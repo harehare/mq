@@ -2506,13 +2506,13 @@ fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             let mut dict = std::mem::take(dict);
             // A key that was never interned cannot be in the dict, so skip the copy-on-write.
             if let Some(key) = Ident::lookup(key) {
-                runtime_value::dict_mut(&mut dict).shift_remove(&key);
+                runtime_value::dict_mut(&mut dict).remove(&key);
             }
             Ok(RuntimeValue::Dict(dict))
         }
         [RuntimeValue::Dict(dict), RuntimeValue::Symbol(key)] => {
             let mut dict = std::mem::take(dict);
-            runtime_value::dict_mut(&mut dict).shift_remove(key);
+            runtime_value::dict_mut(&mut dict).remove(key);
             Ok(RuntimeValue::Dict(dict))
         }
         [a, b] => Err(Error::InvalidTypes(
@@ -3814,9 +3814,9 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
 fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         // Read-only: avoid `dict_mut`/`array_mut`'s `make_mut` deep clone of a shared map.
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(Ident::lookup(key)
-            .and_then(|key| map.get(&key).cloned())
-            .unwrap_or(RuntimeValue::NONE)),
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+            Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
+        }
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let len = array.len();
@@ -3869,9 +3869,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 #[mq_macros::mq_fn(name = "has", params = Fixed(2))]
 fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
-            Ok(Ident::lookup(key).is_some_and(|key| map.contains_key(&key)).into())
-        }
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map.contains_key(key.as_str()).into()),
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.contains_key(key).into()),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let idx = index.value();
@@ -5672,14 +5670,8 @@ fn walk_files_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             RuntimeValue::String(pattern),
             RuntimeValue::Dict(options),
         ] => {
-            let respect_gitignore = matches!(
-                Ident::lookup("respect_gitignore").and_then(|key| options.get(&key)),
-                Some(RuntimeValue::Boolean(true))
-            );
-            let follow_symlinks = matches!(
-                Ident::lookup("follow_symlinks").and_then(|key| options.get(&key)),
-                Some(RuntimeValue::Boolean(true))
-            );
+            let respect_gitignore = matches!(options.get("respect_gitignore"), Some(RuntimeValue::Boolean(true)));
+            let follow_symlinks = matches!(options.get("follow_symlinks"), Some(RuntimeValue::Boolean(true)));
             walk_files_impl_inner(root.as_str(), pattern.as_str(), respect_gitignore, follow_symlinks)
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -7952,24 +7944,24 @@ mod tests {
     // Tests for Dict functions
     #[rstest]
     #[case(
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
-        DictMap::from_iter([("c".into(), RuntimeValue::Number(3.0.into()))]),
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into())), ("c".into(), RuntimeValue::Number(3.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(1.0.into())), ("b", RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("c", RuntimeValue::Number(3.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(1.0.into())), ("b", RuntimeValue::Number(2.0.into())), ("c", RuntimeValue::Number(3.0.into()))]),
     )]
     #[case(
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into()))]),
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(1.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(99.0.into())), ("b", RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(99.0.into())), ("b", RuntimeValue::Number(2.0.into()))]),
     )]
     #[case(
         DictMap::default(),
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
     )]
     #[case(
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
         DictMap::default(),
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
     )]
     fn test_eval_builtin_add_dict(#[case] d1: DictMap, #[case] d2: DictMap, #[case] expected: DictMap) {
         let ident = Ident::new("add");
@@ -8008,7 +8000,7 @@ mod tests {
         assert_eq!(
             result,
             Ok(RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
-                "key".into(),
+                "key",
                 RuntimeValue::String(Shared::new("value".into()))
             )]))))
         );
@@ -8137,8 +8129,8 @@ mod tests {
     fn test_eval_builtin_get_map() {
         let ident_get = Ident::new("get");
         let mut map_data = DictMap::default();
-        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
-        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        map_data.insert("name", RuntimeValue::String(Shared::new("Jules".into())));
+        map_data.insert("age", RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
 
         let args1 = vec![map_val.clone(), RuntimeValue::String(Shared::new("name".into()))];
@@ -8225,8 +8217,8 @@ mod tests {
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = DictMap::default();
-        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
-        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        map_data.insert("name", RuntimeValue::String(Shared::new("Jules".into())));
+        map_data.insert("age", RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, args2.into(), &VmEnv::default());
@@ -8273,8 +8265,8 @@ mod tests {
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = DictMap::default();
-        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
-        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        map_data.insert("name", RuntimeValue::String(Shared::new("Jules".into())));
+        map_data.insert("age", RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_values, args2.into(), &VmEnv::default());

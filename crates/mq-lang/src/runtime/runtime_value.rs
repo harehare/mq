@@ -6,17 +6,14 @@ use crate::{
     tarn::interpreter::coroutine::{CoroutineHandle, CoroutineWeakHandle},
     tarn::value::ClosureValue,
 };
-use indexmap::IndexMap;
 use mq_markdown::Node;
-use rustc_hash::FxBuildHasher;
 use std::{
     borrow::Cow,
     cmp::Ordering,
     ops::{Index, IndexMut},
 };
 
-/// The backing map for [`RuntimeValue::Dict`]: insertion-ordered, `FxHash`-based.
-pub type DictMap = IndexMap<Ident, RuntimeValue, FxBuildHasher>;
+pub use crate::runtime::dict::DictMap;
 
 /// Runtime selector for indexing into markdown nodes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -667,7 +664,7 @@ impl RuntimeValue {
 
     /// Looks up `key` if this is a `Dict`.
     pub fn get(&self, key: &str) -> Option<&RuntimeValue> {
-        self.as_dict()?.get(&Ident::lookup(key)?)
+        self.as_dict()?.get(key)
     }
 
     /// Converts to a Markdown node: markdown values keep their (selected) node, anything else
