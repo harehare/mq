@@ -63,3 +63,23 @@ fn expressions_keep_their_indentation_when_written_and_read_again(#[case] input:
     assert_eq!(describe_all(&first), describe_all(&second), "{first}");
     assert_eq!(second.to_string(), third.to_string());
 }
+
+#[rstest]
+#[case::brace("a\\{b}", "a\\{b}")]
+#[case::brace_from_a_reference("a &#123;b}", "a \\{b}")]
+#[case::esm_looking_text("  import a from \"b\"", "&#105;mport a from \"b\"")]
+#[case::export_looking_text("  export default c", "&#101;xport default c")]
+#[case::text_that_only_starts_like_esm("importx a", "importx a")]
+fn text_is_escaped_for_mdx(#[case] input: &str, #[case] expected: &str) {
+    let markdown = Markdown::from_mdx_str(input).unwrap();
+    let written = markdown.to_string();
+    assert_eq!(written.trim_end(), expected);
+    let reparsed = Markdown::from_mdx_str(&written).unwrap();
+    assert_eq!(describe_all(&markdown), describe_all(&reparsed), "{written}");
+}
+
+#[test]
+fn text_is_not_escaped_for_markdown() {
+    let markdown = Markdown::from_markdown_str("a {b} and\n\nimport a from \"b\"\n").unwrap();
+    assert_eq!(markdown.to_string(), "a {b} and\n\nimport a from \"b\"\n");
+}

@@ -2033,6 +2033,16 @@ impl Cli {
         Ok(())
     }
 
+    /// Whether the input of `file` is read as MDX, so that what is written for it is escaped as MDX.
+    fn is_mdx_input(&self, file: &Option<PathBuf>) -> bool {
+        match self.explicit_input_format() {
+            Some(format) => matches!(format, InputFormat::Mdx),
+            None => file
+                .as_ref()
+                .is_some_and(|file| matches!(InputFormat::from_path(file), InputFormat::Mdx)),
+        }
+    }
+
     fn explicit_input_format(&self) -> Option<InputFormat> {
         self.input
             .program
@@ -2204,7 +2214,7 @@ impl Cli {
         };
 
         if self.quiet {
-            return self.print(runtime_values);
+            return self.print(runtime_values, self.is_mdx_input(file));
         }
 
         if let Some(input) = grep_input {
@@ -2218,7 +2228,7 @@ impl Cli {
             )?;
             grep::print_grep(runtime_values, &input, file, handle, before, after)
         } else {
-            self.print(runtime_values)
+            self.print(runtime_values, self.is_mdx_input(file))
         }
     }
 
@@ -2610,7 +2620,7 @@ impl Cli {
                     vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
                 )
                 .map_err(|e| *e)?;
-            self.print(separator)?;
+            self.print(separator, false)?;
         }
 
         self.emit_results(runtime_values, grep_input, file)
@@ -3022,7 +3032,7 @@ impl Cli {
         value
     }
 
-    fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
+    fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue], mdx: bool) -> mq_markdown::Markdown {
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
         markdown.set_options(mq_markdown::RenderOptions {
@@ -3040,6 +3050,7 @@ impl Cli {
                 LinkUrlStyle::None => mq_markdown::UrlSurroundStyle::None,
                 LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
             },
+            mdx,
         });
         markdown
     }
@@ -3047,7 +3058,7 @@ impl Cli {
     /// Renders `runtime_values` to a byte buffer without writing anywhere.
     /// `emit_diff` always passes `colorize: false` — it needs plain text to diff
     /// against the uncolored original, and colors the diff lines itself.
-    fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool) -> miette::Result<Vec<u8>> {
+    fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool, mdx: bool) -> miette::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
         match self.resolved_output_format() {
@@ -3073,20 +3084,20 @@ impl Cli {
                 }
             }
             OutputFormat::Html => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_html().as_bytes());
             }
             OutputFormat::Text => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_text().as_bytes());
             }
             OutputFormat::Markdown if colorize => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 let theme = mq_markdown::ColorTheme::from_env();
                 buf.extend_from_slice(markdown.to_colored_string_with_theme(&theme).as_bytes());
             }
             OutputFormat::Markdown => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_string().as_bytes());
             }
             OutputFormat::Table => {
@@ -3095,7 +3106,7 @@ impl Cli {
                 buf.extend_from_slice(format!("{}\n", table).as_bytes());
             }
             OutputFormat::Grep => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_string().as_bytes());
             }
             OutputFormat::Gron => {
@@ -3133,7 +3144,7 @@ impl Cli {
         Ok(buf)
     }
 
-    fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
+    fn print(&self, runtime_values: mq_lang::RuntimeValues, mdx: bool) -> miette::Result<()> {
         let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
             runtime_values
                 .values()
@@ -3162,7 +3173,7 @@ impl Cli {
         )?;
 
         let colorize = self.output.color_output && !Self::is_no_color();
-        let buf = self.render(runtime_values, colorize)?;
+        let buf = self.render(runtime_values, colorize, mdx)?;
         Self::write_ignore_pipe(&mut handle, &buf)?;
         handle.finish()?;
 
@@ -3177,7 +3188,7 @@ impl Cli {
         content: &ContentData,
     ) -> miette::Result<()> {
         let original = content.as_str().unwrap_or("");
-        let rendered = self.render(runtime_values.values(), false)?;
+        let rendered = self.render(runtime_values.values(), false, self.is_mdx_input(file))?;
         let rendered = String::from_utf8_lossy(&rendered);
 
         if original != rendered {
