@@ -1,3 +1,7 @@
+[files]
+# HTML entity names from the HTML spec, which include short non-words
+extend-exclude = ["crates/mq-markdown/src/parser/inline/entities.rs"]
+
 [default.extend-words]
 # HashiCorp is a proper noun
 Hashi = "Hashi"
