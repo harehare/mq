@@ -492,6 +492,36 @@ fn mdx_esm_goes_on_while_a_bracket_is_open(#[case] input: &str, #[case] blocks: 
     );
 }
 
+#[rstest]
+#[case::strikethrough_in_emphasis("a*~b~*c\n", "<p>a<em><del>b</del></em>c</p>\n")]
+#[case::strikethrough_not_next_to_a_word("a ~*b*~ c\n", "<p>a <del><em>b</em></del> c</p>\n")]
+#[case::tildes_in_a_word("a~*b*~c\n", "<p>a~<em>b</em>~c</p>\n")]
+#[case::strong_around_strikethrough("a**~b~**c\n", "<p>a<strong><del>b</del></strong>c</p>\n")]
+#[case::underscore_next_to_tildes("a_~b~_c\n", "<p>a_<del>b</del>_c</p>\n")]
+#[case::punctuation_that_is_not_a_tilde("a*.b.*c\n", "<p>a*.b.*c</p>\n")]
+fn emphasis_next_to_strikethrough(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(mq_markdown::to_html(input), expected);
+}
+
+#[rstest]
+#[case::more_spaces("- [ ]   b\n", "  b")]
+#[case::one_space("- [ ] b\n", "b")]
+#[case::tab("- [x]\tb\n", "b")]
+#[case::next_line("- [ ]\n  b\n", "b")]
+#[case::space_and_next_line("- [ ] \n  b\n", "b")]
+#[case::crlf("* [x]\r\n  a\n", "a")]
+fn a_task_marker_takes_one_whitespace_character(#[case] input: &str, #[case] expected: &str) {
+    let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
+    let Node::List(list) = &nodes[0] else {
+        panic!("{nodes:?}")
+    };
+    assert_eq!(
+        list.values.iter().map(Node::value).collect::<String>(),
+        expected,
+        "{nodes:?}"
+    );
+}
+
 /// References keep the notation they were written in, as long as it resolves to the same definition.
 #[rstest]
 #[case::full_keeps_case_and_spaces("[x][Foo   Bar]\n\n[foo bar]: /u\n", "[x][Foo   Bar]")]

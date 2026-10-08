@@ -25,16 +25,30 @@ fn kind(char: Option<char>) -> Kind {
 
 /// Whether a run of `ch` between `before` and `after` can open and can close, by the rules of
 /// `CommonMark` for left- and right-flanking runs, which `~` follows too.
-pub(super) fn flanking(ch: u8, before: Option<char>, after: Option<char>) -> (bool, bool) {
-    let (before_kind, after_kind) = (kind(before), kind(after));
+///
+/// With `strikethrough`, a `~` next to a run of `*` or `_` counts as what lets the run open or close, so
+/// that `a*~b~*c` is emphasis around strikethrough, and `$**~~b~~` still closes.
+pub(super) fn flanking(ch: u8, before: Option<char>, after: Option<char>, strikethrough: bool) -> (bool, bool) {
+    let tilde = |char: Option<char>| strikethrough && ch != b'~' && char == Some('~');
+    // For opening a `~` after the run is a letter and a `~` before it is punctuation, and for closing the
+    // other way round.
+    let (before_for_open, after_for_open) = (
+        if tilde(before) { Kind::Punctuation } else { kind(before) },
+        if tilde(after) { Kind::Other } else { kind(after) },
+    );
+    let (before_for_close, after_for_close) = (
+        if tilde(before) { Kind::Other } else { kind(before) },
+        if tilde(after) { Kind::Punctuation } else { kind(after) },
+    );
 
-    let open = after_kind == Kind::Other || (after_kind == Kind::Punctuation && before_kind != Kind::Other);
-    let close = before_kind == Kind::Other || (before_kind == Kind::Punctuation && after_kind != Kind::Other);
+    let open = after_for_open == Kind::Other || (after_for_open == Kind::Punctuation && before_for_open != Kind::Other);
+    let close =
+        before_for_close == Kind::Other || (before_for_close == Kind::Punctuation && after_for_close != Kind::Other);
 
     if ch == b'_' {
         (
-            open && (before_kind != Kind::Other || !close),
-            close && (after_kind != Kind::Other || !open),
+            open && (before_for_open != Kind::Other || !close),
+            close && (after_for_close != Kind::Other || !open),
         )
     } else {
         (open, close)

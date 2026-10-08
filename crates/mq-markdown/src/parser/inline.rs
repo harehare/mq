@@ -628,7 +628,7 @@ impl Scanner<'_> {
 
         let before = src[..start].chars().next_back();
         let after = src[end..].chars().next();
-        let (can_open, can_close) = emphasis::flanking(ch, before, after);
+        let (can_open, can_close) = emphasis::flanking(ch, before, after, !self.context.references.mdx);
         if !can_open && !can_close {
             self.pos = end;
             return;
