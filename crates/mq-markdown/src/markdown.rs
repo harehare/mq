@@ -286,7 +286,10 @@ impl Markdown {
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
         Ok(Self {
             nodes: parse_mdx_nodes(content)?,
-            options: RenderOptions::default(),
+            options: RenderOptions {
+                mdx: true,
+                ..RenderOptions::default()
+            },
         })
     }
 
@@ -771,6 +774,7 @@ mod tests {
             list_style: Some(ListStyle::Star),
             link_title_style: TitleSurroundStyle::default(),
             link_url_style: UrlSurroundStyle::default(),
+            ..RenderOptions::default()
         });
 
         let formatted = md.to_string();

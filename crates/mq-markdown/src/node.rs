@@ -152,6 +152,8 @@ pub struct RenderOptions {
     pub list_style: Option<ListStyle>,
     pub link_url_style: UrlSurroundStyle,
     pub link_title_style: TitleSurroundStyle,
+    /// Write for MDX: text that MDX would read as an expression or as ESM is escaped.
+    pub mdx: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1508,7 +1510,7 @@ impl Node {
             // values like JSON output or attr lookups must stay untouched.
             Self::Text(Text { value, position }) => {
                 if position.is_some() {
-                    escape_text(value.clone())
+                    escape_text_with(value.clone(), options.mdx)
                 } else {
                     value.clone()
                 }
@@ -3763,6 +3765,16 @@ fn is_email_domain(rest: &str) -> bool {
 /// syntax on re-parse. `# - + > =` only unsafe at line start, `. )` only after leading digits;
 /// a leading `\t` and runs of 2+ `\n` (only possible via decoded entities) use `&#N;` instead.
 fn escape_text(value: String) -> String {
+    escape_text_with(value, false)
+}
+
+/// Whether `text` starts with the `import ` or `export ` that makes a block ESM in MDX.
+fn starts_esm(text: &str) -> bool {
+    text.starts_with("import ") || text.starts_with("export ")
+}
+
+/// `escape_text`, and for MDX also the braces and the `import` or `export` that starts a line.
+fn escape_text_with(value: String, mdx: bool) -> String {
     // Skip the copy when nothing needs escaping; byte scan avoids UTF-8 decoding.
     let needs_escaping = value.bytes().any(|b| {
         matches!(
@@ -3790,7 +3802,8 @@ fn escape_text(value: String) -> String {
                 | b'@'
         )
     });
-    if !needs_escaping {
+    let mdx_special = mdx && (value.contains('{') || value.contains("import ") || value.contains("export "));
+    if !needs_escaping && !mdx_special {
         return value;
     }
 
@@ -3819,6 +3832,15 @@ fn escape_text(value: String) -> String {
                 continue;
             }
             '\\' | '`' | '*' | '_' | '[' | ']' | '|' | '~' | '$' | '<' => result.push('\\'),
+            '{' if mdx => result.push('\\'),
+            // The first letter as a character reference keeps the line from starting an ESM block.
+            'i' | 'e' if mdx && at_line_start && starts_esm(&value[value.len() - rest.len() - 1..]) => {
+                result.push_str(if c == 'i' { "&#105;" } else { "&#101;" });
+                at_line_start = false;
+                leading_digits = false;
+                previous = Some(c);
+                continue;
+            }
             '#' | '-' | '+' | '>' | '=' if at_line_start => result.push('\\'),
             '.' | ')' if leading_digits => result.push('\\'),
             '&' if starts_reference(rest) => result.push('\\'),

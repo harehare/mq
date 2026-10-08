@@ -708,6 +708,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
                         UrlSurroundStyle::None => mq_markdown::UrlSurroundStyle::None,
                     })
                     .unwrap_or_default(),
+                mdx: matches!(options.input_format, Some(InputFormat::Mdx)),
             });
             markdown.to_string()
         })
