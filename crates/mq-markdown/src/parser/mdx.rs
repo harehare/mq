@@ -260,7 +260,7 @@ impl Cursor<'_> {
 }
 
 impl Cursor<'_> {
-    /// The value of an expression: its content, without up to two whitespace characters at the start
+    /// The value of an expression: its content, without up to two columns of whitespace at the start
     /// of each line after the first.
     fn expression_value(&self, start: usize, end: usize) -> SmolStr {
         let content = &self.src[start..end];
@@ -268,15 +268,28 @@ impl Cursor<'_> {
             return SmolStr::new(content);
         }
         let mut value = String::with_capacity(content.len());
-        // How many more whitespace characters may be dropped at the start of the current line.
-        let mut droppable = 0;
+        // How many more columns of whitespace may be dropped at the start of the current line, and the
+        // column that the line is at.
+        let mut droppable = 0usize;
+        let mut column = 0usize;
         for char in content.chars() {
             match char {
                 '\n' | '\r' => {
                     droppable = 2;
+                    column = 0;
                     value.push(char);
                 }
-                ' ' | '\t' if droppable > 0 => droppable -= 1,
+                ' ' if droppable > 0 => {
+                    droppable -= 1;
+                    column += 1;
+                }
+                // What is left of a tab that is dropped in part stays as spaces.
+                '\t' if droppable > 0 => {
+                    let width = 4 - column % 4;
+                    value.extend(std::iter::repeat_n(' ', width.saturating_sub(droppable)));
+                    droppable = droppable.saturating_sub(width);
+                    column += width;
+                }
                 _ => {
                     droppable = 0;
                     value.push(char);

@@ -434,6 +434,64 @@ fn writing_keeps_what_is_read_back(#[case] input: &str, #[case] expected: &str) 
     );
 }
 
+#[rstest]
+#[case::lone_pipe_header("|\n|-|\n|d|\n", false)]
+#[case::empty_cell_header("||\n|-|\n|d|\n", true)]
+#[case::space_cell_header("| |\n|-|\n|d|\n", true)]
+fn a_header_of_a_lone_pipe_has_no_cells(#[case] input: &str, #[case] table: bool) {
+    let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
+    assert_eq!(
+        nodes.iter().any(|node| matches!(node, Node::TableCell(_))),
+        table,
+        "{nodes:?}"
+    );
+}
+
+#[rstest]
+#[case::next_line("- [ ]\n  a\n", Some(false))]
+#[case::checked_next_line("* [x]\r\n  a\n", Some(true))]
+#[case::alone("- [ ]\n", None)]
+#[case::before_a_blank_line("- [ ]\n\npara\n", None)]
+#[case::before_an_item("- [x]\n- b\n", None)]
+#[case::with_a_space("- [x] a\n", Some(true))]
+fn a_task_marker_is_followed_by_whitespace(#[case] input: &str, #[case] checked: Option<bool>) {
+    let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
+    let Node::List(list) = &nodes[0] else {
+        panic!("{nodes:?}")
+    };
+    assert_eq!(list.checked, checked, "{nodes:?}");
+}
+
+#[test]
+fn mdx_attribute_references_of_any_length_are_decoded() {
+    let markdown = Markdown::from_mdx_str("<a b='&#987654321; &#x110000; &#65;' />").unwrap();
+    assert_eq!(markdown.to_string().trim_end(), "<a b=\"\u{FFFD} \u{FFFD} A\" />");
+}
+
+#[test]
+fn mdx_expression_keeps_what_is_left_of_a_tab_at_the_start_of_a_line() {
+    let nodes = Markdown::from_mdx_str("{`\n\t`}").unwrap().nodes;
+    assert!(
+        matches!(&nodes[..], [Node::MdxFlowExpression(e)] if e.value == "`\n  `"),
+        "{nodes:?}"
+    );
+}
+
+#[rstest]
+#[case::bracket_open_over_blank_lines("export {\n\n  a\n\n} from 'b'\n\nc", 2)]
+#[case::paren_open("import (\n\n'a'\n\n)\n\nb", 2)]
+#[case::string_with_a_bracket("import a from \"{\"\n\nb", 2)]
+#[case::closed("import a from 'b'\n\nc", 2)]
+fn mdx_esm_goes_on_while_a_bracket_is_open(#[case] input: &str, #[case] blocks: usize) {
+    let nodes = Markdown::from_mdx_str(input).unwrap().nodes;
+    assert_eq!(nodes.len(), blocks, "{nodes:?}");
+    assert!(matches!(nodes[0], Node::MdxJsEsm(_)), "{nodes:?}");
+    assert!(
+        matches!(&nodes[1], Node::Text(t) if t.value.trim().len() == 1),
+        "{nodes:?}"
+    );
+}
+
 /// References keep the notation they were written in, as long as it resolves to the same definition.
 #[rstest]
 #[case::full_keeps_case_and_spaces("[x][Foo   Bar]\n\n[foo bar]: /u\n", "[x][Foo   Bar]")]

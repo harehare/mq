@@ -112,6 +112,10 @@ fn header<'a>(
         return None;
     }
 
+    // A lone pipe is both the leading and the trailing one of a row, which then has no cells.
+    if head.text.trim_matches([' ', '\t']) == "|" {
+        return None;
+    }
     let cells = split_row(head);
     let aligns = split_row(delimiter)
         .iter()

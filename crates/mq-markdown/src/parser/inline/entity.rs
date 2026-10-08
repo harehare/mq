@@ -4,6 +4,12 @@ use super::entities::ENTITIES;
 
 /// Decodes the character reference that starts at `pos`, returning the offset after it and its value.
 pub(super) fn decode(src: &str, pos: usize) -> Option<(usize, String)> {
+    decode_with(src, pos, true)
+}
+
+/// `decode`, where a numeric reference of any length is one when `limited` is not set, and is
+/// replaced with U+FFFD when it is out of range.
+fn decode_with(src: &str, pos: usize, limited: bool) -> Option<(usize, String)> {
     let bytes = src.as_bytes();
     debug_assert_eq!(bytes[pos], b'&');
     let rest = &bytes[pos + 1..];
@@ -13,6 +19,7 @@ pub(super) fn decode(src: &str, pos: usize) -> Option<(usize, String)> {
             Some(b'x' | b'X') => (16, 2, 6),
             _ => (10, 1, 7),
         };
+        let max = if limited { max } else { usize::MAX };
         let digits = rest[digits_from..]
             .iter()
             .take_while(|b| (radix == 16 && b.is_ascii_hexdigit()) || b.is_ascii_digit())
@@ -20,7 +27,8 @@ pub(super) fn decode(src: &str, pos: usize) -> Option<(usize, String)> {
         if digits == 0 || digits > max || rest.get(digits_from + digits) != Some(&b';') {
             return None;
         }
-        let number = u32::from_str_radix(&src[pos + 1 + digits_from..pos + 1 + digits_from + digits], radix).ok()?;
+        let number =
+            u32::from_str_radix(&src[pos + 1 + digits_from..pos + 1 + digits_from + digits], radix).unwrap_or(u32::MAX);
         // Control characters other than whitespace are not allowed, nor are surrogates and
         // out of range numbers.
         let char = match char::from_u32(number) {
@@ -84,7 +92,7 @@ pub(in crate::parser) fn decode_references(value: &str) -> String {
 
     while index < bytes.len() {
         if bytes[index] == b'&'
-            && let Some((end, decoded)) = decode(value, index)
+            && let Some((end, decoded)) = decode_with(value, index, false)
         {
             result.push_str(&value[from..index]);
             result.push_str(&decoded);

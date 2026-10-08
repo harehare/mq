@@ -608,7 +608,10 @@ fn list_item(
         index += 1;
     }
 
-    let checkbox = inner.iter().find(|line| !line.is_blank()).and_then(task_checkbox);
+    let checkbox = inner
+        .iter()
+        .position(|line| !line.is_blank())
+        .and_then(|index| task_checkbox(&inner[index], inner.get(index + 1)));
 
     // Trailing blank lines belong to whatever follows the item, but still extend its position.
     let reaches_end = index == lines.len();
@@ -651,13 +654,20 @@ fn list_item(
 
 /// Recognises a GFM task marker (`[ ] ` or `[x] `) at the start of an item's content, returning
 /// the checked state and the bytes to skip.
-fn task_checkbox(line: &Line<'_>) -> Option<bool> {
+fn task_checkbox(line: &Line<'_>, next: Option<&Line<'_>>) -> Option<bool> {
     if line.mdx {
         return None;
     }
-    match line.text.as_bytes().get(..4)? {
-        [b'[', b' ', b']', b' ' | b'\t'] => Some(false),
-        [b'[', b'x' | b'X', b']', b' ' | b'\t'] => Some(true),
+    let bytes = line.text.as_bytes();
+    let checked = match bytes.get(..3)? {
+        [b'[', b' ', b']'] => false,
+        [b'[', b'x' | b'X', b']'] => true,
+        _ => return None,
+    };
+    // Whitespace follows the marker, which a line ending is when the item goes on in the next line.
+    match bytes.get(3) {
+        Some(b' ' | b'\t') => Some(checked),
+        None if next.is_some_and(|next| !next.is_blank()) => Some(checked),
         _ => None,
     }
 }
