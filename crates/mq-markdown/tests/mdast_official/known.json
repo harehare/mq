@@ -73,5 +73,11 @@
   "markdown-rs/misc_tabs#15": "The official packages keep trailing whitespace of the info string, as the meta of a fence.",
   "markdown-rs/misc_tabs#16": "The official packages keep trailing whitespace of the info string, as the meta of a fence.",
   "markdown-rs/html_flow#147": "The official packages do not start HTML flow on a line that continues a paragraph in a quote, which CommonMark does.",
-  "markdown-rs/link_reference#46": "A reference followed by an empty label is a shortcut reference here, as in CommonMark, and text in the official packages."
+  "markdown-rs/link_reference#46": "A reference followed by an empty label is a shortcut reference here, as in CommonMark, and text in the official packages.",
+  "random-markdown-1#90": "The official packages match a delimiter run that is partly used without the rule of three, which CommonMark applies to the length of the whole run.",
+  "random-markdown-1#200": "The official packages match a delimiter run that is partly used without the rule of three, which CommonMark applies to the length of the whole run.",
+  "random-markdown-1#298": "The official packages match a delimiter run that is partly used without the rule of three, which CommonMark applies to the length of the whole run.",
+  "random-mdx-1#102": "The official packages match a delimiter run that is partly used without the rule of three, which CommonMark applies to the length of the whole run.",
+  "random-markdown-1#162": "The official packages mark a list as spread when a blank line follows its last item, before a list with another marker.",
+  "random-markdown-1#205": "The official packages mark a list as spread when a blank line follows its last item, before a list with another marker."
 }
