@@ -352,6 +352,58 @@ fn code_span_strips_one_space_or_line_ending(#[case] input: &str, #[case] expect
     assert_eq!(nodes[0].value(), expected, "{nodes:?}");
 }
 
+#[rstest]
+#[case::title_lines_lose_their_indent("[a](b \"\n c\")\n", "\nc")]
+#[case::definition_title("[a]\n\n[a]: b \"\n  c\"\n", "\nc")]
+fn titles_across_lines_lose_the_indent_of_the_lines(#[case] input: &str, #[case] expected: &str) {
+    let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
+    let title = nodes.iter().find_map(|node| match node {
+        Node::Link(link) => link.title.as_ref().map(|title| title.to_string()),
+        Node::Definition(definition) => definition.title.as_ref().map(|title| title.to_string()),
+        _ => None,
+    });
+    assert_eq!(title.as_deref(), Some(expected), "{nodes:?}");
+}
+
+#[rstest]
+#[case::tab_after_an_indented_fence(" ```\n\tx", "   x")]
+#[case::tab_after_a_deeper_fence("  ```\n\tx", "  x")]
+#[case::spaces_after_an_item_marker("- ```\n   \n  ```", " ")]
+#[case::tab_in_an_item("- ```\n\t\n  ```", "  ")]
+fn fenced_code_keeps_the_whitespace_left_after_the_indent(#[case] input: &str, #[case] expected: &str) {
+    let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
+    let code = match &nodes[0] {
+        Node::List(list) => &list.values[0],
+        node => node,
+    };
+    assert_eq!(code.value(), expected, "{nodes:?}");
+}
+
+#[rstest]
+#[case::in_a_paragraph("a <b>x\nc</b>", "x\nc")]
+#[case::after_the_tag("a <b>\nc</b> d", "\nc")]
+#[case::before_the_closing_tag("a <b>c\n</b> d", "c\n")]
+#[case::in_a_quote("> a <b>\n> c </b> d.", "\nc ")]
+fn line_endings_in_text_elements_are_kept(#[case] input: &str, #[case] expected: &str) {
+    let nodes = Markdown::from_mdx_str(input).unwrap().nodes;
+    let children = nodes
+        .iter()
+        .flat_map(|node| match node {
+            Node::Blockquote(quote) => quote.values.clone(),
+            node => vec![node.clone()],
+        })
+        .find_map(|node| match node {
+            Node::MdxJsxTextElement(element) => Some(element.children),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        children.iter().map(Node::value).collect::<String>(),
+        expected,
+        "{nodes:?}"
+    );
+}
+
 /// References keep the notation they were written in, as long as it resolves to the same definition.
 #[rstest]
 #[case::full_keeps_case_and_spaces("[x][Foo   Bar]\n\n[foo bar]: /u\n", "[x][Foo   Bar]")]

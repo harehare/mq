@@ -186,13 +186,6 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
 
     for item in items {
         let (start, end, text): (usize, usize, Cow<'_, str>) = match item {
-            // A line ending directly inside a JSX element is not part of its content.
-            Item::Text {
-                value: Value::Slice(from, to),
-                ..
-            } if !open.is_empty() && from < to && src[from..to].bytes().all(|b| matches!(b, b'\n' | b'\r')) => {
-                continue;
-            }
             Item::Text { start, end, value } => match value {
                 // The backslash of an escape is not part of the position of the text it starts.
                 Value::Slice(from, to) => (from, end, Cow::Borrowed(&src[from..to])),

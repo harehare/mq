@@ -1,6 +1,6 @@
 //! Fenced and indented code, and math fences.
 
-use super::block::{CODE_INDENT, join_lines};
+use super::block::CODE_INDENT;
 use super::inline;
 use super::line::Line;
 use super::tree::{Block, FencedBlock};
@@ -61,9 +61,10 @@ pub(super) fn fenced_code(
             index += 1;
             break;
         }
-        // Remove up to the opening fence's indentation from each content line.
-        let strip = line.text.bytes().take(indent).take_while(|&b| b == b' ').count();
-        body.push((&line.text[strip..], line.eol));
+        // Remove up to the opening fence's indentation from each content line. What is left of a tab
+        // that is only consumed in part stays as spaces.
+        let content = line.skip_columns(lines[start].pad + indent);
+        body.push((content.pad, content.text, line.eol));
         index += 1;
     }
 
@@ -84,7 +85,14 @@ pub(super) fn fenced_code(
         start: lines[start].content_point(indent),
         end,
     });
-    let value = join_lines(&body);
+    let mut value = String::with_capacity(body.iter().map(|(pad, text, eol)| pad + text.len() + eol.len()).sum());
+    for (index, (pad, text, eol)) in body.iter().enumerate() {
+        value.extend(std::iter::repeat_n(' ', *pad));
+        value.push_str(text);
+        if index + 1 < body.len() {
+            value.push_str(eol);
+        }
+    }
     let node = if fence.marker == b'$' {
         Node::Math(Math { value, position })
     } else {
