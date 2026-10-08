@@ -43,16 +43,17 @@ impl InlineSource {
     pub(super) fn remove_prefix(&mut self, marker: usize) {
         let rest = &self.text[marker..];
         let end = self.text.len() - rest.trim_start_matches([' ', '\t', '\n', '\r']).len();
+        let new_point = self.point(end);
         self.text.replace_range(..end, "");
         self.tabs = self.text.contains('\t');
 
         let index = self.lines.partition_point(|(start, _)| *start <= end).saturating_sub(1);
-        let (start, point) = &self.lines[index];
+        let point = &self.lines[index].1;
         let first = (
             0,
             Point {
                 line: point.line,
-                column: point.column + (end - start),
+                column: new_point.column,
             },
         );
         let rest = self.lines[index + 1..]

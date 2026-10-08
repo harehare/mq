@@ -654,7 +654,7 @@ fn list_item(
         index += 1;
     }
 
-    let checkbox = task_checkbox(&first);
+    let checkbox = inner.iter().find(|line| !line.is_blank()).and_then(task_checkbox);
 
     // Trailing blank lines belong to whatever follows the item, but still extend its position.
     let reaches_end = index == lines.len();
