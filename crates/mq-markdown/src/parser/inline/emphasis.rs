@@ -1,7 +1,7 @@
 //! Emphasis, strong emphasis and strikethrough, resolved with a stack of delimiter runs.
 //!
-//! This follows the reference implementation of `CommonMark`. `markdown-rs` differs in how runs next
-//! to other runs open and close, and in using the remaining length of a run for the rule of three.
+//! This follows the reference implementation of `CommonMark`: the rule of three goes by the length of
+//! the whole runs.
 
 use super::punctuation::is_punctuation;
 use super::{Context, Delim, Item, MAX_NESTING, item_depth, to_nodes};

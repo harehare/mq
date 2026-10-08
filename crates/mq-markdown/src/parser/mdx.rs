@@ -2,9 +2,9 @@
 //! so expressions are only checked for balanced braces, outside of strings, template literals and comments.
 
 use crate::node::{MdxAttributeContent, MdxAttributeValue, MdxJsxAttribute};
+use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 use std::cell::OnceCell;
-use std::collections::HashMap;
 
 /// What the end of the input means for a construct it ends inside of.
 pub(super) enum Fallback {
@@ -65,7 +65,7 @@ const UNCLOSED_EXPRESSION: &str =
 /// Where each `{` of a source closes, found in one pass the first time one is asked for, so that
 /// many unclosed braces do not each scan to the end of the input.
 #[derive(Default)]
-pub(super) struct Braces(OnceCell<HashMap<usize, usize>>);
+pub(super) struct Braces(OnceCell<FxHashMap<usize, usize>>);
 
 impl Braces {
     /// The offset of the `}` that closes the `{` at `open`, if there is one.
@@ -83,9 +83,9 @@ enum Frame {
 /// Matches the braces of the expressions in `src` from `from`, which are not checked as JavaScript but
 /// skip over strings, template literals and comments. Text outside braces is not looked at. With
 /// `single`, `from` is a `{` and the search ends once it is closed.
-fn match_braces(src: &str, from: usize, single: bool) -> HashMap<usize, usize> {
+fn match_braces(src: &str, from: usize, single: bool) -> FxHashMap<usize, usize> {
     let bytes = src.as_bytes();
-    let mut closes = HashMap::new();
+    let mut closes = FxHashMap::default();
     let mut stack = Vec::new();
     let mut index = from;
 

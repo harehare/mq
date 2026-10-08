@@ -5,6 +5,7 @@
 
 use super::line::visual_column;
 use super::mdx::TagKind;
+use super::scan::eol_len;
 use crate::node::{ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
 
 /// Raw inline content of a paragraph, heading or table cell, with the source position of each line.
@@ -43,18 +44,11 @@ impl InlineSource {
     /// Removes the first `marker` bytes and the one space, tab or line ending that follows them, and the
     /// line ending after a space or a tab.
     pub(super) fn remove_prefix_and_one(&mut self, marker: usize) {
-        let eol = |rest: &str| {
-            if rest.starts_with("\r\n") {
-                2
-            } else {
-                usize::from(rest.starts_with(['\n', '\r']))
-            }
-        };
-        let rest = &self.text[marker..];
-        let one = if rest.starts_with([' ', '\t']) {
-            1 + eol(&rest[1..])
+        let bytes = self.text.as_bytes();
+        let one = if matches!(bytes.get(marker), Some(b' ' | b'\t')) {
+            1 + eol_len(bytes, marker + 1)
         } else {
-            eol(rest)
+            eol_len(bytes, marker)
         };
         self.drain_to(marker + one);
     }
@@ -67,7 +61,7 @@ impl InlineSource {
             return std::mem::take(&mut self.text);
         };
         let line = self.text[..eol].to_string();
-        let end = eol + if self.text[eol..].starts_with("\r\n") { 2 } else { 1 };
+        let end = eol + eol_len(self.text.as_bytes(), eol);
         self.drain_to(end);
         line
     }

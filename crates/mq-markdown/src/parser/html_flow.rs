@@ -1,5 +1,7 @@
 //! HTML blocks: the seven kinds of `CommonMark`, ported from the rules of `markdown-rs`.
 
+use super::scan::skip_blanks;
+
 /// The kind of an HTML block, which decides how it ends.
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum Kind {
@@ -133,13 +135,6 @@ fn tag(rest: &str, from: usize, closing: bool) -> Option<Kind> {
     } else {
         complete_tag(&bytes[end..], closing).then_some(Kind::Complete)
     }
-}
-
-fn skip_blanks(bytes: &[u8], mut index: usize) -> usize {
-    while matches!(bytes.get(index), Some(b' ' | b'\t')) {
-        index += 1;
-    }
-    index
 }
 
 /// Whether the rest of a tag after its name is complete and alone on the line.

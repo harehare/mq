@@ -22,14 +22,15 @@ pub(super) use tail::{destination, title_at};
 
 use super::mdx::{self, Fallback, Parsed, TagKind};
 use super::resolve::References;
+use super::scan::eol_len;
 use super::tree::InlineSource;
 use crate::node::{
     Break, CodeInline, MathInline, MdxAttributeContent, MdxJsxTextElement, MdxTextExpression, Node, Position, Text,
 };
+use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 use std::borrow::Cow;
 use std::cell::{OnceCell, RefCell};
-use std::collections::HashMap;
 
 /// The value of a text item: a slice of the source, or a decoded string.
 pub(super) enum Value {
@@ -85,8 +86,8 @@ pub(super) struct TextTag {
     end: usize,
 }
 
-/// Emphasis and links nested deeper than this are text, and JSX elements are an error, which bounds the recursion of everything that
-/// walks the nodes.
+/// Emphasis and links nested deeper than this are text, and JSX elements are an error. This bounds the
+/// recursion of everything that walks the nodes.
 pub(super) const MAX_NESTING: usize = 128;
 
 /// How deeply the item nests: nodes carry it, and the rest are text.
@@ -292,8 +293,8 @@ fn text_element(context: &Context<'_>, tag: TextTag, children: Vec<Node>, end: u
 /// span asks, so that openers without a closer do not each scan to the end.
 #[derive(Default)]
 struct SpanRuns {
-    backticks: OnceCell<HashMap<usize, Vec<usize>>>,
-    dollars: OnceCell<HashMap<usize, Vec<usize>>>,
+    backticks: OnceCell<FxHashMap<usize, Vec<usize>>>,
+    dollars: OnceCell<FxHashMap<usize, Vec<usize>>>,
 }
 
 impl SpanRuns {
@@ -303,7 +304,7 @@ impl SpanRuns {
         let starts = runs
             .get_or_init(|| {
                 let bytes = src.as_bytes();
-                let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
+                let mut runs: FxHashMap<usize, Vec<usize>> = FxHashMap::default();
                 let mut index = 0;
                 while index < bytes.len() {
                     if bytes[index] == ch {
@@ -509,7 +510,7 @@ impl Scanner<'_> {
                 self.push(item, pos + 2);
             }
             Some(b'\n' | b'\r') => {
-                let end = pos + 1 + eol_len(&bytes[pos + 1..]);
+                let end = pos + 1 + eol_len(bytes, pos + 1);
                 let node = Node::Break(Break {
                     position: Some(self.context.position(pos, end)),
                 });
@@ -542,7 +543,7 @@ impl Scanner<'_> {
         let src = self.src();
         let bytes = src.as_bytes();
         let pos = self.pos;
-        let eol = eol_len(&bytes[pos..]);
+        let eol = eol_len(bytes, pos);
 
         // Trailing whitespace before the line ending is dropped, or makes a hard break.
         let mut start = pos;
@@ -755,15 +756,6 @@ impl Scanner<'_> {
 
     fn literal_url(&mut self) {
         literal::url(self);
-    }
-}
-
-/// The length of the line ending at the start of `bytes`.
-fn eol_len(bytes: &[u8]) -> usize {
-    match bytes {
-        [b'\r', b'\n', ..] => 2,
-        [b'\r' | b'\n', ..] => 1,
-        _ => 0,
     }
 }
 

@@ -1,5 +1,7 @@
 //! Autolinks (`<https://example.com>`) and raw inline HTML.
 
+use crate::parser::scan::{is_whitespace, skip_whitespace};
+
 /// An autolink found at `<`.
 pub(super) struct Autolink {
     pub(super) url: String,
@@ -142,10 +144,6 @@ pub(super) fn inline_html(src: &str, pos: usize, misses: &mut Misses) -> Option<
     open_tag(bytes).map(|length| pos + length)
 }
 
-fn is_space(byte: u8) -> bool {
-    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
-}
-
 /// The length of a tag name at the start of `bytes`.
 fn tag_name(bytes: &[u8]) -> usize {
     if !bytes.first().is_some_and(u8::is_ascii_alphabetic) {
@@ -157,20 +155,13 @@ fn tag_name(bytes: &[u8]) -> usize {
         .count()
 }
 
-fn skip_spaces(bytes: &[u8], mut index: usize) -> usize {
-    while bytes.get(index).copied().is_some_and(is_space) {
-        index += 1;
-    }
-    index
-}
-
 /// The length of a closing tag such as `</a>` at the start of `bytes`.
 fn closing_tag(bytes: &[u8]) -> Option<usize> {
     let name = tag_name(&bytes[2..]);
     if name == 0 {
         return None;
     }
-    let index = skip_spaces(bytes, 2 + name);
+    let index = skip_whitespace(bytes, 2 + name);
     (bytes.get(index) == Some(&b'>')).then_some(index + 1)
 }
 
@@ -183,7 +174,7 @@ fn open_tag(bytes: &[u8]) -> Option<usize> {
     let mut index = 1 + name;
 
     loop {
-        let after_space = skip_spaces(bytes, index);
+        let after_space = skip_whitespace(bytes, index);
         let has_space = after_space > index;
         match bytes.get(after_space)? {
             b'>' => return Some(after_space + 1),
@@ -204,11 +195,11 @@ fn attribute(bytes: &[u8], start: usize) -> Option<usize> {
         .count();
     let end = start + name;
 
-    let after_space = skip_spaces(bytes, end);
+    let after_space = skip_whitespace(bytes, end);
     if bytes.get(after_space) != Some(&b'=') {
         return Some(end);
     }
-    let value = skip_spaces(bytes, after_space + 1);
+    let value = skip_whitespace(bytes, after_space + 1);
     match bytes.get(value)? {
         quote @ (b'"' | b'\'') => {
             let close = bytes[value + 1..].iter().position(|b| b == quote)?;
@@ -217,7 +208,7 @@ fn attribute(bytes: &[u8], start: usize) -> Option<usize> {
         _ => {
             let length = bytes[value..]
                 .iter()
-                .take_while(|&&b| !is_space(b) && !matches!(b, b'"' | b'\'' | b'=' | b'<' | b'>' | b'`'))
+                .take_while(|&&b| !is_whitespace(b) && !matches!(b, b'"' | b'\'' | b'=' | b'<' | b'>' | b'`'))
                 .count();
             (length > 0).then_some(value + length)
         }

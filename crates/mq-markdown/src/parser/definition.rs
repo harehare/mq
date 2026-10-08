@@ -1,36 +1,9 @@
 //! Link reference definitions: `[label]: destination "title"` at the start of a paragraph.
 
 use super::inline::{destination, normalize, remove_line_indent, title_at, unescape};
+use super::scan::{eol_len, skip_blanks, skip_blanks_and_eol};
 use super::tree::InlineSource;
 use crate::node::{Definition, Node, Point, Position, Title, Url};
-
-/// Skips spaces and tabs.
-fn skip_blanks(bytes: &[u8], mut index: usize) -> usize {
-    while matches!(bytes.get(index), Some(b' ' | b'\t')) {
-        index += 1;
-    }
-    index
-}
-
-/// The length of the line ending at `index`, or 0.
-fn eol_len(bytes: &[u8], index: usize) -> usize {
-    match bytes.get(index..) {
-        Some([b'\r', b'\n', ..]) => 2,
-        Some([b'\r' | b'\n', ..]) => 1,
-        _ => 0,
-    }
-}
-
-/// Skips whitespace including at most one line ending.
-fn skip_space(bytes: &[u8], index: usize) -> usize {
-    let index = skip_blanks(bytes, index);
-    let eol = eol_len(bytes, index);
-    if eol > 0 {
-        skip_blanks(bytes, index + eol)
-    } else {
-        index
-    }
-}
 
 /// Parses the label at `pos` (a `[`) followed by `:`, returning the raw label and the offset after.
 fn label(text: &str, pos: usize) -> Option<(&str, usize)> {
@@ -68,7 +41,7 @@ fn parse_one(text: &str, pos: usize) -> Option<Parsed> {
     let bytes = text.as_bytes();
     let (raw_label, after_colon) = label(text, pos)?;
 
-    let dest_start = skip_space(bytes, after_colon);
+    let dest_start = skip_blanks_and_eol(bytes, after_colon);
     let (url, after_dest) = destination(text, dest_start)?;
     // A bare destination cannot be empty.
     if after_dest == dest_start {
@@ -107,7 +80,7 @@ fn parse_one(text: &str, pos: usize) -> Option<Parsed> {
 
 /// The start of a title after the destination: whitespace is required before it.
 fn title_start(bytes: &[u8], after_dest: usize) -> Option<usize> {
-    let start = skip_space(bytes, after_dest);
+    let start = skip_blanks_and_eol(bytes, after_dest);
     (start > after_dest).then_some(start)
 }
 

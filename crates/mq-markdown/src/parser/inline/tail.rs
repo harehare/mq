@@ -3,6 +3,7 @@
 use super::Context;
 use super::entity;
 use super::link::normalize;
+use crate::parser::scan::{eol_len, skip_blanks_and_eol};
 
 /// The destination and title of an inline link, and the offset after its closing parenthesis.
 pub(super) struct Tail {
@@ -61,25 +62,6 @@ fn parse_label(src: &str, pos: usize) -> Option<(usize, &str)> {
     None
 }
 
-/// Skips whitespace including at most one line ending.
-fn skip_space(bytes: &[u8], mut index: usize) -> usize {
-    let mut line_endings = 0;
-    while let Some(&byte) = bytes.get(index) {
-        match byte {
-            b' ' | b'\t' => index += 1,
-            b'\n' | b'\r' => {
-                line_endings += 1;
-                if line_endings > 1 {
-                    break;
-                }
-                index += super::eol_len(&bytes[index..]);
-            }
-            _ => break,
-        }
-    }
-    index
-}
-
 /// Parses `(destination "title")` at `pos`.
 pub(super) fn inline_tail(src: &str, pos: usize) -> Option<Tail> {
     let bytes = src.as_bytes();
@@ -87,10 +69,10 @@ pub(super) fn inline_tail(src: &str, pos: usize) -> Option<Tail> {
         return None;
     }
 
-    let index = skip_space(bytes, pos + 1);
+    let index = skip_blanks_and_eol(bytes, pos + 1);
     let (url, after_url) = destination(src, index)?;
 
-    let after_space = skip_space(bytes, after_url);
+    let after_space = skip_blanks_and_eol(bytes, after_url);
     if bytes.get(after_space) == Some(&b')') {
         return Some(Tail {
             url,
@@ -104,7 +86,7 @@ pub(super) fn inline_tail(src: &str, pos: usize) -> Option<Tail> {
     }
     let (title, after_title) = title_at(src, after_space)?;
 
-    let closing = skip_space(bytes, after_title);
+    let closing = skip_blanks_and_eol(bytes, after_title);
     (bytes.get(closing) == Some(&b')')).then_some(Tail {
         url,
         title: Some(title),
@@ -179,7 +161,7 @@ pub(in crate::parser) fn title_at(src: &str, pos: usize) -> Option<(String, usiz
             b'\\' => index += 1,
             b'\n' | b'\r' => {
                 // A title cannot contain a blank line.
-                let length = super::eol_len(&bytes[index..]);
+                let length = eol_len(bytes, index);
                 let mut next = index + length;
                 while matches!(bytes.get(next), Some(b' ' | b'\t')) {
                     next += 1;
