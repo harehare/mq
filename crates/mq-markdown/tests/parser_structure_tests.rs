@@ -311,6 +311,24 @@ fn rendering_reads_back_as_the_same_html(#[case] input: &str) {
     );
 }
 
+/// References keep the notation they were written in, as long as it resolves to the same definition.
+#[rstest]
+#[case::full_keeps_case_and_spaces("[x][Foo   Bar]\n\n[foo bar]: /u\n", "[x][Foo   Bar]")]
+#[case::full_image("![x][Foo   Bar]\n\n[foo bar]: /u\n", "![x][Foo   Bar]")]
+#[case::full_escaped_label("[x][a\\]b]\n\n[a\\]b]: /u\n", "[x][a\\]b]")]
+#[case::shortcut_sharp_s("[Straße]\n\n[strasse]: /u\n", "[Straße]")]
+#[case::shortcut_capital_sharp_s("[ẞ]\n\n[ss]: /u\n", "[ẞ]")]
+#[case::collapsed("[Straße][]\n\n[strasse]: /u\n", "[Straße]")]
+fn references_are_written_as_they_were(#[case] input: &str, #[case] expected: &str) {
+    let rendered = Markdown::from_markdown_str(input).unwrap().to_string();
+    assert!(rendered.starts_with(expected), "{rendered:?}");
+    assert_eq!(
+        mq_markdown::to_html(&rendered),
+        mq_markdown::to_html(input),
+        "{rendered:?}"
+    );
+}
+
 /// What an MDX document starts its blocks with: `import` and `export` lines are one block up to the
 /// next blank line.
 #[rstest]

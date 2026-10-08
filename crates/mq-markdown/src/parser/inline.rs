@@ -15,7 +15,7 @@ mod punctuation;
 mod tail;
 
 pub(super) use entity::{decode_references, remove_line_indent, unescape};
-pub(super) use link::normalize;
+pub(crate) use link::normalize;
 pub(super) use tail::{destination, title_at};
 
 use super::mdx::{self, Fallback, Parsed, TagKind};

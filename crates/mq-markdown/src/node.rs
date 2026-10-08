@@ -1388,11 +1388,17 @@ impl Node {
             }
             // Shortcut is safe only if `alt` normalizes back to `ident`; `ident` is raw
             // (already correctly escaped), so escape_label would double it up.
-            Self::ImageRef(ImageRef { alt, ident, .. }) => {
+            Self::ImageRef(ImageRef { alt, ident, label, .. }) => {
                 let (is, ie) = &theme.image;
-                let mismatched = normalize_reference_identifier(alt) != ident.as_str();
+                let mismatched = crate::parser::normalize(alt) != ident.as_str();
                 if mismatched || needs_broad_escaping(alt) {
-                    format!("{}![{}][{}]{}", is, escape_label(alt), ident, ie)
+                    format!(
+                        "{}![{}][{}]{}",
+                        is,
+                        escape_label(alt),
+                        reference_label(label.as_deref(), ident),
+                        ie
+                    )
                 } else {
                     format!("{}![{}]{}", is, escape_label(alt), ie)
                 }
@@ -1444,16 +1450,24 @@ impl Node {
                 }
             }
             // Same reasoning as ImageRef, plus the same broad-escaping fallback.
-            Self::LinkRef(LinkRef { values, ident, .. }) => {
+            Self::LinkRef(LinkRef {
+                values, ident, label, ..
+            }) => {
                 let (ls, le) = &theme.link;
                 let rendered = render_values(values, options, theme);
                 let plain = values_to_value(values);
                 // The label of a shortcut reference is its text as written, markup included.
                 let written = render_values(values, options, &ColorTheme::PLAIN);
-                let mismatched = normalize_reference_identifier(&written) != ident.as_str();
+                let mismatched = crate::parser::normalize(&written) != ident.as_str();
 
                 if mismatched || needs_broad_escaping(&plain) {
-                    format!("{}[{}][{}]{}", ls, rendered, ident, le)
+                    format!(
+                        "{}[{}][{}]{}",
+                        ls,
+                        rendered,
+                        reference_label(label.as_deref(), ident),
+                        le
+                    )
                 } else {
                     format!("{}[{}]{}", ls, rendered, le)
                 }
@@ -3456,9 +3470,13 @@ fn code_fence(value: &str, info: &str) -> String {
     }
 }
 
-/// CommonMark reference-label normalization: collapse whitespace, trim, case-fold.
-fn normalize_reference_identifier(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+/// The label to write in the second brackets of a full reference. The label as written is kept when it
+/// still resolves to `ident`.
+fn reference_label(label: Option<&str>, ident: &str) -> String {
+    match label {
+        Some(label) if crate::parser::normalize(label) == ident => escape_label(label),
+        _ => ident.to_string(),
+    }
 }
 
 /// Picks an inline code span delimiter one backtick longer than the longest
