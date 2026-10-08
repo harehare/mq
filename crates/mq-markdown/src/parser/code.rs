@@ -1,6 +1,7 @@
 //! Fenced and indented code, and math fences.
 
 use super::block::CODE_INDENT;
+use super::flavor::Flavor;
 use super::inline;
 use super::line::{Indent, Line};
 use super::tree::{Block, FencedBlock};
@@ -15,8 +16,9 @@ pub(super) struct Fence<'a> {
 }
 
 impl<'a> Fence<'a> {
-    /// Parses `rest` (indent already removed) as an opening fence.
-    pub(super) fn open(rest: &'a str, math: bool) -> Option<Self> {
+    /// Parses `rest` (indent already removed) as an opening fence, of math too when `flavor` has it.
+    pub(super) fn open(rest: &'a str, flavor: Flavor) -> Option<Self> {
+        let math = flavor.has_math();
         let marker = *rest
             .as_bytes()
             .first()

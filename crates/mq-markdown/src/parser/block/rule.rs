@@ -4,12 +4,9 @@
 //! types chained in [`Rules`], so the dispatch is static and the order is the precedence of the
 //! constructs. The paragraph is not a rule: it is what is left when no rule starts.
 
-use super::{
-    Interrupt, ItemMarker, atx_depth, atx_heading, blockquote, blockquote_marker, footnote, footnote_marker,
-    html_block, html_start, is_thematic_break, join_lines, list, paragraph,
-};
+use super::{Interrupt, LineStart, atx_heading, blockquote, footnote, html_block, join_lines, list, paragraph};
 use crate::node::{HorizontalRule, HorizontalRuleMarker, MdxJsEsm, Node, Position};
-use crate::parser::code::{Fence, fenced_code, indented_code};
+use crate::parser::code::{fenced_code, indented_code};
 use crate::parser::line::{Indent, Line};
 use crate::parser::mdx_flow::{FlowOutcome, mdx_flow};
 use crate::parser::table;
@@ -20,8 +17,9 @@ pub(super) struct Cx<'a, 'l> {
     pub(super) lines: &'l [Line<'a>],
     pub(super) index: usize,
     pub(super) line: &'l Line<'a>,
-    /// The indentation of `line`, and the text after it.
+    /// The indentation of `line`, what the line starts, and the text after the indentation.
     pub(super) indent: Indent,
+    pub(super) start: Option<LineStart<'a>>,
     pub(super) rest: &'a str,
     pub(super) depth: usize,
     /// Whether containers can still be nested.
@@ -120,7 +118,9 @@ pub(super) struct FencedCode;
 
 impl BlockRule for FencedCode {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        let fence = Fence::open(cx.rest, cx.line.flavor.has_math())?;
+        let Some(LineStart::Fence(fence)) = &cx.start else {
+            return None;
+        };
         // The end of an unclosed fence without content is quirky right after a container.
         let own_end = cx.closed_container
             && !(cx.separated
@@ -129,7 +129,7 @@ impl BlockRule for FencedCode {
             cx.lines,
             cx.index,
             cx.indent.bytes,
-            &fence,
+            fence,
             own_end,
             blocks,
         )))
@@ -140,7 +140,9 @@ pub(super) struct AtxHeading;
 
 impl BlockRule for AtxHeading {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        let depth = atx_depth(cx.rest)?;
+        let Some(LineStart::Atx(depth)) = cx.start else {
+            return None;
+        };
         blocks.push(atx_heading(cx.line, cx.indent.bytes, depth));
         Some(Step::to(cx.index + 1))
     }
@@ -150,7 +152,7 @@ pub(super) struct ThematicBreak;
 
 impl BlockRule for ThematicBreak {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        if !is_thematic_break(cx.line, cx.indent.bytes) {
+        if !matches!(cx.start, Some(LineStart::ThematicBreak)) {
             return None;
         }
         blocks.push(Block::Node(Node::HorizontalRule(HorizontalRule {
@@ -168,7 +170,7 @@ pub(super) struct Blockquote;
 
 impl BlockRule for Blockquote {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        if !cx.containers || blockquote_marker(cx.line).is_none() {
+        if !cx.containers || !matches!(cx.start, Some(LineStart::Blockquote)) {
             return None;
         }
         Some(Step::container(blockquote(
@@ -185,12 +187,16 @@ pub(super) struct List;
 
 impl BlockRule for List {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        let marker = ItemMarker::parse(cx.line)
-            .filter(|marker| cx.containers && (!cx.interrupting.list || marker.interrupts_paragraph()))?;
+        let Some(LineStart::Item(marker)) = &cx.start else {
+            return None;
+        };
+        if !(cx.containers && (!cx.interrupting.list || marker.interrupts_paragraph())) {
+            return None;
+        }
         Some(Step::container(list(
             cx.lines,
             cx.index,
-            &marker,
+            marker,
             cx.depth,
             cx.interrupting,
             blocks,
@@ -202,7 +208,9 @@ pub(super) struct Html;
 
 impl BlockRule for Html {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        let kind = html_start(cx.line, cx.rest)?;
+        let Some(LineStart::Html(kind)) = cx.start else {
+            return None;
+        };
         Some(Step::to(html_block(cx.lines, cx.index, kind, blocks)))
     }
 }
@@ -211,11 +219,16 @@ pub(super) struct Footnote;
 
 impl BlockRule for Footnote {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        let marker = footnote_marker(cx.line).filter(|_| cx.containers)?;
+        let Some(LineStart::Footnote(marker)) = &cx.start else {
+            return None;
+        };
+        if !cx.containers {
+            return None;
+        }
         Some(Step::container(footnote(
             cx.lines,
             cx.index,
-            &marker,
+            marker,
             cx.depth,
             cx.interrupting,
             blocks,

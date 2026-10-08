@@ -110,6 +110,7 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
             index,
             line,
             indent,
+            start: LineStart::of(line, indent),
             rest: &line.text[indent.bytes..],
             depth,
             containers,
@@ -124,6 +125,51 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
     }
 
     blocks
+}
+
+/// A block that a line starts by its first characters, before the rest of the document is known.
+///
+/// The constructs are told apart by their first character, so a line starts at most one of them. Block
+/// rules, lazy continuation and the end of paragraphs and tables all decide from this one result.
+pub(super) enum LineStart<'a> {
+    Fence(Fence<'a>),
+    /// An ATX heading of this depth.
+    Atx(u8),
+    ThematicBreak,
+    Blockquote,
+    Item(ItemMarker),
+    Html(HtmlKind),
+    Footnote(FootnoteMarker<'a>),
+}
+
+impl LineStart<'_> {
+    /// What `line` starts, when it is indented less than code. Setext underlines, tables and MDX flow
+    /// content depend on the lines around them, so they are not among these.
+    pub(super) fn of<'a>(line: &Line<'a>, indent: Indent) -> Option<LineStart<'a>> {
+        if indent.columns >= line.code_indent() {
+            return None;
+        }
+        let rest = &line.text[indent.bytes..];
+        match rest.as_bytes().first()? {
+            b'`' | b'~' | b'$' => Fence::open(rest, line.flavor).map(LineStart::Fence),
+            b'#' => atx_depth(rest).map(LineStart::Atx),
+            b'>' => Some(LineStart::Blockquote),
+            b'<' => html_start(line, rest).map(LineStart::Html),
+            b'[' => footnote_marker(line).map(LineStart::Footnote),
+            b'*' | b'-' | b'_' if is_thematic_break(line, indent.bytes) => Some(LineStart::ThematicBreak),
+            _ => ItemMarker::parse(line).map(LineStart::Item),
+        }
+    }
+
+    /// Whether this start ends an open paragraph. A complete HTML tag, an empty item and an ordered
+    /// item that does not start at 1 cannot.
+    fn interrupts_paragraph(&self) -> bool {
+        match self {
+            LineStart::Html(kind) => *kind != HtmlKind::Complete,
+            LineStart::Item(marker) => marker.interrupts_paragraph(),
+            _ => true,
+        }
+    }
 }
 
 /// Tracks just enough of the block state of already collected lines to tell whether a paragraph
@@ -173,7 +219,8 @@ impl<'a> LeafState<'a> {
         // Whether a paragraph was open when the line started, for markers deeper on the same line.
         let open = self.paragraph;
         loop {
-            let Indent { columns, bytes: indent } = line.indent();
+            let line_indent = line.indent();
+            let Indent { columns, bytes: indent } = line_indent;
             let rest = &line.text[indent..];
 
             if let Some(fence) = &self.fence {
@@ -227,7 +274,8 @@ impl<'a> LeafState<'a> {
                 }
                 return;
             }
-            if let Some(fence) = Fence::open(rest, line.flavor.has_math()) {
+            let start = LineStart::of(&line, line_indent);
+            if let Some(LineStart::Fence(fence)) = start {
                 self.fence = Some(fence);
                 self.paragraph = false;
                 return;
@@ -236,38 +284,38 @@ impl<'a> LeafState<'a> {
                 self.paragraph = false;
                 return;
             }
-            if atx_depth(rest).is_some() || is_thematic_break(&line, indent) {
-                self.paragraph = false;
-                return;
-            }
-            if let Some(kind) = html_start(&line, rest).filter(|&kind| kind != HtmlKind::Complete || !self.paragraph) {
-                let closed = match kind {
-                    HtmlKind::Basic | HtmlKind::Complete => false,
-                    _ => html_flow::ends_in(kind, &rest[html_flow::first_line_offset(kind)..]),
-                };
-                self.html = (!closed).then_some(kind);
-                self.paragraph = false;
-                return;
-            }
-            if containers < self.budget
-                && let Some(stripped) = strip_blockquote(line)
-            {
-                line = stripped;
-                containers += 1;
-                continue;
-            }
-            if containers < self.budget
-                && let Some(marker) = ItemMarker::parse(&line).filter(|m| {
-                    // A marker in or inside the container of the open paragraph has to be able to interrupt it.
-                    let continues_paragraph = open && containers >= self.paragraph_containers;
-                    !(restricted.list || continues_paragraph) || m.interrupts_paragraph()
-                })
-            {
-                line = marker.content(line);
-                containers += 1;
-                // The rest of the line starts a new item.
-                self.paragraph = false;
-                continue;
+            match start {
+                Some(LineStart::Atx(_) | LineStart::ThematicBreak) => {
+                    self.paragraph = false;
+                    return;
+                }
+                Some(LineStart::Html(kind)) if kind != HtmlKind::Complete || !self.paragraph => {
+                    let closed = match kind {
+                        HtmlKind::Basic | HtmlKind::Complete => false,
+                        _ => html_flow::ends_in(kind, &rest[html_flow::first_line_offset(kind)..]),
+                    };
+                    self.html = (!closed).then_some(kind);
+                    self.paragraph = false;
+                    return;
+                }
+                Some(LineStart::Blockquote) if containers < self.budget => {
+                    line = after_blockquote_marker(line, line_indent);
+                    containers += 1;
+                    continue;
+                }
+                // A marker in or inside the container of the open paragraph has to be able to interrupt it.
+                Some(LineStart::Item(marker))
+                    if containers < self.budget
+                        && (!(restricted.list || (open && containers >= self.paragraph_containers))
+                            || marker.interrupts_paragraph()) =>
+                {
+                    line = marker.content(line);
+                    containers += 1;
+                    // The rest of the line starts a new item.
+                    self.paragraph = false;
+                    continue;
+                }
+                _ => {}
             }
 
             // MDX flow content is not part of a paragraph.
@@ -286,30 +334,21 @@ impl<'a> LeafState<'a> {
     }
 }
 
-/// Bytes to skip to get past a blockquote marker (`>` and one optional space), if `line` has one.
-fn blockquote_marker(line: &Line<'_>) -> Option<usize> {
-    let Indent { columns, bytes: indent } = line.indent();
-    let rest = &line.text[indent..];
-    if columns >= line.code_indent() || !rest.starts_with('>') {
-        return None;
-    }
-    let optional_space = usize::from(rest[1..].starts_with([' ', '\t']));
-    Some(indent + 1 + optional_space)
-}
-
 /// The line without its blockquote marker and the one space or column after it, if it has a marker.
 fn strip_blockquote(line: Line<'_>) -> Option<Line<'_>> {
-    let Indent { columns, bytes: indent } = line.indent();
-    if columns >= line.code_indent() || !line.text[indent..].starts_with('>') {
-        return None;
-    }
-    let after = line.skip(indent + 1);
-    Some(match after.text.as_bytes().first() {
+    let indent = line.indent();
+    matches!(LineStart::of(&line, indent), Some(LineStart::Blockquote)).then(|| after_blockquote_marker(line, indent))
+}
+
+/// The line after the blockquote marker that follows `indent`, and the one space or column after it.
+fn after_blockquote_marker(line: Line<'_>, indent: Indent) -> Line<'_> {
+    let after = line.skip(indent.bytes + 1);
+    match after.text.as_bytes().first() {
         Some(b' ') => after.skip(1),
         // A tab is consumed by one column only.
         Some(b'\t') => after.skip_columns(1),
         _ => after,
-    })
+    }
 }
 
 fn blockquote(
@@ -355,7 +394,7 @@ fn blockquote(
 }
 
 #[derive(Clone)]
-struct ItemMarker {
+pub(super) struct ItemMarker {
     ordered: bool,
     kind: ListMarker,
     start: u32,
@@ -632,8 +671,13 @@ fn list_item(
     // An unclosed fence in an item includes its line terminator when the next line is blank or starts
     // another container, but not when a plain paragraph or thematic break follows.
     let next = lines.get(index);
-    let item_end = next
-        .is_none_or(|line| line.is_blank() || blockquote_marker(line).is_some() || ItemMarker::parse(line).is_some());
+    let item_end = next.is_none_or(|line| {
+        line.is_blank()
+            || matches!(
+                LineStart::of(line, line.indent()),
+                Some(LineStart::Blockquote | LineStart::Item(_))
+            )
+    });
     if let Some(last) = inner.last_mut() {
         last.item_end = item_end;
     }
@@ -789,35 +833,26 @@ fn setext_depth(line: &Line<'_>) -> Option<u8> {
 /// Whether a line without its container prefix can continue an open paragraph of that container.
 /// Any list marker ends the paragraph here, even one that could not interrupt it elsewhere.
 fn is_lazy_continuation(line: &Line<'_>) -> bool {
-    !interrupts_paragraph(line) && ItemMarker::parse(line).is_none()
+    let start = LineStart::of(line, line.indent());
+    !ends_paragraph(line, start.as_ref()) && !matches!(start, Some(LineStart::Item(_)))
 }
 
 /// Whether `line` ends the paragraph that is being collected.
 fn interrupts_paragraph(line: &Line<'_>) -> bool {
-    if line.is_blank() {
-        return true;
-    }
-    // Already accepted as a continuation by an enclosing container.
-    if line.lazy {
-        return false;
-    }
-    let Indent { columns, bytes: indent } = line.indent();
-    let rest = &line.text[indent..];
-    columns < line.code_indent()
-        && (Fence::open(rest, line.flavor.has_math()).is_some()
-            || atx_depth(rest).is_some()
-            || is_thematic_break(line, indent)
-            || blockquote_marker(line).is_some()
-            || footnote_marker(line).is_some()
-            || html_start(line, rest).is_some_and(|kind| kind != HtmlKind::Complete)
-            || ItemMarker::parse(line).is_some_and(|marker| marker.interrupts_paragraph()))
+    ends_paragraph(line, LineStart::of(line, line.indent()).as_ref())
+}
+
+/// Whether `line`, which starts `start`, ends an open paragraph.
+fn ends_paragraph(line: &Line<'_>, start: Option<&LineStart<'_>>) -> bool {
+    // A lazy line was already accepted as a continuation by an enclosing container.
+    line.is_blank() || (!line.lazy && start.is_some_and(LineStart::interrupts_paragraph))
 }
 
 /// Whether `line` ends a table. Unlike a paragraph, a table is also ended by a list item that is empty
 /// or that is numbered from other than one.
 fn ends_table(line: &Line<'_>) -> bool {
-    interrupts_paragraph(line)
-        || (!line.lazy && line.indent().columns < line.code_indent() && ItemMarker::parse(line).is_some())
+    let start = LineStart::of(line, line.indent());
+    ends_paragraph(line, start.as_ref()) || (!line.lazy && matches!(start, Some(LineStart::Item(_))))
 }
 
 /// Collects a paragraph or a setext heading starting at `lines[start]`, with the definitions at its
@@ -939,7 +974,7 @@ fn paragraph_source(lines: &[Line<'_>]) -> InlineSource {
 }
 
 /// The start of a footnote definition: `[^label]:`.
-struct FootnoteMarker<'a> {
+pub(super) struct FootnoteMarker<'a> {
     label: &'a str,
     /// Bytes from the start of the line to the content.
     content: usize,
