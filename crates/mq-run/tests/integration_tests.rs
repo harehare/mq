@@ -230,7 +230,8 @@ In {year}, the snowfall was above average.
 
 <Chart color="#fcb32c" year={year} />
 <Component />"##,
-    Some(r##"{Chart}
+    Some(r##"import {Chart} from './snowfall.js'
+export const year = 2023
 {year}
 <Chart color="#fcb32c" year={year} />
 <Component />
@@ -796,7 +797,9 @@ In {year}, the snowfall was above average.
     assert
         .success()
         .code(0)
-        .stdout("{Chart}\n{year}\n<Chart color=\"#fcb32c\" year={year} />\n<Component />\n");
+        .stdout(
+            "import {Chart} from './snowfall.js'\nexport const year = 2023\n{year}\n<Chart color=\"#fcb32c\" year={year} />\n<Component />\n",
+        );
     Ok(())
 }
 

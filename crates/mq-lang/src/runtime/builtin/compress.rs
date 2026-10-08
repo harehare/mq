@@ -381,6 +381,7 @@ mod tests {
 
     fn list_item(value: &str, index: usize) -> Node {
         Node::List(List {
+            marker: None,
             values: vec![text(value)],
             index,
             level: 0,

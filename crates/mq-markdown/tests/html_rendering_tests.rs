@@ -20,6 +20,74 @@ use rstest::rstest;
 #[case::thematic_break_after_paragraph("a\n\n***\n", "<p>a</p>\n<hr />\n")]
 #[case::empty("", "")]
 #[case::blank_lines("\n\n  \n", "")]
+#[case::code_keeps_rest_of_tab_in_list(
+    "- foo\n\n\t\tbar\n",
+    "<ul>\n<li>\n<p>foo</p>\n<pre><code>  bar\n</code></pre>\n</li>\n</ul>\n"
+)]
+#[case::code_keeps_rest_of_tab_in_quote(">\t\tfoo\n", "<blockquote>\n<pre><code>  foo\n</code></pre>\n</blockquote>\n")]
+#[case::heading_keeps_a_leading_hash("# #[allow(dead_code)]\n", "<h1>#[allow(dead_code)]</h1>\n")]
+#[case::heading_keeps_a_hash_and_a_space("# # a\n", "<h1># a</h1>\n")]
+#[case::code_span_over_lines_loses_indent("a `b\n    c` d\n", "<p>a <code>b c</code> d</p>\n")]
+#[case::lazy_line_of_backticks_after_quote("> q\n``", "<blockquote>\n<p>q\n``</p>\n</blockquote>")]
+#[case::quote_can_start_with_code_after_paragraph(
+    "text\n>     code\n",
+    "<p>text</p>\n<blockquote>\n<pre><code>code\n</code></pre>\n</blockquote>\n"
+)]
+#[case::quote_can_start_with_ordered_item_after_paragraph(
+    "text\n> 2. a\n",
+    "<p>text</p>\n<blockquote>\n<ol start=\"2\">\n<li>a</li>\n</ol>\n</blockquote>\n"
+)]
+#[case::ordered_item_does_not_interrupt_after_quote(
+    "> q\n\nfoo\n2. a\n",
+    "<blockquote>\n<p>q</p>\n</blockquote>\n<p>foo\n2. a</p>\n"
+)]
+#[case::dashes_after_setext_heading_are_a_rule("a\n---\n---\nb\n", "<h2>a</h2>\n<hr />\n<p>b</p>\n")]
+#[case::text_after_setext_heading_in_item_is_a_paragraph(
+    "- a\n  ---\nb\n",
+    "<ul>\n<li>\n<h2>a</h2>\n</li>\n</ul>\n<p>b</p>\n"
+)]
+#[case::code_of_an_item_is_one_block(
+    "a\n-       b\n        c\n",
+    "<p>a</p>\n<ul>\n<li>\n<pre><code>  b\n  c\n</code></pre>\n</li>\n</ul>\n"
+)]
+#[case::task_without_text("- [ ] \n", "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> </li>\n</ul>\n")]
+#[case::task_without_text_keeps_the_list(
+    "- [x] \n- b\n",
+    "<ul>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> </li>\n<li>b</li>\n</ul>\n"
+)]
+#[case::task_text_is_not_a_list(
+    "- [x] - a\n",
+    "<ul>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> - a</li>\n</ul>\n"
+)]
+#[case::task_text_is_not_a_quote(
+    "- [ ] > a\n",
+    "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> &gt; a</li>\n</ul>\n"
+)]
+#[case::task_on_the_next_line(
+    "- [ ] \n  b\n",
+    "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> b</li>\n</ul>\n"
+)]
+#[case::footnote_with_blank_line_after_marker(
+    "a[^1]\n\n[^1]:\n\n    text\n",
+    "<p>a<sup><a href=\"#user-content-fn-1\" id=\"user-content-fnref-1\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-1\">\n<p>text <a href=\"#user-content-fnref-1\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n"
+)]
+#[case::tag_filter_inline("a <xmp> b <b>c</b>\n", "<p>a &lt;xmp> b <b>c</b></p>\n")]
+#[case::tag_filter_end_tag_and_case("a </SCRIPT> b\n", "<p>a &lt;/SCRIPT> b</p>\n")]
+#[case::tag_filter_block("<script>\nx\n</script>\n", "&lt;script>\nx\n&lt;/script>\n")]
+#[case::tag_filter_keeps_other_tags("<scripts>\n", "<scripts>\n")]
+#[case::autolink_email_after_a_slash(
+    "x@y.com/z@w.org\n",
+    "<p><a href=\"mailto:x@y.com\">x@y.com</a>/<a href=\"mailto:z@w.org\">z@w.org</a></p>\n"
+)]
+#[case::autolink_domain_with_emoji(
+    "http://x\u{1F344}.ga/\n",
+    "<p><a href=\"http://x%F0%9F%8D%84.ga/\">http://x\u{1F344}.ga/</a></p>\n"
+)]
+#[case::autolink_email_before_an_at_sign("x@y.com@\n", "<p>x@y.com@</p>\n")]
+#[case::emphasis_after_a_word_before_punctuation("r*_q* x\n", "<p>r*_q* x</p>\n")]
+#[case::emphasis_next_to_other_runs("]_**é日*\n", "<p>]_*<em>é日</em></p>\n")]
+#[case::hard_break_in_image_alt("![a\\\nb](/u)\n", "<p><img src=\"/u\" alt=\"a\nb\" /></p>\n")]
+#[case::image_in_image_alt("![foo ![bar](/url)](/url2)\n", "<p><img src=\"/url2\" alt=\"foo bar\" /></p>\n")]
 fn blocks(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(to_html(input), expected);
 }
@@ -114,9 +182,9 @@ fn links_and_images(#[case] input: &str, #[case] expected: &str) {
 
 #[rstest]
 #[case::fenced("```\na\n```\n", "<pre><code>a\n</code></pre>\n")]
-#[case::fenced_language("```rust\na\n```\n", "<pre><code class=\"language-rust\">a\n</code></pre>\n")]
-#[case::fenced_meta_is_dropped("```rust title=x\na\n```\n", "<pre><code class=\"language-rust\">a\n</code></pre>\n")]
-#[case::fenced_language_escaped("```a\"b\nc\n```\n", "<pre><code class=\"language-a&quot;b\">c\n</code></pre>\n")]
+#[case::fenced_language("```rust\na\n```\n", "<pre lang=\"rust\"><code>a\n</code></pre>\n")]
+#[case::fenced_meta_is_dropped("```rust title=x\na\n```\n", "<pre lang=\"rust\"><code>a\n</code></pre>\n")]
+#[case::fenced_language_escaped("```a\"b\nc\n```\n", "<pre lang=\"a&quot;b\"><code>c\n</code></pre>\n")]
 #[case::fenced_empty("```\n```\n", "<pre><code></code></pre>\n")]
 #[case::fenced_blank_line("```\n\n```\n", "<pre><code>\n</code></pre>\n")]
 #[case::fenced_blank_lines_kept("```\na\n\n\n```\n", "<pre><code>a\n\n\n</code></pre>\n")]
@@ -174,7 +242,7 @@ fn code_and_html(#[case] input: &str, #[case] expected: &str) {
 #[case::task_unchecked("- [ ] a\n", "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> a</li>\n</ul>\n")]
 #[case::task_checked(
     "- [x] a\n",
-    "<ul>\n<li><input type=\"checkbox\" disabled=\"\" checked=\"\" /> a</li>\n</ul>\n"
+    "<ul>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> a</li>\n</ul>\n"
 )]
 #[case::task_loose(
     "- [ ] a\n\n- b\n",

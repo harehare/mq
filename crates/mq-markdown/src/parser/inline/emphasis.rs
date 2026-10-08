@@ -1,8 +1,7 @@
 //! Emphasis, strong emphasis and strikethrough, resolved with a stack of delimiter runs.
 //!
-//! This follows the attention algorithm of `markdown-rs`, which differs from the reference
-//! implementation of `CommonMark` in how runs next to other runs open and close, and in using the
-//! remaining length of a run for the rule of three.
+//! This follows the reference implementation of `CommonMark`. `markdown-rs` differs in how runs next
+//! to other runs open and close, and in using the remaining length of a run for the rule of three.
 
 use super::punctuation::is_punctuation;
 use super::{Context, Delim, Item, to_nodes};
@@ -24,18 +23,13 @@ fn kind(char: Option<char>) -> Kind {
     }
 }
 
-/// Whether a run of `ch` between `before` and `after` can open and can close. `~` is a delimiter too
-/// when `gfm` is set.
-pub(super) fn flanking(ch: u8, before: Option<char>, after: Option<char>, gfm: bool) -> (bool, bool) {
+/// Whether a run of `ch` between `before` and `after` can open and can close, by the rules of
+/// `CommonMark` for left- and right-flanking runs, which `~` follows too.
+pub(super) fn flanking(ch: u8, before: Option<char>, after: Option<char>) -> (bool, bool) {
     let (before_kind, after_kind) = (kind(before), kind(after));
-    let marker = |char: Option<char>| matches!(char, Some('*' | '_')) || (gfm && char == Some('~'));
 
-    let open = after_kind == Kind::Other
-        || (after_kind == Kind::Punctuation && before_kind != Kind::Other)
-        || (ch != b'~' && marker(after));
-    let close = before_kind == Kind::Other
-        || (before_kind == Kind::Punctuation && after_kind != Kind::Other)
-        || (ch != b'~' && marker(before));
+    let open = after_kind == Kind::Other || (after_kind == Kind::Punctuation && before_kind != Kind::Other);
+    let close = before_kind == Kind::Other || (before_kind == Kind::Punctuation && after_kind != Kind::Other);
 
     if ch == b'_' {
         (
@@ -47,14 +41,15 @@ pub(super) fn flanking(ch: u8, before: Option<char>, after: Option<char>, gfm: b
     }
 }
 
-/// Whether `opener` and `closer` can match, by character and by the rule of three.
+/// Whether `opener` and `closer` can match, by character and by the rule of three, which goes by the
+/// length of the whole runs.
 fn matches(opener: &Delim, closer: &Delim) -> bool {
     if !opener.can_open || opener.ch != closer.ch {
         return false;
     }
     if (opener.can_close || closer.can_open)
-        && !closer.count.is_multiple_of(3)
-        && (opener.count + closer.count).is_multiple_of(3)
+        && !closer.original.is_multiple_of(3)
+        && (opener.original + closer.original).is_multiple_of(3)
     {
         return false;
     }

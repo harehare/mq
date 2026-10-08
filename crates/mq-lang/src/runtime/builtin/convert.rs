@@ -194,6 +194,7 @@ impl Convert {
             ),
             ConvertKind::ListItem => RuntimeValue::Markdown(
                 Shared::new(mq_markdown::Node::List(mq_markdown::List {
+                    marker: None,
                     values: vec![text.into()],
                     index: 0,
                     ordered: false,
@@ -230,6 +231,7 @@ impl Convert {
             ),
             ConvertKind::HorizontalRule => RuntimeValue::Markdown(
                 Shared::new(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+                    marker: None,
                     position: None,
                 })),
                 None,

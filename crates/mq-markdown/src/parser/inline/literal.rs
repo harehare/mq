@@ -28,6 +28,13 @@ fn kind_at(src: &str, index: usize) -> Kind {
     }
 }
 
+/// Whether the character at byte `index` is a symbol of the emoji blocks, which a domain may contain.
+fn is_emoji(src: &str, index: usize) -> bool {
+    src.get(index..)
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(|char| matches!(char, '\u{2600}'..='\u{27BF}' | '\u{1F300}'..='\u{1FAFF}'))
+}
+
 /// Whether the text from `index` is only trailing punctuation up to whitespace, the end or `<`.
 fn trail(src: &str, mut index: usize) -> bool {
     let bytes = src.as_bytes();
@@ -74,7 +81,7 @@ fn domain(src: &str, mut index: usize) -> Option<usize> {
                 index += 1;
             }
             Some(b'-' | 0x80..=0xBF) => index += 1,
-            _ if kind_at(src, index) == Kind::Other => {
+            _ if kind_at(src, index) == Kind::Other || is_emoji(src, index) => {
                 seen = true;
                 index += 1;
             }
@@ -193,7 +200,7 @@ fn local_start(bytes: &[u8], min: usize, at: usize) -> Option<usize> {
     {
         index -= 1;
     }
-    (index != at && !(index > min && bytes[index - 1] == b'/')).then_some(index)
+    (index != at).then_some(index)
 }
 
 /// The end of the domain of an email address that starts at `start`.
@@ -237,7 +244,7 @@ fn split_emails(src: &str, start: usize, end: usize, out: &mut Vec<Item>) {
                     (from, prefixed, xmpp) = (word, false, name == "xmpp");
                 }
             }
-            if let Some(to) = email_domain(&bytes[..end], index + 1, xmpp) {
+            if let Some(to) = email_domain(&bytes[..end], index + 1, xmpp).filter(|&to| bytes.get(to) != Some(&b'@')) {
                 if emitted < from {
                     out.push(Item::Text {
                         start: emitted,

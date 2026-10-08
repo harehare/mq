@@ -46,7 +46,7 @@
 //!
 //! let mut doc = "- Item 1\n- Item 2".parse::<Markdown>().unwrap();
 //! doc.set_options(RenderOptions {
-//!     list_style: ListStyle::Plus,
+//!     list_style: Some(ListStyle::Plus),
 //!     ..Default::default()
 //! });
 //!

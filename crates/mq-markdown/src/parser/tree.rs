@@ -14,6 +14,8 @@ pub(super) struct InlineSource {
     pub(super) lines: Vec<(usize, Point)>,
     /// Whether this is the content of a table cell, where `\|` in code stands for `|`.
     pub(super) table: bool,
+    /// Whether `text` contains a tab, which makes columns differ from byte offsets.
+    tabs: bool,
 }
 
 impl InlineSource {
@@ -30,10 +32,33 @@ impl InlineSource {
             }
         }
         Self {
+            tabs: text.contains('\t'),
             text,
             lines: starts,
             table: false,
         }
+    }
+
+    /// Removes the first `marker` bytes and the whitespace that follows them, line endings included.
+    pub(super) fn remove_prefix(&mut self, marker: usize) {
+        let rest = &self.text[marker..];
+        let end = self.text.len() - rest.trim_start_matches([' ', '\t', '\n', '\r']).len();
+        self.text.replace_range(..end, "");
+        self.tabs = self.text.contains('\t');
+
+        let index = self.lines.partition_point(|(start, _)| *start <= end).saturating_sub(1);
+        let (start, point) = &self.lines[index];
+        let first = (
+            0,
+            Point {
+                line: point.line,
+                column: point.column + (end - start),
+            },
+        );
+        let rest = self.lines[index + 1..]
+            .iter()
+            .map(|(start, point)| (start - end, point.clone()));
+        self.lines = std::iter::once(first).chain(rest).collect();
     }
 
     /// The position where a node ends at `offset`. After a line ending that is the start of the next
@@ -61,7 +86,7 @@ impl InlineSource {
             .saturating_sub(1);
         let (start, point) = &self.lines[index];
         let passed = &self.text[*start..offset];
-        let column = if passed.contains('\t') {
+        let column = if self.tabs && passed.contains('\t') {
             visual_column(passed.chars(), point.column - 1) + 1
         } else {
             point.column + passed.len()
@@ -122,6 +147,7 @@ pub(super) struct FootnoteBlock {
 pub(super) struct ListBlock {
     pub(super) ordered: bool,
     pub(super) start: Option<u32>,
+    pub(super) marker: char,
     pub(super) spread: bool,
     pub(super) items: Vec<Item>,
 }

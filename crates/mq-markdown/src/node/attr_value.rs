@@ -22,6 +22,8 @@ pub mod attr_keys {
     pub(crate) const COLUMN: &str = "column";
     #[cfg(feature = "callout")]
     pub(crate) const KIND: &str = "kind";
+    #[cfg(feature = "callout")]
+    pub(crate) const FOLD: &str = "fold";
     pub(crate) const ROW: &str = "row";
     pub(crate) const LINE: &str = "line";
     pub(crate) const END_LINE: &str = "end_line";

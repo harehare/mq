@@ -16,11 +16,10 @@ pub(super) struct Line<'a> {
     pub(super) item_end: bool,
     /// Whether the line continues a paragraph without its container prefix.
     pub(super) lazy: bool,
-    /// Whether indented code that starts on this line is a chunk of its own, as for the first line of
-    /// an item whose marker is followed by five or more spaces.
-    pub(super) own_chunk: bool,
     /// The whole line as in the document, to compute columns when it contains tabs.
     pub(super) origin: &'a str,
+    /// Whether `origin` contains a tab.
+    pub(super) tabs: bool,
     /// Columns left over from a tab that a container consumed only in part. They count as leading
     /// whitespace of `text`.
     pub(super) pad: usize,
@@ -36,7 +35,7 @@ impl<'a> Line<'a> {
 
     /// The zero-based visual column where `text` starts in the document.
     fn start_column(&self) -> usize {
-        if self.origin.contains('\t') {
+        if self.tabs {
             visual_column(self.origin[..self.column].chars(), 0)
         } else {
             self.column
@@ -65,14 +64,14 @@ impl<'a> Line<'a> {
     }
 
     pub(super) fn is_blank(&self) -> bool {
-        self.text.trim_matches([' ', '\t']).is_empty()
+        self.text.bytes().all(|b| matches!(b, b' ' | b'\t'))
     }
 
     /// The position of the byte at `byte` in `text`. Columns are in bytes, except that a tab advances
     /// to the next multiple of four, like `markdown-rs` counts them.
     pub(super) fn point(&self, byte: usize) -> Point {
         let offset = self.column + byte;
-        let mut column = if self.origin.contains('\t') {
+        let mut column = if self.tabs {
             visual_column(self.origin[..offset].chars(), 0) + 1
         } else {
             offset + 1
@@ -191,8 +190,8 @@ pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
             eof: index == bytes.len(),
             item_end: false,
             lazy: false,
-            own_chunk: false,
             origin: &src[start..end],
+            tabs: src[start..end].contains('\t'),
             pad: 0,
             mdx,
         });
@@ -208,8 +207,8 @@ pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
             eof: true,
             item_end: false,
             lazy: false,
-            own_chunk: false,
             origin: &src[start..],
+            tabs: src[start..].contains('\t'),
             pad: 0,
             mdx,
         });
