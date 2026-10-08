@@ -66,8 +66,8 @@ impl Hir {
     }
 
     #[inline(always)]
-    pub fn builtins(&self) -> impl Iterator<Item = &mq_lang::BuiltinFunctionDoc> {
-        self.builtin.functions.values()
+    pub fn builtins(&self) -> impl Iterator<Item = &'static mq_help::BuiltinDoc> {
+        self.builtin.docs.functions()
     }
 
     #[inline(always)]

@@ -360,12 +360,14 @@ def old_func(x): x + 1;"#;
             else {
                 panic!("expected completion items for {code:?}");
             };
-            let missing = mq_lang::BUILTIN_FUNCTION_DOC
-                .keys()
+            let missing = mq_help::BUILTIN_DOC
+                .functions()
+                .filter(|doc| doc.is_available(mq_lang::is_builtin_function))
+                .map(|doc| doc.name)
                 .filter(|name| {
                     !items
                         .iter()
-                        .any(|item| item.label == name.as_str() && item.kind == Some(CompletionItemKind::FUNCTION))
+                        .any(|item| item.label == *name && item.kind == Some(CompletionItemKind::FUNCTION))
                 })
                 .collect::<Vec<_>>();
             assert!(

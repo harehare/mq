@@ -27,7 +27,7 @@ fn extract_deprecated_message(text: &str) -> Option<String> {
     }
 }
 
-fn format_examples(examples: &[mq_lang::BuiltinExample]) -> Option<String> {
+fn format_examples(examples: &[mq_help::BuiltinExample]) -> Option<String> {
     if examples.is_empty() {
         return None;
     }
@@ -48,7 +48,7 @@ fn format_hover_content(
     docs: &[mq_hir::Doc],
     deprecated: bool,
     params: &[mq_hir::ParamInfo],
-    examples: &[mq_lang::BuiltinExample],
+    examples: &[mq_help::BuiltinExample],
 ) -> String {
     let mut sections: Vec<String> = Vec::new();
 
@@ -125,13 +125,12 @@ pub(crate) fn response(
                     let type_scheme = type_env.as_ref().and_then(|env| env.get(&symbol_id));
                     let name = symbol.value.as_deref().unwrap_or_default();
 
-                    let examples: Vec<mq_lang::BuiltinExample> = {
+                    let examples: Vec<mq_help::BuiltinExample> = {
                         let hir = hir.read().unwrap();
                         if symbol.source.source_id == Some(hir.builtin.source_id) {
                             hir.builtin
-                                .functions
+                                .docs
                                 .get(name)
-                                .or_else(|| hir.builtin.internal_functions.get(name))
                                 .map(|doc| doc.examples.to_vec())
                                 .unwrap_or_default()
                         } else {
@@ -299,7 +298,7 @@ mod tests {
     #[test]
     fn test_format_hover_content_with_examples() {
         let docs: Vec<mq_hir::Doc> = vec![];
-        let examples = vec![mq_lang::BuiltinExample {
+        let examples = vec![mq_help::BuiltinExample {
             code: r#"len("hello")"#,
             expected: "5",
         }];

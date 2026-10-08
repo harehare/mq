@@ -330,11 +330,11 @@ impl CommandContext {
                 }
             }
         } else if word.starts_with('.') {
-            for (selector, doc) in mq_lang::BUILTIN_SELECTOR_DOC.iter() {
-                if selector.starts_with(word) {
+            for doc in mq_help::BUILTIN_DOC.selectors() {
+                for name in doc.names().filter(|name| name.starts_with(word)) {
                     matches.push(CompletionItem {
-                        name: selector.to_string(),
-                        display: format!("{:<20}{}", selector, doc.description),
+                        name: name.to_string(),
+                        display: format!("{:<20}{}", name, doc.description),
                     });
                 }
             }
@@ -388,7 +388,7 @@ impl CommandContext {
     }
 
     fn builtin_display(name: &str) -> String {
-        if let Some(doc) = mq_lang::BUILTIN_FUNCTION_DOC.get(name) {
+        if let Some(doc) = mq_help::BUILTIN_DOC.function(name) {
             if doc.params.is_empty() {
                 format!("{}()", name)
             } else {

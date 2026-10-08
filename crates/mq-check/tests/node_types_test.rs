@@ -100,7 +100,11 @@ fn selector_type(code: &str, selector: &str) -> String {
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     let (id, _) = hir
         .symbols()
-        .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Selector(_)) && symbol.value.as_deref() == Some(selector))
+        .find(|(_, symbol)| {
+            matches!(symbol.kind, SymbolKind::Selector(_))
+                && symbol.value.as_deref() == Some(selector)
+                && !hir.is_builtin_symbol(symbol)
+        })
         .unwrap_or_else(|| panic!("no selector {selector}"));
     checker.type_of(id).unwrap().ty.display_renumbered()
 }

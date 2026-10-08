@@ -11,7 +11,15 @@ readme = "README.md"
 repository.workspace = true
 version.workspace = true
 
+[features]
+# Help catalog and rendering. Without it only the static doc tables are built.
+catalog = ["dep:colored", "dep:mq-lang", "dep:serde"]
+default = ["catalog"]
+
 [dependencies]
-colored = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "http"]}
-serde = {workspace = true, features = ["derive"]}
+colored = {workspace = true, optional = true}
+mq-lang = {workspace = true, features = ["cst", "http"], optional = true}
+serde = {workspace = true, features = ["derive"], optional = true}
+
+[dev-dependencies]
+mq-lang = {workspace = true, features = ["css-selector"]}

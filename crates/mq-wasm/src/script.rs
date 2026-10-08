@@ -912,7 +912,7 @@ fn extract_deprecated_message(text: &str) -> Option<String> {
     }
 }
 
-fn format_examples(examples: &[mq_lang::BuiltinExample]) -> Option<String> {
+fn format_examples(examples: &[mq_help::BuiltinExample]) -> Option<String> {
     if examples.is_empty() {
         return None;
     }
@@ -930,7 +930,7 @@ fn format_hover_content(
     signature: &str,
     docs: &[mq_hir::Doc],
     deprecated: bool,
-    examples: &[mq_lang::BuiltinExample],
+    examples: &[mq_help::BuiltinExample],
 ) -> String {
     let mut sections: Vec<String> = Vec::new();
 
@@ -1007,11 +1007,10 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
     };
 
     let name = symbol.value.as_deref().unwrap_or_default();
-    let examples: Vec<mq_lang::BuiltinExample> = if symbol.source.source_id == Some(hir.builtin.source_id) {
+    let examples: Vec<mq_help::BuiltinExample> = if symbol.source.source_id == Some(hir.builtin.source_id) {
         hir.builtin
-            .functions
+            .docs
             .get(name)
-            .or_else(|| hir.builtin.internal_functions.get(name))
             .map(|doc| doc.examples.to_vec())
             .unwrap_or_default()
     } else {

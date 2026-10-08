@@ -139,65 +139,34 @@ impl Hir {
             self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
         });
 
-        // Collect keys first to avoid borrow checker issues
-        let function_keys: Vec<_> = self.builtin.functions.keys().cloned().collect();
-        for name in function_keys {
-            self.add_symbol(Symbol {
-                value: Some(name.clone()),
-                kind: SymbolKind::Function(
-                    mq_lang::BUILTIN_FUNCTION_DOC[&name]
-                        .params
-                        .iter()
-                        .map(|p| (*p).into())
-                        .collect::<Vec<_>>(),
-                ),
-                source: SourceInfo::new(Some(self.builtin.source_id), None),
-                scope: self.builtin.scope_id,
-                doc: vec![(
-                    mq_lang::Range::default(),
-                    mq_lang::BUILTIN_FUNCTION_DOC[&name].description.to_string(),
-                )],
-                parent: None,
-                insertion_order: 0,
-            });
-        }
+        let source_id = self.builtin.source_id;
+        let scope_id = self.builtin.scope_id;
 
-        let internal_function_keys: Vec<_> = self.builtin.internal_functions.keys().cloned().collect();
-        for name in internal_function_keys {
-            self.add_symbol(Symbol {
-                value: Some(name.clone()),
-                kind: SymbolKind::Function(
-                    mq_lang::INTERNAL_FUNCTION_DOC[&name]
-                        .params
-                        .iter()
-                        .map(|p| (*p).into())
-                        .collect::<Vec<_>>(),
-                ),
-                source: SourceInfo::new(Some(self.builtin.source_id), None),
-                scope: self.builtin.scope_id,
-                doc: vec![(
-                    mq_lang::Range::default(),
-                    mq_lang::INTERNAL_FUNCTION_DOC[&name].description.to_string(),
-                )],
-                parent: None,
-                insertion_order: 0,
-            });
-        }
-
-        let selector_keys: Vec<_> = self.builtin.selectors.keys().cloned().collect();
-        for name in selector_keys {
-            if let Ok(selector) =
-                mq_lang::Selector::try_from(&mq_lang::Token::new(mq_lang::TokenKind::Selector(name.clone())))
-            {
+        for doc in self
+            .builtin
+            .docs
+            .iter()
+            .filter(|doc| doc.is_available(mq_lang::is_builtin_function))
+        {
+            for name in doc.names() {
+                let kind = match doc.kind {
+                    mq_help::DocKind::Function | mq_help::DocKind::Internal => {
+                        SymbolKind::Function(doc.params.iter().map(|p| (*p).into()).collect::<Vec<_>>())
+                    }
+                    mq_help::DocKind::Selector => {
+                        let token = mq_lang::Token::new(mq_lang::TokenKind::Selector(name.into()));
+                        match mq_lang::Selector::try_from(&token) {
+                            Ok(selector) => SymbolKind::Selector(selector),
+                            Err(_) => continue,
+                        }
+                    }
+                };
                 self.add_symbol(Symbol {
-                    value: Some(name.clone()),
-                    kind: SymbolKind::Selector(selector),
-                    source: SourceInfo::new(Some(self.builtin.source_id), None),
-                    scope: self.builtin.scope_id,
-                    doc: vec![(
-                        mq_lang::Range::default(),
-                        mq_lang::BUILTIN_SELECTOR_DOC[&name].description.to_string(),
-                    )],
+                    value: Some(name.into()),
+                    kind,
+                    source: SourceInfo::new(Some(source_id), None),
+                    scope: scope_id,
+                    doc: vec![(mq_lang::Range::default(), doc.description.to_string())],
                     parent: None,
                     insertion_order: 0,
                 });
@@ -405,6 +374,41 @@ mod tests {
     fn test_syntax_errors_inside_a_dict_do_not_panic(#[case] code: &str) {
         let mut hir = Hir::default();
         hir.add_code(None, code);
+    }
+
+    #[test]
+    fn test_feature_gated_builtins_are_defined_only_when_enabled() {
+        let mut hir = Hir::default();
+        hir.add_builtin();
+        let defined: std::collections::BTreeSet<&str> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Function(_)))
+            .filter_map(|(_, symbol)| symbol.value.as_deref())
+            .collect();
+
+        for doc in mq_help::BUILTIN_DOC.iter().filter(|doc| doc.capability.is_some()) {
+            assert_eq!(
+                defined.contains(doc.name),
+                mq_lang::is_builtin_function(doc.name),
+                "{} is defined iff its feature is on",
+                doc.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_selector_aliases_and_attributes_are_defined() {
+        let mut hir = Hir::default();
+        hir.add_builtin();
+        let defined: std::collections::BTreeSet<&str> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Selector(_)))
+            .filter_map(|(_, symbol)| symbol.value.as_deref())
+            .collect();
+
+        for name in mq_lang::SELECTOR_NAMES {
+            assert!(defined.contains(name), "{name} is not defined as a selector");
+        }
     }
 
     #[test]

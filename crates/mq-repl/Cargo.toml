@@ -17,6 +17,7 @@ dirs = {workspace = true}
 glob = {workspace = true}
 miette = {workspace = true}
 mq-hir = {workspace = true}
+mq-help = {workspace = true}
 mq-lang = {workspace = true, features = ["http"]}
 mq-markdown = {workspace = true}
 regex = {workspace = true}

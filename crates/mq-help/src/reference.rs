@@ -1,4 +1,6 @@
-use mq_lang::{BUILTIN_FUNCTION_DOC, CstNode, CstNodeKind, Shared, TokenKind};
+use mq_lang::{CstNode, CstNodeKind, Shared, TokenKind};
+
+use crate::docs::BUILTIN_DOC;
 
 /// A single verified example extracted from an `Example:` code fence in a doc comment.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,7 +172,7 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool, skip_comment_lines: usize
     if name.starts_with('_') {
         return None;
     }
-    if skip_native && BUILTIN_FUNCTION_DOC.contains_key(name.as_str()) {
+    if skip_native && BUILTIN_DOC.function(name.as_str()).is_some() {
         return None;
     }
 

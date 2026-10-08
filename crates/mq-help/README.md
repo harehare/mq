@@ -2,6 +2,11 @@
 
 Documentation catalog for the mq language: builds the single, unified catalog of every native builtin, selector, `builtin.mq` function, and standard-module function — the shared source for the `mq help` CLI command and `mq-web-api`'s documentation endpoints.
 
+## Features
+
+- `catalog` (default): the catalog, lookup and rendering API below. Builtins behind a Cargo feature of `mq-lang` are listed only when that feature is enabled.
+- Without it, only the static doc table (`BUILTIN_DOC`, covering functions, selectors and internal helpers) is built, with no dependency on `mq-lang`.
+
 ## Usage
 
 ```rust
@@ -12,6 +17,7 @@ let entries = all_entries();
 
 // Look up one name (with or without a leading `.` for selectors), or `module::name` to
 // disambiguate a function whose name collides with its own module (e.g. `section::section`).
+// A selector alias finds its primary entry, e.g. `lookup(".p")` returns `.text`.
 let matches = lookup("map");
 
 // A standard module's header doc plus its function list.

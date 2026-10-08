@@ -17,10 +17,11 @@ fn type_errors(code: &str) -> Vec<String> {
 #[test]
 fn documented_builtin_examples_have_no_type_errors() {
     let mut failures: Vec<String> = Vec::new();
-    let docs = mq_lang::BUILTIN_FUNCTION_DOC
+    for doc in mq_help::BUILTIN_DOC
         .iter()
-        .chain(mq_lang::INTERNAL_FUNCTION_DOC.iter());
-    for (name, doc) in docs {
+        .filter(|doc| doc.kind != mq_help::DocKind::Selector)
+    {
+        let name = doc.name;
         for example in doc.examples {
             let errors = type_errors(example.code);
             if !errors.is_empty() {
