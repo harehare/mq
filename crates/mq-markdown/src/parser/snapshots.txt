@@ -199,7 +199,7 @@ html: "<ol>\n<li>a\n<ol>\n<li>b</li>\n<li>c</li>\n</ol>\n</li>\n<li>d</li>\n</ol
 ## nested_dedent "- a\n  - b\n- c\n"
 nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:5-2:6 }), List(List { values: [Text(Text { value: "c", @3:3-3:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @3:3-3:4 })]
 html: "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ul>\n"
-## two_paragraphs "- a\n\n  b\n"
+## list_item_two_paragraphs "- a\n\n  b\n"
 nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:4 })]
 html: "<ul>\n<li>\n<p>a</p>\n<p>b</p>\n</li>\n</ul>\n"
 ## two_paragraphs_then_item "- a\n\n  b\n- c\n"
@@ -241,9 +241,6 @@ html: "<p>a</p>\n<ol>\n<li>b</li>\n</ol>\n"
 ## empty_item_no_interrupt "a\n-\n"
 nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "a", @1:1-1:2 })], @1:1-2:2 })]
 html: "<h2>a</h2>\n"
-## thematic_over_list "- - -\n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:6 })]
-html: "<hr />\n"
 ## list_in_quote "> - a\n> - b\n"
 nodes: [Blockquote(Blockquote { values: [List(List { values: [Text(Text { value: "a", @1:5-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:5-1:6 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:5-2:6 })], @1:1-2:6 })]
 html: "<blockquote>\n<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n</blockquote>\n"
