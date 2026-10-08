@@ -346,7 +346,7 @@ pub fn to_html(s: &str) -> String {
 mod tests {
     use rstest::rstest;
 
-    use crate::{TitleSurroundStyle, UrlSurroundStyle};
+    use crate::{ListStyle, TitleSurroundStyle, UrlSurroundStyle};
 
     use super::*;
 

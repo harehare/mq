@@ -35,6 +35,10 @@ ureq = {workspace = true}
 harness = false
 name = "benchmark"
 
+[[example]]
+name = "html_convert"
+required-features = ["html-to-markdown"]
+
 [features]
 callout = []
 color = []
