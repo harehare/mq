@@ -9,7 +9,7 @@ use crate::node::{RenderOptions, Text};
 
 /// Normalizes a reference label: whitespace runs become one space, the ends are trimmed, and the case
 /// is folded. `markdown-rs` drops the first gap between words, which this does not.
-pub(in crate::parser) fn normalize(label: &str) -> String {
+pub(crate) fn normalize(label: &str) -> String {
     let bytes = label.as_bytes();
     let mut result = String::with_capacity(label.len());
     let mut in_whitespace = true;

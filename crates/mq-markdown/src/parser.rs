@@ -23,6 +23,8 @@ mod tree;
 
 use crate::node::Node;
 
+pub(crate) use inline::normalize;
+
 /// Parses `content` into a flat list of nodes.
 pub(crate) fn parse(content: &str) -> miette::Result<Vec<Node>> {
     resolve::resolve(block::parse(content, false), false).map_err(|message| miette::miette!(message))
