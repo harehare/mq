@@ -1492,11 +1492,14 @@ impl Node {
                 if mdx_jsx_flow_element.children.is_empty() {
                     format!("<{}{} />", name, attributes,)
                 } else {
+                    // Each tag and the children sit on their own lines, or the children would read as
+                    // inline content of the tag.
+                    let children = render_values_block(&mdx_jsx_flow_element.children, options, theme);
                     format!(
-                        "<{}{}>{}</{}>",
+                        "<{}{}>\n{}\n</{}>",
                         name,
                         attributes,
-                        render_values(&mdx_jsx_flow_element.children, options, theme),
+                        indent_continuation(&format!("  {}", children), 2),
                         name
                     )
                 }
@@ -4581,7 +4584,7 @@ mod tests {
             "content".to_string().into()
         ],
         position: None
-    }), RenderOptions::default(), "<div className=\"container\">content</div>")]
+    }), RenderOptions::default(), "<div className=\"container\">\n  content\n</div>")]
     #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
         name: Some("div".to_string()),
         attributes: vec![

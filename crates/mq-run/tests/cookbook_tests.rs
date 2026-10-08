@@ -332,7 +332,7 @@ fn cookbook_extract_mdx_components() {
     let out = run(&["-I", "mdx", "select(is_mdx())", path.to_str().unwrap()]);
     assert_eq!(
         out.trim(),
-        "<CustomComponent prop=\"value\" />\n<AnotherComponent>Content</AnotherComponent>"
+        "<CustomComponent prop=\"value\" />\n<AnotherComponent>\n  Content\n</AnotherComponent>"
     );
 }
 
