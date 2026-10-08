@@ -342,6 +342,16 @@ fn indented_code_drops_trailing_lines_of_whitespace() {
     assert_eq!(nodes[0].value(), "brew install x");
 }
 
+#[rstest]
+#[case::line_endings_at_the_ends("``\nfoo\n``\n", "foo")]
+#[case::line_ending_and_space("`\nfoo `\n", "foo")]
+#[case::inner_line_endings_stay("``\nfoo\nbar  \nbaz\n``\n", "foo\nbar  \nbaz")]
+#[case::only_spaces_and_line_endings("` \n`\n", " \n")]
+fn code_span_strips_one_space_or_line_ending(#[case] input: &str, #[case] expected: &str) {
+    let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
+    assert_eq!(nodes[0].value(), expected, "{nodes:?}");
+}
+
 /// References keep the notation they were written in, as long as it resolves to the same definition.
 #[rstest]
 #[case::full_keeps_case_and_spaces("[x][Foo   Bar]\n\n[foo bar]: /u\n", "[x][Foo   Bar]")]

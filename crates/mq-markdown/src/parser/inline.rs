@@ -771,11 +771,12 @@ fn eol_len(bytes: &[u8]) -> usize {
     }
 }
 
-/// The value of a code or math span: the content as it is, except that one space is removed from
-/// both ends when both have one and the content is not only spaces.
+/// The value of a code or math span: the content as it is, except that one space or line ending is
+/// removed from both ends when both have one and the content is not only spaces and line endings.
 fn span_value(content: &str) -> SmolStr {
+    let is_space = |b: &u8| matches!(b, b' ' | b'\n');
     let bytes = content.as_bytes();
-    if bytes.len() > 2 && bytes[0] == b' ' && bytes[bytes.len() - 1] == b' ' && bytes.iter().any(|&b| b != b' ') {
+    if bytes.len() > 2 && is_space(&bytes[0]) && is_space(&bytes[bytes.len() - 1]) && !bytes.iter().all(is_space) {
         SmolStr::new(&content[1..content.len() - 1])
     } else {
         SmolStr::new(content)
