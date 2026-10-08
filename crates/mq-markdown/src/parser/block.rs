@@ -4,19 +4,18 @@
 //! the remaining lines again, up to [`MAX_DEPTH`] levels. The remaining leaf blocks (HTML, table,
 //! definition, frontmatter, math) are not handled yet, so their lines currently fall into paragraphs.
 
-use super::code::{Fence, fenced_code, indented_code};
+use super::code::Fence;
 use super::definition;
 use super::html_flow::{self, Kind as HtmlKind};
 use super::inline;
 use super::line::{Line, split_lines};
-use super::mdx_flow::{
-    FlowOutcome, absorbed_until, blocks_lazy_continuation, looks_like_mdx_flow, mdx_flow, probe_mdx_flow,
-};
+use super::mdx_flow::{FlowOutcome, absorbed_until, blocks_lazy_continuation, looks_like_mdx_flow, probe_mdx_flow};
 use super::table;
+mod rule;
+
 use super::tree::{Block, FootnoteBlock, InlineBlock, InlineKind, InlineSource, Item, ListBlock, QuoteBlock};
-use crate::node::{
-    HorizontalRule, HorizontalRuleMarker, Html, ListMarker, MdxJsEsm, Node, Point, Position, Toml, Yaml,
-};
+use crate::node::{Html, ListMarker, Node, Point, Position, Toml, Yaml};
+use rule::{BlockRule, Cx, Rules, fallback};
 
 /// Lines indented by this many columns or more are code, not other blocks.
 pub(super) const CODE_INDENT: usize = 4;
@@ -102,83 +101,23 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
         let separated = std::mem::take(&mut blank_between);
 
         let (columns, indent) = line.indent();
-        let rest = &line.text[indent..];
-
-        if columns >= line.code_indent() && !interrupting.code {
-            index = indented_code(lines, index, &mut blocks);
-        } else if columns >= line.code_indent() {
-            // Indented code cannot interrupt a paragraph.
-            let (next, interrupt) = paragraph(lines, index, &mut blocks);
-            index = next;
-            after_paragraph = interrupt;
-        } else if let Some(fence) = Fence::open(rest, !line.mdx) {
-            // The end of an unclosed fence without content is quirky right after a container.
-            let own_end = closed_container
-                && !(separated
-                    && matches!(blocks.last(), Some(Block::List(l)) if l.items.last().is_some_and(|i| i.children.is_empty())));
-            index = fenced_code(lines, index, indent, &fence, own_end, &mut blocks);
-        } else if let Some(depth) = atx_depth(rest) {
-            blocks.push(atx_heading(line, indent, depth));
-            index += 1;
-        } else if is_thematic_break(line, indent) {
-            blocks.push(Block::Node(Node::HorizontalRule(HorizontalRule {
-                marker: rest.chars().next().and_then(HorizontalRuleMarker::from_char),
-                position: Some(Position {
-                    start: line.point(0),
-                    end: line.end(),
-                }),
-            })));
-            index += 1;
-        } else if containers && blockquote_marker(line).is_some() {
-            index = blockquote(lines, index, depth, interrupting, &mut blocks);
-            after_container = true;
-        } else if let Some(marker) =
-            ItemMarker::parse(line).filter(|marker| containers && (!interrupting.list || marker.interrupts_paragraph()))
-        {
-            index = list(lines, index, &marker, depth, interrupting, &mut blocks);
-            after_container = true;
-        } else if let Some(kind) = html_start(line, rest) {
-            index = html_block(lines, index, kind, &mut blocks);
-        } else if let Some(marker) = footnote_marker(line).filter(|_| containers) {
-            index = footnote(lines, index, &marker, depth, interrupting, &mut blocks);
-            after_container = true;
-        } else if let Some((items, next)) = table::parse(lines, index, interrupts_paragraph, ends_table) {
-            blocks.push(Block::Table(items));
-            index = next;
-        } else if line.mdx
-            && depth == 0
-            && indent == 0
-            && (line.text.starts_with("import ") || line.text.starts_with("export "))
-        {
-            // ESM goes on to the next blank line. Without a JavaScript parser it is taken as it is.
-            let end = lines[index..]
-                .iter()
-                .position(Line::is_blank)
-                .map_or(lines.len(), |offset| index + offset);
-            let parts = lines[index..end]
-                .iter()
-                .map(|line| (line.text, line.eol))
-                .collect::<Vec<_>>();
-            blocks.push(Block::Node(Node::MdxJsEsm(MdxJsEsm {
-                value: join_lines(&parts).into(),
-                position: Some(Position {
-                    start: lines[index].point(0),
-                    end: lines[end - 1].end(),
-                }),
-            })));
-            index = end;
-        } else if line.mdx
-            && matches!(rest.as_bytes().first(), Some(b'<' | b'{'))
-            && let FlowOutcome::Flow(next) = mdx_flow(lines, index, &mut blocks)
-        {
-            index = next;
-            // Flow content that interrupted a paragraph keeps the restrictions that came with it.
-            after_paragraph = interrupting;
-        } else {
-            let (next, interrupt) = paragraph(lines, index, &mut blocks);
-            index = next;
-            after_paragraph = interrupt;
-        }
+        let cx = Cx {
+            lines,
+            index,
+            line,
+            columns,
+            indent,
+            rest: &line.text[indent..],
+            depth,
+            containers,
+            interrupting,
+            closed_container,
+            separated,
+        };
+        let step = Rules::parse(&cx, &mut blocks).unwrap_or_else(|| fallback(&cx, &mut blocks));
+        index = step.next;
+        after_container = step.container;
+        after_paragraph = step.interrupt;
     }
 
     blocks
