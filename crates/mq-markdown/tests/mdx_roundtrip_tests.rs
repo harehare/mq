@@ -108,3 +108,22 @@ fn attributes_of_an_element_can_be_read() {
         ]
     );
 }
+
+#[rstest]
+#[case::yaml("---\ntitle: x\n---\n\n# h\n", "yaml")]
+#[case::toml("+++\ntitle = 1\n+++\n\n# h\n", "toml")]
+fn mdx_starts_with_frontmatter(#[case] input: &str, #[case] kind: &str) {
+    let markdown = Markdown::from_mdx_str(input).unwrap();
+    assert_eq!(markdown.nodes[0].name(), kind, "{:?}", markdown.nodes);
+    assert_eq!(markdown.to_string(), input);
+}
+
+#[test]
+fn mdx_without_a_closing_line_has_no_frontmatter() {
+    let markdown = Markdown::from_mdx_str("---\ntitle: x\n").unwrap();
+    assert!(
+        markdown.nodes.iter().all(|node| node.name() != "yaml"),
+        "{:?}",
+        markdown.nodes
+    );
+}
