@@ -412,6 +412,14 @@ fn line_endings_in_text_elements_are_kept(#[case] input: &str, #[case] expected:
 #[case::definition_with_an_escape("[+]: a\n[\\;]: b\n", "[+]: a\n[\\;]: b")]
 #[case::definition_with_a_reference("[&amp;]: a\n\n[&amp;]\n", "[&amp;]: a\n\n[&][&amp;]")]
 #[case::footnote_with_a_reference("Call.[^a&copy;b].\n\n[^a&copy;b]: y\n", "Call.[^a&copy;b].\n\n[^a&copy;b]: y")]
+#[case::table_after_a_footnote(
+    "[^f0]: a\n\n| 1 | 2 |\n|-|-|\n| a | b |\n",
+    "[^f0]: a\n\n| 1 | 2 |\n| - | - |\n| a | b |"
+)]
+#[case::table_after_a_quote("> a\n\n| 1 | 2 |\n|-|-|\n| a | b |\n", "> a\n\n| 1 | 2 |\n| - | - |\n| a | b |")]
+#[case::emphasis_after_a_letter_in_strong("**a*b c***\n", "**a*b c***")]
+#[case::emphasis_before_a_letter_in_strong("***a b*c**\n", "***a b*c**")]
+#[case::emphasis_at_an_end_of_strong("**a *b***\n", "**a _b_**")]
 #[case::email_that_is_not_an_autolink("<asd@-example.com>\n", "\\<[asd\\@-example.com](mailto:asd@-example.com)\\>")]
 fn writing_keeps_what_is_read_back(#[case] input: &str, #[case] expected: &str) {
     let markdown = Markdown::from_markdown_str(input).unwrap();

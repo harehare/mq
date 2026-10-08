@@ -1596,8 +1596,15 @@ impl Node {
                     .enumerate()
                     .map(|(index, value)| match value {
                         // Emphasis at an end uses the other delimiter, or `*` and `**` fuse into `***`.
-                        Self::Emphasis(Emphasis { values, .. }) if index == 0 || index == last => {
-                            render_emphasis(values, "_", options, theme)
+                        // An underscore does not open or close next to a letter or digit, so those keep `*`.
+                        Self::Emphasis(Emphasis { values: inner, .. })
+                            if (index == 0 || index == last)
+                                && !index
+                                    .checked_sub(1)
+                                    .is_some_and(|before| ends_with_word_char(&values[before]))
+                                && !values.get(index + 1).is_some_and(starts_with_word_char) =>
+                        {
+                            render_emphasis(inner, "_", options, theme)
                         }
                         value => value.render_with_theme(options, theme),
                     })
@@ -3345,6 +3352,14 @@ pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme
         result.push(c);
     }
     result
+}
+
+fn ends_with_word_char(node: &Node) -> bool {
+    matches!(node, Node::Text(Text { value, .. }) if value.ends_with(|c: char| c.is_alphanumeric()))
+}
+
+fn starts_with_word_char(node: &Node) -> bool {
+    matches!(node, Node::Text(Text { value, .. }) if value.starts_with(|c: char| c.is_alphanumeric()))
 }
 
 /// Renders `value`, escaping a `!` that ends its text when `next` starts a link, which would make an image.
