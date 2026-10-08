@@ -287,3 +287,116 @@ proptest! {
         check_callout("note", "", &title, "\n> ", body);
     }
 }
+
+#[rstest]
+#[case::wikilink(
+    "[[foo]]\n",
+    "<p><a class=\"internal-link\" href=\"foo\" data-href=\"foo\">foo</a></p>\n"
+)]
+#[case::wikilink_with_text(
+    "a [[foo|bar]] b\n",
+    "<p>a <a class=\"internal-link\" href=\"foo\" data-href=\"foo\">bar</a> b</p>\n"
+)]
+#[case::wikilink_with_spaces(
+    "[[My Note]]\n",
+    "<p><a class=\"internal-link\" href=\"My%20Note\" data-href=\"My Note\">My Note</a></p>\n"
+)]
+#[case::wikilink_with_heading(
+    "[[note#Part one]]\n",
+    "<p><a class=\"internal-link\" href=\"note#Part%20one\" data-href=\"note#Part one\">note &gt; Part one</a></p>\n"
+)]
+#[case::wikilink_to_a_heading_of_the_page(
+    "[[#Part]]\n",
+    "<p><a class=\"internal-link\" href=\"#Part\" data-href=\"#Part\">Part</a></p>\n"
+)]
+#[case::wikilink_is_escaped(
+    "[[a&b|<c>]]\n",
+    "<p><a class=\"internal-link\" href=\"a&amp;b\" data-href=\"a&amp;b\">&lt;c&gt;</a></p>\n"
+)]
+#[case::wikilink_with_a_script_protocol(
+    "[[javascript:alert(1)]]\n",
+    "<p><a class=\"internal-link\" href=\"\" data-href=\"javascript:alert(1)\">javascript:alert(1)</a></p>\n"
+)]
+#[case::wikilink_inside_a_link_stays_text("[a [[b]]](c)\n", "<p><a href=\"c\">a [[b]]</a></p>\n")]
+#[case::wikilink_in_a_heading(
+    "# [[a]]\n",
+    "<h1><a class=\"internal-link\" href=\"a\" data-href=\"a\">a</a></h1>\n"
+)]
+#[case::image("![[img.png]]\n", "<p><img src=\"img.png\" alt=\"img.png\" /></p>\n")]
+#[case::image_with_width(
+    "![[img.png|100]]\n",
+    "<p><img src=\"img.png\" alt=\"img.png\" width=\"100\" /></p>\n"
+)]
+#[case::image_with_size(
+    "![[img.png|100x200]]\n",
+    "<p><img src=\"img.png\" alt=\"img.png\" width=\"100\" height=\"200\" /></p>\n"
+)]
+#[case::image_with_alt("![[img.png|a photo]]\n", "<p><img src=\"img.png\" alt=\"a photo\" /></p>\n")]
+#[case::image_extension_is_case_insensitive("![[IMG.PNG]]\n", "<p><img src=\"IMG.PNG\" alt=\"IMG.PNG\" /></p>\n")]
+#[case::image_with_spaces("![[my img.png]]\n", "<p><img src=\"my%20img.png\" alt=\"my img.png\" /></p>\n")]
+#[case::image_with_a_script_protocol("![[javascript:a.png]]\n", "<p><img src=\"\" alt=\"javascript:a.png\" /></p>\n")]
+#[case::audio("![[a.mp3]]\n", "<p><audio controls src=\"a.mp3\"></audio></p>\n")]
+#[case::video(
+    "![[a.mp4|640x480]]\n",
+    "<p><video controls src=\"a.mp4\" width=\"640\" height=\"480\"></video></p>\n"
+)]
+#[case::pdf("![[a.pdf]]\n", "<p><embed type=\"application/pdf\" src=\"a.pdf\" /></p>\n")]
+#[case::note(
+    "![[note]]\n",
+    "<p><a class=\"internal-link embed\" href=\"note\" data-href=\"note\">note</a></p>\n"
+)]
+#[case::note_with_heading(
+    "a ![[note#Part]] b\n",
+    "<p>a <a class=\"internal-link embed\" href=\"note#Part\" data-href=\"note#Part\">note &gt; Part</a> b</p>\n"
+)]
+fn html_renders_wikilinks_and_embeds(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(mq_markdown::to_html(input), expected);
+    assert_eq!(Markdown::from_markdown_str(input).unwrap().to_html(), expected);
+}
+
+#[rstest]
+#[case::note(
+    "> [!note]\n> Body\n",
+    "<div class=\"callout\" data-callout=\"note\">\n<div class=\"callout-title\">Note</div>\n<div class=\"callout-content\">\n<p>Body</p>\n</div>\n</div>\n"
+)]
+#[case::upper_case_kind(
+    "> [!WARNING]\n> Careful\n",
+    "<div class=\"callout\" data-callout=\"warning\">\n<div class=\"callout-title\">Warning</div>\n<div class=\"callout-content\">\n<p>Careful</p>\n</div>\n</div>\n"
+)]
+#[case::title(
+    "> [!tip] A <b> title\n> Body\n",
+    "<div class=\"callout\" data-callout=\"tip\">\n<div class=\"callout-title\">A &lt;b&gt; title</div>\n<div class=\"callout-content\">\n<p>Body</p>\n</div>\n</div>\n"
+)]
+#[case::without_body(
+    "> [!note] Only a title\n",
+    "<div class=\"callout\" data-callout=\"note\">\n<div class=\"callout-title\">Only a title</div>\n</div>\n"
+)]
+#[case::open_fold(
+    "> [!faq]+ Question\n> Answer\n",
+    "<details class=\"callout\" data-callout=\"faq\" open>\n<summary class=\"callout-title\">Question</summary>\n<div class=\"callout-content\">\n<p>Answer</p>\n</div>\n</details>\n"
+)]
+#[case::closed_fold(
+    "> [!faq]- Question\n> Answer\n",
+    "<details class=\"callout\" data-callout=\"faq\">\n<summary class=\"callout-title\">Question</summary>\n<div class=\"callout-content\">\n<p>Answer</p>\n</div>\n</details>\n"
+)]
+#[case::blocks_in_the_body(
+    "> [!note]\n> a\n>\n> - b\n",
+    "<div class=\"callout\" data-callout=\"note\">\n<div class=\"callout-title\">Note</div>\n<div class=\"callout-content\">\n<p>a</p>\n<ul>\n<li>b</li>\n</ul>\n</div>\n</div>\n"
+)]
+#[case::nested(
+    "> [!note]\n> > [!tip]\n> > Inner\n",
+    "<div class=\"callout\" data-callout=\"note\">\n<div class=\"callout-title\">Note</div>\n<div class=\"callout-content\">\n<div class=\"callout\" data-callout=\"tip\">\n<div class=\"callout-title\">Tip</div>\n<div class=\"callout-content\">\n<p>Inner</p>\n</div>\n</div>\n</div>\n</div>\n"
+)]
+#[case::wikilink_in_the_body(
+    "> [!note]\n> [[a]]\n",
+    "<div class=\"callout\" data-callout=\"note\">\n<div class=\"callout-title\">Note</div>\n<div class=\"callout-content\">\n<p><a class=\"internal-link\" href=\"a\" data-href=\"a\">a</a></p>\n</div>\n</div>\n"
+)]
+#[case::an_ordinary_quote("> [note]\n> Body\n", "<blockquote>\n<p>[note]\nBody</p>\n</blockquote>\n")]
+#[case::after_a_paragraph(
+    "a\n\n> [!note]\n> b\n\nc\n",
+    "<p>a</p>\n<div class=\"callout\" data-callout=\"note\">\n<div class=\"callout-title\">Note</div>\n<div class=\"callout-content\">\n<p>b</p>\n</div>\n</div>\n<p>c</p>\n"
+)]
+fn html_renders_callouts(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(mq_markdown::to_html(input), expected);
+    assert_eq!(Markdown::from_markdown_str(input).unwrap().to_html(), expected);
+}

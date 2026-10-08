@@ -4,7 +4,7 @@
 //! to other runs open and close, and in using the remaining length of a run for the rule of three.
 
 use super::punctuation::is_punctuation;
-use super::{Context, Delim, Item, to_nodes};
+use super::{Context, Delim, Item, MAX_NESTING, item_depth, to_nodes};
 use crate::node::{Delete, Emphasis, Node, Strong};
 
 #[derive(PartialEq)]
@@ -57,38 +57,131 @@ fn matches(opener: &Delim, closer: &Delim) -> bool {
     !(closer.ch == b'~' && (closer.count != opener.count || closer.count > 2))
 }
 
-/// Matches delimiters in `items[bottom..]`, replacing each pair and what is between them by a node.
-pub(super) fn process(items: &mut Vec<Item>, bottom: usize, context: &Context<'_>) {
-    let mut closer = bottom;
+/// A node of the list the delimiters are matched in, which lets matched items be taken out between
+/// two delimiters without moving the items after them.
+struct Slot {
+    item: Option<Item>,
+    prev: usize,
+    next: usize,
+}
 
-    while closer < items.len() {
-        let Item::Delim(current) = &items[closer] else {
-            closer += 1;
+const NIL: usize = usize::MAX;
+
+/// What decides whether a closer can match an opener: the openers a closer with the same key
+/// rejected once are rejected for every later closer with it.
+fn key(closer: &Delim) -> usize {
+    let ch = match closer.ch {
+        b'*' => 0,
+        b'_' => 1,
+        _ => 2,
+    };
+    // Strikethrough also goes by the length of the run.
+    let count = if ch == 2 { closer.count.min(2) } else { 0 };
+    ((ch * 2 + usize::from(closer.can_open)) * 3 + closer.original % 3) * 3 + count
+}
+
+fn delim(slots: &[Slot], index: usize) -> &Delim {
+    match &slots[index].item {
+        Some(Item::Delim(delim)) => delim,
+        _ => unreachable!("the index is a delimiter"),
+    }
+}
+
+fn delim_mut(slots: &mut [Slot], index: usize) -> &mut Delim {
+    match &mut slots[index].item {
+        Some(Item::Delim(delim)) => delim,
+        _ => unreachable!("the index is a delimiter"),
+    }
+}
+
+fn unlink(slots: &mut [Slot], index: usize) {
+    let (prev, next) = (slots[index].prev, slots[index].next);
+    slots[prev].next = next;
+    if next != NIL {
+        slots[next].prev = prev;
+    }
+    slots[index].item = None;
+}
+
+/// Matches the delimiters in `items`, replacing each pair and what is between them by a node.
+///
+/// The openers that can still match are kept on a stack, and the openers a closer cannot match are
+/// remembered by the offset they start at, so that the time is linear in the number of items.
+pub(super) fn process(items: &mut Vec<Item>, context: &Context<'_>) {
+    if !items.iter().any(|item| matches!(item, Item::Delim(_))) {
+        return;
+    }
+
+    let mut slots = Vec::with_capacity(items.len() + 1);
+    let total = items.len();
+    slots.push(Slot {
+        item: None,
+        prev: NIL,
+        next: 1,
+    });
+    for (index, item) in items.drain(..).enumerate() {
+        slots.push(Slot {
+            item: Some(item),
+            prev: index,
+            next: if index + 1 == total { NIL } else { index + 2 },
+        });
+    }
+
+    let mut stack: Vec<usize> = Vec::new();
+    let mut bottoms = [0usize; 54];
+    let mut closer = slots[0].next;
+
+    while closer != NIL {
+        if !matches!(slots[closer].item, Some(Item::Delim(_))) {
+            closer = slots[closer].next;
+            continue;
+        }
+        let current = delim(&slots, closer);
+        let (can_open, can_close, key) = (current.can_open, current.can_close, key(current));
+
+        let mut found = None;
+        if can_close {
+            for at in (0..stack.len()).rev() {
+                let candidate = delim(&slots, stack[at]);
+                if candidate.start < bottoms[key] {
+                    break;
+                }
+                if matches(candidate, current) {
+                    found = Some(at);
+                    break;
+                }
+            }
+        }
+        let found = found.filter(|&at| fits(&slots, stack[at], closer));
+
+        let Some(at) = found else {
+            if can_close {
+                bottoms[key] = delim(&slots, closer).start;
+            }
+            if can_open {
+                stack.push(closer);
+            }
+            closer = slots[closer].next;
             continue;
         };
-        let opener = if current.can_close {
-            (bottom..closer).rev().find(|&index| match &items[index] {
-                Item::Delim(candidate) => matches(candidate, current),
-                _ => false,
-            })
-        } else {
-            None
-        };
-        let Some(opener) = opener else {
-            closer += 1;
-            continue;
-        };
 
-        let (open, close) = match (&items[opener], &items[closer]) {
-            (Item::Delim(open), Item::Delim(close)) => (open, close),
-            _ => unreachable!("both indexes are delimiters"),
-        };
+        let opener = stack[at];
+        let (open, close) = (delim(&slots, opener), delim(&slots, closer));
         let used = if open.count > 1 && close.count > 1 { 2 } else { 1 };
         let ch = close.ch;
         let start = open.start + open.count - used;
         let end = close.start + used;
 
-        let children = items.drain(opener + 1..closer).collect::<Vec<_>>();
+        let mut children = Vec::new();
+        let mut depth = 0;
+        let mut index = slots[opener].next;
+        while index != closer {
+            if let Some(item) = slots[index].item.take() {
+                depth = depth.max(item_depth(&item));
+                children.push(item);
+            }
+            index = slots[index].next;
+        }
         let values = to_nodes(children, context);
         let position = Some(context.position(start, end));
         let node = match (ch, used) {
@@ -97,26 +190,49 @@ pub(super) fn process(items: &mut Vec<Item>, bottom: usize, context: &Context<'_
             _ => Node::Emphasis(Emphasis { values, position }),
         };
 
-        // The drained items are gone, so the closer is now right after the new node.
-        closer = opener + 1;
-        items.insert(closer, Item::Node(node));
-        closer += 1;
+        let node_index = slots.len();
+        slots.push(Slot {
+            item: Some(Item::Node(node, depth + 1)),
+            prev: opener,
+            next: closer,
+        });
+        slots[opener].next = node_index;
+        slots[closer].prev = node_index;
 
-        if let Item::Delim(open) = &mut items[opener] {
-            open.count -= used;
-        }
-        if let Item::Delim(close) = &mut items[closer] {
-            close.start += used;
-            close.count -= used;
-        }
+        delim_mut(&mut slots, opener).count -= used;
+        let close = delim_mut(&mut slots, closer);
+        close.start += used;
+        close.count -= used;
 
-        // Delimiters inside the new node cannot open anything else, and those used up are removed.
-        if matches!(&items[closer], Item::Delim(close) if close.count == 0) {
-            items.remove(closer);
+        // Delimiters inside the new node cannot open anything else.
+        stack.truncate(at + 1);
+        if delim(&slots, opener).count == 0 {
+            unlink(&mut slots, opener);
+            stack.pop();
         }
-        if matches!(&items[opener], Item::Delim(open) if open.count == 0) {
-            items.remove(opener);
-            closer -= 1;
+        if delim(&slots, closer).count == 0 {
+            let next = slots[closer].next;
+            unlink(&mut slots, closer);
+            closer = next;
         }
     }
+
+    let mut index = slots[0].next;
+    while index != NIL {
+        items.extend(slots[index].item.take());
+        index = slots[index].next;
+    }
+}
+
+/// Whether the node for the items between `opener` and `closer` stays within the nesting limit.
+fn fits(slots: &[Slot], opener: usize, closer: usize) -> bool {
+    let mut depth = 0;
+    let mut index = slots[opener].next;
+    while index != closer {
+        if let Some(item) = &slots[index].item {
+            depth = depth.max(item_depth(item));
+        }
+        index = slots[index].next;
+    }
+    depth < MAX_NESTING
 }

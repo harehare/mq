@@ -14,7 +14,9 @@ use super::mdx_flow::{
 };
 use super::table;
 use super::tree::{Block, FootnoteBlock, InlineBlock, InlineKind, InlineSource, Item, ListBlock, QuoteBlock};
-use crate::node::{HorizontalRule, Html, MdxJsEsm, Node, Point, Position, Toml, Yaml};
+use crate::node::{
+    HorizontalRule, HorizontalRuleMarker, Html, ListMarker, MdxJsEsm, Node, Point, Position, Toml, Yaml,
+};
 
 /// Lines indented by this many columns or more are code, not other blocks.
 pub(super) const CODE_INDENT: usize = 4;
@@ -118,9 +120,9 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
         } else if let Some(depth) = atx_depth(rest) {
             blocks.push(atx_heading(line, indent, depth));
             index += 1;
-        } else if is_thematic_break(rest) {
+        } else if is_thematic_break(line, indent) {
             blocks.push(Block::Node(Node::HorizontalRule(HorizontalRule {
-                marker: rest.chars().next(),
+                marker: rest.chars().next().and_then(HorizontalRuleMarker::from_char),
                 position: Some(Position {
                     start: line.point(0),
                     end: line.end(),
@@ -131,7 +133,7 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
             index = blockquote(lines, index, depth, interrupting, &mut blocks);
             after_container = true;
         } else if let Some(marker) =
-            ListMarker::parse(line).filter(|marker| containers && (!interrupting.list || marker.interrupts_paragraph()))
+            ItemMarker::parse(line).filter(|marker| containers && (!interrupting.list || marker.interrupts_paragraph()))
         {
             index = list(lines, index, &marker, depth, interrupting, &mut blocks);
             after_container = true;
@@ -198,10 +200,13 @@ struct LeafState<'a> {
     paragraph_containers: usize,
     /// Restrictions on the next fed line, the first line of a container that interrupted a paragraph.
     restricted: Interrupt,
+    /// How many more containers a line can open before the depth limit, which no longer open any.
+    budget: usize,
 }
 
 impl<'a> LeafState<'a> {
-    fn new(restricted: Interrupt) -> Self {
+    /// `depth` is the depth of the container that collects the lines.
+    fn new(restricted: Interrupt, depth: usize) -> Self {
         Self {
             fence: None,
             html: None,
@@ -210,6 +215,7 @@ impl<'a> LeafState<'a> {
             paragraph: false,
             paragraph_containers: 0,
             restricted,
+            budget: MAX_DEPTH.saturating_sub(depth + 1),
         }
     }
 
@@ -288,7 +294,7 @@ impl<'a> LeafState<'a> {
                 self.paragraph = false;
                 return;
             }
-            if atx_depth(rest).is_some() || is_thematic_break(rest) {
+            if atx_depth(rest).is_some() || is_thematic_break(&line, indent) {
                 self.paragraph = false;
                 return;
             }
@@ -301,16 +307,20 @@ impl<'a> LeafState<'a> {
                 self.paragraph = false;
                 return;
             }
-            if let Some(stripped) = strip_blockquote(line) {
+            if containers < self.budget
+                && let Some(stripped) = strip_blockquote(line)
+            {
                 line = stripped;
                 containers += 1;
                 continue;
             }
-            if let Some(marker) = ListMarker::parse(&line).filter(|m| {
-                // A marker in or inside the container of the open paragraph has to be able to interrupt it.
-                let continues_paragraph = open && containers >= self.paragraph_containers;
-                !(restricted.list || continues_paragraph) || m.interrupts_paragraph()
-            }) {
+            if containers < self.budget
+                && let Some(marker) = ItemMarker::parse(&line).filter(|m| {
+                    // A marker in or inside the container of the open paragraph has to be able to interrupt it.
+                    let continues_paragraph = open && containers >= self.paragraph_containers;
+                    !(restricted.list || continues_paragraph) || m.interrupts_paragraph()
+                })
+            {
                 line = marker.content(line);
                 containers += 1;
                 // The rest of the line starts a new item.
@@ -368,7 +378,7 @@ fn blockquote(
     blocks: &mut Vec<Block>,
 ) -> usize {
     let mut inner = Vec::new();
-    let mut state = LeafState::new(interrupting);
+    let mut state = LeafState::new(interrupting, depth);
     let mut index = start;
 
     while let Some(line) = lines.get(index) {
@@ -402,10 +412,9 @@ fn blockquote(
     index
 }
 
-struct ListMarker {
+struct ItemMarker {
     ordered: bool,
-    /// `-`, `+` or `*` for bullets, `.` or `)` for ordered lists.
-    delimiter: u8,
+    kind: ListMarker,
     start: u32,
     /// Bytes from the start of the line to the end of the marker.
     after_marker: usize,
@@ -417,7 +426,7 @@ struct ListMarker {
     empty: bool,
 }
 
-impl ListMarker {
+impl ItemMarker {
     fn parse(line: &Line<'_>) -> Option<Self> {
         let (columns, indent) = line.indent();
         if columns >= line.code_indent() {
@@ -425,7 +434,7 @@ impl ListMarker {
         }
         let rest = &line.text[indent..];
         let bytes = rest.as_bytes();
-        if is_thematic_break(rest) {
+        if is_thematic_break(line, indent) {
             return None;
         }
 
@@ -440,7 +449,13 @@ impl ListMarker {
             }
             _ => return None,
         };
-        let delimiter = bytes[marker_len - 1];
+        let kind = match bytes[marker_len - 1] {
+            b'-' => ListMarker::Dash,
+            b'+' => ListMarker::Plus,
+            b'*' => ListMarker::Star,
+            b'.' => ListMarker::Period,
+            _ => ListMarker::Paren,
+        };
 
         let after = &rest[marker_len..];
         let (spaces, blanks) = line.skip(indent + marker_len).indent();
@@ -458,7 +473,7 @@ impl ListMarker {
 
         Some(Self {
             ordered,
-            delimiter,
+            kind,
             start,
             after_marker: indent + marker_len,
             gap,
@@ -477,7 +492,7 @@ impl ListMarker {
     }
 
     fn same_list(&self, other: &Self) -> bool {
-        self.ordered == other.ordered && self.delimiter == other.delimiter
+        self.ordered == other.ordered && self.kind == other.kind
     }
 
     /// Whether this marker may interrupt a paragraph.
@@ -489,7 +504,7 @@ impl ListMarker {
 fn list(
     lines: &[Line<'_>],
     start: usize,
-    first: &ListMarker,
+    first: &ItemMarker,
     depth: usize,
     interrupting: Interrupt,
     blocks: &mut Vec<Block>,
@@ -499,7 +514,7 @@ fn list(
     let mut index = start;
 
     loop {
-        let marker = ListMarker::parse(&lines[index]).unwrap_or_else(|| unreachable!("checked by the caller"));
+        let marker = ItemMarker::parse(&lines[index]).unwrap_or_else(|| unreachable!("checked by the caller"));
         let (item, end) = list_item(
             lines,
             index,
@@ -515,7 +530,7 @@ fn list(
 
         // Blank lines between items make the list loose.
         let next = (end..lines.len()).find(|&i| !lines[i].is_blank());
-        match next.filter(|&i| ListMarker::parse(&lines[i]).is_some_and(|m| m.same_list(first))) {
+        match next.filter(|&i| ItemMarker::parse(&lines[i]).is_some_and(|m| m.same_list(first))) {
             Some(next) => {
                 spread |= next > end;
                 index = next;
@@ -530,7 +545,7 @@ fn list(
     blocks.push(Block::List(ListBlock {
         ordered: first.ordered,
         start: first.ordered.then_some(first.start),
-        marker: first.delimiter as char,
+        marker: first.kind,
         spread,
         items,
     }));
@@ -613,13 +628,13 @@ fn extend_quote(quote: &mut QuoteBlock, end: &Point) {
 fn list_item(
     lines: &[Line<'_>],
     start: usize,
-    marker: &ListMarker,
+    marker: &ItemMarker,
     depth: usize,
     interrupting: Interrupt,
 ) -> (Item, usize) {
     let first = marker.content(lines[start]);
     let mut inner = vec![first];
-    let mut state = LeafState::new(interrupting);
+    let mut state = LeafState::new(interrupting, depth);
     state.feed(&first);
     let mut blanks = Vec::new();
     let mut last_blank_has_whitespace = false;
@@ -664,7 +679,7 @@ fn list_item(
     // another container, but not when a plain paragraph or thematic break follows.
     let next = lines.get(index);
     let item_end = next
-        .is_none_or(|line| line.is_blank() || blockquote_marker(line).is_some() || ListMarker::parse(line).is_some());
+        .is_none_or(|line| line.is_blank() || blockquote_marker(line).is_some() || ItemMarker::parse(line).is_some());
     if let Some(last) = inner.last_mut() {
         last.item_end = item_end;
     }
@@ -778,19 +793,21 @@ fn offset_in(parent: &str, child: &str) -> usize {
     child.as_ptr() as usize - parent.as_ptr() as usize
 }
 
-fn is_thematic_break(rest: &str) -> bool {
-    let Some(marker) = rest.chars().next().filter(|c| matches!(c, '*' | '-' | '_')) else {
-        return false;
+/// Whether the rest of `line` after `indent` bytes is a thematic break.
+fn is_thematic_break(line: &Line<'_>, indent: usize) -> bool {
+    let rest = &line.text[indent..];
+    let marker = match rest.as_bytes().first() {
+        Some(b'*') => 0,
+        Some(b'-') => 1,
+        Some(b'_') => 2,
+        _ => return false,
     };
-    let mut count = 0;
-    for c in rest.chars() {
-        if c == marker {
-            count += 1;
-        } else if !matches!(c, ' ' | '\t') {
-            return false;
-        }
+    // Anything else after this point rules it out without looking at the rest of the line.
+    if line.others[marker] > line.column + indent {
+        return false;
     }
-    count >= 3
+    let marker = rest.as_bytes()[0];
+    rest.bytes().filter(|&byte| byte == marker).take(3).count() == 3
 }
 
 /// Returns the setext heading depth when `line` is a setext underline.
@@ -811,7 +828,7 @@ fn setext_depth(line: &Line<'_>) -> Option<u8> {
 /// Whether a line without its container prefix can continue an open paragraph of that container.
 /// Any list marker ends the paragraph here, even one that could not interrupt it elsewhere.
 fn is_lazy_continuation(line: &Line<'_>) -> bool {
-    !interrupts_paragraph(line) && ListMarker::parse(line).is_none()
+    !interrupts_paragraph(line) && ItemMarker::parse(line).is_none()
 }
 
 /// Whether `line` ends the paragraph that is being collected.
@@ -828,18 +845,18 @@ fn interrupts_paragraph(line: &Line<'_>) -> bool {
     columns < line.code_indent()
         && (Fence::open(rest, !line.mdx).is_some()
             || atx_depth(rest).is_some()
-            || is_thematic_break(rest)
+            || is_thematic_break(line, indent)
             || blockquote_marker(line).is_some()
             || footnote_marker(line).is_some()
             || html_start(line, rest).is_some_and(|kind| kind != HtmlKind::Complete)
-            || ListMarker::parse(line).is_some_and(|marker| marker.interrupts_paragraph()))
+            || ItemMarker::parse(line).is_some_and(|marker| marker.interrupts_paragraph()))
 }
 
 /// Whether `line` ends a table. Unlike a paragraph, a table is also ended by a list item that is empty
 /// or that is numbered from other than one.
 fn ends_table(line: &Line<'_>) -> bool {
     interrupts_paragraph(line)
-        || (!line.lazy && line.indent().0 < line.code_indent() && ListMarker::parse(line).is_some())
+        || (!line.lazy && line.indent().0 < line.code_indent() && ItemMarker::parse(line).is_some())
 }
 
 /// Returns the index after the block and what it restricts on the first line of a following container.
@@ -1012,7 +1029,7 @@ fn footnote(
 ) -> usize {
     let first = lines[start].skip(marker.content);
     let mut inner = vec![first];
-    let mut state = LeafState::new(interrupting);
+    let mut state = LeafState::new(interrupting, depth);
     state.feed(&first);
     let mut blanks = Vec::new();
     let mut index = start + 1;

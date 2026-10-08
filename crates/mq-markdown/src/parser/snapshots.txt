@@ -71,13 +71,13 @@ html: "<h2>a</h2>\n"
 nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "a\nb", @1:1-2:2 })], @1:1-3:4 })]
 html: "<h2>a\nb</h2>\n"
 ## thematic_star "***\n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('*'), @1:1-1:4 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Star), @1:1-1:4 })]
 html: "<hr />\n"
 ## thematic_dash_spaced "- - -\n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:6 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:6 })]
 html: "<hr />\n"
 ## thematic_underscore "  ___  \n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('_'), @1:1-1:8 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Underscore), @1:1-1:8 })]
 html: "<hr />\n"
 ## thematic_two "**\n"
 nodes: [Text(Text { value: "**", @1:1-1:3 })]
@@ -149,124 +149,124 @@ html: "<blockquote>\n<pre><code>a\n</code></pre>\n</blockquote>\n<p>b</p>\n"
 nodes: [Text(Text { value: "a", @1:1-1:2 }), Blockquote(Blockquote { values: [Text(Text { value: "b", @2:3-2:4 })], @2:1-2:4 })]
 html: "<p>a</p>\n<blockquote>\n<p>b</p>\n</blockquote>\n"
 ## quote_thematic_not_lazy "> a\n---\n"
-nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:3-1:4 })], @1:1-1:4 }), HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 })]
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:3-1:4 })], @1:1-1:4 }), HorizontalRule(HorizontalRule { marker: Some(Dash), @2:1-2:4 })]
 html: "<blockquote>\n<p>a</p>\n</blockquote>\n<hr />\n"
 ## quote_multibyte "> あ\n> い\n"
 nodes: [Blockquote(Blockquote { values: [Text(Text { value: "あ\nい", @1:3-2:6 })], @1:1-2:6 })]
 html: "<blockquote>\n<p>あ\nい</p>\n</blockquote>\n"
 ## bullet "- a\n- b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:3-2:4 })]
 html: "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n"
 ## bullet_loose "- a\n\n- b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @3:3-3:4 })], index: 1, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @3:3-3:4 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some(Dash), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @3:3-3:4 })], index: 1, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some(Dash), @3:3-3:4 })]
 html: "<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n"
 ## bullet_indent " - a\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:4-1:5 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:4-1:5 })]
 html: "<ul>\n<li>a</li>\n</ul>\n"
 ## bullet_mixed_markers "* a\n+ b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('*'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('+'), @2:3-2:4 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Star), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Plus), @2:3-2:4 })]
 html: "<ul>\n<li>a</li>\n</ul>\n<ul>\n<li>b</li>\n</ul>\n"
 ## ordered "1. a\n2. b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 1, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:4-2:5 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 1, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @2:4-2:5 })]
 html: "<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n"
 ## ordered_paren "5) a\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(5), marker: Some(')'), @1:4-1:5 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(5), marker: Some(Paren), @1:4-1:5 })]
 html: "<ol start=\"5\">\n<li>a</li>\n</ol>\n"
 ## ordered_zero "0. a\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(0), marker: Some('.'), @1:4-1:5 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(0), marker: Some(Period), @1:4-1:5 })]
 html: "<ol start=\"0\">\n<li>a</li>\n</ol>\n"
 ## ordered_too_long "1234567890. a\n"
 nodes: [Text(Text { value: "1234567890. a", @1:1-1:14 })]
 html: "<p>1234567890. a</p>\n"
 ## ordered_mixed_delimiters "1. a\n2) b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(2), marker: Some(')'), @2:4-2:5 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(2), marker: Some(Paren), @2:4-2:5 })]
 html: "<ol>\n<li>a</li>\n</ol>\n<ol start=\"2\">\n<li>b</li>\n</ol>\n"
 ## task "- [ ] x\n- [x] y\n- [X] z\n"
-nodes: [List(List { values: [Text(Text { value: "x", @1:7-1:8 })], index: 0, level: 0, ordered: false, checked: Some(false), spread: false, start: None, marker: Some('-'), @1:7-1:8 }), List(List { values: [Text(Text { value: "y", @2:7-2:8 })], index: 1, level: 0, ordered: false, checked: Some(true), spread: false, start: None, marker: Some('-'), @2:7-2:8 }), List(List { values: [Text(Text { value: "z", @3:7-3:8 })], index: 2, level: 0, ordered: false, checked: Some(true), spread: false, start: None, marker: Some('-'), @3:7-3:8 })]
+nodes: [List(List { values: [Text(Text { value: "x", @1:7-1:8 })], index: 0, level: 0, ordered: false, checked: Some(false), spread: false, start: None, marker: Some(Dash), @1:7-1:8 }), List(List { values: [Text(Text { value: "y", @2:7-2:8 })], index: 1, level: 0, ordered: false, checked: Some(true), spread: false, start: None, marker: Some(Dash), @2:7-2:8 }), List(List { values: [Text(Text { value: "z", @3:7-3:8 })], index: 2, level: 0, ordered: false, checked: Some(true), spread: false, start: None, marker: Some(Dash), @3:7-3:8 })]
 html: "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> x</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> y</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> z</li>\n</ul>\n"
 ## task_empty "- [ ]\n"
-nodes: [List(List { values: [Text(Text { value: "[ ]", @1:3-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:6 })]
+nodes: [List(List { values: [Text(Text { value: "[ ]", @1:3-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:6 })]
 html: "<ul>\n<li>[ ]</li>\n</ul>\n"
 ## task_no_space "- [ ]x\n"
-nodes: [List(List { values: [Text(Text { value: "[ ]x", @1:3-1:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:7 })]
+nodes: [List(List { values: [Text(Text { value: "[ ]x", @1:3-1:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:7 })]
 html: "<ul>\n<li>[ ]x</li>\n</ul>\n"
 ## nested "- a\n  - b\n    c\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b\nc", @2:5-3:6 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:5-3:6 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:4 }), List(List { values: [Text(Text { value: "b\nc", @2:5-3:6 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:5-3:6 })]
 html: "<ul>\n<li>a\n<ul>\n<li>b\nc</li>\n</ul>\n</li>\n</ul>\n"
 ## nested_ordered "1. a\n   1. b\n   2. c\n2. d\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:7-2:8 }), List(List { values: [Text(Text { value: "c", @3:7-3:8 })], index: 1, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @3:7-3:8 }), List(List { values: [Text(Text { value: "d", @4:4-4:5 })], index: 1, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @4:4-4:5 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @2:7-2:8 }), List(List { values: [Text(Text { value: "c", @3:7-3:8 })], index: 1, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @3:7-3:8 }), List(List { values: [Text(Text { value: "d", @4:4-4:5 })], index: 1, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @4:4-4:5 })]
 html: "<ol>\n<li>a\n<ol>\n<li>b</li>\n<li>c</li>\n</ol>\n</li>\n<li>d</li>\n</ol>\n"
 ## nested_dedent "- a\n  - b\n- c\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:5-2:6 }), List(List { values: [Text(Text { value: "c", @3:3-3:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:3-3:4 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:5-2:6 }), List(List { values: [Text(Text { value: "c", @3:3-3:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @3:3-3:4 })]
 html: "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ul>\n"
 ## two_paragraphs "- a\n\n  b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:4 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:4 })]
 html: "<ul>\n<li>\n<p>a</p>\n<p>b</p>\n</li>\n</ul>\n"
 ## two_paragraphs_then_item "- a\n\n  b\n- c\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:4 }), List(List { values: [Text(Text { value: "c", @4:3-4:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @4:3-4:4 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:4 }), List(List { values: [Text(Text { value: "c", @4:3-4:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @4:3-4:4 })]
 html: "<ul>\n<li>\n<p>a</p>\n<p>b</p>\n</li>\n<li>\n<p>c</p>\n</li>\n</ul>\n"
 ## empty_item "-\n"
-nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:1-1:2 })]
+nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:1-1:2 })]
 html: "<ul>\n<li></li>\n</ul>\n"
 ## empty_item_content "-\n  foo\n"
-nodes: [List(List { values: [Text(Text { value: "foo", @2:3-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:6 })]
+nodes: [List(List { values: [Text(Text { value: "foo", @2:3-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:3-2:6 })]
 html: "<ul>\n<li>foo</li>\n</ul>\n"
 ## empty_item_blank_then_text "-\n\n  foo\n"
-nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:1-1:2 }), Text(Text { value: "foo", @3:3-3:6 })]
+nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:1-1:2 }), Text(Text { value: "foo", @3:3-3:6 })]
 html: "<ul>\n<li></li>\n</ul>\n<p>foo</p>\n"
 ## empty_items "-\n-\n"
-nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:1-1:2 }), List(List { values: [], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:1-2:2 })]
+nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:1-1:2 }), List(List { values: [], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:1-2:2 })]
 html: "<ul>\n<li></li>\n<li></li>\n</ul>\n"
 ## wide_marker_gap "-   a\n    b\n"
-nodes: [List(List { values: [Text(Text { value: "a\nb", @1:5-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:5-2:6 })]
+nodes: [List(List { values: [Text(Text { value: "a\nb", @1:5-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:5-2:6 })]
 html: "<ul>\n<li>a\nb</li>\n</ul>\n"
 ## code_in_item "-     a\n"
-nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-1:8, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:8 })]
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-1:8, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:8 })]
 html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n"
 ## lazy "- a\nb\n"
-nodes: [List(List { values: [Text(Text { value: "a\nb", @1:3-2:2 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:2 })]
+nodes: [List(List { values: [Text(Text { value: "a\nb", @1:3-2:2 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:2 })]
 html: "<ul>\n<li>a\nb</li>\n</ul>\n"
 ## lazy_after_blank "- a\n\nb\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), Text(Text { value: "b", @3:1-3:2 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:4 }), Text(Text { value: "b", @3:1-3:2 })]
 html: "<ul>\n<li>a</li>\n</ul>\n<p>b</p>\n"
 ## list_interrupts_paragraph "a\n- b\n"
-nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:3-2:4 })]
 html: "<p>a</p>\n<ul>\n<li>b</li>\n</ul>\n"
 ## ordered_two_no_interrupt "a\n2. b\n"
 nodes: [Text(Text { value: "a\n2. b", @1:1-2:5 })]
 html: "<p>a\n2. b</p>\n"
 ## ordered_one_interrupts "a\n1. b\n"
-nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:4-2:5 })]
+nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @2:4-2:5 })]
 html: "<p>a</p>\n<ol>\n<li>b</li>\n</ol>\n"
 ## empty_item_no_interrupt "a\n-\n"
 nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "a", @1:1-1:2 })], @1:1-2:2 })]
 html: "<h2>a</h2>\n"
 ## thematic_over_list "- - -\n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:6 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:6 })]
 html: "<hr />\n"
 ## list_in_quote "> - a\n> - b\n"
-nodes: [Blockquote(Blockquote { values: [List(List { values: [Text(Text { value: "a", @1:5-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:5-1:6 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:5-2:6 })], @1:1-2:6 })]
+nodes: [Blockquote(Blockquote { values: [List(List { values: [Text(Text { value: "a", @1:5-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:5-1:6 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:5-2:6 })], @1:1-2:6 })]
 html: "<blockquote>\n<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n</blockquote>\n"
 ## quote_in_list "- > a\n  > b\n"
-nodes: [List(List { values: [Blockquote(Blockquote { values: [Text(Text { value: "a\nb", @1:5-2:6 })], @1:3-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:6 })]
+nodes: [List(List { values: [Blockquote(Blockquote { values: [Text(Text { value: "a\nb", @1:5-2:6 })], @1:3-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:6 })]
 html: "<ul>\n<li>\n<blockquote>\n<p>a\nb</p>\n</blockquote>\n</li>\n</ul>\n"
 ## quote_in_list_level "- a\n  > - b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:7-2:8 })], @2:3-2:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:8 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:7-2:8 })], @2:3-2:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:8 })]
 html: "<ul>\n<li>a\n<blockquote>\n<ul>\n<li>b</li>\n</ul>\n</blockquote>\n</li>\n</ul>\n"
 ## heading_in_item "- # h\n  text\n"
-nodes: [List(List { values: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:5-1:6 })], @1:3-1:6 }), Text(Text { value: "text", @2:3-2:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:7 })]
+nodes: [List(List { values: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:5-1:6 })], @1:3-1:6 }), Text(Text { value: "text", @2:3-2:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:7 })]
 html: "<ul>\n<li>\n<h1>h</h1>\ntext</li>\n</ul>\n"
 ## fence_in_item "- ```\n  a\n  ```\n"
-nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-3:6, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:6 })]
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-3:6, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:6 })]
 html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n"
 ## multibyte_item "- あ\n- い\n"
-nodes: [List(List { values: [Text(Text { value: "あ", @1:3-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:6 }), List(List { values: [Text(Text { value: "い", @2:3-2:6 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:6 })]
+nodes: [List(List { values: [Text(Text { value: "あ", @1:3-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:6 }), List(List { values: [Text(Text { value: "い", @2:3-2:6 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:3-2:6 })]
 html: "<ul>\n<li>あ</li>\n<li>い</li>\n</ul>\n"
 ## list_after_paragraph_blank "a\n\n- b\n"
-nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:3-3:4 })]
+nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @3:3-3:4 })]
 html: "<p>a</p>\n<ul>\n<li>b</li>\n</ul>\n"
 ## two_lists_split "- a\n\n\n- b\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @4:3-4:4 })], index: 1, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @4:3-4:4 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some(Dash), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @4:3-4:4 })], index: 1, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some(Dash), @4:3-4:4 })]
 html: "<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n"
 ## deep_quote ">>>>>> a\n"
 nodes: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:8-1:9 })], @1:6-1:9 })], @1:5-1:9 })], @1:4-1:9 })], @1:3-1:9 })], @1:2-1:9 })], @1:1-1:9 })]
@@ -275,10 +275,10 @@ html: "<blockquote>\n<blockquote>\n<blockquote>\n<blockquote>\n<blockquote>\n<bl
 nodes: [Code(Code { value: "a", lang: None, @1:1-2:2, meta: None, fence: true })]
 html: "<pre><code>a\n</code></pre>\n"
 ## fence_unclosed_in_item "- ```\n  a\n"
-nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-3:1, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:1 })]
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-3:1, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:1 })]
 html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>"
 ## fence_unclosed_in_item_no_eol "- ```\n  a"
-nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:4 })]
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:4 })]
 html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>"
 ## fence_unclosed_in_quote_no_eol "> ```\n> a"
 nodes: [Blockquote(Blockquote { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], @1:1-2:4 })]
@@ -290,13 +290,13 @@ html: "<blockquote>\n<pre><code>a\n</code></pre>\n</blockquote>"
 nodes: [Code(Code { value: "a\n", lang: None, @1:1-4:1, meta: None, fence: true })]
 html: "<pre><code>a\n\n</code></pre>\n"
 ## fence_unclosed_item_then_para "- ```\n  a\nb\n"
-nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:4 }), Text(Text { value: "b", @3:1-3:2 })]
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:4 }), Text(Text { value: "b", @3:1-3:2 })]
 html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n<p>b</p>\n"
 ## item_code_then_unindented_text "- ===\n\n      a\n==="
-nodes: [List(List { values: [Text(Text { value: "===", @1:3-1:6 }), Code(Code { value: "a", lang: None, @3:3-3:8, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:8 }), Text(Text { value: "===", @4:1-4:4 })]
+nodes: [List(List { values: [Text(Text { value: "===", @1:3-1:6 }), Code(Code { value: "a", lang: None, @3:3-3:8, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:8 }), Text(Text { value: "===", @4:1-4:4 })]
 html: "<ul>\n<li>\n<p>===</p>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n<p>===</p>"
 ## quote_setext_dashes "> a\n> ---\n> ---\n> a"
-nodes: [Blockquote(Blockquote { values: [Heading(Heading { depth: 2, values: [Text(Text { value: "a", @1:3-1:4 })], @1:3-2:6 }), HorizontalRule(HorizontalRule { marker: Some('-'), @3:3-3:6 }), Text(Text { value: "a", @4:3-4:4 })], @1:1-4:4 })]
+nodes: [Blockquote(Blockquote { values: [Heading(Heading { depth: 2, values: [Text(Text { value: "a", @1:3-1:4 })], @1:3-2:6 }), HorizontalRule(HorizontalRule { marker: Some(Dash), @3:3-3:6 }), Text(Text { value: "a", @4:3-4:4 })], @1:1-4:4 })]
 html: "<blockquote>\n<h2>a</h2>\n<hr />\n<p>a</p>\n</blockquote>"
 ## table_basic "| a | b |\n|---|:-:|\n| 1 | 2 |\n"
 nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:5 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:7-1:8 })]:1, row: 0, @1:5-1:10 }), TableAlign(TableAlign { align: [None, Center], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "1", @3:3-3:4 })]:0, row: 1, @3:1-3:5 }), TableCell(TableCell { values: [Text(Text { value: "2", @3:7-3:8 })]:1, row: 1, @3:5-3:10 })]
@@ -341,7 +341,7 @@ html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<h1>h</h1>
 nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), Code(Code { value: "x", lang: None, @3:1-5:4, meta: None, fence: true })]
 html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<pre><code>x\n</code></pre>\n"
 ## table_then_list "|a|\n|-|\n- x\n"
-nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), List(List { values: [Text(Text { value: "x", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:3-3:4 })]
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), List(List { values: [Text(Text { value: "x", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @3:3-3:4 })]
 html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<ul>\n<li>x</li>\n</ul>\n"
 ## table_two "|a|\n|-|\n\n|b|\n|-|\n"
 nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "b", @4:2-4:3 })]:0, row: 0, @4:1-4:4 }), TableAlign(TableAlign { align: [None], @5:1-5:1 })]
@@ -464,7 +464,7 @@ html: "<h1>a <em>b</em> <code>c</code></h1>\n"
 nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "a ", @1:1-1:3 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:4-1:5 })], @1:3-1:6 }), Text(Text { value: "\nc", @1:6-2:2 })], @1:1-3:4 })]
 html: "<h1>a <em>b</em>\nc</h1>\n"
 ## inline_list_item "- a *b*\n  c **d**\n"
-nodes: [List(List { values: [Text(Text { value: "a ", @1:3-1:5 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:6-1:7 })], @1:5-1:8 }), Text(Text { value: "\nc ", @1:8-2:5 }), Strong(Strong { values: [Text(Text { value: "d", @2:7-2:8 })], @2:5-2:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:10 })]
+nodes: [List(List { values: [Text(Text { value: "a ", @1:3-1:5 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:6-1:7 })], @1:5-1:8 }), Text(Text { value: "\nc ", @1:8-2:5 }), Strong(Strong { values: [Text(Text { value: "d", @2:7-2:8 })], @2:5-2:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:10 })]
 html: "<ul>\n<li>a <em>b</em>\nc <strong>d</strong></li>\n</ul>\n"
 ## inline_table_cell "| a *b* | `c\\|d` |\n|-|-|\n"
 nodes: [TableCell(TableCell { values: [Text(Text { value: "a ", @1:3-1:5 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:6-1:7 })], @1:5-1:8 })]:0, row: 0, @1:1-1:9 }), TableCell(TableCell { values: [CodeInline(CodeInline { value: "c|d", @1:11-1:17 })]:1, row: 0, @1:9-1:19 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 })]
@@ -512,7 +512,7 @@ html: "<p>text\n[a]: b</p>"
 nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "===", @2:1-2:4 })]
 html: "<p>===</p>"
 ## def_then_setext_dashes "[a]: b\n---"
-nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 })]
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), HorizontalRule(HorizontalRule { marker: Some(Dash), @2:1-2:4 })]
 html: "<hr />"
 ## def_indent1 " [a]: b"
 nodes: [Definition(Definition { @1:1-1:8, url: Url("b"), title: None, ident: "a", label: Some("a") })]
@@ -527,7 +527,7 @@ html: "<pre><code>[a]: b\n</code></pre>"
 nodes: [Blockquote(Blockquote { values: [Definition(Definition { @1:3-1:9, url: Url("b"), title: None, ident: "a", label: Some("a") })], @1:1-1:9 })]
 html: "<blockquote>\n</blockquote>"
 ## def_in_list "- [a]: b"
-nodes: [List(List { values: [Definition(Definition { @1:3-1:9, url: Url("b"), title: None, ident: "a", label: Some("a") })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:9 })]
+nodes: [List(List { values: [Definition(Definition { @1:3-1:9, url: Url("b"), title: None, ident: "a", label: Some("a") })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:9 })]
 html: "<ul>\n<li></li>\n</ul>"
 ## def_no_dest "[a]:"
 nodes: [Text(Text { value: "[a]:", @1:1-1:5 })]
@@ -632,19 +632,19 @@ html: "<pre><code>[^a]: b\n</code></pre>"
 nodes: [Blockquote(Blockquote { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:9-1:10 })], @1:3-1:10 })], @1:1-1:10 })]
 html: "<blockquote>\n</blockquote>"
 ## fn_in_list "- [^a]: b"
-nodes: [List(List { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:9-1:10 })], @1:3-1:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:10 })]
+nodes: [List(List { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:9-1:10 })], @1:3-1:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:10 })]
 html: "<ul>\n<li></li>\n</ul>"
 ## fn_then_quote "[^a]: b\n> q"
 nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), Blockquote(Blockquote { values: [Text(Text { value: "q", @2:3-2:4 })], @2:1-2:4 })]
 html: "<blockquote>\n<p>q</p>\n</blockquote>"
 ## fn_then_list "[^a]: b\n- x"
-nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), List(List { values: [Text(Text { value: "x", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), List(List { values: [Text(Text { value: "x", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:3-2:4 })]
 html: "<ul>\n<li>x</li>\n</ul>"
 ## fn_heading "[^a]: # h"
 nodes: [Footnote(Footnote { ident: "a", values: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:9-1:10 })], @1:7-1:10 })], @1:1-1:10 })]
 html: ""
 ## fn_list "[^a]: - x\n    - y"
-nodes: [Footnote(Footnote { ident: "a", values: [List(List { values: [Text(Text { value: "x", @1:9-1:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:9-1:10 }), List(List { values: [Text(Text { value: "y", @2:7-2:8 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:7-2:8 })], @1:1-2:8 })]
+nodes: [Footnote(Footnote { ident: "a", values: [List(List { values: [Text(Text { value: "x", @1:9-1:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:9-1:10 }), List(List { values: [Text(Text { value: "y", @2:7-2:8 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:7-2:8 })], @1:1-2:8 })]
 html: ""
 ## fn_fence "[^a]: b\n    ```\n    x\n    ```"
 nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 }), Code(Code { value: "x", lang: None, @2:5-4:8, meta: None, fence: true })], @1:1-4:8 })]
@@ -659,7 +659,7 @@ html: ""
 nodes: [Text(Text { value: "text", @1:1-1:5 }), Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @2:7-2:8 })], @2:1-2:8 })]
 html: "<p>text</p>\n"
 ## fn_then_dashes "[^a]: b\n---"
-nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 })]
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), HorizontalRule(HorizontalRule { marker: Some(Dash), @2:1-2:4 })]
 html: "<hr />"
 ## fn_then_equals "[^a]: b\n==="
 nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b\n===", @1:7-2:4 })], @1:1-2:4 })]
@@ -731,7 +731,7 @@ html: "<div\nclass=\"a\">\nz"
 nodes: [Blockquote(Blockquote { values: [Html(Html { value: "<div>\nx", @1:3-2:4 })], @1:1-2:4 })]
 html: "<blockquote>\n<div>\nx\n</blockquote>"
 ## html_in_list "- <div>\n  x"
-nodes: [List(List { values: [Html(Html { value: "<div>\nx", @1:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:4 })]
+nodes: [List(List { values: [Html(Html { value: "<div>\nx", @1:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-2:4 })]
 html: "<ul>\n<li>\n<div>\nx\n</li>\n</ul>"
 ## html_uppercase "<DIV>\nx"
 nodes: [Html(Html { value: "<DIV>\nx", @1:1-2:2 })]
@@ -794,7 +794,7 @@ html: ""
 nodes: [Yaml(Yaml { value: "", @1:1-2:4 })]
 html: ""
 ## fm_unclosed "---\na\n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:4 }), Text(Text { value: "a", @2:1-2:2 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:4 }), Text(Text { value: "a", @2:1-2:2 })]
 html: "<hr />\n<p>a</p>\n"
 ## fm_blank_content "---\n\n---\nx"
 nodes: [Yaml(Yaml { value: "", @1:1-3:4 }), Text(Text { value: "x", @4:1-4:2 })]
@@ -803,13 +803,13 @@ html: "<p>x</p>"
 nodes: [Toml(Toml { value: "a = 1", @1:1-3:4 }), Text(Text { value: "x", @4:1-4:2 })]
 html: "<p>x</p>"
 ## fm_indented " ---\na\n---"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:5 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:4 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:5 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:4 })]
 html: "<hr />\n<h2>a</h2>"
 ## fm_close_trailing_space "---\na\n--- \nx"
 nodes: [Yaml(Yaml { value: "a", @1:1-3:5 }), Text(Text { value: "x", @4:1-4:2 })]
 html: "<p>x</p>"
 ## fm_close_longer "---\na\n----\nx"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:5 }), Text(Text { value: "x", @4:1-4:2 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:5 }), Text(Text { value: "x", @4:1-4:2 })]
 html: "<hr />\n<h2>a</h2>\n<p>x</p>"
 ## fm_open_trailing_space "---  \na\n---"
 nodes: [Yaml(Yaml { value: "a", @1:1-3:4 })]
@@ -821,13 +821,13 @@ html: "<h2>---x\na</h2>"
 nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "text", @1:1-1:5 })], @1:1-2:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @3:1-3:2 })], @3:1-4:4 })]
 html: "<h2>text</h2>\n<h2>a</h2>"
 ## fm_blank_before "\n---\na\n---"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @3:1-3:2 })], @3:1-4:4 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @2:1-2:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @3:1-3:2 })], @3:1-4:4 })]
 html: "<hr />\n<h2>a</h2>"
 ## fm_multiline_content "---\na: 1\n\nb: 2\n---\n# h"
 nodes: [Yaml(Yaml { value: "a: 1\n\nb: 2", @1:1-5:4 }), Heading(Heading { depth: 1, values: [Text(Text { value: "h", @6:3-6:4 })], @6:1-6:4 })]
 html: "<h1>h</h1>"
 ## fm_hr_after "---\na\n---\n\n---"
-nodes: [Yaml(Yaml { value: "a", @1:1-3:4 }), HorizontalRule(HorizontalRule { marker: Some('-'), @5:1-5:4 })]
+nodes: [Yaml(Yaml { value: "a", @1:1-3:4 }), HorizontalRule(HorizontalRule { marker: Some(Dash), @5:1-5:4 })]
 html: "<hr />"
 ## math_basic "$$\na\n$$"
 nodes: [Math(Math { value: "a", @1:1-3:3 })]
@@ -863,7 +863,7 @@ html: "<pre><code class=\"language-math math-display\"></code></pre>"
 nodes: [Blockquote(Blockquote { values: [Math(Math { value: "a", @1:3-3:5 })], @1:1-3:5 })]
 html: "<blockquote>\n<pre><code class=\"language-math math-display\">a\n</code></pre>\n</blockquote>"
 ## math_in_list "- $$\n  a\n  $$"
-nodes: [List(List { values: [Math(Math { value: "a", @1:3-3:5 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:5 })]
+nodes: [List(List { values: [Math(Math { value: "a", @1:3-3:5 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:5 })]
 html: "<ul>\n<li>\n<pre><code class=\"language-math math-display\">a\n</code></pre>\n</li>\n</ul>"
 ## math_close_junk "$$\na\n$$ x"
 nodes: [Math(Math { value: "a\n$$ x", @1:1-3:5 })]
@@ -905,13 +905,13 @@ html: "<pre><code class=\"language-math math-display\">\n</code></pre>"
 nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:4 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:5-1:6 })]:1, row: 0, @1:4-1:6 }), TableAlign(TableAlign { align: [None, Center], @2:1-2:1 })]
 html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th align=\"center\">b</th>\n</tr>\n</thead>\n</table>"
 ## tab_nested_list "- a\n\t- b\n\t\t- c\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:7-2:8 }), List(List { values: [Text(Text { value: "c", @3:11-3:12 })], index: 0, level: 2, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:11-3:12 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:7-2:8 }), List(List { values: [Text(Text { value: "c", @3:11-3:12 })], index: 0, level: 2, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @3:11-3:12 })]
 html: "<ul>\n<li>a\n<ul>\n<li>b\n<ul>\n<li>c</li>\n</ul>\n</li>\n</ul>\n</li>\n</ul>\n"
 ## tab_nested_ordered "1. a\n\t1. b\n\t\t1. c\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:8-2:9 })], index: 0, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:8-2:9 }), List(List { values: [Text(Text { value: "c", @3:12-3:13 })], index: 0, level: 2, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @3:12-3:13 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:8-2:9 })], index: 0, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @2:8-2:9 }), List(List { values: [Text(Text { value: "c", @3:12-3:13 })], index: 0, level: 2, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @3:12-3:13 })]
 html: "<ol>\n<li>a\n<ol>\n<li>b\n<ol>\n<li>c</li>\n</ol>\n</li>\n</ol>\n</li>\n</ol>\n"
 ## tab_list_code "- a\n\n\t\tcode\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Code(Code { value: "  code", lang: None, @3:3-3:13, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:13 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Code(Code { value: "  code", lang: None, @3:3-3:13, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:13 })]
 html: "<ul>\n<li>\n<p>a</p>\n<pre><code>  code\n</code></pre>\n</li>\n</ul>\n"
 ## tab_in_text "a\tb\t*c*\n"
 nodes: [Text(Text { value: "a\tb\t", @1:1-1:9 }), Emphasis(Emphasis { values: [Text(Text { value: "c", @1:10-1:11 })], @1:9-1:12 })]
@@ -920,7 +920,7 @@ html: "<p>a\tb\t<em>c</em></p>\n"
 nodes: [Code(Code { value: "code\n\tmore", lang: None, @1:1-2:13, meta: None, fence: false })]
 html: "<pre><code>code\n\tmore\n</code></pre>\n"
 ## tab_after_marker "-\ta\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:5-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:5-1:6 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:5-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:5-1:6 })]
 html: "<ul>\n<li>a</li>\n</ul>\n"
 ## atx_leading_sequences "# # a"
 nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "# a", @1:3-1:6 })], @1:1-1:6 })]
@@ -947,7 +947,7 @@ html: "<h1># a</h1>"
 nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "a # b", @1:3-1:8 })], @1:1-1:8 })]
 html: "<h1>a # b</h1>"
 ## quote_footnote_trailing_space "- a\n  > [^a]: x\n  "
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "x", @2:11-2:12 })], @2:5-3:3 })], @2:3-3:3 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:3 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "x", @2:11-2:12 })], @2:5-3:3 })], @2:3-3:3 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:3 })]
 html: "<ul>\n<li>a\n<blockquote>\n</blockquote>\n</li>\n</ul>"
 ## indented_code_trailing_blank "    code\n\n\n"
 nodes: [Code(Code { value: "code", lang: None, @1:1-1:9, meta: None, fence: false })]
@@ -1007,28 +1007,28 @@ html: "<table>\n<thead>\n<tr>\n<th align=\"right\">a</th>\n</tr>\n</thead>\n<tbo
 nodes: [Text(Text { value: "a\n::-", @1:1-2:4 })]
 html: "<p>a\n::-</p>\n"
 ## table_body_empty_marker "a|b\n|-|-|\n*\n"
-nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('*'), @3:1-3:2 })]
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Star), @3:1-3:2 })]
 html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n</table>\n<ul>\n<li></li>\n</ul>\n"
 ## table_body_ordered_marker "a|b\n|-|-|\n2. x\n"
-nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [Text(Text { value: "x", @3:4-3:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(2), marker: Some('.'), @3:4-3:5 })]
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [Text(Text { value: "x", @3:4-3:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(2), marker: Some(Period), @3:4-3:5 })]
 html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n</table>\n<ol start=\"2\">\n<li>x</li>\n</ol>\n"
 ## table_body_empty_ordered "a|b\n|-|-|\n1.\n"
-nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @3:1-3:3 })]
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some(Period), @3:1-3:3 })]
 html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n</table>\n<ol>\n<li></li>\n</ol>\n"
 ## paragraph_after_partial_tab "- a\n\n\t[P](h) x\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Link(Link { url: Url("h"), title: None, values: [Text(Text { value: "P", @3:6-3:7 })], @3:5-3:11 }), Text(Text { value: " x", @3:11-3:13 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:13 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Link(Link { url: Url("h"), title: None, values: [Text(Text { value: "P", @3:6-3:7 })], @3:5-3:11 }), Text(Text { value: " x", @3:11-3:13 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:13 })]
 html: "<ul>\n<li>\n<p>a</p>\n<p><a href=\"h\">P</a> x</p>\n</li>\n</ul>\n"
 ## fence_after_partial_tab "- a\n\n\t```ts\n\t\tx\n\t```\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Code(Code { value: "\tx", lang: Some("ts"), @3:5-5:8, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-5:8 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Code(Code { value: "\tx", lang: Some("ts"), @3:5-5:8, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-5:8 })]
 html: "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-ts\">\tx\n</code></pre>\n</li>\n</ul>\n"
 ## math_after_partial_tab "- a\n\n\t$$\n\tm\n\t$$\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Math(Math { value: "m", @3:5-5:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-5:7 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Math(Math { value: "m", @3:5-5:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-5:7 })]
 html: "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-math math-display\">m\n</code></pre>\n</li>\n</ul>\n"
 ## quote_after_partial_tab "- a\n\n\t> q\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [Text(Text { value: "q", @3:7-3:8 })], @3:3-3:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:8 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [Text(Text { value: "q", @3:7-3:8 })], @3:3-3:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:8 })]
 html: "<ul>\n<li>\n<p>a</p>\n<blockquote>\n<p>q</p>\n</blockquote>\n</li>\n</ul>\n"
 ## heading_after_partial_tab "- a\n\n\t# h\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Heading(Heading { depth: 1, values: [Text(Text { value: "h", @3:7-3:8 })], @3:3-3:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:8 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Heading(Heading { depth: 1, values: [Text(Text { value: "h", @3:7-3:8 })], @3:3-3:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:8 })]
 html: "<ul>\n<li>\n<p>a</p>\n<h1>h</h1>\n</li>\n</ul>\n"
 ## control_character_references "&#1;&#x7f;&#x85;&#xB;&#xC;&#x9f;&#xa0;&#xd800;&#x110000;&#0;"
 nodes: [Text(Text { value: "����\u{c}�\u{a0}���", @1:1-1:61 })]
@@ -1064,7 +1064,7 @@ html: "<p><a href=\"x%EF%BF%BDy\">a</a></p>"
 nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "-", @2:1-2:2 })]
 html: "<p>-</p>"
 ## definition_then_item "[a]: b\n- x"
-nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), List(List { values: [Text(Text { value: "x", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), List(List { values: [Text(Text { value: "x", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:3-2:4 })]
 html: "<ul>\n<li>x</li>\n</ul>"
 ## definition_then_ordered "[a]: b\n1."
 nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "1.", @2:1-2:3 })]
@@ -1097,7 +1097,7 @@ html: "<pre><code class=\"language-あ\">日本語\n</code></pre>\n"
 nodes: [Blockquote(Blockquote { values: [Code(Code { value: "x", lang: Some("🎉"), @1:3-3:6, meta: None, fence: true })], @1:1-3:6 })]
 html: "<blockquote>\n<pre><code class=\"language-🎉\">x\n</code></pre>\n</blockquote>\n"
 ## fence_in_list_cjk "- ```あ\n  日本語\n  ```\n"
-nodes: [List(List { values: [Code(Code { value: "日本語", lang: Some("あ"), @1:3-3:6, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:6 })]
+nodes: [List(List { values: [Code(Code { value: "日本語", lang: Some("あ"), @1:3-3:6, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:6 })]
 html: "<ul>\n<li>\n<pre><code class=\"language-あ\">日本語\n</code></pre>\n</li>\n</ul>\n"
 ## math_cjk "$$\nあ\n$$\n\n$い$\n"
 nodes: [Math(Math { value: "あ", @1:1-3:3 }), MathInline(MathInline { value: "い", @5:1-5:6 })]
@@ -1190,7 +1190,7 @@ nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [MdxJsxFlowElement(MdxJs
 ## mdx jsx_in_quote "> <a>\n> x\n> </a>"
 nodes: [Blockquote(Blockquote { values: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Text(Text { value: "x", @2:3-2:4 })], @1:3-3:7, name: Some("a"), attributes: [] })], @1:1-3:7 })]
 ## mdx jsx_in_list "- <a>\n  x\n  </a>"
-nodes: [List(List { values: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Text(Text { value: "x", @2:3-2:4 })], @1:3-3:7, name: Some("a"), attributes: [] })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:7 })]
+nodes: [List(List { values: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Text(Text { value: "x", @2:3-2:4 })], @1:3-3:7, name: Some("a"), attributes: [] })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:3-3:7 })]
 ## mdx attr_quote_inside "<a b='c\"d' />"
 nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:14, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b", value: Some(Literal("c\"d")) })] })]
 ## mdx two_tags "<a/><b/>"
@@ -1258,7 +1258,7 @@ nodes: [MdxJsxTextElement(MdxJsxTextElement { children: [Emphasis(Emphasis { val
 ## mdx flow_element_with_emphasis "<a>\n*b*\n</a>"
 nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Emphasis(Emphasis { values: [Text(Text { value: "b", @2:2-2:3 })], @2:1-2:4 })], @1:1-3:5, name: Some("a"), attributes: [] })]
 ## mdx flow_element_with_list "<a>\n- b\n</a>"
-nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })], @1:1-3:5, name: Some("a"), attributes: [] })]
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @2:3-2:4 })], @1:1-3:5, name: Some("a"), attributes: [] })]
 ## mdx list_items_unbalanced "- <a>\n- </a>"
 nodes: error: Expected a closing tag for `<a>` (1:3) before the end of its container
 ## mdx spaced_equals "<a b = \"c\" />"
@@ -1272,17 +1272,17 @@ nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:8-1:9 })
 ## mdx no_autolink "<http://a.b>"
 nodes: error: Unexpected character `/` (U+002F) before local name
 ## mdx no_gfm "| a |\n|-|\n\n~a~ www.a.b [^a]\n\n- [ ] a\n"
-nodes: [Text(Text { value: "| a |\n|-|", @1:1-2:4 }), Text(Text { value: "~a~ www.a.b [^a]", @4:1-4:17 }), List(List { values: [Text(Text { value: "[ ] a", @6:3-6:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @6:3-6:8 })]
+nodes: [Text(Text { value: "| a |\n|-|", @1:1-2:4 }), Text(Text { value: "~a~ www.a.b [^a]", @4:1-4:17 }), List(List { values: [Text(Text { value: "[ ] a", @6:3-6:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @6:3-6:8 })]
 ## mdx no_math "$a$\n\n$$\na\n$$\n"
 nodes: [Text(Text { value: "$a$", @1:1-1:4 }), Text(Text { value: "$$\na\n$$", @3:1-5:3 })]
 ## mdx no_frontmatter "---\na\n---\n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:4 })]
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:4 })]
 ## mdx esm "import a from 'b'\n\nexport const c = 1\n"
 nodes: [MdxJsEsm(MdxJsEsm { value: "import a from 'b'", @1:1-1:18 }), MdxJsEsm(MdxJsEsm { value: "export const c = 1", @3:1-3:19 })]
 ## mdx definition "[a]: /u\n\n[a]\n"
 nodes: [Definition(Definition { @1:1-1:8, url: Url("/u"), title: None, ident: "a", label: Some("a") }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @3:2-3:3 })], @3:1-3:4 })]
 ## mdx list_deep_indent "-      a\n"
-nodes: [List(List { values: [Text(Text { value: "a", @1:8-1:9 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:8-1:9 })]
+nodes: [List(List { values: [Text(Text { value: "a", @1:8-1:9 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @1:8-1:9 })]
 ## mdx fence "```rust\ncode\n```\n"
 nodes: [Code(Code { value: "code", lang: Some("rust"), @1:1-3:4, meta: None, fence: true })]
 ## mdx lone_cr_after_lt "<\r/-x"

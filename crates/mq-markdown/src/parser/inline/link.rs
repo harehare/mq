@@ -2,7 +2,7 @@
 
 use super::entity::{remove_line_indent, unescape};
 use super::tail::{Tail, inline_tail, reference};
-use super::{Context, Item, Scanner, Value, emphasis, to_nodes};
+use super::{Context, Item, MAX_NESTING, Scanner, Value, emphasis, item_depth, to_nodes};
 use crate::node::{FootnoteRef, Image, ImageRef, Link, LinkRef, Node, Position, Title, Url};
 #[cfg(feature = "wikilink")]
 use crate::node::{RenderOptions, Text};
@@ -58,9 +58,14 @@ pub(super) fn close(scanner: &mut Scanner<'_>) -> bool {
     let Item::Open(opener) = &scanner.items[opener_index] else {
         return false;
     };
-    let (image, active, opener_start) = (opener.image, opener.active, opener.start);
+    let (image, opener_start) = (opener.image, opener.start);
+    let active = image || scanner.openers.len() > scanner.inactive_below;
     scanner.openers.pop();
-    if !active {
+    scanner.inactive_below = scanner.inactive_below.min(scanner.openers.len());
+    let inner_depth = scanner.depths.pop().unwrap_or(0);
+    // The brackets stay text when they do not close, and what is inside them is still inside the outer ones.
+    scanner.note_depth(inner_depth);
+    if !active || inner_depth >= MAX_NESTING {
         return false;
     }
 
@@ -108,23 +113,19 @@ pub(super) fn close(scanner: &mut Scanner<'_>) -> bool {
         emails: false,
         ..*context
     };
-    emphasis::process(&mut content, 0, &inner);
+    emphasis::process(&mut content, &inner);
+    let depth = content.iter().map(item_depth).max().unwrap_or(0) + 1;
     let values = to_nodes(content, &inner);
 
     let (node, end) = build(kind, image, values, after, |end| context.position(opener_start, end));
 
     if !image {
         // Links cannot contain links: earlier `[` openers can no longer become links.
-        for &index in &scanner.openers {
-            if let Item::Open(earlier) = &mut scanner.items[index]
-                && !earlier.image
-            {
-                earlier.active = false;
-            }
-        }
+        scanner.inactive_below = scanner.openers.len();
     }
 
-    scanner.items.push(Item::Node(node));
+    scanner.note_depth(depth);
+    scanner.items.push(Item::Node(node, depth));
     scanner.pos = end;
     scanner.run = end;
     true

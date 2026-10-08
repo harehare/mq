@@ -10,6 +10,9 @@ use super::tree::{Block, FencedBlock, InlineBlock, InlineKind, InlineSource, Lis
 use crate::node::{Code, Node, TableAlignKind};
 use rustc_hash::FxHashMap;
 
+#[cfg(any(feature = "wikilink", feature = "embed", feature = "callout"))]
+mod obsidian;
+
 /// Protocols that a link may have, others are dropped.
 const SAFE_PROTOCOL_HREF: [&str; 6] = ["http", "https", "irc", "ircs", "mailto", "xmpp"];
 /// Protocols that an image source may have.
@@ -221,6 +224,11 @@ impl Html {
             Block::Fenced(fenced) => self.fenced(fenced),
             Block::Inline(block) => self.inline_block(block),
             Block::Quote(quote) => {
+                #[cfg(feature = "callout")]
+                if let Some((header, head)) = super::callout::peek_header(&quote.children) {
+                    self.callout(&header, &head, &quote.children[1..]);
+                    return;
+                }
                 self.tight.push(false);
                 self.line_ending_if_needed();
                 self.out.push_str("<blockquote>");
@@ -471,6 +479,10 @@ impl Html {
                 self.image(&url, &image.alt, title.as_deref());
             }
             Node::FootnoteRef(reference) => self.footnote_call(&reference.ident),
+            #[cfg(feature = "wikilink")]
+            Node::WikiLink(link) => self.wikilink(&link.target, link.text.as_deref()),
+            #[cfg(feature = "embed")]
+            Node::Embed(embed) => self.embed(&embed.target, embed.display.as_deref()),
             _ => {}
         }
     }

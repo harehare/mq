@@ -25,6 +25,10 @@ pub(super) struct Line<'a> {
     pub(super) pad: usize,
     /// Whether the document is MDX, which has no indented code, HTML, autolinks or GFM.
     pub(super) mdx: bool,
+    /// For `*`, `-` and `_`: one past the offset in `origin` of the last byte that is neither that
+    /// character, nor a space or tab, or 0 if there is none. A thematic break is a run of one of them
+    /// and whitespace to the end of the line, so this tells at once, from any offset, that it is not.
+    pub(super) others: [usize; 3],
 }
 
 impl<'a> Line<'a> {
@@ -166,6 +170,21 @@ pub(super) fn visual_column(chars: impl Iterator<Item = char>, start: usize) -> 
     })
 }
 
+/// The `Line::others` of `text`.
+fn last_others(text: &str) -> [usize; 3] {
+    let mut last = [0; 3];
+    for (index, byte) in text.bytes().enumerate() {
+        match byte {
+            b' ' | b'\t' => {}
+            b'*' => (last[1], last[2]) = (index + 1, index + 1),
+            b'-' => (last[0], last[2]) = (index + 1, index + 1),
+            b'_' => (last[0], last[1]) = (index + 1, index + 1),
+            _ => last = [index + 1; 3],
+        }
+    }
+    last
+}
+
 /// Splits `src` into lines on `\n`, `\r\n` and `\r`. A trailing terminator does not add a line.
 pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
     let bytes = src.as_bytes();
@@ -194,6 +213,7 @@ pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
             tabs: src[start..end].contains('\t'),
             pad: 0,
             mdx,
+            others: last_others(&src[start..end]),
         });
         start = index;
     }
@@ -211,6 +231,7 @@ pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
             tabs: src[start..].contains('\t'),
             pad: 0,
             mdx,
+            others: last_others(&src[start..]),
         });
     }
 

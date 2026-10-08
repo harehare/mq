@@ -49,3 +49,15 @@ pub(super) fn take_header(children: &mut Vec<Block>) -> Option<Header> {
     }
     Some(header)
 }
+
+/// The header of a callout at the start of `children`, and what remains of the first paragraph after it.
+/// Unlike [`take_header`] this leaves `children` as it is.
+pub(super) fn peek_header(children: &[Block]) -> Option<(Header, Vec<Block>)> {
+    let Block::Inline(inline) = children.first()? else {
+        return None;
+    };
+    split(&inline.source.text)?;
+    let mut head = vec![Block::Inline(inline.clone())];
+    let header = take_header(&mut head)?;
+    Some((header, head))
+}

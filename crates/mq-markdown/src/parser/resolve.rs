@@ -1,7 +1,7 @@
 //! Turns the block tree into nodes: parses the inline content, pairs JSX tags and flattens lists and
 //! tables.
 
-use super::inline;
+use super::inline::{self, MAX_NESTING};
 use super::mdx::TagKind;
 use super::tree::{Block, InlineBlock, InlineKind, JsxTag, ListBlock, QuoteBlock, TableItem};
 use crate::node::{
@@ -66,6 +66,9 @@ impl Frames {
 
     fn tag(&mut self, tag: JsxTag) -> Result<(), String> {
         match tag.kind {
+            TagKind::Open if self.open.len() >= MAX_NESTING => {
+                return Err(format!("Elements are nested deeper than {MAX_NESTING} levels"));
+            }
             TagKind::Open => self.open.push((tag, Vec::new())),
             TagKind::SelfClosing => self.push(element(tag, Vec::new(), None)),
             TagKind::Close => {

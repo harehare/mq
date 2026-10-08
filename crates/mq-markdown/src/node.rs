@@ -172,6 +172,114 @@ impl Display for ListStyle {
     }
 }
 
+/// The marker of a list item as it is written in the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "json", derive(serde::Serialize, serde::Deserialize))]
+pub enum ListMarker {
+    /// `-`, a bullet.
+    #[cfg_attr(feature = "json", serde(rename = "-"))]
+    Dash,
+    /// `+`, a bullet.
+    #[cfg_attr(feature = "json", serde(rename = "+"))]
+    Plus,
+    /// `*`, a bullet.
+    #[cfg_attr(feature = "json", serde(rename = "*"))]
+    Star,
+    /// `.` after the number of an ordered item.
+    #[cfg_attr(feature = "json", serde(rename = "."))]
+    Period,
+    /// `)` after the number of an ordered item.
+    #[cfg_attr(feature = "json", serde(rename = ")"))]
+    Paren,
+    /// What the rest of an item that follows the items nested in it is rendered with. It has no marker
+    /// of its own, and the parser never produces it.
+    #[doc(hidden)]
+    #[cfg_attr(feature = "json", serde(rename = "\0"))]
+    Continuation,
+}
+
+impl ListMarker {
+    /// The character the marker is written with, or `None` for [`ListMarker::Continuation`].
+    pub fn as_char(self) -> Option<char> {
+        match self {
+            Self::Dash => Some('-'),
+            Self::Plus => Some('+'),
+            Self::Star => Some('*'),
+            Self::Period => Some('.'),
+            Self::Paren => Some(')'),
+            Self::Continuation => None,
+        }
+    }
+
+    /// The marker written with `char`: `-`, `+`, `*`, `.` or `)`.
+    pub fn from_char(char: char) -> Option<Self> {
+        match char {
+            '-' => Some(Self::Dash),
+            '+' => Some(Self::Plus),
+            '*' => Some(Self::Star),
+            '.' => Some(Self::Period),
+            ')' => Some(Self::Paren),
+            _ => None,
+        }
+    }
+
+    /// The bullet style of the marker, if it is a bullet.
+    pub fn style(self) -> Option<ListStyle> {
+        match self {
+            Self::Dash => Some(ListStyle::Dash),
+            Self::Plus => Some(ListStyle::Plus),
+            Self::Star => Some(ListStyle::Star),
+            Self::Period | Self::Paren | Self::Continuation => None,
+        }
+    }
+}
+
+impl From<ListStyle> for ListMarker {
+    fn from(style: ListStyle) -> Self {
+        match style {
+            ListStyle::Dash => Self::Dash,
+            ListStyle::Plus => Self::Plus,
+            ListStyle::Star => Self::Star,
+        }
+    }
+}
+
+/// The character a horizontal rule is written with in the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "json", derive(serde::Serialize, serde::Deserialize))]
+pub enum HorizontalRuleMarker {
+    /// `*`
+    #[cfg_attr(feature = "json", serde(rename = "*"))]
+    Star,
+    /// `-`
+    #[cfg_attr(feature = "json", serde(rename = "-"))]
+    Dash,
+    /// `_`
+    #[cfg_attr(feature = "json", serde(rename = "_"))]
+    Underscore,
+}
+
+impl HorizontalRuleMarker {
+    /// The character the rule is written with.
+    pub fn as_char(self) -> char {
+        match self {
+            Self::Star => '*',
+            Self::Dash => '-',
+            Self::Underscore => '_',
+        }
+    }
+
+    /// The marker written with `char`: `*`, `-` or `_`.
+    pub fn from_char(char: char) -> Option<Self> {
+        match char {
+            '*' => Some(Self::Star),
+            '-' => Some(Self::Dash),
+            '_' => Some(Self::Underscore),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -290,9 +398,9 @@ pub struct List {
     /// Starting number for an ordered list (e.g. `5` in `5. foo`); `None` means 1.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub start: Option<u32>,
-    /// Source marker: `-`, `+` or `*` for bullets, `.` or `)` for ordered lists.
+    /// Source marker. `None` keeps the default of the list kind: `-` for bullets, `.` for ordered lists.
     #[cfg_attr(feature = "json", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub marker: Option<char>,
+    pub marker: Option<ListMarker>,
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -771,9 +879,9 @@ pub struct Break {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct HorizontalRule {
-    /// Source marker: `*`, `-` or `_`.
+    /// Source marker. `None` renders as `***`.
     #[cfg_attr(feature = "json", serde(default, skip_serializing_if = "Option::is_none"))]
-    pub marker: Option<char>,
+    pub marker: Option<HorizontalRuleMarker>,
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -1089,15 +1197,12 @@ impl Node {
                 ..
             }) => {
                 let marker = if *ordered {
-                    let delimiter = marker.filter(|c| *c == ')').unwrap_or('.');
+                    let delimiter = if *marker == Some(ListMarker::Paren) { ')' } else { '.' };
                     format!("{}{}", start.unwrap_or(1) as usize + *index, delimiter)
                 } else if let Some(style) = &options.list_style {
                     style.to_string()
                 } else {
-                    marker
-                        .filter(|c| matches!(c, '-' | '+' | '*'))
-                        .unwrap_or('-')
-                        .to_string()
+                    marker.and_then(ListMarker::style).unwrap_or_default().to_string()
                 };
                 let checkbox = (*checked).map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or("");
                 let prefix_width = *level as usize * 2 + list_own_prefix_width(*ordered, *index, *start);
@@ -1454,7 +1559,11 @@ impl Node {
             Self::Break(_) => "\\\n".to_string(),
             Self::HorizontalRule(HorizontalRule { marker, .. }) => {
                 let (hs, he) = &theme.horizontal_rule;
-                let marker = marker.filter(|c| matches!(c, '-' | '_')).unwrap_or('*');
+                let marker = match marker {
+                    Some(HorizontalRuleMarker::Dash) => '-',
+                    Some(HorizontalRuleMarker::Underscore) => '_',
+                    _ => '*',
+                };
                 format!("{hs}{marker}{marker}{marker}{he}")
             }
             Self::Fragment(Fragment { values }) => values
@@ -1858,6 +1967,24 @@ impl Node {
 
     pub fn is_blockquote(&self) -> bool {
         matches!(self, Self::Blockquote(_))
+    }
+
+    /// True for the nodes that make up the text of a paragraph.
+    pub(crate) fn is_paragraph_text(&self) -> bool {
+        matches!(
+            self,
+            Self::Text(_)
+                | Self::Emphasis(_)
+                | Self::Strong(_)
+                | Self::Delete(_)
+                | Self::CodeInline(_)
+                | Self::MathInline(_)
+                | Self::Link(_)
+                | Self::LinkRef(_)
+                | Self::Image(_)
+                | Self::ImageRef(_)
+                | Self::FootnoteRef(_)
+        )
     }
 
     /// True for block quotes and (when enabled) Obsidian-style callouts.
@@ -3457,6 +3584,124 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::dash('-', Some(ListMarker::Dash))]
+    #[case::plus('+', Some(ListMarker::Plus))]
+    #[case::star('*', Some(ListMarker::Star))]
+    #[case::period('.', Some(ListMarker::Period))]
+    #[case::paren(')', Some(ListMarker::Paren))]
+    #[case::underscore('_', None)]
+    #[case::digit('1', None)]
+    fn list_marker_from_char(#[case] char: char, #[case] expected: Option<ListMarker>) {
+        assert_eq!(ListMarker::from_char(char), expected);
+        assert_eq!(expected.and_then(ListMarker::as_char), expected.map(|_| char));
+    }
+
+    #[rstest]
+    #[case::dash(ListMarker::Dash, Some(ListStyle::Dash))]
+    #[case::plus(ListMarker::Plus, Some(ListStyle::Plus))]
+    #[case::star(ListMarker::Star, Some(ListStyle::Star))]
+    #[case::period(ListMarker::Period, None)]
+    #[case::paren(ListMarker::Paren, None)]
+    #[case::continuation(ListMarker::Continuation, None)]
+    fn list_marker_style(#[case] marker: ListMarker, #[case] expected: Option<ListStyle>) {
+        assert_eq!(marker.style(), expected);
+    }
+
+    #[rstest]
+    #[case::dash(ListStyle::Dash, ListMarker::Dash)]
+    #[case::plus(ListStyle::Plus, ListMarker::Plus)]
+    #[case::star(ListStyle::Star, ListMarker::Star)]
+    fn list_marker_from_style(#[case] style: ListStyle, #[case] expected: ListMarker) {
+        assert_eq!(ListMarker::from(style), expected);
+    }
+
+    #[rstest]
+    #[case::star('*', Some(HorizontalRuleMarker::Star))]
+    #[case::dash('-', Some(HorizontalRuleMarker::Dash))]
+    #[case::underscore('_', Some(HorizontalRuleMarker::Underscore))]
+    #[case::plus('+', None)]
+    fn horizontal_rule_marker_from_char(#[case] char: char, #[case] expected: Option<HorizontalRuleMarker>) {
+        assert_eq!(HorizontalRuleMarker::from_char(char), expected);
+        assert_eq!(expected.map(HorizontalRuleMarker::as_char), expected.map(|_| char));
+    }
+
+    #[rstest]
+    #[case::bullet_dash(false, Some(ListMarker::Dash), "- a")]
+    #[case::bullet_plus(false, Some(ListMarker::Plus), "+ a")]
+    #[case::bullet_star(false, Some(ListMarker::Star), "* a")]
+    #[case::bullet_unknown(false, None, "- a")]
+    #[case::bullet_with_an_ordered_marker(false, Some(ListMarker::Paren), "- a")]
+    #[case::ordered_period(true, Some(ListMarker::Period), "1. a")]
+    #[case::ordered_paren(true, Some(ListMarker::Paren), "1) a")]
+    #[case::ordered_unknown(true, None, "1. a")]
+    #[case::ordered_with_a_bullet_marker(true, Some(ListMarker::Star), "1. a")]
+    fn list_renders_its_marker(#[case] ordered: bool, #[case] marker: Option<ListMarker>, #[case] expected: &str) {
+        let node = Node::List(List {
+            index: 0,
+            level: 0,
+            checked: None,
+            values: vec![Node::Text(Text {
+                value: "a".into(),
+                position: None,
+            })],
+            ordered,
+            start: None,
+            spread: false,
+            marker,
+            position: None,
+        });
+        assert_eq!(
+            node.render_with_theme(&RenderOptions::default(), &ColorTheme::PLAIN),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case::star(Some(HorizontalRuleMarker::Star), "***")]
+    #[case::dash(Some(HorizontalRuleMarker::Dash), "---")]
+    #[case::underscore(Some(HorizontalRuleMarker::Underscore), "___")]
+    #[case::unknown(None, "***")]
+    fn horizontal_rule_renders_its_marker(#[case] marker: Option<HorizontalRuleMarker>, #[case] expected: &str) {
+        let node = Node::HorizontalRule(HorizontalRule { marker, position: None });
+        assert_eq!(
+            node.render_with_theme(&RenderOptions::default(), &ColorTheme::PLAIN),
+            expected
+        );
+    }
+
+    /// The JSON of the markers is the character they are written with, as it was when they were chars.
+    #[cfg(feature = "json")]
+    #[rstest]
+    #[case::dash(ListMarker::Dash, "\"-\"")]
+    #[case::plus(ListMarker::Plus, "\"+\"")]
+    #[case::star(ListMarker::Star, "\"*\"")]
+    #[case::period(ListMarker::Period, "\".\"")]
+    #[case::paren(ListMarker::Paren, "\")\"")]
+    fn list_marker_json(#[case] marker: ListMarker, #[case] expected: &str) {
+        assert_eq!(serde_json::to_string(&marker).unwrap(), expected);
+        assert_eq!(serde_json::from_str::<ListMarker>(expected).unwrap(), marker);
+    }
+
+    #[cfg(feature = "json")]
+    #[rstest]
+    #[case::star(HorizontalRuleMarker::Star, "\"*\"")]
+    #[case::dash(HorizontalRuleMarker::Dash, "\"-\"")]
+    #[case::underscore(HorizontalRuleMarker::Underscore, "\"_\"")]
+    fn horizontal_rule_marker_json(#[case] marker: HorizontalRuleMarker, #[case] expected: &str) {
+        assert_eq!(serde_json::to_string(&marker).unwrap(), expected);
+        assert_eq!(serde_json::from_str::<HorizontalRuleMarker>(expected).unwrap(), marker);
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn list_json_keeps_the_marker_as_a_string() {
+        let json = r#"{"type":"list","values":[],"index":0,"level":0,"ordered":false,"checked":null,"spread":false,"marker":"+"}"#;
+        let list = serde_json::from_str::<List>(json).unwrap();
+        assert_eq!(list.marker, Some(ListMarker::Plus));
+        assert!(serde_json::to_string(&list).unwrap().contains(r#""marker":"+""#));
+    }
 
     #[test]
     fn map_values_into_transforms_owned_fragments() {

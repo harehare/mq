@@ -15,7 +15,9 @@ pub(super) struct Tail {
 /// Returns the label, the offset after the reference, and whether the label is the text itself.
 pub(super) fn reference(context: &Context<'_>, text: &str, after: usize) -> Option<(String, usize, bool)> {
     let src = context.src();
-    let defined = |label: &str| context.references.definitions.contains(&normalize(label));
+    // A label has at most 999 characters, which also keeps the normalizing of long text away.
+    let defined =
+        |label: &str| label.chars().nth(999).is_none() && context.references.definitions.contains(&normalize(label));
 
     if src[after..].starts_with('[') {
         match parse_label(src, after) {
