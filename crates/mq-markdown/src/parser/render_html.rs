@@ -272,13 +272,13 @@ impl Html {
 
     fn code(&mut self, code: &Code, lines: usize, closed: bool) {
         self.line_ending_if_needed();
-        self.out.push_str("<pre");
+        self.out.push_str("<pre><code");
         if let Some(lang) = code.lang.as_deref().filter(|lang| !lang.is_empty()) {
-            self.out.push_str(" lang=\"");
+            self.out.push_str(" class=\"language-");
             encode(&mut self.out, lang);
             self.out.push('"');
         }
-        self.out.push_str("><code>");
+        self.out.push('>');
         self.raw_flow(&code.value, lines, closed);
     }
 

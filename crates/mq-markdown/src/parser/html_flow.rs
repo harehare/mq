@@ -4,7 +4,7 @@
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum Kind {
     /// `<script`, `<pre`, `<style` or `<textarea`: ends at a line with the matching closing tag.
-    Raw,
+    Raw(&'static str),
     /// `<!--`: ends at a line with `-->`.
     Comment,
     /// `<?`: ends at a line with `?>`.
@@ -125,8 +125,8 @@ fn tag(rest: &str, from: usize, closing: bool) -> Option<Kind> {
     let slash = terminator == Some(b'/');
     let name = rest[from..end].to_ascii_lowercase();
 
-    if !slash && !closing && RAW_NAMES.contains(&name.as_str()) {
-        Some(Kind::Raw)
+    if let Some(raw) = RAW_NAMES.iter().find(|raw| !slash && !closing && **raw == name) {
+        Some(Kind::Raw(raw))
     } else if BLOCK_NAMES.contains(&name.as_str()) {
         // A slash has to be the end of a self-closing tag.
         (!slash || bytes.get(end + 1) == Some(&b'>')).then_some(Kind::Basic)
@@ -206,7 +206,7 @@ pub(super) fn first_line_offset(kind: Kind) -> usize {
         Kind::Instruction => 1,
         Kind::Declaration => 3,
         Kind::Cdata => 9,
-        Kind::Raw | Kind::Basic | Kind::Complete => 1,
+        Kind::Raw(_) | Kind::Basic | Kind::Complete => 1,
     }
 }
 
@@ -217,21 +217,19 @@ pub(super) fn ends_in(kind: Kind, text: &str) -> bool {
         Kind::Instruction => text.contains("?>"),
         Kind::Declaration => text.contains('>'),
         Kind::Cdata => text.contains("]]>"),
-        Kind::Raw => has_raw_end(text),
+        Kind::Raw(name) => has_raw_end(text, name),
         Kind::Basic | Kind::Complete => false,
     }
 }
 
-/// Whether `text` has a closing tag of a raw element, such as `</script>`.
-fn has_raw_end(text: &str) -> bool {
+/// Whether `text` has the closing tag of the raw element `name`, such as `</script>`.
+fn has_raw_end(text: &str, name: &str) -> bool {
     let bytes = text.as_bytes();
     let mut index = 0;
     while let Some(found) = text[index..].find("</") {
         let from = index + found + 2;
         let letters = bytes[from..].iter().take_while(|b| b.is_ascii_alphabetic()).count();
-        if bytes.get(from + letters) == Some(&b'>')
-            && RAW_NAMES.contains(&text[from..from + letters].to_ascii_lowercase().as_str())
-        {
+        if bytes.get(from + letters) == Some(&b'>') && text[from..from + letters].eq_ignore_ascii_case(name) {
             return true;
         }
         index = from;
