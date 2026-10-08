@@ -360,6 +360,29 @@ fn references_are_written_as_they_were(#[case] input: &str, #[case] expected: &s
     );
 }
 
+/// Braces in strings, template literals and comments do not end an expression.
+#[rstest]
+#[case::string("{'}'}", "'}'")]
+#[case::double_quoted("{\"}\" + '{'}", "\"}\" + '{'")]
+#[case::escaped_quote("{'\\'}'}", "'\\'}'")]
+#[case::block_comment("{a /* } */}", "a /* } */")]
+#[case::line_comment("{a // }\n}", "a // }\n")]
+#[case::template("{`a${`}`}c`}", "`a${`}`}c`")]
+#[case::division("{a / b}", "a / b")]
+fn mdx_expression_braces(#[case] input: &str, #[case] expected: &str) {
+    let nodes = Markdown::from_mdx_str(input).unwrap().nodes;
+    assert!(
+        matches!(&nodes[..], [Node::MdxFlowExpression(expression)] if expression.value == expected),
+        "{nodes:?}"
+    );
+}
+
+#[test]
+fn mdx_attribute_expression_braces() {
+    let nodes = Markdown::from_mdx_str("<a b={'}'} />").unwrap().nodes;
+    assert!(matches!(&nodes[..], [Node::MdxJsxFlowElement(_)]), "{nodes:?}");
+}
+
 /// What an MDX document starts its blocks with: `import` and `export` lines are one block up to the
 /// next blank line.
 #[rstest]
