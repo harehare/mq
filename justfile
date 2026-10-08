@@ -126,11 +126,13 @@ test-gfm-spec:
 test-spec:
     cargo test -p mq-markdown --lib -- --ignored spec_examples
 
-# Compare the MDX nodes with those of the official MDX packages (installs them with npm)
-test-mdx-official:
-    cd crates/mq-markdown/tests/mdx_official && npm install --silent
-    MDX_OFFICIAL_OUT="$PWD/target/mdx_official.json" cargo test -p mq-markdown --features json --test mdx_official -- --ignored
-    node crates/mq-markdown/tests/mdx_official/compare.mjs target/mdx_official.json
+# Compare the nodes of Markdown and MDX with the mdast of the official packages (installs them with npm and
+# fetches the specs)
+test-mdast-official:
+    cd crates/mq-markdown/tests/mdast_official && npm install --silent
+    node crates/mq-markdown/tests/mdast_official/corpus.mjs target/mdast_corpus.json
+    MDAST_CORPUS="$PWD/target/mdast_corpus.json" MDAST_OUT="$PWD/target/mdast_nodes.json" cargo test -p mq-markdown --features json --test mdast_official -- --ignored
+    node crates/mq-markdown/tests/mdast_official/compare.mjs target/mdast_corpus.json target/mdast_nodes.json
 
 test-doc:
     cargo test --doc --workspace
