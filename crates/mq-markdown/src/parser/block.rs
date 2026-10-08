@@ -685,7 +685,7 @@ fn remove_task_marker(children: &mut Vec<Block>) -> bool {
     if !matches!(source.text.as_bytes().get(..3), Some([b'[', b' ' | b'x' | b'X', b']'])) {
         return false;
     }
-    source.remove_prefix(3);
+    source.remove_prefix_and_one(3);
     if source.text.is_empty() {
         children.remove(0);
     }

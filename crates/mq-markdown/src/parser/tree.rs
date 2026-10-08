@@ -40,11 +40,23 @@ impl InlineSource {
         }
     }
 
-    /// Removes the first `marker` bytes and the whitespace that follows them, line endings included.
-    pub(super) fn remove_prefix(&mut self, marker: usize) {
+    /// Removes the first `marker` bytes and the one space, tab or line ending that follows them, and the
+    /// line ending after a space or a tab.
+    pub(super) fn remove_prefix_and_one(&mut self, marker: usize) {
+        let eol = |rest: &str| {
+            if rest.starts_with("\r\n") {
+                2
+            } else {
+                usize::from(rest.starts_with(['\n', '\r']))
+            }
+        };
         let rest = &self.text[marker..];
-        let end = self.text.len() - rest.trim_start_matches([' ', '\t', '\n', '\r']).len();
-        self.drain_to(end);
+        let one = if rest.starts_with([' ', '\t']) {
+            1 + eol(&rest[1..])
+        } else {
+            eol(rest)
+        };
+        self.drain_to(marker + one);
     }
 
     /// Removes the first line with its line ending and returns it without the line ending.
