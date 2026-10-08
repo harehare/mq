@@ -750,6 +750,7 @@ pub struct MdxJsxFlowElement {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", tag = "type", content = "value")
 )]
+/// An attribute of a JSX element: a property such as `a="b"`, or an expression such as `{...props}`.
 pub enum MdxAttributeContent {
     Expression(SmolStr),
     Property(MdxJsxAttribute),
@@ -761,6 +762,7 @@ pub enum MdxAttributeContent {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", tag = "type")
 )]
+/// A property of a JSX element, with the value it has after its quotes or braces.
 pub struct MdxJsxAttribute {
     pub name: SmolStr,
     pub value: Option<MdxAttributeValue>,
@@ -772,6 +774,7 @@ pub struct MdxJsxAttribute {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", tag = "type", content = "value")
 )]
+/// The value of a JSX property: a string, or an expression in braces.
 pub enum MdxAttributeValue {
     Expression(SmolStr),
     Literal(SmolStr),
