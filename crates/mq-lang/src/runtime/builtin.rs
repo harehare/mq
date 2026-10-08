@@ -2504,7 +2504,10 @@ fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
         [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
         [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
             let mut dict = std::mem::take(dict);
-            runtime_value::dict_mut(&mut dict).shift_remove(&Ident::new(key));
+            // A key that was never interned cannot be in the dict, so skip the copy-on-write.
+            if let Some(key) = Ident::lookup(key) {
+                runtime_value::dict_mut(&mut dict).shift_remove(&key);
+            }
             Ok(RuntimeValue::Dict(dict))
         }
         [RuntimeValue::Dict(dict), RuntimeValue::Symbol(key)] => {
@@ -3811,9 +3814,9 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
 fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         // Read-only: avoid `dict_mut`/`array_mut`'s `make_mut` deep clone of a shared map.
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
-            Ok(map.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE))
-        }
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(Ident::lookup(key)
+            .and_then(|key| map.get(&key).cloned())
+            .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let len = array.len();
@@ -3866,7 +3869,9 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 #[mq_macros::mq_fn(name = "has", params = Fixed(2))]
 fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map.contains_key(&Ident::new(key)).into()),
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+            Ok(Ident::lookup(key).is_some_and(|key| map.contains_key(&key)).into())
+        }
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.contains_key(key).into()),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let idx = index.value();
@@ -5666,11 +5671,11 @@ fn walk_files_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             RuntimeValue::Dict(options),
         ] => {
             let respect_gitignore = matches!(
-                options.get(&Ident::new("respect_gitignore")),
+                Ident::lookup("respect_gitignore").and_then(|key| options.get(&key)),
                 Some(RuntimeValue::Boolean(true))
             );
             let follow_symlinks = matches!(
-                options.get(&Ident::new("follow_symlinks")),
+                Ident::lookup("follow_symlinks").and_then(|key| options.get(&key)),
                 Some(RuntimeValue::Boolean(true))
             );
             walk_files_impl_inner(root.as_str(), pattern.as_str(), respect_gitignore, follow_symlinks)
@@ -10162,6 +10167,26 @@ mod tests {
 
     fn call(name: &str, args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {
         eval_builtin(&RuntimeValue::None, &Ident::new(name), args.into(), &env())
+    }
+
+    #[rstest]
+    #[case::get("get", "key_only_looked_up_by_get")]
+    #[case::has("has", "key_only_looked_up_by_has")]
+    #[case::del("del", "key_only_looked_up_by_del")]
+    fn test_dict_lookup_does_not_intern_missing_key(#[case] name: &str, #[case] key: &str) {
+        let dict = RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
+            Ident::new("present"),
+            RuntimeValue::Number(1.into()),
+        )])));
+
+        let result = call(name, vec![dict.clone(), key.into()]).unwrap();
+
+        assert!(Ident::lookup(key).is_none());
+        match name {
+            "get" => assert_eq!(result, RuntimeValue::NONE),
+            "has" => assert_eq!(result, RuntimeValue::Boolean(false)),
+            _ => assert_eq!(result, dict),
+        }
     }
 
     // =========================================================================
