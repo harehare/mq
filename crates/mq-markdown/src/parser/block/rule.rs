@@ -229,6 +229,30 @@ impl BlockRule for Table {
     }
 }
 
+/// How many brackets are open after `text`, given the `depth` before it. Strings and a comment to the end
+/// of the line are skipped.
+fn open_brackets(text: &str, mut depth: i32) -> i32 {
+    let mut chars = text.chars().peekable();
+    while let Some(char) = chars.next() {
+        match char {
+            '{' | '(' | '[' => depth += 1,
+            '}' | ')' | ']' => depth -= 1,
+            '\'' | '"' | '`' => {
+                while let Some(next) = chars.next() {
+                    if next == '\\' {
+                        chars.next();
+                    } else if next == char {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'/') => break,
+            _ => {}
+        }
+    }
+    depth
+}
+
 /// MDX `import` and `export`, which go on to the next blank line.
 pub(super) struct Esm;
 
@@ -242,11 +266,17 @@ impl BlockRule for Esm {
         {
             return None;
         }
-        // Without a JavaScript parser the module is taken as it is.
-        let end = cx.lines[cx.index..]
-            .iter()
-            .position(Line::is_blank)
-            .map_or(cx.lines.len(), |offset| cx.index + offset);
+        // Without a JavaScript parser the module goes on to the next blank line, or past it when a bracket
+        // is still open.
+        let mut depth = 0i32;
+        let mut end = cx.lines.len();
+        for (offset, line) in cx.lines[cx.index..].iter().enumerate() {
+            if line.is_blank() && depth <= 0 {
+                end = cx.index + offset;
+                break;
+            }
+            depth = open_brackets(line.text, depth);
+        }
         let parts = cx.lines[cx.index..end]
             .iter()
             .map(|line| (line.text, line.eol))
