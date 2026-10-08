@@ -134,6 +134,15 @@ fn writing_and_reading_back_keeps_the_nodes(#[case] input: &str) {
     assert_eq!(written, input);
 }
 
+#[rstest]
+#[case::after_wikilink("[[note]]\n- - -\n")]
+#[case::after_embed("![[img.png]]\n- - -\n")]
+fn a_dash_rule_after_inline_nodes_stays_a_rule(#[case] input: &str) {
+    let written = Markdown::from_markdown_str(input).unwrap().to_string();
+    assert_eq!(parse(&written), parse(input), "{written:?}");
+    assert!(!parse(&written).contains("heading"), "{written:?}");
+}
+
 /// Title lines, and the title they have to give: markup in a title spreads it over several nodes.
 const TITLES: &[(&str, &str)] = &[
     ("Title", "Title"),
@@ -348,6 +357,19 @@ proptest! {
 #[case::note_with_heading(
     "a ![[note#Part]] b\n",
     "<p>a <a class=\"internal-link embed\" href=\"note#Part\" data-href=\"note#Part\">note &gt; Part</a> b</p>\n"
+)]
+#[case::image_with_alt_and_width(
+    "![[img.png|photo|200]]\n",
+    "<p><img src=\"img.png\" alt=\"photo\" width=\"200\" /></p>\n"
+)]
+#[case::image_with_alt_and_size(
+    "![[img.png|photo|200x100]]\n",
+    "<p><img src=\"img.png\" alt=\"photo\" width=\"200\" height=\"100\" /></p>\n"
+)]
+#[case::image_with_alt_and_pipe_text("![[img.png|a|b]]\n", "<p><img src=\"img.png\" alt=\"a|b\" /></p>\n")]
+#[case::note_with_label(
+    "![[project-notes|Meeting notes]]\n",
+    "<p><a class=\"internal-link embed\" href=\"project-notes\" data-href=\"project-notes\">Meeting notes</a></p>\n"
 )]
 fn html_renders_wikilinks_and_embeds(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(mq_markdown::to_html(input), expected);

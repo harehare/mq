@@ -59,6 +59,21 @@ fn size(display: &str) -> Option<(&str, Option<&str>)> {
     }
 }
 
+/// The alt text and the size from a display like `alt`, `100`, or `alt|100`.
+#[cfg(feature = "embed")]
+fn alt_and_size(display: &str) -> (Option<&str>, Option<(&str, Option<&str>)>) {
+    match display.rsplit_once('|') {
+        Some((alt, last)) => match size(last) {
+            Some(dimensions) => (Some(alt), Some(dimensions)),
+            None => (Some(display), None),
+        },
+        None => match size(display) {
+            Some(dimensions) => (None, Some(dimensions)),
+            None => (Some(display), None),
+        },
+    }
+}
+
 impl Html {
     /// `<a>` to the target, which is plain text inside another link.
     #[cfg(any(feature = "wikilink", feature = "embed"))]
@@ -90,11 +105,12 @@ impl Html {
     pub(super) fn embed(&mut self, target: &str, display: Option<&str>) {
         let kind = media(target);
         if matches!(kind, Media::Note) {
-            return self.internal_link("internal-link embed", target, &shown_target(target));
+            let shown = display.map_or_else(|| shown_target(target), str::to_string);
+            return self.internal_link("internal-link embed", target, &shown);
         }
 
         let src = sanitize_with_protocols(target, &SAFE_PROTOCOL_SRC);
-        let dimensions = display.and_then(size);
+        let (alt, dimensions) = display.map_or((None, None), alt_and_size);
         let mut attributes = String::new();
         if let Some((width, height)) = dimensions {
             attributes.push_str(&format!(" width=\"{width}\""));
@@ -106,10 +122,7 @@ impl Html {
         match kind {
             Media::Image => {
                 self.out.push_str(&format!("<img src=\"{src}\" alt=\""));
-                encode(
-                    &mut self.out,
-                    display.filter(|_| dimensions.is_none()).unwrap_or(target),
-                );
+                encode(&mut self.out, alt.filter(|alt| !alt.is_empty()).unwrap_or(target));
                 self.out.push_str(&format!("\"{attributes} />"));
             }
             Media::Audio => self.out.push_str(&format!("<audio controls src=\"{src}\"></audio>")),
