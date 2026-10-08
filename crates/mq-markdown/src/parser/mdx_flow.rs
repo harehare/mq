@@ -29,7 +29,7 @@ fn flow_items(source: &InlineSource) -> Flow {
     loop {
         let start = index;
         let after_expression = match text[index..].chars().next() {
-            Some('<') => match mdx::tag(text, index) {
+            Some('<') => match mdx::tag(text, index, None) {
                 Parsed::Ok(tag) => {
                     index = tag.end;
                     items.push(FlowItem::Tag(tag, start));
@@ -39,7 +39,7 @@ fn flow_items(source: &InlineSource) -> Flow {
                 Parsed::More(fallback) => return Flow::More(fallback),
                 Parsed::Error(message) => return Flow::Error(message),
             },
-            Some('{') => match mdx::expression(text, index) {
+            Some('{') => match mdx::expression(text, index, None) {
                 Parsed::Ok((end, value)) => {
                     index = end;
                     items.push(FlowItem::Expression(value, start, end));

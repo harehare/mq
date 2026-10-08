@@ -73,8 +73,19 @@ fn elements_nested_within_the_limit_parse() {
 #[case::quote_markers_on_a_line(format!("{}a\n", "> ".repeat(20_000)).repeat(20))]
 #[case::numbered_markers_on_a_line(format!("{}a\n", "1. ".repeat(20_000)).repeat(20))]
 #[case::long_labels(format!("[a]: /u\n{}", "[b ".repeat(100_000)))]
+#[case::unclosed_comments("a <!--".repeat(300_000))]
+#[case::unclosed_comments_after_a_closer(format!("</{}", "<!--".repeat(300_000)))]
+#[case::unclosed_instructions("a <?".repeat(300_000))]
+#[case::unclosed_cdata("a <![CDATA[".repeat(300_000))]
+#[case::unclosed_declarations("a <!A".repeat(300_000))]
 fn repeated_constructs_parse(#[case] input: String) {
     exercise(Markdown::from_markdown_str(&input).unwrap());
+}
+
+#[test]
+fn repeated_unclosed_expressions_are_an_error() {
+    let error = Markdown::from_mdx_str(&"a {".repeat(300_000)).unwrap_err().to_string();
+    assert!(error.contains("closing brace"), "{error}");
 }
 
 #[rstest]
