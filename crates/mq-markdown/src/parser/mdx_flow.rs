@@ -1,5 +1,6 @@
 //! MDX flow content: JSX tags and expressions that make up whole lines.
 
+use super::error::{Located, MdxError, MdxErrorKind};
 use super::line::Line;
 use super::mdx::{self, Fallback, Parsed};
 use super::tree::{Block, InlineSource, JsxTag};
@@ -10,7 +11,7 @@ pub(super) enum Flow {
     /// Not flow content. When some items were parsed, the offset where the last one ends.
     Nok(Option<usize>),
     More(Fallback),
-    Error(String),
+    Error(Located),
     /// The items, and the offset where the last one ends.
     Done(Vec<FlowItem>, usize),
 }
@@ -37,7 +38,7 @@ fn flow_items(source: &InlineSource) -> Flow {
                 }
                 Parsed::Nok => return Flow::Nok(items.last().map(item_end)),
                 Parsed::More(fallback) => return Flow::More(fallback),
-                Parsed::Error(message) => return Flow::Error(message),
+                Parsed::Error(error) => return Flow::Error(error),
             },
             Some('{') => match mdx::expression(text, index, None) {
                 Parsed::Ok((end, value)) => {
@@ -47,7 +48,7 @@ fn flow_items(source: &InlineSource) -> Flow {
                 }
                 Parsed::Nok => return Flow::Nok(items.last().map(item_end)),
                 Parsed::More(fallback) => return Flow::More(fallback),
-                Parsed::Error(message) => return Flow::Error(message),
+                Parsed::Error(error) => return Flow::Error(error),
             },
             _ => return Flow::Nok(items.last().map(item_end)),
         };
@@ -99,14 +100,15 @@ pub(super) fn mdx_flow(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>
             // The construct goes on: read more lines, unless the container has none left.
             Flow::More(_) if end < lines.len() => count *= 2,
             Flow::More(_) if container_end => {
-                blocks.push(Block::Error(
-                    "Unexpected lazy line in expression in container, expected line to be prefixed with `>` when in a block quote, whitespace when in a list, etc".into(),
-                ));
+                blocks.push(Block::Error(MdxError::new(
+                    MdxErrorKind::LazyLine,
+                    Some(lines[start].point(0)),
+                )));
                 return FlowOutcome::Flow(lines.len());
             }
             Flow::More(Fallback::Nok) => return FlowOutcome::Pending,
-            Flow::More(Fallback::Error(message)) => {
-                blocks.push(Block::Error(message));
+            Flow::More(Fallback::Error(error)) => {
+                blocks.push(Block::Error(error.in_source(&source)));
                 return FlowOutcome::Flow(lines.len());
             }
             Flow::Nok(end) => {
@@ -114,8 +116,8 @@ pub(super) fn mdx_flow(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>
                     end.map(|end| start + source.lines.partition_point(|line| line.offset < end).saturating_sub(1));
                 return FlowOutcome::Nok(last_line);
             }
-            Flow::Error(message) => {
-                blocks.push(Block::Error(message));
+            Flow::Error(error) => {
+                blocks.push(Block::Error(error.in_source(&source)));
                 return FlowOutcome::Flow(lines.len());
             }
             Flow::Done(items, last) => {
@@ -124,10 +126,8 @@ pub(super) fn mdx_flow(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>
                         .lines
                         .partition_point(|line| line.offset < last)
                         .saturating_sub(1);
-                if lines[start + 1..=last_line].iter().any(|line| line.lazy) {
-                    blocks.push(Block::Error(
-                        "Unexpected lazy line in expression in container, expected line to be prefixed with `>` when in a block quote, whitespace when in a list, etc".into(),
-                    ));
+                if let Some(lazy) = lines[start + 1..=last_line].iter().find(|line| line.lazy) {
+                    blocks.push(Block::Error(MdxError::new(MdxErrorKind::LazyLine, Some(lazy.point(0)))));
                     return FlowOutcome::Flow(lines.len());
                 }
                 for item in items {

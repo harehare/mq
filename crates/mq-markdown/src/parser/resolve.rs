@@ -1,6 +1,7 @@
 //! Turns the block tree into nodes: parses the inline content, pairs JSX tags and flattens lists and
 //! tables.
 
+use super::error::{MdxError, MdxErrorKind};
 use super::flavor::Flavor;
 use super::inline::{self, Document, MAX_NESTING};
 use super::mdx::TagKind;
@@ -19,7 +20,7 @@ pub(super) struct References {
     pub(super) footnotes: FxHashSet<String>,
 }
 
-pub(super) fn resolve(blocks: Vec<Block>, flavor: Flavor) -> Result<Vec<Node>, String> {
+pub(super) fn resolve(blocks: Vec<Block>, flavor: Flavor) -> Result<Vec<Node>, MdxError> {
     let mut references = References::default();
     collect(&blocks, &mut references);
 
@@ -67,24 +68,31 @@ impl Frames {
         }
     }
 
-    fn tag(&mut self, tag: JsxTag) -> Result<(), String> {
+    fn tag(&mut self, tag: JsxTag) -> Result<(), MdxError> {
         match tag.kind {
             TagKind::Open if self.open.len() >= MAX_NESTING => {
-                return Err(format!("Elements are nested deeper than {MAX_NESTING} levels"));
+                return Err(MdxError::new(
+                    MdxErrorKind::TooDeep { limit: MAX_NESTING },
+                    Some(tag.position.start),
+                ));
             }
             TagKind::Open => self.open.push((tag, Vec::new())),
             TagKind::SelfClosing => self.push(element(tag, Vec::new(), None)),
             TagKind::Close => {
                 let Some((open, children)) = self.open.pop() else {
-                    return Err("Unexpected closing slash `/` in tag, expected an open tag first".into());
+                    return Err(MdxError::new(
+                        MdxErrorKind::UnopenedClosingTag,
+                        Some(tag.position.start),
+                    ));
                 };
                 if open.name != tag.name {
-                    return Err(format!(
-                        "Unexpected closing tag `</{}>`, expected corresponding closing tag for `<{}>` ({}:{})",
-                        tag.name.as_deref().unwrap_or_default(),
-                        open.name.as_deref().unwrap_or_default(),
-                        open.position.start.line,
-                        open.position.start.column
+                    return Err(MdxError::new(
+                        MdxErrorKind::MismatchedClosingTag {
+                            closing: tag.name,
+                            opening: open.name,
+                            opened_at: Some(open.position.start),
+                        },
+                        Some(tag.position.start),
                     ));
                 }
                 let end = tag.position.end;
@@ -107,7 +115,7 @@ fn element(tag: JsxTag, children: Vec<Node>, end: Option<crate::node::Point>) ->
     })
 }
 
-fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), String> {
+fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), MdxError> {
     let mut frames = Frames {
         open: Vec::new(),
         root: Vec::new(),
@@ -163,16 +171,18 @@ fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Resu
                 }
             }
             Block::Jsx(tag) => frames.tag(tag)?,
-            Block::Error(message) => return Err(message),
+            Block::Error(error) => return Err(error),
         }
     }
 
-    if let Some((open, _)) = frames.open.last() {
-        return Err(format!(
-            "Expected a closing tag for `<{}>` ({}:{}) before the end of its container",
-            open.name.as_deref().unwrap_or_default(),
-            open.position.start.line,
-            open.position.start.column
+    if let Some((open, _)) = frames.open.pop() {
+        let opened_at = open.position.start;
+        return Err(MdxError::new(
+            MdxErrorKind::UnclosedFlowElement {
+                name: open.name,
+                opened_at: opened_at.clone(),
+            },
+            Some(opened_at),
         ));
     }
     nodes.append(&mut frames.root);
@@ -181,7 +191,7 @@ fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Resu
 }
 
 /// A block quote, or a callout when the `callout` feature is enabled and its first line is a callout header.
-fn quote_node(quote: QuoteBlock, doc: Document<'_>) -> Result<Node, String> {
+fn quote_node(quote: QuoteBlock, doc: Document<'_>) -> Result<Node, MdxError> {
     #[cfg(feature = "callout")]
     let (header, children) = {
         let mut children = quote.children;
@@ -207,7 +217,7 @@ fn quote_node(quote: QuoteBlock, doc: Document<'_>) -> Result<Node, String> {
     Ok(Node::Blockquote(Blockquote { values, position }))
 }
 
-fn inline_block(block: InlineBlock, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), String> {
+fn inline_block(block: InlineBlock, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), MdxError> {
     let values = inline::parse(&block.source, doc)?;
     match block.kind {
         InlineKind::Paragraph => nodes.extend(values),
@@ -221,7 +231,7 @@ fn inline_block(block: InlineBlock, doc: Document<'_>, nodes: &mut Vec<Node>) ->
 }
 
 /// Emits one flat `Node::List` per item, followed by the items of its nested lists one level deeper.
-fn list_nodes(list: ListBlock, level: Level, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), String> {
+fn list_nodes(list: ListBlock, level: Level, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), MdxError> {
     for (index, item) in list.items.into_iter().enumerate() {
         let (nested, others): (Vec<_>, Vec<_>) = item.children.into_iter().partition(|b| matches!(b, Block::List(_)));
         let mut values = Vec::new();

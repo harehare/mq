@@ -1,6 +1,7 @@
 //! MDX: JSX tags and expressions, ported from the rules of `markdown-rs` without a JavaScript parser,
 //! so expressions are only checked for balanced braces, outside of strings, template literals and comments.
 
+use super::error::{Located, MdxErrorKind, MdxFound, MdxPlace};
 use super::scan::Span;
 use crate::node::{MdxAttributeContent, MdxAttributeValue, MdxJsxAttribute};
 use rustc_hash::FxHashMap;
@@ -10,7 +11,7 @@ use std::cell::OnceCell;
 /// What the end of the input means for a construct it ends inside of.
 pub(super) enum Fallback {
     Nok,
-    Error(String),
+    Error(Located),
 }
 
 /// The outcome of parsing at a position.
@@ -22,7 +23,7 @@ pub(super) enum Parsed<T> {
     /// is what the end of the input means for it.
     More(Fallback),
     /// The construct is invalid.
-    Error(String),
+    Error(Located),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -55,13 +56,10 @@ fn id_continue(char: char) -> bool {
 enum Stop {
     Nok,
     More(Fallback),
-    Error(String),
+    Error(Located),
 }
 
 type Step<T> = Result<T, Stop>;
-
-const UNCLOSED_EXPRESSION: &str =
-    "Unexpected end of file in expression, expected a corresponding closing brace for `{`";
 
 /// Where each `{` of a source closes, found in one pass the first time one is asked for, so that
 /// many unclosed braces do not each scan to the end of the input.
@@ -179,8 +177,18 @@ impl Cursor<'_> {
         Err(Stop::More(Fallback::Nok))
     }
 
-    fn crash<T>(&self, message: String) -> Step<T> {
-        Err(Stop::Error(message))
+    /// The construct is invalid at the current position.
+    fn crash<T>(&self, kind: MdxErrorKind) -> Step<T> {
+        Err(Stop::Error(Located {
+            kind,
+            offset: self.index,
+        }))
+    }
+
+    /// The current character, or the end of the input, cannot be at `place`.
+    fn unexpected<T>(&self, place: MdxPlace) -> Step<T> {
+        let found = self.peek().map_or(MdxFound::EndOfFile, MdxFound::Char);
+        self.crash(MdxErrorKind::Unexpected { found, place })
     }
 
     /// Skips whitespace, including line endings. Ends the tag at the end of the input.
@@ -203,13 +211,6 @@ impl Cursor<'_> {
         Ok(&self.src[start..self.index])
     }
 
-    fn describe(&self) -> String {
-        match self.peek() {
-            Some(char) => format!("character `{char}` (U+{:04X})", char as u32),
-            None => "end of file".to_string(),
-        }
-    }
-
     /// The name of a tag, with its member (`.`) or namespace (`:`) parts, cleaned of whitespace.
     fn tag_name(&mut self) -> Step<String> {
         let mut name = self.name_part()?.to_string();
@@ -220,7 +221,7 @@ impl Cursor<'_> {
                     self.bump();
                     self.skip_whitespace()?;
                     if !self.peek().is_some_and(id_start) {
-                        return self.crash(format!("Unexpected {} before member name", self.describe()));
+                        return self.unexpected(MdxPlace::BeforeMemberName);
                     }
                     name.push('.');
                     name.push_str(self.name_part()?);
@@ -231,7 +232,7 @@ impl Cursor<'_> {
                 self.bump();
                 self.skip_whitespace()?;
                 if !self.peek().is_some_and(id_start) {
-                    return self.crash(format!("Unexpected {} before local name", self.describe()));
+                    return self.unexpected(MdxPlace::BeforeLocalName);
                 }
                 name.push(':');
                 name.push_str(self.name_part()?);
@@ -253,7 +254,10 @@ impl Cursor<'_> {
         };
         let Some(end) = end else {
             self.index = self.src.len();
-            return Err(Stop::More(Fallback::Error(UNCLOSED_EXPRESSION.into())));
+            return Err(Stop::More(Fallback::Error(Located {
+                kind: MdxErrorKind::UnclosedExpression,
+                offset: open,
+            })));
         };
         self.index = end + 1;
         Ok(Span::new(start, end))
@@ -301,35 +305,35 @@ impl Cursor<'_> {
     }
 
     /// Checks the character after a name: whitespace or one of `allowed`.
-    fn end_of_name(&self, allowed: &[char], what: &str) -> Step<()> {
+    fn end_of_name(&self, allowed: &[char], place: MdxPlace) -> Step<()> {
         match self.peek() {
             None => self.end_of_input(),
             Some(char) if char.is_whitespace() || allowed.contains(&char) => Ok(()),
-            Some(_) => self.crash(format!("Unexpected {} in {what}", self.describe())),
+            Some(_) => self.unexpected(place),
         }
     }
 
     fn attribute(&mut self) -> Step<MdxAttributeContent> {
         let mut name = self.name_part()?.to_string();
-        self.end_of_name(&['/', ':', '=', '>', '{'], "attribute name")?;
+        self.end_of_name(&['/', ':', '=', '>', '{'], MdxPlace::InAttributeName)?;
         self.skip_whitespace()?;
 
         if self.peek() == Some(':') {
             self.bump();
             self.skip_whitespace()?;
             if !self.peek().is_some_and(id_start) {
-                return self.crash(format!("Unexpected {} before local attribute name", self.describe()));
+                return self.unexpected(MdxPlace::BeforeLocalAttributeName);
             }
             name.push(':');
             name.push_str(self.name_part()?);
-            self.end_of_name(&['/', '=', '>', '{'], "local attribute name")?;
+            self.end_of_name(&['/', '=', '>', '{'], MdxPlace::InLocalAttributeName)?;
             self.skip_whitespace()?;
         }
 
         let name = SmolStr::new(name);
         if self.peek() != Some('=') {
             if !matches!(self.peek(), Some('/' | '>' | '{')) && !self.peek().is_some_and(id_start) {
-                return self.crash(format!("Unexpected {} after attribute name", self.describe()));
+                return self.unexpected(MdxPlace::AfterAttributeName);
             }
             return Ok(MdxAttributeContent::Property(MdxJsxAttribute { name, value: None }));
         }
@@ -341,9 +345,10 @@ impl Cursor<'_> {
                 self.bump();
                 let start = self.index;
                 let Some(length) = self.src[start..].find(quote) else {
-                    return Err(Stop::More(Fallback::Error(format!(
-                        "Unexpected end of file in attribute value, expected a corresponding closing quote `{quote}`"
-                    ))));
+                    return Err(Stop::More(Fallback::Error(Located {
+                        kind: MdxErrorKind::UnclosedAttributeValue { quote },
+                        offset: start - 1,
+                    })));
                 };
                 self.index = start + length + 1;
                 MdxAttributeValue::Literal(SmolStr::new(super::inline::decode_references(
@@ -355,7 +360,7 @@ impl Cursor<'_> {
                 MdxAttributeValue::Expression(self.expression_value(content))
             }
             _ => {
-                return self.crash(format!("Unexpected {} before attribute value", self.describe()));
+                return self.unexpected(MdxPlace::BeforeAttributeValue);
             }
         };
         Ok(MdxAttributeContent::Property(MdxJsxAttribute {
@@ -383,7 +388,7 @@ impl Cursor<'_> {
         let name = match self.peek() {
             Some('>') => None,
             Some(char) if id_start(char) => Some(self.tag_name()?),
-            _ => return self.crash(format!("Unexpected {} before name", self.describe())),
+            _ => return self.unexpected(MdxPlace::BeforeName),
         };
         if name.is_some() {
             self.end_of_tag_name()?;
@@ -398,12 +403,10 @@ impl Cursor<'_> {
                     self.bump();
                     self.skip_whitespace()?;
                     if self.peek() != Some('>') {
-                        return self.crash(format!("Unexpected {} after self-closing slash", self.describe()));
+                        return self.unexpected(MdxPlace::AfterSelfClosingSlash);
                     }
                     if kind == TagKind::Close {
-                        return self.crash(
-                            "Unexpected self-closing slash `/` in closing tag, expected the end of the tag".into(),
-                        );
+                        return self.crash(MdxErrorKind::SelfClosingSlashInClosingTag);
                     }
                     kind = TagKind::SelfClosing;
                 }
@@ -412,8 +415,11 @@ impl Cursor<'_> {
                     break;
                 }
                 Some(char) if char == '{' || id_start(char) => {
-                    if kind == TagKind::Close {
-                        misplaced = Some("Unexpected attribute in closing tag, expected the end of the tag");
+                    if kind == TagKind::Close && misplaced.is_none() {
+                        misplaced = Some(Located {
+                            kind: MdxErrorKind::AttributeInClosingTag,
+                            offset: self.index,
+                        });
                     }
                     let attribute = if char == '{' {
                         let content = self.expression()?;
@@ -425,12 +431,12 @@ impl Cursor<'_> {
                     self.skip_whitespace()?;
                 }
                 None => return self.end_of_input(),
-                Some(_) => return self.crash(format!("Unexpected {} before attribute name", self.describe())),
+                Some(_) => return self.unexpected(MdxPlace::BeforeAttributeName),
             }
         }
 
-        if let Some(message) = misplaced {
-            return self.crash(message.into());
+        if let Some(error) = misplaced {
+            return Err(Stop::Error(error));
         }
 
         Ok(Tag {
@@ -448,7 +454,7 @@ impl Cursor<'_> {
             Some('/' | '>' | '{') => Ok(()),
             // An attribute needs whitespace before it.
             Some(char) if id_start(char) && self.src[..self.index].ends_with(char::is_whitespace) => Ok(()),
-            Some(_) => self.crash(format!("Unexpected {} after name", self.describe())),
+            Some(_) => self.unexpected(MdxPlace::AfterName),
         }
     }
 }
@@ -458,7 +464,7 @@ fn parsed<T>(step: Step<T>) -> Parsed<T> {
         Ok(value) => Parsed::Ok(value),
         Err(Stop::Nok) => Parsed::Nok,
         Err(Stop::More(fallback)) => Parsed::More(fallback),
-        Err(Stop::Error(message)) => Parsed::Error(message),
+        Err(Stop::Error(error)) => Parsed::Error(error),
     }
 }
 
