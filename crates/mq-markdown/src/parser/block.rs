@@ -15,7 +15,7 @@ use super::table;
 mod rule;
 
 use super::tree::{Block, FootnoteBlock, InlineBlock, InlineKind, InlineSource, Item, ListBlock, QuoteBlock};
-use crate::node::{Html, ListMarker, Node, Point, Position, Toml, Yaml};
+use crate::node::{HeadingDepth, Html, ListMarker, Node, Point, Position, Toml, Yaml};
 use rule::{BlockRule, Cx, Rules, fallback};
 
 /// Lines indented by this many columns or more are code, not other blocks.
@@ -134,7 +134,7 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
 pub(super) enum LineStart<'a> {
     Fence(Fence<'a>),
     /// An ATX heading of this depth.
-    Atx(u8),
+    Atx(HeadingDepth),
     ThematicBreak,
     Blockquote,
     Item(ItemMarker),
@@ -749,14 +749,15 @@ fn remove_task_marker(children: &mut Vec<Block>) -> bool {
 }
 
 /// Returns the heading depth when `rest` (indent already removed) is an ATX heading line.
-fn atx_depth(rest: &str) -> Option<u8> {
+fn atx_depth(rest: &str) -> Option<HeadingDepth> {
     let hashes = rest.bytes().take_while(|&b| b == b'#').count();
     let delimited = matches!(rest[hashes..].chars().next(), None | Some(' ' | '\t'));
-    ((1..=6).contains(&hashes) && delimited).then_some(hashes as u8)
+    let depth = u8::try_from(hashes).ok().and_then(HeadingDepth::new)?;
+    delimited.then_some(depth)
 }
 
-fn atx_heading(line: &Line<'_>, indent: usize, depth: u8) -> Block {
-    let rest = &line.text[indent + depth as usize..];
+fn atx_heading(line: &Line<'_>, indent: usize, depth: HeadingDepth) -> Block {
+    let rest = &line.text[indent + usize::from(depth.get())..];
     let content = rest.trim_matches([' ', '\t']);
     // A closing sequence must be preceded by whitespace, unless it is the whole content.
     let content = {
@@ -816,7 +817,7 @@ fn is_thematic_break(line: &Line<'_>, indent: usize) -> bool {
 }
 
 /// Returns the setext heading depth when `line` is a setext underline.
-fn setext_depth(line: &Line<'_>) -> Option<u8> {
+fn setext_depth(line: &Line<'_>) -> Option<HeadingDepth> {
     let Indent { columns, bytes: indent } = line.indent();
     let content = line.text[indent..].trim_end_matches([' ', '\t']);
     let marker = content.chars().next()?;
@@ -824,8 +825,8 @@ fn setext_depth(line: &Line<'_>) -> Option<u8> {
         return None;
     }
     match marker {
-        '=' => Some(1),
-        '-' => Some(2),
+        '=' => Some(HeadingDepth::H1),
+        '-' => Some(HeadingDepth::H2),
         _ => None,
     }
 }

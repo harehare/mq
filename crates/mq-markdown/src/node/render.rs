@@ -191,8 +191,8 @@ impl Node {
                     }
                 };
                 // Multi-line content must stay setext for depths 1-2; ATX has no setext form.
-                if text.contains('\n') && matches!(depth, 1 | 2) {
-                    let underline = if *depth == 1 { "===" } else { "---" };
+                if text.contains('\n') && *depth <= HeadingDepth::H2 {
+                    let underline = if *depth == HeadingDepth::H1 { "===" } else { "---" };
                     format!("{}{}\n{}{}", hs, text, underline, he)
                 } else {
                     // A trailing `#` run reads back as an ATX closing sequence and gets
@@ -210,7 +210,7 @@ impl Node {
                         None if !text.is_empty() => format!("\\{text}"),
                         _ => text,
                     };
-                    format!("{}{} {}{}", hs, "#".repeat(*depth as usize), text, he)
+                    format!("{}{} {}{}", hs, "#".repeat(usize::from(depth.get())), text, he)
                 }
             }
             Self::Html(Html { value, .. }) => {
@@ -1222,7 +1222,7 @@ mod tests {
             depth in 1u8..=6,
         ) {
             let value = format!("{}{}", body, "#".repeat(hashes));
-            let node = Node::Heading(Heading { depth, values: vec![value.into()], position: None });
+            let node = Node::Heading(Heading { depth: HeadingDepth::saturating(i64::from(depth)), values: vec![value.into()], position: None });
             let _ = node.to_string_with(&RenderOptions::default());
         }
 

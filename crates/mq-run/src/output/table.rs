@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn test_table_all_markdown_nodes() {
         let node = mq_markdown::Node::Heading(mq_markdown::Heading {
-            depth: 1,
+            depth: mq_markdown::HeadingDepth::H1,
             values: vec![mq_markdown::Node::Text(mq_markdown::Text {
                 value: "Title".to_string(),
                 position: None,

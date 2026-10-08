@@ -2011,7 +2011,7 @@ fn heading(depth: u8) -> RuntimeValue {
     RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
         values: vec![],
         position: None,
-        depth,
+        depth: mq_markdown::HeadingDepth::new(depth).expect("a heading depth"),
     }))
 }
 
@@ -2350,12 +2350,12 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
     let matching_child = mq_markdown::Node::Heading(mq_markdown::Heading {
         values: vec![],
         position: None,
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
     });
     let outer = mq_markdown::Node::Heading(mq_markdown::Heading {
         values: vec![matching_child.clone(), text_node("no match anywhere")],
         position: None,
-        depth: 2,
+        depth: mq_markdown::HeadingDepth::H2,
     });
     let code = ".h1";
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
