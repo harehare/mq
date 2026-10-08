@@ -184,9 +184,9 @@ fn map_values_into_owned_moves_nodes_through_the_callback() {
 #[case::strong(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None }),
        "test".to_string(),
        Node::Strong(Strong{values: vec!["test".to_string().into()], position: None }))]
-#[case::heading(Node::Heading(Heading {depth: 1, values: vec!["test".to_string().into()], position: None }),
+#[case::heading(Node::Heading(Heading {depth: HeadingDepth::H1, values: vec!["test".to_string().into()], position: None }),
        "test".to_string(),
-       Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None }))]
+       Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["test".to_string().into()], position: None }))]
 #[case::link(Node::Link(Link {url: Url::new("test".to_string()), values: Vec::new(), title: None, position: None }),
        "test".to_string(),
        Node::Link(Link{url: Url::new("test".to_string()), values: Vec::new(), title: None, position: None }))]
@@ -349,13 +349,13 @@ fn test_with_value(#[case] node: Node, #[case] input: String, #[case] expected: 
         Node::Text(Text{value: "new".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}))]
-#[case(Node::Heading(Heading{depth: 1, values: vec![
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![
     Node::Text(Text{value: "first".to_string(), position: None}),
     Node::Text(Text{value: "second".to_string(), position: None})
 ], position: None}),
     "new",
     1,
-    Node::Heading(Heading{depth: 1, values: vec![
+    Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "new".to_string(), position: None})
     ], position: None}))]
@@ -579,9 +579,9 @@ fn test_is_code(#[case] node: Node, #[case] expected: bool, #[case] lang: Option
 }
 
 #[rstest]
-#[case(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), true, Some(1))]
-#[case(Node::Heading(Heading{depth: 2, values: vec!["test".to_string().into()], position: None}), false, Some(1))]
-#[case(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), true, None)]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["test".to_string().into()], position: None}), true, Some(1))]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H2, values: vec!["test".to_string().into()], position: None}), false, Some(1))]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["test".to_string().into()], position: None}), true, None)]
 #[case(Node::Text(Text{value: "test".to_string(), position: None}), false, None)]
 fn test_is_heading(#[case] node: Node, #[case] expected: bool, #[case] depth: Option<u8>) {
     assert_eq!(node.is_heading(depth), expected);
@@ -816,7 +816,7 @@ fn test_is_html(#[case] node: Node, #[case] expected: bool) {
        &Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None})),
        vec!["test".to_string().into()])]
 #[case(Node::node_values(
-       &Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None})),
+       &Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["test".to_string().into()], position: None})),
        vec!["test".to_string().into()])]
 #[case(Node::node_values(
        &Node::List(List{ marker: None,values: vec!["test".to_string().into()], ordered: false, level: 1, checked: Some(false), index: 0, start: None, spread: false, position: None})),
@@ -946,15 +946,15 @@ fn test_is_msx_js_esm(#[case] node: Node, #[case] expected: bool) {
 #[case::emphasis_nested_in_emphasis_alternates_delimiter(Node::Emphasis(Emphasis{values: vec![Node::Emphasis(Emphasis{values: vec!["foo".to_string().into()], position: None})], position: None}), RenderOptions::default(), "_*foo*_")]
 #[case::footnote(Node::Footnote(Footnote{ident: "id".to_string(), values: vec![attr_keys::LABEL.to_string().into()], position: None}), RenderOptions::default(), "[^id]: label")]
 #[case::footnote_ref(Node::FootnoteRef(FootnoteRef{ident: attr_keys::LABEL.to_string(), label: Some(attr_keys::LABEL.to_string()), position: None}), RenderOptions::default(), "[^label]")]
-#[case::heading(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "# test")]
-#[case::heading(Node::Heading(Heading{depth: 3, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "### test")]
-#[case::heading_multiline_h1_stays_setext(Node::Heading(Heading{depth: 1, values: vec!["Foo\nBar".to_string().into()], position: None}), RenderOptions::default(), "Foo\nBar\n===")]
-#[case::heading_multiline_h2_stays_setext(Node::Heading(Heading{depth: 2, values: vec!["Foo\nBar".to_string().into()], position: None}), RenderOptions::default(), "Foo\nBar\n---")]
-#[case::heading_multiline_h3_joins_with_space(Node::Heading(Heading{depth: 3, values: vec!["Foo\nBar".to_string().into()], position: None}), RenderOptions::default(), "### Foo Bar")]
-#[case::heading_trailing_hash_escaped(Node::Heading(Heading{depth: 1, values: vec!["foo #".to_string().into()], position: None}), RenderOptions::default(), "# foo \\#")]
-#[case::heading_trailing_hash_run_escaped(Node::Heading(Heading{depth: 3, values: vec!["foo ###".to_string().into()], position: None}), RenderOptions::default(), "### foo \\###")]
-#[case::heading_trailing_hash_after_multibyte_char(Node::Heading(Heading{depth: 1, values: vec!["foo あ#".to_string().into()], position: None}), RenderOptions::default(), "# foo あ\\#")]
-#[case::heading_no_trailing_hash_unaffected(Node::Heading(Heading{depth: 1, values: vec!["foo bar".to_string().into()], position: None}), RenderOptions::default(), "# foo bar")]
+#[case::heading(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "# test")]
+#[case::heading(Node::Heading(Heading{depth: HeadingDepth::H3, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "### test")]
+#[case::heading_multiline_h1_stays_setext(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["Foo\nBar".to_string().into()], position: None}), RenderOptions::default(), "Foo\nBar\n===")]
+#[case::heading_multiline_h2_stays_setext(Node::Heading(Heading{depth: HeadingDepth::H2, values: vec!["Foo\nBar".to_string().into()], position: None}), RenderOptions::default(), "Foo\nBar\n---")]
+#[case::heading_multiline_h3_joins_with_space(Node::Heading(Heading{depth: HeadingDepth::H3, values: vec!["Foo\nBar".to_string().into()], position: None}), RenderOptions::default(), "### Foo Bar")]
+#[case::heading_trailing_hash_escaped(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["foo #".to_string().into()], position: None}), RenderOptions::default(), "# foo \\#")]
+#[case::heading_trailing_hash_run_escaped(Node::Heading(Heading{depth: HeadingDepth::H3, values: vec!["foo ###".to_string().into()], position: None}), RenderOptions::default(), "### foo \\###")]
+#[case::heading_trailing_hash_after_multibyte_char(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["foo あ#".to_string().into()], position: None}), RenderOptions::default(), "# foo あ\\#")]
+#[case::heading_no_trailing_hash_unaffected(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["foo bar".to_string().into()], position: None}), RenderOptions::default(), "# foo bar")]
 #[case::html(Node::Html(Html{value: "<div>test</div>".to_string(), position: None}), RenderOptions::default(), "<div>test</div>")]
 #[case::image(Node::Image(Image{alt: attr_keys::ALT.to_string(), url: attr_keys::URL.to_string(), title: None, position: None}), RenderOptions::default(), "![alt](url)")]
 #[case::image(Node::Image(Image{alt: attr_keys::ALT.to_string(), url: "url with space".to_string(), title: Some(attr_keys::TITLE.to_string()), position: None}), RenderOptions::default(), "![alt](<url with space> \"title\")")]
@@ -1154,13 +1154,12 @@ fn test_node_partial_ord() {
 #[case(Node::Break(Break{position: None}), "break")]
 #[case(Node::Definition(Definition{ident: "".to_string(), url: Url::new("".to_string()), title: None, label: None, position: None}), "definition")]
 #[case(Node::Delete(Delete{values: Vec::new(), position: None}), "delete")]
-#[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: None}), "h1")]
-#[case(Node::Heading(Heading{depth: 2, values: Vec::new(), position: None}), "h2")]
-#[case(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "h3")]
-#[case(Node::Heading(Heading{depth: 4, values: Vec::new(), position: None}), "h4")]
-#[case(Node::Heading(Heading{depth: 5, values: Vec::new(), position: None}), "h5")]
-#[case(Node::Heading(Heading{depth: 6, values: Vec::new(), position: None}), "h6")]
-#[case(Node::Heading(Heading{depth: 7, values: Vec::new(), position: None}), "h")]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: Vec::new(), position: None}), "h1")]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H2, values: Vec::new(), position: None}), "h2")]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H3, values: Vec::new(), position: None}), "h3")]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H4, values: Vec::new(), position: None}), "h4")]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H5, values: Vec::new(), position: None}), "h5")]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H6, values: Vec::new(), position: None}), "h6")]
 #[case(Node::Emphasis(Emphasis{values: Vec::new(), position: None}), "emphasis")]
 #[case(Node::Footnote(Footnote{ident: "".to_string(), values: Vec::new(), position: None}), "footnote")]
 #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: None}), "footnoteref")]
@@ -1196,7 +1195,7 @@ fn test_name(#[case] node: Node, #[case] expected: &str) {
 #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
 #[case(Node::Blockquote(Blockquote{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
 #[case(Node::Delete(Delete{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
-#[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
 #[case(Node::Emphasis(Emphasis{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
 #[case(Node::Footnote(Footnote{ident: "test".to_string(), values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
 #[case(Node::FootnoteRef(FootnoteRef{ident: "test".to_string(), label: None, position: None}), "test")]
@@ -1233,7 +1232,7 @@ fn test_value(#[case] node: Node, #[case] expected: &str) {
 #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
 #[case(Node::Blockquote(Blockquote{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
 #[case(Node::Delete(Delete{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-#[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
 #[case(Node::Emphasis(Emphasis{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
 #[case(Node::Footnote(Footnote{ident: "".to_string(), values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
 #[case(Node::FootnoteRef(FootnoteRef{ident: "".to_string(), label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -1309,7 +1308,7 @@ fn test_position(#[case] node: Node, #[case] expected: Option<Position>) {
 #[case(Node::Strong(Strong{values: vec![
     Node::Text(Text{value: "first".to_string(), position: None})
 ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
-#[case(Node::Heading(Heading{depth: 1, values: vec![
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![
     Node::Text(Text{value: "first".to_string(), position: None}),
     Node::Text(Text{value: "second".to_string(), position: None})
 ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
@@ -1336,7 +1335,7 @@ fn test_find_at_index(#[case] node: Node, #[case] index: usize, #[case] expected
        Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
 #[case(Node::Delete(Delete{values: vec!["test".to_string().into()], position: None}),
        Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
-#[case(Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None}),
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec!["test".to_string().into()], position: None}),
        Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
 #[case(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}),
        Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
@@ -1379,8 +1378,8 @@ fn test_to_fragment(#[case] node: Node, #[case] expected: Node) {
 #[case::blockquote_mixed(Node::Blockquote(Blockquote{values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
 #[case::delete_all_empty(Node::Delete(Delete{values: vec![Node::Empty, Node::Empty], position: None}), "")]
 #[case::delete_mixed(Node::Delete(Delete{values: vec![Node::Text(Text{value: "kept".to_string(), position: None}), Node::Empty], position: None}), "kept")]
-#[case::heading_all_empty(Node::Heading(Heading{depth: 1, values: vec![Node::Empty, Node::Empty], position: None}), "")]
-#[case::heading_mixed(Node::Heading(Heading{depth: 1, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+#[case::heading_all_empty(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![Node::Empty, Node::Empty], position: None}), "")]
+#[case::heading_mixed(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
 #[case::emphasis_all_empty(Node::Emphasis(Emphasis{values: vec![Node::Empty, Node::Empty], position: None}), "")]
 #[case::emphasis_mixed(Node::Emphasis(Emphasis{values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
 #[case::list_all_empty(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Empty, Node::Empty], position: None}), "")]
@@ -1456,13 +1455,13 @@ fn test_to_fragment_then_render_skips_non_matching(#[case] node: Node, #[case] e
     ], position: None})
 )]
 #[case(
-    &mut Node::Heading(Heading{depth: 1, values: vec![
+    &mut Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![
         Node::Text(Text{value: "old".to_string(), position: None})
     ], position: None}),
     Node::Fragment(Fragment{values: vec![
         Node::Text(Text{value: "new".to_string(), position: None})
     ]}),
-    Node::Heading(Heading{depth: 1, values: vec![
+    Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![
         Node::Text(Text{value: "new".to_string(), position: None})
     ], position: None})
 )]
@@ -1675,10 +1674,10 @@ fn test_apply_fragment(#[case] node: &mut Node, #[case] fragment: Node, #[case] 
     Node::Blockquote(Blockquote{values: vec![
         Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})
     ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
-#[case(Node::Heading(Heading{depth: 1, values: vec![
+#[case(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![
         Node::Text(Text{value: "test".to_string(), position: None})], position: None}),
         Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
-        Node::Heading(Heading{depth: 1, values: vec![
+        Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![
             Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})})
         ], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
 #[case(Node::Strong(Strong{values: vec![
@@ -1757,7 +1756,7 @@ fn test_strip_positions_recurses_into_children() {
 #[test]
 fn test_clear_text_position_at_leaf_only() {
     let mut node = Node::Heading(Heading {
-        depth: 1,
+        depth: HeadingDepth::H1,
         values: vec![Node::Text(Text {
             value: "title".to_string(),
             position: some_position(),
@@ -1883,7 +1882,7 @@ fn test_is_empty_fragment(#[case] node: Node, #[case] expected: bool) {
 #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: Some(Title::new(attr_keys::TITLE.to_string())), label: Some(attr_keys::LABEL.to_string()), position: None}), attr_keys::URL, Some(AttrValue::String(attr_keys::URL.to_string())))]
 #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: Some(Title::new(attr_keys::TITLE.to_string())), label: Some(attr_keys::LABEL.to_string()), position: None}), attr_keys::TITLE, Some(AttrValue::String(attr_keys::TITLE.to_string())))]
 #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: Some(Title::new(attr_keys::TITLE.to_string())), label: Some(attr_keys::LABEL.to_string()), position: None}), attr_keys::LABEL, Some(AttrValue::String(attr_keys::LABEL.to_string())))]
-#[case::heading(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "depth", Some(AttrValue::Integer(3)))]
+#[case::heading(Node::Heading(Heading{depth: HeadingDepth::H3, values: Vec::new(), position: None}), "depth", Some(AttrValue::Integer(3)))]
 #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "index", Some(AttrValue::Integer(2)))]
 #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "level", Some(AttrValue::Integer(1)))]
 #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "ordered", Some(AttrValue::Boolean(true)))]
@@ -1899,9 +1898,9 @@ fn test_is_empty_fragment(#[case] node: Node, #[case] expected: bool) {
 #[case::break_(Node::Break(Break{position: None}), attr_keys::VALUE, None)]
 #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{ marker: None,position: None}), attr_keys::VALUE, None)]
 #[case::fragment(Node::Fragment(Fragment{values: Vec::new()}), attr_keys::VALUE, Some(AttrValue::String("".to_string())))]
-#[case::heading(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "heading text".to_string(), position: None})], position: None}), attr_keys::VALUE, Some(AttrValue::String("heading text".to_string())))]
-#[case::heading(Node::Heading(Heading{depth: 2, values: vec![], position: None}), attr_keys::VALUE, Some(AttrValue::String("".to_string())))]
-#[case::heading(Node::Heading(Heading{depth: 3, values: vec![
+#[case::heading(Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![Node::Text(Text{value: "heading text".to_string(), position: None})], position: None}), attr_keys::VALUE, Some(AttrValue::String("heading text".to_string())))]
+#[case::heading(Node::Heading(Heading{depth: HeadingDepth::H2, values: vec![], position: None}), attr_keys::VALUE, Some(AttrValue::String("".to_string())))]
+#[case::heading(Node::Heading(Heading{depth: HeadingDepth::H3, values: vec![
     Node::Text(Text{value: "first".to_string(), position: None}),
     Node::Text(Text{value: "second".to_string(), position: None}),
 ], position: None}), attr_keys::VALUE, Some(AttrValue::String("firstsecond".to_string())))]
@@ -1962,7 +1961,7 @@ fn test_is_empty_fragment(#[case] node: Node, #[case] expected: bool) {
 #[case::empty(Node::Empty, attr_keys::VALUE, None)]
 #[case::heading(
     Node::Heading(Heading {
-        depth: 1,
+        depth: HeadingDepth::H1,
         values: vec![
         Node::Text(Text {
             value: "child1".to_string(),
@@ -2101,7 +2100,7 @@ fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<At
 #[rstest]
 #[case::heading_with_position(
     Node::Heading(Heading {
-        depth: 1,
+        depth: HeadingDepth::H1,
         values: vec![],
         position: Some(Position {
             start: Point { line: 3, column: 1 },
@@ -2127,7 +2126,7 @@ fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<At
 )]
 #[case::synthetic_node_has_no_line(
     Node::Heading(Heading {
-        depth: 1,
+        depth: HeadingDepth::H1,
         values: vec![],
         position: None,
     }),
@@ -2136,7 +2135,7 @@ fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<At
 )]
 #[case::synthetic_node_has_no_end_line(
     Node::Heading(Heading {
-        depth: 1,
+        depth: HeadingDepth::H1,
         values: vec![],
         position: None,
     }),
@@ -2149,9 +2148,9 @@ fn test_line_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Opti
 
 #[rstest]
 #[case::heading(
-    Node::Heading(Heading{depth: 1, values: vec![], position: None}),
+    Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![], position: None}),
     vec![Node::Text(Text{value: "child".to_string(), position: None})],
-    Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "child".to_string(), position: None})], position: None})
+    Node::Heading(Heading{depth: HeadingDepth::H1, values: vec![Node::Text(Text{value: "child".to_string(), position: None})], position: None})
 )]
 #[case::list(
     Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None}),
@@ -2275,10 +2274,10 @@ fn test_set_children(#[case] mut node: Node, #[case] children: Vec<Node>, #[case
     Node::Image(Image{alt: attr_keys::ALT.to_string(), url: attr_keys::URL.to_string(), title: Some("new_title".to_string()), position: None})
 )]
 #[case(
-    Node::Heading(Heading{depth: 2, values: vec![], position: None}),
+    Node::Heading(Heading{depth: HeadingDepth::H2, values: vec![], position: None}),
     "depth",
     "3",
-    Node::Heading(Heading{depth: 3, values: vec![], position: None})
+    Node::Heading(Heading{depth: HeadingDepth::H3, values: vec![], position: None})
 )]
 #[case(
     Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: false, values: vec![], position: None}),
@@ -3029,4 +3028,69 @@ fn test_list_own_prefix_width(
     #[case] expected: usize,
 ) {
     assert_eq!(list_own_prefix_width(ordered, index, start), expected);
+}
+
+#[rstest]
+#[case(0, None)]
+#[case(1, Some(HeadingDepth::H1))]
+#[case(6, Some(HeadingDepth::H6))]
+#[case(7, None)]
+fn heading_depth_new(#[case] depth: u8, #[case] expected: Option<HeadingDepth>) {
+    assert_eq!(HeadingDepth::new(depth), expected);
+    assert_eq!(HeadingDepth::try_from(depth).ok(), expected);
+}
+
+#[rstest]
+#[case(i64::MIN, HeadingDepth::H1)]
+#[case(0, HeadingDepth::H1)]
+#[case(3, HeadingDepth::H3)]
+#[case(257, HeadingDepth::H6)]
+fn heading_depth_saturating(#[case] depth: i64, #[case] expected: HeadingDepth) {
+    assert_eq!(HeadingDepth::saturating(depth), expected);
+}
+
+#[rstest]
+#[case(HeadingDepth::H2, 3, Some(HeadingDepth::H5))]
+#[case(HeadingDepth::H6, 1, None)]
+#[case(HeadingDepth::H6, u8::MAX, None)]
+fn heading_depth_checked_add(#[case] depth: HeadingDepth, #[case] levels: u8, #[case] expected: Option<HeadingDepth>) {
+    assert_eq!(depth.checked_add(levels), expected);
+}
+
+#[rstest]
+#[case(HeadingDepth::H4, 2, HeadingDepth::H2)]
+#[case(HeadingDepth::H2, u8::MAX, HeadingDepth::H1)]
+fn heading_depth_saturating_sub(#[case] depth: HeadingDepth, #[case] levels: u8, #[case] expected: HeadingDepth) {
+    assert_eq!(depth.saturating_sub(levels), expected);
+}
+
+#[rstest]
+#[case::integer(AttrValue::Integer(3), HeadingDepth::H3)]
+#[case::string(AttrValue::String("4".to_string()), HeadingDepth::H4)]
+#[case::too_deep(AttrValue::Integer(7), HeadingDepth::H2)]
+#[case::wraps_as_byte(AttrValue::Integer(257), HeadingDepth::H2)]
+#[case::negative(AttrValue::Integer(-1), HeadingDepth::H2)]
+#[case::zero_string(AttrValue::String("0".to_string()), HeadingDepth::H2)]
+fn set_attr_keeps_heading_depth_in_range(#[case] value: AttrValue, #[case] expected: HeadingDepth) {
+    let mut node = Node::Heading(Heading {
+        depth: HeadingDepth::H2,
+        values: vec!["a".to_string().into()],
+        position: None,
+    });
+    node.set_attr(attr_keys::DEPTH, value);
+    assert!(matches!(node, Node::Heading(Heading { depth, .. }) if depth == expected));
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn heading_depth_is_a_number_in_json() {
+    let heading = Heading {
+        depth: HeadingDepth::H3,
+        values: Vec::new(),
+        position: None,
+    };
+    let json = serde_json::to_string(&heading).unwrap();
+    assert!(json.contains("\"depth\":3"), "{json}");
+    assert_eq!(serde_json::from_str::<Heading>(&json).unwrap(), heading);
+    assert!(serde_json::from_str::<Heading>(&json.replace("\"depth\":3", "\"depth\":7")).is_err());
 }

@@ -617,6 +617,96 @@ pub struct LinkRef {
     pub position: Option<Position>,
 }
 
+/// The depth of a heading, from 1 to 6.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(
+    feature = "json",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(try_from = "u8", into = "u8")
+)]
+pub struct HeadingDepth(u8);
+
+impl fmt::Debug for HeadingDepth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl HeadingDepth {
+    pub const H1: Self = Self(1);
+    pub const H2: Self = Self(2);
+    pub const H3: Self = Self(3);
+    pub const H4: Self = Self(4);
+    pub const H5: Self = Self(5);
+    pub const H6: Self = Self(6);
+
+    /// The depth `depth`, if it is from 1 to 6.
+    pub const fn new(depth: u8) -> Option<Self> {
+        if depth >= 1 && depth <= 6 {
+            Some(Self(depth))
+        } else {
+            None
+        }
+    }
+
+    /// The depth nearest to `depth` from 1 to 6.
+    pub fn saturating(depth: i64) -> Self {
+        Self(depth.clamp(1, 6) as u8)
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+
+    /// The depth `levels` deeper, if that is still at most 6.
+    pub fn checked_add(self, levels: u8) -> Option<Self> {
+        self.0.checked_add(levels).and_then(Self::new)
+    }
+
+    /// The depth `levels` shallower, or 1 when that is less.
+    pub fn saturating_sub(self, levels: u8) -> Self {
+        Self(self.0.saturating_sub(levels).max(1))
+    }
+}
+
+impl Default for HeadingDepth {
+    fn default() -> Self {
+        Self::H1
+    }
+}
+
+impl TryFrom<u8> for HeadingDepth {
+    type Error = InvalidHeadingDepth;
+
+    fn try_from(depth: u8) -> Result<Self, Self::Error> {
+        Self::new(depth).ok_or(InvalidHeadingDepth(depth))
+    }
+}
+
+impl From<HeadingDepth> for u8 {
+    fn from(depth: HeadingDepth) -> Self {
+        depth.0
+    }
+}
+
+impl Display for HeadingDepth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// A heading depth outside of 1 to 6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidHeadingDepth(pub u8);
+
+impl Display for InvalidHeadingDepth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "heading depth {} is not from 1 to 6", self.0)
+    }
+}
+
+impl std::error::Error for InvalidHeadingDepth {}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -624,7 +714,7 @@ pub struct LinkRef {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Heading {
-    pub depth: u8,
+    pub depth: HeadingDepth,
     pub values: Vec<Node>,
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
@@ -1289,14 +1379,13 @@ impl Node {
             Self::Break { .. } => "break".into(),
             Self::Definition(_) => "definition".into(),
             Self::Delete(_) => "delete".into(),
-            Self::Heading(Heading { depth, .. }) => match depth {
+            Self::Heading(Heading { depth, .. }) => match depth.get() {
                 1 => "h1".into(),
                 2 => "h2".into(),
                 3 => "h3".into(),
                 4 => "h4".into(),
                 5 => "h5".into(),
-                6 => "h6".into(),
-                _ => "h".into(),
+                _ => "h6".into(),
             },
             Self::Emphasis(_) => "emphasis".into(),
             Self::Footnote(_) => "footnote".into(),
@@ -1690,7 +1779,7 @@ impl Node {
             depth: heading_depth, ..
         }) = &self
         {
-            depth.is_none() || *heading_depth == depth.unwrap()
+            depth.is_none_or(|depth| heading_depth.get() == depth)
         } else {
             false
         }

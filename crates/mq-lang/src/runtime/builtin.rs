@@ -3177,14 +3177,14 @@ fn to_h_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     match args.as_slice() {
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(depth)] => {
             Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
-                depth: (*depth).value() as u8,
+                depth: mq_markdown::HeadingDepth::saturating((*depth).value() as i64),
                 values: node.node_values(),
                 position: None,
             })
             .into())
         }
         [a, RuntimeValue::Number(depth)] if !a.is_none() => Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
-            depth: (*depth).value() as u8,
+            depth: mq_markdown::HeadingDepth::saturating((*depth).value() as i64),
             values: vec![a.to_string().into()],
             position: None,
         })
@@ -3279,7 +3279,7 @@ fn to_md_name_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
 fn md_heading_level_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     let level = match args.as_slice() {
         [RuntimeValue::Markdown(node, _)] => match &**node {
-            mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) if (1..=6).contains(depth) => *depth,
+            mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) => depth.get(),
             _ => 0,
         },
         _ => 0,
@@ -4530,7 +4530,7 @@ fn shift_left_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
             if let mq_markdown::Node::Heading(heading) = runtime_value::markdown_mut(node) {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
-                heading.depth = heading.depth.saturating_sub(shift_amount).max(1);
+                heading.depth = heading.depth.saturating_sub(shift_amount);
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
             } else {
                 Ok(RuntimeValue::Markdown(std::mem::take(node), selector.take()))
@@ -4572,8 +4572,8 @@ fn shift_right_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             if let mq_markdown::Node::Heading(heading) = runtime_value::markdown_mut(node) {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
-                if heading.depth + shift_amount <= 6 {
-                    heading.depth += shift_amount;
+                if let Some(depth) = heading.depth.checked_add(shift_amount) {
+                    heading.depth = depth;
                 }
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
             } else {
@@ -6228,7 +6228,7 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
             }
 
             if let mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) = node {
-                depths.contains(depth)
+                depths.contains(&depth.get())
             } else {
                 false
             }
@@ -7646,12 +7646,12 @@ mod tests {
         true
     )]
     #[case::heading_matching_depth(
-        Node::Heading(mq_markdown::Heading { depth: 2, values: vec!["test".to_string().into()], position: None }),
+        Node::Heading(mq_markdown::Heading { depth: mq_markdown::HeadingDepth::H2, values: vec!["test".to_string().into()], position: None }),
         Selector::Heading(Some(2)),
         true
     )]
     #[case::heading_wrong_depth(
-        Node::Heading(mq_markdown::Heading { depth: 2, values: vec!["test".to_string().into()], position: None }),
+        Node::Heading(mq_markdown::Heading { depth: mq_markdown::HeadingDepth::H2, values: vec!["test".to_string().into()], position: None }),
         Selector::Heading(Some(3)),
         false
     )]
@@ -7855,7 +7855,7 @@ mod tests {
                 }),
             ],
             position: None,
-            depth: 1,
+            depth: mq_markdown::HeadingDepth::H1,
         });
         let result = eval_selector(&node, &Selector::Recursive);
         assert_eq!(
@@ -7900,7 +7900,7 @@ mod tests {
         let heading = Node::Heading(mq_markdown::Heading {
             values: vec![inner_text.clone()],
             position: None,
-            depth: 2,
+            depth: mq_markdown::HeadingDepth::H2,
         });
         let node = Node::Blockquote(mq_markdown::Blockquote {
             values: vec![heading.clone()],
@@ -9740,25 +9740,25 @@ mod tests {
 
     #[rstest]
     #[case::heading_depth_match(
-        Node::Heading(mq_markdown::Heading { depth: 1, values: vec![], position: None }),
+        Node::Heading(mq_markdown::Heading { depth: mq_markdown::HeadingDepth::H1, values: vec![], position: None }),
         Selector::Heading(None),
         vec![RuntimeValue::Number(1.into())],
         true
     )]
     #[case::heading_depth_no_match(
-        Node::Heading(mq_markdown::Heading { depth: 2, values: vec![], position: None }),
+        Node::Heading(mq_markdown::Heading { depth: mq_markdown::HeadingDepth::H2, values: vec![], position: None }),
         Selector::Heading(None),
         vec![RuntimeValue::Number(1.into())],
         false
     )]
     #[case::heading_multi_depth_match(
-        Node::Heading(mq_markdown::Heading { depth: 2, values: vec![], position: None }),
+        Node::Heading(mq_markdown::Heading { depth: mq_markdown::HeadingDepth::H2, values: vec![], position: None }),
         Selector::Heading(None),
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
         true
     )]
     #[case::heading_no_args_fallback(
-        Node::Heading(mq_markdown::Heading { depth: 1, values: vec![], position: None }),
+        Node::Heading(mq_markdown::Heading { depth: mq_markdown::HeadingDepth::H1, values: vec![], position: None }),
         Selector::Heading(None),
         vec![],
         true

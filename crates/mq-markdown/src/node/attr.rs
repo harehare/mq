@@ -132,7 +132,7 @@ impl Node {
                 _ => None,
             },
             Node::Heading(Heading { depth, values, .. }) => match attr {
-                attr_keys::DEPTH | attr_keys::LEVEL => Some(AttrValue::Integer(*depth as i64)),
+                attr_keys::DEPTH | attr_keys::LEVEL => Some(AttrValue::Integer(i64::from(depth.get()))),
                 attr_keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(values.clone())),
                 _ => None,
@@ -344,10 +344,14 @@ impl Node {
             },
             Node::Heading(h) => match attr {
                 attr_keys::DEPTH | attr_keys::LEVEL => {
-                    h.depth = match value {
-                        AttrValue::Integer(i) => i as u8,
-                        _ => value_str.parse::<u8>().unwrap_or(h.depth),
+                    // A depth outside of 1 to 6 leaves the heading as it is.
+                    let depth = match value {
+                        AttrValue::Integer(i) => u8::try_from(i).ok(),
+                        _ => value_str.parse::<u8>().ok(),
                     };
+                    if let Some(depth) = depth.and_then(HeadingDepth::new) {
+                        h.depth = depth;
+                    }
                 }
                 _ => (),
             },

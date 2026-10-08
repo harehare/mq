@@ -223,7 +223,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 1,
+          depth: mq_markdown::HeadingDepth::H1,
       }))],
       Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "h1".to_string(),
@@ -240,7 +240,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 3,
+          depth: mq_markdown::HeadingDepth::H3,
       }))],
       Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "deep".to_string(),
@@ -337,7 +337,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 2,
+          depth: mq_markdown::HeadingDepth::H2,
       }))],
       Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "top-level".to_string(),
@@ -400,7 +400,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 1,
+          depth: mq_markdown::HeadingDepth::H1,
       }))],
       Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "other".to_string(),
@@ -614,15 +614,15 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
            mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
            mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), url: "url".to_string(), title: None, position: None })
-      ], position: None, depth: 1 }))],
+      ], position: None, depth: mq_markdown::HeadingDepth::H1 }))],
       Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("test".to_string()), title: None, values: Vec::new(), position: None }))].into()))]
 #[case::selector("nodes | .h",
       vec![
-        RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
+        RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: mq_markdown::HeadingDepth::H1 })),
         RuntimeValue::String(Shared::new("test".to_string())),
       ],
       Ok(vec![
-        RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
+        RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: mq_markdown::HeadingDepth::H1 })),
         RuntimeValue::NONE
       ].into()))]
 #[case::selector("nodes | .h",
@@ -1173,7 +1173,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 1,
+            depth: mq_markdown::HeadingDepth::H1,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
@@ -1192,7 +1192,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 1,
+            depth: mq_markdown::HeadingDepth::H1,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
@@ -1202,7 +1202,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 2,
+          depth: mq_markdown::HeadingDepth::H2,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
@@ -1221,7 +1221,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 2,
+            depth: mq_markdown::HeadingDepth::H2,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
@@ -1231,7 +1231,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 3,
+          depth: mq_markdown::HeadingDepth::H3,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
@@ -1250,7 +1250,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 3,
+            depth: mq_markdown::HeadingDepth::H3,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
@@ -1260,7 +1260,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 4,
+          depth: mq_markdown::HeadingDepth::H4,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
@@ -1279,7 +1279,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 4,
+            depth: mq_markdown::HeadingDepth::H4,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
@@ -1289,7 +1289,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 5,
+          depth: mq_markdown::HeadingDepth::H5,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
@@ -1308,7 +1308,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 5,
+            depth: mq_markdown::HeadingDepth::H5,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
@@ -1318,7 +1318,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 4,
+          depth: mq_markdown::HeadingDepth::H4,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
@@ -1337,7 +1337,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 6,
+            depth: mq_markdown::HeadingDepth::H6,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "true".to_string(),
@@ -1347,7 +1347,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
         vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
           values: vec![],
           position: None,
-          depth: 5,
+          depth: mq_markdown::HeadingDepth::H5,
         }))],
         Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
           value: "false".to_string(),
@@ -1468,7 +1468,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
           vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
             values: vec![],
             position: None,
-            depth: 1,
+            depth: mq_markdown::HeadingDepth::H1,
           }))],
           Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text {
             value: "false".to_string(),
@@ -1788,7 +1788,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
                       mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
                   ],
                   position: None,
-                  depth: 1,
+                  depth: mq_markdown::HeadingDepth::H1,
               })),
             ],
             Ok(vec![
@@ -1809,7 +1809,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
                               mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None }),
                           ],
                           position: None,
-                          depth: 2,
+                          depth: mq_markdown::HeadingDepth::H2,
                       }),
                   ],
                   position: None,
@@ -1822,7 +1822,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
                       mq_markdown::Node::Text(mq_markdown::Text { value: "nested".to_string(), position: None }),
                   ],
                   position: None,
-                  depth: 2,
+                  depth: mq_markdown::HeadingDepth::H2,
               })),
             ].into()))]
 #[case::recursive_selector_pipe_filter("nodes | .. | filter(fn(x): select(x, .text);)",
@@ -1833,7 +1833,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
                       mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
                   ],
                   position: None,
-                  depth: 1,
+                  depth: mq_markdown::HeadingDepth::H1,
               })),
             ],
             Ok(vec![
@@ -2269,42 +2269,42 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::shift_right_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_right(1)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 2,
+        depth: mq_markdown::HeadingDepth::H2,
         values: vec!["Heading 1".to_string().into()],
         position: None
     }))].into()))]
 #[case::shift_right_header_level_h1_operator("let md = do to_markdown(\"# Heading 1\") | first(); | md >> 1",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 2,
+        depth: mq_markdown::HeadingDepth::H2,
         values: vec!["Heading 1".to_string().into()],
         position: None
     }))].into()))]
 #[case::shift_right_header_level_h6("to_markdown(\"###### Heading 6\") | first() | shift_right(1)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 6,
+        depth: mq_markdown::HeadingDepth::H6,
         values: vec!["Heading 6".to_string().into()],
         position: None
     }))].into()))]
 #[case::shift_left_header_level_h2("to_markdown(\"## Heading 2\") | first() | shift_left(1)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
         values: vec!["Heading 2".to_string().into()],
         position: None
     }))].into()))]
 #[case::shift_left_header_level_h2_via_binding("let md = do to_markdown(\"## Heading 2\") | first(); | md << 1",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
         values: vec!["Heading 2".to_string().into()],
         position: None
     }))].into()))]
 #[case::shift_left_header_level_h1("to_markdown(\"# Heading 1\") | first() | shift_left(1)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
         values: vec!["Heading 1".to_string().into()],
         position: None
     }))].into()))]
@@ -2323,35 +2323,35 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::convert_string_to_h1_function("convert(\"Hello\", :h1)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
         values: vec!["Hello".to_string().into()],
         position: None,
     }))].into()))]
 #[case::convert_string_to_h1_operator("\"Hello\" @ :h1",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
         values: vec!["Hello".to_string().into()],
         position: None,
     }))].into()))]
 #[case::convert_string_to_h2_operator("\"Hello\" @ :h2",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 2,
+        depth: mq_markdown::HeadingDepth::H2,
         values: vec!["Hello".to_string().into()],
         position: None,
     }))].into()))]
 #[case::convert_string_to_h1_via_string_operator("\"Hello\" @ \"#\"",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
         values: vec!["Hello".to_string().into()],
         position: None,
     }))].into()))]
 #[case::convert_string_to_h2_via_string_operator("\"Hello\" @ \"##\"",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 2,
+        depth: mq_markdown::HeadingDepth::H2,
         values: vec!["Hello".to_string().into()],
         position: None,
     }))].into()))]
@@ -2539,7 +2539,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 // type pattern `:markdown` matches any markdown node value
 #[case::match_type_markdown(
     r#"match (.) do | :markdown: "is markdown" | _: "other" end"#,
-    vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading { depth: 1, values: vec!["Title".to_string().into()], position: None }))],
+    vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading { depth: mq_markdown::HeadingDepth::H1, values: vec!["Title".to_string().into()], position: None }))],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "is markdown".to_string(), position: None }))].into()))]
 // type pattern `:markdown` does not match a plain string
 #[case::match_type_markdown_no_match_on_string(
@@ -2574,7 +2574,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
     r#""<h1>Hello</h1>" | from_html() | first()"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
-        depth: 1,
+        depth: mq_markdown::HeadingDepth::H1,
         values: vec!["Hello".to_string().into()],
         position: None,
     }))].into()))]
@@ -2648,7 +2648,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::token_count_no_model_simple(r#"token_count("Hello, world!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::token_count_no_model_markdown(r#"to_md_text("Hello, world!") | token_count()"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::token_count_no_model_none(r#"token_count(None)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
-#[case::token_compress_under_budget(r##"to_markdown("# Title") | token_compress(1000)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Title".to_string().into()], position: None}))]))].into()))]
+#[case::token_compress_under_budget(r##"to_markdown("# Title") | token_compress(1000)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: mq_markdown::HeadingDepth::H1, values: vec!["Title".to_string().into()], position: None}))]))].into()))]
 #[case::token_compress_none(r#"token_compress(None, 100)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 #[case::explode_simple(r##"explode("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(97.into()), RuntimeValue::Number(98.into()), RuntimeValue::Number(99.into())]))].into()))]
 #[case::implode_simple(r##"implode([97, 98, 99])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc".to_string()))].into()))]
@@ -2656,8 +2656,13 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::nan_builtin("nan() | is_nan()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::infinite_builtin("infinite() > 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::to_md_text_simple(r##"to_md_text("hello")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello".to_string(), position: None}))].into()))]
-#[case::to_h_simple(r##"to_h("title", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["title".to_string().into()], position: None}))].into()))]
+#[case::to_h_simple(r##"to_h("title", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: mq_markdown::HeadingDepth::H1, values: vec!["title".to_string().into()], position: None}))].into()))]
 #[case::to_h_none("to_h(None, 1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::to_h_depth_above_six(r##"to_h("title", 9)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: mq_markdown::HeadingDepth::H6, values: vec!["title".to_string().into()], position: None}))].into()))]
+#[case::to_h_depth_below_one(r##"to_h("title", 0)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: mq_markdown::HeadingDepth::H1, values: vec!["title".to_string().into()], position: None}))].into()))]
+#[case::shift_right_heading_past_six(r##"to_h("title", 6) | shift_right(255)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: mq_markdown::HeadingDepth::H6, values: vec!["title".to_string().into()], position: None}))].into()))]
+#[case::shift_right_heading(r##"to_h("title", 2) | shift_right(3)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: mq_markdown::HeadingDepth::H5, values: vec!["title".to_string().into()], position: None}))].into()))]
+#[case::shift_left_heading_past_one(r##"to_h("title", 2) | shift_left(5)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: mq_markdown::HeadingDepth::H1, values: vec!["title".to_string().into()], position: None}))].into()))]
 #[case::to_code_none(r#"to_code(None, "rust")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::to_math_none("to_math(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::to_math_inline_none("to_math_inline(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]

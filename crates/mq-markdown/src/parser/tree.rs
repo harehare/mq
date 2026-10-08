@@ -7,7 +7,7 @@ use super::error::MdxError;
 use super::line::visual_column;
 use super::mdx::TagKind;
 use super::scan::eol_len;
-use crate::node::{ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
+use crate::node::{HeadingDepth, ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
 
 /// Where a line of an [`InlineSource`] starts: its offset in the text and its position in the document.
 #[derive(Clone)]
@@ -167,7 +167,7 @@ pub(super) struct InlineBlock {
 #[derive(Clone)]
 pub(super) enum InlineKind {
     Paragraph,
-    Heading { depth: u8, position: Position },
+    Heading { depth: HeadingDepth, position: Position },
 }
 
 pub(super) struct QuoteBlock {
