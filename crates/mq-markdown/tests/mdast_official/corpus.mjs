@@ -1,6 +1,7 @@
 // Writes the inputs to compare to the file in the first argument: the hand-written corpora and the
 // examples of the specs, which are fetched over the network.
 import fs from 'node:fs'
+import {generate} from './generate.mjs'
 
 const dir = new URL('.', import.meta.url)
 const read = (file) => JSON.parse(fs.readFileSync(new URL(file, dir), 'utf8'))
@@ -124,6 +125,14 @@ for (const name of MARKDOWN_RS_TESTS) {
 for (const url of MICROMARK_TESTS) {
   const name = url.split('/').slice(-4, -2).join('/').replace('%40', '@')
   addTests(name, 'mdx', firstArguments(await fetchText(url), ['micromark']))
+}
+// Random documents. MDAST_RANDOM is how many of each kind, MDAST_SEED the seed.
+const random = Number(process.env.MDAST_RANDOM ?? 500)
+const seed = Number(process.env.MDAST_SEED ?? 1)
+for (const [mode, offset] of [['markdown', 0], ['mdx', 1]]) {
+  generate(random, seed + offset, mode === 'mdx').forEach((input, index) => {
+    corpus.push({id: `random-${mode}-${seed}#${index + 1}`, mode, input})
+  })
 }
 fs.writeFileSync(process.argv[2], JSON.stringify(corpus))
 console.log(`${corpus.length} inputs`)
