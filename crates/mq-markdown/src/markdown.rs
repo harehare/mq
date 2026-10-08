@@ -5,10 +5,9 @@ use crate::html_to_markdown::ConversionOptions;
 #[cfg(feature = "html-to-markdown")]
 use crate::node::ListStyle;
 use crate::node::{
-    Code, ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, indent_lines, list_own_prefix_width,
-    reindent_all_lines, render_cell_values, render_values_block,
+    Code, ColorTheme, ListMarker, Node, Position, RenderOptions, TableAlign, TableCell, indent_lines,
+    list_own_prefix_width, reindent_all_lines, render_cell_values, render_values_block,
 };
-use list_order::CONTINUATION;
 #[cfg(any(feature = "json", feature = "html-to-markdown"))]
 use miette::miette;
 use std::{fmt, str::FromStr};
@@ -157,7 +156,7 @@ impl Markdown {
             let prev_node = i.checked_sub(1).and_then(|j| nodes.get(j));
 
             let value = if let Node::List(list) = node
-                && list.marker == Some(CONTINUATION)
+                && list.marker == Some(ListMarker::Continuation)
             {
                 // The rest of an item after its nested items, aligned with the content of the item.
                 list_indent_stack.truncate(list.level as usize + 1);
@@ -202,6 +201,15 @@ impl Markdown {
 
                 // Single newline after a block quote reads back as lazy continuation.
                 if new_line_count < 2 && prev_node.is_some_and(Node::is_blockquote_like) {
+                    new_line_count = 2;
+                }
+
+                // A line of dashes right under paragraph text reads back as a setext heading.
+                if new_line_count < 2
+                    && value.starts_with("---")
+                    && matches!(node, Node::HorizontalRule(_))
+                    && prev_node.is_some_and(Node::is_paragraph_text)
+                {
                     new_line_count = 2;
                 }
 
@@ -519,6 +527,9 @@ mod tests {
     #[case::fence_switches_to_tilde_on_backtick_in_info("~~~ aa ``` ~~~\nfoo\n~~~", 1, "~~~aa ``` ~~~\nfoo\n~~~\n")]
     // a sibling right after a block quote needs a blank line, or it's read as lazy continuation
     #[case::blockquote_sibling_gets_blank_line_separator("> bar\n>\nbaz", 2, "> bar\n\nbaz\n")]
+    #[case::dash_rule_under_text_stays_a_rule("Foo\n--- -\n", 2, "Foo\n\n---\n")]
+    #[case::dash_rule_under_emphasis_stays_a_rule("*Foo*\n- - -\n", 2, "*Foo*\n\n---\n")]
+    #[case::star_rule_under_text_needs_no_blank_line("Foo\n***\n", 2, "Foo\n***\n")]
     // items whose marker sits alone on its own line must stay tight, not go loose
     #[case::list_tight_despite_marker_on_own_line("-\n  foo\n-\n  bar", 2, "- foo\n- bar\n")]
     // an indented code block right after a list must not read back as list continuation

@@ -51,8 +51,6 @@ pub(super) struct Opener {
     pub(super) image: bool,
     /// Offset of the `[`, or of the `!` of an image.
     pub(super) start: usize,
-    /// Links cannot contain links, so openers before a link are deactivated.
-    pub(super) active: bool,
 }
 
 pub(super) enum Item {
@@ -61,7 +59,8 @@ pub(super) enum Item {
         end: usize,
         value: Value,
     },
-    Node(Node),
+    /// A finished node and how deeply it nests: a leaf is 1.
+    Node(Node, usize),
     Delim(Delim),
     Open(Opener),
     /// An email address in plain text. It is not linked inside link text.
@@ -81,6 +80,18 @@ pub(super) struct TextTag {
     kind: TagKind,
     start: usize,
     end: usize,
+}
+
+/// Emphasis and links nested deeper than this are text, and JSX elements are an error, which bounds the recursion of everything that
+/// walks the nodes.
+pub(super) const MAX_NESTING: usize = 128;
+
+/// How deeply the item nests: nodes carry it, and the rest are text.
+pub(super) fn item_depth(item: &Item) -> usize {
+    match item {
+        Item::Node(_, depth) => *depth,
+        _ => 0,
+    }
 }
 
 /// What the scanner and its helpers share.
@@ -129,6 +140,8 @@ pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Ve
         context: &context,
         items: Vec::new(),
         openers: Vec::new(),
+        depths: Vec::new(),
+        inactive_below: 0,
         pos: 0,
         run: 0,
     };
@@ -136,7 +149,7 @@ pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Ve
     scanner.flush();
 
     let Scanner { mut items, .. } = scanner;
-    emphasis::process(&mut items, 0, &context);
+    emphasis::process(&mut items, &context);
     let nodes = to_nodes(items, &context);
 
     match error.into_inner() {
@@ -189,7 +202,7 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
                 let end = opener.start + if opener.image { 2 } else { 1 };
                 (opener.start, end, Cow::Borrowed(&src[opener.start..end]))
             }
-            Item::Node(node) => {
+            Item::Node(node, _) => {
                 finish(&mut current, &mut nodes);
                 nodes.push(node);
                 continue;
@@ -197,6 +210,9 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
             Item::Jsx(tag) => {
                 finish(&mut current, &mut nodes);
                 match tag.kind {
+                    TagKind::Open if open.len() >= MAX_NESTING => {
+                        context.fail(format!("Elements are nested deeper than {MAX_NESTING} levels"));
+                    }
                     TagKind::Open => open.push((tag, std::mem::take(&mut nodes))),
                     TagKind::SelfClosing => {
                         let end = tag.end;
@@ -277,6 +293,10 @@ struct Scanner<'a> {
     items: Vec<Item>,
     /// Indexes of the `Item::Open` items that are still waiting for a `]`.
     openers: Vec<usize>,
+    /// For each opener, the deepest node pushed inside it so far.
+    depths: Vec<usize>,
+    /// Links cannot contain links, so the `[` openers below this many are deactivated.
+    inactive_below: usize,
     pos: usize,
     /// Start of the plain text that has not been pushed as an item yet.
     run: usize,
@@ -356,11 +376,12 @@ impl Scanner<'_> {
             [b'[', b'[', ..] if cfg!(feature = "wikilink") => (false, start + 2),
             _ => return None,
         };
-        let close = open + src[open..].find("]]")?;
-        let content = &src[open..close];
-        if content.contains(['[', ']', '\n', '\r']) {
+        // The content holds no bracket or line ending, so the first one found must start the `]]`.
+        let close = open + src[open..].find(['[', ']', '\n', '\r'])?;
+        if !src[close..].starts_with("]]") {
             return None;
         }
+        let content = &src[open..close];
         let (target, label) = match content.split_once('|') {
             Some((target, label)) => (target.trim(), Some(label.trim().to_string())),
             None => (content.trim(), None),
@@ -417,13 +438,23 @@ impl Scanner<'_> {
     /// Pushes `item` after the pending text and continues scanning at `end`.
     fn push(&mut self, item: Item, end: usize) {
         self.flush();
+        if let Item::Node(_, depth) = &item {
+            self.note_depth(*depth);
+        }
         self.items.push(item);
         self.pos = end;
         self.run = end;
     }
 
+    /// Records that a node of `depth` is inside the innermost open bracket.
+    fn note_depth(&mut self, depth: usize) {
+        if let Some(innermost) = self.depths.last_mut() {
+            *innermost = (*innermost).max(depth);
+        }
+    }
+
     fn push_node(&mut self, node: Node, end: usize) {
-        self.push(Item::Node(node), end);
+        self.push(Item::Node(node, 1), end);
     }
 
     fn escape(&mut self) {
@@ -493,7 +524,8 @@ impl Scanner<'_> {
             let node = Node::Break(Break {
                 position: Some(self.context.position(start, pos + eol)),
             });
-            self.items.push(Item::Node(node));
+            self.note_depth(1);
+            self.items.push(Item::Node(node, 1));
         } else {
             self.items.push(Item::Text {
                 start: pos,
@@ -591,14 +623,11 @@ impl Scanner<'_> {
     }
 
     fn open(&mut self, image: bool) {
-        let opener = Opener {
-            image,
-            start: self.pos,
-            active: true,
-        };
+        let opener = Opener { image, start: self.pos };
         let end = self.pos + if image { 2 } else { 1 };
         self.flush();
         self.openers.push(self.items.len());
+        self.depths.push(0);
         self.items.push(Item::Open(opener));
         self.pos = end;
         self.run = end;

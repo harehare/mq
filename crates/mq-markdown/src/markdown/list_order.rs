@@ -4,11 +4,7 @@
 //! that item come after them in the source, like a paragraph that follows a nested list. Rendering
 //! the nodes as they are would write those children before the nested items.
 
-use crate::node::{List, Node, Position};
-
-/// The marker of a node that holds the children of an item that follow items nested in it. Such a
-/// node is rendered as its content, indented to the content of the item, without a marker.
-pub(super) const CONTINUATION: char = '\0';
+use crate::node::{List, ListMarker, Node, Position};
 
 /// Returns the nodes in source order, or `None` when they already are.
 pub(super) fn reorder(nodes: &[Node]) -> Option<Vec<Node>> {
@@ -110,7 +106,8 @@ fn continuation(item: &List, values: &[Node]) -> Node {
     Node::List(List {
         values: values.to_vec(),
         position: span(values),
-        marker: Some(CONTINUATION),
+        // Rendered as its content, indented to the content of the item, without a marker.
+        marker: Some(ListMarker::Continuation),
         ..item.clone()
     })
 }

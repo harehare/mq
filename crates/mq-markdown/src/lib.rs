@@ -13,6 +13,9 @@
 //! - **Configurable Rendering**: Customize output formatting and styles
 //! - **Built-in parser**: CommonMark, GFM (tables, strikethrough, autolink literals, task lists,
 //!   footnotes), frontmatter, math and MDX are parsed, and rendered to HTML, by a parser of this crate.
+//! - **Obsidian syntax**: with the `wikilink`, `embed` and `callout` features, `[[links]]`, `![[embeds]]` and
+//!   `> [!callouts]` are parsed, and rendered to HTML with the classes Obsidian uses (`internal-link`, `callout`).
+//!   Link targets are used as URLs as written.
 //!
 //! ## Quick Start
 //!
@@ -88,10 +91,10 @@ mod parser;
 pub use markdown::{Markdown, to_html};
 pub use node::{
     Blockquote, Break, Code, CodeInline, ColorTheme, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment,
-    Heading, HorizontalRule, Html, Image, ImageRef, Link, LinkRef, List, ListStyle, Math, MathInline,
-    MdxFlowExpression, MdxJsEsm, MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node, Point, Position,
-    RenderOptions, Strong, TableAlign, TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url,
-    UrlSurroundStyle, Yaml, attr_value::AttrValue,
+    Heading, HorizontalRule, HorizontalRuleMarker, Html, Image, ImageRef, Link, LinkRef, List, ListMarker, ListStyle,
+    Math, MathInline, MdxFlowExpression, MdxJsEsm, MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node,
+    Point, Position, RenderOptions, Strong, TableAlign, TableAlignKind, TableCell, TableRow, Text, Title,
+    TitleSurroundStyle, Toml, Url, UrlSurroundStyle, Yaml, attr_value::AttrValue,
 };
 pub use node_kind::{AttrSpec, AttrType, NodeKind};
 

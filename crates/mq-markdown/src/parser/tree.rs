@@ -5,9 +5,10 @@
 
 use super::line::visual_column;
 use super::mdx::TagKind;
-use crate::node::{MdxAttributeContent, Node, Point, Position, TableAlignKind};
+use crate::node::{ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
 
 /// Raw inline content of a paragraph, heading or table cell, with the source position of each line.
+#[derive(Clone)]
 pub(super) struct InlineSource {
     pub(super) text: String,
     /// For each line, the offset in `text` where it starts and its position in the document.
@@ -141,11 +142,13 @@ pub(super) struct FencedBlock {
     pub(super) lines: usize,
 }
 
+#[derive(Clone)]
 pub(super) struct InlineBlock {
     pub(super) source: InlineSource,
     pub(super) kind: InlineKind,
 }
 
+#[derive(Clone)]
 pub(super) enum InlineKind {
     Paragraph,
     Heading { depth: u8, position: Position },
@@ -166,7 +169,7 @@ pub(super) struct FootnoteBlock {
 pub(super) struct ListBlock {
     pub(super) ordered: bool,
     pub(super) start: Option<u32>,
-    pub(super) marker: char,
+    pub(super) marker: ListMarker,
     pub(super) spread: bool,
     pub(super) items: Vec<Item>,
 }
