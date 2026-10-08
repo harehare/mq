@@ -1,7 +1,8 @@
 //! HTML character reference names and their values.
 //!
-//! Generated from the table of `markdown-rs` (MIT License, Titus Wormer), which follows the
-//! [HTML standard](https://html.spec.whatwg.org/multipage/named-characters.html). Sorted by name.
+//! The names that end with `;` in the table of the
+//! [HTML standard](https://html.spec.whatwg.org/multipage/named-characters.html), without the `;`.
+//! Sorted by name.
 
 pub(super) static ENTITIES: [(&str, &str); 2125] = [
     ("AElig", "Æ"),

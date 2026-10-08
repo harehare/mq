@@ -1,7 +1,7 @@
 //! Unicode punctuation for emphasis flanking rules.
 //!
-//! Generated from the table of `markdown-rs` (MIT License, Titus Wormer): the general categories P
-//! and S, as `CommonMark` defines punctuation. Sorted ranges.
+//! The Unicode general categories P and S (Unicode 16.0.0), as `CommonMark` defines punctuation.
+//! Sorted ranges, ASCII included.
 
 const RANGES: [(u32, u32); 349] = [
     (0x0021, 0x002F),
