@@ -14,34 +14,13 @@ use super::mdx_flow::{
 };
 use super::table;
 use super::tree::{Block, FootnoteBlock, InlineBlock, InlineKind, InlineSource, Item, ListBlock, QuoteBlock};
-use crate::node::{HorizontalRule, Html, Node, Point, Position, Toml, Yaml};
+use crate::node::{HorizontalRule, Html, MdxJsEsm, Node, Point, Position, Toml, Yaml};
 
 /// Lines indented by this many columns or more are code, not other blocks.
 pub(super) const CODE_INDENT: usize = 4;
 
 /// Containers nested deeper than this are parsed as plain paragraph text, which bounds recursion.
 const MAX_DEPTH: usize = 128;
-
-/// Which list markers end a paragraph on its second line although they could not interrupt it.
-#[derive(Clone, Copy, PartialEq)]
-enum Release {
-    None,
-    /// Markers with content.
-    Markers,
-    /// Every marker.
-    AllMarkers,
-}
-
-/// How far a paragraph of dashes right after a setext heading extends, in markdown-rs.
-#[derive(Clone, Copy, PartialEq)]
-enum Dashes {
-    /// Not such a paragraph.
-    No,
-    /// Up to the next indented code line, at the top level.
-    UntilCode,
-    /// A single line, inside containers.
-    OneLine,
-}
 
 /// What the first line of a container cannot start because the container interrupted a paragraph.
 #[derive(Clone, Copy, Default)]
@@ -105,15 +84,12 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
     let mut blocks = Vec::new();
     let mut index = 0;
     let mut after_paragraph = interrupting;
-    let mut after_setext = false;
     // Set after a container, and whether a blank line or an empty list item preceded the next block.
     let mut after_container = false;
-    let mut after_list = false;
     let mut blank_between = false;
 
     while index < lines.len() {
         let interrupting = std::mem::take(&mut after_paragraph);
-        let follows_setext = std::mem::take(&mut after_setext);
         let line = &lines[index];
         if line.is_blank() {
             blank_between = true;
@@ -121,20 +97,18 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
             continue;
         }
         let closed_container = std::mem::take(&mut after_container);
-        let closed_list = std::mem::take(&mut after_list);
         let separated = std::mem::take(&mut blank_between);
 
         let (columns, indent) = line.indent();
         let rest = &line.text[indent..];
 
         if columns >= line.code_indent() && !interrupting.code {
-            index = indented_code(lines, index, closed_list || closed_container && !separated, &mut blocks);
+            index = indented_code(lines, index, &mut blocks);
         } else if columns >= line.code_indent() {
             // Indented code cannot interrupt a paragraph.
-            let (next, interrupt, setext) = paragraph(lines, index, Release::None, Dashes::No, &mut blocks);
+            let (next, interrupt) = paragraph(lines, index, &mut blocks);
             index = next;
             after_paragraph = interrupt;
-            after_setext = setext;
         } else if let Some(fence) = Fence::open(rest, !line.mdx) {
             // The end of an unclosed fence without content is quirky right after a container.
             let own_end = closed_container
@@ -144,8 +118,9 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
         } else if let Some(depth) = atx_depth(rest) {
             blocks.push(atx_heading(line, indent, depth));
             index += 1;
-        } else if is_thematic_break(rest) && !(follows_setext && is_dash_run(rest)) {
+        } else if is_thematic_break(rest) {
             blocks.push(Block::Node(Node::HorizontalRule(HorizontalRule {
+                marker: rest.chars().next(),
                 position: Some(Position {
                     start: line.point(0),
                     end: line.end(),
@@ -160,7 +135,6 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
         {
             index = list(lines, index, &marker, depth, interrupting, &mut blocks);
             after_container = true;
-            after_list = true;
         } else if let Some(kind) = html_start(line, rest) {
             index = html_block(lines, index, kind, &mut blocks);
         } else if let Some(marker) = footnote_marker(line).filter(|_| containers) {
@@ -170,6 +144,28 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
             blocks.push(Block::Table(items));
             index = next;
         } else if line.mdx
+            && depth == 0
+            && indent == 0
+            && (line.text.starts_with("import ") || line.text.starts_with("export "))
+        {
+            // ESM goes on to the next blank line. Without a JavaScript parser it is taken as it is.
+            let end = lines[index..]
+                .iter()
+                .position(Line::is_blank)
+                .map_or(lines.len(), |offset| index + offset);
+            let parts = lines[index..end]
+                .iter()
+                .map(|line| (line.text, line.eol))
+                .collect::<Vec<_>>();
+            blocks.push(Block::Node(Node::MdxJsEsm(MdxJsEsm {
+                value: join_lines(&parts).into(),
+                position: Some(Position {
+                    start: lines[index].point(0),
+                    end: lines[end - 1].end(),
+                }),
+            })));
+            index = end;
+        } else if line.mdx
             && matches!(rest.as_bytes().first(), Some(b'<' | b'{'))
             && let FlowOutcome::Flow(next) = mdx_flow(lines, index, &mut blocks)
         {
@@ -177,25 +173,9 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
             // Flow content that interrupted a paragraph keeps the restrictions that came with it.
             after_paragraph = interrupting;
         } else {
-            let release = match (closed_container, separated) {
-                (false, _) => Release::None,
-                (true, false) => Release::AllMarkers,
-                (true, true) => Release::Markers,
-            };
-            let (next, interrupt, setext) = paragraph(
-                lines,
-                index,
-                release,
-                match (follows_setext && is_dash_run(rest), depth) {
-                    (false, _) => Dashes::No,
-                    (true, 0) => Dashes::UntilCode,
-                    (true, _) => Dashes::OneLine,
-                },
-                &mut blocks,
-            );
+            let (next, interrupt) = paragraph(lines, index, &mut blocks);
             index = next;
             after_paragraph = interrupt;
-            after_setext = setext;
         }
     }
 
@@ -216,8 +196,6 @@ struct LeafState<'a> {
     paragraph: bool,
     /// Number of container markers on the line that opened the paragraph.
     paragraph_containers: usize,
-    /// Whether the last line was a setext underline. markdown-rs still lets unindented text continue.
-    after_setext: bool,
     /// Restrictions on the next fed line, the first line of a container that interrupted a paragraph.
     restricted: Interrupt,
 }
@@ -231,20 +209,18 @@ impl<'a> LeafState<'a> {
             header: None,
             paragraph: false,
             paragraph_containers: 0,
-            after_setext: false,
             restricted,
         }
     }
 
     /// Whether `line` without its container prefix continues the paragraph of the collected lines.
     fn continues_with(&self, line: &Line<'_>) -> bool {
-        (self.paragraph || (self.after_setext && line.indent().0 < line.code_indent())) && is_lazy_continuation(line)
+        self.paragraph && is_lazy_continuation(line)
     }
 
     fn feed(&mut self, line: &Line<'a>) {
         let mut line = *line;
         let restricted = std::mem::take(&mut self.restricted);
-        let follows_setext = std::mem::take(&mut self.after_setext);
         let mut containers = 0;
         // Whether a paragraph was open when the line started, for markers deeper on the same line.
         let open = self.paragraph;
@@ -310,13 +286,6 @@ impl<'a> LeafState<'a> {
             }
             if self.paragraph && containers == self.paragraph_containers && setext_depth(&line).is_some() {
                 self.paragraph = false;
-                self.after_setext = true;
-                return;
-            }
-            // Dashes right after a setext heading start a paragraph, not a thematic break.
-            if follows_setext && is_dash_run(rest) {
-                self.paragraph = true;
-                self.paragraph_containers = containers;
                 return;
             }
             if atx_depth(rest).is_some() || is_thematic_break(rest) {
@@ -548,7 +517,7 @@ fn list(
         let next = (end..lines.len()).find(|&i| !lines[i].is_blank());
         match next.filter(|&i| ListMarker::parse(&lines[i]).is_some_and(|m| m.same_list(first))) {
             Some(next) => {
-                spread |= next > end || items.last().is_some_and(ends_in_empty_item);
+                spread |= next > end;
                 index = next;
             }
             None => {
@@ -561,6 +530,7 @@ fn list(
     blocks.push(Block::List(ListBlock {
         ordered: first.ordered,
         start: first.ordered.then_some(first.start),
+        marker: first.delimiter as char,
         spread,
         items,
     }));
@@ -639,18 +609,6 @@ fn extend_quote(quote: &mut QuoteBlock, end: &Point) {
     }
 }
 
-/// Whether the item ends with a nested list whose last item is empty. markdown-rs counts that
-/// like a blank line between the item and the next one.
-fn ends_in_empty_item(item: &Item) -> bool {
-    match item.children.last() {
-        Some(Block::List(list)) => list
-            .items
-            .last()
-            .is_some_and(|last| last.children.is_empty() || ends_in_empty_item(last)),
-        _ => false,
-    }
-}
-
 /// Collects one item starting at `start`, returning it and the index of the first line after it.
 fn list_item(
     lines: &[Line<'_>],
@@ -659,8 +617,7 @@ fn list_item(
     depth: usize,
     interrupting: Interrupt,
 ) -> (Item, usize) {
-    let mut first = marker.content(lines[start]);
-    first.own_chunk = first.indent().0 >= first.code_indent();
+    let first = marker.content(lines[start]);
     let mut inner = vec![first];
     let mut state = LeafState::new(interrupting);
     state.feed(&first);
@@ -697,16 +654,7 @@ fn list_item(
         index += 1;
     }
 
-    // The checkbox is on the first content line, which is the next one when the marker line is empty.
-    let target = usize::from(first.is_blank());
-    let checked = inner
-        .get(target)
-        .filter(|_| !ends_with_setext_underline(&inner[target + 1..]))
-        .and_then(task_checkbox)
-        .map(|(checked, bytes)| {
-            inner[target] = inner[target].skip(bytes);
-            checked
-        });
+    let checkbox = task_checkbox(&first);
 
     // Trailing blank lines belong to whatever follows the item, but still extend its position.
     let reaches_end = index == lines.len();
@@ -729,6 +677,8 @@ fn list_item(
             .map_or_else(|| lines[start].end(), Line::end),
     };
     let mut children = parse_blocks(&inner, depth + 1, interrupting);
+    // The checkbox is the start of the text of the first paragraph.
+    let checked = checkbox.filter(|_| remove_task_marker(&mut children));
     if let Some(blank) = blanks.last() {
         extend_last_items(
             &mut children,
@@ -745,32 +695,37 @@ fn list_item(
     (item, index)
 }
 
-/// Whether the paragraph that continues on `lines` is turned into a setext heading.
-fn ends_with_setext_underline(lines: &[Line<'_>]) -> bool {
-    for line in lines {
-        if setext_depth(line).is_some() {
-            return true;
-        }
-        if interrupts_paragraph(line) {
-            return false;
-        }
-    }
-    false
-}
-
 /// Recognises a GFM task marker (`[ ] ` or `[x] `) at the start of an item's content, returning
 /// the checked state and the bytes to skip.
-fn task_checkbox(line: &Line<'_>) -> Option<(bool, usize)> {
+fn task_checkbox(line: &Line<'_>) -> Option<bool> {
     if line.mdx {
         return None;
     }
-    let bytes = line.text.as_bytes();
-    let checked = match bytes.get(..4)? {
-        [b'[', b' ', b']', b' ' | b'\t'] => false,
-        [b'[', b'x' | b'X', b']', b' ' | b'\t'] => true,
-        _ => return None,
+    match line.text.as_bytes().get(..4)? {
+        [b'[', b' ', b']', b' ' | b'\t'] => Some(false),
+        [b'[', b'x' | b'X', b']', b' ' | b'\t'] => Some(true),
+        _ => None,
+    }
+}
+
+/// Removes the checkbox from the text of the first paragraph of an item, and the paragraph when nothing
+/// else is in it. Returns whether the item starts with one.
+fn remove_task_marker(children: &mut Vec<Block>) -> bool {
+    let Some(Block::Inline(InlineBlock {
+        source,
+        kind: InlineKind::Paragraph,
+    })) = children.first_mut()
+    else {
+        return false;
     };
-    (!line.text[4..].trim_matches([' ', '\t']).is_empty()).then_some((checked, 4))
+    if !matches!(source.text.as_bytes().get(..3), Some([b'[', b' ' | b'x' | b'X', b']'])) {
+        return false;
+    }
+    source.remove_prefix(3);
+    if source.text.is_empty() {
+        children.remove(0);
+    }
+    true
 }
 
 /// Returns the heading depth when `rest` (indent already removed) is an ATX heading line.
@@ -791,14 +746,6 @@ fn atx_heading(line: &Line<'_>, indent: usize, depth: u8) -> Block {
         } else {
             content
         }
-    };
-    // markdown-rs drops further `#` sequences (and the whitespace between them) at the start of the text.
-    let content = {
-        let mut content = content;
-        while content.starts_with('#') {
-            content = content.trim_start_matches('#').trim_start_matches([' ', '\t']);
-        }
-        content
     };
     let start = line.point(offset_in(line.text, content));
 
@@ -829,13 +776,6 @@ pub(super) fn join_lines(parts: &[(&str, &str)]) -> String {
 /// Byte offset of `child` within `parent`, where `child` is a subslice of `parent`.
 fn offset_in(parent: &str, child: &str) -> usize {
     child.as_ptr() as usize - parent.as_ptr() as usize
-}
-
-/// Whether `rest` is only dashes, like `---`, which markdown-rs does not read as a thematic break
-/// right after a setext heading.
-fn is_dash_run(rest: &str) -> bool {
-    let content = rest.trim_end_matches([' ', '\t']);
-    content.len() >= 3 && content.bytes().all(|b| b == b'-')
 }
 
 fn is_thematic_break(rest: &str) -> bool {
@@ -871,28 +811,7 @@ fn setext_depth(line: &Line<'_>) -> Option<u8> {
 /// Whether a line without its container prefix can continue an open paragraph of that container.
 /// Any list marker ends the paragraph here, even one that could not interrupt it elsewhere.
 fn is_lazy_continuation(line: &Line<'_>) -> bool {
-    !interrupts_paragraph(line) && ListMarker::parse(line).is_none() && !starts_construct(line)
-}
-
-/// Whether the line is only the start of a construct that a next line could still complete: one or two
-/// underscores (a thematic break), one or two backticks or tildes (a fence), a dollar, or an angle
-/// bracket. markdown-rs does not continue paragraphs lazily with such a line.
-fn starts_construct(line: &Line<'_>) -> bool {
-    // Only the end of the document leaves such a start undecided.
-    if !line.eof || !line.eol.is_empty() {
-        return false;
-    }
-    let text = line.text.trim_matches([' ', '\t']);
-    match text.as_bytes() {
-        [b'<'] => !line.mdx,
-        [b'$'] => true,
-        [first @ (b'`' | b'~'), rest @ ..] => rest.len() < 2 && rest.iter().all(|b| b == first),
-        _ => {
-            // Underscores with spaces between, like `_ _`.
-            let markers = text.bytes().filter(|&b| b == b'_').count();
-            (1..3).contains(&markers) && text.bytes().all(|b| matches!(b, b'_' | b' ' | b'\t'))
-        }
-    }
+    !interrupts_paragraph(line) && ListMarker::parse(line).is_none()
 }
 
 /// Whether `line` ends the paragraph that is being collected.
@@ -925,14 +844,7 @@ fn ends_table(line: &Line<'_>) -> bool {
 
 /// Returns the index after the block and what it restricts on the first line of a following container.
 ///
-/// A paragraph of `dashes` right after a setext heading is cut short as described by [`Dashes`]. A paragraph with a `release` has its second line ended by list markers that could not interrupt it.
-fn paragraph(
-    lines: &[Line<'_>],
-    start: usize,
-    release: Release,
-    dashes: Dashes,
-    blocks: &mut Vec<Block>,
-) -> (usize, Interrupt, bool) {
+fn paragraph(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>) -> (usize, Interrupt) {
     let mut index = start + 1;
     // Lines up to this one are taken by flow content that turned out to be text.
     let mut absorbed = match probe_mdx_flow(lines, start) {
@@ -940,8 +852,6 @@ fn paragraph(
         _ => start,
     };
     let mut setext = None;
-    // Whether a marker that could not interrupt the paragraph ended it anyway.
-    let mut released = false;
 
     while let Some(line) = lines.get(index) {
         if table::starts_at(lines, index, interrupts_paragraph) {
@@ -958,24 +868,11 @@ fn paragraph(
             index += 1;
             continue;
         }
-        let releases = index == start + 1
-            && ListMarker::parse(line).is_some_and(|marker| match release {
-                Release::None => false,
-                Release::Markers => !marker.empty,
-                Release::AllMarkers => true,
-            });
-        if releases {
-            released = true;
-            break;
-        }
         if let Some(depth) = setext_depth(line) {
             setext = Some((depth, index));
             break;
         }
-        if dashes == Dashes::OneLine
-            || interrupts_paragraph(line)
-            || (dashes == Dashes::UntilCode && line.indent().0 >= line.code_indent())
-        {
+        if interrupts_paragraph(line) {
             break;
         }
         index += 1;
@@ -1003,9 +900,8 @@ fn paragraph(
                     code: false,
                     list: true,
                 },
-                true,
             ),
-            None => (index, Interrupt::default(), false),
+            None => (index, Interrupt::default()),
         };
     }
     let source = paragraph_source(&lines[first..index]);
@@ -1022,7 +918,7 @@ fn paragraph(
                     },
                 },
             }));
-            (underline + 1, Interrupt::default(), true)
+            (underline + 1, Interrupt::default())
         }
         None => {
             blocks.push(Block::Inline(InlineBlock {
@@ -1030,14 +926,7 @@ fn paragraph(
                 kind: InlineKind::Paragraph,
             }));
             // A one-line paragraph right after a container does not restrict what follows it.
-            (
-                index,
-                Interrupt {
-                    code: dashes == Dashes::No,
-                    list: !(dashes != Dashes::No || released || release == Release::AllMarkers && index == start + 1),
-                },
-                false,
-            )
+            (index, Interrupt::default())
         }
     }
 }
@@ -1127,15 +1016,9 @@ fn footnote(
     state.feed(&first);
     let mut blanks = Vec::new();
     let mut index = start + 1;
-    // The end of a definition without content: it reaches to the end of the blank lines that follow.
-    let mut empty_end = None;
 
     while let Some(line) = lines.get(index) {
         if line.is_blank() {
-            if first.is_blank() && inner.len() == 1 {
-                empty_end = lines[index..].iter().take_while(|l| l.is_blank()).last().map(Line::end);
-                break;
-            }
             blanks.push(line.skip(line.text.len()));
         } else if line.indent().0 >= CODE_INDENT {
             for blank in &blanks {
@@ -1157,12 +1040,10 @@ fn footnote(
 
     // Trailing blank lines belong to whatever follows, but still extend the position.
     index -= blanks.len();
-    let end = empty_end.unwrap_or_else(|| {
-        blanks
-            .last()
-            .or(inner.last())
-            .map_or_else(|| lines[start].end(), Line::end)
-    });
+    let end = blanks
+        .last()
+        .or(inner.last())
+        .map_or_else(|| lines[start].end(), Line::end);
     let position = Position {
         start: lines[start].point(0),
         end,

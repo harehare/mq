@@ -688,14 +688,11 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
                     .collect(),
             );
             markdown.set_options(mq_markdown::RenderOptions {
-                list_style: options
-                    .list_style
-                    .map(|style| match style {
-                        ListStyle::Dash => mq_markdown::ListStyle::Dash,
-                        ListStyle::Plus => mq_markdown::ListStyle::Plus,
-                        ListStyle::Star => mq_markdown::ListStyle::Star,
-                    })
-                    .unwrap_or_default(),
+                list_style: options.list_style.map(|style| match style {
+                    ListStyle::Dash => mq_markdown::ListStyle::Dash,
+                    ListStyle::Plus => mq_markdown::ListStyle::Plus,
+                    ListStyle::Star => mq_markdown::ListStyle::Star,
+                }),
                 link_title_style: options
                     .link_title_style
                     .map(|style| match style {

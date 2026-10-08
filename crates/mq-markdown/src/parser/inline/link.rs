@@ -2,11 +2,13 @@
 
 use super::entity::{remove_line_indent, unescape};
 use super::tail::{Tail, inline_tail, reference};
-use super::{Context, Item, Scanner, emphasis, to_nodes};
+use super::{Context, Item, Scanner, Value, emphasis, to_nodes};
 use crate::node::{FootnoteRef, Image, ImageRef, Link, LinkRef, Node, Position, Title, Url};
+#[cfg(feature = "wikilink")]
+use crate::node::{RenderOptions, Text};
 
-/// Normalizes a reference label the way `markdown-rs` does, including its handling of whitespace:
-/// the first gap between words is dropped.
+/// Normalizes a reference label: whitespace runs become one space, the ends are trimmed, and the case
+/// is folded. `markdown-rs` drops the first gap between words, which this does not.
 pub(in crate::parser) fn normalize(label: &str) -> String {
     let bytes = label.as_bytes();
     let mut result = String::with_capacity(label.len());
@@ -20,7 +22,7 @@ pub(in crate::parser) fn normalize(label: &str) -> String {
                 in_whitespace = true;
             }
         } else if in_whitespace {
-            if start != 0 {
+            if !result.is_empty() {
                 result.push(' ');
             }
             start = index;
@@ -69,8 +71,15 @@ pub(super) fn close(scanner: &mut Scanner<'_>) -> bool {
     let label = &src[label_start..pos];
     let after = pos + 1;
 
-    let is_footnote =
-        !image && footnote_label(label).is_some_and(|name| context.references.footnotes.contains(&normalize(name)));
+    // After a `!`, a footnote reference is the reference and the `!` is text, unless a destination follows.
+    let is_footnote = footnote_label(label).is_some_and(|name| context.references.footnotes.contains(&normalize(name)))
+        && (!image || inline_tail(src, after).is_none());
+    let bang = image && is_footnote;
+    let (image, opener_start) = if bang {
+        (false, opener_start + 1)
+    } else {
+        (image, opener_start)
+    };
     let kind = if is_footnote {
         Some(Kind::Footnote {
             label: label[1..].to_string(),
@@ -87,6 +96,13 @@ pub(super) fn close(scanner: &mut Scanner<'_>) -> bool {
     // Everything after the opener becomes the content.
     let mut content = scanner.items.split_off(opener_index + 1);
     scanner.items.pop();
+    if bang {
+        scanner.items.push(Item::Text {
+            start: opener_start - 1,
+            end: opener_start,
+            value: Value::Slice(opener_start - 1, opener_start),
+        });
+    }
     // Email addresses are not linked inside link text.
     let inner = Context {
         emails: false,
@@ -165,7 +181,7 @@ fn build(
                 Node::LinkRef(LinkRef {
                     ident: normalize(&label),
                     label: Some(shown),
-                    values,
+                    values: unwrap_links(values),
                     position,
                 })
             };
@@ -180,19 +196,26 @@ fn footnote_label(label: &str) -> Option<&str> {
     (!name.is_empty() && !name.bytes().any(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'))).then_some(name)
 }
 
-/// Builds a link, unwrapping nested links to the same destination (from autolink literals).
-pub(super) fn make_link(url: String, title: Option<String>, values: Vec<Node>, position: Option<Position>) -> Node {
-    let values = values
+/// Replaces links in link text by their content: a link cannot contain a link, so these come from
+/// autolink literals. A wikilink there is text.
+fn unwrap_links(values: Vec<Node>) -> Vec<Node> {
+    values
         .into_iter()
         .flat_map(|child| match child {
-            Node::Link(Link {
-                url: Url(ref inner),
-                values,
-                ..
-            }) if *inner == url => values,
+            Node::Link(Link { values, .. }) => values,
+            #[cfg(feature = "wikilink")]
+            Node::WikiLink(link) => vec![Node::Text(Text {
+                value: Node::WikiLink(link).to_string_with(&RenderOptions::default()),
+                position: None,
+            })],
             other => vec![other],
         })
-        .collect();
+        .collect()
+}
+
+/// Builds a link, unwrapping the links in its text.
+pub(super) fn make_link(url: String, title: Option<String>, values: Vec<Node>, position: Option<Position>) -> Node {
+    let values = unwrap_links(values);
 
     Node::Link(Link {
         url: Url(url),
@@ -216,6 +239,9 @@ fn plain_text(nodes: &[Node]) -> String {
             Node::Delete(node) => text.push_str(&plain_text(&node.values)),
             Node::Link(node) => text.push_str(&plain_text(&node.values)),
             Node::LinkRef(node) => text.push_str(&plain_text(&node.values)),
+            Node::Break(_) => text.push('\n'),
+            Node::Image(node) => text.push_str(&node.alt),
+            Node::ImageRef(node) => text.push_str(&node.alt),
             _ => {}
         }
     }

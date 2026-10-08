@@ -256,3 +256,88 @@ fn blocks_are_separate_nodes(#[case] input: &str, #[case] count: usize) {
         .count();
     assert_eq!(nodes, count);
 }
+
+/// Nodes whose positions overlap, as the items of a list inside a quote, must not break rendering.
+#[rstest]
+#[case::nested_list_in_quote("> - - {x}\n>   }\n/>\n")]
+fn rendering_overlapping_positions_does_not_panic(#[case] input: &str) {
+    let markdown = Markdown::from_markdown_str(input).unwrap();
+    assert!(!markdown.to_string().is_empty());
+}
+
+/// A thematic rule of dashes at the start would turn into frontmatter with the next one.
+#[rstest]
+#[case::dashes_at_start("-----\n\ntext\n\n-----\n\nmore\n")]
+fn rendering_dashes_at_start_keeps_the_rules(#[case] input: &str) {
+    let rendered = Markdown::from_markdown_str(input).unwrap().to_string();
+    let nodes = Markdown::from_markdown_str(&rendered).unwrap().nodes;
+    let rules = |nodes: &[Node]| nodes.iter().filter(|n| matches!(n, Node::HorizontalRule(_))).count();
+    assert_eq!(
+        rules(&nodes),
+        rules(&Markdown::from_markdown_str(input).unwrap().nodes),
+        "{rendered:?}"
+    );
+}
+
+/// What `to_string` writes must read back as the same document, in HTML.
+#[rstest]
+#[case::url_with_underscores("see https://a.b/c_d_e/ end\n")]
+#[case::nested_list_in_task_item("- [ ] one\n  - sub\n- two\n")]
+#[case::paragraph_in_task_item("- [x] one\n\n  more\n- two\n")]
+#[case::reference_label_with_spaces("see [Code of Conduct].\n\n[Code of Conduct]: https://a.b/c\n")]
+#[case::reference_with_code_text("type [`Options`][options].\n\n[options]: #options\n")]
+#[case::table_code_with_pipe("| a | b |\n|---|---|\n| `x\\|y` | z\\|w |\n")]
+#[case::link_text_is_a_url("[www.W3.org](http://www.w3.org) site\n")]
+#[case::strong_with_emphasis("**_NOTE:_** text\n")]
+#[case::second_paragraph_after_escape("- \\[a] x\n\n  b\n")]
+#[case::table_in_quote("> | a | b |\n> |---|---|\n> | 1 | 2 |\n")]
+#[case::table_in_list_item("- **P:**\n  | Name | Type |\n  |------|------|\n  | a | b |\n- next\n")]
+#[case::table_row_with_more_cells("| a | b |\n|---|---|\n| 1 | 2 | 3 |\n")]
+#[case::paragraph_after_footnote("[^1]: Note text.\n\nParagraph after.\n")]
+#[case::list_in_empty_item("- - a\n  - b\n")]
+#[case::empty_code_with_blank_line("```\n\n```\n")]
+#[case::paragraph_after_list_in_empty_item("- - a\n\n  Own Id: X\n")]
+#[case::paragraph_after_nested_list("- a\n  - s\n\n  b\n")]
+#[case::code_after_nested_list("- a\n  - s\n  ```\n  code\n  ```\n")]
+#[case::nested_lists_around_paragraph("- a\n  - s\n\n  b\n  - t\n")]
+#[case::ordered_item_with_nested_list_and_paragraph("1. x\n   - s\n\n   para\n2. y\n")]
+fn rendering_reads_back_as_the_same_html(#[case] input: &str) {
+    let rendered = Markdown::from_markdown_str(input).unwrap().to_string();
+    assert_eq!(
+        mq_markdown::to_html(&rendered),
+        mq_markdown::to_html(input),
+        "{rendered:?}"
+    );
+}
+
+/// What an MDX document starts its blocks with: `import` and `export` lines are one block up to the
+/// next blank line.
+#[rstest]
+#[case::import_and_export("import a from \"b\"\nexport const x = 1\n\nx\n", &["esm:import a from \"b\"\nexport const x = 1", "text:x"])]
+#[case::export_default("export default d\n", &["esm:export default d"])]
+#[case::indented_is_text("  import a from \"b\"\n", &["text:import a from \"b\""])]
+#[case::no_space_is_text("import{a} from \"b\"\n", &["text:import", "expr:a", "text: from \"b\""])]
+#[case::a_word_is_text("importx a\n", &["text:importx a"])]
+#[case::in_a_list_is_text("- import a from \"b\"\n", &["item"])]
+#[case::does_not_interrupt_a_paragraph("text\nimport a from \"b\"\n", &["text:text\nimport a from \"b\""])]
+fn mdx_esm(#[case] input: &str, #[case] expected: &[&str]) {
+    let nodes = Markdown::from_mdx_str(input).unwrap().nodes;
+    let described = nodes
+        .iter()
+        .map(|node| match node {
+            Node::MdxJsEsm(esm) => format!("esm:{}", esm.value),
+            Node::MdxTextExpression(expression) => format!("expr:{}", expression.value),
+            Node::Text(text) => format!("text:{}", text.value),
+            Node::List(_) => "item".to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(described, expected);
+}
+
+/// Without MDX, `import` is text.
+#[test]
+fn import_is_text_in_markdown() {
+    let nodes = Markdown::from_markdown_str("import a from \"b\"\n").unwrap().nodes;
+    assert!(matches!(nodes.as_slice(), [Node::Text(_)]));
+}

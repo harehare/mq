@@ -693,9 +693,9 @@ struct OutputArgs {
     #[clap(long, default_value_t = false, conflicts_with = "quiet")]
     unbuffered: bool,
 
-    /// Set the list style for markdown output
-    #[clap(long, value_enum, default_value_t = ListStyle::Dash, conflicts_with = "quiet")]
-    list_style: ListStyle,
+    /// Set the list style for markdown output (default: keep the original)
+    #[clap(long, value_enum, conflicts_with = "quiet")]
+    list_style: Option<ListStyle>,
 
     /// Set the link title surround style for markdown output
     #[clap(long, value_enum, default_value_t = LinkTitleStyle::Double, conflicts_with = "quiet")]
@@ -3026,11 +3026,11 @@ impl Cli {
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
         markdown.set_options(mq_markdown::RenderOptions {
-            list_style: match self.output.list_style.clone() {
+            list_style: self.output.list_style.clone().map(|style| match style {
                 ListStyle::Dash => mq_markdown::ListStyle::Dash,
                 ListStyle::Plus => mq_markdown::ListStyle::Plus,
                 ListStyle::Star => mq_markdown::ListStyle::Star,
-            },
+            }),
             link_title_style: match self.output.link_title_style.clone() {
                 LinkTitleStyle::Double => mq_markdown::TitleSurroundStyle::Double,
                 LinkTitleStyle::Single => mq_markdown::TitleSurroundStyle::Single,
@@ -4063,7 +4063,7 @@ mod tests {
             let cli = Cli {
                 input: InputArgs::default(),
                 output: OutputArgs {
-                    list_style: style.clone(),
+                    list_style: Some(style.clone()),
                     ..Default::default()
                 },
                 commands: None,

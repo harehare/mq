@@ -214,6 +214,7 @@ fn list_nodes(list: ListBlock, level: Level, references: &References, nodes: &mu
             checked: item.checked,
             spread: list.spread,
             start: list.start,
+            marker: Some(list.marker),
             position: Some(position),
         }));
 

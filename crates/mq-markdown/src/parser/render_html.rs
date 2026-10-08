@@ -251,7 +251,7 @@ impl Html {
             }
             Node::Html(html) => {
                 self.line_ending_if_needed();
-                self.out.push_str(&html.value);
+                push_html(&mut self.out, &html.value);
             }
             Node::Code(code) => self.code(code, usize::from(!code.value.is_empty()), true),
             _ => {}
@@ -272,13 +272,13 @@ impl Html {
 
     fn code(&mut self, code: &Code, lines: usize, closed: bool) {
         self.line_ending_if_needed();
-        self.out.push_str("<pre><code");
+        self.out.push_str("<pre");
         if let Some(lang) = code.lang.as_deref().filter(|lang| !lang.is_empty()) {
-            self.out.push_str(" class=\"language-");
+            self.out.push_str(" lang=\"");
             encode(&mut self.out, lang);
             self.out.push('"');
         }
-        self.out.push('>');
+        self.out.push_str("><code>");
         self.raw_flow(&code.value, lines, closed);
     }
 
@@ -324,11 +324,11 @@ impl Html {
 
     fn task_check(&mut self) {
         if let Some(checked) = self.check.take() {
-            self.out.push_str("<input type=\"checkbox\" disabled=\"\" ");
+            self.out.push_str("<input type=\"checkbox\" ");
             if checked {
                 self.out.push_str("checked=\"\" ");
             }
-            self.out.push_str("/> ");
+            self.out.push_str("disabled=\"\" /> ");
         }
     }
 
@@ -348,7 +348,8 @@ impl Html {
             self.check = item.checked;
             let empty = !item.children.iter().any(is_content);
             self.blocks(&item.children);
-            self.check = None;
+            // An item without content has the checkbox alone.
+            self.task_check();
 
             let tight_paragraph =
                 tight
@@ -453,7 +454,7 @@ impl Html {
                 self.out.push_str("<br />");
                 self.line_ending();
             }
-            Node::Html(html) => self.out.push_str(&html.value),
+            Node::Html(html) => push_html(&mut self.out, &html.value),
             Node::Link(link) => {
                 let title = link.title.as_ref().map(|title| title.0.as_str());
                 self.link(&link.url.0, title, &link.values);
@@ -708,4 +709,39 @@ fn sanitize_with_protocols(value: &str, protocols: &[&str]) -> String {
         return String::new();
     }
     value
+}
+
+/// The tags that GFM does not let through as raw HTML: their `<` is written as `&lt;`.
+const DISALLOWED_TAGS: [&str; 9] = [
+    "title",
+    "textarea",
+    "style",
+    "xmp",
+    "iframe",
+    "noembed",
+    "noframes",
+    "script",
+    "plaintext",
+];
+
+/// Writes raw HTML, with the start and end tags of [`DISALLOWED_TAGS`] made text.
+fn push_html(out: &mut String, html: &str) {
+    let mut rest = html;
+    while let Some(at) = rest.find('<') {
+        let (before, tag) = rest.split_at(at);
+        out.push_str(before);
+        let name = tag[1..].strip_prefix('/').unwrap_or(&tag[1..]);
+        let end = name.find(|c: char| !c.is_ascii_alphanumeric()).unwrap_or(name.len());
+        let boundary = matches!(
+            name[end..].chars().next(),
+            None | Some(' ' | '\t' | '\n' | '\r' | '/' | '>')
+        );
+        if boundary && DISALLOWED_TAGS.iter().any(|tag| name[..end].eq_ignore_ascii_case(tag)) {
+            out.push_str("&lt;");
+        } else {
+            out.push('<');
+        }
+        rest = &tag[1..];
+    }
+    out.push_str(rest);
 }
