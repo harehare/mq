@@ -5,7 +5,7 @@
 //! text of paragraphs, headings and table cells along the way.
 //!
 //! It reads `CommonMark`, GFM, frontmatter, math and MDX (without a JavaScript parser, so expressions
-//! only need balanced braces). HTML is rendered by [`render_html`].
+//! only need balanced braces outside of strings and comments). HTML is rendered by [`render_html`].
 mod block;
 #[cfg(feature = "callout")]
 mod callout;

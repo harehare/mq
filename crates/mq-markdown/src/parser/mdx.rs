@@ -1,5 +1,5 @@
 //! MDX: JSX tags and expressions, ported from the rules of `markdown-rs` without a JavaScript parser,
-//! so expressions are only checked for balanced braces.
+//! so expressions are only checked for balanced braces, outside of strings, template literals and comments.
 
 use crate::node::{MdxAttributeContent, MdxAttributeValue, MdxJsxAttribute};
 use smol_str::SmolStr;
@@ -70,26 +70,89 @@ pub(super) struct Braces(OnceCell<HashMap<usize, usize>>);
 impl Braces {
     /// The offset of the `}` that closes the `{` at `open`, if there is one.
     fn close(&self, src: &str, open: usize) -> Option<usize> {
-        self.0
-            .get_or_init(|| {
-                let mut closes = HashMap::new();
-                let mut opens = Vec::new();
-                for (index, byte) in src.bytes().enumerate() {
-                    match byte {
-                        b'{' => opens.push(index),
-                        b'}' => {
-                            if let Some(open) = opens.pop() {
-                                closes.insert(open, index);
-                            }
+        self.0.get_or_init(|| match_braces(src, 0, false)).get(&open).copied()
+    }
+}
+
+enum Frame {
+    /// A `{`, or a `${` of a template literal when it has no offset.
+    Brace(Option<usize>),
+    Template,
+}
+
+/// Matches the braces of the expressions in `src` from `from`, which are not checked as JavaScript but
+/// skip over strings, template literals and comments. Text outside braces is not looked at. With
+/// `single`, `from` is a `{` and the search ends once it is closed.
+fn match_braces(src: &str, from: usize, single: bool) -> HashMap<usize, usize> {
+    let bytes = src.as_bytes();
+    let mut closes = HashMap::new();
+    let mut stack = Vec::new();
+    let mut index = from;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        index += 1;
+        match stack.last() {
+            None => {
+                if byte == b'{' {
+                    stack.push(Frame::Brace(Some(index - 1)));
+                }
+            }
+            Some(Frame::Template) => match byte {
+                b'\\' => index += 1,
+                b'`' => {
+                    stack.pop();
+                }
+                b'$' if bytes.get(index) == Some(&b'{') => {
+                    stack.push(Frame::Brace(None));
+                    index += 1;
+                }
+                _ => {}
+            },
+            Some(Frame::Brace(_)) => match byte {
+                b'{' => stack.push(Frame::Brace(Some(index - 1))),
+                b'}' => {
+                    if let Some(Frame::Brace(Some(open))) = stack.pop() {
+                        closes.insert(open, index - 1);
+                        if single && open == from {
+                            break;
                         }
-                        _ => {}
                     }
                 }
-                closes
-            })
-            .get(&open)
-            .copied()
+                b'`' => stack.push(Frame::Template),
+                b'\'' | b'"' => index = skip_string(bytes, index, byte).unwrap_or(index),
+                b'/' => match bytes.get(index) {
+                    Some(b'/') => {
+                        index += bytes[index..].iter().take_while(|&&b| b != b'\n').count();
+                    }
+                    Some(b'*') => {
+                        if let Some(end) = src[index + 1..].find("*/") {
+                            index += 1 + end + 2;
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
+            },
+        }
     }
+    closes
+}
+
+/// The offset after the string that starts before `from` with the `quote`. A string that does not end on
+/// its line is not one.
+fn skip_string(bytes: &[u8], from: usize, quote: u8) -> Option<usize> {
+    let mut index = from;
+    while let Some(&byte) = bytes.get(index) {
+        match byte {
+            b'\\' => index += 1,
+            b'\n' | b'\r' => return None,
+            _ if byte == quote => return Some(index + 1),
+            _ => {}
+        }
+        index += 1;
+    }
+    None
 }
 
 struct Cursor<'a> {
@@ -183,31 +246,16 @@ impl Cursor<'_> {
         let open = self.index;
         self.bump();
         let start = self.index;
-        if let Some(braces) = self.braces {
-            let Some(end) = braces.close(self.src, open) else {
-                self.index = self.src.len();
-                return Err(Stop::More(Fallback::Error(UNCLOSED_EXPRESSION.into())));
-            };
-            self.index = end + 1;
-            return Ok((start, end));
-        }
-        let mut depth = 0usize;
-        loop {
-            match self.peek() {
-                None => {
-                    return Err(Stop::More(Fallback::Error(UNCLOSED_EXPRESSION.into())));
-                }
-                Some('{') => depth += 1,
-                Some('}') if depth == 0 => {
-                    let end = self.index;
-                    self.bump();
-                    return Ok((start, end));
-                }
-                Some('}') => depth -= 1,
-                Some(_) => {}
-            }
-            self.bump();
-        }
+        let end = match self.braces {
+            Some(braces) => braces.close(self.src, open),
+            None => match_braces(self.src, open, true).get(&open).copied(),
+        };
+        let Some(end) = end else {
+            self.index = self.src.len();
+            return Err(Stop::More(Fallback::Error(UNCLOSED_EXPRESSION.into())));
+        };
+        self.index = end + 1;
+        Ok((start, end))
     }
 }
 
