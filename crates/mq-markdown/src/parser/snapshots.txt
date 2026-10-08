@@ -1287,8 +1287,12 @@ nodes: error: Unexpected character `/` (U+002F) before local name
 nodes: [Text(Text { value: "| a |\n|-|", @1:1-2:4 }), Text(Text { value: "~a~ www.a.b [^a]", @4:1-4:17 }), List(List { values: [Text(Text { value: "[ ] a", @6:3-6:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some(Dash), @6:3-6:8 })]
 ## mdx no_math "$a$\n\n$$\na\n$$\n"
 nodes: [Text(Text { value: "$a$", @1:1-1:4 }), Text(Text { value: "$$\na\n$$", @3:1-5:3 })]
-## mdx no_frontmatter "---\na\n---\n"
-nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:4 })]
+## mdx frontmatter "---\na\n---\n"
+nodes: [Yaml(Yaml { value: "a", @1:1-3:4 })]
+## mdx frontmatter_toml "+++\na = 1\n+++\n\n<A />"
+nodes: [Toml(Toml { value: "a = 1", @1:1-3:4 }), MdxJsxFlowElement(MdxJsxFlowElement { children: [], @5:1-5:6, name: Some("A"), attributes: [] })]
+## mdx frontmatter_unclosed "---\na\n"
+nodes: [HorizontalRule(HorizontalRule { marker: Some(Dash), @1:1-1:4 }), Text(Text { value: "a", @2:1-2:2 })]
 ## mdx esm "import a from 'b'\n\nexport const c = 1\n"
 nodes: [MdxJsEsm(MdxJsEsm { value: "import a from 'b'", @1:1-1:18 }), MdxJsEsm(MdxJsEsm { value: "export const c = 1", @3:1-3:19 })]
 ## mdx definition "[a]: /u\n\n[a]\n"

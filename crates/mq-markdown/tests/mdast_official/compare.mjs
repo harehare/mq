@@ -165,7 +165,10 @@ const OPTIONS = {
     extensions: [gfm(), frontmatter(['yaml', 'toml']), math()],
     mdastExtensions: [gfmFromMarkdown(), frontmatterFromMarkdown(['yaml', 'toml']), mathFromMarkdown()],
   },
-  mdx: {extensions: [mdxjs()], mdastExtensions: [mdxFromMarkdown()]},
+  mdx: {
+    extensions: [mdxjs(), frontmatter(['yaml', 'toml'])],
+    mdastExtensions: [mdxFromMarkdown(), frontmatterFromMarkdown(['yaml', 'toml'])],
+  },
 }
 
 function official({mode, input}) {

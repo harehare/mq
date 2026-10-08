@@ -38,7 +38,7 @@ pub(super) fn parse(src: &str, mdx: bool) -> Vec<Block> {
     if let Some(first) = lines.first_mut().filter(|line| line.text.starts_with('\u{feff}')) {
         *first = first.skip('\u{feff}'.len_utf8());
     }
-    match frontmatter(&lines).filter(|_| !mdx) {
+    match frontmatter(&lines) {
         Some((node, next)) => {
             let mut blocks = vec![Block::Node(node)];
             blocks.extend(parse_blocks(&lines[next..], 0, Interrupt::default()));
