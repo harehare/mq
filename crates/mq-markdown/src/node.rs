@@ -746,7 +746,7 @@ pub struct MdxJsxFlowElement {
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "camelCase", tag = "type")
+    serde(rename_all = "camelCase", tag = "type", content = "value")
 )]
 pub enum MdxAttributeContent {
     Expression(SmolStr),
@@ -768,7 +768,7 @@ pub struct MdxJsxAttribute {
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "camelCase", tag = "type")
+    serde(rename_all = "camelCase", tag = "type", content = "value")
 )]
 pub enum MdxAttributeValue {
     Expression(SmolStr),
