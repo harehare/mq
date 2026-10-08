@@ -43,6 +43,24 @@ impl InlineSource {
     pub(super) fn remove_prefix(&mut self, marker: usize) {
         let rest = &self.text[marker..];
         let end = self.text.len() - rest.trim_start_matches([' ', '\t', '\n', '\r']).len();
+        self.drain_to(end);
+    }
+
+    /// Removes the first line with its line ending and returns it without the line ending.
+    #[cfg(feature = "callout")]
+    pub(super) fn take_first_line(&mut self) -> String {
+        let Some(eol) = self.text.find(['\n', '\r']) else {
+            self.lines.clear();
+            return std::mem::take(&mut self.text);
+        };
+        let line = self.text[..eol].to_string();
+        let end = eol + if self.text[eol..].starts_with("\r\n") { 2 } else { 1 };
+        self.drain_to(end);
+        line
+    }
+
+    /// Removes the first `end` bytes, keeping the position of every line that is left.
+    fn drain_to(&mut self, end: usize) {
         let new_point = self.point(end);
         self.text.replace_range(..end, "");
         self.tabs = self.text.contains('\t');

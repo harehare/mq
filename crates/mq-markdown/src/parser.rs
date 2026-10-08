@@ -7,6 +7,8 @@
 //! It reads `CommonMark`, GFM, frontmatter, math and MDX (without a JavaScript parser, so expressions
 //! only need balanced braces). HTML is rendered by [`render_html`].
 mod block;
+#[cfg(feature = "callout")]
+mod callout;
 mod code;
 mod definition;
 mod html_flow;
