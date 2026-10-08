@@ -98,6 +98,7 @@ pub use node::{
     attr_value::AttrValue,
 };
 pub use node_kind::{AttrSpec, AttrType, NodeKind};
+pub use parser::{MdxDiagnostic, MdxError, MdxErrorKind, MdxFound, MdxPlace};
 
 #[cfg(feature = "wikilink")]
 pub use node::WikiLink;

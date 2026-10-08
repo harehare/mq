@@ -975,7 +975,7 @@ pub struct Position {
     pub end: Point,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),

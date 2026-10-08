@@ -20,6 +20,7 @@ pub(crate) use html::is_autolink_email;
 pub(crate) use link::normalize;
 pub(super) use tail::{destination, title_at};
 
+use super::error::{Located, MdxError, MdxErrorKind};
 use super::flavor::Flavor;
 use super::mdx::{self, Fallback, Parsed, TagKind};
 use super::resolve::References;
@@ -119,13 +120,15 @@ pub(super) struct Context<'a> {
     /// in the text, which is looked for once.
     pub(super) emails: bool,
     /// The first error in the content, which only MDX has.
-    error: &'a RefCell<Option<String>>,
+    error: &'a RefCell<Option<MdxError>>,
 }
 
 impl Context<'_> {
-    /// Records an error, keeping the first one.
-    fn fail(&self, message: String) {
-        self.error.borrow_mut().get_or_insert(message);
+    /// Records an error at an offset of the source, keeping the first one.
+    fn fail(&self, error: Located) {
+        self.error
+            .borrow_mut()
+            .get_or_insert_with(|| error.in_source(self.source));
     }
 
     pub(super) fn src(&self) -> &str {
@@ -141,7 +144,7 @@ impl Context<'_> {
 }
 
 /// Parses raw inline content into nodes.
-pub(super) fn parse(source: &InlineSource, doc: Document<'_>) -> Result<Vec<Node>, String> {
+pub(super) fn parse(source: &InlineSource, doc: Document<'_>) -> Result<Vec<Node>, MdxError> {
     if source.text.is_empty() {
         return Ok(Vec::new());
     }
@@ -174,7 +177,7 @@ pub(super) fn parse(source: &InlineSource, doc: Document<'_>) -> Result<Vec<Node
     let nodes = to_nodes(items, &context);
 
     match error.into_inner() {
-        Some(message) => Err(message),
+        Some(error) => Err(error),
         None => Ok(nodes),
     }
 }
@@ -225,7 +228,10 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
                 finish(&mut current, &mut nodes);
                 match tag.kind {
                     TagKind::Open if open.len() >= MAX_NESTING => {
-                        context.fail(format!("Elements are nested deeper than {MAX_NESTING} levels"));
+                        context.fail(Located {
+                            kind: MdxErrorKind::TooDeep { limit: MAX_NESTING },
+                            offset: tag.start,
+                        });
                     }
                     TagKind::Open => open.push((tag, std::mem::take(&mut nodes))),
                     TagKind::SelfClosing => {
@@ -233,14 +239,20 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
                         nodes.push(text_element(context, tag, Vec::new(), end));
                     }
                     TagKind::Close => match open.pop() {
-                        None => context.fail("Unexpected closing slash `/` in tag, expected an open tag first".into()),
+                        None => context.fail(Located {
+                            kind: MdxErrorKind::UnopenedClosingTag,
+                            offset: tag.start,
+                        }),
                         Some((opening, before)) => {
                             if opening.name != tag.name {
-                                context.fail(format!(
-                                    "Unexpected closing tag `</{}>`, expected corresponding closing tag for `<{}>`",
-                                    tag.name.as_deref().unwrap_or_default(),
-                                    opening.name.as_deref().unwrap_or_default()
-                                ));
+                                context.fail(Located {
+                                    kind: MdxErrorKind::MismatchedClosingTag {
+                                        closing: tag.name.clone(),
+                                        opening: opening.name.clone(),
+                                        opened_at: None,
+                                    },
+                                    offset: tag.start,
+                                });
                             }
                             let children = std::mem::replace(&mut nodes, before);
                             nodes.push(text_element(context, opening, children, tag.end));
@@ -281,10 +293,12 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
 
     // Elements that never close are an error, and are closed where the content ends.
     while let Some((opening, before)) = open.pop() {
-        context.fail(format!(
-            "Expected a closing tag for `<{}>` before the end of the content",
-            opening.name.as_deref().unwrap_or_default()
-        ));
+        context.fail(Located {
+            kind: MdxErrorKind::UnclosedTextElement {
+                name: opening.name.clone(),
+            },
+            offset: opening.start,
+        });
         let end = opening.end;
         let children = std::mem::replace(&mut nodes, before);
         nodes.push(text_element(context, opening, children, end));
@@ -733,12 +747,8 @@ impl Scanner<'_> {
                 });
                 self.push(item, end);
             }
-            Parsed::Error(message) => {
-                self.context.fail(message);
-                self.pos += 1;
-            }
-            Parsed::More(Fallback::Error(message)) => {
-                self.context.fail(message);
+            Parsed::Error(error) | Parsed::More(Fallback::Error(error)) => {
+                self.context.fail(error);
                 self.pos += 1;
             }
             Parsed::Nok | Parsed::More(Fallback::Nok) => self.pos += 1,
@@ -755,12 +765,8 @@ impl Scanner<'_> {
                 });
                 self.push_node(node, end);
             }
-            Parsed::Error(message) => {
-                self.context.fail(message);
-                self.pos += 1;
-            }
-            Parsed::More(Fallback::Error(message)) => {
-                self.context.fail(message);
+            Parsed::Error(error) | Parsed::More(Fallback::Error(error)) => {
+                self.context.fail(error);
                 self.pos += 1;
             }
             Parsed::Nok | Parsed::More(Fallback::Nok) => self.pos += 1,

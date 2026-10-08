@@ -11,6 +11,7 @@ mod block;
 mod callout;
 mod code;
 mod definition;
+pub(crate) mod error;
 mod flavor;
 mod html_flow;
 mod inline;
@@ -26,6 +27,7 @@ mod tree;
 use crate::node::Node;
 use flavor::Flavor;
 
+pub use error::{MdxDiagnostic, MdxError, MdxErrorKind, MdxFound, MdxPlace};
 pub(crate) use inline::{is_autolink_email, normalize, unescape};
 
 /// Parses `content` into a flat list of nodes.
@@ -37,7 +39,7 @@ pub(crate) fn parse(content: &str) -> miette::Result<Vec<Node>> {
 /// Parses `content` into a flat list of nodes, with frontmatter at the start when `frontmatter` is set.
 pub(crate) fn parse_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
     resolve::resolve(block::parse(content, Flavor::Markdown, frontmatter), Flavor::Markdown)
-        .map_err(|message| miette::miette!(message))
+        .map_err(|error| miette::Report::new(error.into_diagnostic(content)))
 }
 
 /// Renders `content` as HTML.
@@ -54,7 +56,7 @@ pub(crate) fn parse_mdx(content: &str) -> miette::Result<Vec<Node>> {
 /// Parses `content` as MDX, with frontmatter at the start when `frontmatter` is set.
 pub(crate) fn parse_mdx_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
     resolve::resolve(block::parse(content, Flavor::Mdx, frontmatter), Flavor::Mdx)
-        .map_err(|message| miette::miette!(message))
+        .map_err(|error| miette::Report::new(error.into_diagnostic(content)))
 }
 
 #[cfg(test)]

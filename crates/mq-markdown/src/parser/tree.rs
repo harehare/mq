@@ -3,6 +3,7 @@
 //! Inline parsing needs to know every definition of the document, including those that come later, so
 //! it runs in [`super::resolve`] once all blocks are known.
 
+use super::error::MdxError;
 use super::line::visual_column;
 use super::mdx::TagKind;
 use super::scan::eol_len;
@@ -146,7 +147,7 @@ pub(super) enum Block {
     /// A JSX tag on a line of its own in MDX. Tags are paired when the blocks become nodes.
     Jsx(JsxTag),
     /// Invalid MDX, reported when the blocks become nodes.
-    Error(String),
+    Error(MdxError),
 }
 
 pub(super) struct FencedBlock {
