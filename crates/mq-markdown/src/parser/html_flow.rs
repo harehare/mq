@@ -1,4 +1,4 @@
-//! HTML blocks: the seven kinds of `CommonMark`, ported from the rules of `markdown-rs`.
+//! HTML blocks, with the start and end conditions of the seven kinds that `CommonMark` defines.
 
 use super::scan::skip_blanks;
 
@@ -90,111 +90,153 @@ const BLOCK_NAMES: [&str; 62] = [
 
 /// Recognizes the start of an HTML block in `rest`, the line without its indentation.
 pub(super) fn start(rest: &str) -> Option<Kind> {
-    let bytes = rest.as_bytes();
-    if bytes.first() != Some(&b'<') {
-        return None;
-    }
-
-    match bytes.get(1)? {
-        b'!' => match bytes.get(2)? {
-            b'-' if bytes.get(3) == Some(&b'-') => Some(Kind::Comment),
-            b'[' if rest[3..].starts_with("CDATA[") => Some(Kind::Cdata),
-            byte if byte.is_ascii_alphabetic() => Some(Kind::Declaration),
-            _ => None,
-        },
-        b'?' => Some(Kind::Instruction),
-        b'/' => tag(rest, 2, true),
-        byte if byte.is_ascii_alphabetic() => tag(rest, 1, false),
-        _ => None,
+    let after = rest.strip_prefix('<')?;
+    if after.starts_with("!--") {
+        Some(Kind::Comment)
+    } else if after.starts_with("![CDATA[") {
+        Some(Kind::Cdata)
+    } else if after.starts_with('?') {
+        Some(Kind::Instruction)
+    } else if after
+        .strip_prefix('!')
+        .is_some_and(|name| name.starts_with(|c: char| c.is_ascii_alphabetic()))
+    {
+        Some(Kind::Declaration)
+    } else {
+        match after.strip_prefix('/') {
+            Some(name) => tag(name, true),
+            None => tag(after, false),
+        }
     }
 }
 
-/// Recognizes a block tag, a raw tag or a complete tag whose name starts at `from`.
-fn tag(rest: &str, from: usize, closing: bool) -> Option<Kind> {
-    let bytes = rest.as_bytes();
-    if !bytes.get(from).is_some_and(u8::is_ascii_alphabetic) {
+/// Classifies the tag whose name starts `text`, which is what follows `<` or `</`.
+fn tag(text: &str, closing: bool) -> Option<Kind> {
+    let bytes = text.as_bytes();
+    if !bytes.first().is_some_and(u8::is_ascii_alphabetic) {
         return None;
     }
-    let length = bytes[from..]
+    let name_end = bytes
         .iter()
-        .take_while(|b| b.is_ascii_alphanumeric() || **b == b'-')
-        .count();
-    let end = from + length;
-    let terminator = bytes.get(end).copied();
-    if !matches!(terminator, None | Some(b'\t' | b' ' | b'/' | b'>')) {
+        .position(|b| !(b.is_ascii_alphanumeric() || *b == b'-'))
+        .unwrap_or(bytes.len());
+    let after = &bytes[name_end..];
+    let self_closing = after.starts_with(b"/");
+    if !matches!(after.first(), None | Some(b'\t' | b' ' | b'/' | b'>')) {
         return None;
     }
-    let slash = terminator == Some(b'/');
-    let name = rest[from..end].to_ascii_lowercase();
+    let name = text[..name_end].to_ascii_lowercase();
 
-    if let Some(raw) = RAW_NAMES.iter().find(|raw| !slash && !closing && **raw == name) {
+    if !closing
+        && !self_closing
+        && let Some(raw) = RAW_NAMES.iter().find(|raw| **raw == name)
+    {
         Some(Kind::Raw(raw))
     } else if BLOCK_NAMES.contains(&name.as_str()) {
-        // A slash has to be the end of a self-closing tag.
-        (!slash || bytes.get(end + 1) == Some(&b'>')).then_some(Kind::Basic)
+        // A slash has to be the start of `/>`.
+        (!self_closing || after.starts_with(b"/>")).then_some(Kind::Basic)
     } else {
-        complete_tag(&bytes[end..], closing).then_some(Kind::Complete)
+        is_complete_tag(after, closing).then_some(Kind::Complete)
     }
 }
 
-/// Whether the rest of a tag after its name is complete and alone on the line.
-fn complete_tag(bytes: &[u8], closing: bool) -> bool {
-    let mut index = 0;
-
-    if closing {
-        index = skip_blanks(bytes, index);
-        return bytes.get(index) == Some(&b'>') && skip_blanks(bytes, index + 1) == bytes.len();
-    }
-
-    loop {
-        index = skip_blanks(bytes, index);
-        match bytes.get(index) {
-            Some(b'/') => {
-                return bytes.get(index + 1) == Some(&b'>') && skip_blanks(bytes, index + 2) == bytes.len();
+/// Whether `rest`, what follows the name of a tag, closes the tag with nothing after it on the line.
+fn is_complete_tag(rest: &[u8], closing: bool) -> bool {
+    let mut cursor = Cursor { bytes: rest, index: 0 };
+    cursor.skip_blanks();
+    if !closing {
+        loop {
+            match cursor.attribute() {
+                Attribute::Read => cursor.skip_blanks(),
+                Attribute::Absent => break,
+                Attribute::Invalid => return false,
             }
-            Some(b'0'..=b'9' | b':' | b'A'..=b'Z' | b'_' | b'a'..=b'z') => {
-                index += 1;
-                while matches!(
-                    bytes.get(index),
-                    Some(b'-' | b'.' | b'0'..=b'9' | b':' | b'A'..=b'Z' | b'_' | b'a'..=b'z')
-                ) {
-                    index += 1;
-                }
-                let after = skip_blanks(bytes, index);
-                if bytes.get(after) == Some(&b'=') {
-                    let Some(end) = attribute_value(bytes, skip_blanks(bytes, after + 1)) else {
-                        return false;
-                    };
-                    index = end;
-                }
-            }
-            Some(b'>') => return skip_blanks(bytes, index + 1) == bytes.len(),
-            _ => return false,
         }
+        cursor.eat(b'/');
+    }
+    cursor.eat(b'>') && {
+        cursor.skip_blanks();
+        cursor.peek().is_none()
     }
 }
 
-/// The offset after the attribute value at `index`.
-fn attribute_value(bytes: &[u8], index: usize) -> Option<usize> {
-    match bytes.get(index)? {
-        b'<' | b'=' | b'>' | b'`' => None,
-        quote @ (b'"' | b'\'') => {
-            let close = bytes[index + 1..].iter().position(|b| b == quote)?;
-            let end = index + 1 + close + 1;
-            matches!(bytes.get(end), Some(b'\t' | b' ' | b'/' | b'>')).then_some(end)
+enum Attribute {
+    Read,
+    /// There is no attribute here.
+    Absent,
+    /// An attribute whose value is malformed.
+    Invalid,
+}
+
+struct Cursor<'a> {
+    bytes: &'a [u8],
+    index: usize,
+}
+
+impl Cursor<'_> {
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.index).copied()
+    }
+
+    fn skip_blanks(&mut self) {
+        self.index = skip_blanks(self.bytes, self.index);
+    }
+
+    fn eat(&mut self, byte: u8) -> bool {
+        let found = self.peek() == Some(byte);
+        self.index += usize::from(found);
+        found
+    }
+
+    fn skip_while(&mut self, accept: impl Fn(u8) -> bool) {
+        while self.peek().is_some_and(&accept) {
+            self.index += 1;
         }
-        _ => {
-            let length = bytes[index..]
-                .iter()
-                .take_while(|b| !matches!(b, b'\t' | b' ' | b'"' | b'\'' | b'/' | b'<' | b'=' | b'>' | b'`'))
-                .count();
-            Some(index + length)
+    }
+
+    /// Reads an attribute name and its optional value.
+    fn attribute(&mut self) -> Attribute {
+        if !self
+            .peek()
+            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b':' || b == b'_')
+        {
+            return Attribute::Absent;
+        }
+        self.skip_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b':' | b'_'));
+        // Blanks before an `=` belong to the value, otherwise they are left to the caller.
+        let name_end = self.index;
+        self.skip_blanks();
+        if self.eat(b'=') {
+            self.skip_blanks();
+            return if self.value() {
+                Attribute::Read
+            } else {
+                Attribute::Invalid
+            };
+        }
+        self.index = name_end;
+        Attribute::Read
+    }
+
+    fn value(&mut self) -> bool {
+        match self.peek() {
+            None | Some(b'<' | b'=' | b'>' | b'`') => false,
+            Some(quote @ (b'"' | b'\'')) => {
+                self.index += 1;
+                self.skip_while(|b| b != quote);
+                // The closing quote has to be followed by blanks, `/` or `>`.
+                self.eat(quote) && matches!(self.peek(), Some(b'\t' | b' ' | b'/' | b'>'))
+            }
+            Some(_) => {
+                self.skip_while(|b| !matches!(b, b'\t' | b' ' | b'"' | b'\'' | b'/' | b'<' | b'=' | b'>' | b'`'));
+                true
+            }
         }
     }
 }
 
 /// Where in the first line the search for the end of a block starts, so that the opening marker is
-/// only reused where `markdown-rs` reuses it (`<!-->` and `<?>` are complete).
+/// only reused where it can close the block (`<!-->` and `<?>` are complete).
 pub(super) fn first_line_offset(kind: Kind) -> usize {
     match kind {
         Kind::Comment => 2,
