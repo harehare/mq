@@ -20,6 +20,7 @@ pub(crate) use html::is_autolink_email;
 pub(crate) use link::normalize;
 pub(super) use tail::{destination, title_at};
 
+use super::flavor::Flavor;
 use super::mdx::{self, Fallback, Parsed, TagKind};
 use super::resolve::References;
 use super::scan::eol_len;
@@ -98,11 +99,19 @@ pub(super) fn item_depth(item: &Item) -> usize {
     }
 }
 
+/// What inline parsing needs to know about the whole document.
+#[derive(Clone, Copy)]
+pub(super) struct Document<'a> {
+    pub(super) references: &'a References,
+    pub(super) flavor: Flavor,
+}
+
 /// What the scanner and its helpers share.
 #[derive(Clone, Copy)]
 pub(super) struct Context<'a> {
     pub(super) source: &'a InlineSource,
     pub(super) references: &'a References,
+    pub(super) flavor: Flavor,
     /// Whether email addresses in plain text are linked: not inside link text, and not when there is no `@`
     /// in the text, which is looked for once.
     pub(super) emails: bool,
@@ -129,7 +138,7 @@ impl Context<'_> {
 }
 
 /// Parses raw inline content into nodes.
-pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Vec<Node>, String> {
+pub(super) fn parse(source: &InlineSource, doc: Document<'_>) -> Result<Vec<Node>, String> {
     if source.text.is_empty() {
         return Ok(Vec::new());
     }
@@ -137,8 +146,9 @@ pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Ve
     let error = RefCell::new(None);
     let context = Context {
         source,
-        references,
-        emails: !references.mdx && source.text.contains('@'),
+        references: doc.references,
+        flavor: doc.flavor,
+        emails: doc.flavor.has_gfm() && source.text.contains('@'),
         error: &error,
     };
     let mut scanner = Scanner {
@@ -384,17 +394,17 @@ impl Scanner<'_> {
                 b'\\' => self.escape(),
                 b'&' => self.entity(),
                 b'`' => self.span(b'`'),
-                b'$' if !self.context.references.mdx => self.span(b'$'),
+                b'$' if self.context.flavor.has_math() => self.span(b'$'),
                 b'*' | b'_' => self.delimiter(),
-                b'~' if !self.context.references.mdx => self.delimiter(),
+                b'~' if self.context.flavor.has_gfm() => self.delimiter(),
                 b'[' => self.open(false),
                 b'!' if image => self.open(true),
                 b']' => self.close(),
-                b'<' if !self.context.references.mdx => self.angle(),
+                b'<' if self.context.flavor.has_html() => self.angle(),
                 b'<' => self.jsx(),
-                b'{' if self.context.references.mdx => self.expression(),
+                b'{' if self.context.flavor.has_jsx() => self.expression(),
                 b'\n' | b'\r' => self.line_ending(),
-                b'h' | b'H' | b'w' | b'W' if !self.context.references.mdx => self.literal_url(),
+                b'h' | b'H' | b'w' | b'W' if self.context.flavor.has_gfm() => self.literal_url(),
                 _ => self.pos += 1,
             }
         }
@@ -404,7 +414,7 @@ impl Scanner<'_> {
     /// offset where it ends. The target is not empty, and neither part holds a bracket or a line ending.
     #[cfg(any(feature = "wikilink", feature = "embed"))]
     fn obsidian_link(&self) -> Option<(Node, usize)> {
-        if self.context.references.mdx {
+        if !self.context.flavor.has_obsidian() {
             return None;
         }
         let src = self.src();
@@ -594,10 +604,10 @@ impl Scanner<'_> {
         // In a table cell, `\|` stands for `|` inside code as well.
         let content = &src[start + size..close];
         // The lines of a paragraph lose their leading whitespace before the inline content is read.
-        let content = if self.context.references.mdx {
-            Cow::Borrowed(content)
-        } else {
+        let content = if self.context.flavor.strips_span_indent() {
             remove_line_indent(content)
+        } else {
+            Cow::Borrowed(content)
         };
         let content = content.as_ref();
         let value = if self.context.source.table && content.contains("\\|") {
@@ -630,7 +640,7 @@ impl Scanner<'_> {
 
         let before = src[..start].chars().next_back();
         let after = src[end..].chars().next();
-        let (can_open, can_close) = emphasis::flanking(ch, before, after, !self.context.references.mdx);
+        let (can_open, can_close) = emphasis::flanking(ch, before, after, self.context.flavor.has_gfm());
         if !can_open && !can_close {
             self.pos = end;
             return;

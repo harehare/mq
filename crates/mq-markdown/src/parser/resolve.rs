@@ -1,7 +1,8 @@
 //! Turns the block tree into nodes: parses the inline content, pairs JSX tags and flattens lists and
 //! tables.
 
-use super::inline::{self, MAX_NESTING};
+use super::flavor::Flavor;
+use super::inline::{self, Document, MAX_NESTING};
 use super::mdx::TagKind;
 use super::tree::{Block, InlineBlock, InlineKind, JsxTag, ListBlock, QuoteBlock, TableItem};
 use crate::node::{
@@ -16,19 +17,21 @@ pub(super) struct References {
     pub(super) definitions: FxHashSet<String>,
     /// Normalized labels of footnote definitions.
     pub(super) footnotes: FxHashSet<String>,
-    /// Whether the document is MDX.
-    pub(super) mdx: bool,
 }
 
-pub(super) fn resolve(blocks: Vec<Block>, mdx: bool) -> Result<Vec<Node>, String> {
-    let mut references = References {
-        mdx,
-        ..References::default()
-    };
+pub(super) fn resolve(blocks: Vec<Block>, flavor: Flavor) -> Result<Vec<Node>, String> {
+    let mut references = References::default();
     collect(&blocks, &mut references);
 
     let mut nodes = Vec::new();
-    flatten(blocks, &references, &mut nodes)?;
+    flatten(
+        blocks,
+        Document {
+            references: &references,
+            flavor,
+        },
+        &mut nodes,
+    )?;
     Ok(nodes)
 }
 
@@ -104,7 +107,7 @@ fn element(tag: JsxTag, children: Vec<Node>, end: Option<crate::node::Point>) ->
     })
 }
 
-fn flatten(blocks: Vec<Block>, references: &References, nodes: &mut Vec<Node>) -> Result<(), String> {
+fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), String> {
     let mut frames = Frames {
         open: Vec::new(),
         root: Vec::new(),
@@ -116,18 +119,18 @@ fn flatten(blocks: Vec<Block>, references: &References, nodes: &mut Vec<Node>) -
             Block::Fenced(fenced) => frames.push(fenced.node),
             Block::Inline(block) => {
                 let mut out = Vec::new();
-                inline_block(block, references, &mut out)?;
+                inline_block(block, doc, &mut out)?;
                 out.into_iter().for_each(|node| frames.push(node));
             }
-            Block::Quote(quote) => frames.push(quote_node(quote, references)?),
+            Block::Quote(quote) => frames.push(quote_node(quote, doc)?),
             Block::List(list) => {
                 let mut out = Vec::new();
-                list_nodes(list, 0, references, &mut out)?;
+                list_nodes(list, 0, doc, &mut out)?;
                 out.into_iter().for_each(|node| frames.push(node));
             }
             Block::Footnote(footnote) => {
                 let mut values = Vec::new();
-                flatten(footnote.children, references, &mut values)?;
+                flatten(footnote.children, doc, &mut values)?;
                 frames.push(Node::Footnote(Footnote {
                     ident: footnote.ident,
                     values,
@@ -144,7 +147,7 @@ fn flatten(blocks: Vec<Block>, references: &References, nodes: &mut Vec<Node>) -
                             source,
                         } => Node::TableCell(TableCell {
                             values: match source {
-                                Some(source) => inline::parse(&source, references)?,
+                                Some(source) => inline::parse(&source, doc)?,
                                 None => Vec::new(),
                             },
                             column,
@@ -178,7 +181,7 @@ fn flatten(blocks: Vec<Block>, references: &References, nodes: &mut Vec<Node>) -
 }
 
 /// A block quote, or a callout when the `callout` feature is enabled and its first line is a callout header.
-fn quote_node(quote: QuoteBlock, references: &References) -> Result<Node, String> {
+fn quote_node(quote: QuoteBlock, doc: Document<'_>) -> Result<Node, String> {
     #[cfg(feature = "callout")]
     let (header, children) = {
         let mut children = quote.children;
@@ -188,7 +191,7 @@ fn quote_node(quote: QuoteBlock, references: &References) -> Result<Node, String
     let children = quote.children;
 
     let mut values = Vec::new();
-    flatten(children, references, &mut values)?;
+    flatten(children, doc, &mut values)?;
     let position = Some(quote.position);
 
     #[cfg(feature = "callout")]
@@ -204,8 +207,8 @@ fn quote_node(quote: QuoteBlock, references: &References) -> Result<Node, String
     Ok(Node::Blockquote(Blockquote { values, position }))
 }
 
-fn inline_block(block: InlineBlock, references: &References, nodes: &mut Vec<Node>) -> Result<(), String> {
-    let values = inline::parse(&block.source, references)?;
+fn inline_block(block: InlineBlock, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), String> {
+    let values = inline::parse(&block.source, doc)?;
     match block.kind {
         InlineKind::Paragraph => nodes.extend(values),
         InlineKind::Heading { depth, position } => nodes.push(Node::Heading(Heading {
@@ -218,11 +221,11 @@ fn inline_block(block: InlineBlock, references: &References, nodes: &mut Vec<Nod
 }
 
 /// Emits one flat `Node::List` per item, followed by the items of its nested lists one level deeper.
-fn list_nodes(list: ListBlock, level: Level, references: &References, nodes: &mut Vec<Node>) -> Result<(), String> {
+fn list_nodes(list: ListBlock, level: Level, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), String> {
     for (index, item) in list.items.into_iter().enumerate() {
         let (nested, others): (Vec<_>, Vec<_>) = item.children.into_iter().partition(|b| matches!(b, Block::List(_)));
         let mut values = Vec::new();
-        flatten(others, references, &mut values)?;
+        flatten(others, doc, &mut values)?;
         let position = match (
             values.first().and_then(Node::position),
             values.last().and_then(Node::position),
@@ -248,7 +251,7 @@ fn list_nodes(list: ListBlock, level: Level, references: &References, nodes: &mu
 
         for block in nested {
             if let Block::List(sub_list) = block {
-                list_nodes(sub_list, level + 1, references, nodes)?;
+                list_nodes(sub_list, level + 1, doc, nodes)?;
             }
         }
     }

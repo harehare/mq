@@ -174,7 +174,7 @@ pub(super) fn blocks_lazy_continuation(lines: &[Line<'_>], index: usize) -> bool
 
 pub(super) fn probe_mdx_flow(lines: &[Line<'_>], index: usize) -> Option<FlowOutcome> {
     let line = &lines[index];
-    (line.mdx
+    (line.flavor.has_jsx()
         && !line.lazy
         && matches!(
             line.text.trim_start_matches([' ', '\t']).as_bytes().first(),
@@ -185,7 +185,7 @@ pub(super) fn probe_mdx_flow(lines: &[Line<'_>], index: usize) -> Option<FlowOut
 
 /// Whether a single MDX line looks like flow content, for tracking what a paragraph can continue.
 pub(super) fn looks_like_mdx_flow(line: &Line<'_>) -> bool {
-    if !line.mdx
+    if !line.flavor.has_jsx()
         || !matches!(
             line.text.trim_start_matches([' ', '\t']).as_bytes().first(),
             Some(b'<' | b'{')

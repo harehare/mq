@@ -95,7 +95,7 @@ fn header<'a>(
     starts_block: fn(&Line<'_>) -> bool,
 ) -> Option<(Vec<Cell<'a>>, Vec<TableAlignKind>)> {
     let head = &lines[start];
-    if head.mdx {
+    if !head.flavor.has_gfm() {
         return None;
     }
     let delimiter = lines.get(start + 1)?;

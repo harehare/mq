@@ -6,6 +6,7 @@
 
 use super::code::Fence;
 use super::definition;
+use super::flavor::Flavor;
 use super::html_flow::{self, Kind as HtmlKind};
 use super::inline;
 use super::line::{Line, split_lines};
@@ -35,8 +36,8 @@ struct Interrupt {
     list: bool,
 }
 
-pub(super) fn parse(src: &str, mdx: bool, read_frontmatter: bool) -> Vec<Block> {
-    let mut lines = split_lines(src, mdx);
+pub(super) fn parse(src: &str, flavor: Flavor, read_frontmatter: bool) -> Vec<Block> {
+    let mut lines = split_lines(src, flavor);
     // A byte order mark at the start of the document is not content.
     if let Some(first) = lines.first_mut().filter(|line| line.text.starts_with('\u{feff}')) {
         *first = first.skip('\u{feff}'.len_utf8());
@@ -227,7 +228,7 @@ impl<'a> LeafState<'a> {
                 }
                 return;
             }
-            if let Some(fence) = Fence::open(rest, !line.mdx) {
+            if let Some(fence) = Fence::open(rest, line.flavor.has_math()) {
                 self.fence = Some(fence);
                 self.paragraph = false;
                 return;
@@ -664,7 +665,7 @@ fn list_item(
 /// Recognises a GFM task marker (`[ ] ` or `[x] `) at the start of an item's content, returning
 /// the checked state and the bytes to skip.
 fn task_checkbox(line: &Line<'_>, next: Option<&Line<'_>>) -> Option<bool> {
-    if line.mdx {
+    if !line.flavor.has_gfm() {
         return None;
     }
     let bytes = line.text.as_bytes();
@@ -801,7 +802,7 @@ fn interrupts_paragraph(line: &Line<'_>) -> bool {
     let (columns, indent) = line.indent();
     let rest = &line.text[indent..];
     columns < line.code_indent()
-        && (Fence::open(rest, !line.mdx).is_some()
+        && (Fence::open(rest, line.flavor.has_math()).is_some()
             || atx_depth(rest).is_some()
             || is_thematic_break(line, indent)
             || blockquote_marker(line).is_some()
@@ -940,7 +941,7 @@ struct FootnoteMarker<'a> {
 }
 
 fn footnote_marker<'a>(line: &Line<'a>) -> Option<FootnoteMarker<'a>> {
-    if line.mdx {
+    if !line.flavor.has_gfm() {
         return None;
     }
     let (columns, indent) = line.indent();
@@ -1094,7 +1095,7 @@ fn html_block(lines: &[Line<'_>], start: usize, kind: HtmlKind, blocks: &mut Vec
     last + 1
 }
 
-/// The kind of HTML block that starts at `rest`; MDX has none.
+/// The kind of HTML block that starts at `rest`, in a flavor that has HTML.
 fn html_start(line: &Line<'_>, rest: &str) -> Option<HtmlKind> {
-    if line.mdx { None } else { html_flow::start(rest) }
+    line.flavor.has_html().then(|| html_flow::start(rest)).flatten()
 }
