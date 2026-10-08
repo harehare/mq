@@ -102,11 +102,19 @@ impl Markdown {
                             buffer.push('\n');
                         } else if let Some(pos) = node.position() {
                             // Insert newlines before the first row of a table
-                            let new_line_count = pre_position
+                            let mut new_line_count = pre_position
                                 .as_ref()
                                 .map(|p| pos.start.line.saturating_sub(p.end.line))
                                 .unwrap_or_else(|| if is_first { 0 } else { 1 })
                                 .min(2);
+                            // A footnote ends where the next line starts, and a single newline after a
+                            // block quote reads back as lazy continuation: a table needs a blank line.
+                            if new_line_count < 2
+                                && i > 0
+                                && matches!(nodes[i - 1], Node::Footnote(_) | Node::Blockquote(_))
+                            {
+                                new_line_count = 2;
+                            }
                             for _ in 0..new_line_count {
                                 buffer.push('\n');
                             }
