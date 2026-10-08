@@ -3,7 +3,7 @@
 use super::inline::{destination, normalize, remove_line_indent, title_at, unescape};
 use super::scan::{eol_len, skip_blanks, skip_blanks_and_eol};
 use super::tree::InlineSource;
-use crate::node::{Definition, Node, Point, Position, Title, Url};
+use crate::node::{Definition, Node, Position, Title, Url};
 
 /// Parses the label at `pos` (a `[`) followed by `:`, returning the raw label and the offset after.
 fn label(text: &str, pos: usize) -> Option<(&str, usize)> {
@@ -84,9 +84,9 @@ fn title_start(bytes: &[u8], after_dest: usize) -> Option<usize> {
     (start > after_dest).then_some(start)
 }
 
-/// Parses the definitions at the start of a paragraph. `lines` holds the start (including its
-/// indentation) and the end of each line. Returns the definitions and how many lines they use.
-pub(super) fn extract(source: &InlineSource, lines: &[(Point, Point)]) -> (Vec<Node>, usize) {
+/// Parses the definitions at the start of a paragraph. `lines` holds the span of each line, from the
+/// start of its indentation. Returns the definitions and how many lines they use.
+pub(super) fn extract(source: &InlineSource, lines: &[Position]) -> (Vec<Node>, usize) {
     let text = source.text.as_str();
     let mut nodes = Vec::new();
     let mut pos = 0;
@@ -96,13 +96,13 @@ pub(super) fn extract(source: &InlineSource, lines: &[(Point, Point)]) -> (Vec<N
         let Some(parsed) = parse_one(text, pos) else {
             break;
         };
-        let first = source.lines.partition_point(|(start, _)| *start <= pos) - 1;
+        let first = source.line_index(pos);
         // The definition ends with its last line, trailing whitespace included.
-        let last = source.lines.partition_point(|(start, _)| *start <= parsed.end) - 1;
+        let last = source.line_index(parsed.end);
         nodes.push(Node::Definition(Definition {
             position: Some(Position {
-                start: lines[first].0.clone(),
-                end: lines[last].1.clone(),
+                start: lines[first].start.clone(),
+                end: lines[last].end.clone(),
             }),
             url: Url(parsed.url),
             title: parsed.title.map(Title),
@@ -114,6 +114,6 @@ pub(super) fn extract(source: &InlineSource, lines: &[(Point, Point)]) -> (Vec<N
     }
 
     // Every line that starts before the end of the definitions is used.
-    let used = source.lines.partition_point(|(start, _)| *start < next_line);
+    let used = source.lines.partition_point(|line| line.offset < next_line);
     (nodes, used)
 }

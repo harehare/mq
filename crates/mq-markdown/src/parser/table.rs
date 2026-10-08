@@ -100,7 +100,11 @@ fn header<'a>(
     }
     let delimiter = lines.get(start + 1)?;
     // The delimiter row cannot start another block, such as a list item.
-    if head.indent().0 >= 4 || delimiter.indent().0 >= 4 || delimiter.lazy || starts_block(delimiter) {
+    if head.indent().columns >= head.code_indent()
+        || delimiter.indent().columns >= delimiter.code_indent()
+        || delimiter.lazy
+        || starts_block(delimiter)
+    {
         return None;
     }
     let text = delimiter.text.trim_matches([' ', '\t']);
@@ -179,7 +183,7 @@ pub(super) fn parse(
     let mut index = start + 2;
     let mut row = 1;
     while let Some(line) = lines.get(index) {
-        if line.is_blank() || line.indent().0 >= 4 || ends_row(line) {
+        if line.is_blank() || line.indent().columns >= line.code_indent() || ends_row(line) {
             break;
         }
         for (column, cell) in split_row(line).iter().enumerate() {

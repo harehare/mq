@@ -2,7 +2,7 @@
 
 use super::block::CODE_INDENT;
 use super::inline;
-use super::line::Line;
+use super::line::{Indent, Line};
 use super::tree::{Block, FencedBlock};
 use crate::node::{Code, Math, Node, Point, Position};
 
@@ -55,7 +55,10 @@ pub(super) fn fenced_code(
     let mut end = None;
 
     while let Some(line) = lines.get(index) {
-        let (columns, line_indent) = line.indent();
+        let Indent {
+            columns,
+            bytes: line_indent,
+        } = line.indent();
         if columns < line.code_indent() && fence.is_closed_by(&line.text[line_indent..]) {
             end = Some(line.end());
             index += 1;
@@ -128,7 +131,7 @@ pub(super) fn indented_code(lines: &[Line<'_>], start: usize, blocks: &mut Vec<B
 
     while let Some(line) = lines.get(index) {
         // Whitespace-only lines are code when indented enough, otherwise they may just separate chunks.
-        if line.indent().0 >= CODE_INDENT {
+        if line.indent().columns >= CODE_INDENT {
             last_code = index;
         } else if !line.is_blank() {
             break;

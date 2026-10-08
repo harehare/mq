@@ -10,7 +10,7 @@ use super::{
 };
 use crate::node::{HorizontalRule, HorizontalRuleMarker, MdxJsEsm, Node, Position};
 use crate::parser::code::{Fence, fenced_code, indented_code};
-use crate::parser::line::Line;
+use crate::parser::line::{Indent, Line};
 use crate::parser::mdx_flow::{FlowOutcome, mdx_flow};
 use crate::parser::table;
 use crate::parser::tree::Block;
@@ -20,9 +20,8 @@ pub(super) struct Cx<'a, 'l> {
     pub(super) lines: &'l [Line<'a>],
     pub(super) index: usize,
     pub(super) line: &'l Line<'a>,
-    /// Columns and byte length of the indentation of `line`, and the text after it.
-    pub(super) columns: usize,
-    pub(super) indent: usize,
+    /// The indentation of `line`, and the text after it.
+    pub(super) indent: Indent,
     pub(super) rest: &'a str,
     pub(super) depth: usize,
     /// Whether containers can still be nested.
@@ -106,7 +105,7 @@ pub(super) struct IndentedCode;
 
 impl BlockRule for IndentedCode {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        if cx.columns < cx.line.code_indent() {
+        if cx.indent.columns < cx.line.code_indent() {
             return None;
         }
         Some(if cx.interrupting.code {
@@ -127,7 +126,12 @@ impl BlockRule for FencedCode {
             && !(cx.separated
                 && matches!(blocks.last(), Some(Block::List(l)) if l.items.last().is_some_and(|i| i.children.is_empty())));
         Some(Step::to(fenced_code(
-            cx.lines, cx.index, cx.indent, &fence, own_end, blocks,
+            cx.lines,
+            cx.index,
+            cx.indent.bytes,
+            &fence,
+            own_end,
+            blocks,
         )))
     }
 }
@@ -137,7 +141,7 @@ pub(super) struct AtxHeading;
 impl BlockRule for AtxHeading {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
         let depth = atx_depth(cx.rest)?;
-        blocks.push(atx_heading(cx.line, cx.indent, depth));
+        blocks.push(atx_heading(cx.line, cx.indent.bytes, depth));
         Some(Step::to(cx.index + 1))
     }
 }
@@ -146,7 +150,7 @@ pub(super) struct ThematicBreak;
 
 impl BlockRule for ThematicBreak {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        if !is_thematic_break(cx.line, cx.indent) {
+        if !is_thematic_break(cx.line, cx.indent.bytes) {
             return None;
         }
         blocks.push(Block::Node(Node::HorizontalRule(HorizontalRule {
@@ -261,7 +265,7 @@ impl BlockRule for Esm {
         let line = cx.line;
         if !(line.flavor.has_jsx()
             && cx.depth == 0
-            && cx.indent == 0
+            && cx.indent.bytes == 0
             && (line.text.starts_with("import ") || line.text.starts_with("export ")))
         {
             return None;

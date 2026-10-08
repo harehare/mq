@@ -1,12 +1,12 @@
 //! Autolinks (`<https://example.com>`) and raw inline HTML.
 
-use crate::parser::scan::{is_whitespace, skip_whitespace};
+use crate::parser::scan::{Span, is_whitespace, skip_whitespace};
 
 /// An autolink found at `<`.
 pub(super) struct Autolink {
     pub(super) url: String,
-    /// Start and end of the link text, inside the angle brackets.
-    pub(super) text: (usize, usize),
+    /// The link text, inside the angle brackets.
+    pub(super) text: Span,
     /// Offset after the closing `>`.
     pub(super) end: usize,
 }
@@ -38,7 +38,7 @@ pub(super) fn autolink(src: &str, pos: usize) -> Option<Autolink> {
                 .position(|&b| b == b'>' || b <= 0x1F || matches!(b, b' ' | b'<' | 0x7F))?;
         return (bytes[close] == b'>').then(|| Autolink {
             url: src[inner..close].to_string(),
-            text: (inner, close),
+            text: Span::new(inner, close),
             end: close + 1,
         });
     }
@@ -46,7 +46,7 @@ pub(super) fn autolink(src: &str, pos: usize) -> Option<Autolink> {
     let end = email(bytes, inner)?;
     Some(Autolink {
         url: format!("mailto:{}", &src[inner..end]),
-        text: (inner, end),
+        text: Span::new(inner, end),
         end: end + 1,
     })
 }

@@ -1,5 +1,23 @@
 //! Byte-level helpers shared by the block and inline parsers.
 
+/// A byte range `start..end` of a source text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Span {
+    pub(super) start: usize,
+    pub(super) end: usize,
+}
+
+impl Span {
+    pub(super) fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    /// The text of the range in `src`.
+    pub(super) fn of(self, src: &str) -> &str {
+        &src[self.start..self.end]
+    }
+}
+
 /// The length of the line ending at `index`, or 0 when there is none.
 pub(super) fn eol_len(bytes: &[u8], index: usize) -> usize {
     match bytes.get(index..) {

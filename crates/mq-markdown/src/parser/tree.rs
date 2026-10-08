@@ -8,12 +8,19 @@ use super::mdx::TagKind;
 use super::scan::eol_len;
 use crate::node::{ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
 
+/// Where a line of an [`InlineSource`] starts: its offset in the text and its position in the document.
+#[derive(Clone)]
+pub(super) struct LineStart {
+    pub(super) offset: usize,
+    pub(super) point: Point,
+}
+
 /// Raw inline content of a paragraph, heading or table cell, with the source position of each line.
 #[derive(Clone)]
 pub(super) struct InlineSource {
     pub(super) text: String,
-    /// For each line, the offset in `text` where it starts and its position in the document.
-    pub(super) lines: Vec<(usize, Point)>,
+    /// Where each line starts, in `text` and in the document.
+    pub(super) lines: Vec<LineStart>,
     /// Whether this is the content of a table cell, where `\|` in code stands for `|`.
     pub(super) table: bool,
     /// Whether `text` contains a tab, which makes columns differ from byte offsets.
@@ -27,7 +34,10 @@ impl InlineSource {
         let mut text = String::new();
         let mut starts = Vec::with_capacity(count);
         for (index, (line, eol, start)) in lines.enumerate() {
-            starts.push((text.len(), start));
+            starts.push(LineStart {
+                offset: text.len(),
+                point: start,
+            });
             text.push_str(line);
             if index + 1 < count {
                 text.push_str(eol);
@@ -72,32 +82,35 @@ impl InlineSource {
         self.text.replace_range(..end, "");
         self.tabs = self.text.contains('\t');
 
-        let index = self.lines.partition_point(|(start, _)| *start <= end).saturating_sub(1);
-        let point = &self.lines[index].1;
-        let first = (
-            0,
-            Point {
-                line: point.line,
+        let index = self.line_index(end);
+        let first = LineStart {
+            offset: 0,
+            point: Point {
+                line: self.lines[index].point.line,
                 column: new_point.column,
             },
-        );
-        let rest = self.lines[index + 1..]
-            .iter()
-            .map(|(start, point)| (start - end, point.clone()));
+        };
+        let rest = self.lines[index + 1..].iter().map(|line| LineStart {
+            offset: line.offset - end,
+            point: line.point.clone(),
+        });
         self.lines = std::iter::once(first).chain(rest).collect();
+    }
+
+    /// The index of the line that `offset` is on.
+    pub(super) fn line_index(&self, offset: usize) -> usize {
+        self.lines
+            .partition_point(|line| line.offset <= offset)
+            .saturating_sub(1)
     }
 
     /// The position where a node ends at `offset`. After a line ending that is the start of the next
     /// line in the document, not the start of its content inside containers.
     pub(super) fn end_point(&self, offset: usize) -> Point {
-        let index = self
-            .lines
-            .partition_point(|(start, _)| *start <= offset)
-            .saturating_sub(1);
-        let (start, point) = &self.lines[index];
-        if *start == offset && offset > 0 {
+        let line = &self.lines[self.line_index(offset)];
+        if line.offset == offset && offset > 0 {
             return Point {
-                line: point.line,
+                line: line.point.line,
                 column: 1,
             };
         }
@@ -106,11 +119,7 @@ impl InlineSource {
 
     /// The position of the byte at `offset` in `text`.
     pub(super) fn point(&self, offset: usize) -> Point {
-        let index = self
-            .lines
-            .partition_point(|(start, _)| *start <= offset)
-            .saturating_sub(1);
-        let (start, point) = &self.lines[index];
+        let LineStart { offset: start, point } = &self.lines[self.line_index(offset)];
         let passed = &self.text[*start..offset];
         let column = if self.tabs && passed.contains('\t') {
             visual_column(passed.chars(), point.column - 1) + 1

@@ -6,6 +6,7 @@ use super::{Context, Item, MAX_NESTING, Scanner, Value, emphasis, item_depth, to
 #[cfg(feature = "wikilink")]
 use crate::node::RenderOptions;
 use crate::node::{FootnoteRef, Image, ImageRef, Link, LinkRef, Node, Position, Text, Title, Url};
+use crate::parser::scan::Span;
 
 /// Normalizes a reference label: whitespace runs become one space, the ends are trimmed, and the case
 /// is folded.
@@ -105,7 +106,7 @@ pub(super) fn close(scanner: &mut Scanner<'_>) -> bool {
         scanner.items.push(Item::Text {
             start: opener_start - 1,
             end: opener_start,
-            value: Value::Slice(opener_start - 1, opener_start),
+            value: Value::Slice(Span::new(opener_start - 1, opener_start)),
         });
     }
     // Email addresses are not linked inside link text.
@@ -125,7 +126,7 @@ pub(super) fn close(scanner: &mut Scanner<'_>) -> bool {
     }
 
     scanner.note_depth(depth);
-    scanner.items.push(Item::Node(node, depth));
+    scanner.items.push(Item::Node { node, depth });
     scanner.pos = end;
     scanner.run = end;
     true
