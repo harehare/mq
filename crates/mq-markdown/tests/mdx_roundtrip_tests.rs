@@ -83,3 +83,28 @@ fn text_is_not_escaped_for_markdown() {
     let markdown = Markdown::from_markdown_str("a {b} and\n\nimport a from \"b\"\n").unwrap();
     assert_eq!(markdown.to_string(), "a {b} and\n\nimport a from \"b\"\n");
 }
+
+#[test]
+fn attributes_of_an_element_can_be_read() {
+    use mq_markdown::{MdxAttributeContent, MdxAttributeValue, MdxJsxAttribute};
+
+    let markdown = Markdown::from_mdx_str("<a b=\"c\" d={e} f {...g} />").unwrap();
+    let Node::MdxJsxFlowElement(element) = &markdown.nodes[0] else {
+        panic!("{:?}", markdown.nodes)
+    };
+    let property = |name: &str, value: Option<MdxAttributeValue>| {
+        MdxAttributeContent::Property(MdxJsxAttribute {
+            name: name.into(),
+            value,
+        })
+    };
+    assert_eq!(
+        element.attributes,
+        vec![
+            property("b", Some(MdxAttributeValue::Literal("c".into()))),
+            property("d", Some(MdxAttributeValue::Expression("e".into()))),
+            property("f", None),
+            MdxAttributeContent::Expression("...g".into()),
+        ]
+    );
+}

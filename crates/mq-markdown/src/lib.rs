@@ -92,9 +92,10 @@ pub use markdown::{Markdown, to_html};
 pub use node::{
     Blockquote, Break, Code, CodeInline, ColorTheme, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment,
     Heading, HorizontalRule, HorizontalRuleMarker, Html, Image, ImageRef, Link, LinkRef, List, ListMarker, ListStyle,
-    Math, MathInline, MdxFlowExpression, MdxJsEsm, MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node,
-    Point, Position, RenderOptions, Strong, TableAlign, TableAlignKind, TableCell, TableRow, Text, Title,
-    TitleSurroundStyle, Toml, Url, UrlSurroundStyle, Yaml, attr_value::AttrValue,
+    Math, MathInline, MdxAttributeContent, MdxAttributeValue, MdxFlowExpression, MdxJsEsm, MdxJsxAttribute,
+    MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node, Point, Position, RenderOptions, Strong, TableAlign,
+    TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url, UrlSurroundStyle, Yaml,
+    attr_value::AttrValue,
 };
 pub use node_kind::{AttrSpec, AttrType, NodeKind};
 
