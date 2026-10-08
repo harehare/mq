@@ -60,7 +60,8 @@ fn split_row<'a>(line: &Line<'a>) -> Vec<Cell<'a>> {
             let content_offset = from + (raw.len() - raw.trim_start_matches([' ', '\t']).len());
             // The first cell starts at the start of the line, later ones at their leading pipe.
             let start = if index == first { 0 } else { pipes[index - 1] };
-            let end = if index + 1 == last { end } else { pipes[index] };
+            // The last cell takes the whitespace at the end of the line along.
+            let end = if index + 1 == last { text.len() } else { pipes[index] };
             Cell {
                 start,
                 end,
@@ -74,8 +75,8 @@ fn split_row<'a>(line: &Line<'a>) -> Vec<Cell<'a>> {
 /// Parses a delimiter cell such as `:-:` into its alignment.
 fn align(content: &str) -> Option<TableAlignKind> {
     let left = content.starts_with(':');
-    let right = content.ends_with(':') && content.len() > 1;
-    let dashes = content.trim_start_matches(':').trim_end_matches(':');
+    let right = content.len() > 1 && content.ends_with(':');
+    let dashes = &content[usize::from(left)..content.len() - usize::from(right)];
     if dashes.is_empty() || !dashes.bytes().all(|b| b == b'-') {
         return None;
     }
@@ -103,7 +104,8 @@ fn header<'a>(
         return None;
     }
     let text = delimiter.text.trim_matches([' ', '\t']);
-    if !text.contains('|')
+    // Without a pipe, a colon tells the delimiter row from the underline of a heading.
+    if !text.contains(['|', ':'])
         || !text.contains('-')
         || !text.bytes().all(|b| matches!(b, b'|' | b':' | b'-' | b' ' | b'\t'))
     {
@@ -141,13 +143,15 @@ fn cell_item(line: &Line<'_>, row: usize, column: usize, cell: &Cell<'_>) -> Tab
 }
 
 /// Parses a table starting at `lines[start]`, returning its nodes and the index after it.
-/// `ends_row` tells which lines end the table besides blank lines.
+/// `starts_block` tells which lines cannot be the delimiter row, `ends_row` which lines end the table
+/// besides blank lines.
 pub(super) fn parse(
     lines: &[Line<'_>],
     start: usize,
+    starts_block: fn(&Line<'_>) -> bool,
     ends_row: fn(&Line<'_>) -> bool,
 ) -> Option<(Vec<TableItem>, usize)> {
-    let (cells, aligns) = header(lines, start, ends_row)?;
+    let (cells, aligns) = header(lines, start, starts_block)?;
 
     let mut items = Vec::new();
     for (column, cell) in cells.iter().enumerate() {
@@ -192,7 +196,8 @@ pub(super) fn row_cells(line: &Line<'_>) -> usize {
 /// The number of cells of `line` when it is a delimiter row such as `|:-|-:|`.
 pub(super) fn delimiter_cells(line: &Line<'_>) -> Option<usize> {
     let text = line.text.trim_matches([' ', '\t']);
-    if !text.contains('|')
+    // Without a pipe, a colon tells the delimiter row from the underline of a heading.
+    if !text.contains(['|', ':'])
         || !text.contains('-')
         || !text.bytes().all(|b| matches!(b, b'|' | b':' | b'-' | b' ' | b'\t'))
     {

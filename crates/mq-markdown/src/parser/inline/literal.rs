@@ -148,8 +148,8 @@ fn www(src: &str, pos: usize) -> Option<usize> {
     {
         return None;
     }
-    let prefix = src.get(pos..pos + 4)?;
-    if !prefix[..3].eq_ignore_ascii_case("www") || !prefix.ends_with('.') || pos + 4 >= bytes.len() {
+    let prefix = bytes.get(pos..pos + 4)?;
+    if !prefix[..3].eq_ignore_ascii_case(b"www") || prefix[3] != b'.' || pos + 4 >= bytes.len() {
         return None;
     }
     let end = domain(src, pos)?;

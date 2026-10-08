@@ -473,7 +473,7 @@ impl Scanner<'_> {
 
         let before = src[..start].chars().next_back();
         let after = src[end..].chars().next();
-        let (can_open, can_close) = emphasis::flanking(ch, before, after);
+        let (can_open, can_close) = emphasis::flanking(ch, before, after, !self.context.references.mdx);
         if !can_open && !can_close {
             self.pos = end;
             return;
@@ -528,8 +528,20 @@ impl Scanner<'_> {
             });
             self.push_node(node, autolink.end);
         } else if let Some(end) = html::inline_html(src, pos) {
+            // Lines of a paragraph lose their leading whitespace, also inside a tag.
+            let value = src[pos..end]
+                .split_inclusive('\n')
+                .enumerate()
+                .map(|(index, line)| {
+                    if index == 0 {
+                        line
+                    } else {
+                        line.trim_start_matches([' ', '\t'])
+                    }
+                })
+                .collect::<String>();
             let node = Node::Html(crate::node::Html {
-                value: src[pos..end].to_string(),
+                value,
                 position: Some(self.context.position(pos, end)),
             });
             self.push_node(node, end);

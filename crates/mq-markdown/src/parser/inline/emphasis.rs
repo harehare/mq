@@ -24,10 +24,11 @@ fn kind(char: Option<char>) -> Kind {
     }
 }
 
-/// Whether a run of `ch` between `before` and `after` can open and can close.
-pub(super) fn flanking(ch: u8, before: Option<char>, after: Option<char>) -> (bool, bool) {
+/// Whether a run of `ch` between `before` and `after` can open and can close. `~` is a delimiter too
+/// when `gfm` is set.
+pub(super) fn flanking(ch: u8, before: Option<char>, after: Option<char>, gfm: bool) -> (bool, bool) {
     let (before_kind, after_kind) = (kind(before), kind(after));
-    let marker = |char: Option<char>| matches!(char, Some('*' | '_' | '~'));
+    let marker = |char: Option<char>| matches!(char, Some('*' | '_')) || (gfm && char == Some('~'));
 
     let open = after_kind == Kind::Other
         || (after_kind == Kind::Punctuation && before_kind != Kind::Other)

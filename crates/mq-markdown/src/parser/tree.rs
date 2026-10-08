@@ -76,6 +76,8 @@ impl InlineSource {
 pub(super) enum Block {
     /// A finished leaf such as a code block or a thematic break.
     Node(Node),
+    /// A fenced code or math block.
+    Fenced(FencedBlock),
     Inline(InlineBlock),
     Quote(QuoteBlock),
     List(ListBlock),
@@ -85,6 +87,14 @@ pub(super) enum Block {
     Jsx(JsxTag),
     /// Invalid MDX, reported when the blocks become nodes.
     Error(String),
+}
+
+pub(super) struct FencedBlock {
+    pub(super) node: Node,
+    /// Whether it has a closing fence.
+    pub(super) closed: bool,
+    /// The number of lines of content, blank ones included.
+    pub(super) lines: usize,
 }
 
 pub(super) struct InlineBlock {
