@@ -170,7 +170,11 @@ pub(in crate::parser) fn title_at(src: &str, pos: usize) -> Option<(String, usiz
     let mut index = pos + 1;
     while let Some(&byte) = bytes.get(index) {
         match byte {
-            byte if byte == close => return Some((entity::unescape(&src[pos + 1..index]), index + 1)),
+            byte if byte == close => {
+                // The lines of a paragraph lose their leading whitespace, also inside a title.
+                let title = entity::remove_line_indent(&src[pos + 1..index]);
+                return Some((entity::unescape(&title), index + 1));
+            }
             b'(' if close == b')' => return None,
             b'\\' => index += 1,
             b'\n' | b'\r' => {

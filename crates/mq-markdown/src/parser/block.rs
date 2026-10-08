@@ -586,7 +586,7 @@ fn list_item(
                 break;
             }
             last_blank_has_whitespace = !line.text.is_empty();
-            blanks.push(line.skip(line.text.len()));
+            blanks.push(line.skip_columns(marker.width));
         } else if line.lazy {
             state.feed(line);
             inner.push(*line);
