@@ -1185,6 +1185,18 @@ nodes: [Text(Text { value: "a < b", @1:1-1:6 })]
 nodes: error: Unexpected character `3` (U+0033) before name
 ## mdx attr_no_value "<a b=>"
 nodes: error: Unexpected character `>` (U+003E) before attribute value
+## mdx attr_space_after_eq "<b e= \"f\"/>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:12, name: Some("b"), attributes: [Property(MdxJsxAttribute { name: "e", value: Some(Literal("f")) })] })]
+## mdx attr_spaces_around_eq "a <b e = \"f\"/>."
+nodes: [Text(Text { value: "a ", @1:1-1:3 }), MdxJsxTextElement(MdxJsxTextElement { children: [], @1:3-1:15, name: Some("b"), attributes: [Property(MdxJsxAttribute { name: "e", value: Some(Literal("f")) })] }), Text(Text { value: ".", @1:15-1:16 })]
+## mdx attr_line_before_eq "<b c\n= \"x\">c</b>"
+nodes: [MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "c", @2:7-2:8 })], @1:1-2:12, name: Some("b"), attributes: [Property(MdxJsxAttribute { name: "c", value: Some(Literal("x")) })] })]
+## mdx attr_namespace_spaces "a <b xml :\tlang\n= \"de-CH\" foo:bar>c</b>."
+nodes: [Text(Text { value: "a ", @1:1-1:3 }), MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "c", @2:19-2:20 })], @1:3-2:24, name: Some("b"), attributes: [Property(MdxJsxAttribute { name: "xml:lang", value: Some(Literal("de-CH")) }), Property(MdxJsxAttribute { name: "foo:bar", value: None })] }), Text(Text { value: ".", @2:24-2:25 })]
+## mdx attr_spaced_names "a <b a b : c d : e = \"f\" g/>."
+nodes: [Text(Text { value: "a ", @1:1-1:3 }), MdxJsxTextElement(MdxJsxTextElement { children: [], @1:3-1:29, name: Some("b"), attributes: [Property(MdxJsxAttribute { name: "a", value: None }), Property(MdxJsxAttribute { name: "b:c", value: None }), Property(MdxJsxAttribute { name: "d:e", value: Some(Literal("f")) }), Property(MdxJsxAttribute { name: "g", value: None })] }), Text(Text { value: ".", @1:29-1:30 })]
+## mdx attr_expr_space_after_eq "<b e= {f}/>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:12, name: Some("b"), attributes: [Property(MdxJsxAttribute { name: "e", value: Some(Expression("f")) })] })]
 ## mdx jsx_nested_flow "<a>\n<b>\n</b>\n</a>"
 nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @2:1-3:5, name: Some("b"), attributes: [] })], @1:1-4:5, name: Some("a"), attributes: [] })]
 ## mdx jsx_in_quote "> <a>\n> x\n> </a>"
@@ -1262,7 +1274,7 @@ nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [List(List { values: [Te
 ## mdx list_items_unbalanced "- <a>\n- </a>"
 nodes: error: Expected a closing tag for `<a>` (1:3) before the end of its container
 ## mdx spaced_equals "<a b = \"c\" />"
-nodes: [Text(Text { value: "<a b = \"c\" />", @1:1-1:14 })]
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:14, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b", value: Some(Literal("c")) })] })]
 ## mdx heading "# h\n\ntext *a* [b](c) `d`\n"
 nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:3-1:4 })], @1:1-1:4 }), Text(Text { value: "text ", @3:1-3:6 }), Emphasis(Emphasis { values: [Text(Text { value: "a", @3:7-3:8 })], @3:6-3:9 }), Text(Text { value: " ", @3:9-3:10 }), Link(Link { url: Url("c"), title: None, values: [Text(Text { value: "b", @3:11-3:12 })], @3:10-3:16 }), Text(Text { value: " ", @3:16-3:17 }), CodeInline(CodeInline { value: "d", @3:17-3:20 })]
 ## mdx indented_is_text "    not code\n"

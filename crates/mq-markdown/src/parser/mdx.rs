@@ -273,10 +273,7 @@ impl Cursor<'_> {
         }
 
         self.bump();
-        // Unlike before the `=`, no whitespace is allowed after it.
-        if self.peek().is_some_and(char::is_whitespace) {
-            return Err(Stop::Nok);
-        }
+        self.skip_whitespace()?;
         let value = match self.peek() {
             Some(quote @ ('"' | '\'')) => {
                 self.bump();
