@@ -922,6 +922,29 @@ mod json_tests {
     }
 
     #[test]
+    fn test_to_json_mdx_attributes() {
+        let md = Markdown::from_mdx_str("<a b=\"c\" d={e} f {...g} />").unwrap();
+        let json: serde_json::Value = serde_json::from_str(&md.to_json().unwrap()).unwrap();
+        let attributes = &json[0]["attributes"];
+        assert_eq!(
+            attributes[0],
+            serde_json::json!({"type": "property", "value": {"type": "MdxJsxAttribute", "name": "b", "value": {"type": "literal", "value": "c"}}})
+        );
+        assert_eq!(
+            attributes[1],
+            serde_json::json!({"type": "property", "value": {"type": "MdxJsxAttribute", "name": "d", "value": {"type": "expression", "value": "e"}}})
+        );
+        assert_eq!(
+            attributes[2],
+            serde_json::json!({"type": "property", "value": {"type": "MdxJsxAttribute", "name": "f", "value": null}})
+        );
+        assert_eq!(
+            attributes[3],
+            serde_json::json!({"type": "expression", "value": "...g"})
+        );
+    }
+
+    #[test]
     fn test_to_json_complex() {
         let md = "# Header\n\n- Item 1\n- Item 2\n\n*Emphasis* and **Strong**"
             .parse::<Markdown>()
