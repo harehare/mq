@@ -32,13 +32,13 @@ struct Interrupt {
     list: bool,
 }
 
-pub(super) fn parse(src: &str, mdx: bool) -> Vec<Block> {
+pub(super) fn parse(src: &str, mdx: bool, read_frontmatter: bool) -> Vec<Block> {
     let mut lines = split_lines(src, mdx);
     // A byte order mark at the start of the document is not content.
     if let Some(first) = lines.first_mut().filter(|line| line.text.starts_with('\u{feff}')) {
         *first = first.skip('\u{feff}'.len_utf8());
     }
-    match frontmatter(&lines) {
+    match read_frontmatter.then(|| frontmatter(&lines)).flatten() {
         Some((node, next)) => {
             let mut blocks = vec![Block::Node(node)];
             blocks.extend(parse_blocks(&lines[next..], 0, Interrupt::default()));

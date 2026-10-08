@@ -466,6 +466,12 @@ struct ProgramArgs {
     #[arg(long = "no-header", default_value_t = false)]
     no_header: bool,
 
+    /// Do not read frontmatter at the start of Markdown or MDX input: the lines between `---` or
+    /// `+++` are then text, a heading or a rule. Applies to `-I markdown` and `-I mdx`, and to
+    /// `.md` and `.mdx` files
+    #[arg(long = "no-frontmatter", default_value_t = false)]
+    no_frontmatter: bool,
+
     /// Search modules from the directory
     #[arg(short = 'L', long = "directory")]
     module_directories: Option<Vec<PathBuf>>,
@@ -1783,6 +1789,7 @@ impl Cli {
         }
 
         self.validate_csv_options()?;
+        self.validate_frontmatter_option()?;
         self.check_output_permitted()?;
 
         match &self.commands {
@@ -2022,6 +2029,22 @@ impl Cli {
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
+    fn validate_frontmatter_option(&self) -> miette::Result<()> {
+        if self.input.program.no_frontmatter
+            && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Markdown | InputFormat::Mdx))
+        {
+            return Err(miette!("--no-frontmatter only applies to -I markdown or -I mdx"));
+        }
+        Ok(())
+    }
+
+    /// How Markdown and MDX input is read.
+    fn parse_options(&self) -> mq_markdown::ParseOptions {
+        mq_markdown::ParseOptions {
+            frontmatter: !self.input.program.no_frontmatter,
+        }
+    }
+
     fn validate_csv_options(&self) -> miette::Result<()> {
         if (self.input.program.csv_delimiter.is_some() || self.input.program.no_header)
             && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
@@ -2149,8 +2172,8 @@ impl Cli {
                 }
             }) {
                 // Native formats
-                InputFormat::Markdown => mq_lang::parse_markdown_input(text)?,
-                InputFormat::Mdx => mq_lang::parse_mdx_input(text)?,
+                InputFormat::Markdown => mq_lang::parse_markdown_input_with(text, self.parse_options())?,
+                InputFormat::Mdx => mq_lang::parse_mdx_input_with(text, self.parse_options())?,
                 InputFormat::Html => mq_lang::parse_html_input(text)?,
                 InputFormat::Text => mq_lang::parse_text_input(text)?,
                 InputFormat::Null => mq_lang::null_input(),
@@ -5914,6 +5937,65 @@ mod tests {
             ..Cli::default()
         };
         assert_eq!(cli.tabular_query_prefix(&InputFormat::Json), None);
+    }
+
+    fn frontmatter_cli(format: Option<InputFormat>, no_frontmatter: bool) -> Cli {
+        Cli {
+            input: InputArgs {
+                program: ProgramArgs {
+                    input_format: format,
+                    no_frontmatter,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Cli::default()
+        }
+    }
+
+    #[rstest]
+    #[case::markdown(InputFormat::Markdown)]
+    #[case::mdx(InputFormat::Mdx)]
+    fn test_frontmatter_is_read_unless_turned_off(#[case] format: InputFormat) {
+        let input = ContentData::Text("---\ntitle: x\n---\n\ntext".to_string());
+        let names = |cli: &Cli| -> Vec<String> {
+            cli.resolve_input(&None, &input)
+                .unwrap()
+                .iter()
+                .map(|value| match value {
+                    mq_lang::RuntimeValue::Markdown(node, _) => node.name().to_string(),
+                    other => other.to_string(),
+                })
+                .collect()
+        };
+
+        assert_eq!(names(&frontmatter_cli(Some(format.clone()), false)), ["yaml", "text"]);
+        assert_eq!(
+            names(&frontmatter_cli(Some(format), true)),
+            ["Horizontal_rule", "h2", "text"]
+        );
+    }
+
+    #[rstest]
+    #[case::markdown(Some(InputFormat::Markdown), true)]
+    #[case::mdx(Some(InputFormat::Mdx), true)]
+    #[case::by_extension(None, true)]
+    #[case::csv(Some(InputFormat::Csv), false)]
+    #[case::json(Some(InputFormat::Json), false)]
+    fn test_no_frontmatter_applies_to_markdown_and_mdx(#[case] format: Option<InputFormat>, #[case] valid: bool) {
+        assert_eq!(
+            frontmatter_cli(format, true).validate_frontmatter_option().is_ok(),
+            valid
+        );
+    }
+
+    #[test]
+    fn test_no_frontmatter_is_not_checked_when_it_is_not_given() {
+        assert!(
+            frontmatter_cli(Some(InputFormat::Csv), false)
+                .validate_frontmatter_option()
+                .is_ok()
+        );
     }
 
     #[test]

@@ -16,6 +16,20 @@ use table_layout::{TableLayout, write_padded_cell};
 mod list_order;
 mod table_layout;
 
+/// What reading Markdown or MDX turns on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseOptions {
+    /// Read YAML between `---` lines, or TOML between `+++` lines, at the start of the input as frontmatter.
+    /// Without it these lines are a rule and text, or a heading.
+    pub frontmatter: bool,
+}
+
+impl Default for ParseOptions {
+    fn default() -> Self {
+        Self { frontmatter: true }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Markdown {
     pub nodes: Vec<Node>,
@@ -284,8 +298,13 @@ impl Markdown {
     }
 
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
+        Self::from_mdx_str_with(content, ParseOptions::default())
+    }
+
+    /// Reads MDX with the given options.
+    pub fn from_mdx_str_with(content: &str, options: ParseOptions) -> miette::Result<Self> {
         Ok(Self {
-            nodes: parse_mdx_nodes(content)?,
+            nodes: parse_mdx_nodes(content, options)?,
             options: RenderOptions {
                 mdx: true,
                 ..RenderOptions::default()
@@ -334,7 +353,12 @@ impl Markdown {
     }
 
     pub fn from_markdown_str(content: &str) -> miette::Result<Self> {
-        let nodes = parse_nodes(content)?;
+        Self::from_markdown_str_with(content, ParseOptions::default())
+    }
+
+    /// Reads Markdown with the given options.
+    pub fn from_markdown_str_with(content: &str, options: ParseOptions) -> miette::Result<Self> {
+        let nodes = parse_nodes(content, options)?;
 
         Ok(Self {
             nodes,
@@ -344,13 +368,13 @@ impl Markdown {
 }
 
 /// Parses `content` into nodes.
-fn parse_nodes(content: &str) -> miette::Result<Vec<Node>> {
-    crate::parser::parse(content)
+fn parse_nodes(content: &str, options: ParseOptions) -> miette::Result<Vec<Node>> {
+    crate::parser::parse_with(content, options.frontmatter)
 }
 
 /// Parses `content` as MDX into nodes.
-fn parse_mdx_nodes(content: &str) -> miette::Result<Vec<Node>> {
-    crate::parser::parse_mdx(content)
+fn parse_mdx_nodes(content: &str, options: ParseOptions) -> miette::Result<Vec<Node>> {
+    crate::parser::parse_mdx_with(content, options.frontmatter)
 }
 
 /// Converts Markdown to HTML.

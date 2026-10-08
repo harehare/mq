@@ -88,7 +88,7 @@ mod markdown;
 mod node;
 mod node_kind;
 mod parser;
-pub use markdown::{Markdown, to_html};
+pub use markdown::{Markdown, ParseOptions, to_html};
 pub use node::{
     Blockquote, Break, Code, CodeInline, ColorTheme, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment,
     Heading, HorizontalRule, HorizontalRuleMarker, Html, Image, ImageRef, Link, LinkRef, List, ListMarker, ListStyle,
