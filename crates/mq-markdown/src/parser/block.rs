@@ -53,7 +53,11 @@ struct Interrupt {
 }
 
 pub(super) fn parse(src: &str, mdx: bool) -> Vec<Block> {
-    let lines = split_lines(src, mdx);
+    let mut lines = split_lines(src, mdx);
+    // A byte order mark at the start of the document is not content.
+    if let Some(first) = lines.first_mut().filter(|line| line.text.starts_with('\u{feff}')) {
+        *first = first.skip('\u{feff}'.len_utf8());
+    }
     match frontmatter(&lines).filter(|_| !mdx) {
         Some((node, next)) => {
             let mut blocks = vec![Block::Node(node)];
@@ -162,7 +166,7 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
         } else if let Some(marker) = footnote_marker(line).filter(|_| containers) {
             index = footnote(lines, index, &marker, depth, interrupting, &mut blocks);
             after_container = true;
-        } else if let Some((items, next)) = table::parse(lines, index, interrupts_paragraph) {
+        } else if let Some((items, next)) = table::parse(lines, index, interrupts_paragraph, ends_table) {
             blocks.push(Block::Table(items));
             index = next;
         } else if line.mdx
@@ -568,6 +572,7 @@ fn list(
 fn last_end(block: &Block) -> Option<Point> {
     match block {
         Block::Node(node) => node.position().map(|position| position.end),
+        Block::Fenced(fenced) => fenced.node.position().map(|position| position.end),
         Block::Quote(quote) => Some(quote.position.end.clone()),
         Block::List(list) => list.items.last().map(|item| item.position.end.clone()),
         Block::Footnote(footnote) => Some(footnote.position.end.clone()),
@@ -617,7 +622,7 @@ fn ends_in_text(block: &Block) -> bool {
         Block::Footnote(footnote) => footnote.children.last().is_some_and(ends_in_text),
         // A definition is a paragraph whose content was consumed.
         Block::Node(node) => matches!(node, Node::Definition(_)),
-        Block::Table(_) | Block::Jsx(_) | Block::Error(_) => false,
+        Block::Fenced(_) | Block::Table(_) | Block::Jsx(_) | Block::Error(_) => false,
     }
 }
 
@@ -911,6 +916,13 @@ fn interrupts_paragraph(line: &Line<'_>) -> bool {
             || ListMarker::parse(line).is_some_and(|marker| marker.interrupts_paragraph()))
 }
 
+/// Whether `line` ends a table. Unlike a paragraph, a table is also ended by a list item that is empty
+/// or that is numbered from other than one.
+fn ends_table(line: &Line<'_>) -> bool {
+    interrupts_paragraph(line)
+        || (!line.lazy && line.indent().0 < line.code_indent() && ListMarker::parse(line).is_some())
+}
+
 /// Returns the index after the block and what it restricts on the first line of a following container.
 ///
 /// A paragraph of `dashes` right after a setext heading is cut short as described by [`Dashes`]. A paragraph with a `release` has its second line ended by list markers that could not interrupt it.
@@ -984,7 +996,15 @@ fn paragraph(
     if first == index {
         // Nothing is left of the paragraph, so a setext underline starts a paragraph of text instead.
         return match setext {
-            Some((_, underline)) => (underline, Interrupt::default(), true),
+            Some((_, underline)) => (
+                underline,
+                // The underline is still a line of a paragraph, which an empty list item cannot interrupt.
+                Interrupt {
+                    code: false,
+                    list: true,
+                },
+                true,
+            ),
             None => (index, Interrupt::default(), false),
         };
     }
@@ -1038,7 +1058,13 @@ fn paragraph_source(lines: &[Line<'_>]) -> InlineSource {
         } else {
             text
         };
-        (text, line.eol, line.point(offset_in(line.text, text)))
+        let offset = offset_in(line.text, text);
+        let point = if index == 0 {
+            line.content_point(offset)
+        } else {
+            line.point(offset)
+        };
+        (text, line.eol, point)
     }))
 }
 
@@ -1058,9 +1084,24 @@ fn footnote_marker<'a>(line: &Line<'a>) -> Option<FootnoteMarker<'a>> {
     if columns >= CODE_INDENT {
         return None;
     }
-    let close = rest.find(']')?;
+    // A backslash escapes the bracket that follows it, as well as another backslash.
+    let bytes = rest.as_bytes();
+    let mut close = 0;
+    while close < bytes.len() && bytes[close] != b']' {
+        if bytes[close] == b'[' {
+            return None;
+        }
+        close += if bytes[close] == b'\\' && matches!(bytes.get(close + 1), Some(b'[' | b'\\' | b']')) {
+            2
+        } else {
+            1
+        };
+    }
+    if close >= bytes.len() {
+        return None;
+    }
     let label = &rest[..close];
-    if label.is_empty() || label.bytes().any(|b| matches!(b, b' ' | b'\t' | b'[' | b'\r' | b'\n')) {
+    if label.is_empty() || label.bytes().any(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n')) {
         return None;
     }
     let after = rest[close + 1..].strip_prefix(':')?;
@@ -1086,10 +1127,13 @@ fn footnote(
     state.feed(&first);
     let mut blanks = Vec::new();
     let mut index = start + 1;
+    // The end of a definition without content: it reaches to the end of the blank lines that follow.
+    let mut empty_end = None;
 
     while let Some(line) = lines.get(index) {
         if line.is_blank() {
             if first.is_blank() && inner.len() == 1 {
+                empty_end = lines[index..].iter().take_while(|l| l.is_blank()).last().map(Line::end);
                 break;
             }
             blanks.push(line.skip(line.text.len()));
@@ -1113,12 +1157,15 @@ fn footnote(
 
     // Trailing blank lines belong to whatever follows, but still extend the position.
     index -= blanks.len();
-    let position = Position {
-        start: lines[start].point(0),
-        end: blanks
+    let end = empty_end.unwrap_or_else(|| {
+        blanks
             .last()
             .or(inner.last())
-            .map_or_else(|| lines[start].end(), Line::end),
+            .map_or_else(|| lines[start].end(), Line::end)
+    });
+    let position = Position {
+        start: lines[start].point(0),
+        end,
     };
     blocks.push(Block::Footnote(FootnoteBlock {
         ident: inline::normalize(marker.label),

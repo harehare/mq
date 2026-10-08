@@ -21,9 +21,13 @@ pub(super) fn decode(src: &str, pos: usize) -> Option<(usize, String)> {
             return None;
         }
         let number = u32::from_str_radix(&src[pos + 1 + digits_from..pos + 1 + digits_from + digits], radix).ok()?;
+        // Control characters other than whitespace are not allowed, nor are surrogates and
+        // out of range numbers.
         let char = match char::from_u32(number) {
-            Some(char) if number != 0 => char,
-            _ => char::REPLACEMENT_CHARACTER,
+            Some('\0'..='\u{8}' | '\u{b}' | '\u{e}'..='\u{1f}' | '\u{7f}'..='\u{9f}') | None => {
+                char::REPLACEMENT_CHARACTER
+            }
+            Some(char) => char,
         };
         return Some((pos + 1 + digits_from + digits + 1, char.to_string()));
     }

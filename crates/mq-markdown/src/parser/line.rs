@@ -77,7 +77,8 @@ impl<'a> Line<'a> {
         } else {
             offset + 1
         };
-        // The start of a line inside a tab is before the end of that tab.
+        // Whitespace at the start of a line inside a tab starts before the end of that tab, content
+        // starts where that tab ends.
         if byte == 0 {
             column -= self.pad;
         }
@@ -85,6 +86,16 @@ impl<'a> Line<'a> {
             line: self.number,
             column,
         }
+    }
+
+    /// Like [`Line::point`] for content that `markdown-rs` places where the rest of a tab ends, instead
+    /// of before it: paragraphs and fences.
+    pub(super) fn content_point(&self, byte: usize) -> Point {
+        let mut point = self.point(byte);
+        if byte == 0 {
+            point.column += self.pad;
+        }
+        point
     }
 
     /// The same line with the first `bytes` bytes removed.

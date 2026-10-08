@@ -3,7 +3,7 @@
 use super::block::{CODE_INDENT, join_lines};
 use super::inline;
 use super::line::Line;
-use super::tree::Block;
+use super::tree::{Block, FencedBlock};
 use crate::node::{Code, Math, Node, Point, Position};
 
 /// An opening code fence, or math fence.
@@ -70,6 +70,7 @@ pub(super) fn fenced_code(
     // An unclosed fence runs to the end of its container. When that is the end of the document the
     // final line terminator is part of it, so the end is the start of the following line.
     // Right after a container, a fence without content ends with its own line instead.
+    let closed = end.is_some();
     let end = end.unwrap_or_else(|| match lines.last() {
         Some(last) if !last.eol.is_empty() && reaches_line_end(last, body.is_empty(), own_end) => Point {
             line: last.number + 1,
@@ -80,7 +81,7 @@ pub(super) fn fenced_code(
     });
 
     let position = Some(Position {
-        start: lines[start].point(indent),
+        start: lines[start].content_point(indent),
         end,
     });
     let value = join_lines(&body);
@@ -95,7 +96,11 @@ pub(super) fn fenced_code(
             position,
         })
     };
-    blocks.push(Block::Node(node));
+    blocks.push(Block::Fenced(FencedBlock {
+        node,
+        closed,
+        lines: body.len(),
+    }));
 
     index
 }

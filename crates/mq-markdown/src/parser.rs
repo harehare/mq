@@ -4,19 +4,29 @@
 //! [`resolve`] collects the definitions and turns the tree into nodes, and [`inline`] parses the raw
 //! text of paragraphs, headings and table cells along the way.
 //!
-//! The output, positions included, is the same as that of `markdown-rs` for CommonMark, GFM, frontmatter,
-//! math and MDX (without a JavaScript parser, so expressions only need balanced braces). This holds for
-//! every example of the CommonMark and GFM specifications, and for randomly generated documents, except:
+//! The output, positions included, is the one that `markdown-rs`, which this parser replaced, gave for
+//! CommonMark, GFM, frontmatter, math and MDX (without a JavaScript parser, so expressions only need
+//! balanced braces). HTML is rendered by [`render_html`] in the way `markdown-rs` did. Where the two
+//! differ, this parser follows the specifications:
+//!
+//! - a byte order mark at the start is not content
+//! - a table has no body rows that end it for starting with `*`, `#` or a backtick, a table of one
+//!   column needs no pipe, and its last cell takes the whitespace that follows it
+//! - an info string loses its trailing whitespace, and a list is not loose for blank lines after it
+//! - a tab that a container only partly consumes is not kept in text, the text starts where the tab ends
+//! - `![^a](b)` is an image
+//! - the end of text that has a tab before its line ending, which `markdown-rs` places beyond the text
+//!
+//! What `markdown-rs` did and this parser does not do:
 //!
 //! - lazy continuation lines after definitions, footnotes or thematic breaks in containers, in containers
 //!   nested more than two deep, or with several container markers on a line, and unclosed fences in
 //!   containers whose end depends on the line that follows
-//! - documents that start with a `---` or `+++` line that never closes, and inputs on which
-//!   `markdown-rs` panics
-//! - a few tab quirks of `markdown-rs`: a tab that a container only partly consumes keeps its rest in
-//!   text values
+//! - documents that start with a `---` or `+++` line that never closes
 //! - character references in an image destination that contains an email address
-//! - MDX text expressions and tags that span lines interrupted by container markers
+//! - MDX text expressions and tags that span lines interrupted by container markers, and tabs in them
+//! - an image in the alt text of an image, and the tabs that a container consumes in part inside of
+//!   code, in HTML
 mod block;
 mod code;
 mod definition;
@@ -25,6 +35,7 @@ mod inline;
 mod line;
 mod mdx;
 mod mdx_flow;
+mod render_html;
 mod resolve;
 mod table;
 mod tree;
@@ -36,6 +47,11 @@ pub(crate) fn parse(content: &str) -> miette::Result<Vec<Node>> {
     resolve::resolve(block::parse(content, false), false).map_err(|message| miette::miette!(message))
 }
 
+/// Renders `content` as HTML.
+pub(crate) fn to_html(content: &str) -> String {
+    render_html::render(content)
+}
+
 /// Parses `content` as MDX: no indented code, HTML, autolinks or GFM, but expressions and JSX.
 pub(crate) fn parse_mdx(content: &str) -> miette::Result<Vec<Node>> {
     resolve::resolve(block::parse(content, true), true).map_err(|message| miette::miette!(message))
@@ -44,432 +60,540 @@ pub(crate) fn parse_mdx(content: &str) -> miette::Result<Vec<Node>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::markdown::{parse_mdx_with_markdown_rs, parse_with_markdown_rs};
     use proptest::prelude::*;
     use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
-    use rstest::rstest;
 
-    /// `Node`'s `PartialEq` compares rendered output, so compare `Debug` output to include positions.
-    fn assert_same_as_markdown_rs(input: &str) {
-        let expected = parse_with_markdown_rs(input).unwrap();
-        let actual = parse(input).unwrap();
-        assert_eq!(format!("{actual:#?}"), format!("{expected:#?}"), "input: {input:?}");
+    const MDX_CASES: &[(&str, &str)] = &[
+        ("jsx_self", "<a />"),
+        ("jsx_attrs", "<a b=\"c&amp;d\" e='f' g={h} {...i} j />"),
+        ("jsx_member", "<a.b.c />"),
+        ("jsx_namespace", "<a:b c:d=\"e\" />"),
+        ("jsx_fragment", "<></>"),
+        ("jsx_text_pair", "<a>x</a>"),
+        ("jsx_flow_pair", "<a>\n\nx\n\n</a>"),
+        ("jsx_flow_indented_child", "<a>\n  x\n</a>"),
+        ("jsx_inline", "a <b>c</b> d"),
+        ("jsx_inline_self", "a <b/> d"),
+        ("expr_flow", "{a}"),
+        ("expr_nested", "{a {b} c}"),
+        ("expr_multiline", "{a\nb}"),
+        ("expr_multiline_indented", "{a\n  b\n   c}"),
+        ("expr_text", "x {a} y"),
+        ("expr_then_tag", "{a} <b/>"),
+        ("tag_then_expr", "<b/> {a}"),
+        ("tag_then_text", "<b/> x"),
+        ("expr_then_text", "{a}x"),
+        ("jsx_in_expr_child", "<a>{b}</a>"),
+        ("jsx_unclosed_text", "<a>b"),
+        ("jsx_mismatch", "<a></b>"),
+        ("lt_space", "a < b"),
+        ("lt_digit", "a <3"),
+        ("attr_no_value", "<a b=>"),
+        ("jsx_nested_flow", "<a>\n<b>\n</b>\n</a>"),
+        ("jsx_in_quote", "> <a>\n> x\n> </a>"),
+        ("jsx_in_list", "- <a>\n  x\n  </a>"),
+        ("attr_quote_inside", "<a b='c\"d' />"),
+        ("two_tags", "<a/><b/>"),
+        ("two_text_elements", "<a>x</a><b>y</b>"),
+        ("interrupt_paragraph_tag", "a\n<b/>"),
+        ("interrupt_paragraph_expr", "a\n{b}"),
+        ("two_expressions", "{a}\n{b}"),
+        ("expr_in_flow_element", "<a>\n\n{b}\n\n</a>"),
+        ("indented_tag", "   <a/>"),
+        ("very_indented_tag", "    <a/>"),
+        ("heading_jsx", "# h <a>b</a>"),
+        ("emphasis_crossing", "*<a>x</a>*"),
+        ("emphasis_crossing_bad", "*<a>x*</a>"),
+        ("link_jsx", "[<a>x</a>](y)"),
+        ("code_not_jsx", "`<a/>` {b}"),
+        ("escaped", "\\<a/> \\{b}"),
+        ("attr_entities", "<a b=\"&lt;&#x41;\" />"),
+        ("attr_multiline_literal", "<a b='x\ny' />"),
+        ("closing_spaces", "<a  >x</a  >"),
+        ("lt_space_name", "< a>"),
+        ("self_closing_space", "<a / >"),
+        ("attr_on_next_line", "<a\nb />"),
+        ("dashed_name", "<a-b />"),
+        ("dashed_attr", "<a b-c=\"d\" />"),
+        ("bad_name_char", "<A_b$.c-d />"),
+        ("expr_unclosed", "{a"),
+        ("expr_empty", "{}"),
+        ("expr_space", "{ }"),
+        ("empty_flow_element", "<a>\n</a>"),
+        ("text_element_unclosed_line", "<a>x\n</a>"),
+        ("stray_close", "</a>"),
+        ("stray_close_text", "x </a>"),
+        ("element_with_emphasis", "<a>*b*</a>"),
+        ("flow_element_with_emphasis", "<a>\n*b*\n</a>"),
+        ("flow_element_with_list", "<a>\n- b\n</a>"),
+        ("list_items_unbalanced", "- <a>\n- </a>"),
+        ("spaced_equals", "<a b = \"c\" />"),
+        ("heading", "# h\n\ntext *a* [b](c) `d`\n"),
+        ("indented_is_text", "    not code\n"),
+        ("indented_heading", "     # h\n"),
+        ("no_autolink", "<http://a.b>"),
+        ("no_gfm", "| a |\n|-|\n\n~a~ www.a.b [^a]\n\n- [ ] a\n"),
+        ("no_math", "$a$\n\n$$\na\n$$\n"),
+        ("no_frontmatter", "---\na\n---\n"),
+        ("esm_is_text", "import a from 'b'\n\nexport const c = 1\n"),
+        ("definition", "[a]: /u\n\n[a]\n"),
+        ("list_deep_indent", "-      a\n"),
+        ("fence", "```rust\ncode\n```\n"),
+        ("lone_cr_after_lt", "<\r/-x"),
+        ("crlf_after_lt", "<\r\n/-x"),
+        ("expression_lone_cr", "{\r }"),
+        ("expression_cr_indent", "{a\r   b\r\n c\n  d}"),
+        ("tilde_not_delimiter", "*~*a"),
+        ("tilde_strong_not_delimiter", "**~**あ"),
+        ("dollar_after_name", "<a$/>"),
+        ("dollar_after_space", "<a $b/>"),
+        ("cjk_tag_name", "<あ b=\"c\" />"),
+        ("fullwidth_underscore_name", "<a＿b />"),
+        ("jsx_text_cjk", "あ <b>い</b> う"),
+        ("expression_cjk", "{あ} い"),
+    ];
+
+    const CASES: &[(&str, &str)] = &[
+        ("empty", ""),
+        ("blank_lines", "\n\n  \n"),
+        ("paragraph", "hello\n"),
+        ("paragraph_no_eol", "hello"),
+        ("paragraph_multiline", "a\nb\nc\n"),
+        ("paragraph_indented_continuation", "a\n    b\n"),
+        ("paragraph_trailing_space", "あい\n  うえ  \n"),
+        ("two_paragraphs", "a\n\nb\n"),
+        ("crlf", "a\r\nb\r\n\r\nc\r\n"),
+        ("crlf_fence", "```\r\na\r\nb\r\n```\r\n"),
+        ("cr_only", "a\rb\r"),
+        ("atx_h1", "# title\n"),
+        ("atx_h6", "###### title\n"),
+        ("atx_seven", "####### title\n"),
+        ("atx_no_space", "#title\n"),
+        ("atx_empty", "#\n"),
+        ("atx_closing", "## title ##\n"),
+        ("atx_closing_no_space", "## title##\n"),
+        ("atx_indent", "  ## title ##  \n"),
+        ("atx_multibyte", "# あ h #\n"),
+        ("atx_interrupts_paragraph", "a\n# b\n"),
+        ("setext_h1", "Title\n===\n"),
+        ("setext_h2", "a\n  ---\n"),
+        ("setext_multiline", "a\nb\n---\n"),
+        ("thematic_star", "***\n"),
+        ("thematic_dash_spaced", "- - -\n"),
+        ("thematic_underscore", "  ___  \n"),
+        ("thematic_two", "**\n"),
+        ("fence_lang_meta", "```rust title\nlet a;\n```\n"),
+        ("fence_indented", "  ```\n  a\n   b\n  ```\n"),
+        ("fence_tilde", "~~~\na\n~~~\n"),
+        ("fence_unclosed", "```\na\n"),
+        ("fence_empty", "para\n\n\n```\n```\n"),
+        ("fence_longer_close", "```\na\n`````\n"),
+        ("fence_shorter_close", "````\na\n```\nb\n````\n"),
+        ("fence_blank_inside", "```\na\n\nb\n```\n"),
+        ("fence_backtick_info", "``` a`b\nc\n"),
+        ("fence_interrupts_paragraph", "a\n```\nb\n```\n"),
+        ("indented_code", "    code\n\n      more\n\nx\n"),
+        ("quote", "> a\n> b\n"),
+        ("quote_indented_lazy", "  > a\nb\n"),
+        ("quote_heading", "> # h\n>\n> c\n"),
+        ("quote_no_space", ">a\n"),
+        ("quote_empty", ">\n"),
+        ("quote_nested", "> > a\n> b\n"),
+        ("quote_lazy_nested", "> > a\nb\n"),
+        ("quote_blank_ends", "> a\n\n> b\n"),
+        ("quote_fence", "> ```\n> a\n> ```\n"),
+        ("quote_no_lazy_after_fence", "> ```\n> a\nb\n"),
+        ("quote_interrupts_paragraph", "a\n> b\n"),
+        ("quote_thematic_not_lazy", "> a\n---\n"),
+        ("quote_multibyte", "> あ\n> い\n"),
+        ("bullet", "- a\n- b\n"),
+        ("bullet_loose", "- a\n\n- b\n"),
+        ("bullet_indent", " - a\n"),
+        ("bullet_mixed_markers", "* a\n+ b\n"),
+        ("ordered", "1. a\n2. b\n"),
+        ("ordered_paren", "5) a\n"),
+        ("ordered_zero", "0. a\n"),
+        ("ordered_too_long", "1234567890. a\n"),
+        ("ordered_mixed_delimiters", "1. a\n2) b\n"),
+        ("task", "- [ ] x\n- [x] y\n- [X] z\n"),
+        ("task_empty", "- [ ]\n"),
+        ("task_no_space", "- [ ]x\n"),
+        ("nested", "- a\n  - b\n    c\n"),
+        ("nested_ordered", "1. a\n   1. b\n   2. c\n2. d\n"),
+        ("nested_dedent", "- a\n  - b\n- c\n"),
+        ("two_paragraphs", "- a\n\n  b\n"),
+        ("two_paragraphs_then_item", "- a\n\n  b\n- c\n"),
+        ("empty_item", "-\n"),
+        ("empty_item_content", "-\n  foo\n"),
+        ("empty_item_blank_then_text", "-\n\n  foo\n"),
+        ("empty_items", "-\n-\n"),
+        ("wide_marker_gap", "-   a\n    b\n"),
+        ("code_in_item", "-     a\n"),
+        ("lazy", "- a\nb\n"),
+        ("lazy_after_blank", "- a\n\nb\n"),
+        ("list_interrupts_paragraph", "a\n- b\n"),
+        ("ordered_two_no_interrupt", "a\n2. b\n"),
+        ("ordered_one_interrupts", "a\n1. b\n"),
+        ("empty_item_no_interrupt", "a\n-\n"),
+        ("thematic_over_list", "- - -\n"),
+        ("list_in_quote", "> - a\n> - b\n"),
+        ("quote_in_list", "- > a\n  > b\n"),
+        ("quote_in_list_level", "- a\n  > - b\n"),
+        ("heading_in_item", "- # h\n  text\n"),
+        ("fence_in_item", "- ```\n  a\n  ```\n"),
+        ("multibyte_item", "- あ\n- い\n"),
+        ("list_after_paragraph_blank", "a\n\n- b\n"),
+        ("two_lists_split", "- a\n\n\n- b\n"),
+        ("deep_quote", ">>>>>> a\n"),
+        ("fence_unclosed_no_eol", "```\na"),
+        ("fence_unclosed_in_item", "- ```\n  a\n"),
+        ("fence_unclosed_in_item_no_eol", "- ```\n  a"),
+        ("fence_unclosed_in_quote_no_eol", "> ```\n> a"),
+        ("fence_unclosed_in_quote_eof", "> ```\n> a\n"),
+        ("fence_unclosed_trailing_blank", "```\na\n\n"),
+        ("fence_unclosed_item_then_para", "- ```\n  a\nb\n"),
+        ("item_code_then_unindented_text", "- ===\n\n      a\n==="),
+        ("quote_setext_dashes", "> a\n> ---\n> ---\n> a"),
+        ("table_basic", "| a | b |\n|---|:-:|\n| 1 | 2 |\n"),
+        ("table_no_edge_pipes", "a|b\n-|-\n1|2|3\n"),
+        ("table_short_row", "|a|b|\n|-|-|\n|1|\n"),
+        ("table_escaped_pipe", "| a \\| b | c |\n|--|--|\n"),
+        ("table_indented", "  | a |\n  |---|\n  | b |\n"),
+        ("table_text_after", "| a |\n|---|\ntext after\n"),
+        ("table_in_quote", "> | a |\n> |---|\n> | b |\n"),
+        ("table_after_paragraph", "x\n| a |\n|---|\n"),
+        ("table_column_mismatch", "| a | b |\n|---|\n"),
+        ("table_bad_delimiter", "|a|\n|:|\n"),
+        ("table_then_blank_para", "|a|\n|-|\n\nnext\n"),
+        ("table_then_quote", "|a|\n|-|\n> q\n"),
+        ("table_then_heading", "|a|\n|-|\n# h\n"),
+        ("table_then_fence", "|a|\n|-|\n```\nx\n```\n"),
+        ("table_then_list", "|a|\n|-|\n- x\n"),
+        ("table_two", "|a|\n|-|\n\n|b|\n|-|\n"),
+        ("table_align_spaces", "|a|b|\n|:-|-:|\n|  x  |  y|\n"),
+        ("table_indented_code_row", "|a|\n|-|\n|b|\n    |c|\n"),
+        ("table_no_body", "| a |\n| - |\n"),
+        ("table_empty_cells", "||\n|-|\n"),
+        ("table_lone_pipe_row", "|a|\n|-|\n|\n"),
+        ("table_no_trailing_pipe", "| a | b\n|-|-\n| c | d\n"),
+        ("table_multibyte", "| あ | い |\n|---|---|\n| う | え |\n"),
+        ("not_table_setext", "Title\n---\n"),
+        ("not_table_no_pipe_delim", "a|b\n---\n"),
+        ("table_header_no_pipe", "a\n|-|\n"),
+        ("table_one_col_dash", "|a|\n-\n"),
+        ("inline_escape", "a\\*b"),
+        ("inline_escape_nonpunct", "a\\qb"),
+        ("inline_entities", "a&amp;b &copy; &#35; &#x41; &unknown; &"),
+        ("inline_emphasis_all", "a *b* **c** _d_ __e__ ***f***"),
+        ("inline_code", "`code` `` a`b `` ` a `"),
+        ("inline_code_unclosed", "`a ``b`"),
+        ("inline_hard_break_spaces", "a  \nb"),
+        ("inline_hard_break_backslash", "a\\\nb"),
+        ("inline_soft_break", "a\nb"),
+        ("inline_soft_break_trailing_space", "a \nb"),
+        ("inline_emphasis_multiline", "*a\nb*"),
+        ("inline_strike", "a ~b~ ~~c~~ ~~~d~~~"),
+        ("inline_math", "$x$ $$y$$ $ a"),
+        ("inline_autolinks", "<http://a.b> <a@b.c> <span> <!-- c --> <br/>"),
+        ("inline_links", "[a](http://x \"t\") [b][c] [d][] [e] ![f](g) ![h][i]"),
+        (
+            "inline_link_forms",
+            "[a](<b c> 'x') [d]( e ) [f](g (h)) [i](j \"k\\\"l\") [m](n&amp;o)",
+        ),
+        ("inline_link_multiline", "[a](b\n\"t\") [c](d"),
+        ("inline_image_alt", "![a *b* `c`](d) ![e ![f](g)](h)"),
+        ("inline_link_in_link", "[a [b](c) d](e)"),
+        ("inline_emphasis_link", "*[a](b)* **[c][a]**"),
+        ("inline_html", "<a href=\"x\">t</a> <a\nhref=x>"),
+        (
+            "inline_html_misc",
+            "<http://a b> <a+b@c> <ab> </a> <?x?> <![CDATA[x]]> <!X y>",
+        ),
+        ("inline_nested_emphasis", "*a **b** c* **a *b* c**"),
+        ("inline_intraword", "a_b_c a*b*c _a_b"),
+        ("inline_unmatched", "*a **b _c ~d [e ![f"),
+        ("inline_rule_of_three", "*foo**bar**baz* ***a** b*"),
+        ("inline_heading", "# a *b* `c`\n"),
+        ("inline_setext_heading", "a *b*\nc\n===\n"),
+        ("inline_list_item", "- a *b*\n  c **d**\n"),
+        ("inline_table_cell", "| a *b* | `c\\|d` |\n|-|-|\n"),
+        ("inline_multibyte", "あ*い*う `え` [お](か)"),
+        ("inline_crlf_break", "a  \r\nb\r\n"),
+        ("math_multiline", "x$\nx$"),
+        ("decl_email", "x<!a@b.co>"),
+        ("code_multiline", "x`\nx`"),
+        ("def_basic", "[a]: b"),
+        ("def_title", "[a]: <b c> 'T'"),
+        ("def_next_lines", "[a]:\nb\n\"t\""),
+        ("def_title_junk_next_line", "[a]: b\n\"t\" x"),
+        ("def_title_junk_same_line", "[a]: b \"t\" x"),
+        ("def_then_paragraph", "[a]: b\nc"),
+        ("def_two_then_text", "[a]: b\n[c]: d\ntext"),
+        ("def_not_at_start", "text\n[a]: b"),
+        ("def_then_setext_equals", "[a]: b\n=== "),
+        ("def_then_setext_dashes", "[a]: b\n---"),
+        ("def_indent1", " [a]: b"),
+        ("def_indent3", "   [a]: b"),
+        ("def_indent4", "    [a]: b"),
+        ("def_in_quote", "> [a]: b"),
+        ("def_in_list", "- [a]: b"),
+        ("def_no_dest", "[a]:"),
+        ("def_empty_label", "[]: b"),
+        ("def_blank_label", "[ ]: b"),
+        ("def_escaped_label", "[a\\]b]: c"),
+        ("def_multiline_title", "[a]: b \"t\nt\""),
+        ("def_title_indented", "[a]: b\n  \"t\""),
+        ("def_no_space", "[a]:b"),
+        ("def_dest_junk", "[a]: b c"),
+        ("def_duplicate_labels", "[A  b]: c\n[a b]: d"),
+        ("def_empty_angle", "[a]: <>"),
+        ("def_quote_in_dest", "[a]: 'x"),
+        ("def_use_shortcut", "[a]: /u\n\n[a] [a][] [b][a] [a][b] [A b]"),
+        ("def_use_normalized", "[ab cd]: /u\n\n[AB   CD] [ab\ncd]"),
+        ("def_use_before", "[a] and [b][a]\n\n[a]: /u \"T\""),
+        ("def_use_in_link_text", "[a]: b\n\n[a](x) [a]"),
+        ("def_use_image", "[x]: /u\n\n![x] ![y][x] ![x][]"),
+        ("def_link_in_emphasis", "[a]: b\n\n*[a]* **[c][a]**"),
+        ("fn_basic", "[^a]: b"),
+        ("fn_lazy", "[^a]: b\nc"),
+        ("fn_indented_continuation", "[^a]: b\n    c"),
+        ("fn_two_paragraphs", "[^a]: b\n\n    c"),
+        ("fn_two_paragraphs_then_text", "[^a]: b\n\n    c\n\nd"),
+        ("fn_two_space_continuation", "[^a]: b\n  c"),
+        ("fn_empty", "[^a]:"),
+        ("fn_empty_space", "[^a]: "),
+        ("fn_content_next_line", "[^a]:\n    b"),
+        ("fn_two_adjacent", "[^a]: b\n[^c]: d"),
+        ("fn_two_separated", "[^a]: b\n\n[^c]: d"),
+        ("fn_label_space", "[^ a]: b"),
+        ("fn_label_inner_space", "[^a b]: b"),
+        ("fn_label_empty", "[^]: b"),
+        ("fn_indent1", " [^a]: b"),
+        ("fn_indent4", "    [^a]: b"),
+        ("fn_in_quote", "> [^a]: b"),
+        ("fn_in_list", "- [^a]: b"),
+        ("fn_then_quote", "[^a]: b\n> q"),
+        ("fn_then_list", "[^a]: b\n- x"),
+        ("fn_heading", "[^a]: # h"),
+        ("fn_list", "[^a]: - x\n    - y"),
+        ("fn_fence", "[^a]: b\n    ```\n    x\n    ```"),
+        ("fn_ref_case", "[^A]: b\n\nx[^a]"),
+        ("fn_no_space", "[^a]:b"),
+        ("fn_interrupts_paragraph", "text\n[^a]: b"),
+        ("fn_then_dashes", "[^a]: b\n---"),
+        ("fn_then_equals", "[^a]: b\n==="),
+        ("fn_ref_basic", "[^a]\n\n[^a]: note"),
+        ("fn_ref_no_def", "[^b] no def"),
+        ("fn_ref_inline", "x[^a] and [^a]!\n\n[^a]: note"),
+        ("fn_ref_in_link_text", "[a[^a]](b)\n\n[^a]: note"),
+        ("html_div", "<div>\nx\n</div>\n\ny"),
+        ("html_indented", "  <div>\n  x\n"),
+        ("html_oneline", "<div>x</div>"),
+        ("html_script", "<script>\nx\n\ny\n</script>\nz"),
+        ("html_pre", "<pre>\na\n\nb</pre>\nc"),
+        ("html_style_inline_end", "<style>x</style> y\nz"),
+        ("html_comment", "<!-- c\n\n d -->\nx"),
+        ("html_instruction", "<?php\nx ?>\ny"),
+        ("html_declaration", "<!DOCTYPE html>\nx"),
+        ("html_cdata", "<![CDATA[\n\nx]]>\ny"),
+        ("html_complete_tag", "<a href=\"x\">\ny"),
+        ("html_tag_then_text", "<a href=\"x\">y"),
+        ("html_interrupt_basic", "text\n<div>"),
+        ("html_no_interrupt_complete", "text\n<a href=\"x\">"),
+        ("html_custom_element", "<x-y>\nz"),
+        ("html_closing", "</div>\nz"),
+        ("html_multiline_open", "<div\nclass=\"a\">\nz"),
+        ("html_in_quote", "> <div>\n> x"),
+        ("html_in_list", "- <div>\n  x"),
+        ("html_uppercase", "<DIV>\nx"),
+        ("html_self_closing", "<div/>\nx"),
+        ("html_ins", "<ins>\nx"),
+        ("html_br", "<br>\nx"),
+        ("html_textarea", "<textarea>\nx\n\ny</textarea>"),
+        ("html_table_two_blocks", "<table>\n<tr>\n\n<td>"),
+        ("html_img_self_close", "<img src=\"x\" />\nz"),
+        ("html_img_then_text", "<img src=\"x\" /> y"),
+        ("html_multiline_tag_inline", "<a\nb>\nz"),
+        ("html_indent4", "    <div>"),
+        ("html_comment_then_text", "<!--x-->y\nz"),
+        ("html_then_code_line", "<div>\n    code"),
+        ("html_comment_short", "<!-->\nx"),
+        ("html_instruction_short", "<?>\nx"),
+        ("html_lazy_quote", "> <div>\nx"),
+        ("html_attr_forms", "<a b c=d e='f' g=\"h\">\nx"),
+        ("html_bad_attr", "<a b=>\nx"),
+        ("fm_yaml", "---\na: b\n---\ntext"),
+        ("fm_yaml_only", "---\na: b\n---"),
+        ("fm_empty", "---\n---"),
+        ("fm_unclosed", "---\na\n"),
+        ("fm_blank_content", "---\n\n---\nx"),
+        ("fm_toml", "+++\na = 1\n+++\nx"),
+        ("fm_indented", " ---\na\n---"),
+        ("fm_close_trailing_space", "---\na\n--- \nx"),
+        ("fm_close_longer", "---\na\n----\nx"),
+        ("fm_open_trailing_space", "---  \na\n---"),
+        ("fm_open_junk", "---x\na\n---"),
+        ("fm_not_first", "text\n---\na\n---"),
+        ("fm_blank_before", "\n---\na\n---"),
+        ("fm_multiline_content", "---\na: 1\n\nb: 2\n---\n# h"),
+        ("fm_hr_after", "---\na\n---\n\n---"),
+        ("math_basic", "$$\na\n$$"),
+        ("math_then_text", "$$\na\n$$\nx"),
+        ("math_meta", "$$ meta\na\n$$"),
+        ("math_unclosed", "$$\na"),
+        ("math_longer_open", "$$$\na\n$$"),
+        ("math_longer_close", "$$\na\n$$$$"),
+        ("math_indented", "  $$\n  a\n   b\n  $$"),
+        ("math_empty", "$$\n$$"),
+        ("math_inline_not_block", "$$a$$"),
+        ("math_info_no_close", "$$a\n$$"),
+        ("math_in_quote", "> $$\n> a\n> $$"),
+        ("math_in_list", "- $$\n  a\n  $$"),
+        ("math_close_junk", "$$\na\n$$ x"),
+        ("math_interrupts_paragraph", "text\n$$\na\n$$"),
+        ("math_blank_inside", "$$\n\na\n$$"),
+        ("math_single_dollar_line", "$ $\nx"),
+        ("crlf_frontmatter", "---\r\na\r\n---\r\nx"),
+        ("break_end_indented", "a  \n  b"),
+        ("text_end_indented_continuation", "*a*\n  <x>"),
+        ("soft_end_before_node", "a\n  `b`"),
+        ("break_in_quote", "> a  \n> b"),
+        ("text_eol_in_footnote", "[^a]: x \n  [a]"),
+        ("math_whitespace_content", "  $$\n \n  $$"),
+        ("math_whitespace_content2", "  $$\n  \n  $$"),
+        ("table_indented_no_pipe", "  a|b\n|-|:-:|"),
+        ("tab_nested_list", "- a\n\t- b\n\t\t- c\n"),
+        ("tab_nested_ordered", "1. a\n\t1. b\n\t\t1. c\n"),
+        ("tab_list_code", "- a\n\n\t\tcode\n"),
+        ("tab_in_text", "a\tb\t*c*\n"),
+        ("tab_code_block", "\tcode\n\t\tmore\n"),
+        ("tab_after_marker", "-\ta\n"),
+        ("atx_leading_sequences", "# # a"),
+        ("atx_leading_sequences2", "## # a"),
+        ("atx_only_sequences", "# # #"),
+        ("atx_no_space_sequence", "# #a"),
+        ("atx_double_sequence", "# ## a"),
+        ("atx_tab_sequence", "#\t# a"),
+        ("atx_closing_and_leading", "# # a #"),
+        ("atx_inner_hash", "# a # b"),
+        ("quote_footnote_trailing_space", "- a\n  > [^a]: x\n  "),
+        ("indented_code_trailing_blank", "    code\n\n\n"),
+        ("bom_heading", "\u{feff}# a\n"),
+        ("bom_frontmatter", "\u{feff}---\na: b\n---\n"),
+        ("bom_text", "\u{feff}a\n"),
+        ("www_multibyte_after_ww", "wwß x"),
+        ("www_combining", "ww\u{301}.a.com"),
+        ("www_cjk", "www.あ.com/パス x"),
+        ("http_cjk", "http://あ.jp/パス ok"),
+        ("email_cjk_domain", "a@あ.com"),
+        ("email_cjk_local", "あ@b.com"),
+        ("html_inline_continuation", "<img a\n     b=\"c\">"),
+        ("html_inline_continuation_tab", "<img a\n\t\tb=\"c\">"),
+        ("table_trailing_space", "| a | b |  \n|-|-|  \n| c | d |  \n"),
+        ("table_no_pipes_trailing_space", "a | b\n--|--\nd | e \n"),
+        ("table_trailing_tab", "| a | b |\t\n|-|-|\n| c | d |   \n"),
+        ("table_cjk", "| あ | 🎉 |\n|:-|-:|\n| é | ß |\n"),
+        ("table_single_column_colon", "a\n:-\nb\n"),
+        ("table_single_column_right", "a\n---:\nb\nc\n"),
+        ("table_double_colon_not_delimiter", "a\n::-\n"),
+        ("table_body_empty_marker", "a|b\n|-|-|\n*\n"),
+        ("table_body_ordered_marker", "a|b\n|-|-|\n2. x\n"),
+        ("table_body_empty_ordered", "a|b\n|-|-|\n1.\n"),
+        ("paragraph_after_partial_tab", "- a\n\n\t[P](h) x\n"),
+        ("fence_after_partial_tab", "- a\n\n\t```ts\n\t\tx\n\t```\n"),
+        ("math_after_partial_tab", "- a\n\n\t$$\n\tm\n\t$$\n"),
+        ("quote_after_partial_tab", "- a\n\n\t> q\n"),
+        ("heading_after_partial_tab", "- a\n\n\t# h\n"),
+        (
+            "control_character_references",
+            "&#1;&#x7f;&#x85;&#xB;&#xC;&#x9f;&#xa0;&#xd800;&#x110000;&#0;",
+        ),
+        ("footnote_escaped_bracket", "[^a\\]: x"),
+        ("footnote_escaped_backslash", "[^a\\\\]: x"),
+        ("footnote_escaped_open", "[^a\\[]: x"),
+        ("footnote_unescaped_open", "[^a[]: x"),
+        ("footnote_empty_then_blank", "[^a]: \n\n"),
+        ("footnote_empty_then_spaces", "[^a]: \n    \n"),
+        ("footnote_empty_then_text", "[^a]: \n\nb"),
+        ("definition_nul_destination", "[a]: \0\n\n[a]\n"),
+        ("link_nul_destination", "[a](x\0y)"),
+        ("definition_then_empty_marker", "[a]: b\n-"),
+        ("definition_then_item", "[a]: b\n- x"),
+        ("definition_then_ordered", "[a]: b\n1."),
+        ("emphasis_cjk", "*あ*。*い*"),
+        ("strong_cjk", "**日本語**です"),
+        ("underscore_accent", "_é_ _ß_"),
+        ("fullwidth_markers", "＊a＊ ＿b＿"),
+        ("emphasis_after_cjk_punctuation", "。*a*、**b**"),
+        ("combining_mark", "e\u{301}*a*"),
+        ("emoji_zwj", "👨\u{200d}👩\u{200d}👧 *a*"),
+        ("fence_cjk_info", "```あ\n日本語\n```\n"),
+        ("fence_in_quote_emoji", "> ```🎉\n> x\n> ```\n"),
+        ("fence_in_list_cjk", "- ```あ\n  日本語\n  ```\n"),
+        ("math_cjk", "$$\nあ\n$$\n\n$い$\n"),
+        ("heading_cjk", "# 見出し\n\n見出し2\n===\n"),
+        ("link_cjk", "[あ](http://い.jp/う \"え\")"),
+        ("reference_cjk", "[あ]\n\n[あ]: /u\n"),
+        ("footnote_cjk", "あ[^い]\n\n[^い]: う\n"),
+        ("ideographic_space", "a\u{3000}b\n\u{3000}c"),
+        ("nbsp_around_emphasis", "a\u{a0}*b*\u{a0}c"),
+        ("entity_cjk_context", "あ&amp;い&#12354;&#x1F389;"),
+        ("autolink_cjk", "<http://あ.jp/パス>"),
+        ("code_span_cjk", "`あ`と``い`う``"),
+        ("hard_break_cjk", "あ  \nい\\\nう"),
+        ("nul_in_text", "a\0b"),
+    ];
+
+    /// One line with the nodes, positions written as `@line:column-line:column`.
+    fn dump(nodes: &[Node]) -> String {
+        format!("{nodes:?}")
+            .replace("position: Some(Position { start: Point { line: ", "@")
+            .replace(", column: ", ":")
+            .replace(" }, end: Point { line: ", "-")
+            .replace(" } })", "")
     }
 
-    /// Compares the MDX parsers. Invalid MDX has to fail in both.
-    fn assert_same_mdx(input: &str) {
-        let expected = parse_mdx_with_markdown_rs(input);
-        let actual = parse_mdx(input);
-        match (expected, actual) {
-            (Ok(expected), Ok(actual)) => {
-                assert_eq!(format!("{actual:#?}"), format!("{expected:#?}"), "input: {input:?}");
-            }
-            (Err(_), Err(_)) => {}
-            (expected, actual) => panic!("input: {input:?}\n markdown-rs: {expected:?}\n native: {actual:?}"),
+    /// What the parser and the HTML renderer make of each case, to compare with `snapshots.txt`.
+    /// Run the tests with `UPDATE_SNAPSHOTS=1` to write it after a change that is meant to alter it.
+    fn snapshot() -> String {
+        let mut out = String::new();
+        for (name, input) in CASES {
+            let nodes = dump(&parse(input).unwrap());
+            out.push_str(&format!(
+                "## {name} {input:?}\nnodes: {nodes}\nhtml: {:?}\n",
+                to_html(input)
+            ));
         }
+        for (name, input) in MDX_CASES {
+            let nodes = match parse_mdx(input) {
+                Ok(nodes) => dump(&nodes),
+                Err(error) => format!("error: {error}"),
+            };
+            out.push_str(&format!("## mdx {name} {input:?}\nnodes: {nodes}\n"));
+        }
+        out
     }
 
-    #[rstest]
-    #[case::jsx_self("<a />")]
-    #[case::jsx_attrs("<a b=\"c&amp;d\" e='f' g={h} {...i} j />")]
-    #[case::jsx_member("<a.b.c />")]
-    #[case::jsx_namespace("<a:b c:d=\"e\" />")]
-    #[case::jsx_fragment("<></>")]
-    #[case::jsx_text_pair("<a>x</a>")]
-    #[case::jsx_flow_pair("<a>\n\nx\n\n</a>")]
-    #[case::jsx_flow_indented_child("<a>\n  x\n</a>")]
-    #[case::jsx_inline("a <b>c</b> d")]
-    #[case::jsx_inline_self("a <b/> d")]
-    #[case::expr_flow("{a}")]
-    #[case::expr_nested("{a {b} c}")]
-    #[case::expr_multiline("{a\nb}")]
-    #[case::expr_multiline_indented("{a\n  b\n   c}")]
-    #[case::expr_text("x {a} y")]
-    #[case::expr_then_tag("{a} <b/>")]
-    #[case::tag_then_expr("<b/> {a}")]
-    #[case::tag_then_text("<b/> x")]
-    #[case::expr_then_text("{a}x")]
-    #[case::jsx_in_expr_child("<a>{b}</a>")]
-    #[case::jsx_unclosed_text("<a>b")]
-    #[case::jsx_mismatch("<a></b>")]
-    #[case::lt_space("a < b")]
-    #[case::lt_digit("a <3")]
-    #[case::attr_no_value("<a b=>")]
-    #[case::jsx_nested_flow("<a>\n<b>\n</b>\n</a>")]
-    #[case::jsx_in_quote("> <a>\n> x\n> </a>")]
-    #[case::jsx_in_list("- <a>\n  x\n  </a>")]
-    #[case::attr_quote_inside("<a b='c\"d' />")]
-    #[case::two_tags("<a/><b/>")]
-    #[case::two_text_elements("<a>x</a><b>y</b>")]
-    #[case::interrupt_paragraph_tag("a\n<b/>")]
-    #[case::interrupt_paragraph_expr("a\n{b}")]
-    #[case::two_expressions("{a}\n{b}")]
-    #[case::expr_in_flow_element("<a>\n\n{b}\n\n</a>")]
-    #[case::indented_tag("   <a/>")]
-    #[case::very_indented_tag("    <a/>")]
-    #[case::heading_jsx("# h <a>b</a>")]
-    #[case::emphasis_crossing("*<a>x</a>*")]
-    #[case::emphasis_crossing_bad("*<a>x*</a>")]
-    #[case::link_jsx("[<a>x</a>](y)")]
-    #[case::code_not_jsx("`<a/>` {b}")]
-    #[case::escaped("\\<a/> \\{b}")]
-    #[case::attr_entities("<a b=\"&lt;&#x41;\" />")]
-    #[case::attr_multiline_literal("<a b='x\ny' />")]
-    #[case::closing_spaces("<a  >x</a  >")]
-    #[case::lt_space_name("< a>")]
-    #[case::self_closing_space("<a / >")]
-    #[case::attr_on_next_line("<a\nb />")]
-    #[case::dashed_name("<a-b />")]
-    #[case::dashed_attr("<a b-c=\"d\" />")]
-    #[case::bad_name_char("<A_b$.c-d />")]
-    #[case::expr_unclosed("{a")]
-    #[case::expr_empty("{}")]
-    #[case::expr_space("{ }")]
-    #[case::empty_flow_element("<a>\n</a>")]
-    #[case::text_element_unclosed_line("<a>x\n</a>")]
-    #[case::stray_close("</a>")]
-    #[case::stray_close_text("x </a>")]
-    #[case::element_with_emphasis("<a>*b*</a>")]
-    #[case::flow_element_with_emphasis("<a>\n*b*\n</a>")]
-    #[case::flow_element_with_list("<a>\n- b\n</a>")]
-    #[case::list_items_unbalanced("- <a>\n- </a>")]
-    #[case::spaced_equals("<a b = \"c\" />")]
-    #[case::heading("# h\n\ntext *a* [b](c) `d`\n")]
-    #[case::indented_is_text("    not code\n")]
-    #[case::indented_heading("     # h\n")]
-    #[case::no_autolink("<http://a.b>")]
-    #[case::no_gfm("| a |\n|-|\n\n~a~ www.a.b [^a]\n\n- [ ] a\n")]
-    #[case::no_math("$a$\n\n$$\na\n$$\n")]
-    #[case::no_frontmatter("---\na\n---\n")]
-    #[case::esm_is_text("import a from 'b'\n\nexport const c = 1\n")]
-    #[case::definition("[a]: /u\n\n[a]\n")]
-    #[case::list_deep_indent("-      a\n")]
-    #[case::fence("```rust\ncode\n```\n")]
-    fn mdx_matches_markdown_rs(#[case] input: &str) {
-        assert_same_mdx(input);
+    #[test]
+    fn snapshots_match() {
+        let actual = snapshot();
+        if std::env::var("UPDATE_SNAPSHOTS").is_ok() {
+            std::fs::write(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/src/parser/snapshots.txt"),
+                &actual,
+            )
+            .unwrap();
+            return;
+        }
+        let expected = include_str!("parser/snapshots.txt");
+        for (actual, expected) in actual.split("## ").zip(expected.split("## ")) {
+            assert_eq!(actual, expected, "snapshot differs, UPDATE_SNAPSHOTS=1 rewrites it");
+        }
+        assert_eq!(actual.len(), expected.len(), "number of snapshots differs");
     }
 
-    #[rstest]
-    #[case::empty("")]
-    #[case::blank_lines("\n\n  \n")]
-    #[case::paragraph("hello\n")]
-    #[case::paragraph_no_eol("hello")]
-    #[case::paragraph_multiline("a\nb\nc\n")]
-    #[case::paragraph_indented_continuation("a\n    b\n")]
-    #[case::paragraph_trailing_space("あい\n  うえ  \n")]
-    #[case::two_paragraphs("a\n\nb\n")]
-    #[case::crlf("a\r\nb\r\n\r\nc\r\n")]
-    #[case::crlf_fence("```\r\na\r\nb\r\n```\r\n")]
-    #[case::cr_only("a\rb\r")]
-    #[case::atx_h1("# title\n")]
-    #[case::atx_h6("###### title\n")]
-    #[case::atx_seven("####### title\n")]
-    #[case::atx_no_space("#title\n")]
-    #[case::atx_empty("#\n")]
-    #[case::atx_closing("## title ##\n")]
-    #[case::atx_closing_no_space("## title##\n")]
-    #[case::atx_indent("  ## title ##  \n")]
-    #[case::atx_multibyte("# あ h #\n")]
-    #[case::atx_interrupts_paragraph("a\n# b\n")]
-    #[case::setext_h1("Title\n===\n")]
-    #[case::setext_h2("a\n  ---\n")]
-    #[case::setext_multiline("a\nb\n---\n")]
-    #[case::thematic_star("***\n")]
-    #[case::thematic_dash_spaced("- - -\n")]
-    #[case::thematic_underscore("  ___  \n")]
-    #[case::thematic_two("**\n")]
-    #[case::fence_lang_meta("```rust title\nlet a;\n```\n")]
-    #[case::fence_indented("  ```\n  a\n   b\n  ```\n")]
-    #[case::fence_tilde("~~~\na\n~~~\n")]
-    #[case::fence_unclosed("```\na\n")]
-    #[case::fence_empty("para\n\n\n```\n```\n")]
-    #[case::fence_longer_close("```\na\n`````\n")]
-    #[case::fence_shorter_close("````\na\n```\nb\n````\n")]
-    #[case::fence_blank_inside("```\na\n\nb\n```\n")]
-    #[case::fence_backtick_info("``` a`b\nc\n")]
-    #[case::fence_interrupts_paragraph("a\n```\nb\n```\n")]
-    #[case::indented_code("    code\n\n      more\n\nx\n")]
-    #[case::quote("> a\n> b\n")]
-    #[case::quote_indented_lazy("  > a\nb\n")]
-    #[case::quote_heading("> # h\n>\n> c\n")]
-    #[case::quote_no_space(">a\n")]
-    #[case::quote_empty(">\n")]
-    #[case::quote_nested("> > a\n> b\n")]
-    #[case::quote_lazy_nested("> > a\nb\n")]
-    #[case::quote_blank_ends("> a\n\n> b\n")]
-    #[case::quote_fence("> ```\n> a\n> ```\n")]
-    #[case::quote_no_lazy_after_fence("> ```\n> a\nb\n")]
-    #[case::quote_interrupts_paragraph("a\n> b\n")]
-    #[case::quote_thematic_not_lazy("> a\n---\n")]
-    #[case::quote_multibyte("> あ\n> い\n")]
-    #[case::bullet("- a\n- b\n")]
-    #[case::bullet_loose("- a\n\n- b\n")]
-    #[case::bullet_indent(" - a\n")]
-    #[case::bullet_mixed_markers("* a\n+ b\n")]
-    #[case::ordered("1. a\n2. b\n")]
-    #[case::ordered_paren("5) a\n")]
-    #[case::ordered_zero("0. a\n")]
-    #[case::ordered_too_long("1234567890. a\n")]
-    #[case::ordered_mixed_delimiters("1. a\n2) b\n")]
-    #[case::task("- [ ] x\n- [x] y\n- [X] z\n")]
-    #[case::task_empty("- [ ]\n")]
-    #[case::task_no_space("- [ ]x\n")]
-    #[case::nested("- a\n  - b\n    c\n")]
-    #[case::nested_ordered("1. a\n   1. b\n   2. c\n2. d\n")]
-    #[case::nested_dedent("- a\n  - b\n- c\n")]
-    #[case::two_paragraphs("- a\n\n  b\n")]
-    #[case::two_paragraphs_then_item("- a\n\n  b\n- c\n")]
-    #[case::empty_item("-\n")]
-    #[case::empty_item_content("-\n  foo\n")]
-    #[case::empty_item_blank_then_text("-\n\n  foo\n")]
-    #[case::empty_items("-\n-\n")]
-    #[case::wide_marker_gap("-   a\n    b\n")]
-    #[case::code_in_item("-     a\n")]
-    #[case::lazy("- a\nb\n")]
-    #[case::lazy_after_blank("- a\n\nb\n")]
-    #[case::list_interrupts_paragraph("a\n- b\n")]
-    #[case::ordered_two_no_interrupt("a\n2. b\n")]
-    #[case::ordered_one_interrupts("a\n1. b\n")]
-    #[case::empty_item_no_interrupt("a\n-\n")]
-    #[case::thematic_over_list("- - -\n")]
-    #[case::list_in_quote("> - a\n> - b\n")]
-    #[case::quote_in_list("- > a\n  > b\n")]
-    #[case::quote_in_list_level("- a\n  > - b\n")]
-    #[case::heading_in_item("- # h\n  text\n")]
-    #[case::fence_in_item("- ```\n  a\n  ```\n")]
-    #[case::multibyte_item("- あ\n- い\n")]
-    #[case::list_after_paragraph_blank("a\n\n- b\n")]
-    #[case::two_lists_split("- a\n\n\n- b\n")]
-    #[case::deep_quote(">>>>>> a\n")]
-    #[case::fence_unclosed_no_eol("```\na")]
-    #[case::fence_unclosed_in_item("- ```\n  a\n")]
-    #[case::fence_unclosed_in_item_no_eol("- ```\n  a")]
-    #[case::fence_unclosed_in_quote_no_eol("> ```\n> a")]
-    #[case::fence_unclosed_in_quote_eof("> ```\n> a\n")]
-    #[case::fence_unclosed_trailing_blank("```\na\n\n")]
-    #[case::fence_unclosed_item_then_para("- ```\n  a\nb\n")]
-    #[case::item_code_then_unindented_text("- ===\n\n      a\n===")]
-    #[case::quote_setext_dashes("> a\n> ---\n> ---\n> a")]
-    #[case::table_basic("| a | b |\n|---|:-:|\n| 1 | 2 |\n")]
-    #[case::table_no_edge_pipes("a|b\n-|-\n1|2|3\n")]
-    #[case::table_short_row("|a|b|\n|-|-|\n|1|\n")]
-    #[case::table_escaped_pipe("| a \\| b | c |\n|--|--|\n")]
-    #[case::table_indented("  | a |\n  |---|\n  | b |\n")]
-    #[case::table_text_after("| a |\n|---|\ntext after\n")]
-    #[case::table_in_quote("> | a |\n> |---|\n> | b |\n")]
-    #[case::table_after_paragraph("x\n| a |\n|---|\n")]
-    #[case::table_column_mismatch("| a | b |\n|---|\n")]
-    #[case::table_bad_delimiter("|a|\n|:|\n")]
-    #[case::table_then_blank_para("|a|\n|-|\n\nnext\n")]
-    #[case::table_then_quote("|a|\n|-|\n> q\n")]
-    #[case::table_then_heading("|a|\n|-|\n# h\n")]
-    #[case::table_then_fence("|a|\n|-|\n```\nx\n```\n")]
-    #[case::table_then_list("|a|\n|-|\n- x\n")]
-    #[case::table_two("|a|\n|-|\n\n|b|\n|-|\n")]
-    #[case::table_align_spaces("|a|b|\n|:-|-:|\n|  x  |  y|\n")]
-    #[case::table_indented_code_row("|a|\n|-|\n|b|\n    |c|\n")]
-    #[case::table_no_body("| a |\n| - |\n")]
-    #[case::table_empty_cells("||\n|-|\n")]
-    #[case::table_lone_pipe_row("|a|\n|-|\n|\n")]
-    #[case::table_no_trailing_pipe("| a | b\n|-|-\n| c | d\n")]
-    #[case::table_multibyte("| あ | い |\n|---|---|\n| う | え |\n")]
-    #[case::not_table_setext("Title\n---\n")]
-    #[case::not_table_no_pipe_delim("a|b\n---\n")]
-    #[case::table_header_no_pipe("a\n|-|\n")]
-    #[case::table_one_col_dash("|a|\n-\n")]
-    #[case::inline_escape("a\\*b")]
-    #[case::inline_escape_nonpunct("a\\qb")]
-    #[case::inline_entities("a&amp;b &copy; &#35; &#x41; &unknown; &")]
-    #[case::inline_emphasis_all("a *b* **c** _d_ __e__ ***f***")]
-    #[case::inline_code("`code` `` a`b `` ` a `")]
-    #[case::inline_code_unclosed("`a ``b`")]
-    #[case::inline_hard_break_spaces("a  \nb")]
-    #[case::inline_hard_break_backslash("a\\\nb")]
-    #[case::inline_soft_break("a\nb")]
-    #[case::inline_soft_break_trailing_space("a \nb")]
-    #[case::inline_emphasis_multiline("*a\nb*")]
-    #[case::inline_strike("a ~b~ ~~c~~ ~~~d~~~")]
-    #[case::inline_math("$x$ $$y$$ $ a")]
-    #[case::inline_autolinks("<http://a.b> <a@b.c> <span> <!-- c --> <br/>")]
-    #[case::inline_links("[a](http://x \"t\") [b][c] [d][] [e] ![f](g) ![h][i]")]
-    #[case::inline_link_forms("[a](<b c> 'x') [d]( e ) [f](g (h)) [i](j \"k\\\"l\") [m](n&amp;o)")]
-    #[case::inline_link_multiline("[a](b\n\"t\") [c](d")]
-    #[case::inline_image_alt("![a *b* `c`](d) ![e ![f](g)](h)")]
-    #[case::inline_link_in_link("[a [b](c) d](e)")]
-    #[case::inline_emphasis_link("*[a](b)* **[c][a]**")]
-    #[case::inline_html("<a href=\"x\">t</a> <a\nhref=x>")]
-    #[case::inline_html_misc("<http://a b> <a+b@c> <ab> </a> <?x?> <![CDATA[x]]> <!X y>")]
-    #[case::inline_nested_emphasis("*a **b** c* **a *b* c**")]
-    #[case::inline_intraword("a_b_c a*b*c _a_b")]
-    #[case::inline_unmatched("*a **b _c ~d [e ![f")]
-    #[case::inline_rule_of_three("*foo**bar**baz* ***a** b*")]
-    #[case::inline_heading("# a *b* `c`\n")]
-    #[case::inline_setext_heading("a *b*\nc\n===\n")]
-    #[case::inline_list_item("- a *b*\n  c **d**\n")]
-    #[case::inline_table_cell("| a *b* | `c\\|d` |\n|-|-|\n")]
-    #[case::inline_multibyte("あ*い*う `え` [お](か)")]
-    #[case::inline_crlf_break("a  \r\nb\r\n")]
-    #[case::math_multiline("x$\nx$")]
-    #[case::decl_email("x<!a@b.co>")]
-    #[case::code_multiline("x`\nx`")]
-    #[case::def_basic("[a]: b")]
-    #[case::def_title("[a]: <b c> 'T'")]
-    #[case::def_next_lines("[a]:\nb\n\"t\"")]
-    #[case::def_title_junk_next_line("[a]: b\n\"t\" x")]
-    #[case::def_title_junk_same_line("[a]: b \"t\" x")]
-    #[case::def_then_paragraph("[a]: b\nc")]
-    #[case::def_two_then_text("[a]: b\n[c]: d\ntext")]
-    #[case::def_not_at_start("text\n[a]: b")]
-    #[case::def_then_setext_equals("[a]: b\n=== ")]
-    #[case::def_then_setext_dashes("[a]: b\n---")]
-    #[case::def_indent1(" [a]: b")]
-    #[case::def_indent3("   [a]: b")]
-    #[case::def_indent4("    [a]: b")]
-    #[case::def_in_quote("> [a]: b")]
-    #[case::def_in_list("- [a]: b")]
-    #[case::def_no_dest("[a]:")]
-    #[case::def_empty_label("[]: b")]
-    #[case::def_blank_label("[ ]: b")]
-    #[case::def_escaped_label("[a\\]b]: c")]
-    #[case::def_multiline_title("[a]: b \"t\nt\"")]
-    #[case::def_title_indented("[a]: b\n  \"t\"")]
-    #[case::def_no_space("[a]:b")]
-    #[case::def_dest_junk("[a]: b c")]
-    #[case::def_duplicate_labels("[A  b]: c\n[a b]: d")]
-    #[case::def_empty_angle("[a]: <>")]
-    #[case::def_quote_in_dest("[a]: 'x")]
-    #[case::def_use_shortcut("[a]: /u\n\n[a] [a][] [b][a] [a][b] [A b]")]
-    #[case::def_use_normalized("[ab cd]: /u\n\n[AB   CD] [ab\ncd]")]
-    #[case::def_use_before("[a] and [b][a]\n\n[a]: /u \"T\"")]
-    #[case::def_use_in_link_text("[a]: b\n\n[a](x) [a]")]
-    #[case::def_use_image("[x]: /u\n\n![x] ![y][x] ![x][]")]
-    #[case::def_link_in_emphasis("[a]: b\n\n*[a]* **[c][a]**")]
-    #[case::fn_basic("[^a]: b")]
-    #[case::fn_lazy("[^a]: b\nc")]
-    #[case::fn_indented_continuation("[^a]: b\n    c")]
-    #[case::fn_two_paragraphs("[^a]: b\n\n    c")]
-    #[case::fn_two_paragraphs_then_text("[^a]: b\n\n    c\n\nd")]
-    #[case::fn_two_space_continuation("[^a]: b\n  c")]
-    #[case::fn_empty("[^a]:")]
-    #[case::fn_empty_space("[^a]: ")]
-    #[case::fn_content_next_line("[^a]:\n    b")]
-    #[case::fn_two_adjacent("[^a]: b\n[^c]: d")]
-    #[case::fn_two_separated("[^a]: b\n\n[^c]: d")]
-    #[case::fn_label_space("[^ a]: b")]
-    #[case::fn_label_inner_space("[^a b]: b")]
-    #[case::fn_label_empty("[^]: b")]
-    #[case::fn_indent1(" [^a]: b")]
-    #[case::fn_indent4("    [^a]: b")]
-    #[case::fn_in_quote("> [^a]: b")]
-    #[case::fn_in_list("- [^a]: b")]
-    #[case::fn_then_quote("[^a]: b\n> q")]
-    #[case::fn_then_list("[^a]: b\n- x")]
-    #[case::fn_heading("[^a]: # h")]
-    #[case::fn_list("[^a]: - x\n    - y")]
-    #[case::fn_fence("[^a]: b\n    ```\n    x\n    ```")]
-    #[case::fn_ref_case("[^A]: b\n\nx[^a]")]
-    #[case::fn_no_space("[^a]:b")]
-    #[case::fn_interrupts_paragraph("text\n[^a]: b")]
-    #[case::fn_then_dashes("[^a]: b\n---")]
-    #[case::fn_then_equals("[^a]: b\n===")]
-    #[case::fn_ref_basic("[^a]\n\n[^a]: note")]
-    #[case::fn_ref_no_def("[^b] no def")]
-    #[case::fn_ref_inline("x[^a] and [^a]!\n\n[^a]: note")]
-    #[case::fn_ref_in_link_text("[a[^a]](b)\n\n[^a]: note")]
-    #[case::html_div("<div>\nx\n</div>\n\ny")]
-    #[case::html_indented("  <div>\n  x\n")]
-    #[case::html_oneline("<div>x</div>")]
-    #[case::html_script("<script>\nx\n\ny\n</script>\nz")]
-    #[case::html_pre("<pre>\na\n\nb</pre>\nc")]
-    #[case::html_style_inline_end("<style>x</style> y\nz")]
-    #[case::html_comment("<!-- c\n\n d -->\nx")]
-    #[case::html_instruction("<?php\nx ?>\ny")]
-    #[case::html_declaration("<!DOCTYPE html>\nx")]
-    #[case::html_cdata("<![CDATA[\n\nx]]>\ny")]
-    #[case::html_complete_tag("<a href=\"x\">\ny")]
-    #[case::html_tag_then_text("<a href=\"x\">y")]
-    #[case::html_interrupt_basic("text\n<div>")]
-    #[case::html_no_interrupt_complete("text\n<a href=\"x\">")]
-    #[case::html_custom_element("<x-y>\nz")]
-    #[case::html_closing("</div>\nz")]
-    #[case::html_multiline_open("<div\nclass=\"a\">\nz")]
-    #[case::html_in_quote("> <div>\n> x")]
-    #[case::html_in_list("- <div>\n  x")]
-    #[case::html_uppercase("<DIV>\nx")]
-    #[case::html_self_closing("<div/>\nx")]
-    #[case::html_ins("<ins>\nx")]
-    #[case::html_br("<br>\nx")]
-    #[case::html_textarea("<textarea>\nx\n\ny</textarea>")]
-    #[case::html_table_two_blocks("<table>\n<tr>\n\n<td>")]
-    #[case::html_img_self_close("<img src=\"x\" />\nz")]
-    #[case::html_img_then_text("<img src=\"x\" /> y")]
-    #[case::html_multiline_tag_inline("<a\nb>\nz")]
-    #[case::html_indent4("    <div>")]
-    #[case::html_comment_then_text("<!--x-->y\nz")]
-    #[case::html_then_code_line("<div>\n    code")]
-    #[case::html_comment_short("<!-->\nx")]
-    #[case::html_instruction_short("<?>\nx")]
-    #[case::html_lazy_quote("> <div>\nx")]
-    #[case::html_attr_forms("<a b c=d e='f' g=\"h\">\nx")]
-    #[case::html_bad_attr("<a b=>\nx")]
-    #[case::fm_yaml("---\na: b\n---\ntext")]
-    #[case::fm_yaml_only("---\na: b\n---")]
-    #[case::fm_empty("---\n---")]
-    #[case::fm_unclosed("---\na\n")]
-    #[case::fm_blank_content("---\n\n---\nx")]
-    #[case::fm_toml("+++\na = 1\n+++\nx")]
-    #[case::fm_indented(" ---\na\n---")]
-    #[case::fm_close_trailing_space("---\na\n--- \nx")]
-    #[case::fm_close_longer("---\na\n----\nx")]
-    #[case::fm_open_trailing_space("---  \na\n---")]
-    #[case::fm_open_junk("---x\na\n---")]
-    #[case::fm_not_first("text\n---\na\n---")]
-    #[case::fm_blank_before("\n---\na\n---")]
-    #[case::fm_multiline_content("---\na: 1\n\nb: 2\n---\n# h")]
-    #[case::fm_hr_after("---\na\n---\n\n---")]
-    #[case::math_basic("$$\na\n$$")]
-    #[case::math_then_text("$$\na\n$$\nx")]
-    #[case::math_meta("$$ meta\na\n$$")]
-    #[case::math_unclosed("$$\na")]
-    #[case::math_longer_open("$$$\na\n$$")]
-    #[case::math_longer_close("$$\na\n$$$$")]
-    #[case::math_indented("  $$\n  a\n   b\n  $$")]
-    #[case::math_empty("$$\n$$")]
-    #[case::math_inline_not_block("$$a$$")]
-    #[case::math_info_no_close("$$a\n$$")]
-    #[case::math_in_quote("> $$\n> a\n> $$")]
-    #[case::math_in_list("- $$\n  a\n  $$")]
-    #[case::math_close_junk("$$\na\n$$ x")]
-    #[case::math_interrupts_paragraph("text\n$$\na\n$$")]
-    #[case::math_blank_inside("$$\n\na\n$$")]
-    #[case::math_single_dollar_line("$ $\nx")]
-    #[case::crlf_frontmatter("---\r\na\r\n---\r\nx")]
-    #[case::break_end_indented("a  \n  b")]
-    #[case::text_end_indented_continuation("*a*\n  <x>")]
-    #[case::soft_end_before_node("a\n  `b`")]
-    #[case::break_in_quote("> a  \n> b")]
-    #[case::text_eol_in_footnote("[^a]: x \n  [a]")]
-    #[case::math_whitespace_content("  $$\n \n  $$")]
-    #[case::math_whitespace_content2("  $$\n  \n  $$")]
-    #[case::table_indented_no_pipe("  a|b\n|-|:-:|")]
-    #[case::tab_nested_list("- a\n\t- b\n\t\t- c\n")]
-    #[case::tab_nested_ordered("1. a\n\t1. b\n\t\t1. c\n")]
-    #[case::tab_list_code("- a\n\n\t\tcode\n")]
-    #[case::tab_in_text("a\tb\t*c*\n")]
-    #[case::tab_code_block("\tcode\n\t\tmore\n")]
-    #[case::tab_after_marker("-\ta\n")]
-    #[case::atx_leading_sequences("# # a")]
-    #[case::atx_leading_sequences2("## # a")]
-    #[case::atx_only_sequences("# # #")]
-    #[case::atx_no_space_sequence("# #a")]
-    #[case::atx_double_sequence("# ## a")]
-    #[case::atx_tab_sequence("#\t# a")]
-    #[case::atx_closing_and_leading("# # a #")]
-    #[case::atx_inner_hash("# a # b")]
-    #[case::quote_footnote_trailing_space("- a\n  > [^a]: x\n  ")]
-    #[case::indented_code_trailing_blank("    code\n\n\n")]
-    fn matches_markdown_rs(#[case] input: &str) {
-        assert_same_as_markdown_rs(input);
+    fn env_number<T: std::str::FromStr>(name: &str) -> Option<T> {
+        std::env::var(name).ok()?.parse().ok()
     }
 
     /// Lines built from container prefixes and block-level bodies only, so inline syntax (not
@@ -527,51 +651,6 @@ mod tests {
             }
             input
         })
-    }
-
-    fn env_number<T: std::str::FromStr>(name: &str) -> Option<T> {
-        std::env::var(name).ok()?.parse().ok()
-    }
-
-    /// Runs `strategy` with a fixed seed so the outcome never varies between runs. `PROPTEST_CASES`
-    /// and `PARSER_TEST_SEED` widen the exploration, which finds more differences in the cases listed
-    /// on [`block_input`] that are not covered yet.
-    fn check(strategy: impl Strategy<Value = String>) {
-        check_with(strategy, parse_with_markdown_rs, assert_same_as_markdown_rs);
-    }
-
-    fn check_with<R>(
-        strategy: impl Strategy<Value = String>,
-        reference: fn(&str) -> miette::Result<Vec<crate::node::Node>>,
-        assert_same: fn(&str) -> R,
-    ) {
-        let config = ProptestConfig {
-            cases: env_number("PROPTEST_CASES").unwrap_or(3000),
-            failure_persistence: None,
-            ..ProptestConfig::default()
-        };
-        let seed = env_number("PARSER_TEST_SEED").unwrap_or(7);
-        let mut runner = TestRunner::new_with_rng(config, TestRng::from_seed(RngAlgorithm::ChaCha, &[seed; 32]));
-        let result = runner.run(&strategy, |input| {
-            // markdown-rs misparses what follows an opening `---` or `+++` that never closes, and even
-            // panics on some inputs. Those cannot be compared.
-            let mut lines = input.lines().map(str::trim_end);
-            if let Some(first @ ("---" | "+++")) = lines.next() {
-                prop_assume!(lines.any(|line| line == first));
-            }
-            let outcome = std::panic::catch_unwind(|| reference(&input));
-            prop_assume!(outcome.is_ok());
-            assert_same(&input);
-            Ok(())
-        });
-        if let Err(error) = result {
-            panic!("{error}");
-        }
-    }
-
-    #[test]
-    fn block_structure_matches_markdown_rs() {
-        check(block_input());
     }
 
     /// Lines of inline syntax. Each line starts with `x` so that no line is a block on its own.
@@ -691,21 +770,345 @@ mod tests {
         prop::collection::vec(token, 1..16).prop_map(|tokens| tokens.concat())
     }
 
-    #[test]
-    fn mdx_syntax_matches_markdown_rs() {
-        check_with(mdx_input(), parse_mdx_with_markdown_rs, assert_same_mdx);
+    /// Markdown syntax mixed with multibyte text: CJK, emoji, combining marks, `ß`, full-width and
+    /// ideographic punctuation and spaces, and characters that change case or width.
+    fn unicode_input() -> impl Strategy<Value = String> {
+        let word = prop::sample::select(vec![
+            "あ",
+            "日本語",
+            "テスト",
+            "🎉",
+            "👨‍👩‍👧",
+            "é",
+            "e\u{301}",
+            "ß",
+            "ǅ",
+            "İ",
+            "ﬁ",
+            "ｗｗｗ",
+            "www.あ.com",
+            "wwß",
+            "ww\u{301}",
+            "http://あ.jp/パス",
+            "https://例え.jp",
+            "a@あ.com",
+            "あ@b.com",
+            "。",
+            "、",
+            "「",
+            "」",
+            "（",
+            "）",
+            "！",
+            "？",
+            "＊",
+            "＿",
+            "｀",
+            "＃",
+            "\u{3000}",
+            "\u{a0}",
+            "\u{200b}",
+            "\u{2028}",
+            "\u{feff}",
+            "\u{fe0f}",
+            "ا",
+            "א",
+            "𠮷",
+            "\u{10ffff}",
+            "\u{0}",
+            "x",
+            "foo",
+        ]);
+        let syntax = prop::sample::select(vec![
+            " ",
+            "  ",
+            "\t",
+            "*",
+            "**",
+            "_",
+            "__",
+            "~",
+            "~~",
+            "`",
+            "``",
+            "[",
+            "]",
+            "(",
+            ")",
+            "![",
+            "<",
+            ">",
+            "&",
+            "&amp;",
+            "&#12354;",
+            "&#x1F389;",
+            "&あ;",
+            "\\",
+            "|",
+            ":",
+            "-",
+            "#",
+            "^",
+            "\"",
+            "'",
+            "{",
+            "}",
+            "/",
+            "=",
+            "://",
+            ".",
+            "\n",
+            "\n\n",
+            "\n> ",
+            "\n- ",
+            "\n1. ",
+            "\n# ",
+            "\n| ",
+            "\n|-|-|\n",
+            "\n    ",
+            "\n\t",
+            "\r\n",
+            "\n[a]: ",
+            "\n[^a]: ",
+        ]);
+        let token = prop_oneof![3 => word, 2 => syntax];
+        prop::collection::vec(token, 1..24).prop_map(|tokens| tokens.concat())
+    }
+
+    /// Any characters at all, with extra weight on the ones that matter to Markdown.
+    fn arbitrary_input() -> impl Strategy<Value = String> {
+        let ch = prop_oneof![
+            4 => any::<char>(),
+            3 => prop::sample::select(vec!['*', '_', '`', '[', ']', '(', ')', '<', '>', '&', '|', '\\', '#', '-', '~', ' ', '\t', '\n', '!', 'w', 'h', '@', ':', '/', '.', '{', '}']),
+            3 => prop::sample::select(vec!['あ', 'é', 'ß', '🎉', '\u{301}', '\u{3000}', '\u{a0}', '。', '＊']),
+        ];
+        prop::collection::vec(ch, 0..40).prop_map(|chars| chars.into_iter().collect())
+    }
+
+    /// Closed fences whose info string and content are multibyte, alone or inside a container.
+    fn unicode_fence_input() -> impl Strategy<Value = String> {
+        let text = prop::sample::select(vec![
+            "あ",
+            "日本語 x",
+            "🎉",
+            "é",
+            "ß",
+            "ｗｗｗ",
+            "a b",
+            "",
+            "> あ",
+            "- 🎉",
+            "\u{3000}",
+        ]);
+        (
+            prop::sample::select(vec!["", "> ", "- ", "  ", "1. "]),
+            prop::sample::select(vec![("```", "```"), ("~~~", "~~~"), ("````", "````"), ("$$", "$$")]),
+            text.clone(),
+            text.clone(),
+            text,
+        )
+            .prop_map(|(container, (open, close), info, first, second)| {
+                let pad = if container == "> " {
+                    "> ".to_string()
+                } else {
+                    " ".repeat(container.len())
+                };
+                let lead = |line: &str, first: bool| {
+                    if first {
+                        format!("{container}{line}")
+                    } else {
+                        format!("{pad}{line}")
+                    }
+                };
+                [
+                    lead(&format!("{open}{info}"), true),
+                    lead(first, false),
+                    lead(second, false),
+                    lead(close, false),
+                ]
+                .join("\n")
+            })
+    }
+
+    /// Checks what has to hold for any input: nothing panics, and every position lies inside the
+    /// document and does not end before it starts.
+    fn assert_valid(input: &str) {
+        let lines = 1 + input.matches(['\n', '\r']).count() - input.matches("\r\n").count();
+        let mut stack = parse(input).expect("Markdown always parses");
+        stack.extend(parse_mdx(input).unwrap_or_default());
+        while let Some(node) = stack.pop() {
+            if let Some(position) = node.position() {
+                let (start, end) = (&position.start, &position.end);
+                let ordered = (start.line, start.column) <= (end.line, end.column);
+                assert!(
+                    ordered && start.line >= 1 && start.column >= 1 && end.line <= lines,
+                    "{node:?} has a position outside of {input:?}"
+                );
+            }
+            stack.extend(node.children());
+        }
+        let _ = to_html(input);
+    }
+
+    /// Runs `strategy` with a fixed seed so the outcome never varies between runs. `PROPTEST_CASES`
+    /// and `PARSER_TEST_SEED` widen the exploration.
+    fn check(strategy: impl Strategy<Value = String>) {
+        let config = ProptestConfig {
+            cases: env_number("PROPTEST_CASES").unwrap_or(3000),
+            failure_persistence: None,
+            ..ProptestConfig::default()
+        };
+        let seed = env_number("PARSER_TEST_SEED").unwrap_or(7);
+        let mut runner = TestRunner::new_with_rng(config, TestRng::from_seed(RngAlgorithm::ChaCha, &[seed; 32]));
+        let result = runner.run(&strategy, |input| {
+            assert_valid(&input);
+            Ok(())
+        });
+        if let Err(error) = result {
+            panic!("{error}");
+        }
     }
 
     #[test]
-    fn inline_syntax_matches_markdown_rs() {
+    fn block_structure_is_valid() {
+        check(block_input());
+    }
+
+    #[test]
+    fn inline_syntax_is_valid() {
         check(inline_input());
+    }
+
+    #[test]
+    fn mdx_syntax_is_valid() {
+        check(mdx_input());
+    }
+
+    #[test]
+    fn multibyte_syntax_is_valid() {
+        check(unicode_input());
+    }
+
+    #[test]
+    fn multibyte_fences_are_valid() {
+        check(unicode_fence_input());
+    }
+
+    #[test]
+    fn arbitrary_text_is_valid() {
+        check(arbitrary_input());
+    }
+
+    /// Every control character and unusual space or separator at each syntax position.
+    #[test]
+    fn special_characters_are_valid() {
+        let chars = (0u32..=0x9f)
+            .chain([
+                0xa0, 0xad, 0x1680, 0x180e, 0x2000, 0x200a, 0x200b, 0x200d, 0x2028, 0x2029, 0x202f, 0x205f, 0x2060,
+                0x3000, 0xfeff, 0xfffd, 0xfe0f,
+            ])
+            .filter_map(char::from_u32);
+        let templates = [
+            "[a]: {}",
+            "[a]: x{}y",
+            "[a]: <{}>",
+            "[a]: /u '{}'",
+            "[a]: /u {}",
+            "[a]\n\n[a]: {}x\n\n[a]",
+            "[a]({})",
+            "[a](x{}y)",
+            "[a](<{}>)",
+            "[a](/u '{}')",
+            "[a](/u \"{}\")",
+            "![{}](x)",
+            "[{}](x)",
+            "[x{}]: y",
+            "<http://a{}b>",
+            "<a@b{}c>",
+            "<{}a>",
+            "<a{}b>",
+            "<a {}b=c>",
+            "<a b={}c>",
+            "<a b=\"{}\">",
+            "http://a{}b.c",
+            "www.a{}b.c",
+            "www.a.b/{}x",
+            "x@y{}z.com",
+            "{}x@y.com",
+            "a{}b",
+            "{}a",
+            "a{}",
+            "a {}",
+            "{} a",
+            "# {}",
+            "# a{}",
+            "#{}a",
+            "{}# a",
+            "> {}",
+            "- {}",
+            "-{}a",
+            "1.{}a",
+            "1. {}",
+            "```{}",
+            "```a{}\nx\n```",
+            "```\n{}\n```",
+            "~~~{}",
+            "$${}",
+            "$$\n{}\n$$",
+            "`{}`",
+            "`a{}b`",
+            "*{}*",
+            "*a{}*",
+            "{}*a*",
+            "*a*{}",
+            "**{}**",
+            "_a{}_",
+            "_{}a_",
+            "~~a{}~~",
+            "~~{}~~",
+            "a\\{}",
+            "&{};",
+            "&a{};",
+            "&#{};",
+            "&#x{};",
+            "&amp{}",
+            "{}\n---",
+            "a{}\n---",
+            "a\n{}---",
+            "---{}",
+            "***{}",
+            "- - {}",
+            "| a{} | b |\n|-|-|",
+            "| {} |\n|-|\n| {} |",
+            "|{}|\n|{}|",
+            "[^a]: {}",
+            "[^a{}]: x",
+            "[^a]\n\n[^a]: {}x",
+            "x\n\n    {}",
+            "x\n\n    a{}",
+            "<!-- {} -->",
+            "<div>{}",
+            "<div {}>",
+            "<?{}?>",
+            "<![CDATA[{}]]>",
+            "---\n{}\n---\na",
+            "+++\n{}\n+++\na",
+            "{}  \nb",
+            "a{}\nb",
+            "a\n{}b",
+        ];
+        for char in chars {
+            for template in templates {
+                assert_valid(&template.replace("{}", &char.to_string()));
+            }
+        }
     }
 
     const SPEC_URL: &str =
         "https://raw.githubusercontent.com/github/cmark-gfm/828322d1ee4facdab56f0d3edccb13e9af90dcd2/test/spec.txt";
 
-    /// The markdown of each example of the `CommonMark` and GFM `spec.txt`, with its number.
-    fn spec_examples(text: &str) -> Vec<(usize, String)> {
+    /// The markdown and the HTML of each example of the `CommonMark` and GFM `spec.txt`, with its number.
+    fn spec_examples(text: &str) -> Vec<(usize, String, String)> {
         let fence = "`".repeat(32);
         let open = format!("{fence} example");
         let mut examples = Vec::new();
@@ -716,24 +1119,35 @@ mod tests {
                 continue;
             }
             let markdown = lines.by_ref().take_while(|line| *line != ".").collect::<Vec<_>>();
-            for line in lines.by_ref() {
-                if line == fence {
-                    break;
-                }
-            }
+            let html = lines.by_ref().take_while(|line| *line != fence).collect::<Vec<_>>();
             // `→` stands for a tab in the spec.
-            examples.push((examples.len() + 1, markdown.join("\n").replace('\u{2192}', "\t") + "\n"));
+            let text = |lines: Vec<&str>| lines.join("\n").replace('\u{2192}', "\t");
+            let html = text(html);
+            let html = if html.is_empty() { html } else { html + "\n" };
+            examples.push((examples.len() + 1, text(markdown) + "\n", html));
         }
         examples
     }
 
-    /// Examples of the spec on which the native parser differs from `markdown-rs`, by number.
-    const KNOWN_DIFFERENCES: &[usize] = &[];
+    /// Examples of the spec that are not rendered as in the spec, by number. The parser has kept the
+    /// behavior of `markdown-rs` here:
+    ///
+    /// - code with a tab that a container consumes in part, which keeps the rest of the tab as spaces in
+    ///   the spec, and an image in the alt text of an image (5, 6, 7, 570)
+    /// - a document that starts with `---` has frontmatter (66, 68)
+    /// - emphasis next to other runs of `*` and `_` follows the algorithm of `markdown-rs` (388, 416,
+    ///   424, 425, 426, 463, 464, 465, 467)
+    /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href` (496,
+    ///   594, 595, 597)
+    /// - GFM autolink literals, which the spec does not have (598, 604, 607, 608)
+    const KNOWN_DIFFERENCES: &[usize] = &[
+        5, 6, 7, 66, 68, 388, 416, 424, 425, 426, 463, 464, 465, 467, 496, 570, 594, 595, 597, 598, 604, 607, 608,
+    ];
 
-    /// Compares every example of the spec, from `SPEC_FILE` or fetched over the network.
+    /// Renders every example of the spec to HTML, from `SPEC_FILE` or fetched over the network.
     #[test]
     #[ignore = "fetches spec.txt over the network; set SPEC_FILE to use a local copy"]
-    fn spec_examples_match_markdown_rs() {
+    fn spec_examples_render_as_in_the_spec() {
         let text = match std::env::var("SPEC_FILE") {
             Ok(path) => std::fs::read_to_string(path).unwrap(),
             Err(_) => ureq::get(SPEC_URL)
@@ -746,24 +1160,14 @@ mod tests {
         let examples = spec_examples(&text);
         assert!(examples.len() > 600, "only {} examples were found", examples.len());
 
-        if let Ok(number) = std::env::var("SPEC_SHOW") {
-            let (_, markdown) = &examples[number.parse::<usize>().unwrap() - 1];
-            println!("{markdown:?}");
-            println!("native: {:?}", parse(markdown).unwrap());
-            println!("markdown-rs: {:?}", parse_with_markdown_rs(markdown).unwrap());
-        }
-
         let differing = examples
             .iter()
-            .filter(|(_, markdown)| {
-                let Ok(expected) = std::panic::catch_unwind(|| parse_with_markdown_rs(markdown)) else {
-                    return false;
-                };
-                format!("{:#?}", parse(markdown).unwrap()) != format!("{:#?}", expected.unwrap())
-            })
-            .map(|(number, _)| *number)
+            .filter(|(_, markdown, html)| to_html(markdown) != *html)
+            .map(|(number, ..)| *number)
             .collect::<Vec<_>>();
-
-        assert_eq!(differing, KNOWN_DIFFERENCES, "examples that differ from markdown-rs");
+        assert_eq!(
+            differing, KNOWN_DIFFERENCES,
+            "examples that are not rendered as in the spec"
+        );
     }
 }

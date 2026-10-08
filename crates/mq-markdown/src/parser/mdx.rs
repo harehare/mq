@@ -38,14 +38,14 @@ pub(super) struct Tag {
     pub(super) end: usize,
 }
 
+/// Whether `char` can start a JavaScript identifier.
 fn id_start(char: char) -> bool {
-    char.is_alphabetic() || matches!(char, '$' | '_')
+    unicode_id::UnicodeID::is_id_start(char) || matches!(char, '$' | '_')
 }
 
+/// Whether `char` can continue a JSX identifier, which may contain dashes.
 fn id_continue(char: char) -> bool {
-    char.is_alphanumeric()
-        || matches!(char, '_' | '-' | '\u{200c}' | '\u{200d}')
-        || ('\u{0300}'..='\u{036f}').contains(&char)
+    unicode_id::UnicodeID::is_id_continue(char) || matches!(char, '\u{200c}' | '\u{200d}' | '-')
 }
 
 /// What a tag parser stops with: a failure of the construct, or of the input.
@@ -172,20 +172,24 @@ impl Cursor<'_> {
     /// of each line after the first.
     fn expression_value(&self, start: usize, end: usize) -> SmolStr {
         let content = &self.src[start..end];
-        if !content.contains('\n') {
+        if !content.contains(['\n', '\r']) {
             return SmolStr::new(content);
         }
         let mut value = String::with_capacity(content.len());
-        for (index, line) in content.split('\n').enumerate() {
-            if index > 0 {
-                value.push('\n');
+        // How many more whitespace characters may be dropped at the start of the current line.
+        let mut droppable = 0;
+        for char in content.chars() {
+            match char {
+                '\n' | '\r' => {
+                    droppable = 2;
+                    value.push(char);
+                }
+                ' ' | '\t' if droppable > 0 => droppable -= 1,
+                _ => {
+                    droppable = 0;
+                    value.push(char);
+                }
             }
-            let skipped = if index == 0 {
-                0
-            } else {
-                line.chars().take(2).take_while(|c| matches!(c, ' ' | '\t')).count()
-            };
-            value.push_str(&line[skipped..]);
         }
         SmolStr::new(value)
     }
@@ -260,7 +264,7 @@ impl Cursor<'_> {
     fn tag(&mut self) -> Step<Tag> {
         // `<` is followed by a name, not by whitespace.
         match self.peek() {
-            Some(' ' | '\t' | '\n') => return Err(Stop::Nok),
+            Some(' ' | '\t' | '\n' | '\r') => return Err(Stop::Nok),
             None => return self.end_of_input(),
             Some(_) => {}
         }
@@ -339,7 +343,8 @@ impl Cursor<'_> {
         match self.peek() {
             None => self.end_of_input(),
             Some('/' | '>' | '{') => Ok(()),
-            Some(char) if id_start(char) => Ok(()),
+            // An attribute needs whitespace before it.
+            Some(char) if id_start(char) && self.src[..self.index].ends_with(char::is_whitespace) => Ok(()),
             Some(_) => self.crash(format!("Unexpected {} after name", self.describe())),
         }
     }

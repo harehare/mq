@@ -6,8 +6,7 @@ use crate::node::{
     Code, ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, list_own_prefix_width, reindent_all_lines,
     render_values,
 };
-use markdown::{CompileOptions, Constructs, Options, ParseOptions};
-#[cfg(any(not(feature = "native-parser"), test, feature = "json", feature = "html-to-markdown"))]
+#[cfg(any(feature = "json", feature = "html-to-markdown"))]
 use miette::miette;
 use std::{fmt, str::FromStr};
 use table_layout::{TableLayout, write_padded_cell};
@@ -241,8 +240,7 @@ impl Markdown {
     }
 
     pub fn to_html(&self) -> String {
-        let md_str = self.to_string();
-        markdown::to_html_with_options(&md_str, &html_options()).unwrap_or_else(|_| markdown::to_html(&md_str))
+        to_html(&self.to_string())
     }
 
     pub fn to_text(&self) -> String {
@@ -314,149 +312,22 @@ impl Markdown {
     }
 }
 
-/// Parses `content` with the parser selected by the `native-parser` feature.
+/// Parses `content` into nodes.
 fn parse_nodes(content: &str) -> miette::Result<Vec<Node>> {
-    #[cfg(feature = "native-parser")]
-    {
-        crate::parser::parse(content)
-    }
-    #[cfg(not(feature = "native-parser"))]
-    {
-        parse_with_markdown_rs(content)
-    }
+    crate::parser::parse(content)
 }
 
-/// Parses `content` as MDX with the parser selected by the `native-parser` feature.
+/// Parses `content` as MDX into nodes.
 fn parse_mdx_nodes(content: &str) -> miette::Result<Vec<Node>> {
-    #[cfg(feature = "native-parser")]
-    {
-        crate::parser::parse_mdx(content)
-    }
-    #[cfg(not(feature = "native-parser"))]
-    {
-        parse_mdx_with_markdown_rs(content)
-    }
+    crate::parser::parse_mdx(content)
 }
 
-/// Parses `content` as MDX with `markdown-rs` and converts the `mdast` tree into nodes.
-#[cfg(any(not(feature = "native-parser"), test))]
-pub(crate) fn parse_mdx_with_markdown_rs(content: &str) -> miette::Result<Vec<Node>> {
-    let root = markdown::to_mdast(content, &markdown::ParseOptions::mdx()).map_err(|e| miette!(e.reason))?;
-    Ok(Node::from_mdast_node(root))
-}
-
-/// Parses `content` with `markdown-rs` and converts the `mdast` tree into nodes.
-#[cfg(any(not(feature = "native-parser"), test))]
-pub(crate) fn parse_with_markdown_rs(content: &str) -> miette::Result<Vec<Node>> {
-    let root = markdown::to_mdast(
-        content,
-        &markdown::ParseOptions {
-            gfm_strikethrough_single_tilde: true,
-            math_text_single_dollar: true,
-            mdx_expression_parse: None,
-            mdx_esm_parse: None,
-            constructs: Constructs {
-                attention: true,
-                autolink: true,
-                block_quote: true,
-                character_escape: true,
-                character_reference: true,
-                code_indented: true,
-                code_fenced: true,
-                code_text: true,
-                definition: true,
-                frontmatter: true,
-                gfm_autolink_literal: true,
-                gfm_label_start_footnote: true,
-                gfm_footnote_definition: true,
-                gfm_strikethrough: true,
-                gfm_table: true,
-                gfm_task_list_item: true,
-                hard_break_escape: true,
-                hard_break_trailing: true,
-                heading_atx: true,
-                heading_setext: true,
-                html_flow: true,
-                html_text: true,
-                label_start_image: true,
-                label_start_link: true,
-                label_end: true,
-                list_item: true,
-                math_flow: true,
-                math_text: true,
-                mdx_esm: false,
-                mdx_expression_flow: false,
-                mdx_expression_text: false,
-                mdx_jsx_flow: false,
-                mdx_jsx_text: false,
-                thematic_break: true,
-            },
-        },
-    )
-    .map_err(|e| miette!(e.reason))?;
-    Ok(Node::from_mdast_node(root))
-}
-
-/// Returns the shared `Options` used for both `Markdown::to_html` and the
-/// standalone `to_html` helper.  The options mirror the constructs that are
-/// enabled during parsing (see `from_markdown_str`) so that every feature
-/// that can be *parsed* is also correctly *rendered* to HTML, including:
+/// Converts Markdown to HTML.
 ///
-/// - GFM tables → `<table>`
-/// - GFM task-list items → `<input type="checkbox">`
-/// - GFM strikethrough → `<del>`
-/// - GFM footnotes
-/// - GFM autolink literals
-/// - Math (flow and inline) via `<code class="language-math …">`
-/// - YAML / TOML frontmatter (stripped from HTML output)
-fn html_options() -> Options {
-    Options {
-        parse: ParseOptions {
-            gfm_strikethrough_single_tilde: true,
-            math_text_single_dollar: true,
-            constructs: Constructs {
-                attention: true,
-                autolink: true,
-                block_quote: true,
-                character_escape: true,
-                character_reference: true,
-                code_indented: true,
-                code_fenced: true,
-                code_text: true,
-                definition: true,
-                frontmatter: true,
-                gfm_autolink_literal: true,
-                gfm_label_start_footnote: true,
-                gfm_footnote_definition: true,
-                gfm_strikethrough: true,
-                gfm_table: true,
-                gfm_task_list_item: true,
-                hard_break_escape: true,
-                hard_break_trailing: true,
-                heading_atx: true,
-                heading_setext: true,
-                html_flow: true,
-                html_text: true,
-                label_start_image: true,
-                label_start_link: true,
-                label_end: true,
-                list_item: true,
-                math_flow: true,
-                math_text: true,
-                thematic_break: true,
-                ..Constructs::default()
-            },
-            ..ParseOptions::default()
-        },
-        compile: CompileOptions {
-            allow_dangerous_html: true,
-            ..CompileOptions::default()
-        },
-    }
-}
-
+/// Everything that is parsed is rendered: GFM tables, task list items, strikethrough, footnotes and
+/// autolink literals, math, and raw HTML. Frontmatter is left out.
 pub fn to_html(s: &str) -> String {
-    markdown::to_html_with_options(s, &html_options()).unwrap_or_else(|_| markdown::to_html(s))
+    crate::parser::to_html(s)
 }
 
 #[cfg(test)]

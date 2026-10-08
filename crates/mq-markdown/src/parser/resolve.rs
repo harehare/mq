@@ -30,7 +30,7 @@ pub(super) fn resolve(blocks: Vec<Block>, mdx: bool) -> Result<Vec<Node>, String
     Ok(nodes)
 }
 
-fn collect(blocks: &[Block], references: &mut References) {
+pub(super) fn collect(blocks: &[Block], references: &mut References) {
     for block in blocks {
         match block {
             Block::Node(Node::Definition(definition)) => {
@@ -108,6 +108,7 @@ fn flatten(blocks: Vec<Block>, references: &References, nodes: &mut Vec<Node>) -
     for block in blocks {
         match block {
             Block::Node(node) => frames.push(node),
+            Block::Fenced(fenced) => frames.push(fenced.node),
             Block::Inline(block) => {
                 let mut out = Vec::new();
                 inline_block(block, references, &mut out)?;
