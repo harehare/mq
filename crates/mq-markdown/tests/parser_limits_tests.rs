@@ -73,6 +73,8 @@ fn elements_nested_within_the_limit_parse() {
 #[case::quote_markers_on_a_line(format!("{}a\n", "> ".repeat(20_000)).repeat(20))]
 #[case::numbered_markers_on_a_line(format!("{}a\n", "1. ".repeat(20_000)).repeat(20))]
 #[case::long_labels(format!("[a]: /u\n{}", "[b ".repeat(100_000)))]
+#[case::many_emphasis_pairs("*a* _b_ **c** __d__ ~~e~~ ".repeat(30_000))]
+#[case::many_emphasis_pairs_and_an_email("*a* b@c.de ".repeat(30_000))]
 #[case::backtick_runs_of_every_length((1..3_000).map(|length| format!("e{}", "`".repeat(length))).collect::<String>())]
 #[case::dollar_runs_of_every_length((1..3_000).map(|length| format!("e{}", "$".repeat(length))).collect::<String>())]
 #[case::unclosed_comments("a <!--".repeat(300_000))]
