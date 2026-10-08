@@ -102,7 +102,8 @@ pub(super) fn item_depth(item: &Item) -> usize {
 pub(super) struct Context<'a> {
     pub(super) source: &'a InlineSource,
     pub(super) references: &'a References,
-    /// Whether email addresses in plain text are linked. They are not inside link text.
+    /// Whether email addresses in plain text are linked: not inside link text, and not when there is no `@`
+    /// in the text, which is looked for once.
     pub(super) emails: bool,
     /// The first error in the content, which only MDX has.
     error: &'a RefCell<Option<String>>,
@@ -136,7 +137,7 @@ pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Ve
     let context = Context {
         source,
         references,
-        emails: !references.mdx,
+        emails: !references.mdx && source.text.contains('@'),
         error: &error,
     };
     let mut scanner = Scanner {
@@ -167,7 +168,7 @@ pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Ve
 /// Converts items to nodes, merging adjacent text. Unused delimiters and openers become text.
 pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
     let src = context.src();
-    let items = if context.emails && src.contains('@') {
+    let items = if context.emails {
         literal::link_emails(src, items)
     } else {
         items
