@@ -1,5 +1,6 @@
 //! Source lines and their positions.
 
+use super::block::CODE_INDENT;
 use crate::node::Point;
 
 #[derive(Clone, Copy)]
@@ -34,7 +35,7 @@ pub(super) struct Line<'a> {
 impl<'a> Line<'a> {
     /// The indentation from which a line is code. Without indented code, indentation never matters.
     pub(super) fn code_indent(&self) -> usize {
-        if self.mdx { usize::MAX } else { 4 }
+        if self.mdx { usize::MAX } else { CODE_INDENT }
     }
 
     /// The zero-based visual column where `text` starts in the document.

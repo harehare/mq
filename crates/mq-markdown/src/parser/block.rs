@@ -1,8 +1,8 @@
-//! Block structure parsing: resolves each line into leaf blocks.
+//! Block structure parsing: resolves the lines into a tree of [`Block`]s.
 //!
-//! Containers (blockquote, list) are resolved by stripping their prefix from each line and parsing
-//! the remaining lines again, up to [`MAX_DEPTH`] levels. The remaining leaf blocks (HTML, table,
-//! definition, frontmatter, math) are not handled yet, so their lines currently fall into paragraphs.
+//! The constructs that can start at a line are the rules of [`rule::Rules`], tried in order, and a
+//! paragraph when none starts. Containers (blockquote, list item, footnote definition) collect their
+//! lines without the container prefix and parse them again, up to [`MAX_DEPTH`] levels.
 
 use super::code::Fence;
 use super::definition;
@@ -19,6 +19,9 @@ use rule::{BlockRule, Cx, Rules, fallback};
 
 /// Lines indented by this many columns or more are code, not other blocks.
 pub(super) const CODE_INDENT: usize = 4;
+
+/// The indentation of the lines that continue a footnote definition.
+const FOOTNOTE_INDENT: usize = 4;
 
 /// Containers nested deeper than this are parsed as plain paragraph text, which bounds recursion.
 const MAX_DEPTH: usize = 128;
@@ -351,6 +354,7 @@ fn blockquote(
     index
 }
 
+#[derive(Clone)]
 struct ItemMarker {
     ordered: bool,
     kind: ListMarker,
@@ -451,9 +455,9 @@ fn list(
     let mut items = Vec::new();
     let mut spread = false;
     let mut index = start;
+    let mut marker = first.clone();
 
     loop {
-        let marker = ItemMarker::parse(&lines[index]).unwrap_or_else(|| unreachable!("checked by the caller"));
         let (item, end) = list_item(
             lines,
             index,
@@ -468,11 +472,16 @@ fn list(
         items.push(item);
 
         // Blank lines between items make the list loose.
-        let next = (end..lines.len()).find(|&i| !lines[i].is_blank());
-        match next.filter(|&i| ItemMarker::parse(&lines[i]).is_some_and(|m| m.same_list(first))) {
-            Some(next) => {
+        let next = (end..lines.len()).find(|&i| !lines[i].is_blank()).and_then(|i| {
+            ItemMarker::parse(&lines[i])
+                .filter(|m| m.same_list(first))
+                .map(|m| (i, m))
+        });
+        match next {
+            Some((next, next_marker)) => {
                 spread |= next > end;
                 index = next;
+                marker = next_marker;
             }
             None => {
                 index = end;
@@ -808,8 +817,8 @@ fn ends_table(line: &Line<'_>) -> bool {
         || (!line.lazy && line.indent().0 < line.code_indent() && ItemMarker::parse(line).is_some())
 }
 
-/// Returns the index after the block and what it restricts on the first line of a following container.
-///
+/// Collects a paragraph or a setext heading starting at `lines[start]`, with the definitions at its
+/// start as blocks of their own. Returns the index after it and what it restricts on the next line.
 fn paragraph(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>) -> (usize, Interrupt) {
     let mut index = start + 1;
     // Lines up to this one are taken by flow content that turned out to be text.
@@ -936,7 +945,7 @@ fn footnote_marker<'a>(line: &Line<'a>) -> Option<FootnoteMarker<'a>> {
     }
     let (columns, indent) = line.indent();
     let rest = line.text[indent..].strip_prefix("[^")?;
-    if columns >= CODE_INDENT {
+    if columns >= line.code_indent() {
         return None;
     }
     // A backslash escapes the bracket that follows it, as well as another backslash.
@@ -986,12 +995,12 @@ fn footnote(
     while let Some(line) = lines.get(index) {
         if line.is_blank() {
             blanks.push(line.skip(line.text.len()));
-        } else if line.indent().0 >= CODE_INDENT {
+        } else if line.indent().0 >= FOOTNOTE_INDENT {
             for blank in &blanks {
                 state.feed(blank);
             }
             inner.append(&mut blanks);
-            let stripped = line.skip_columns(CODE_INDENT);
+            let stripped = line.skip_columns(FOOTNOTE_INDENT);
             state.feed(&stripped);
             inner.push(stripped);
         } else if blanks.is_empty() && state.continues_with(line) && !blocks_lazy_continuation(lines, index) {

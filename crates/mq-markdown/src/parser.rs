@@ -18,6 +18,7 @@ mod mdx;
 mod mdx_flow;
 mod render_html;
 mod resolve;
+mod scan;
 mod table;
 mod tree;
 
