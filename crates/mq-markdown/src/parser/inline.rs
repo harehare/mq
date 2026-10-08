@@ -26,7 +26,8 @@ use crate::node::{
 };
 use smol_str::SmolStr;
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
+use std::collections::HashMap;
 
 /// The value of a text item: a slice of the source, or a decoded string.
 pub(super) enum Value {
@@ -145,6 +146,7 @@ pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Ve
         pos: 0,
         run: 0,
         misses: html::Misses::default(),
+        runs: SpanRuns::default(),
         braces: mdx::Braces::default(),
     };
     scanner.scan();
@@ -290,6 +292,39 @@ fn text_element(context: &Context<'_>, tag: TextTag, children: Vec<Node>, end: u
     })
 }
 
+/// Where the runs of backticks and of dollar signs start, by length, found in one pass the first time a
+/// span asks, so that openers without a closer do not each scan to the end.
+#[derive(Default)]
+struct SpanRuns {
+    backticks: OnceCell<HashMap<usize, Vec<usize>>>,
+    dollars: OnceCell<HashMap<usize, Vec<usize>>>,
+}
+
+impl SpanRuns {
+    /// The start of the first run of exactly `size` bytes `ch` that starts at or after `from`.
+    fn next_of_length(&self, src: &str, ch: u8, size: usize, from: usize) -> Option<usize> {
+        let runs = if ch == b'`' { &self.backticks } else { &self.dollars };
+        let starts = runs
+            .get_or_init(|| {
+                let bytes = src.as_bytes();
+                let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
+                let mut index = 0;
+                while index < bytes.len() {
+                    if bytes[index] == ch {
+                        let length = bytes[index..].iter().take_while(|&&b| b == ch).count();
+                        runs.entry(length).or_default().push(index);
+                        index += length;
+                    } else {
+                        index += 1;
+                    }
+                }
+                runs
+            })
+            .get(&size)?;
+        starts.get(starts.partition_point(|&start| start < from)).copied()
+    }
+}
+
 struct Scanner<'a> {
     context: &'a Context<'a>,
     items: Vec<Item>,
@@ -304,6 +339,7 @@ struct Scanner<'a> {
     run: usize,
     /// Raw HTML terminators already known to be missing.
     misses: html::Misses,
+    runs: SpanRuns,
     /// Where the braces of the content close, for MDX.
     braces: mdx::Braces,
 }
@@ -545,26 +581,12 @@ impl Scanner<'_> {
 
     /// A code span (`` ` ``) or an inline math span (`$`).
     fn span(&mut self, ch: u8) {
-        let src = self.src();
+        let src = self.context.src();
         let bytes = src.as_bytes();
         let start = self.pos;
         let size = bytes[start..].iter().take_while(|&&b| b == ch).count();
 
-        // Find the next run of exactly the same length.
-        let mut index = start + size;
-        let mut close = None;
-        while index < bytes.len() {
-            if bytes[index] == ch {
-                let run = bytes[index..].iter().take_while(|&&b| b == ch).count();
-                if run == size {
-                    close = Some(index);
-                    break;
-                }
-                index += run;
-            } else {
-                index += 1;
-            }
-        }
+        let close = self.runs.next_of_length(src, ch, size, start + size);
 
         let Some(close) = close else {
             self.pos = start + size;
