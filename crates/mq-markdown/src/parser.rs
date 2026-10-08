@@ -23,7 +23,7 @@ mod tree;
 
 use crate::node::Node;
 
-pub(crate) use inline::normalize;
+pub(crate) use inline::{is_autolink_email, normalize, unescape};
 
 /// Parses `content` into a flat list of nodes.
 pub(crate) fn parse(content: &str) -> miette::Result<Vec<Node>> {

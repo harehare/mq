@@ -44,7 +44,7 @@ pub(super) fn decode(src: &str, pos: usize) -> Option<(usize, String)> {
 }
 
 /// Decodes backslash escapes and character references, as in link destinations and titles.
-pub(in crate::parser) fn unescape(value: &str) -> String {
+pub(crate) fn unescape(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut result = String::with_capacity(value.len());
     let mut from = 0;

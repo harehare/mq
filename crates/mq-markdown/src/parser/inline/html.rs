@@ -49,6 +49,12 @@ pub(super) fn autolink(src: &str, pos: usize) -> Option<Autolink> {
     })
 }
 
+/// Whether `text` is an email address that an autolink (`<text>`) can hold.
+pub(crate) fn is_autolink_email(text: &str) -> bool {
+    let closed = format!("{text}>");
+    email(closed.as_bytes(), 0) == Some(text.len())
+}
+
 /// Parses an email address for an autolink at `start`, returning the offset of the closing `>`.
 /// The characters allowed differ slightly from `CommonMark`, following `markdown-rs`.
 fn email(bytes: &[u8], start: usize) -> Option<usize> {
