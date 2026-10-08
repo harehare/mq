@@ -1971,6 +1971,14 @@ impl Node {
 
     /// True for the nodes that make up the text of a paragraph.
     pub(crate) fn is_paragraph_text(&self) -> bool {
+        #[cfg(feature = "wikilink")]
+        if matches!(self, Self::WikiLink(_)) {
+            return true;
+        }
+        #[cfg(feature = "embed")]
+        if matches!(self, Self::Embed(_)) {
+            return true;
+        }
         matches!(
             self,
             Self::Text(_)
