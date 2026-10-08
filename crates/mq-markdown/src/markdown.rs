@@ -6,7 +6,7 @@ use crate::html_to_markdown::ConversionOptions;
 use crate::node::ListStyle;
 use crate::node::{
     Code, ColorTheme, ListMarker, Node, Position, RenderOptions, TableAlign, TableCell, indent_lines,
-    list_own_prefix_width, reindent_all_lines, render_cell_values, render_values_block,
+    list_own_prefix_width, reindent_all_lines, render_before, render_cell_values, render_values_block,
 };
 #[cfg(any(feature = "json", feature = "html-to-markdown"))]
 use miette::miette;
@@ -184,7 +184,7 @@ impl Markdown {
                 .render_with_theme(&self.options, theme)
             } else {
                 list_indent_stack.clear();
-                node.render_with_theme(&self.options, theme)
+                render_before(node, nodes.get(i + 1), &self.options, theme)
             };
 
             if value.is_empty() || value == "\n" {

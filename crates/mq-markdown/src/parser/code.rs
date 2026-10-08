@@ -135,8 +135,12 @@ pub(super) fn indented_code(lines: &[Line<'_>], start: usize, blocks: &mut Vec<B
             (content.pad, content.text, line.eol)
         })
         .collect::<Vec<_>>();
-    // Lines that are empty once the indent is removed only extend the position, not the value.
-    while parts.len() > 1 && parts.last().is_some_and(|(pad, text, _)| *pad == 0 && text.is_empty()) {
+    // Trailing lines of whitespace only extend the position, not the value.
+    while parts.len() > 1
+        && parts
+            .last()
+            .is_some_and(|(_, text, _)| text.trim_matches([' ', '\t']).is_empty())
+    {
         parts.pop();
     }
     // What is left of a tab that the indent consumes in part is code, as spaces.

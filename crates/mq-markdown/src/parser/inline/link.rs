@@ -3,9 +3,9 @@
 use super::entity::{remove_line_indent, unescape};
 use super::tail::{Tail, inline_tail, reference};
 use super::{Context, Item, MAX_NESTING, Scanner, Value, emphasis, item_depth, to_nodes};
-use crate::node::{FootnoteRef, Image, ImageRef, Link, LinkRef, Node, Position, Title, Url};
 #[cfg(feature = "wikilink")]
-use crate::node::{RenderOptions, Text};
+use crate::node::RenderOptions;
+use crate::node::{FootnoteRef, Image, ImageRef, Link, LinkRef, Node, Position, Text, Title, Url};
 
 /// Normalizes a reference label: whitespace runs become one space, the ends are trimmed, and the case
 /// is folded. `markdown-rs` drops the first gap between words, which this does not.
@@ -203,7 +203,21 @@ fn unwrap_links(values: Vec<Node>) -> Vec<Node> {
     values
         .into_iter()
         .flat_map(|child| match child {
-            Node::Link(Link { values, .. }) => values,
+            Node::Link(Link { values, position, .. }) => values
+                .into_iter()
+                .map(|value| match value {
+                    // An autolink literal spans exactly its text, which is not decoded as it was linked. In
+                    // link text it is ordinary text, so escapes and references in it apply.
+                    Node::Text(Text {
+                        value,
+                        position: text_position,
+                    }) if text_position == position => Node::Text(Text {
+                        value: unescape(&value),
+                        position: text_position,
+                    }),
+                    other => other,
+                })
+                .collect(),
             #[cfg(feature = "wikilink")]
             Node::WikiLink(link) => vec![Node::Text(Text {
                 value: Node::WikiLink(link).to_string_with(&RenderOptions::default()),
