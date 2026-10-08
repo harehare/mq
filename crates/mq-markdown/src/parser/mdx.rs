@@ -3,6 +3,8 @@
 
 use crate::node::{MdxAttributeContent, MdxAttributeValue, MdxJsxAttribute};
 use smol_str::SmolStr;
+use std::cell::OnceCell;
+use std::collections::HashMap;
 
 /// What the end of the input means for a construct it ends inside of.
 pub(super) enum Fallback {
@@ -57,9 +59,44 @@ enum Stop {
 
 type Step<T> = Result<T, Stop>;
 
+const UNCLOSED_EXPRESSION: &str =
+    "Unexpected end of file in expression, expected a corresponding closing brace for `{`";
+
+/// Where each `{` of a source closes, found in one pass the first time one is asked for, so that
+/// many unclosed braces do not each scan to the end of the input.
+#[derive(Default)]
+pub(super) struct Braces(OnceCell<HashMap<usize, usize>>);
+
+impl Braces {
+    /// The offset of the `}` that closes the `{` at `open`, if there is one.
+    fn close(&self, src: &str, open: usize) -> Option<usize> {
+        self.0
+            .get_or_init(|| {
+                let mut closes = HashMap::new();
+                let mut opens = Vec::new();
+                for (index, byte) in src.bytes().enumerate() {
+                    match byte {
+                        b'{' => opens.push(index),
+                        b'}' => {
+                            if let Some(open) = opens.pop() {
+                                closes.insert(open, index);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                closes
+            })
+            .get(&open)
+            .copied()
+    }
+}
+
 struct Cursor<'a> {
     src: &'a str,
     index: usize,
+    /// Set when the same source is searched for many expressions. Without it each one is scanned.
+    braces: Option<&'a Braces>,
 }
 
 impl Cursor<'_> {
@@ -143,15 +180,22 @@ impl Cursor<'_> {
 
     /// A `{...}` expression with balanced braces, returning the offsets of its content.
     fn expression(&mut self) -> Step<(usize, usize)> {
+        let open = self.index;
         self.bump();
         let start = self.index;
+        if let Some(braces) = self.braces {
+            let Some(end) = braces.close(self.src, open) else {
+                self.index = self.src.len();
+                return Err(Stop::More(Fallback::Error(UNCLOSED_EXPRESSION.into())));
+            };
+            self.index = end + 1;
+            return Ok((start, end));
+        }
         let mut depth = 0usize;
         loop {
             match self.peek() {
                 None => {
-                    return Err(Stop::More(Fallback::Error(
-                        "Unexpected end of file in expression, expected a corresponding closing brace for `{`".into(),
-                    )));
+                    return Err(Stop::More(Fallback::Error(UNCLOSED_EXPRESSION.into())));
                 }
                 Some('{') => depth += 1,
                 Some('}') if depth == 0 => {
@@ -360,14 +404,22 @@ fn parsed<T>(step: Step<T>) -> Parsed<T> {
 }
 
 /// Parses the JSX tag that starts at `pos`, a `<`.
-pub(super) fn tag(src: &str, pos: usize) -> Parsed<Tag> {
-    let mut cursor = Cursor { src, index: pos + 1 };
+pub(super) fn tag(src: &str, pos: usize, braces: Option<&Braces>) -> Parsed<Tag> {
+    let mut cursor = Cursor {
+        src,
+        index: pos + 1,
+        braces,
+    };
     parsed(cursor.tag())
 }
 
 /// Parses the expression that starts at `pos`, a `{`, returning the offset after it and its value.
-pub(super) fn expression(src: &str, pos: usize) -> Parsed<(usize, SmolStr)> {
-    let mut cursor = Cursor { src, index: pos };
+pub(super) fn expression(src: &str, pos: usize, braces: Option<&Braces>) -> Parsed<(usize, SmolStr)> {
+    let mut cursor = Cursor {
+        src,
+        index: pos,
+        braces,
+    };
     parsed(
         cursor
             .expression()

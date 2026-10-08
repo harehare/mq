@@ -85,28 +85,50 @@ fn email(bytes: &[u8], start: usize) -> Option<usize> {
     }
 }
 
+/// Terminators that a search reached the end of the input without finding, so that later searches
+/// for the same one fail without scanning again. Each is the first offset a search started from.
+#[derive(Default)]
+pub(super) struct Misses {
+    comment: Option<usize>,
+    instruction: Option<usize>,
+    cdata: Option<usize>,
+    declaration: Option<usize>,
+}
+
+/// Finds `terminator` in `src` from `from`, recording a failure in `miss`.
+fn find_from(src: &str, from: usize, terminator: &str, miss: &mut Option<usize>) -> Option<usize> {
+    if miss.is_some_and(|missed| from >= missed) {
+        return None;
+    }
+    let found = src[from..].find(terminator).map(|index| from + index);
+    if found.is_none() {
+        *miss = Some(from);
+    }
+    found
+}
+
 /// Parses raw inline HTML at `pos` (a `<`), returning the offset after it.
-pub(super) fn inline_html(src: &str, pos: usize) -> Option<usize> {
+pub(super) fn inline_html(src: &str, pos: usize, misses: &mut Misses) -> Option<usize> {
     let rest = &src[pos..];
     let bytes = rest.as_bytes();
 
-    if let Some(after) = rest.strip_prefix("<!--") {
+    if rest.starts_with("<!--") {
         if rest.starts_with("<!-->") {
             return Some(pos + 5);
         }
         if rest.starts_with("<!--->") {
             return Some(pos + 6);
         }
-        return after.find("-->").map(|index| pos + 4 + index + 3);
+        return find_from(src, pos + 4, "-->", &mut misses.comment).map(|index| index + 3);
     }
-    if let Some(after) = rest.strip_prefix("<?") {
-        return after.find("?>").map(|index| pos + 2 + index + 2);
+    if rest.starts_with("<?") {
+        return find_from(src, pos + 2, "?>", &mut misses.instruction).map(|index| index + 2);
     }
-    if let Some(after) = rest.strip_prefix("<![CDATA[") {
-        return after.find("]]>").map(|index| pos + 9 + index + 3);
+    if rest.starts_with("<![CDATA[") {
+        return find_from(src, pos + 9, "]]>", &mut misses.cdata).map(|index| index + 3);
     }
     if rest.starts_with("<!") && bytes.get(2).is_some_and(u8::is_ascii_alphabetic) {
-        return rest.find('>').map(|index| pos + index + 1);
+        return find_from(src, pos, ">", &mut misses.declaration).map(|index| index + 1);
     }
     if rest.starts_with("</") {
         return closing_tag(bytes).map(|length| pos + length);

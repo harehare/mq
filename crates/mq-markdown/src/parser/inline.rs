@@ -144,6 +144,8 @@ pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Ve
         inactive_below: 0,
         pos: 0,
         run: 0,
+        misses: html::Misses::default(),
+        braces: mdx::Braces::default(),
     };
     scanner.scan();
     scanner.flush();
@@ -300,6 +302,10 @@ struct Scanner<'a> {
     pos: usize,
     /// Start of the plain text that has not been pushed as an item yet.
     run: usize,
+    /// Raw HTML terminators already known to be missing.
+    misses: html::Misses,
+    /// Where the braces of the content close, for MDX.
+    braces: mdx::Braces,
 }
 
 /// Bytes where `Scanner::scan` may start a construct. Every other byte is plain text.
@@ -643,7 +649,8 @@ impl Scanner<'_> {
 
     /// `<` starts an autolink or raw inline HTML.
     fn angle(&mut self) {
-        let src = self.src();
+        let context = self.context;
+        let src = context.src();
         let pos = self.pos;
         if let Some(autolink) = html::autolink(src, pos) {
             let position = |start, end| Some(self.context.position(start, end));
@@ -657,7 +664,7 @@ impl Scanner<'_> {
                 position: position(pos, autolink.end),
             });
             self.push_node(node, autolink.end);
-        } else if let Some(end) = html::inline_html(src, pos) {
+        } else if let Some(end) = html::inline_html(src, pos, &mut self.misses) {
             // Lines of a paragraph lose their leading whitespace, also inside a tag.
             let value = src[pos..end]
                 .split_inclusive('\n')
@@ -682,7 +689,7 @@ impl Scanner<'_> {
 
     /// A JSX tag in MDX text.
     fn jsx(&mut self) {
-        match mdx::tag(self.src(), self.pos) {
+        match mdx::tag(self.src(), self.pos, Some(&self.braces)) {
             Parsed::Ok(tag) => {
                 let end = tag.end;
                 let item = Item::Jsx(TextTag {
@@ -708,7 +715,7 @@ impl Scanner<'_> {
 
     /// An expression in MDX text.
     fn expression(&mut self) {
-        match mdx::expression(self.src(), self.pos) {
+        match mdx::expression(self.src(), self.pos, Some(&self.braces)) {
             Parsed::Ok((end, value)) => {
                 let node = Node::MdxTextExpression(MdxTextExpression {
                     value,
