@@ -110,13 +110,8 @@ pub(super) fn mdx_flow(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>
                 return FlowOutcome::Flow(lines.len());
             }
             Flow::Nok(end) => {
-                let last_line = end.map(|end| {
-                    start
-                        + source
-                            .lines
-                            .partition_point(|(offset, _)| *offset < end)
-                            .saturating_sub(1)
-                });
+                let last_line =
+                    end.map(|end| start + source.lines.partition_point(|line| line.offset < end).saturating_sub(1));
                 return FlowOutcome::Nok(last_line);
             }
             Flow::Error(message) => {
@@ -127,7 +122,7 @@ pub(super) fn mdx_flow(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>
                 let last_line = start
                     + source
                         .lines
-                        .partition_point(|(offset, _)| *offset < last)
+                        .partition_point(|line| line.offset < last)
                         .saturating_sub(1);
                 if lines[start + 1..=last_line].iter().any(|line| line.lazy) {
                     blocks.push(Block::Error(

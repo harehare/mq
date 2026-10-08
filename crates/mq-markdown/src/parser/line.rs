@@ -4,6 +4,14 @@ use super::block::CODE_INDENT;
 use super::flavor::Flavor;
 use crate::node::Point;
 
+/// Leading whitespace: how many columns it spans, where tabs go to the next multiple of four, and how
+/// many bytes it takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Indent {
+    pub(super) columns: usize,
+    pub(super) bytes: usize,
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct Line<'a> {
     pub(super) number: usize,
@@ -52,8 +60,8 @@ impl<'a> Line<'a> {
         }
     }
 
-    /// Column count and byte length of the leading whitespace.
-    pub(super) fn indent(&self) -> (usize, usize) {
+    /// The leading whitespace.
+    pub(super) fn indent(&self) -> Indent {
         let mut columns = self.pad;
         let mut absolute = self.start_column();
         for (index, byte) in self.text.bytes().enumerate() {
@@ -67,10 +75,13 @@ impl<'a> Line<'a> {
                     columns += width;
                     absolute += width;
                 }
-                _ => return (columns, index),
+                _ => return Indent { columns, bytes: index },
             }
         }
-        (columns, self.text.len())
+        Indent {
+            columns,
+            bytes: self.text.len(),
+        }
     }
 
     pub(super) fn is_blank(&self) -> bool {

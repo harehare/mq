@@ -325,7 +325,7 @@ pub(super) fn process(items: &mut Vec<Item>, context: &Context<'_>) {
             (_, 2) => Node::Strong(Strong { values, position }),
             _ => Node::Emphasis(Emphasis { values, position }),
         };
-        slots.insert_between(opener, closer, Item::Node(node, depth + 1));
+        slots.insert_between(opener, closer, Item::Node { node, depth: depth + 1 });
 
         slots.delim_mut(opener).count -= used;
         let close = slots.delim_mut(closer);

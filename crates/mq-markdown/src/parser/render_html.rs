@@ -118,7 +118,7 @@ fn end_line(block: &Block) -> Option<usize> {
             kind: InlineKind::Heading { position, .. },
             ..
         }) => Some(position.end.line),
-        Block::Inline(block) => block.source.lines.last().map(|(_, point)| point.line),
+        Block::Inline(block) => block.source.lines.last().map(|line| line.point.line),
         Block::Quote(quote) => Some(quote.position.end.line),
         // The position of an item includes the blank lines that follow it.
         Block::List(list) => list.items.last().and_then(|item| {
@@ -144,7 +144,7 @@ fn start_line(block: &Block) -> Option<usize> {
             kind: InlineKind::Heading { position, .. },
             ..
         }) => Some(position.start.line),
-        Block::Inline(block) => block.source.lines.first().map(|(_, point)| point.line),
+        Block::Inline(block) => block.source.lines.first().map(|line| line.point.line),
         Block::Quote(quote) => Some(quote.position.start.line),
         Block::List(list) => list.items.first().map(|item| item.position.start.line),
         Block::Footnote(footnote) => Some(footnote.position.start.line),

@@ -23,7 +23,7 @@ pub(super) use tail::{destination, title_at};
 use super::flavor::Flavor;
 use super::mdx::{self, Fallback, Parsed, TagKind};
 use super::resolve::References;
-use super::scan::eol_len;
+use super::scan::{Span, eol_len};
 use super::tree::InlineSource;
 use crate::node::{
     Break, CodeInline, MathInline, MdxAttributeContent, MdxJsxTextElement, MdxTextExpression, Node, Position, Text,
@@ -35,7 +35,7 @@ use std::cell::{OnceCell, RefCell};
 
 /// The value of a text item: a slice of the source, or a decoded string.
 pub(super) enum Value {
-    Slice(usize, usize),
+    Slice(Span),
     Owned(String),
 }
 
@@ -65,7 +65,10 @@ pub(super) enum Item {
         value: Value,
     },
     /// A finished node and how deeply it nests: a leaf is 1.
-    Node(Node, usize),
+    Node {
+        node: Node,
+        depth: usize,
+    },
     Delim(Delim),
     Open(Opener),
     /// An email address in plain text. It is not linked inside link text.
@@ -94,7 +97,7 @@ pub(super) const MAX_NESTING: usize = 128;
 /// How deeply the item nests: nodes carry it, and the rest are text.
 pub(super) fn item_depth(item: &Item) -> usize {
     match item {
-        Item::Node(_, depth) => *depth,
+        Item::Node { depth, .. } => *depth,
         _ => 0,
     }
 }
@@ -202,7 +205,7 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
         let (start, end, text): (usize, usize, Cow<'_, str>) = match item {
             Item::Text { start, end, value } => match value {
                 // The backslash of an escape is not part of the position of the text it starts.
-                Value::Slice(from, to) => (from, end, Cow::Borrowed(&src[from..to])),
+                Value::Slice(span) => (span.start, end, Cow::Borrowed(span.of(src))),
                 Value::Owned(value) => (start, end, Cow::Owned(value)),
             },
             Item::Delim(delim) => {
@@ -213,7 +216,7 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
                 let end = opener.start + if opener.image { 2 } else { 1 };
                 (opener.start, end, Cow::Borrowed(&src[opener.start..end]))
             }
-            Item::Node(node, _) => {
+            Item::Node { node, .. } => {
                 finish(&mut current, &mut nodes);
                 nodes.push(node);
                 continue;
@@ -478,7 +481,7 @@ impl Scanner<'_> {
             self.items.push(Item::Text {
                 start: self.run,
                 end: self.pos,
-                value: Value::Slice(self.run, self.pos),
+                value: Value::Slice(Span::new(self.run, self.pos)),
             });
         }
         self.run = self.pos;
@@ -487,7 +490,7 @@ impl Scanner<'_> {
     /// Pushes `item` after the pending text and continues scanning at `end`.
     fn push(&mut self, item: Item, end: usize) {
         self.flush();
-        if let Item::Node(_, depth) = &item {
+        if let Item::Node { depth, .. } = &item {
             self.note_depth(*depth);
         }
         self.items.push(item);
@@ -503,7 +506,7 @@ impl Scanner<'_> {
     }
 
     fn push_node(&mut self, node: Node, end: usize) {
-        self.push(Item::Node(node, 1), end);
+        self.push(Item::Node { node, depth: 1 }, end);
     }
 
     fn escape(&mut self) {
@@ -515,7 +518,7 @@ impl Scanner<'_> {
                 let item = Item::Text {
                     start: pos,
                     end: pos + 2,
-                    value: Value::Slice(pos + 1, pos + 2),
+                    value: Value::Slice(Span::new(pos + 1, pos + 2)),
                 };
                 self.push(item, pos + 2);
             }
@@ -574,12 +577,12 @@ impl Scanner<'_> {
                 position: Some(self.context.position(start, pos + eol)),
             });
             self.note_depth(1);
-            self.items.push(Item::Node(node, 1));
+            self.items.push(Item::Node { node, depth: 1 });
         } else {
             self.items.push(Item::Text {
                 start: pos,
                 end: pos + eol,
-                value: Value::Slice(pos, pos + eol),
+                value: Value::Slice(Span::new(pos, pos + eol)),
             });
         }
         self.pos = after;
@@ -687,8 +690,8 @@ impl Scanner<'_> {
                 url: crate::node::Url(autolink.url),
                 title: None,
                 values: vec![Node::Text(Text {
-                    value: src[autolink.text.0..autolink.text.1].to_string(),
-                    position: position(autolink.text.0, autolink.text.1),
+                    value: autolink.text.of(src).to_string(),
+                    position: position(autolink.text.start, autolink.text.end),
                 })],
                 position: position(pos, autolink.end),
             });

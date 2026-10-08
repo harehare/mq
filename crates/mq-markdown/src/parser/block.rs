@@ -9,7 +9,7 @@ use super::definition;
 use super::flavor::Flavor;
 use super::html_flow::{self, Kind as HtmlKind};
 use super::inline;
-use super::line::{Line, split_lines};
+use super::line::{Indent, Line, split_lines};
 use super::mdx_flow::{FlowOutcome, absorbed_until, blocks_lazy_continuation, looks_like_mdx_flow, probe_mdx_flow};
 use super::table;
 mod rule;
@@ -104,14 +104,13 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
         let closed_container = std::mem::take(&mut after_container);
         let separated = std::mem::take(&mut blank_between);
 
-        let (columns, indent) = line.indent();
+        let indent = line.indent();
         let cx = Cx {
             lines,
             index,
             line,
-            columns,
             indent,
-            rest: &line.text[indent..],
+            rest: &line.text[indent.bytes..],
             depth,
             containers,
             interrupting,
@@ -174,7 +173,7 @@ impl<'a> LeafState<'a> {
         // Whether a paragraph was open when the line started, for markers deeper on the same line.
         let open = self.paragraph;
         loop {
-            let (columns, indent) = line.indent();
+            let Indent { columns, bytes: indent } = line.indent();
             let rest = &line.text[indent..];
 
             if let Some(fence) = &self.fence {
@@ -289,7 +288,7 @@ impl<'a> LeafState<'a> {
 
 /// Bytes to skip to get past a blockquote marker (`>` and one optional space), if `line` has one.
 fn blockquote_marker(line: &Line<'_>) -> Option<usize> {
-    let (columns, indent) = line.indent();
+    let Indent { columns, bytes: indent } = line.indent();
     let rest = &line.text[indent..];
     if columns >= line.code_indent() || !rest.starts_with('>') {
         return None;
@@ -300,7 +299,7 @@ fn blockquote_marker(line: &Line<'_>) -> Option<usize> {
 
 /// The line without its blockquote marker and the one space or column after it, if it has a marker.
 fn strip_blockquote(line: Line<'_>) -> Option<Line<'_>> {
-    let (columns, indent) = line.indent();
+    let Indent { columns, bytes: indent } = line.indent();
     if columns >= line.code_indent() || !line.text[indent..].starts_with('>') {
         return None;
     }
@@ -372,7 +371,7 @@ struct ItemMarker {
 
 impl ItemMarker {
     fn parse(line: &Line<'_>) -> Option<Self> {
-        let (columns, indent) = line.indent();
+        let Indent { columns, bytes: indent } = line.indent();
         if columns >= line.code_indent() {
             return None;
         }
@@ -402,7 +401,10 @@ impl ItemMarker {
         };
 
         let after = &rest[marker_len..];
-        let (spaces, blanks) = line.skip(indent + marker_len).indent();
+        let Indent {
+            columns: spaces,
+            bytes: blanks,
+        } = line.skip(indent + marker_len).indent();
         if blanks == 0 && !after.is_empty() {
             return None;
         }
@@ -600,7 +602,7 @@ fn list_item(
         } else if line.lazy {
             state.feed(line);
             inner.push(*line);
-        } else if line.indent().0 >= marker.width {
+        } else if line.indent().columns >= marker.width {
             for blank in &blanks {
                 state.feed(blank);
             }
@@ -771,7 +773,7 @@ fn is_thematic_break(line: &Line<'_>, indent: usize) -> bool {
 
 /// Returns the setext heading depth when `line` is a setext underline.
 fn setext_depth(line: &Line<'_>) -> Option<u8> {
-    let (columns, indent) = line.indent();
+    let Indent { columns, bytes: indent } = line.indent();
     let content = line.text[indent..].trim_end_matches([' ', '\t']);
     let marker = content.chars().next()?;
     if line.lazy || columns >= line.code_indent() || !content.chars().all(|c| c == marker) {
@@ -799,7 +801,7 @@ fn interrupts_paragraph(line: &Line<'_>) -> bool {
     if line.lazy {
         return false;
     }
-    let (columns, indent) = line.indent();
+    let Indent { columns, bytes: indent } = line.indent();
     let rest = &line.text[indent..];
     columns < line.code_indent()
         && (Fence::open(rest, line.flavor.has_math()).is_some()
@@ -815,7 +817,7 @@ fn interrupts_paragraph(line: &Line<'_>) -> bool {
 /// or that is numbered from other than one.
 fn ends_table(line: &Line<'_>) -> bool {
     interrupts_paragraph(line)
-        || (!line.lazy && line.indent().0 < line.code_indent() && ItemMarker::parse(line).is_some())
+        || (!line.lazy && line.indent().columns < line.code_indent() && ItemMarker::parse(line).is_some())
 }
 
 /// Collects a paragraph or a setext heading starting at `lines[start]`, with the definitions at its
@@ -858,11 +860,14 @@ fn paragraph(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>) -> (usiz
     let mut first = start;
     if lines[start].text.trim_start_matches([' ', '\t']).starts_with('[') {
         let source = paragraph_source(&lines[start..index]);
-        let starts = lines[start..index]
+        let spans = lines[start..index]
             .iter()
-            .map(|line| (line.point(0), line.end()))
+            .map(|line| Position {
+                start: line.point(0),
+                end: line.end(),
+            })
             .collect::<Vec<_>>();
-        let (definitions, used) = definition::extract(&source, &starts);
+        let (definitions, used) = definition::extract(&source, &spans);
         blocks.extend(definitions.into_iter().map(Block::Node));
         first += used;
     }
@@ -944,7 +949,7 @@ fn footnote_marker<'a>(line: &Line<'a>) -> Option<FootnoteMarker<'a>> {
     if !line.flavor.has_gfm() {
         return None;
     }
-    let (columns, indent) = line.indent();
+    let Indent { columns, bytes: indent } = line.indent();
     let rest = line.text[indent..].strip_prefix("[^")?;
     if columns >= line.code_indent() {
         return None;
@@ -996,7 +1001,7 @@ fn footnote(
     while let Some(line) = lines.get(index) {
         if line.is_blank() {
             blanks.push(line.skip(line.text.len()));
-        } else if line.indent().0 >= FOOTNOTE_INDENT {
+        } else if line.indent().columns >= FOOTNOTE_INDENT {
             for blank in &blanks {
                 state.feed(blank);
             }
@@ -1050,7 +1055,7 @@ fn html_block(lines: &[Line<'_>], start: usize, kind: HtmlKind, blocks: &mut Vec
             }
         }
         _ => {
-            let (_, indent) = first.indent();
+            let indent = first.indent().bytes;
             let from = indent + html_flow::first_line_offset(kind);
             if !html_flow::ends_in(kind, &first.text[from..]) {
                 let mut ended = false;

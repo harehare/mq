@@ -1,6 +1,7 @@
 //! MDX: JSX tags and expressions, ported from the rules of `markdown-rs` without a JavaScript parser,
 //! so expressions are only checked for balanced braces, outside of strings, template literals and comments.
 
+use super::scan::Span;
 use crate::node::{MdxAttributeContent, MdxAttributeValue, MdxJsxAttribute};
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -241,8 +242,8 @@ impl Cursor<'_> {
         Ok(name)
     }
 
-    /// A `{...}` expression with balanced braces, returning the offsets of its content.
-    fn expression(&mut self) -> Step<(usize, usize)> {
+    /// A `{...}` expression with balanced braces, returning the range of its content.
+    fn expression(&mut self) -> Step<Span> {
         let open = self.index;
         self.bump();
         let start = self.index;
@@ -255,15 +256,15 @@ impl Cursor<'_> {
             return Err(Stop::More(Fallback::Error(UNCLOSED_EXPRESSION.into())));
         };
         self.index = end + 1;
-        Ok((start, end))
+        Ok(Span::new(start, end))
     }
 }
 
 impl Cursor<'_> {
     /// The value of an expression: its content, without up to two columns of whitespace at the start
     /// of each line after the first.
-    fn expression_value(&self, start: usize, end: usize) -> SmolStr {
-        let content = &self.src[start..end];
+    fn expression_value(&self, content: Span) -> SmolStr {
+        let content = content.of(self.src);
         if !content.contains(['\n', '\r']) {
             return SmolStr::new(content);
         }
@@ -350,8 +351,8 @@ impl Cursor<'_> {
                 )))
             }
             Some('{') => {
-                let (start, end) = self.expression()?;
-                MdxAttributeValue::Expression(self.expression_value(start, end))
+                let content = self.expression()?;
+                MdxAttributeValue::Expression(self.expression_value(content))
             }
             _ => {
                 return self.crash(format!("Unexpected {} before attribute value", self.describe()));
@@ -415,8 +416,8 @@ impl Cursor<'_> {
                         misplaced = Some("Unexpected attribute in closing tag, expected the end of the tag");
                     }
                     let attribute = if char == '{' {
-                        let (start, end) = self.expression()?;
-                        MdxAttributeContent::Expression(self.expression_value(start, end))
+                        let content = self.expression()?;
+                        MdxAttributeContent::Expression(self.expression_value(content))
                     } else {
                         self.attribute()?
                     };
@@ -481,6 +482,6 @@ pub(super) fn expression(src: &str, pos: usize, braces: Option<&Braces>) -> Pars
     parsed(
         cursor
             .expression()
-            .map(|(start, end)| (end + 1, cursor.expression_value(start, end))),
+            .map(|content| (content.end + 1, cursor.expression_value(content))),
     )
 }

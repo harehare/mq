@@ -6,6 +6,7 @@
 use super::punctuation::is_punctuation;
 use super::{Item, Scanner, Value};
 use crate::node::{Link, Node, Text, Url};
+use crate::parser::scan::Span;
 
 #[derive(PartialEq)]
 enum Kind {
@@ -249,7 +250,7 @@ fn split_emails(src: &str, start: usize, end: usize, out: &mut Vec<Item>) {
                     out.push(Item::Text {
                         start: emitted,
                         end: from,
-                        value: Value::Slice(emitted, from),
+                        value: Value::Slice(Span::new(emitted, from)),
                     });
                 }
                 out.push(Item::Email {
@@ -270,22 +271,22 @@ fn split_emails(src: &str, start: usize, end: usize, out: &mut Vec<Item>) {
         out.push(Item::Text {
             start: emitted,
             end,
-            value: Value::Slice(emitted, end),
+            value: Value::Slice(Span::new(emitted, end)),
         });
     }
 }
 
-/// The source range of an item that `markdown-rs` treats as plain data: text that is not decoded,
-/// and delimiters and brackets that were not used.
-fn data_range(item: &Item) -> Option<(usize, usize)> {
+/// The source range of an item that is plain data: text that is not decoded, and delimiters and
+/// brackets that were not used.
+fn data_range(item: &Item) -> Option<Span> {
     match item {
         Item::Text {
             start,
             end,
-            value: Value::Slice(from, to),
-        } if from == start && to == end => Some((*start, *end)),
-        Item::Delim(delim) => Some((delim.start, delim.start + delim.count)),
-        Item::Open(opener) => Some((opener.start, opener.start + if opener.image { 2 } else { 1 })),
+            value: Value::Slice(span),
+        } if span.start == *start && span.end == *end => Some(*span),
+        Item::Delim(delim) => Some(Span::new(delim.start, delim.start + delim.count)),
+        Item::Open(opener) => Some(Span::new(opener.start, opener.start + if opener.image { 2 } else { 1 })),
         _ => None,
     }
 }
@@ -294,28 +295,28 @@ fn data_range(item: &Item) -> Option<(usize, usize)> {
 pub(super) fn link_emails(src: &str, items: Vec<Item>) -> Vec<Item> {
     let mut out = Vec::with_capacity(items.len());
     let mut group: Vec<Item> = Vec::new();
-    let mut range = (0, 0);
+    let mut range = Span::new(0, 0);
 
-    let finish = |group: &mut Vec<Item>, range: (usize, usize), out: &mut Vec<Item>| {
+    let finish = |group: &mut Vec<Item>, range: Span, out: &mut Vec<Item>| {
         if group.is_empty() {
             return;
         }
-        if src[range.0..range.1].contains('@') {
+        if range.of(src).contains('@') {
             group.clear();
-            split_emails(src, range.0, range.1, out);
+            split_emails(src, range.start, range.end, out);
         } else {
             out.append(group);
         }
     };
 
     for item in items {
-        let data = data_range(&item).filter(|&(start, _)| !matches!(src.as_bytes()[start], b'\n' | b'\r'));
+        let data = data_range(&item).filter(|span| !matches!(src.as_bytes()[span.start], b'\n' | b'\r'));
         match data {
-            Some((start, end)) => {
+            Some(span) => {
                 if group.is_empty() {
-                    range.0 = start;
+                    range.start = span.start;
                 }
-                range.1 = end;
+                range.end = span.end;
                 group.push(item);
             }
             None => {
