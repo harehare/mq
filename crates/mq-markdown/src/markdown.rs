@@ -7,6 +7,7 @@ use crate::node::{
     render_values,
 };
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
+#[cfg(any(not(feature = "native-parser"), test, feature = "json", feature = "html-to-markdown"))]
 use miette::miette;
 use std::{fmt, str::FromStr};
 use table_layout::{TableLayout, write_padded_cell};
@@ -233,11 +234,8 @@ impl Markdown {
     }
 
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
-        let root = markdown::to_mdast(content, &markdown::ParseOptions::mdx()).map_err(|e| miette!(e.reason))?;
-        let nodes = Node::from_mdast_node(root);
-
         Ok(Self {
-            nodes,
+            nodes: parse_mdx_nodes(content)?,
             options: RenderOptions::default(),
         })
     }
@@ -279,53 +277,7 @@ impl Markdown {
     }
 
     pub fn from_markdown_str(content: &str) -> miette::Result<Self> {
-        let root = markdown::to_mdast(
-            content,
-            &markdown::ParseOptions {
-                gfm_strikethrough_single_tilde: true,
-                math_text_single_dollar: true,
-                mdx_expression_parse: None,
-                mdx_esm_parse: None,
-                constructs: Constructs {
-                    attention: true,
-                    autolink: true,
-                    block_quote: true,
-                    character_escape: true,
-                    character_reference: true,
-                    code_indented: true,
-                    code_fenced: true,
-                    code_text: true,
-                    definition: true,
-                    frontmatter: true,
-                    gfm_autolink_literal: true,
-                    gfm_label_start_footnote: true,
-                    gfm_footnote_definition: true,
-                    gfm_strikethrough: true,
-                    gfm_table: true,
-                    gfm_task_list_item: true,
-                    hard_break_escape: true,
-                    hard_break_trailing: true,
-                    heading_atx: true,
-                    heading_setext: true,
-                    html_flow: true,
-                    html_text: true,
-                    label_start_image: true,
-                    label_start_link: true,
-                    label_end: true,
-                    list_item: true,
-                    math_flow: true,
-                    math_text: true,
-                    mdx_esm: false,
-                    mdx_expression_flow: false,
-                    mdx_expression_text: false,
-                    mdx_jsx_flow: false,
-                    mdx_jsx_text: false,
-                    thematic_break: true,
-                },
-            },
-        )
-        .map_err(|e| miette!(e.reason))?;
-        let nodes = Node::from_mdast_node(root);
+        let nodes = parse_nodes(content)?;
 
         #[cfg(all(feature = "embed", feature = "wikilink"))]
         let nodes = if content.contains("[[") {
@@ -358,54 +310,91 @@ impl Markdown {
     /// isolate expand cost from the mdast parse cost.
     #[cfg(any(feature = "wikilink", feature = "embed"))]
     pub fn from_markdown_str_no_expand(content: &str) -> miette::Result<Vec<Node>> {
-        let root = markdown::to_mdast(
-            content,
-            &markdown::ParseOptions {
-                gfm_strikethrough_single_tilde: true,
-                math_text_single_dollar: true,
-                mdx_expression_parse: None,
-                mdx_esm_parse: None,
-                constructs: markdown::Constructs {
-                    attention: true,
-                    autolink: true,
-                    block_quote: true,
-                    character_escape: true,
-                    character_reference: true,
-                    code_indented: true,
-                    code_fenced: true,
-                    code_text: true,
-                    definition: true,
-                    frontmatter: true,
-                    gfm_autolink_literal: true,
-                    gfm_label_start_footnote: true,
-                    gfm_footnote_definition: true,
-                    gfm_strikethrough: true,
-                    gfm_table: true,
-                    gfm_task_list_item: true,
-                    hard_break_escape: true,
-                    hard_break_trailing: true,
-                    heading_atx: true,
-                    heading_setext: true,
-                    html_flow: true,
-                    html_text: true,
-                    label_start_image: true,
-                    label_start_link: true,
-                    label_end: true,
-                    list_item: true,
-                    math_flow: true,
-                    math_text: true,
-                    mdx_esm: false,
-                    mdx_expression_flow: false,
-                    mdx_expression_text: false,
-                    mdx_jsx_flow: false,
-                    mdx_jsx_text: false,
-                    thematic_break: true,
-                },
-            },
-        )
-        .map_err(|e| miette::miette!(e.reason))?;
-        Ok(Node::from_mdast_node(root))
+        parse_nodes(content)
     }
+}
+
+/// Parses `content` with the parser selected by the `native-parser` feature.
+fn parse_nodes(content: &str) -> miette::Result<Vec<Node>> {
+    #[cfg(feature = "native-parser")]
+    {
+        crate::parser::parse(content)
+    }
+    #[cfg(not(feature = "native-parser"))]
+    {
+        parse_with_markdown_rs(content)
+    }
+}
+
+/// Parses `content` as MDX with the parser selected by the `native-parser` feature.
+fn parse_mdx_nodes(content: &str) -> miette::Result<Vec<Node>> {
+    #[cfg(feature = "native-parser")]
+    {
+        crate::parser::parse_mdx(content)
+    }
+    #[cfg(not(feature = "native-parser"))]
+    {
+        parse_mdx_with_markdown_rs(content)
+    }
+}
+
+/// Parses `content` as MDX with `markdown-rs` and converts the `mdast` tree into nodes.
+#[cfg(any(not(feature = "native-parser"), test))]
+pub(crate) fn parse_mdx_with_markdown_rs(content: &str) -> miette::Result<Vec<Node>> {
+    let root = markdown::to_mdast(content, &markdown::ParseOptions::mdx()).map_err(|e| miette!(e.reason))?;
+    Ok(Node::from_mdast_node(root))
+}
+
+/// Parses `content` with `markdown-rs` and converts the `mdast` tree into nodes.
+#[cfg(any(not(feature = "native-parser"), test))]
+pub(crate) fn parse_with_markdown_rs(content: &str) -> miette::Result<Vec<Node>> {
+    let root = markdown::to_mdast(
+        content,
+        &markdown::ParseOptions {
+            gfm_strikethrough_single_tilde: true,
+            math_text_single_dollar: true,
+            mdx_expression_parse: None,
+            mdx_esm_parse: None,
+            constructs: Constructs {
+                attention: true,
+                autolink: true,
+                block_quote: true,
+                character_escape: true,
+                character_reference: true,
+                code_indented: true,
+                code_fenced: true,
+                code_text: true,
+                definition: true,
+                frontmatter: true,
+                gfm_autolink_literal: true,
+                gfm_label_start_footnote: true,
+                gfm_footnote_definition: true,
+                gfm_strikethrough: true,
+                gfm_table: true,
+                gfm_task_list_item: true,
+                hard_break_escape: true,
+                hard_break_trailing: true,
+                heading_atx: true,
+                heading_setext: true,
+                html_flow: true,
+                html_text: true,
+                label_start_image: true,
+                label_start_link: true,
+                label_end: true,
+                list_item: true,
+                math_flow: true,
+                math_text: true,
+                mdx_esm: false,
+                mdx_expression_flow: false,
+                mdx_expression_text: false,
+                mdx_jsx_flow: false,
+                mdx_jsx_text: false,
+                thematic_break: true,
+            },
+        },
+    )
+    .map_err(|e| miette!(e.reason))?;
+    Ok(Node::from_mdast_node(root))
 }
 
 /// Returns the shared `Options` used for both `Markdown::to_html` and the

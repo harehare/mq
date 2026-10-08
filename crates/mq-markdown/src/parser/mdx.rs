@@ -1,0 +1,371 @@
+//! MDX: JSX tags and expressions, ported from the rules of `markdown-rs` without a JavaScript parser,
+//! so expressions are only checked for balanced braces.
+
+use crate::node::{MdxAttributeContent, MdxAttributeValue, MdxJsxAttribute};
+use smol_str::SmolStr;
+
+/// What the end of the input means for a construct it ends inside of.
+pub(super) enum Fallback {
+    Nok,
+    Error(String),
+}
+
+/// The outcome of parsing at a position.
+pub(super) enum Parsed<T> {
+    Ok(T),
+    /// Not this construct, so the text is something else.
+    Nok,
+    /// The input ended inside the construct. More input may complete it, and if there is none this
+    /// is what the end of the input means for it.
+    More(Fallback),
+    /// The construct is invalid.
+    Error(String),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum TagKind {
+    Open,
+    Close,
+    SelfClosing,
+}
+
+/// A JSX tag: `<a b="c">`, `</a>` or `<a />`. A fragment has no name.
+pub(super) struct Tag {
+    pub(super) name: Option<String>,
+    pub(super) attributes: Vec<MdxAttributeContent>,
+    pub(super) kind: TagKind,
+    /// Offset after the closing `>`.
+    pub(super) end: usize,
+}
+
+fn id_start(char: char) -> bool {
+    char.is_alphabetic() || matches!(char, '$' | '_')
+}
+
+fn id_continue(char: char) -> bool {
+    char.is_alphanumeric()
+        || matches!(char, '_' | '-' | '\u{200c}' | '\u{200d}')
+        || ('\u{0300}'..='\u{036f}').contains(&char)
+}
+
+/// What a tag parser stops with: a failure of the construct, or of the input.
+enum Stop {
+    Nok,
+    More(Fallback),
+    Error(String),
+}
+
+type Step<T> = Result<T, Stop>;
+
+struct Cursor<'a> {
+    src: &'a str,
+    index: usize,
+}
+
+impl Cursor<'_> {
+    fn peek(&self) -> Option<char> {
+        self.src[self.index..].chars().next()
+    }
+
+    fn bump(&mut self) {
+        if let Some(char) = self.peek() {
+            self.index += char.len_utf8();
+        }
+    }
+
+    /// The input ends inside a construct: more input may follow, otherwise it is not one.
+    fn end_of_input<T>(&self) -> Step<T> {
+        Err(Stop::More(Fallback::Nok))
+    }
+
+    fn crash<T>(&self, message: String) -> Step<T> {
+        Err(Stop::Error(message))
+    }
+
+    /// Skips whitespace, including line endings. Ends the tag at the end of the input.
+    fn skip_whitespace(&mut self) -> Step<()> {
+        while self.peek().is_some_and(char::is_whitespace) {
+            self.bump();
+        }
+        if self.peek().is_none() {
+            return self.end_of_input();
+        }
+        Ok(())
+    }
+
+    fn name_part(&mut self) -> Step<&str> {
+        let start = self.index;
+        self.bump();
+        while self.peek().is_some_and(id_continue) {
+            self.bump();
+        }
+        Ok(&self.src[start..self.index])
+    }
+
+    fn describe(&self) -> String {
+        match self.peek() {
+            Some(char) => format!("character `{char}` (U+{:04X})", char as u32),
+            None => "end of file".to_string(),
+        }
+    }
+
+    /// The name of a tag, with its member (`.`) or namespace (`:`) parts, cleaned of whitespace.
+    fn tag_name(&mut self) -> Step<String> {
+        let mut name = self.name_part()?.to_string();
+        self.skip_whitespace()?;
+        match self.peek() {
+            Some('.') => {
+                while self.peek() == Some('.') {
+                    self.bump();
+                    self.skip_whitespace()?;
+                    if !self.peek().is_some_and(id_start) {
+                        return self.crash(format!("Unexpected {} before member name", self.describe()));
+                    }
+                    name.push('.');
+                    name.push_str(self.name_part()?);
+                    self.skip_whitespace()?;
+                }
+            }
+            Some(':') => {
+                self.bump();
+                self.skip_whitespace()?;
+                if !self.peek().is_some_and(id_start) {
+                    return self.crash(format!("Unexpected {} before local name", self.describe()));
+                }
+                name.push(':');
+                name.push_str(self.name_part()?);
+                self.skip_whitespace()?;
+            }
+            _ => {}
+        }
+        Ok(name)
+    }
+
+    /// A `{...}` expression with balanced braces, returning the offsets of its content.
+    fn expression(&mut self) -> Step<(usize, usize)> {
+        self.bump();
+        let start = self.index;
+        let mut depth = 0usize;
+        loop {
+            match self.peek() {
+                None => {
+                    return Err(Stop::More(Fallback::Error(
+                        "Unexpected end of file in expression, expected a corresponding closing brace for `{`".into(),
+                    )));
+                }
+                Some('{') => depth += 1,
+                Some('}') if depth == 0 => {
+                    let end = self.index;
+                    self.bump();
+                    return Ok((start, end));
+                }
+                Some('}') => depth -= 1,
+                Some(_) => {}
+            }
+            self.bump();
+        }
+    }
+}
+
+impl Cursor<'_> {
+    /// The value of an expression: its content, without up to two whitespace characters at the start
+    /// of each line after the first.
+    fn expression_value(&self, start: usize, end: usize) -> SmolStr {
+        let content = &self.src[start..end];
+        if !content.contains('\n') {
+            return SmolStr::new(content);
+        }
+        let mut value = String::with_capacity(content.len());
+        for (index, line) in content.split('\n').enumerate() {
+            if index > 0 {
+                value.push('\n');
+            }
+            let skipped = if index == 0 {
+                0
+            } else {
+                line.chars().take(2).take_while(|c| matches!(c, ' ' | '\t')).count()
+            };
+            value.push_str(&line[skipped..]);
+        }
+        SmolStr::new(value)
+    }
+
+    /// Checks the character after a name: whitespace or one of `allowed`.
+    fn end_of_name(&self, allowed: &[char], what: &str) -> Step<()> {
+        match self.peek() {
+            None => self.end_of_input(),
+            Some(char) if char.is_whitespace() || allowed.contains(&char) => Ok(()),
+            Some(_) => self.crash(format!("Unexpected {} in {what}", self.describe())),
+        }
+    }
+
+    fn attribute(&mut self) -> Step<MdxAttributeContent> {
+        let mut name = self.name_part()?.to_string();
+        self.end_of_name(&['/', ':', '=', '>', '{'], "attribute name")?;
+        self.skip_whitespace()?;
+
+        if self.peek() == Some(':') {
+            self.bump();
+            self.skip_whitespace()?;
+            if !self.peek().is_some_and(id_start) {
+                return self.crash(format!("Unexpected {} before local attribute name", self.describe()));
+            }
+            name.push(':');
+            name.push_str(self.name_part()?);
+            self.end_of_name(&['/', '=', '>', '{'], "local attribute name")?;
+            self.skip_whitespace()?;
+        }
+
+        let name = SmolStr::new(name);
+        if self.peek() != Some('=') {
+            if !matches!(self.peek(), Some('/' | '>' | '{')) && !self.peek().is_some_and(id_start) {
+                return self.crash(format!("Unexpected {} after attribute name", self.describe()));
+            }
+            return Ok(MdxAttributeContent::Property(MdxJsxAttribute { name, value: None }));
+        }
+
+        self.bump();
+        // Unlike before the `=`, no whitespace is allowed after it.
+        if self.peek().is_some_and(char::is_whitespace) {
+            return Err(Stop::Nok);
+        }
+        let value = match self.peek() {
+            Some(quote @ ('"' | '\'')) => {
+                self.bump();
+                let start = self.index;
+                let Some(length) = self.src[start..].find(quote) else {
+                    return Err(Stop::More(Fallback::Error(format!(
+                        "Unexpected end of file in attribute value, expected a corresponding closing quote `{quote}`"
+                    ))));
+                };
+                self.index = start + length + 1;
+                MdxAttributeValue::Literal(SmolStr::new(super::inline::decode_references(
+                    &self.src[start..start + length],
+                )))
+            }
+            Some('{') => {
+                let (start, end) = self.expression()?;
+                MdxAttributeValue::Expression(self.expression_value(start, end))
+            }
+            _ => {
+                return self.crash(format!("Unexpected {} before attribute value", self.describe()));
+            }
+        };
+        Ok(MdxAttributeContent::Property(MdxJsxAttribute {
+            name,
+            value: Some(value),
+        }))
+    }
+
+    fn tag(&mut self) -> Step<Tag> {
+        // `<` is followed by a name, not by whitespace.
+        match self.peek() {
+            Some(' ' | '\t' | '\n') => return Err(Stop::Nok),
+            None => return self.end_of_input(),
+            Some(_) => {}
+        }
+        self.skip_whitespace()?;
+
+        let mut kind = TagKind::Open;
+        if self.peek() == Some('/') {
+            self.bump();
+            self.skip_whitespace()?;
+            kind = TagKind::Close;
+        }
+
+        let name = match self.peek() {
+            Some('>') => None,
+            Some(char) if id_start(char) => Some(self.tag_name()?),
+            _ => return self.crash(format!("Unexpected {} before name", self.describe())),
+        };
+        if name.is_some() {
+            self.end_of_tag_name()?;
+        }
+
+        let mut attributes = Vec::new();
+        // Errors about a closing tag are reported once the tag is known to end.
+        let mut misplaced = None;
+        loop {
+            match self.peek() {
+                Some('/') => {
+                    self.bump();
+                    self.skip_whitespace()?;
+                    if self.peek() != Some('>') {
+                        return self.crash(format!("Unexpected {} after self-closing slash", self.describe()));
+                    }
+                    if kind == TagKind::Close {
+                        return self.crash(
+                            "Unexpected self-closing slash `/` in closing tag, expected the end of the tag".into(),
+                        );
+                    }
+                    kind = TagKind::SelfClosing;
+                }
+                Some('>') => {
+                    self.bump();
+                    break;
+                }
+                Some(char) if char == '{' || id_start(char) => {
+                    if kind == TagKind::Close {
+                        misplaced = Some("Unexpected attribute in closing tag, expected the end of the tag");
+                    }
+                    let attribute = if char == '{' {
+                        let (start, end) = self.expression()?;
+                        MdxAttributeContent::Expression(self.expression_value(start, end))
+                    } else {
+                        self.attribute()?
+                    };
+                    attributes.push(attribute);
+                    self.skip_whitespace()?;
+                }
+                None => return self.end_of_input(),
+                Some(_) => return self.crash(format!("Unexpected {} before attribute name", self.describe())),
+            }
+        }
+
+        if let Some(message) = misplaced {
+            return self.crash(message.into());
+        }
+
+        Ok(Tag {
+            name,
+            attributes,
+            kind,
+            end: self.index,
+        })
+    }
+
+    /// After the name of a tag comes a slash, the end, or an attribute.
+    fn end_of_tag_name(&self) -> Step<()> {
+        match self.peek() {
+            None => self.end_of_input(),
+            Some('/' | '>' | '{') => Ok(()),
+            Some(char) if id_start(char) => Ok(()),
+            Some(_) => self.crash(format!("Unexpected {} after name", self.describe())),
+        }
+    }
+}
+
+fn parsed<T>(step: Step<T>) -> Parsed<T> {
+    match step {
+        Ok(value) => Parsed::Ok(value),
+        Err(Stop::Nok) => Parsed::Nok,
+        Err(Stop::More(fallback)) => Parsed::More(fallback),
+        Err(Stop::Error(message)) => Parsed::Error(message),
+    }
+}
+
+/// Parses the JSX tag that starts at `pos`, a `<`.
+pub(super) fn tag(src: &str, pos: usize) -> Parsed<Tag> {
+    let mut cursor = Cursor { src, index: pos + 1 };
+    parsed(cursor.tag())
+}
+
+/// Parses the expression that starts at `pos`, a `{`, returning the offset after it and its value.
+pub(super) fn expression(src: &str, pos: usize) -> Parsed<(usize, SmolStr)> {
+    let mut cursor = Cursor { src, index: pos };
+    parsed(
+        cursor
+            .expression()
+            .map(|(start, end)| (end + 1, cursor.expression_value(start, end))),
+    )
+}

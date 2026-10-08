@@ -1,0 +1,612 @@
+//! Inline parsing of paragraph, heading and table cell content.
+//!
+//! The content is scanned once, left to right, into a flat list of items: literal text, finished
+//! nodes (code spans, autolinks, breaks), delimiter runs and bracket openers. Links close over the
+//! items after their opener, and emphasis is resolved with the delimiter stack algorithm of the
+//! CommonMark specification, so nesting never recurses over the source.
+
+mod emphasis;
+mod entities;
+mod entity;
+mod html;
+mod link;
+mod literal;
+mod punctuation;
+mod tail;
+
+pub(super) use entity::{decode_references, remove_line_indent, unescape};
+pub(super) use link::normalize;
+pub(super) use tail::{destination, title_at};
+
+use super::mdx::{self, Fallback, Parsed, TagKind};
+use super::resolve::References;
+use super::tree::InlineSource;
+use crate::node::{
+    Break, CodeInline, MathInline, MdxAttributeContent, MdxJsxTextElement, MdxTextExpression, Node, Position, Text,
+};
+use smol_str::SmolStr;
+use std::borrow::Cow;
+use std::cell::RefCell;
+
+/// The value of a text item: a slice of the source, or a decoded string.
+pub(super) enum Value {
+    Slice(usize, usize),
+    Owned(String),
+}
+
+/// A run of `*`, `_` or `~` that may open or close emphasis.
+pub(super) struct Delim {
+    pub(super) ch: u8,
+    /// Offset of the first remaining character.
+    pub(super) start: usize,
+    pub(super) count: usize,
+    pub(super) can_open: bool,
+    pub(super) can_close: bool,
+}
+
+/// A `[` or `![` that may open a link or an image.
+pub(super) struct Opener {
+    pub(super) image: bool,
+    /// Offset of the `[`, or of the `!` of an image.
+    pub(super) start: usize,
+    /// Links cannot contain links, so openers before a link are deactivated.
+    pub(super) active: bool,
+}
+
+pub(super) enum Item {
+    Text {
+        start: usize,
+        end: usize,
+        value: Value,
+    },
+    Node(Node),
+    Delim(Delim),
+    Open(Opener),
+    /// An email address in plain text. It is not linked inside link text.
+    Email {
+        start: usize,
+        end: usize,
+        prefixed: bool,
+    },
+    /// A JSX tag in MDX. Tags are paired when the items become nodes.
+    Jsx(TextTag),
+}
+
+/// A JSX tag in text, with its offsets in the source.
+pub(super) struct TextTag {
+    name: Option<String>,
+    attributes: Vec<MdxAttributeContent>,
+    kind: TagKind,
+    start: usize,
+    end: usize,
+}
+
+/// What the scanner and its helpers share.
+#[derive(Clone, Copy)]
+pub(super) struct Context<'a> {
+    pub(super) source: &'a InlineSource,
+    pub(super) references: &'a References,
+    /// Whether email addresses in plain text are linked. They are not inside link text.
+    pub(super) emails: bool,
+    /// The first error in the content, which only MDX has.
+    error: &'a RefCell<Option<String>>,
+}
+
+impl Context<'_> {
+    /// Records an error, keeping the first one.
+    fn fail(&self, message: String) {
+        self.error.borrow_mut().get_or_insert(message);
+    }
+
+    pub(super) fn src(&self) -> &str {
+        &self.source.text
+    }
+
+    pub(super) fn position(&self, start: usize, end: usize) -> Position {
+        Position {
+            start: self.source.point(start),
+            end: self.source.end_point(end),
+        }
+    }
+}
+
+/// Parses raw inline content into nodes.
+pub(super) fn parse(source: &InlineSource, references: &References) -> Result<Vec<Node>, String> {
+    if source.text.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let error = RefCell::new(None);
+    let context = Context {
+        source,
+        references,
+        emails: !references.mdx,
+        error: &error,
+    };
+    let mut scanner = Scanner {
+        context: &context,
+        items: Vec::new(),
+        openers: Vec::new(),
+        pos: 0,
+        run: 0,
+    };
+    scanner.scan();
+    scanner.flush();
+
+    let Scanner { mut items, .. } = scanner;
+    emphasis::process(&mut items, 0, &context);
+    let nodes = to_nodes(items, &context);
+
+    match error.into_inner() {
+        Some(message) => Err(message),
+        None => Ok(nodes),
+    }
+}
+
+/// Converts items to nodes, merging adjacent text. Unused delimiters and openers become text.
+pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
+    let src = context.src();
+    let items = if context.emails && src.contains('@') {
+        literal::link_emails(src, items)
+    } else {
+        items
+    };
+    let mut nodes = Vec::new();
+    // Elements that are open, with the nodes that came before them.
+    let mut open: Vec<(TextTag, Vec<Node>)> = Vec::new();
+    let mut current: Option<(usize, usize, String)> = None;
+
+    let finish = |current: &mut Option<(usize, usize, String)>, nodes: &mut Vec<Node>| {
+        if let Some((start, end, value)) = current.take() {
+            nodes.push(Node::Text(Text {
+                value,
+                position: Some(context.position(start, end)),
+            }));
+        }
+    };
+
+    for item in items {
+        let (start, end, text): (usize, usize, Cow<'_, str>) = match item {
+            // A line ending directly inside a JSX element is not part of its content.
+            Item::Text {
+                value: Value::Slice(from, to),
+                ..
+            } if !open.is_empty() && from < to && src[from..to].bytes().all(|b| matches!(b, b'\n' | b'\r')) => {
+                continue;
+            }
+            Item::Text { start, end, value } => match value {
+                // The backslash of an escape is not part of the position of the text it starts.
+                Value::Slice(from, to) => (from, end, Cow::Borrowed(&src[from..to])),
+                Value::Owned(value) => (start, end, Cow::Owned(value)),
+            },
+            Item::Delim(delim) => {
+                let end = delim.start + delim.count;
+                (delim.start, end, Cow::Borrowed(&src[delim.start..end]))
+            }
+            Item::Open(opener) => {
+                let end = opener.start + if opener.image { 2 } else { 1 };
+                (opener.start, end, Cow::Borrowed(&src[opener.start..end]))
+            }
+            Item::Node(node) => {
+                finish(&mut current, &mut nodes);
+                nodes.push(node);
+                continue;
+            }
+            Item::Jsx(tag) => {
+                finish(&mut current, &mut nodes);
+                match tag.kind {
+                    TagKind::Open => open.push((tag, std::mem::take(&mut nodes))),
+                    TagKind::SelfClosing => {
+                        let end = tag.end;
+                        nodes.push(text_element(context, tag, Vec::new(), end));
+                    }
+                    TagKind::Close => match open.pop() {
+                        None => context.fail("Unexpected closing slash `/` in tag, expected an open tag first".into()),
+                        Some((opening, before)) => {
+                            if opening.name != tag.name {
+                                context.fail(format!(
+                                    "Unexpected closing tag `</{}>`, expected corresponding closing tag for `<{}>`",
+                                    tag.name.as_deref().unwrap_or_default(),
+                                    opening.name.as_deref().unwrap_or_default()
+                                ));
+                            }
+                            let children = std::mem::replace(&mut nodes, before);
+                            nodes.push(text_element(context, opening, children, tag.end));
+                        }
+                    },
+                }
+                continue;
+            }
+            Item::Email { start, end, prefixed } => {
+                finish(&mut current, &mut nodes);
+                let text = &src[start..end];
+                let position = Some(context.position(start, end));
+                nodes.push(Node::Link(crate::node::Link {
+                    url: crate::node::Url(if prefixed {
+                        format!("mailto:{text}")
+                    } else {
+                        text.to_string()
+                    }),
+                    title: None,
+                    values: vec![Node::Text(Text {
+                        value: text.to_string(),
+                        position: position.clone(),
+                    })],
+                    position,
+                }));
+                continue;
+            }
+        };
+        match &mut current {
+            Some((_, current_end, value)) => {
+                value.push_str(&text);
+                *current_end = end;
+            }
+            None => current = Some((start, end, text.into_owned())),
+        }
+    }
+    finish(&mut current, &mut nodes);
+
+    // Elements that never close are an error, and are closed where the content ends.
+    while let Some((opening, before)) = open.pop() {
+        context.fail(format!(
+            "Expected a closing tag for `<{}>` before the end of the content",
+            opening.name.as_deref().unwrap_or_default()
+        ));
+        let end = opening.end;
+        let children = std::mem::replace(&mut nodes, before);
+        nodes.push(text_element(context, opening, children, end));
+    }
+
+    nodes
+}
+
+fn text_element(context: &Context<'_>, tag: TextTag, children: Vec<Node>, end: usize) -> Node {
+    Node::MdxJsxTextElement(MdxJsxTextElement {
+        children,
+        position: Some(context.position(tag.start, end)),
+        name: tag.name.map(SmolStr::new),
+        attributes: tag.attributes,
+    })
+}
+
+struct Scanner<'a> {
+    context: &'a Context<'a>,
+    items: Vec<Item>,
+    /// Indexes of the `Item::Open` items that are still waiting for a `]`.
+    openers: Vec<usize>,
+    pos: usize,
+    /// Start of the plain text that has not been pushed as an item yet.
+    run: usize,
+}
+
+impl Scanner<'_> {
+    fn src(&self) -> &str {
+        self.context.src()
+    }
+
+    fn scan(&mut self) {
+        let len = self.src().len();
+        while self.pos < len {
+            let bytes = self.src().as_bytes();
+            match bytes[self.pos] {
+                b'\\' => self.escape(),
+                b'&' => self.entity(),
+                b'`' => self.span(b'`'),
+                b'$' if !self.context.references.mdx => self.span(b'$'),
+                b'*' | b'_' => self.delimiter(),
+                b'~' if !self.context.references.mdx => self.delimiter(),
+                b'[' => self.open(false),
+                b'!' if bytes.get(self.pos + 1) == Some(&b'[') => self.open(true),
+                b']' => self.close(),
+                b'<' if !self.context.references.mdx => self.angle(),
+                b'<' => self.jsx(),
+                b'{' if self.context.references.mdx => self.expression(),
+                b'\n' | b'\r' => self.line_ending(),
+                b'h' | b'H' | b'w' | b'W' if !self.context.references.mdx => self.literal_url(),
+                _ => self.pos += 1,
+            }
+        }
+    }
+
+    /// Pushes the pending plain text up to the current position as an item.
+    fn flush(&mut self) {
+        if self.run < self.pos {
+            self.items.push(Item::Text {
+                start: self.run,
+                end: self.pos,
+                value: Value::Slice(self.run, self.pos),
+            });
+        }
+        self.run = self.pos;
+    }
+
+    /// Pushes `item` after the pending text and continues scanning at `end`.
+    fn push(&mut self, item: Item, end: usize) {
+        self.flush();
+        self.items.push(item);
+        self.pos = end;
+        self.run = end;
+    }
+
+    fn push_node(&mut self, node: Node, end: usize) {
+        self.push(Item::Node(node), end);
+    }
+
+    fn escape(&mut self) {
+        let src = self.src();
+        let bytes = src.as_bytes();
+        let pos = self.pos;
+        match bytes.get(pos + 1) {
+            Some(next) if next.is_ascii_punctuation() => {
+                let item = Item::Text {
+                    start: pos,
+                    end: pos + 2,
+                    value: Value::Slice(pos + 1, pos + 2),
+                };
+                self.push(item, pos + 2);
+            }
+            Some(b'\n' | b'\r') => {
+                let end = pos + 1 + eol_len(&bytes[pos + 1..]);
+                let node = Node::Break(Break {
+                    position: Some(self.context.position(pos, end)),
+                });
+                self.push_node(node, end);
+                // The indentation of the next line is not part of the text.
+                while matches!(self.src().as_bytes().get(self.pos), Some(b' ' | b'\t')) {
+                    self.pos += 1;
+                }
+                self.run = self.pos;
+            }
+            _ => self.pos += 1,
+        }
+    }
+
+    fn entity(&mut self) {
+        match entity::decode(self.src(), self.pos) {
+            Some((end, value)) => {
+                let item = Item::Text {
+                    start: self.pos,
+                    end,
+                    value: Value::Owned(value),
+                };
+                self.push(item, end);
+            }
+            None => self.pos += 1,
+        }
+    }
+
+    fn line_ending(&mut self) {
+        let src = self.src();
+        let bytes = src.as_bytes();
+        let pos = self.pos;
+        let eol = eol_len(&bytes[pos..]);
+
+        // Trailing whitespace before the line ending is dropped, or makes a hard break.
+        let mut start = pos;
+        while start > self.run && matches!(bytes[start - 1], b' ' | b'\t') {
+            start -= 1;
+        }
+        let hard = pos - start >= 2 && bytes[start..pos].iter().all(|&b| b == b' ');
+        // The indentation of the next line is not part of the text.
+        let mut after = pos + eol;
+        while matches!(bytes.get(after), Some(b' ' | b'\t')) {
+            after += 1;
+        }
+
+        self.pos = start;
+        self.flush();
+        if hard {
+            let node = Node::Break(Break {
+                position: Some(self.context.position(start, pos + eol)),
+            });
+            self.items.push(Item::Node(node));
+        } else {
+            self.items.push(Item::Text {
+                start: pos,
+                end: pos + eol,
+                value: Value::Slice(pos, pos + eol),
+            });
+        }
+        self.pos = after;
+        self.run = after;
+    }
+
+    /// A code span (`` ` ``) or an inline math span (`$`).
+    fn span(&mut self, ch: u8) {
+        let src = self.src();
+        let bytes = src.as_bytes();
+        let start = self.pos;
+        let size = bytes[start..].iter().take_while(|&&b| b == ch).count();
+
+        // Find the next run of exactly the same length.
+        let mut index = start + size;
+        let mut close = None;
+        while index < bytes.len() {
+            if bytes[index] == ch {
+                let run = bytes[index..].iter().take_while(|&&b| b == ch).count();
+                if run == size {
+                    close = Some(index);
+                    break;
+                }
+                index += run;
+            } else {
+                index += 1;
+            }
+        }
+
+        let Some(close) = close else {
+            self.pos = start + size;
+            return;
+        };
+
+        let end = close + size;
+        // In a table cell, `\|` stands for `|` inside code as well.
+        let content = &src[start + size..close];
+        let value = if self.context.source.table && content.contains("\\|") {
+            span_value(&content.replace("\\|", "|"))
+        } else {
+            span_value(content)
+        };
+        let position = Some(self.context.position(start, end));
+        let node = if ch == b'`' {
+            Node::CodeInline(CodeInline { value, position })
+        } else {
+            Node::MathInline(MathInline { value, position })
+        };
+        self.push_node(node, end);
+    }
+
+    fn delimiter(&mut self) {
+        let src = self.src();
+        let bytes = src.as_bytes();
+        let start = self.pos;
+        let ch = bytes[start];
+        let size = bytes[start..].iter().take_while(|&&b| b == ch).count();
+        let end = start + size;
+
+        // Strikethrough runs are one or two tildes.
+        if ch == b'~' && size > 2 {
+            self.pos = end;
+            return;
+        }
+
+        let before = src[..start].chars().next_back();
+        let after = src[end..].chars().next();
+        let (can_open, can_close) = emphasis::flanking(ch, before, after);
+        if !can_open && !can_close {
+            self.pos = end;
+            return;
+        }
+
+        let delim = Delim {
+            ch,
+            start,
+            count: size,
+            can_open,
+            can_close,
+        };
+        self.push(Item::Delim(delim), end);
+    }
+
+    fn open(&mut self, image: bool) {
+        let opener = Opener {
+            image,
+            start: self.pos,
+            active: true,
+        };
+        let end = self.pos + if image { 2 } else { 1 };
+        self.flush();
+        self.openers.push(self.items.len());
+        self.items.push(Item::Open(opener));
+        self.pos = end;
+        self.run = end;
+    }
+
+    fn close(&mut self) {
+        self.flush();
+        if !link::close(self) {
+            // Not a link: the bracket stays plain text.
+            self.pos += 1;
+        }
+    }
+
+    /// `<` starts an autolink or raw inline HTML.
+    fn angle(&mut self) {
+        let src = self.src();
+        let pos = self.pos;
+        if let Some(autolink) = html::autolink(src, pos) {
+            let position = |start, end| Some(self.context.position(start, end));
+            let node = Node::Link(crate::node::Link {
+                url: crate::node::Url(autolink.url),
+                title: None,
+                values: vec![Node::Text(Text {
+                    value: src[autolink.text.0..autolink.text.1].to_string(),
+                    position: position(autolink.text.0, autolink.text.1),
+                })],
+                position: position(pos, autolink.end),
+            });
+            self.push_node(node, autolink.end);
+        } else if let Some(end) = html::inline_html(src, pos) {
+            let node = Node::Html(crate::node::Html {
+                value: src[pos..end].to_string(),
+                position: Some(self.context.position(pos, end)),
+            });
+            self.push_node(node, end);
+        } else {
+            self.pos += 1;
+        }
+    }
+
+    /// A JSX tag in MDX text.
+    fn jsx(&mut self) {
+        match mdx::tag(self.src(), self.pos) {
+            Parsed::Ok(tag) => {
+                let end = tag.end;
+                let item = Item::Jsx(TextTag {
+                    name: tag.name,
+                    attributes: tag.attributes,
+                    kind: tag.kind,
+                    start: self.pos,
+                    end,
+                });
+                self.push(item, end);
+            }
+            Parsed::Error(message) => {
+                self.context.fail(message);
+                self.pos += 1;
+            }
+            Parsed::More(Fallback::Error(message)) => {
+                self.context.fail(message);
+                self.pos += 1;
+            }
+            Parsed::Nok | Parsed::More(Fallback::Nok) => self.pos += 1,
+        }
+    }
+
+    /// An expression in MDX text.
+    fn expression(&mut self) {
+        match mdx::expression(self.src(), self.pos) {
+            Parsed::Ok((end, value)) => {
+                let node = Node::MdxTextExpression(MdxTextExpression {
+                    value,
+                    position: Some(self.context.position(self.pos, end)),
+                });
+                self.push_node(node, end);
+            }
+            Parsed::Error(message) => {
+                self.context.fail(message);
+                self.pos += 1;
+            }
+            Parsed::More(Fallback::Error(message)) => {
+                self.context.fail(message);
+                self.pos += 1;
+            }
+            Parsed::Nok | Parsed::More(Fallback::Nok) => self.pos += 1,
+        }
+    }
+
+    fn literal_url(&mut self) {
+        literal::url(self);
+    }
+}
+
+/// The length of the line ending at the start of `bytes`.
+fn eol_len(bytes: &[u8]) -> usize {
+    match bytes {
+        [b'\r', b'\n', ..] => 2,
+        [b'\r' | b'\n', ..] => 1,
+        _ => 0,
+    }
+}
+
+/// The value of a code or math span: the content as it is, except that one space is removed from
+/// both ends when both have one and the content is not only spaces.
+fn span_value(content: &str) -> SmolStr {
+    let bytes = content.as_bytes();
+    if bytes.len() > 2 && bytes[0] == b' ' && bytes[bytes.len() - 1] == b' ' && bytes.iter().any(|&b| b != b' ') {
+        SmolStr::new(&content[1..content.len() - 1])
+    } else {
+        SmolStr::new(content)
+    }
+}
