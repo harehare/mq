@@ -1,129 +1,82 @@
 //! GFM autolink literals: `www.example.com`, `https://example.com` and `user@example.com`.
 //!
-//! Ported from the state machines of `markdown-rs` (MIT License, Titus Wormer) so that the same
-//! text is linked, including how trailing punctuation and unbalanced parentheses are excluded.
+//! A link runs to the first whitespace or `<`, without the punctuation, character references and
+//! unbalanced `)` at its end.
 
 use super::punctuation::is_punctuation;
 use super::{Item, Scanner, Value};
 use crate::node::{Link, Node, Text, Url};
 use crate::parser::scan::Span;
 
-#[derive(PartialEq)]
-enum Kind {
-    Whitespace,
-    Punctuation,
-    Other,
+/// Whether `char` is a symbol of the emoji blocks, which a domain may contain.
+fn is_emoji(char: char) -> bool {
+    matches!(char, '\u{2600}'..='\u{27BF}' | '\u{1F300}'..='\u{1FAFF}')
 }
 
-/// Classifies the character at byte `index`; the end of the text counts as whitespace.
-fn kind_at(src: &str, index: usize) -> Kind {
-    let Some(char) = src.get(index..).and_then(|rest| rest.chars().next()) else {
-        return Kind::Whitespace;
-    };
-    if char.is_whitespace() {
-        Kind::Whitespace
-    } else if is_punctuation(char) {
-        Kind::Punctuation
-    } else {
-        Kind::Other
-    }
+/// Whether `char` can be in a domain besides the separators `.`, `_` and `-`.
+fn is_domain_char(char: char) -> bool {
+    is_emoji(char) || !(char.is_whitespace() || is_punctuation(char))
 }
 
-/// Whether the character at byte `index` is a symbol of the emoji blocks, which a domain may contain.
-fn is_emoji(src: &str, index: usize) -> bool {
-    src.get(index..)
-        .and_then(|rest| rest.chars().next())
-        .is_some_and(|char| matches!(char, '\u{2600}'..='\u{27BF}' | '\u{1F300}'..='\u{1FAFF}'))
+/// Where a `]` ends the link: at the end of the text, before whitespace, or before a `(` or `[`
+/// that continues a Markdown link.
+fn closes_label(bytes: &[u8], index: usize) -> bool {
+    bytes[index] == b']' && matches!(bytes.get(index + 1), None | Some(b'\t' | b'\n' | b' ' | b'(' | b'['))
 }
 
-/// Whether the text from `index` is only trailing punctuation up to whitespace, the end or `<`.
-fn trail(src: &str, mut index: usize) -> bool {
+/// The end of the autolink whose domain starts at `start`, with the trailing punctuation left out.
+fn autolink_end(src: &str, start: usize) -> usize {
     let bytes = src.as_bytes();
-    loop {
-        match bytes.get(index) {
-            Some(b'!' | b'"' | b'\'' | b')' | b'*' | b',' | b'.' | b':' | b';' | b'?' | b'_' | b'~') => index += 1,
-            Some(b'&') => {
-                index += 1;
-                let letters = bytes[index..].iter().take_while(|b| b.is_ascii_alphabetic()).count();
-                if letters == 0 || bytes.get(index + letters) != Some(&b';') {
-                    return false;
-                }
-                index += letters + 1;
-            }
-            Some(b'<') => return true,
-            Some(b']') => {
-                index += 1;
-                if matches!(bytes.get(index), None | Some(b'\t' | b'\n' | b' ' | b'(' | b'[')) {
-                    return true;
-                }
-            }
-            _ => return kind_at(src, index) == Kind::Whitespace,
+    let mut end = start;
+    for (offset, char) in src[start..].char_indices() {
+        if char.is_whitespace() || char == '<' || closes_label(bytes, start + offset) {
+            break;
         }
+        end = start + offset + char.len_utf8();
     }
-}
 
-/// Matches the domain that starts at `index`, returning the offset after it.
-fn domain(src: &str, mut index: usize) -> Option<usize> {
-    let bytes = src.as_bytes();
-    let (mut seen, mut marker, mut marker_before) = (false, 0u8, 0u8);
-
-    loop {
-        match bytes.get(index) {
-            Some(b'.' | b'_') => {
-                if trail(src, index) {
-                    break;
-                }
-                if bytes[index] == b'_' {
-                    marker = b'_';
+    // The trailing punctuation starts where only punctuation is left up to the end.
+    let mut trailing = end;
+    while trailing > start {
+        match bytes[trailing - 1] {
+            b'!' | b'"' | b'\'' | b')' | b'*' | b',' | b'.' | b':' | b'?' | b']' | b'_' | b'~' => trailing -= 1,
+            b';' => {
+                // A character reference such as `&amp;` goes as a whole.
+                let letters = bytes[start..trailing - 1]
+                    .iter()
+                    .rev()
+                    .take_while(|b| b.is_ascii_alphabetic())
+                    .count();
+                let reference = trailing - 1 - letters;
+                trailing = if letters > 0 && reference > start && bytes[reference - 1] == b'&' {
+                    reference - 1
                 } else {
-                    marker_before = marker;
-                    marker = 0;
-                }
-                index += 1;
-            }
-            Some(b'-' | 0x80..=0xBF) => index += 1,
-            _ if kind_at(src, index) == Kind::Other || is_emoji(src, index) => {
-                seen = true;
-                index += 1;
+                    trailing - 1
+                };
             }
             _ => break,
         }
     }
 
-    // Underscores are not allowed in the last two segments.
-    (marker_before != b'_' && marker != b'_' && seen).then_some(index)
+    // A `)` that closes a `(` of the link is part of it.
+    let open = bytes[start..trailing].iter().filter(|b| **b == b'(').count();
+    let mut closed = bytes[start..trailing].iter().filter(|b| **b == b')').count();
+    while trailing < end && bytes[trailing] == b')' && closed < open {
+        closed += 1;
+        trailing += 1;
+    }
+    trailing
 }
 
-/// Matches the path that starts at `index`, returning the offset after it.
-fn path(src: &str, mut index: usize) -> usize {
-    let bytes = src.as_bytes();
-    let (mut open, mut closed) = (0usize, 0usize);
-
-    loop {
-        match bytes.get(index) {
-            None => return index,
-            Some(0x80..=0xBF) => index += 1,
-            Some(b'(') => {
-                open += 1;
-                index += 1;
-            }
-            Some(
-                punctuation @ (b'!' | b'"' | b'&' | b'\'' | b')' | b'*' | b',' | b'.' | b':' | b';' | b'<' | b'?'
-                | b']' | b'_' | b'~'),
-            ) => {
-                let unbalanced = *punctuation == b')' && closed < open;
-                if trail(src, index) && !unbalanced {
-                    return index;
-                }
-                if *punctuation == b')' {
-                    closed += 1;
-                }
-                index += 1;
-            }
-            _ if kind_at(src, index) == Kind::Whitespace => return index,
-            _ => index += 1,
-        }
-    }
+/// Whether the domain at the start of `text` is valid: it has a character besides the separators,
+/// and no `_` in its last two segments.
+fn has_valid_domain(text: &str) -> bool {
+    let length = text
+        .find(|char: char| !(matches!(char, '.' | '_' | '-') || is_domain_char(char)))
+        .unwrap_or(text.len());
+    let domain = &text[..length];
+    let underscore_free = domain.rsplit('.').take(2).all(|segment| !segment.contains('_'));
+    underscore_free && domain.chars().any(is_domain_char)
 }
 
 /// Matches `http://` or `https://` followed by a domain and a path.
@@ -141,8 +94,9 @@ fn protocol(src: &str, pos: usize) -> Option<usize> {
     if !matches!(name.as_str(), "http" | "https") || !src[pos + letters..].starts_with("://") {
         return None;
     }
-    let end = domain(src, pos + letters + 3)?;
-    Some(path(src, end))
+    let start = pos + letters + 3;
+    let end = autolink_end(src, start);
+    has_valid_domain(&src[start..end]).then_some(end)
 }
 
 /// Matches `www.` followed by a domain and a path.
@@ -160,8 +114,8 @@ fn www(src: &str, pos: usize) -> Option<usize> {
     if !prefix[..3].eq_ignore_ascii_case(b"www") || prefix[3] != b'.' || pos + 4 >= bytes.len() {
         return None;
     }
-    let end = domain(src, pos)?;
-    Some(path(src, end))
+    let end = autolink_end(src, pos);
+    has_valid_domain(&src[pos..end]).then_some(end)
 }
 
 /// Handles `h` or `w` at the scanner position: a protocol or `www.` autolink.
