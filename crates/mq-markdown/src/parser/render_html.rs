@@ -20,7 +20,7 @@ const SAFE_PROTOCOL_SRC: [&str; 2] = ["http", "https"];
 
 /// Renders `content` as HTML.
 pub(super) fn render(content: &str) -> String {
-    let blocks = super::block::parse(content, false);
+    let blocks = super::block::parse(content, false, true);
     let mut references = References::default();
     resolve::collect(&blocks, &mut references);
 

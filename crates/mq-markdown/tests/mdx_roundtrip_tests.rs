@@ -127,3 +127,37 @@ fn mdx_without_a_closing_line_has_no_frontmatter() {
         markdown.nodes
     );
 }
+
+#[rstest]
+#[case::mdx(true)]
+#[case::markdown(false)]
+fn frontmatter_can_be_left_to_the_text(#[case] mdx: bool) {
+    use mq_markdown::ParseOptions;
+
+    let options = ParseOptions { frontmatter: false };
+    let input = "---\ntitle: x\n---\n\n+++\na\n+++\n";
+    let markdown = if mdx {
+        Markdown::from_mdx_str_with(input, options)
+    } else {
+        Markdown::from_markdown_str_with(input, options)
+    }
+    .unwrap();
+    assert!(
+        markdown
+            .nodes
+            .iter()
+            .all(|node| !matches!(node.name().as_str(), "yaml" | "toml")),
+        "{:?}",
+        markdown.nodes
+    );
+    assert_eq!(markdown.nodes[0].name().as_str(), "Horizontal_rule");
+    assert_eq!(markdown.nodes[1].name().as_str(), "h2");
+
+    let default = if mdx {
+        Markdown::from_mdx_str(input)
+    } else {
+        Markdown::from_markdown_str(input)
+    }
+    .unwrap();
+    assert_eq!(default.nodes[0].name().as_str(), "yaml");
+}

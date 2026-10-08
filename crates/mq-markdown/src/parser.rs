@@ -26,8 +26,14 @@ use crate::node::Node;
 pub(crate) use inline::{is_autolink_email, normalize, unescape};
 
 /// Parses `content` into a flat list of nodes.
+#[cfg(test)]
 pub(crate) fn parse(content: &str) -> miette::Result<Vec<Node>> {
-    resolve::resolve(block::parse(content, false), false).map_err(|message| miette::miette!(message))
+    parse_with(content, true)
+}
+
+/// Parses `content` into a flat list of nodes, with frontmatter at the start when `frontmatter` is set.
+pub(crate) fn parse_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
+    resolve::resolve(block::parse(content, false, frontmatter), false).map_err(|message| miette::miette!(message))
 }
 
 /// Renders `content` as HTML.
@@ -36,8 +42,14 @@ pub(crate) fn to_html(content: &str) -> String {
 }
 
 /// Parses `content` as MDX: no indented code, HTML, autolinks or GFM, but expressions and JSX.
+#[cfg(test)]
 pub(crate) fn parse_mdx(content: &str) -> miette::Result<Vec<Node>> {
-    resolve::resolve(block::parse(content, true), true).map_err(|message| miette::miette!(message))
+    parse_mdx_with(content, true)
+}
+
+/// Parses `content` as MDX, with frontmatter at the start when `frontmatter` is set.
+pub(crate) fn parse_mdx_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
+    resolve::resolve(block::parse(content, true, frontmatter), true).map_err(|message| miette::miette!(message))
 }
 
 #[cfg(test)]
