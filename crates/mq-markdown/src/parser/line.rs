@@ -1,6 +1,7 @@
 //! Source lines and their positions.
 
 use super::block::CODE_INDENT;
+use super::flavor::Flavor;
 use crate::node::Point;
 
 #[derive(Clone, Copy)]
@@ -24,8 +25,8 @@ pub(super) struct Line<'a> {
     /// Columns left over from a tab that a container consumed only in part. They count as leading
     /// whitespace of `text`.
     pub(super) pad: usize,
-    /// Whether the document is MDX, which has no indented code, HTML, autolinks or GFM.
-    pub(super) mdx: bool,
+    /// The dialect of the document.
+    pub(super) flavor: Flavor,
     /// For `*`, `-` and `_`: one past the offset in `origin` of the last byte that is neither that
     /// character, nor a space or tab, or 0 if there is none. A thematic break is a run of one of them
     /// and whitespace to the end of the line, so this tells at once, from any offset, that it is not.
@@ -35,7 +36,11 @@ pub(super) struct Line<'a> {
 impl<'a> Line<'a> {
     /// The indentation from which a line is code. Without indented code, indentation never matters.
     pub(super) fn code_indent(&self) -> usize {
-        if self.mdx { usize::MAX } else { CODE_INDENT }
+        if self.flavor.has_indented_code() {
+            CODE_INDENT
+        } else {
+            usize::MAX
+        }
     }
 
     /// The zero-based visual column where `text` starts in the document.
@@ -187,7 +192,7 @@ fn last_others(text: &str) -> [usize; 3] {
 }
 
 /// Splits `src` into lines on `\n`, `\r\n` and `\r`. A trailing terminator does not add a line.
-pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
+pub(super) fn split_lines(src: &str, flavor: Flavor) -> Vec<Line<'_>> {
     let bytes = src.as_bytes();
     let mut lines = Vec::new();
     let (mut start, mut index) = (0, 0);
@@ -213,7 +218,7 @@ pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
             origin: &src[start..end],
             tabs: src[start..end].contains('\t'),
             pad: 0,
-            mdx,
+            flavor,
             others: last_others(&src[start..end]),
         });
         start = index;
@@ -231,7 +236,7 @@ pub(super) fn split_lines(src: &str, mdx: bool) -> Vec<Line<'_>> {
             origin: &src[start..],
             tabs: src[start..].contains('\t'),
             pad: 0,
-            mdx,
+            flavor,
             others: last_others(&src[start..]),
         });
     }

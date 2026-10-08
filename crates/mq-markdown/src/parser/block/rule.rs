@@ -121,7 +121,7 @@ pub(super) struct FencedCode;
 
 impl BlockRule for FencedCode {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        let fence = Fence::open(cx.rest, !cx.line.mdx)?;
+        let fence = Fence::open(cx.rest, cx.line.flavor.has_math())?;
         // The end of an unclosed fence without content is quirky right after a container.
         let own_end = cx.closed_container
             && !(cx.separated
@@ -259,7 +259,7 @@ pub(super) struct Esm;
 impl BlockRule for Esm {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
         let line = cx.line;
-        if !(line.mdx
+        if !(line.flavor.has_jsx()
             && cx.depth == 0
             && cx.indent == 0
             && (line.text.starts_with("import ") || line.text.starts_with("export ")))
@@ -296,7 +296,7 @@ pub(super) struct MdxFlow;
 
 impl BlockRule for MdxFlow {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        if !(cx.line.mdx && matches!(cx.rest.as_bytes().first(), Some(b'<' | b'{'))) {
+        if !(cx.line.flavor.has_jsx() && matches!(cx.rest.as_bytes().first(), Some(b'<' | b'{'))) {
             return None;
         }
         let FlowOutcome::Flow(next) = mdx_flow(cx.lines, cx.index, blocks) else {

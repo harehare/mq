@@ -4,7 +4,8 @@
 //! The output is the same as that of `markdown-rs`, line endings included: blocks start on a line of
 //! their own, and the line ending that the source has after the last block is kept.
 
-use super::inline;
+use super::flavor::Flavor;
+use super::inline::{self, Document};
 use super::resolve::{self, References};
 use super::tree::{Block, FencedBlock, InlineBlock, InlineKind, InlineSource, ListBlock, TableItem};
 use crate::node::{Code, Node, TableAlignKind};
@@ -20,7 +21,7 @@ const SAFE_PROTOCOL_SRC: [&str; 2] = ["http", "https"];
 
 /// Renders `content` as HTML.
 pub(super) fn render(content: &str) -> String {
-    let blocks = super::block::parse(content, false, true);
+    let blocks = super::block::parse(content, Flavor::Markdown, true);
     let mut references = References::default();
     resolve::collect(&blocks, &mut references);
 
@@ -183,6 +184,14 @@ struct Html {
 }
 
 impl Html {
+    /// The document that inline content is parsed in: the definitions of this one, as Markdown.
+    fn document(&self) -> Document<'_> {
+        Document {
+            references: &self.references,
+            flavor: Flavor::Markdown,
+        }
+    }
+
     fn line_ending(&mut self) {
         self.out.push_str(self.eol);
     }
@@ -304,7 +313,7 @@ impl Html {
     }
 
     fn inline_block(&mut self, block: &InlineBlock) {
-        let nodes = inline::parse(&block.source, &self.references).unwrap_or_default();
+        let nodes = inline::parse(&block.source, self.document()).unwrap_or_default();
         match &block.kind {
             InlineKind::Paragraph => {
                 let tight = self.tight.last().copied().unwrap_or(false);
@@ -418,7 +427,7 @@ impl Html {
                 }
                 self.out.push('>');
                 if let Some(Some(source)) = row.get(column) {
-                    let nodes = inline::parse(source, &self.references).unwrap_or_default();
+                    let nodes = inline::parse(source, self.document()).unwrap_or_default();
                     self.inlines(&nodes);
                 }
                 self.out.push_str(&format!("</{tag}>"));
