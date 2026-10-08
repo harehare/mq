@@ -1312,7 +1312,7 @@ impl Node {
                 let (us, ue) = &theme.link_url;
                 format!(
                     "[{}]: {}{}{}{}",
-                    escape_label(label.as_deref().unwrap_or(ident)),
+                    definition_label(label.as_deref(), ident),
                     us,
                     url.to_string_with(options),
                     ue,
@@ -1337,10 +1337,14 @@ impl Node {
                 render_emphasis(values, delim, options, theme)
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
-                format!("[^{}]: {}", escape_label(ident), render_values(values, options, theme))
+                format!(
+                    "[^{}]: {}",
+                    escape_brackets(ident),
+                    render_values(values, options, theme)
+                )
             }
-            Self::FootnoteRef(FootnoteRef { label, .. }) => {
-                format!("[^{}]", escape_label(label.as_deref().unwrap_or_default()))
+            Self::FootnoteRef(FootnoteRef { label, ident, .. }) => {
+                format!("[^{}]", reference_label(label.as_deref(), ident))
             }
             Self::Heading(Heading { depth, values, .. }) => {
                 let (hs, he) = &theme.heading;
@@ -1432,7 +1436,18 @@ impl Node {
             }
             Self::MathInline(MathInline { value, .. }) => {
                 let (ms, me) = &theme.math;
-                format!("{}${}${}", ms, value, me)
+                let fence = math_span_fence(value);
+                // Padding keeps a dollar sign at an end from fusing with the fence, and a genuine space at
+                // both ends from being removed when it is read.
+                let all_spaces = value.chars().all(|c| c == ' ');
+                if value.starts_with('$')
+                    || value.ends_with('$')
+                    || (!all_spaces && value.starts_with(' ') && value.ends_with(' '))
+                {
+                    format!("{}{} {} {}{}", ms, fence, value, fence, me)
+                } else {
+                    format!("{}{}{}{}{}", ms, fence, value, fence, me)
+                }
             }
             Self::Link(Link { url, title, values, .. }) => {
                 let (ls, le) = &theme.link;
@@ -1486,7 +1501,8 @@ impl Node {
             }
             Self::Math(Math { value, .. }) => {
                 let (ms, me) = &theme.math;
-                format!("{}$$\n{}\n$${}", ms, value, me)
+                let fence = "$".repeat((longest_run(value, '$') + 1).max(2));
+                format!("{}{}\n{}\n{}{}", ms, fence, value, fence, me)
             }
             // Only escape text parsed from real markdown (has a position); programmatic
             // values like JSON output or attr lookups must stay untouched.
@@ -1498,7 +1514,7 @@ impl Node {
                 }
             }
             Self::MdxFlowExpression(mdx_flow_expression) => {
-                format!("{{{}}}", mdx_flow_expression.value)
+                format!("{{{}}}", indent_expression(&mdx_flow_expression.value))
             }
             Self::MdxJsxFlowElement(mdx_jsx_flow_element) => {
                 let name = mdx_jsx_flow_element.name.as_deref().unwrap_or_default();
@@ -1516,18 +1532,24 @@ impl Node {
                 };
 
                 if mdx_jsx_flow_element.children.is_empty() {
-                    format!("<{}{} />", name, attributes,)
+                    // A fragment has no self-closing form.
+                    if name.is_empty() {
+                        format!("<{}></>", attributes)
+                    } else {
+                        format!("<{}{} />", name, attributes,)
+                    }
                 } else {
                     // Each tag and the children sit on their own lines, or the children would read as
                     // inline content of the tag.
                     let children = render_values_block(&mdx_jsx_flow_element.children, options, theme);
-                    format!(
-                        "<{}{}>\n{}\n</{}>",
-                        name,
-                        attributes,
-                        indent_continuation(&format!("  {}", children), 2),
-                        name
-                    )
+                    // The lines of an expression are indented as they are written, which indenting them
+                    // again would add to each time they are read.
+                    let children = if mdx_jsx_flow_element.children.iter().any(has_multiline_expression) {
+                        children
+                    } else {
+                        indent_continuation(&format!("  {}", children), 2)
+                    };
+                    format!("<{}{}>\n{}\n</{}>", name, attributes, children, name)
                 }
             }
             Self::MdxJsxTextElement(mdx_jsx_text_element) => {
@@ -1546,7 +1568,12 @@ impl Node {
                 };
 
                 if mdx_jsx_text_element.children.is_empty() {
-                    format!("<{}{} />", name, attributes,)
+                    // A fragment has no self-closing form.
+                    if name.is_empty() {
+                        format!("<{}></>", attributes)
+                    } else {
+                        format!("<{}{} />", name, attributes,)
+                    }
                 } else {
                     format!(
                         "<{}{}>{}</{}>",
@@ -1558,7 +1585,7 @@ impl Node {
                 }
             }
             Self::MdxTextExpression(mdx_text_expression) => {
-                format!("{{{}}}", mdx_text_expression.value)
+                format!("{{{}}}", indent_expression(&mdx_text_expression.value))
             }
             Self::MdxJsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
             Self::Strong(Strong { values, .. }) => {
@@ -3184,16 +3211,79 @@ impl Node {
 
     fn mdx_attribute_content_to_string(attr: &MdxAttributeContent) -> SmolStr {
         match attr {
-            MdxAttributeContent::Expression(value) => format!("{{{}}}", value).into(),
+            MdxAttributeContent::Expression(value) => format!("{{{}}}", indent_expression(value)).into(),
             MdxAttributeContent::Property(property) => match &property.value {
                 Some(value) => match value {
-                    MdxAttributeValue::Expression(value) => format!("{}={{{}}}", property.name, value).into(),
-                    MdxAttributeValue::Literal(literal) => format!("{}=\"{}\"", property.name, literal).into(),
+                    MdxAttributeValue::Expression(value) => {
+                        format!("{}={{{}}}", property.name, indent_expression(value)).into()
+                    }
+                    MdxAttributeValue::Literal(literal) => {
+                        format!("{}={}", property.name, quote_attribute_value(literal)).into()
+                    }
                 },
                 None => property.name.clone(),
             },
         }
     }
+}
+
+/// Whether `node` or a node in it is an expression of more than one line.
+fn has_multiline_expression(node: &Node) -> bool {
+    match node {
+        Node::MdxFlowExpression(expression) => expression.value.contains('\n'),
+        Node::MdxTextExpression(expression) => expression.value.contains('\n'),
+        Node::MdxJsxTextElement(MdxJsxTextElement { attributes, .. })
+        | Node::MdxJsxFlowElement(MdxJsxFlowElement { attributes, .. })
+            if attributes.iter().any(|attribute| match attribute {
+                MdxAttributeContent::Expression(value) => value.contains('\n'),
+                MdxAttributeContent::Property(MdxJsxAttribute {
+                    value: Some(MdxAttributeValue::Expression(value)),
+                    ..
+                }) => value.contains('\n'),
+                _ => false,
+            }) =>
+        {
+            true
+        }
+        other => other.children().iter().any(has_multiline_expression),
+    }
+}
+
+/// Quotes the value of a JSX attribute with the quote it does not contain. Character references that the
+/// value holds as text are written with their `&` as a reference.
+fn quote_attribute_value(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for (index, c) in value.char_indices() {
+        if c == '&' && starts_reference(&value[index + 1..]) {
+            escaped.push_str("&amp;");
+        } else {
+            escaped.push(c);
+        }
+    }
+    if !escaped.contains('"') {
+        format!("\"{escaped}\"")
+    } else if !escaped.contains('\'') {
+        format!("'{escaped}'")
+    } else {
+        format!("\"{}\"", escaped.replace('"', "&quot;"))
+    }
+}
+
+/// The content of an expression as it is written: the lines after the first are indented, as the
+/// indentation of up to two characters is removed from them when they are read.
+fn indent_expression(value: &str) -> String {
+    value
+        .split('\n')
+        .enumerate()
+        .map(|(index, line)| {
+            if index == 0 || line.is_empty() || line == "\r" {
+                line.to_string()
+            } else {
+                format!("  {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub(crate) fn values_to_string(values: &[Node], options: &RenderOptions) -> String {
@@ -3482,21 +3572,36 @@ pub(crate) fn list_own_prefix_width(ordered: bool, index: usize, start: Option<u
     marker_len + 1
 }
 
+/// The length of the longest run of `ch` in `s`.
+fn longest_run(s: &str, ch: char) -> usize {
+    s.split('\n')
+        .flat_map(|line| line.split(|c| c != ch).map(str::len))
+        .max()
+        .unwrap_or(0)
+}
+
 /// Longest fence-char run in `value` + 1 (min 3); switches to tilde when `info`
 /// has a backtick, since a backtick-fenced info string can't contain one.
 fn code_fence(value: &str, info: &str) -> String {
-    let longest_run = |s: &str, ch: char| -> usize {
-        s.split('\n')
-            .flat_map(|line| line.split(|c| c != ch).map(str::len))
-            .max()
-            .unwrap_or(0)
-    };
     if info.contains('`') {
         let len = (longest_run(value, '~') + 1).max(3);
         "~".repeat(len)
     } else {
         let len = (longest_run(value, '`') + 1).max(3);
         "`".repeat(len)
+    }
+}
+
+/// The label to write in a definition: the identifier as it was written when the label is only that
+/// without its escapes and character references, which would not read back as the same identifier.
+fn definition_label(label: Option<&str>, ident: &str) -> String {
+    match label {
+        Some(label) if crate::parser::normalize(label) == ident => escape_label(label),
+        Some(label) if crate::parser::normalize(label) == crate::parser::normalize(&crate::parser::unescape(ident)) => {
+            ident.to_string()
+        }
+        Some(label) => escape_label(label),
+        None => ident.to_string(),
     }
 }
 
@@ -3525,6 +3630,45 @@ fn code_span_fence(value: &str) -> String {
     "`".repeat(max_run + 1)
 }
 
+/// The shortest run of dollar signs, from one, that is not the length of a run in `value`, so that no
+/// run inside a math span can be mistaken for the closing.
+fn math_span_fence(value: &str) -> String {
+    let mut lengths = std::collections::HashSet::new();
+    let mut current = 0;
+    for c in value.chars() {
+        if c == '$' {
+            current += 1;
+        } else if current > 0 {
+            lengths.insert(current);
+            current = 0;
+        }
+    }
+    if current > 0 {
+        lengths.insert(current);
+    }
+    "$".repeat((1..).find(|length| !lengths.contains(length)).unwrap_or(1))
+}
+
+/// Escapes the brackets that are not escaped yet, for an identifier that keeps the escapes it was written with.
+fn escape_brackets(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' if chars.peek().is_some_and(char::is_ascii_punctuation) => {
+                result.push(c);
+                result.extend(chars.next());
+            }
+            '[' | ']' => {
+                result.push('\\');
+                result.push(c);
+            }
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
 fn escape_label(s: &str) -> String {
     if !s.bytes().any(|b| matches!(b, b'\\' | b'[' | b']')) {
         return s.to_string();
@@ -3547,7 +3691,7 @@ fn autolink_target(url: &str, values: &[Node]) -> Option<String> {
     };
     let target = if value == url {
         url
-    } else if url.strip_prefix("mailto:") == Some(value.as_str()) && value.contains('@') {
+    } else if url.strip_prefix("mailto:") == Some(value.as_str()) && crate::parser::is_autolink_email(value) {
         value.as_str()
     } else {
         return None;

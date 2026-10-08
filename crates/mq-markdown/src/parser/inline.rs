@@ -14,7 +14,9 @@ mod literal;
 mod punctuation;
 mod tail;
 
-pub(super) use entity::{decode_references, remove_line_indent, unescape};
+pub(crate) use entity::unescape;
+pub(super) use entity::{decode_references, remove_line_indent};
+pub(crate) use html::is_autolink_email;
 pub(crate) use link::normalize;
 pub(super) use tail::{destination, title_at};
 

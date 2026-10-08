@@ -404,6 +404,28 @@ fn line_endings_in_text_elements_are_kept(#[case] input: &str, #[case] expected:
     );
 }
 
+/// What `to_string` writes for these reads back as the same nodes.
+#[rstest]
+#[case::math_with_a_dollar("$$ foo $ bar $$\n", "$$foo $ bar$$")]
+#[case::math_of_dollars("$ $$ $\n", "$ $$ $")]
+#[case::math_block_with_a_fence_inside("$$$\naaa\n$$\n$$$$\n", "$$$\naaa\n$$\n$$$")]
+#[case::definition_with_an_escape("[+]: a\n[\\;]: b\n", "[+]: a\n[\\;]: b")]
+#[case::definition_with_a_reference("[&amp;]: a\n\n[&amp;]\n", "[&amp;]: a\n\n[&][&amp;]")]
+#[case::footnote_with_a_reference("Call.[^a&copy;b].\n\n[^a&copy;b]: y\n", "Call.[^a&copy;b].\n\n[^a&copy;b]: y")]
+#[case::email_that_is_not_an_autolink("<asd@-example.com>\n", "\\<[asd\\@-example.com](mailto:asd@-example.com)\\>")]
+fn writing_keeps_what_is_read_back(#[case] input: &str, #[case] expected: &str) {
+    let markdown = Markdown::from_markdown_str(input).unwrap();
+    let written = markdown.to_string();
+    assert_eq!(written.trim_end(), expected, "{:?}", markdown.nodes);
+    let reparsed = Markdown::from_markdown_str(&written).unwrap();
+    assert_eq!(
+        mq_markdown::to_html(&written),
+        mq_markdown::to_html(input),
+        "{written:?} {:?}",
+        reparsed.nodes
+    );
+}
+
 /// References keep the notation they were written in, as long as it resolves to the same definition.
 #[rstest]
 #[case::full_keeps_case_and_spaces("[x][Foo   Bar]\n\n[foo bar]: /u\n", "[x][Foo   Bar]")]
