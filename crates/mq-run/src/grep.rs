@@ -165,11 +165,11 @@ fn flatten(value: &mq_lang::RuntimeValue) -> Vec<(String, mq_lang::RuntimeValue)
             .flat_map(|(k, v)| {
                 let nested = flatten(v);
                 if nested.is_empty() {
-                    vec![(k.as_str(), v.clone())]
+                    vec![(k.to_string(), v.clone())]
                 } else {
                     nested
                         .into_iter()
-                        .map(|(nk, nv)| (join_key(&k.as_str(), &nk), nv))
+                        .map(|(nk, nv)| (join_key(&k.to_string(), &nk), nv))
                         .collect()
                 }
             })

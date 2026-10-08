@@ -8711,7 +8711,7 @@ Shared::new(Node {
         let Expr::As(ident, inner) = &program[0].expr else {
             panic!("expected Expr::As, got {:?}", program[0].expr);
         };
-        assert_eq!(ident.name.as_str(), "x");
+        assert_eq!(ident.name.to_string(), "x");
         assert!(matches!(&inner.expr, Expr::Literal(Literal::Number(_))));
     }
 

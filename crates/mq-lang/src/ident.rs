@@ -30,17 +30,9 @@ impl Ident {
         STRING_INTERNER.read().unwrap().get(s).map(Self)
     }
 
-    /// Resolves the identifier to its string representation.
-    ///
-    /// Returns a new `String` with the identifier's content.
-    pub fn as_str(&self) -> String {
-        STRING_INTERNER.read().unwrap().resolve(self.0).unwrap().to_string()
-    }
-
     /// Resolves the identifier and passes it to a callback function.
     ///
-    /// This is more efficient than `as_str()` when you don't need to own the string,
-    /// as it avoids allocating a new `String`.
+    /// Use this instead of `to_string()` when the string does not need to be owned.
     pub fn resolve_with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&str) -> R,
@@ -81,7 +73,7 @@ impl serde::Serialize for Ident {
     where
         S: serde::Serializer,
     {
-        self.as_str().serialize(serializer)
+        self.resolve_with(|s| s.serialize(serializer))
     }
 }
 
@@ -111,9 +103,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ident_new_and_as_str() {
+    fn test_ident_new_and_to_string() {
         let ident = Ident::new("hello");
-        assert_eq!(ident.as_str(), "hello");
+        assert_eq!(ident.to_string(), "hello");
     }
 
     #[test]
@@ -121,7 +113,7 @@ mod tests {
         let ident1: Ident = "world".into();
         let ident2: Ident = String::from("world").into();
         assert_eq!(ident1, ident2);
-        assert_eq!(ident1.as_str(), "world");
+        assert_eq!(ident1.to_string(), "world");
     }
 
     #[test]

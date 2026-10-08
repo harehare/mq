@@ -88,7 +88,7 @@ pub(crate) fn encode(program: &SplitProgram) -> Result<EncodedCode, MqcError> {
     let mut payload = Writer::with_remaining_items(body.remaining_items());
     payload.len(tables.idents.len())?;
     for ident in &tables.idents {
-        payload.str(&ident.as_str())?;
+        ident.resolve_with(|s| payload.str(s))?;
     }
     payload.raw(&body.into_bytes());
 

@@ -610,7 +610,7 @@ impl RuntimeValue {
             RuntimeValue::Number(n) => n.value() as usize,
             RuntimeValue::Boolean(_) => 1,
             RuntimeValue::String(s) => s.len(),
-            RuntimeValue::Symbol(i) => i.as_str().len(),
+            RuntimeValue::Symbol(i) => i.resolve_with(str::len),
             RuntimeValue::Array(a) => a.len(),
             RuntimeValue::Markdown(m, _) => m.value().len(),
             RuntimeValue::Dict(m) => m.len(),
@@ -988,7 +988,7 @@ impl RuntimeValues {
                             }
                         }
                         RuntimeValue::String(s) => RuntimeValue::new_markdown(node.with_value(s)),
-                        RuntimeValue::Symbol(i) => RuntimeValue::new_markdown(node.with_value(&i.as_str())),
+                        RuntimeValue::Symbol(i) => RuntimeValue::new_markdown(node.with_value(&i.to_string())),
                         RuntimeValue::Boolean(b) => RuntimeValue::new_markdown(node.with_value(b.to_string().as_str())),
                         RuntimeValue::Number(n) => RuntimeValue::new_markdown(node.with_value(n.to_string().as_str())),
                         RuntimeValue::Array(array) => RuntimeValue::Array(Shared::new(

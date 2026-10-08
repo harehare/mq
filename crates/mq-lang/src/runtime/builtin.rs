@@ -3933,7 +3933,7 @@ fn keys_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
         [RuntimeValue::Dict(map)] => {
             let keys = map
                 .keys()
-                .map(|k| RuntimeValue::String(Shared::new(k.as_str())))
+                .map(|k| RuntimeValue::String(Shared::new(k.to_string())))
                 .collect::<Vec<RuntimeValue>>();
             Ok(RuntimeValue::Array(Shared::new(keys)))
         }
@@ -3964,7 +3964,7 @@ fn entries_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                 .iter()
                 .map(|(k, v)| {
                     RuntimeValue::Array(Shared::new(vec![
-                        RuntimeValue::String(Shared::new(k.as_str())),
+                        RuntimeValue::String(Shared::new(k.to_string())),
                         v.to_owned(),
                     ]))
                 })
@@ -4041,8 +4041,10 @@ fn negate_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 #[mq_macros::mq_fn(name = "intern", params = Fixed(1))]
 fn intern_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(Ident::new(s).as_str()))),
-        [a] => Ok(RuntimeValue::String(Shared::new(Ident::new(&a.to_string()).as_str()))),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(Ident::new(s).to_string()))),
+        [a] => Ok(RuntimeValue::String(Shared::new(
+            Ident::new(&a.to_string()).to_string(),
+        ))),
         _ => unreachable!("intern should always receive exactly one argument"),
     }
 }
@@ -5229,7 +5231,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
             other => Err(Error::Runtime(format!("http_all: `url` must be a string, got {other}"))),
         })?;
     let method = match fields.get(&Ident::from("method")) {
-        Some(RuntimeValue::Symbol(method)) => method.as_str().to_string(),
+        Some(RuntimeValue::Symbol(method)) => method.to_string(),
         Some(RuntimeValue::String(method)) => method.to_string(),
         Some(other) => {
             return Err(Error::Runtime(format!(
@@ -5255,7 +5257,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         Some(RuntimeValue::Dict(headers)) => headers
             .iter()
             .map(|(name, value)| match value {
-                RuntimeValue::String(value) => Ok((name.as_str().to_string(), value.to_string())),
+                RuntimeValue::String(value) => Ok((name.to_string(), value.to_string())),
                 other => Err(Error::Runtime(format!(
                     "http_all: header {name:?} must be a string, got {other}"
                 ))),
