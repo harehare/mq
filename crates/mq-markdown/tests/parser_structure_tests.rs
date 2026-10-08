@@ -302,6 +302,20 @@ fn rendering_dashes_at_start_keeps_the_rules(#[case] input: &str) {
 #[case::code_after_nested_list("- a\n  - s\n  ```\n  code\n  ```\n")]
 #[case::nested_lists_around_paragraph("- a\n  - s\n\n  b\n  - t\n")]
 #[case::ordered_item_with_nested_list_and_paragraph("1. x\n   - s\n\n   para\n2. y\n")]
+#[case::escaped_reference("\\&ouml; x\n")]
+#[case::escaped_numeric_reference("\\&#35; x \\&#x23; y\n")]
+#[case::ampersand_without_a_reference("a & b &c d &amp\n")]
+#[case::bang_before_a_link("\\![foo]\n\n[foo]: /url\n")]
+#[case::bang_before_an_inline_link("wow\\![a](b)\n")]
+#[case::bang_before_a_full_reference("\\![a][foo]\n\n[foo]: /url\n")]
+#[case::escaped_email("<foo\\+@bar.example.com>\n")]
+#[case::escaped_email_domain("<a\\_b@c.de> x\n")]
+#[case::heading_with_a_trailing_line_ending("# a&#10;\n")]
+#[case::heading_with_a_leading_line_ending("# &#10;a\n")]
+#[case::heading_with_a_line_ending_inside("# a&#10;b\n")]
+#[case::link_text_that_looks_like_a_url("[https://a.com/x\\_y](u)\n")]
+#[case::link_text_with_a_reference_in_a_url("[https://a.com/x&amp;y](u)\n")]
+#[case::code_ending_in_whitespace("    brew install x\n     \n# h\n")]
 fn rendering_reads_back_as_the_same_html(#[case] input: &str) {
     let rendered = Markdown::from_markdown_str(input).unwrap().to_string();
     assert_eq!(
@@ -309,6 +323,23 @@ fn rendering_reads_back_as_the_same_html(#[case] input: &str) {
         mq_markdown::to_html(input),
         "{rendered:?}"
     );
+}
+
+#[rstest]
+#[case::escape("[https://a.com/x\\_y](u)\n", "https://a.com/x_y")]
+#[case::reference("[https://a.com/x&amp;y](u)\n", "https://a.com/x&y")]
+#[case::www("[www.a.com/x\\_y](u)\n", "www.a.com/x_y")]
+fn link_text_that_looks_like_a_url_is_decoded(#[case] input: &str, #[case] expected: &str) {
+    let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
+    assert_eq!(nodes[0].children()[0].value(), expected, "{nodes:?}");
+}
+
+#[test]
+fn indented_code_drops_trailing_lines_of_whitespace() {
+    let nodes = Markdown::from_markdown_str("    brew install x\n     \n\t\n# h\n")
+        .unwrap()
+        .nodes;
+    assert_eq!(nodes[0].value(), "brew install x");
 }
 
 /// References keep the notation they were written in, as long as it resolves to the same definition.

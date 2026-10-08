@@ -1345,6 +1345,18 @@ impl Node {
             Self::Heading(Heading { depth, values, .. }) => {
                 let (hs, he) = &theme.heading;
                 let text = render_values(values, options, theme);
+                // A line ending at either end is not part of the heading text, so it is written as a
+                // character reference.
+                let text = {
+                    let inner = text.trim_matches('\n');
+                    let leading = text.len() - text.trim_start_matches('\n').len();
+                    let trailing = text.len() - text.trim_end_matches('\n').len();
+                    if inner.is_empty() || (leading == 0 && trailing == 0) {
+                        text.clone()
+                    } else {
+                        format!("{}{}{}", "&#10;".repeat(leading), inner, "&#10;".repeat(trailing))
+                    }
+                };
                 // Multi-line content must stay setext for depths 1-2; ATX has no setext form.
                 if text.contains('\n') && matches!(depth, 1 | 2) {
                     let underline = if *depth == 1 { "===" } else { "---" };
@@ -3245,11 +3257,33 @@ pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme
     result
 }
 
+/// Renders `value`, escaping a `!` that ends its text when `next` starts a link, which would make an image.
+pub(crate) fn render_before(
+    value: &Node,
+    next: Option<&Node>,
+    options: &RenderOptions,
+    theme: &ColorTheme<'_>,
+) -> String {
+    let mut rendered = value.render_with_theme(options, theme);
+    let starts_link = match next {
+        Some(Node::Link(_) | Node::LinkRef(_)) => true,
+        #[cfg(feature = "wikilink")]
+        Some(Node::WikiLink(_)) => true,
+        _ => false,
+    };
+    if starts_link && matches!(value, Node::Text(Text { position: Some(_), .. })) && rendered.ends_with('!') {
+        rendered.insert(rendered.len() - 1, '\\');
+    }
+    rendered
+}
+
 pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
     let mut pre_position: Option<Position> = None;
     values
         .iter()
-        .map(|value| {
+        .enumerate()
+        .map(|(index, value)| {
+            let rendered = || render_before(value, values.get(index + 1), options, theme);
             if let Some(pos) = value.position() {
                 let new_line_count = pre_position
                     .as_ref()
@@ -3270,25 +3304,17 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
                 pre_position = Some(pos);
 
                 if space.is_empty() {
-                    format!(
-                        "{}{}",
-                        "\n".repeat(new_line_count),
-                        value.render_with_theme(options, theme)
-                    )
+                    format!("{}{}", "\n".repeat(new_line_count), rendered())
                 } else {
                     format!(
                         "{}{}",
                         "\n".repeat(new_line_count),
-                        value
-                            .render_with_theme(options, theme)
-                            .lines()
-                            .map(|line| format!("{}{}", space, line))
-                            .join("\n")
+                        rendered().lines().map(|line| format!("{}{}", space, line)).join("\n")
                     )
                 }
             } else {
                 pre_position = None;
-                value.render_with_theme(options, theme)
+                rendered()
             }
         })
         .collect::<String>()
@@ -3331,7 +3357,11 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
             )
         } else {
             let value = &values[index];
-            (value.render_with_theme(options, theme), value.position(), index + 1)
+            (
+                render_before(value, values.get(index + 1), options, theme),
+                value.position(),
+                index + 1,
+            )
         };
         index = next;
 
@@ -3536,6 +3566,40 @@ fn autolink_target(url: &str, values: &[Node]) -> Option<String> {
     (plain && (scheme || email) && escape_text(target.to_string()) != target).then(|| target.to_string())
 }
 
+/// Whether `rest`, the text after an `&`, reads as the rest of a character reference.
+fn starts_reference(rest: &str) -> bool {
+    let name = match rest.strip_prefix('#') {
+        Some(number) => match number.strip_prefix(['x', 'X']) {
+            Some(hex) => hex
+                .split_once(';')
+                .map(|(digits, _)| (digits, char::is_ascii_hexdigit as fn(&char) -> bool)),
+            None => number
+                .split_once(';')
+                .map(|(digits, _)| (digits, char::is_ascii_digit as fn(&char) -> bool)),
+        },
+        None => rest
+            .split_once(';')
+            .map(|(name, _)| (name, char::is_ascii_alphanumeric as fn(&char) -> bool)),
+    };
+    name.is_some_and(|(name, is_valid)| !name.is_empty() && name.chars().all(|c| is_valid(&c)))
+}
+
+fn is_email_local(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+')
+}
+
+/// Whether `rest`, the text after an `@`, starts with a domain that makes an email address of the text
+/// before it.
+fn is_email_domain(rest: &str) -> bool {
+    let domain = rest
+        .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_')))
+        .next()
+        .unwrap_or_default();
+    domain
+        .split_once('.')
+        .is_some_and(|(label, after)| !label.is_empty() && after.starts_with(|c: char| c.is_ascii_alphanumeric()))
+}
+
 /// Re-escapes markdown-significant characters so plain text can't be reinterpreted as
 /// syntax on re-parse. `# - + > =` only unsafe at line start, `. )` only after leading digits;
 /// a leading `\t` and runs of 2+ `\n` (only possible via decoded entities) use `&#N;` instead.
@@ -3563,6 +3627,8 @@ fn escape_text(value: String) -> String {
                 | b')'
                 | b'\n'
                 | b'\t'
+                | b'&'
+                | b'@'
         )
     });
     if !needs_escaping {
@@ -3573,11 +3639,15 @@ fn escape_text(value: String) -> String {
     let mut at_line_start = true;
     // True while in an unbroken digit run since line start (ordered-list marker number).
     let mut leading_digits = false;
-    let mut chars = value.chars().peekable();
+    let mut chars = value
+        .char_indices()
+        .map(|(index, c)| (c, &value[index + c.len_utf8()..]))
+        .peekable();
+    let mut previous = None;
 
-    while let Some(c) = chars.next() {
+    while let Some((c, rest)) = chars.next() {
         match c {
-            '\n' if chars.peek() == Some(&'\n') => {
+            '\n' if chars.peek().is_some_and(|(next, _)| *next == '\n') => {
                 result.push_str("&#10;");
                 at_line_start = true;
                 leading_digits = false;
@@ -3592,9 +3662,12 @@ fn escape_text(value: String) -> String {
             '\\' | '`' | '*' | '_' | '[' | ']' | '|' | '~' | '$' | '<' => result.push('\\'),
             '#' | '-' | '+' | '>' | '=' if at_line_start => result.push('\\'),
             '.' | ')' if leading_digits => result.push('\\'),
+            '&' if starts_reference(rest) => result.push('\\'),
+            '@' if previous.is_some_and(is_email_local) && is_email_domain(rest) => result.push('\\'),
             _ => {}
         }
         result.push(c);
+        previous = Some(c);
 
         let is_digit = c.is_ascii_digit();
         leading_digits = if at_line_start {
