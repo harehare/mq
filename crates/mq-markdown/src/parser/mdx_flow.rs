@@ -4,7 +4,7 @@ use super::error::{Located, MdxError, MdxErrorKind};
 use super::line::Line;
 use super::mdx::{self, Fallback, Parsed};
 use super::tree::{Block, InlineSource, JsxTag};
-use crate::node::{MdxFlowExpression, Node, Position};
+use crate::node::{MdxFlowExpression, Node, Point, Position};
 
 /// What the items of a line of MDX flow content add up to.
 pub(super) enum Flow {
@@ -182,15 +182,47 @@ pub(super) fn probe_mdx_flow(lines: &[Line<'_>], index: usize) -> Option<FlowOut
     (may_start_flow(line) && !line.lazy).then(|| mdx_flow(lines, index, &mut Vec::new()))
 }
 
-/// Whether a single MDX line looks like flow content, for tracking what a paragraph can continue.
-pub(super) fn looks_like_mdx_flow(line: &Line<'_>) -> bool {
+/// What a single MDX line makes of flow content, for tracking what a paragraph can continue.
+pub(super) enum FlowStart {
+    /// The line is flow content, or an error in it.
+    Complete,
+    /// The construct goes on in the next line.
+    Pending,
+}
+
+/// Whether a single MDX line looks like flow content.
+pub(super) fn flow_start(line: &Line<'_>) -> Option<FlowStart> {
     if !may_start_flow(line) {
-        return false;
+        return None;
     }
     // The line ending counts, unless the document ends here.
     let mut source = InlineSource::new(std::iter::once((line.text, "", line.point(0))));
     source.text.push_str(line.eol);
-    !matches!(flow_items(&source), Flow::Nok(_))
+    match flow_items(&source) {
+        Flow::Nok(_) => None,
+        Flow::More(_) => Some(FlowStart::Pending),
+        _ => Some(FlowStart::Complete),
+    }
+}
+
+/// Where flow content made of the lines in `text` stands after its last line.
+pub(super) enum FlowEnd {
+    /// It goes on in the next line.
+    Open,
+    /// It is complete, or invalid.
+    Done,
+    /// It is not flow content: the lines are text.
+    Text,
+}
+
+pub(super) fn flow_end(text: &str) -> FlowEnd {
+    let mut source = InlineSource::new(std::iter::once((text, "\n", Point { line: 1, column: 1 })));
+    source.text.push('\n');
+    match flow_items(&source) {
+        Flow::More(_) => FlowEnd::Open,
+        Flow::Nok(_) => FlowEnd::Text,
+        _ => FlowEnd::Done,
+    }
 }
 
 /// The last line of `first..=last` that a paragraph takes when flow content spans them: it stops

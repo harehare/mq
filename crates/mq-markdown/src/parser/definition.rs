@@ -117,3 +117,16 @@ pub(super) fn extract(source: &InlineSource, lines: &[Position]) -> (Vec<Node>, 
     let used = source.lines.partition_point(|line| line.offset < next_line);
     (nodes, used)
 }
+
+/// Whether `text`, the lines of a paragraph, is nothing but definitions.
+pub(super) fn only_definitions(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut pos = skip_blanks_and_eol(bytes, 0);
+    while pos < text.len() && bytes[pos] == b'[' {
+        let Some(parsed) = parse_one(text, pos) else {
+            return false;
+        };
+        pos = skip_blanks_and_eol(bytes, parsed.next);
+    }
+    pos >= text.len()
+}

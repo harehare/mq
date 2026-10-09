@@ -566,16 +566,12 @@ proptest! {
 
 /// Lines that start, continue and end the blocks that decide whether a paragraph is open. Footnote
 /// definitions are left out: a quote hoists them, so their text is not found in the same place.
-/// Definitions are left out too: a quote does not know that a paragraph is only definitions, so it reads a line of `=`
-/// under one as a setext underline, where outside a quote it is text. Indented code and an
-/// empty item are left out for the same reason as blank lines after an item.
 const LAZY_LINES: &[&str] = &[
-    "a", "b c", "", "# h", "***", "---", "===", "> q", "- i", "1. i", "2. i", "  more", "```", "~~~", "$$", "<div>",
-    "</div>", "<!-- c", "-->", "<?x", "?>", "<p>", "<span>",
+    "a", "b c", "", "# h", "***", "---", "===", "> q", "- i", "1. i", "2. i", "-", "  more", "    code", "[r]: /u",
+    "```", "~~~", "$$", "<div>", "</div>", "<!-- c", "-->", "<?x", "?>", "<p>", "<span>",
 ];
 
-/// The lines of MDX that start, continue and end flow content. A fence is left out of the lines with
-/// them: it is text inside an expression that spans lines, which a quote cannot tell line by line.
+/// The lines of MDX that start, continue and end flow content.
 const LAZY_MDX_LINES: &[&str] = &[
     "<A>",
     "</A>",
@@ -613,14 +609,6 @@ fn lazy_line_agrees(lines: &[&str], parse: impl Fn(&str) -> Option<Vec<Node>>) -
     if lines.last().is_none_or(|line| line.is_empty()) {
         return Ok(());
     }
-    // A quote does not track the indentation of the items that are open, so it reads a line that an
-    // item holds after a blank line as code, or as text where the item has a setext underline.
-    let first_item = lines
-        .iter()
-        .position(|line| line.starts_with("- ") || line.starts_with(char::is_numeric));
-    if first_item.is_some_and(|item| lines[item..].contains(&"")) {
-        return Ok(());
-    }
     let plain = format!("{}\nlazy", lines.join("\n"));
     let in_quote = format!("{}\nlazy", quoted(lines));
     // MDX does not allow a lazy line inside flow content, which is an error only in a quote.
@@ -640,7 +628,7 @@ fn lazy_line_agrees(lines: &[&str], parse: impl Fn(&str) -> Option<Vec<Node>>) -
 proptest! {
     #[test]
     fn lazy_continuation_in_a_quote_agrees_with_a_paragraph_outside(
-        lines in prop::collection::vec(prop::sample::select(LAZY_LINES), 1..6)
+        lines in prop::collection::vec(prop::sample::select(LAZY_LINES), 1..10)
     ) {
         lazy_line_agrees(&lines, |input| {
             Markdown::from_markdown_str_with(input, ParseOptions::default().with_frontmatter(false)).ok().map(|md| md.nodes)
@@ -650,10 +638,7 @@ proptest! {
     #[test]
     fn lazy_continuation_in_a_quote_agrees_with_a_paragraph_outside_in_mdx(
         lines in prop::collection::vec(
-            prop_oneof![
-                prop::sample::select(LAZY_LINES).prop_filter("a fence", |line| !matches!(*line, "```" | "~~~" | "$$")),
-                prop::sample::select(LAZY_MDX_LINES)
-            ],
+            prop_oneof![prop::sample::select(LAZY_LINES), prop::sample::select(LAZY_MDX_LINES)],
             1..6
         )
     ) {
