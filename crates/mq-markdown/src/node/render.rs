@@ -834,7 +834,7 @@ pub(super) fn render_link_title(title: &str, style: &TitleSurroundStyle) -> Stri
 
 /// Escapes `\ [ ]` in reference labels/idents and image alt text: plain strings
 /// (not walked as inline nodes) that still sit inside `[...]` syntax.
-/// True if `s` needs escaping beyond `escape_label`'s narrow `\ [ ]` set — unsafe
+/// True if `s` needs escaping beyond `escape_label`'s narrow `\ [ ]` set: unsafe
 /// for a reference's implicit shortcut form, since the definition's label won't match.
 fn needs_broad_escaping(s: &str) -> bool {
     s.bytes().any(|b| {
@@ -1257,7 +1257,7 @@ mod tests {
         }
 
         // Rendering must never panic, whatever the heading text (arbitrary Unicode,
-        // possibly ending in a run of `#`) — this is a UTF-8 char-boundary regression
+        // possibly ending in a run of `#`): this is a UTF-8 char-boundary regression
         // guard for the trailing-`#` escape logic.
         #[test]
         fn heading_render_never_panics_on_unicode_text(
@@ -1279,7 +1279,7 @@ mod tests {
         }
 
         // A Link's destination, rendered through the real writer and re-parsed by the
-        // real markdown parser, must recover the original URL string — the concrete
+        // real markdown parser, must recover the original URL string: the concrete
         // bug class from the GFM spec-suite fidelity check (spaces/parens/angle
         // brackets silently corrupting or breaking the link on round-trip).
         #[test]

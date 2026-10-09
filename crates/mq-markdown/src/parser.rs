@@ -69,9 +69,8 @@ mod tests {
         std::env::var(name).ok()?.parse().ok()
     }
 
-    /// Lines built from container prefixes and block-level bodies only, so inline syntax (not
-    /// implemented yet) never appears. Constructs whose markdown-rs positions depend on quirks of the
-    /// following lines are left to the cases of `tests/parser_tree_tests.rs`: empty items and quotes,
+    /// Lines built from container prefixes and block-level bodies only, so inline syntax never
+    /// appears. Constructs whose mdast positions depend on quirks of the following lines are left to the cases of `tests/parser_tree_tests.rs`: empty items and quotes,
     /// unclosed fences, indented code next to containers, ordered lists that do not start at 1, and
     /// lazy continuation inside nested containers, more than one container marker on a line, and runs
     /// of setext underlines (`===` is only used by those cases).
@@ -613,7 +612,7 @@ mod tests {
     /// - nested `strong` of runs of `*` and `_`, which `CommonMark` 0.30 and later render as nested
     ///   elements where 0.29 merged them (388, 416, 424, 425, 426, 463, 464, 465, 467)
     /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href`, as
-    ///   `markdown-rs` does it by default (496, 594, 595, 597)
+    ///   as mdast to HTML does by default (496, 594, 595, 597)
     /// - GFM autolink literals, which the spec does not have (598, 604, 607, 608)
     /// - the GFM tag filter, which writes the tags `script`, `style` and `textarea` as text (140, 141,
     ///   142, 145, 147)

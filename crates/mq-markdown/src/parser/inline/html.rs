@@ -58,7 +58,7 @@ pub(crate) fn is_autolink_email(text: &str) -> bool {
 }
 
 /// Parses an email address for an autolink at `start`, returning the offset of the closing `>`.
-/// The characters allowed differ slightly from `CommonMark`, following `markdown-rs`.
+/// The characters allowed are those of the mdast email autolink, which differ slightly from `CommonMark`.
 fn email(bytes: &[u8], start: usize) -> Option<usize> {
     let atext = |b: u8| matches!(b, b'#'..=b'\'' | b'*' | b'+' | b'-'..=b'9' | b'=' | b'?' | b'A'..=b'Z' | b'^'..=b'~');
     let mut index = start;

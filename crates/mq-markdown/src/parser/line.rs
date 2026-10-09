@@ -95,7 +95,7 @@ impl<'a> Line<'a> {
     }
 
     /// The position of the byte at `byte` in `text`. Columns are in bytes, except that a tab advances
-    /// to the next multiple of four, like `markdown-rs` counts them.
+    /// to the next multiple of four, as mdast positions count them.
     pub(super) fn point(&self, byte: usize) -> Point {
         let offset = self.column + byte;
         let mut column = self.visual_column(offset) + 1;
@@ -110,7 +110,7 @@ impl<'a> Line<'a> {
         }
     }
 
-    /// Like [`Line::point`] for content that `markdown-rs` places where the rest of a tab ends, instead
+    /// Like [`Line::point`] for content that mdast places where the rest of a tab ends, instead
     /// of before it: paragraphs and fences.
     pub(super) fn content_point(&self, byte: usize) -> Point {
         let mut point = self.point(byte);

@@ -1,8 +1,8 @@
 //! Renders the block tree as HTML, with CommonMark, GFM, math and frontmatter, and with raw HTML
 //! allowed.
 //!
-//! The output is the same as that of `markdown-rs`, line endings included: blocks start on a line of
-//! their own, and the line ending that the source has after the last block is kept.
+//! The output is the HTML of the CommonMark and GFM specs, line endings included: blocks start on a
+//! line of their own, and the line ending that the source has after the last block is kept.
 
 use super::flavor::Flavor;
 use super::inline::{self, Document};
