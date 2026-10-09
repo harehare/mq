@@ -622,6 +622,29 @@ mod tests {
         607, 608,
     ];
 
+    /// Examples of the GFM spec with `[[...]]` in them that the `wikilink` feature reads as a wikilink
+    /// (544, 555), and the one that either the `wikilink` or the `embed` feature changes (586).
+    const GFM_WIKILINK_DIFFERENCES: &[usize] = &[544, 555];
+    const GFM_OBSIDIAN_DIFFERENCES: &[usize] = &[586];
+
+    /// The same for the `CommonMark` 0.31.2 spec (548, 559 and 590).
+    const COMMONMARK_WIKILINK_DIFFERENCES: &[usize] = &[548, 559];
+    const COMMONMARK_OBSIDIAN_DIFFERENCES: &[usize] = &[590];
+
+    /// The examples that differ from the spec: `known`, and those that the enabled features read as
+    /// wikilinks and embeds.
+    fn expected_differences(known: &[usize], wikilink: &[usize], either: &[usize]) -> Vec<usize> {
+        let mut all = known.to_vec();
+        if cfg!(feature = "wikilink") {
+            all.extend_from_slice(wikilink);
+        }
+        if cfg!(any(feature = "wikilink", feature = "embed")) {
+            all.extend_from_slice(either);
+        }
+        all.sort_unstable();
+        all
+    }
+
     /// Examples of the `CommonMark` 0.31.2 spec that are not rendered as in the spec, by number:
     ///
     /// - a document that starts with `---` has frontmatter (96, 98)
@@ -665,7 +688,7 @@ mod tests {
     fn spec_examples_render_as_in_the_spec() {
         assert_eq!(
             differing_examples(&spec_text("SPEC_FILE", SPEC_URL), 600),
-            KNOWN_DIFFERENCES,
+            expected_differences(KNOWN_DIFFERENCES, GFM_WIKILINK_DIFFERENCES, GFM_OBSIDIAN_DIFFERENCES),
             "examples that are not rendered as in the spec"
         );
     }
@@ -677,7 +700,11 @@ mod tests {
     fn commonmark_spec_examples_render_as_in_the_spec() {
         assert_eq!(
             differing_examples(&spec_text("COMMONMARK_SPEC_FILE", COMMONMARK_SPEC_URL), 600),
-            COMMONMARK_KNOWN_DIFFERENCES,
+            expected_differences(
+                COMMONMARK_KNOWN_DIFFERENCES,
+                COMMONMARK_WIKILINK_DIFFERENCES,
+                COMMONMARK_OBSIDIAN_DIFFERENCES
+            ),
             "examples that are not rendered as in the spec"
         );
     }

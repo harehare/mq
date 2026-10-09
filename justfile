@@ -125,6 +125,7 @@ test-gfm-spec:
 # Render every example of the CommonMark, GFM and GFM extensions specs (fetches them over the network)
 test-spec:
     cargo test -p mq-markdown --lib -- --ignored spec_examples
+    cargo test -p mq-markdown --lib --features obsidian -- --ignored spec_examples
 
 test-doc:
     cargo test --doc --workspace
