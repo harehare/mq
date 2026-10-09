@@ -304,6 +304,12 @@ impl<'a> LeafState<'a> {
                     containers += 1;
                     continue;
                 }
+                Some(LineStart::Footnote(marker)) if containers < self.budget => {
+                    line = line.skip(marker.content);
+                    containers += 1;
+                    self.paragraph = false;
+                    continue;
+                }
                 // A marker in or inside the container of the open paragraph has to be able to interrupt it.
                 Some(LineStart::Item(marker))
                     if containers < self.budget
@@ -325,8 +331,9 @@ impl<'a> LeafState<'a> {
                 return;
             }
             self.header = rest.contains('|').then(|| table::row_cells(&line));
-            // A lazy line belongs to the paragraph that is already open, in its container.
-            if !(line.lazy && self.paragraph) {
+            // A lazy line belongs to the paragraph that is already open, in its container. So does a
+            // line that has fewer containers than that paragraph, as it is lazy for the inner ones.
+            if !(self.paragraph && (line.lazy || containers < self.paragraph_containers)) {
                 self.paragraph_containers = containers;
             }
             self.paragraph = true;

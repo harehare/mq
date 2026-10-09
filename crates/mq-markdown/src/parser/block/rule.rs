@@ -8,7 +8,7 @@ use super::{Interrupt, LineStart, atx_heading, blockquote, footnote, html_block,
 use crate::node::{HorizontalRule, HorizontalRuleMarker, MdxJsEsm, Node, Position};
 use crate::parser::code::{fenced_code, indented_code};
 use crate::parser::line::{Indent, Line};
-use crate::parser::mdx_flow::{FlowOutcome, mdx_flow};
+use crate::parser::mdx_flow::{FlowOutcome, may_start_flow, mdx_flow};
 use crate::parser::table;
 use crate::parser::tree::Block;
 
@@ -313,7 +313,7 @@ pub(super) struct MdxFlow;
 
 impl BlockRule for MdxFlow {
     fn parse(cx: &Cx<'_, '_>, blocks: &mut Vec<Block>) -> Option<Step> {
-        if !(cx.line.flavor.has_jsx() && matches!(cx.rest.as_bytes().first(), Some(b'<' | b'{'))) {
+        if !may_start_flow(cx.line) {
             return None;
         }
         let FlowOutcome::Flow(next) = mdx_flow(cx.lines, cx.index, blocks) else {
