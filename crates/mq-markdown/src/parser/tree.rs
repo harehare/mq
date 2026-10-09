@@ -214,6 +214,8 @@ pub(super) struct Item {
     pub(super) checked: Option<bool>,
     pub(super) children: Vec<Block>,
     pub(super) position: Position,
+    /// Where the last line of the item ends, before the blank lines that `position` runs over.
+    pub(super) content_end: Point,
 }
 
 pub(super) enum TableItem {

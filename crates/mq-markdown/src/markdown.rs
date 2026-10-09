@@ -567,6 +567,9 @@ mod tests {
     #[case::star_rule_under_text_needs_no_blank_line("Foo\n***\n", 2, "Foo\n***\n")]
     // items whose marker sits alone on its own line must stay tight, not go loose
     #[case::list_tight_despite_marker_on_own_line("-\n  foo\n-\n  bar", 2, "- foo\n- bar\n")]
+    // an empty task item must not take the paragraph after it
+    #[case::empty_task_item_then_paragraph("- [ ] \n\npara", 2, "- [ ] \n\npara\n")]
+    #[case::empty_checked_ordered_task_item_then_paragraph("1. [x] \n\npara", 2, "1. [x] \n\npara\n")]
     // an indented code block right after a list must not read back as list continuation
     #[case::code_after_list_uses_fence(" -    one\n\n     two", 2, "- one\n\n```\n two\n```\n")]
     // a block quote nested in a list item needs its continuation line's own indent
