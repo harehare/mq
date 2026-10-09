@@ -2040,9 +2040,7 @@ impl Cli {
 
     /// How Markdown and MDX input is read.
     fn parse_options(&self) -> mq_markdown::ParseOptions {
-        mq_markdown::ParseOptions {
-            frontmatter: !self.input.program.no_frontmatter,
-        }
+        mq_markdown::ParseOptions::default().with_frontmatter(!self.input.program.no_frontmatter)
     }
 
     fn validate_csv_options(&self) -> miette::Result<()> {

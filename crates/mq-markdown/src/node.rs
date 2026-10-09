@@ -203,23 +203,17 @@ pub enum ListMarker {
     /// `)` after the number of an ordered item.
     #[cfg_attr(feature = "json", serde(rename = ")"))]
     Paren,
-    /// What the rest of an item that follows the items nested in it is rendered with. It has no marker
-    /// of its own, and the parser never produces it.
-    #[doc(hidden)]
-    #[cfg_attr(feature = "json", serde(rename = "\0"))]
-    Continuation,
 }
 
 impl ListMarker {
-    /// The character the marker is written with, or `None` for [`ListMarker::Continuation`].
-    pub fn as_char(self) -> Option<char> {
+    /// The character the marker is written with.
+    pub fn as_char(self) -> char {
         match self {
-            Self::Dash => Some('-'),
-            Self::Plus => Some('+'),
-            Self::Star => Some('*'),
-            Self::Period => Some('.'),
-            Self::Paren => Some(')'),
-            Self::Continuation => None,
+            Self::Dash => '-',
+            Self::Plus => '+',
+            Self::Star => '*',
+            Self::Period => '.',
+            Self::Paren => ')',
         }
     }
 
@@ -241,7 +235,7 @@ impl ListMarker {
             Self::Dash => Some(ListStyle::Dash),
             Self::Plus => Some(ListStyle::Plus),
             Self::Star => Some(ListStyle::Star),
-            Self::Period | Self::Paren | Self::Continuation => None,
+            Self::Period | Self::Paren => None,
         }
     }
 }

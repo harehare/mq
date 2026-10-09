@@ -6,6 +6,7 @@ use std::fmt;
 
 /// What a JSX tag has where something else must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MdxFound {
     Char(char),
     EndOfFile,
@@ -22,6 +23,7 @@ impl fmt::Display for MdxFound {
 
 /// The part of a JSX tag where an unexpected character is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MdxPlace {
     BeforeName,
     AfterName,

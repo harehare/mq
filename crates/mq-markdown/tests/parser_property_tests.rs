@@ -643,7 +643,7 @@ proptest! {
         lines in prop::collection::vec(prop::sample::select(LAZY_LINES), 1..6)
     ) {
         lazy_line_agrees(&lines, |input| {
-            Markdown::from_markdown_str_with(input, ParseOptions { frontmatter: false }).ok().map(|md| md.nodes)
+            Markdown::from_markdown_str_with(input, ParseOptions::default().with_frontmatter(false)).ok().map(|md| md.nodes)
         })?;
     }
 
@@ -658,7 +658,7 @@ proptest! {
         )
     ) {
         lazy_line_agrees(&lines, |input| {
-            Markdown::from_mdx_str_with(input, ParseOptions { frontmatter: false }).ok().map(|md| md.nodes)
+            Markdown::from_mdx_str_with(input, ParseOptions::default().with_frontmatter(false)).ok().map(|md| md.nodes)
         })?;
     }
 }

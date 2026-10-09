@@ -4,7 +4,7 @@
 //! are not empty or default, and `@line:column-line:column`.
 
 use mq_markdown::{
-    HorizontalRuleMarker, ListMarker, Markdown, MdxAttributeContent, MdxAttributeValue, Node, Position, TableAlignKind,
+    HorizontalRuleMarker, Markdown, MdxAttributeContent, MdxAttributeValue, Node, Position, TableAlignKind,
 };
 use rstest::rstest;
 
@@ -51,10 +51,7 @@ fn node_line(node: &Node) -> (String, &[Node]) {
         ),
         Node::Blockquote(quote) => (format!("blockquote{}", position(&quote.position)), &quote.values),
         Node::List(list) => {
-            let marker = list.marker.map(|marker| match marker {
-                ListMarker::Continuation => "continuation".to_string(),
-                marker => marker.as_char().unwrap_or_default().to_string(),
-            });
+            let marker = list.marker.map(|marker| marker.as_char().to_string());
             (
                 format!(
                     "list level={} index={}{}{}{}{}{}{}",
