@@ -4,7 +4,7 @@
 //! letters do not change the structure, every position is on a character boundary, and the HTML is
 //! well-formed with safe URLs.
 
-use mq_markdown::{Markdown, Node, to_html};
+use mq_markdown::{Markdown, Node, ParseOptions, to_html};
 use proptest::prelude::*;
 
 fn parse(input: &str) -> Vec<Node> {
@@ -561,5 +561,104 @@ proptest! {
         }
         let positions = order.iter().map(|id| html.find(&format!("<li id=\"user-content-fn-n{id}\">")).unwrap()).collect::<Vec<_>>();
         prop_assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "{html}");
+    }
+}
+
+/// Lines that start, continue and end the blocks that decide whether a paragraph is open. Footnote
+/// definitions are left out: a quote hoists them, so their text is not found in the same place.
+/// Definitions are left out too: a quote does not know that a paragraph is only definitions, so it reads a line of `=`
+/// under one as a setext underline, where outside a quote it is text. Indented code and an
+/// empty item are left out for the same reason as blank lines after an item.
+const LAZY_LINES: &[&str] = &[
+    "a", "b c", "", "# h", "***", "---", "===", "> q", "- i", "1. i", "2. i", "  more", "```", "~~~", "$$", "<div>",
+    "</div>", "<!-- c", "-->", "<?x", "?>", "<p>", "<span>",
+];
+
+/// The lines of MDX that start, continue and end flow content. A fence is left out of the lines with
+/// them: it is text inside an expression that spans lines, which a quote cannot tell line by line.
+const LAZY_MDX_LINES: &[&str] = &[
+    "<A>",
+    "</A>",
+    "<A />",
+    "<A",
+    "b>",
+    "<A b={",
+    "}>",
+    "{x}",
+    "{",
+    "{x} <B />",
+    "<A> t",
+    "t {x}",
+    "<a b='",
+];
+
+/// Whether the text `lazy` has been joined to the paragraph before it.
+fn lazy_is_joined(nodes: Vec<Node>) -> bool {
+    walk(nodes)
+        .iter()
+        .any(|node| matches!(node, Node::Text(text) if text.value.contains("\nlazy")))
+}
+
+fn quoted(lines: &[&str]) -> String {
+    lines
+        .iter()
+        .map(|line| format!(">{}{line}", if line.is_empty() { "" } else { " " }))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Block parsing tracks which paragraph is open in a quote on its own, to tell lazy continuation. It has
+/// to decide as parsing the lines without the quote does.
+fn lazy_line_agrees(lines: &[&str], parse: impl Fn(&str) -> Option<Vec<Node>>) -> Result<(), TestCaseError> {
+    if lines.last().is_none_or(|line| line.is_empty()) {
+        return Ok(());
+    }
+    // A quote does not track the indentation of the items that are open, so it reads a line that an
+    // item holds after a blank line as code, or as text where the item has a setext underline.
+    let first_item = lines
+        .iter()
+        .position(|line| line.starts_with("- ") || line.starts_with(char::is_numeric));
+    if first_item.is_some_and(|item| lines[item..].contains(&"")) {
+        return Ok(());
+    }
+    let plain = format!("{}\nlazy", lines.join("\n"));
+    let in_quote = format!("{}\nlazy", quoted(lines));
+    // MDX does not allow a lazy line inside flow content, which is an error only in a quote.
+    let (Some(in_quote_nodes), Some(plain_nodes)) = (parse(&in_quote), parse(&plain)) else {
+        return Ok(());
+    };
+    prop_assert_eq!(
+        lazy_is_joined(in_quote_nodes),
+        lazy_is_joined(plain_nodes),
+        "{:?} against {:?}",
+        in_quote,
+        plain
+    );
+    Ok(())
+}
+
+proptest! {
+    #[test]
+    fn lazy_continuation_in_a_quote_agrees_with_a_paragraph_outside(
+        lines in prop::collection::vec(prop::sample::select(LAZY_LINES), 1..6)
+    ) {
+        lazy_line_agrees(&lines, |input| {
+            Markdown::from_markdown_str_with(input, ParseOptions { frontmatter: false }).ok().map(|md| md.nodes)
+        })?;
+    }
+
+    #[test]
+    fn lazy_continuation_in_a_quote_agrees_with_a_paragraph_outside_in_mdx(
+        lines in prop::collection::vec(
+            prop_oneof![
+                prop::sample::select(LAZY_LINES).prop_filter("a fence", |line| !matches!(*line, "```" | "~~~" | "$$")),
+                prop::sample::select(LAZY_MDX_LINES)
+            ],
+            1..6
+        )
+    ) {
+        lazy_line_agrees(&lines, |input| {
+            Markdown::from_mdx_str_with(input, ParseOptions { frontmatter: false }).ok().map(|md| md.nodes)
+        })?;
     }
 }

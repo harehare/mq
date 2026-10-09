@@ -167,25 +167,24 @@ pub(super) fn blocks_lazy_continuation(lines: &[Line<'_>], index: usize) -> bool
     )
 }
 
-pub(super) fn probe_mdx_flow(lines: &[Line<'_>], index: usize) -> Option<FlowOutcome> {
-    let line = &lines[index];
-    (line.flavor.has_jsx()
-        && !line.lazy
+/// Whether `line` can start flow content: it is MDX and begins with a tag or an expression. The rule
+/// that parses flow content and the checks of what a paragraph can continue all start from this.
+pub(super) fn may_start_flow(line: &Line<'_>) -> bool {
+    line.flavor.has_jsx()
         && matches!(
             line.text.trim_start_matches([' ', '\t']).as_bytes().first(),
             Some(b'<' | b'{')
-        ))
-    .then(|| mdx_flow(lines, index, &mut Vec::new()))
+        )
+}
+
+pub(super) fn probe_mdx_flow(lines: &[Line<'_>], index: usize) -> Option<FlowOutcome> {
+    let line = &lines[index];
+    (may_start_flow(line) && !line.lazy).then(|| mdx_flow(lines, index, &mut Vec::new()))
 }
 
 /// Whether a single MDX line looks like flow content, for tracking what a paragraph can continue.
 pub(super) fn looks_like_mdx_flow(line: &Line<'_>) -> bool {
-    if !line.flavor.has_jsx()
-        || !matches!(
-            line.text.trim_start_matches([' ', '\t']).as_bytes().first(),
-            Some(b'<' | b'{')
-        )
-    {
+    if !may_start_flow(line) {
         return false;
     }
     // The line ending counts, unless the document ends here.
