@@ -4,10 +4,30 @@
 //! that item come after them in the source, like a paragraph that follows a nested list. Rendering
 //! the nodes as they are would write those children before the nested items.
 
-use crate::node::{List, ListMarker, Node, Position};
+use crate::node::{List, Node, Position};
+
+/// Nodes in source order.
+pub(super) struct Reordered {
+    pub(super) nodes: Vec<Node>,
+    /// For each node, whether it holds the rest of an item that follows the items nested in it. It is
+    /// rendered as its content, indented to the content of the item, without a marker.
+    pub(super) continuation: Vec<bool>,
+}
+
+impl Reordered {
+    fn push(&mut self, node: Node) {
+        self.nodes.push(node);
+        self.continuation.push(false);
+    }
+
+    fn push_continuation(&mut self, node: Node) {
+        self.nodes.push(node);
+        self.continuation.push(true);
+    }
+}
 
 /// Returns the nodes in source order, or `None` when they already are.
-pub(super) fn reorder(nodes: &[Node]) -> Option<Vec<Node>> {
+pub(super) fn reorder(nodes: &[Node]) -> Option<Reordered> {
     // Some child of an item starts after the item nested right after it.
     let needed = nodes.windows(2).any(|pair| match (&pair[0], &pair[1]) {
         (Node::List(item), Node::List(next)) if next.level > item.level => {
@@ -22,7 +42,10 @@ pub(super) fn reorder(nodes: &[Node]) -> Option<Vec<Node>> {
     if !needed {
         return None;
     }
-    let mut out = Vec::with_capacity(nodes.len() + 4);
+    let mut out = Reordered {
+        nodes: Vec::with_capacity(nodes.len() + 4),
+        continuation: Vec::with_capacity(nodes.len() + 4),
+    };
     reorder_into(nodes, &mut out);
     Some(out)
 }
@@ -31,7 +54,7 @@ fn start_line(node: &Node) -> Option<usize> {
     node.position().map(|position| position.start.line)
 }
 
-fn reorder_into(nodes: &[Node], out: &mut Vec<Node>) {
+fn reorder_into(nodes: &[Node], out: &mut Reordered) {
     let mut index = 0;
     while index < nodes.len() {
         let node = &nodes[index];
@@ -91,12 +114,12 @@ fn reorder_into(nodes: &[Node], out: &mut Vec<Node>) {
                 child += 1;
             }
             if child > from {
-                out.push(continuation(item, &item.values[from..child]));
+                out.push_continuation(continuation(item, &item.values[from..child]));
             }
             reorder_into(segment, out);
         }
         if child < item.values.len() {
-            out.push(continuation(item, &item.values[child..]));
+            out.push_continuation(continuation(item, &item.values[child..]));
         }
         index += 1 + nested;
     }
@@ -106,8 +129,6 @@ fn continuation(item: &List, values: &[Node]) -> Node {
     Node::List(List {
         values: values.to_vec(),
         position: span(values),
-        // Rendered as its content, indented to the content of the item, without a marker.
-        marker: Some(ListMarker::Continuation),
         ..item.clone()
     })
 }

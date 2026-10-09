@@ -11,7 +11,7 @@ use rstest::rstest;
 #[case::digit('1', None)]
 fn list_marker_from_char(#[case] char: char, #[case] expected: Option<ListMarker>) {
     assert_eq!(ListMarker::from_char(char), expected);
-    assert_eq!(expected.and_then(ListMarker::as_char), expected.map(|_| char));
+    assert_eq!(expected.map(ListMarker::as_char), expected.map(|_| char));
 }
 
 #[rstest]
@@ -20,7 +20,6 @@ fn list_marker_from_char(#[case] char: char, #[case] expected: Option<ListMarker
 #[case::star(ListMarker::Star, Some(ListStyle::Star))]
 #[case::period(ListMarker::Period, None)]
 #[case::paren(ListMarker::Paren, None)]
-#[case::continuation(ListMarker::Continuation, None)]
 fn list_marker_style(#[case] marker: ListMarker, #[case] expected: Option<ListStyle>) {
     assert_eq!(marker.style(), expected);
 }

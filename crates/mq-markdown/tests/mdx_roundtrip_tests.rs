@@ -134,7 +134,7 @@ fn mdx_without_a_closing_line_has_no_frontmatter() {
 fn frontmatter_can_be_left_to_the_text(#[case] mdx: bool) {
     use mq_markdown::ParseOptions;
 
-    let options = ParseOptions { frontmatter: false };
+    let options = ParseOptions::default().with_frontmatter(false);
     let input = "---\ntitle: x\n---\n\n+++\na\n+++\n";
     let markdown = if mdx {
         Markdown::from_mdx_str_with(input, options)

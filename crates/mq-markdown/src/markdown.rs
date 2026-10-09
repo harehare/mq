@@ -5,8 +5,8 @@ use crate::html_to_markdown::ConversionOptions;
 #[cfg(feature = "html-to-markdown")]
 use crate::node::ListStyle;
 use crate::node::{
-    Code, ColorTheme, ListMarker, Node, Position, RenderOptions, TableAlign, TableCell, indent_lines,
-    list_own_prefix_width, reindent_all_lines, render_before, render_cell_values, render_values_block,
+    Code, ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, indent_lines, list_own_prefix_width,
+    reindent_all_lines, render_before, render_cell_values, render_values_block,
 };
 #[cfg(any(feature = "json", feature = "html-to-markdown"))]
 use miette::miette;
@@ -18,10 +18,20 @@ mod table_layout;
 
 /// What reading Markdown or MDX turns on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ParseOptions {
     /// Read YAML between `---` lines, or TOML between `+++` lines, at the start of the input as frontmatter.
     /// Without it these lines are a rule and text, or a heading.
     pub frontmatter: bool,
+}
+
+impl ParseOptions {
+    /// Sets whether frontmatter at the start of the input is read as such.
+    #[must_use]
+    pub fn with_frontmatter(mut self, frontmatter: bool) -> Self {
+        self.frontmatter = frontmatter;
+        self
+    }
 }
 
 impl Default for ParseOptions {
@@ -85,7 +95,12 @@ impl Markdown {
         let mut list_indent_stack: Vec<usize> = Vec::new();
 
         let reordered = list_order::reorder(&self.nodes);
-        let nodes: &[Node] = reordered.as_deref().unwrap_or(&self.nodes);
+        let nodes: &[Node] = reordered.as_ref().map_or(&self.nodes, |reordered| &reordered.nodes);
+        let is_continuation = |index: usize| {
+            reordered
+                .as_ref()
+                .is_some_and(|reordered| reordered.continuation[index])
+        };
         let mut buffer = String::with_capacity(nodes.len() * 50);
 
         for (i, node) in nodes.iter().enumerate() {
@@ -178,7 +193,7 @@ impl Markdown {
             let prev_node = i.checked_sub(1).and_then(|j| nodes.get(j));
 
             let value = if let Node::List(list) = node
-                && list.marker == Some(ListMarker::Continuation)
+                && is_continuation(i)
             {
                 // The rest of an item after its nested items, aligned with the content of the item.
                 list_indent_stack.truncate(list.level as usize + 1);
