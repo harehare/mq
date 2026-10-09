@@ -1,8 +1,0 @@
-{
-  "gfm-extensions#19": "Text that reads as an email address or a URL once written is linked, as it cannot be written so that it stays text.",
-  "markdown-rs/gfm_autolink_literal#31": "Text that reads as an email address or a URL once written is linked, as it cannot be written so that it stays text.",
-  "gfm-extensions#23": "A footnote definition with blocks, such as code, is written on one line.",
-  "markdown-rs/misc_line_ending#20": "Line endings of a lone carriage return are not kept when written.",
-  "random-markdown-1#311": "Emphasis next to a run of asterisks that closes a strong and an image is written so that the runs fuse.",
-  "markdown-rs/gfm_task_list_item#6": "Line endings of a lone carriage return are not kept when written."
-}
