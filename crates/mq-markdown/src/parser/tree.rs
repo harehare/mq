@@ -4,7 +4,6 @@
 //! it runs in [`super::resolve`] once all blocks are known.
 
 use super::error::MdxError;
-use super::line::visual_column;
 use super::mdx::TagKind;
 use super::scan::eol_len;
 use crate::node::{HeadingDepth, ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
@@ -24,8 +23,9 @@ pub(super) struct InlineSource {
     pub(super) lines: Vec<LineStart>,
     /// Whether this is the content of a table cell, where `\|` in code stands for `|`.
     pub(super) table: bool,
-    /// Whether `text` contains a tab, which makes columns differ from byte offsets.
-    tabs: bool,
+    /// The tabs in `text` and the document column right after each, which make columns differ from
+    /// byte offsets.
+    tabs: Vec<(usize, usize)>,
 }
 
 impl InlineSource {
@@ -44,11 +44,32 @@ impl InlineSource {
                 text.push_str(eol);
             }
         }
-        Self {
-            tabs: text.contains('\t'),
+        let mut source = Self {
+            tabs: Vec::new(),
             text,
             lines: starts,
             table: false,
+        };
+        source.index_tabs();
+        source
+    }
+
+    /// Finds the tabs of every line and the column after them.
+    fn index_tabs(&mut self) {
+        self.tabs.clear();
+        if !self.text.contains('\t') {
+            return;
+        }
+        for (index, line) in self.lines.iter().enumerate() {
+            let end = self.lines.get(index + 1).map_or(self.text.len(), |next| next.offset);
+            // The offset and the zero-based column right after the last tab or line start.
+            let (mut anchor, mut anchor_column) = (line.offset, line.point.column - 1);
+            for (at, _) in self.text[line.offset..end].match_indices('\t') {
+                let at = line.offset + at;
+                let after = ((anchor_column + (at - anchor)) / 4 + 1) * 4;
+                self.tabs.push((at, after));
+                (anchor, anchor_column) = (at + 1, after);
+            }
         }
     }
 
@@ -81,7 +102,6 @@ impl InlineSource {
     fn drain_to(&mut self, end: usize) {
         let new_point = self.point(end);
         self.text.replace_range(..end, "");
-        self.tabs = self.text.contains('\t');
 
         let index = self.line_index(end);
         let first = LineStart {
@@ -96,6 +116,7 @@ impl InlineSource {
             point: line.point.clone(),
         });
         self.lines = std::iter::once(first).chain(rest).collect();
+        self.index_tabs();
     }
 
     /// The index of the line that `offset` is on.
@@ -121,11 +142,10 @@ impl InlineSource {
     /// The position of the byte at `offset` in `text`.
     pub(super) fn point(&self, offset: usize) -> Point {
         let LineStart { offset: start, point } = &self.lines[self.line_index(offset)];
-        let passed = &self.text[*start..offset];
-        let column = if self.tabs && passed.contains('\t') {
-            visual_column(passed.chars(), point.column - 1) + 1
-        } else {
-            point.column + passed.len()
+        let passed = self.tabs.partition_point(|&(at, _)| at < offset);
+        let column = match passed.checked_sub(1).map(|index| self.tabs[index]) {
+            Some((at, after)) if at >= *start => after + (offset - at - 1) + 1,
+            _ => point.column + (offset - start),
         };
         Point {
             line: point.line,
