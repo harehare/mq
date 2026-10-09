@@ -407,6 +407,18 @@ fn eval_compiled_large_dict_field_access(bencher: divan::Bencher) {
     );
 }
 
+/// Type patterns compile to `TypeCheck`, so this isolates its per-op cost.
+#[divan::bench]
+fn eval_compiled_type_pattern_match(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"foreach(i, range(0, 1000, 1)): match (i): | :string: 1 | :array: 2 | :dict: 3 | :number: 4 | _: 5 end;"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
 /// Isolates the `yield`/`next()` suspend-resume path with no captured container state.
 #[divan::bench]
 fn eval_compiled_generator_yield_loop(bencher: divan::Bencher) {

@@ -56,7 +56,7 @@ impl TryFrom<&RuntimeValue> for Convert {
 
     fn try_from(value: &RuntimeValue) -> Result<Self, Self::Error> {
         match value {
-            RuntimeValue::Symbol(symbol) => match symbol.as_str().as_str() {
+            RuntimeValue::Symbol(symbol) => match symbol.to_string().as_str() {
                 "h1" => Ok(Convert::Markdown(ConvertKind::Heading(1))),
                 "h2" => Ok(Convert::Markdown(ConvertKind::Heading(2))),
                 "h3" => Ok(Convert::Markdown(ConvertKind::Heading(3))),
@@ -244,7 +244,7 @@ pub(super) fn to_html(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         RuntimeValue::String(s) => Ok(mq_markdown::to_html(s).into()),
-        RuntimeValue::Symbol(s) => Ok(mq_markdown::to_html(&s.as_str()).into()),
+        RuntimeValue::Symbol(s) => Ok(mq_markdown::to_html(&s.to_string()).into()),
         RuntimeValue::Markdown(node_value, _) => Ok(mq_markdown::to_html(node_value.to_string().as_str()).into()),
         _ => Err(Error::InvalidTypes("to_html".to_string(), vec![value.clone()])),
     }
@@ -269,7 +269,7 @@ pub(super) fn to_markdown_string(args: Vec<RuntimeValue>) -> Result<RuntimeValue
 /// convert to string
 pub(super) fn to_string(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
-        RuntimeValue::Symbol(s) => Ok(s.as_str().into()),
+        RuntimeValue::Symbol(s) => Ok(s.to_string().into()),
         o => Ok(o.to_string().into()),
     }
 }

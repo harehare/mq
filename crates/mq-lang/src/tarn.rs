@@ -244,7 +244,7 @@ fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node
         | RuntimeValue::Number(_)
         | RuntimeValue::String(_)
         | RuntimeValue::Bytes(_) => value.to_string().into(),
-        RuntimeValue::Symbol(i) => i.as_str().into(),
+        RuntimeValue::Symbol(i) => i.to_string().into(),
         RuntimeValue::Markdown(node, _) => {
             // `node` can be the shared VM input. Drop the unmatched fallback first so the
             // result is uniquely owned again and can move out without cloning.

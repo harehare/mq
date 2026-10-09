@@ -26,7 +26,7 @@ fn err(msg: impl std::fmt::Display) -> Error {
 /// returning the normalized (uppercased) method name.
 fn parse_method(value: &RuntimeValue) -> Result<String, Error> {
     let name = match value {
-        RuntimeValue::Symbol(name) => name.as_str().to_string(),
+        RuntimeValue::Symbol(name) => name.to_string(),
         RuntimeValue::String(name) => name.to_string(),
         other => return Err(err(format!("method must be a string or symbol, got {other}"))),
     };
@@ -45,7 +45,7 @@ fn extract_headers(headers: Option<&DictMap>) -> Result<Vec<(String, String)>, E
     headers
         .iter()
         .map(|(name, value)| match value {
-            RuntimeValue::String(value) => Ok((name.as_str(), value.to_string())),
+            RuntimeValue::String(value) => Ok((name.to_string(), value.to_string())),
             other => Err(err(format!("header {name:?} must be a string, got {other}"))),
         })
         .collect()

@@ -1689,8 +1689,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::TypeCheck(type_name) => {
                 let v = pop_value!();
-                let type_str = type_name.as_str();
-                let matches = type_check(&v, type_str.as_str());
+                let matches = type_name.resolve_with(|type_str| type_check(&v, type_str));
                 stack.push(StackValue::Value(RuntimeValue::Boolean(matches)));
             }
             OpCode::SelectorMatch(_) | OpCode::SelectorMatchWithArgs(_) => {

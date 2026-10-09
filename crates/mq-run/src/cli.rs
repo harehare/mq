@@ -2936,7 +2936,7 @@ impl Cli {
         let type_key = mq_lang::Ident::new("type");
         matches!(
             map.get(&type_key),
-            Some(mq_lang::RuntimeValue::Symbol(s)) if matches!(s.as_str().as_str(), "section" | "table")
+            Some(mq_lang::RuntimeValue::Symbol(s)) if s.resolve_with(|s| matches!(s, "section" | "table"))
         )
     }
 
@@ -2947,7 +2947,7 @@ impl Cli {
     fn expand_typed_dict(map: &DictMap) -> Option<Vec<mq_markdown::Node>> {
         let type_key = mq_lang::Ident::new("type");
         match map.get(&type_key) {
-            Some(mq_lang::RuntimeValue::Symbol(s)) => match s.as_str().as_str() {
+            Some(mq_lang::RuntimeValue::Symbol(s)) => match s.to_string().as_str() {
                 "section" => {
                     let mut nodes = Vec::new();
                     if let Some(header) = map.get(&mq_lang::Ident::new("header")) {

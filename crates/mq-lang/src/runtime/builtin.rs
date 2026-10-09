@@ -2504,12 +2504,15 @@ fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
         [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
         [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
             let mut dict = std::mem::take(dict);
-            runtime_value::dict_mut(&mut dict).shift_remove(&Ident::new(key));
+            // A key that was never interned cannot be in the dict, so skip the copy-on-write.
+            if let Some(key) = Ident::lookup(key) {
+                runtime_value::dict_mut(&mut dict).remove(&key);
+            }
             Ok(RuntimeValue::Dict(dict))
         }
         [RuntimeValue::Dict(dict), RuntimeValue::Symbol(key)] => {
             let mut dict = std::mem::take(dict);
-            runtime_value::dict_mut(&mut dict).shift_remove(key);
+            runtime_value::dict_mut(&mut dict).remove(key);
             Ok(RuntimeValue::Dict(dict))
         }
         [a, b] => Err(Error::InvalidTypes(
@@ -3812,7 +3815,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     match args.as_mut_slice() {
         // Read-only: avoid `dict_mut`/`array_mut`'s `make_mut` deep clone of a shared map.
         [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
-            Ok(map.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE))
+            Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
         }
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
@@ -3866,7 +3869,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 #[mq_macros::mq_fn(name = "has", params = Fixed(2))]
 fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map.contains_key(&Ident::new(key)).into()),
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map.contains_key(key.as_str()).into()),
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.contains_key(key).into()),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let idx = index.value();
@@ -3928,7 +3931,7 @@ fn keys_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
         [RuntimeValue::Dict(map)] => {
             let keys = map
                 .keys()
-                .map(|k| RuntimeValue::String(Shared::new(k.as_str())))
+                .map(|k| RuntimeValue::String(Shared::new(k.to_string())))
                 .collect::<Vec<RuntimeValue>>();
             Ok(RuntimeValue::Array(Shared::new(keys)))
         }
@@ -3959,7 +3962,7 @@ fn entries_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                 .iter()
                 .map(|(k, v)| {
                     RuntimeValue::Array(Shared::new(vec![
-                        RuntimeValue::String(Shared::new(k.as_str())),
+                        RuntimeValue::String(Shared::new(k.to_string())),
                         v.to_owned(),
                     ]))
                 })
@@ -4036,8 +4039,10 @@ fn negate_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 #[mq_macros::mq_fn(name = "intern", params = Fixed(1))]
 fn intern_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(Ident::new(s).as_str()))),
-        [a] => Ok(RuntimeValue::String(Shared::new(Ident::new(&a.to_string()).as_str()))),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(Ident::new(s).to_string()))),
+        [a] => Ok(RuntimeValue::String(Shared::new(
+            Ident::new(&a.to_string()).to_string(),
+        ))),
         _ => unreachable!("intern should always receive exactly one argument"),
     }
 }
@@ -5224,7 +5229,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
             other => Err(Error::Runtime(format!("http_all: `url` must be a string, got {other}"))),
         })?;
     let method = match fields.get(&Ident::from("method")) {
-        Some(RuntimeValue::Symbol(method)) => method.as_str().to_string(),
+        Some(RuntimeValue::Symbol(method)) => method.to_string(),
         Some(RuntimeValue::String(method)) => method.to_string(),
         Some(other) => {
             return Err(Error::Runtime(format!(
@@ -5250,7 +5255,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         Some(RuntimeValue::Dict(headers)) => headers
             .iter()
             .map(|(name, value)| match value {
-                RuntimeValue::String(value) => Ok((name.as_str().to_string(), value.to_string())),
+                RuntimeValue::String(value) => Ok((name.to_string(), value.to_string())),
                 other => Err(Error::Runtime(format!(
                     "http_all: header {name:?} must be a string, got {other}"
                 ))),
@@ -5665,14 +5670,8 @@ fn walk_files_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             RuntimeValue::String(pattern),
             RuntimeValue::Dict(options),
         ] => {
-            let respect_gitignore = matches!(
-                options.get(&Ident::new("respect_gitignore")),
-                Some(RuntimeValue::Boolean(true))
-            );
-            let follow_symlinks = matches!(
-                options.get(&Ident::new("follow_symlinks")),
-                Some(RuntimeValue::Boolean(true))
-            );
+            let respect_gitignore = matches!(options.get("respect_gitignore"), Some(RuntimeValue::Boolean(true)));
+            let follow_symlinks = matches!(options.get("follow_symlinks"), Some(RuntimeValue::Boolean(true)));
             walk_files_impl_inner(root.as_str(), pattern.as_str(), respect_gitignore, follow_symlinks)
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -7945,24 +7944,24 @@ mod tests {
     // Tests for Dict functions
     #[rstest]
     #[case(
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
-        DictMap::from_iter([("c".into(), RuntimeValue::Number(3.0.into()))]),
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into())), ("c".into(), RuntimeValue::Number(3.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(1.0.into())), ("b", RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("c", RuntimeValue::Number(3.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(1.0.into())), ("b", RuntimeValue::Number(2.0.into())), ("c", RuntimeValue::Number(3.0.into()))]),
     )]
     #[case(
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into()))]),
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
-        DictMap::from_iter([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(1.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(99.0.into())), ("b", RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("a", RuntimeValue::Number(99.0.into())), ("b", RuntimeValue::Number(2.0.into()))]),
     )]
     #[case(
         DictMap::default(),
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
     )]
     #[case(
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
         DictMap::default(),
-        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x", RuntimeValue::String(Shared::new("hello".into())))]),
     )]
     fn test_eval_builtin_add_dict(#[case] d1: DictMap, #[case] d2: DictMap, #[case] expected: DictMap) {
         let ident = Ident::new("add");
@@ -8001,7 +8000,7 @@ mod tests {
         assert_eq!(
             result,
             Ok(RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
-                "key".into(),
+                "key",
                 RuntimeValue::String(Shared::new("value".into()))
             )]))))
         );
@@ -8130,8 +8129,8 @@ mod tests {
     fn test_eval_builtin_get_map() {
         let ident_get = Ident::new("get");
         let mut map_data = DictMap::default();
-        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
-        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        map_data.insert("name", RuntimeValue::String(Shared::new("Jules".into())));
+        map_data.insert("age", RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
 
         let args1 = vec![map_val.clone(), RuntimeValue::String(Shared::new("name".into()))];
@@ -8218,8 +8217,8 @@ mod tests {
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = DictMap::default();
-        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
-        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        map_data.insert("name", RuntimeValue::String(Shared::new("Jules".into())));
+        map_data.insert("age", RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, args2.into(), &VmEnv::default());
@@ -8266,8 +8265,8 @@ mod tests {
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = DictMap::default();
-        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
-        map_data.insert("age".into(), RuntimeValue::Number(30.into()));
+        map_data.insert("name", RuntimeValue::String(Shared::new("Jules".into())));
+        map_data.insert("age", RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
         let result2 = eval_builtin(&RuntimeValue::None, &ident_values, args2.into(), &VmEnv::default());
@@ -10162,6 +10161,26 @@ mod tests {
 
     fn call(name: &str, args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {
         eval_builtin(&RuntimeValue::None, &Ident::new(name), args.into(), &env())
+    }
+
+    #[rstest]
+    #[case::get("get", "key_only_looked_up_by_get")]
+    #[case::has("has", "key_only_looked_up_by_has")]
+    #[case::del("del", "key_only_looked_up_by_del")]
+    fn test_dict_lookup_does_not_intern_missing_key(#[case] name: &str, #[case] key: &str) {
+        let dict = RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
+            Ident::new("present"),
+            RuntimeValue::Number(1.into()),
+        )])));
+
+        let result = call(name, vec![dict.clone(), key.into()]).unwrap();
+
+        assert!(Ident::lookup(key).is_none());
+        match name {
+            "get" => assert_eq!(result, RuntimeValue::NONE),
+            "has" => assert_eq!(result, RuntimeValue::Boolean(false)),
+            _ => assert_eq!(result, dict),
+        }
     }
 
     // =========================================================================

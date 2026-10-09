@@ -438,7 +438,7 @@ impl Display for Selector {
             Selector::Todo => write!(f, ".todo"),
             Selector::Done => write!(f, ".done"),
             Selector::Attr(attr) => write!(f, "{}", attr),
-            Selector::Property(property) => write!(f, ".\"{}\"", escape_property_key(&property.as_str())),
+            Selector::Property(property) => property.resolve_with(|s| write!(f, ".\"{}\"", escape_property_key(s))),
         }
     }
 }

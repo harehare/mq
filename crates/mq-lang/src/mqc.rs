@@ -309,8 +309,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let meta = Meta {
             vm_abi: MQC_VM_ABI,
             mq_version: env!("CARGO_PKG_VERSION").to_string(),
-            required_builtins: encoded.builtins.iter().map(Ident::as_str).collect(),
-            external_globals: encoded.external_globals.iter().map(Ident::as_str).collect(),
+            required_builtins: encoded.builtins.iter().map(Ident::to_string).collect(),
+            external_globals: encoded.external_globals.iter().map(Ident::to_string).collect(),
             metadata: metadata
                 .iter()
                 .map(|(key, value)| (key.to_string(), value.to_string()))

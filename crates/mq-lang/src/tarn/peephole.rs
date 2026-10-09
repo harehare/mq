@@ -1174,7 +1174,7 @@ mod tests {
     }
 
     fn slot_names(chunk: &Chunk) -> Vec<String> {
-        chunk.local_names.iter().map(|name| name.as_str()).collect()
+        chunk.local_names.iter().map(|name| name.to_string()).collect()
     }
 
     #[rstest::rstest]

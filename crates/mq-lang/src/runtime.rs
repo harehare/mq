@@ -3,6 +3,7 @@
 pub mod builtin;
 #[cfg(feature = "debugger")]
 pub mod debugger;
+pub mod dict;
 pub mod host;
 mod json;
 #[cfg(any(feature = "file-io", feature = "http"))]
