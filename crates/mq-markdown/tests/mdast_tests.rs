@@ -463,9 +463,9 @@ fn check(input: &str, expected: &[&str], parse: fn(&str) -> miette::Result<Markd
 #[case("  { a }\nb", &["flowexpr { a }", r#"T"b""#])]
 // should support lists after non-expressions (wooorm/markdown-rs#11)
 #[case("a\n\n* b", &[r#"T"a""#, "item 0 u - t(", r#"T"b""#, ")"])]
-// should not support lazyness (2)
+// should not support laziness (2)
 #[case("> a\n{b}", &["blockquote(", r#"T"a""#, ")", "flowexpr {b}"])]
-// should not support lazyness (3)
+// should not support laziness (3)
 #[case("> {a}\nb", &["blockquote(", "flowexpr {a}", ")", r#"T"b""#])]
 // should support mdx expressions (flow) as `MdxFlowExpression`s in mdast
 #[case("{alpha +\nbravo}", &["flowexpr {alpha +\nbravo}"])]
@@ -847,9 +847,9 @@ fn mdx(#[case] input: &str, #[case] expected: &[&str]) {
 #[case("{a")]
 // should crash if no closing brace is found (2)
 #[case("{b { c }")]
-// should not support lazyness (1)
+// should not support laziness (1)
 #[case("> {a\nb}")]
-// should not support lazyness (4)
+// should not support laziness (4)
 #[case("> {\n> a\nb}")]
 // should crash on an incorrect spread that looks like an assignment
 #[case("<a {b=c}={} d>")]

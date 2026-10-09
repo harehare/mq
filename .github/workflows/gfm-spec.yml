@@ -1,4 +1,4 @@
-name: GFM spec round-trip fidelity
+name: Markdown spec conformance
 
 on:
   schedule:
@@ -21,5 +21,7 @@ jobs:
         with:
           just-version: 1.58.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Render the spec examples
+        run: just test-spec
       - name: Run GFM spec round-trip check
         run: just test-gfm-spec
