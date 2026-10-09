@@ -704,7 +704,6 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
 /// so applying column-based spacing causes double-indentation. This variant preserves
 /// blank lines between values (via newline counting) but ignores the column position.
 pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
-    let is_table_part = |node: &Node| matches!(node, Node::TableCell(_) | Node::TableAlign(_));
     let mut result = String::new();
     let mut pre_position: Option<Position> = None;
     let mut index = 0;
@@ -712,40 +711,17 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
     let mut previous: Option<&Node> = None;
 
     while index < values.len() {
+        let first = &values[index];
         // The cells of a table are laid out together, as at the top level.
-        let (rendered, position, next, last) = if is_table_part(&values[index]) {
-            let end = values[index..]
-                .iter()
-                .position(|node| !is_table_part(node))
-                .map_or(values.len(), |offset| index + offset);
-            let run = &values[index..end];
-            let table = crate::Markdown {
-                nodes: run.to_vec(),
-                options: options.clone(),
-            };
-            let position = match (run[0].position(), run[run.len() - 1].position()) {
-                (Some(first), Some(last)) => Some(Position {
-                    start: first.start,
-                    end: last.end,
-                }),
-                _ => None,
-            };
-            (
-                table.render_with_theme(theme).trim_end_matches('\n').to_string(),
-                position,
-                end,
-                &run[run.len() - 1],
-            )
+        let (rendered, position, next) = if is_table_part(first) {
+            render_table_run(values, index, options, theme)
         } else {
-            let value = &values[index];
             (
-                render_before(value, values.get(index + 1), options, theme),
-                value.position(),
+                render_before(first, values.get(index + 1), options, theme),
+                first.position(),
                 index + 1,
-                value,
             )
         };
-        let first = &values[index];
         index = next;
 
         if let Some(pos) = position {
@@ -762,10 +738,46 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
             }
             pre_position = None;
         }
-        previous = Some(last);
+        previous = Some(&values[index - 1]);
         result.push_str(&rendered);
     }
     result
+}
+
+fn is_table_part(node: &Node) -> bool {
+    matches!(node, Node::TableCell(_) | Node::TableAlign(_))
+}
+
+/// Renders the cells and the delimiter row from `values[index]` on as one table, with its position and
+/// the index after it. Apart from the recursion, so that nesting does not pay for its locals.
+#[inline(never)]
+fn render_table_run(
+    values: &[Node],
+    index: usize,
+    options: &RenderOptions,
+    theme: &ColorTheme<'_>,
+) -> (String, Option<Position>, usize) {
+    let end = values[index..]
+        .iter()
+        .position(|node| !is_table_part(node))
+        .map_or(values.len(), |offset| index + offset);
+    let run = &values[index..end];
+    let table = crate::Markdown {
+        nodes: run.to_vec(),
+        options: options.clone(),
+    };
+    let position = match (run[0].position(), run[run.len() - 1].position()) {
+        (Some(first), Some(last)) => Some(Position {
+            start: first.start,
+            end: last.end,
+        }),
+        _ => None,
+    };
+    (
+        table.render_with_theme(theme).trim_end_matches('\n').to_string(),
+        position,
+        end,
+    )
 }
 
 /// Renders a link/image destination, auto-upgrading to `<...>` (escaping `\ < >`)
