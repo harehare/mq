@@ -1596,8 +1596,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_postfix_ops(fn_node, fn_token)
     }
 
-    /// `fn: body`, parsed as `fn(self): self | body`. `self` in the source is its own token, so the
-    /// parameter is only ever read by the leading statement.
+    /// `fn: body`, parsed as `fn(%arg): %arg | body`.
     #[inline(never)]
     fn parse_implicit_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.alloc_token(fn_token);
@@ -1609,7 +1608,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             0,
             Shared::new(Node {
                 token_id: fn_token_id,
-                expr: Expr::Ident(IdentWithToken::new(constants::identifiers::SELF)),
+                expr: Expr::Ident(IdentWithToken::new(constants::identifiers::IMPLICIT_FN_ARG)),
             }),
         );
 
@@ -1617,7 +1616,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             token_id: fn_token_id,
             expr: Expr::Fn(
                 vec![Param {
-                    ident: IdentWithToken::new(constants::identifiers::SELF),
+                    ident: IdentWithToken::new(constants::identifiers::IMPLICIT_FN_ARG),
                     default: None,
                     is_variadic: false,
                 }],

@@ -1236,8 +1236,28 @@ impl Hir {
                 }
             });
 
+            // `fn: body` is `fn(%arg): %arg | body`.
             if implicit_arg {
-                param_info.push(crate::symbol::ParamInfo::from("self"));
+                let arg_name = smol_str::SmolStr::from(mq_lang::IMPLICIT_FN_ARG);
+                param_info.push(crate::symbol::ParamInfo::from(mq_lang::IMPLICIT_FN_ARG));
+                self.add_symbol(Symbol {
+                    value: Some(arg_name.clone()),
+                    kind: SymbolKind::Parameter,
+                    source: SourceInfo::new(Some(source_id), None),
+                    scope: scope_id,
+                    doc: Vec::new(),
+                    parent: Some(symbol_id),
+                    insertion_order: 0,
+                });
+                self.add_symbol(Symbol {
+                    value: Some(arg_name),
+                    kind: SymbolKind::Ref,
+                    source: SourceInfo::new(Some(source_id), None),
+                    scope: scope_id,
+                    doc: Vec::new(),
+                    parent: Some(symbol_id),
+                    insertion_order: 0,
+                });
             }
 
             self.symbols[symbol_id].kind = SymbolKind::Function(param_info);

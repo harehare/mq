@@ -735,7 +735,15 @@ end"#;
             hir.symbols()
                 .any(|(_, s)| matches!(&s.kind, SymbolKind::Function(params) if params.len() == 1))
         );
-        assert!(hir.symbols().all(|(_, s)| s.kind != SymbolKind::Parameter));
+
+        let is_arg = |s: &Symbol| s.value.as_deref() == Some(mq_lang::IMPLICIT_FN_ARG);
+        let param = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Parameter && is_arg(s));
+        let arg_ref = hir.symbols().find(|(_, s)| s.kind == SymbolKind::Ref && is_arg(s));
+        let (param_id, _) = param.expect("hidden parameter");
+        let (ref_id, _) = arg_ref.expect("leading reference");
+        assert_eq!(hir.resolve_reference_symbol(ref_id), Some(param_id));
     }
 
     #[test]

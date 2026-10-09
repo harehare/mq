@@ -46,5 +46,7 @@ pub mod builtins {
 
 pub mod identifiers {
     pub const SELF: &str = "self";
+    /// Argument of `fn: body`. Not lexable, so it never clashes with a user name.
+    pub const IMPLICIT_FN_ARG: &str = "%arg";
     pub const PATTERN_MATCH_WILDCARD: &str = "_";
 }

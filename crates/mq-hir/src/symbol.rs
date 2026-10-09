@@ -15,14 +15,6 @@ pub struct ParamInfo {
     pub is_variadic: bool,
 }
 
-impl ParamInfo {
-    /// Whether this is the argument of `fn: body`. It is named `self`, which no written
-    /// parameter can be, and has no `Parameter` symbol.
-    pub fn is_implicit(&self) -> bool {
-        self.name == "self"
-    }
-}
-
 impl From<&str> for ParamInfo {
     fn from(name: &str) -> Self {
         ParamInfo {
