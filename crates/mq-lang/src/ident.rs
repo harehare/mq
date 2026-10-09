@@ -73,7 +73,8 @@ impl serde::Serialize for Ident {
     where
         S: serde::Serializer,
     {
-        self.resolve_with(|s| s.serialize(serializer))
+        // Own the string so the interner lock is released before running external serializer code.
+        self.to_string().serialize(serializer)
     }
 }
 
