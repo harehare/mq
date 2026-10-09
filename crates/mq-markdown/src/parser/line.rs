@@ -26,16 +26,16 @@ pub(super) struct Line<'a> {
     pub(super) item_end: bool,
     /// Whether the line continues a paragraph without its container prefix.
     pub(super) lazy: bool,
-    /// The whole line as in the document, to compute columns when it contains tabs.
-    pub(super) origin: &'a str,
-    /// Whether `origin` contains a tab.
-    pub(super) tabs: bool,
+    /// The tabs of the line, to compute columns without scanning the line again.
+    pub(super) stops: &'a [TabStop],
+    /// Byte offset of the line in the document, to compare with `stops`.
+    pub(super) base: usize,
     /// Columns left over from a tab that a container consumed only in part. They count as leading
     /// whitespace of `text`.
     pub(super) pad: usize,
     /// The dialect of the document.
     pub(super) flavor: Flavor,
-    /// For `*`, `-` and `_`: one past the offset in `origin` of the last byte that is neither that
+    /// For `*`, `-` and `_`: one past the offset in the line of the last byte that is neither that
     /// character, nor a space or tab, or 0 if there is none. A thematic break is a run of one of them
     /// and whitespace to the end of the line, so this tells at once, from any offset, that it is not.
     pub(super) others: [usize; 3],
@@ -53,10 +53,16 @@ impl<'a> Line<'a> {
 
     /// The zero-based visual column where `text` starts in the document.
     fn start_column(&self) -> usize {
-        if self.tabs {
-            visual_column(self.origin[..self.column].chars(), 0)
-        } else {
-            self.column
+        self.visual_column(self.column)
+    }
+
+    /// The zero-based visual column of the byte at `offset` in the line.
+    fn visual_column(&self, offset: usize) -> usize {
+        let at = self.base + offset;
+        let passed = self.stops.partition_point(|stop| stop.at < at);
+        match passed.checked_sub(1).map(|index| self.stops[index]) {
+            Some(stop) => stop.after + (at - stop.at - 1),
+            None => offset,
         }
     }
 
@@ -92,11 +98,7 @@ impl<'a> Line<'a> {
     /// to the next multiple of four, like `markdown-rs` counts them.
     pub(super) fn point(&self, byte: usize) -> Point {
         let offset = self.column + byte;
-        let mut column = if self.tabs {
-            visual_column(self.origin[..offset].chars(), 0) + 1
-        } else {
-            offset + 1
-        };
+        let mut column = self.visual_column(offset) + 1;
         // Whitespace at the start of a line inside a tab starts before the end of that tab, content
         // starts where that tab ends.
         if byte == 0 {
@@ -175,16 +177,31 @@ impl<'a> Line<'a> {
     }
 }
 
-/// The zero-based column reached after `chars`, starting at column `start`, where tabs go to the next
-/// multiple of four and other characters advance by their length in bytes.
-pub(super) fn visual_column(chars: impl Iterator<Item = char>, start: usize) -> usize {
-    chars.fold(start, |column, char| {
-        if char == '\t' {
-            (column / 4 + 1) * 4
-        } else {
-            column + char.len_utf8()
+/// A tab in the document and the zero-based column right after it.
+#[derive(Clone, Copy)]
+pub(super) struct TabStop {
+    at: usize,
+    after: usize,
+}
+
+/// Every tab in `src` in order.
+pub(super) fn tab_stops(src: &str) -> Vec<TabStop> {
+    let mut stops = Vec::new();
+    // The byte offset and the column right after the last tab or line start.
+    let (mut anchor, mut anchor_column) = (0, 0);
+    for (index, byte) in src.bytes().enumerate() {
+        match byte {
+            b'\n' | b'\r' => (anchor, anchor_column) = (index + 1, 0),
+            b'\t' => {
+                let column = anchor_column + (index - anchor);
+                let after = (column / 4 + 1) * 4;
+                stops.push(TabStop { at: index, after });
+                (anchor, anchor_column) = (index + 1, after);
+            }
+            _ => {}
         }
-    })
+    }
+    stops
 }
 
 /// The `Line::others` of `text`.
@@ -203,10 +220,19 @@ fn last_others(text: &str) -> [usize; 3] {
 }
 
 /// Splits `src` into lines on `\n`, `\r\n` and `\r`. A trailing terminator does not add a line.
-pub(super) fn split_lines(src: &str, flavor: Flavor) -> Vec<Line<'_>> {
+pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]) -> Vec<Line<'a>> {
     let bytes = src.as_bytes();
     let mut lines = Vec::new();
     let (mut start, mut index) = (0, 0);
+    let mut next_stop = 0;
+    // The tabs between `start` and `end`.
+    let mut take_stops = |end: usize| {
+        let first = next_stop;
+        while stops.get(next_stop).is_some_and(|stop| stop.at < end) {
+            next_stop += 1;
+        }
+        &stops[first..next_stop]
+    };
 
     while index < bytes.len() {
         let end = index;
@@ -226,8 +252,8 @@ pub(super) fn split_lines(src: &str, flavor: Flavor) -> Vec<Line<'_>> {
             eof: index == bytes.len(),
             item_end: false,
             lazy: false,
-            origin: &src[start..end],
-            tabs: src[start..end].contains('\t'),
+            stops: take_stops(end),
+            base: start,
             pad: 0,
             flavor,
             others: last_others(&src[start..end]),
@@ -244,8 +270,8 @@ pub(super) fn split_lines(src: &str, flavor: Flavor) -> Vec<Line<'_>> {
             eof: true,
             item_end: false,
             lazy: false,
-            origin: &src[start..],
-            tabs: src[start..].contains('\t'),
+            stops: take_stops(src.len()),
+            base: start,
             pad: 0,
             flavor,
             others: last_others(&src[start..]),
