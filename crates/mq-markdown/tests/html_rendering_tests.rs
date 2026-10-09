@@ -454,3 +454,14 @@ fn to_html_of_a_document_equals_to_html_of_its_source(#[case] input: &str) {
     let document: Markdown = input.parse().unwrap();
     assert_eq!(document.to_html(), to_html(input));
 }
+
+#[rstest]
+#[case::children_are_markdown("<Card title=\"a\">\ntext *em*\n</Card>\n", &["<Card title=\"a\">", "<p>text <em>em</em></p>", "</Card>"])]
+#[case::nested_elements("<A>\n<B>\n*x*\n</B>\n</A>\n", &["<A>", "<B>", "<p><em>x</em></p>", "</B>", "</A>"])]
+#[case::in_a_list_item("- <A>\n  *x*\n  </A>\n", &["<A>", "<p><em>x</em></p>", "</A>"])]
+fn mdx_jsx_flow_children_are_rendered_as_markdown(#[case] input: &str, #[case] expected: &[&str]) {
+    let html = Markdown::from_mdx_str(input).unwrap().to_html();
+    for part in expected {
+        assert!(html.lines().any(|line| line == *part), "{part:?} in {html:?}");
+    }
+}

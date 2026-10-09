@@ -1,6 +1,24 @@
 //! Rendering nodes back to Markdown.
 
 use super::*;
+use std::cell::Cell;
+
+thread_local! {
+    /// Set while the output is read again as Markdown to make HTML of it, not as MDX.
+    static HTML_TARGET: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Runs `render` with the JSX elements written so that their children are Markdown in HTML.
+pub(crate) fn for_html<R>(render: impl FnOnce() -> R) -> R {
+    struct Reset(bool);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            HTML_TARGET.set(self.0);
+        }
+    }
+    let _reset = Reset(HTML_TARGET.replace(true));
+    render()
+}
 
 impl Node {
     pub fn to_string_with(&self, options: &RenderOptions) -> String {
@@ -373,6 +391,10 @@ impl Node {
                     let children = render_values_block(&mdx_jsx_flow_element.children, options, theme);
                     // The lines of an expression are indented as they are written, which indenting them
                     // again would add to each time they are read.
+                    if HTML_TARGET.get() {
+                        // Blank lines end the tags as HTML blocks, so the children are Markdown.
+                        return format!("<{}{}>\n\n{}\n\n</{}>", name, attributes, children, name);
+                    }
                     let children = if mdx_jsx_flow_element.children.iter().any(has_multiline_expression) {
                         children
                     } else {

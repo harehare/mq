@@ -313,7 +313,7 @@ impl Markdown {
     }
 
     pub fn to_html(&self) -> String {
-        to_html(&self.to_string())
+        to_html(&crate::node::for_html(|| self.to_string()))
     }
 
     pub fn to_text(&self) -> String {
