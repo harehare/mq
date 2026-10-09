@@ -10,12 +10,14 @@ use super::flavor::Flavor;
 use super::html_flow::{self, Kind as HtmlKind};
 use super::inline;
 use super::line::{Indent, Line, split_lines, tab_stops};
-use super::mdx_flow::{FlowOutcome, absorbed_until, blocks_lazy_continuation, looks_like_mdx_flow, probe_mdx_flow};
+use super::mdx_flow::{FlowOutcome, absorbed_until, blocks_lazy_continuation, probe_mdx_flow};
 use super::table;
+mod leaf;
 mod rule;
 
 use super::tree::{Block, FootnoteBlock, InlineBlock, InlineKind, InlineSource, Item, ListBlock, QuoteBlock};
 use crate::node::{HeadingDepth, Html, ListMarker, Node, Point, Position, Toml, Yaml};
+use leaf::LeafState;
 use rule::{BlockRule, Cx, Rules, fallback};
 
 /// Lines indented by this many columns or more are code, not other blocks.
@@ -169,175 +171,6 @@ impl LineStart<'_> {
             LineStart::Html(kind) => *kind != HtmlKind::Complete,
             LineStart::Item(marker) => marker.interrupts_paragraph(),
             _ => true,
-        }
-    }
-}
-
-/// Tracks just enough of the block state of already collected lines to tell whether a paragraph
-/// is open, which decides whether a following line can be a lazy continuation.
-struct LeafState<'a> {
-    fence: Option<Fence<'a>>,
-    /// An HTML block that has not ended yet.
-    html: Option<HtmlKind>,
-    /// A table that has not ended yet. Its rows cannot be continued lazily.
-    table: bool,
-    /// The number of cells of the last line when it was paragraph text with a pipe, which a delimiter
-    /// row with as many cells can turn into a header.
-    header: Option<usize>,
-    paragraph: bool,
-    /// Number of container markers on the line that opened the paragraph.
-    paragraph_containers: usize,
-    /// Restrictions on the next fed line, the first line of a container that interrupted a paragraph.
-    restricted: Interrupt,
-    /// How many more containers a line can open before the depth limit, which no longer open any.
-    budget: usize,
-}
-
-impl<'a> LeafState<'a> {
-    /// `depth` is the depth of the container that collects the lines.
-    fn new(restricted: Interrupt, depth: usize) -> Self {
-        Self {
-            fence: None,
-            html: None,
-            table: false,
-            header: None,
-            paragraph: false,
-            paragraph_containers: 0,
-            restricted,
-            budget: MAX_DEPTH.saturating_sub(depth + 1),
-        }
-    }
-
-    /// Whether `line` without its container prefix continues the paragraph of the collected lines.
-    fn continues_with(&self, line: &Line<'_>) -> bool {
-        self.paragraph && is_lazy_continuation(line)
-    }
-
-    fn feed(&mut self, line: &Line<'a>) {
-        let mut line = *line;
-        let restricted = std::mem::take(&mut self.restricted);
-        let mut containers = 0;
-        // Whether a paragraph was open when the line started, for markers deeper on the same line.
-        let open = self.paragraph;
-        loop {
-            let line_indent = line.indent();
-            let Indent { columns, bytes: indent } = line_indent;
-            let rest = &line.text[indent..];
-
-            if let Some(fence) = &self.fence {
-                if columns < line.code_indent() && fence.is_closed_by(rest) {
-                    self.fence = None;
-                }
-                return;
-            }
-
-            if let Some(kind) = self.html {
-                let ends = match kind {
-                    HtmlKind::Basic | HtmlKind::Complete => line.is_blank(),
-                    _ => html_flow::ends_in(kind, line.text),
-                };
-                if ends {
-                    self.html = None;
-                }
-                self.paragraph = false;
-                return;
-            }
-            if line.is_blank() {
-                self.paragraph = false;
-                self.table = false;
-                self.header = None;
-                return;
-            }
-            let header = std::mem::take(&mut self.header);
-            if self.table {
-                if interrupts_paragraph(&line) {
-                    self.table = false;
-                } else {
-                    self.paragraph = false;
-                    return;
-                }
-            } else if self.paragraph
-                && !line.lazy
-                && header.is_some()
-                && table::delimiter_cells(&line) == header
-                && !interrupts_paragraph(&line)
-            {
-                self.table = true;
-                self.paragraph = false;
-                return;
-            }
-            if columns >= line.code_indent() {
-                // Continues an open paragraph of this container, otherwise it is indented code (or
-                // text when the container interrupted a paragraph).
-                if !(self.paragraph && containers <= self.paragraph_containers) {
-                    self.paragraph = restricted.code;
-                    self.paragraph_containers = containers;
-                }
-                return;
-            }
-            let start = LineStart::of(&line, line_indent);
-            if let Some(LineStart::Fence(fence)) = start {
-                self.fence = Some(fence);
-                self.paragraph = false;
-                return;
-            }
-            if self.paragraph && containers == self.paragraph_containers && setext_depth(&line).is_some() {
-                self.paragraph = false;
-                return;
-            }
-            match start {
-                Some(LineStart::Atx(_) | LineStart::ThematicBreak) => {
-                    self.paragraph = false;
-                    return;
-                }
-                Some(LineStart::Html(kind)) if kind != HtmlKind::Complete || !self.paragraph => {
-                    let closed = match kind {
-                        HtmlKind::Basic | HtmlKind::Complete => false,
-                        _ => html_flow::ends_in(kind, &rest[html_flow::first_line_offset(kind)..]),
-                    };
-                    self.html = (!closed).then_some(kind);
-                    self.paragraph = false;
-                    return;
-                }
-                Some(LineStart::Blockquote) if containers < self.budget => {
-                    line = after_blockquote_marker(line, line_indent);
-                    containers += 1;
-                    continue;
-                }
-                Some(LineStart::Footnote(marker)) if containers < self.budget => {
-                    line = line.skip(marker.content);
-                    containers += 1;
-                    self.paragraph = false;
-                    continue;
-                }
-                // A marker in or inside the container of the open paragraph has to be able to interrupt it.
-                Some(LineStart::Item(marker))
-                    if containers < self.budget
-                        && (!(restricted.list || (open && containers >= self.paragraph_containers))
-                            || marker.interrupts_paragraph()) =>
-                {
-                    line = marker.content(line);
-                    containers += 1;
-                    // The rest of the line starts a new item.
-                    self.paragraph = false;
-                    continue;
-                }
-                _ => {}
-            }
-
-            // MDX flow content is not part of a paragraph.
-            if looks_like_mdx_flow(&line) {
-                self.paragraph = false;
-                return;
-            }
-            self.header = rest.contains('|').then(|| table::row_cells(&line));
-            // A lazy line belongs to the paragraph that is already open, in its container. So does a
-            // line that has fewer containers than that paragraph, as it is lazy for the inner ones.
-            if !(self.paragraph && (line.lazy || containers < self.paragraph_containers)) {
-                self.paragraph_containers = containers;
-            }
-            self.paragraph = true;
-            return;
         }
     }
 }

@@ -471,6 +471,8 @@ fn mdx_jsx_flow_children_are_rendered_as_markdown(#[case] input: &str, #[case] e
     "> [^n]: f\n> ===\nlazy\n\n[^n]\n",
     "<p>f\n===\nlazy <a href=\"#user-content-fnref-n\""
 )]
+#[case::definition_then_underline_in_a_quote("> [r]: /u\n> ===\nlazy\n", "<p>===\nlazy</p>")]
+#[case::item_content_after_a_blank_line("> - a\n>\n>   b\n>   ===\nlazy\n", "<h1>b</h1>")]
 #[case::line_lazy_for_an_inner_quote("> > q\n> a\n> ===\nlazy\n", "<p>q\na\n===\nlazy</p>")]
 fn lazy_lines_continue_the_paragraph_of_the_innermost_container(#[case] input: &str, #[case] expected: &str) {
     let html = to_html(input);
