@@ -651,6 +651,18 @@ mod tests {
         assert_eq!(first, "[https://example.com](https://example.com)\n");
     }
 
+    #[rstest]
+    #[case::paragraphs_in_an_item("- a\n\n  b\n\n  c\n", "- a\n\n  b\n\n  c\n")]
+    // the order of a paragraph after a nested list is lost, but its content is not
+    #[case::paragraph_after_a_nested_list("- a\n\n  - n\n\n  para\n", "- a\n\n  para\n  - n\n")]
+    #[case::paragraphs_in_an_ordered_item("1. a\n\n   b\n", "1. a\n\n   b\n")]
+    #[case::paragraphs_in_a_quote_in_an_item("- > a\n  >\n  > b\n", "- > a\n  > \n  > b\n")]
+    fn test_paragraphs_stay_apart_without_positions(#[case] input: &str, #[case] expected: &str) {
+        let mut md = Markdown::from_markdown_str(input).unwrap();
+        md.nodes.iter_mut().for_each(Node::strip_positions);
+        assert_eq!(md.to_string(), expected);
+    }
+
     #[test]
     fn test_markdown_to_html() {
         let md = "# Hello".parse::<Markdown>().unwrap();

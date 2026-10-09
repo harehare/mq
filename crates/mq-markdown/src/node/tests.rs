@@ -2554,7 +2554,7 @@ fn test_attr_value_as_i64(#[case] value: AttrValue, #[case] expected: Option<i64
         position: None }),
     "> [!INFO]\n> line one\n> line two"
 )]
-// two separate position-less Text values are concatenated inline (no implicit newline)
+// two separate position-less Text values are paragraphs: the inline nodes of one never are two Texts
 #[case(
     Node::Callout(Callout { fold: None, kind: "INFO".to_string(), title: None,
         values: vec![
@@ -2562,7 +2562,7 @@ fn test_attr_value_as_i64(#[case] value: AttrValue, #[case] expected: Option<i64
             Node::Text(Text { value: "part b".to_string(), position: None }),
         ],
         position: None }),
-    "> [!INFO]\n> part apart b"
+    "> [!INFO]\n> part a\n> \n> part b"
 )]
 fn test_callout_render(#[case] node: Node, #[case] expected: &str) {
     assert_eq!(node.to_string_with(&RenderOptions::default()), expected);
