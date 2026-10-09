@@ -683,12 +683,10 @@ fn list_item(
         last.item_end = item_end;
     }
 
+    let content_end = inner.last().map_or_else(|| lines[start].end(), Line::end);
     let position = Position {
         start: lines[start].point(0),
-        end: blanks
-            .last()
-            .or(inner.last())
-            .map_or_else(|| lines[start].end(), Line::end),
+        end: blanks.last().map_or_else(|| content_end.clone(), Line::end),
     };
     let mut children = parse_blocks(&inner, depth + 1, interrupting);
     // The checkbox is the start of the text of the first paragraph.
@@ -704,6 +702,7 @@ fn list_item(
         checked,
         children,
         position,
+        content_end,
     };
 
     (item, index)

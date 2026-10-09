@@ -244,7 +244,10 @@ fn list_nodes(list: ListBlock, level: Level, doc: Document<'_>, nodes: &mut Vec<
                 start: first.start.clone(),
                 end: last.end.clone(),
             },
-            _ => item.position,
+            _ => Position {
+                start: item.position.start,
+                end: item.content_end,
+            },
         };
 
         nodes.push(Node::List(List {
