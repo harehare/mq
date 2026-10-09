@@ -686,10 +686,12 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
     let mut result = String::new();
     let mut pre_position: Option<Position> = None;
     let mut index = 0;
+    // The last node written, to tell paragraphs from the inline nodes of one when there are no positions.
+    let mut previous: Option<&Node> = None;
 
     while index < values.len() {
         // The cells of a table are laid out together, as at the top level.
-        let (rendered, position, next) = if is_table_part(&values[index]) {
+        let (rendered, position, next, last) = if is_table_part(&values[index]) {
             let end = values[index..]
                 .iter()
                 .position(|node| !is_table_part(node))
@@ -710,6 +712,7 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
                 table.render_with_theme(theme).trim_end_matches('\n').to_string(),
                 position,
                 end,
+                &run[run.len() - 1],
             )
         } else {
             let value = &values[index];
@@ -717,8 +720,10 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
                 render_before(value, values.get(index + 1), options, theme),
                 value.position(),
                 index + 1,
+                value,
             )
         };
+        let first = &values[index];
         index = next;
 
         if let Some(pos) = position {
@@ -729,8 +734,13 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
             pre_position = Some(pos);
             result.push_str(&"\n".repeat(new_line_count));
         } else {
+            // Text never follows text inside one paragraph, so without positions that is a new one.
+            if pre_position.is_none() && matches!((previous, first), (Some(Node::Text(_)), Node::Text(_))) {
+                result.push_str("\n\n");
+            }
             pre_position = None;
         }
+        previous = Some(last);
         result.push_str(&rendered);
     }
     result
