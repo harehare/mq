@@ -16,8 +16,8 @@ pub mod attr_value;
 mod expand;
 mod render;
 pub(crate) use render::{
-    indent_lines, list_own_prefix_width, reindent_all_lines, render_before, render_cell_values, render_values_block,
-    values_to_string,
+    for_html, indent_lines, list_own_prefix_width, reindent_all_lines, render_before, render_cell_values,
+    render_values_block, values_to_string,
 };
 use render::{render_link_destination, render_link_title};
 #[cfg(test)]
