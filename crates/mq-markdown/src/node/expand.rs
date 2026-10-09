@@ -202,7 +202,7 @@ impl Node {
             let content = &text[inner_start..close];
 
             if content.contains('[') || content.contains(']') {
-                // nested brackets — skip past this '[' and retry
+                // nested brackets: skip past this '[' and retry
                 search_from = open + 1;
                 continue;
             }

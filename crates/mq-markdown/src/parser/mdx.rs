@@ -1,4 +1,4 @@
-//! MDX: JSX tags and expressions, ported from the rules of `markdown-rs` without a JavaScript parser,
+//! MDX: JSX tags and expressions, as the MDX syntax extensions to CommonMark define them, without a JavaScript parser,
 //! so expressions are only checked for balanced braces, outside of strings, template literals and comments.
 
 use super::error::{Located, MdxErrorKind, MdxFound, MdxPlace};

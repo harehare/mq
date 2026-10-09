@@ -130,7 +130,7 @@ pub(in crate::parser) fn destination(src: &str, pos: usize) -> Option<(String, u
                 depth -= 1;
             }
             b' ' | b'\t' | b'\n' | b'\r' => break,
-            // markdown-rs lets a NUL through, though it is a control character.
+            // A NUL is let through, though it is a control character.
             byte if byte.is_ascii_control() && byte != 0 => break,
             _ => {}
         }

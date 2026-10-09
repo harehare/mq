@@ -625,7 +625,7 @@ fn test_is_link_includes_wikilink(#[case] node: Node, #[case] expected: bool) {
 
 #[cfg(feature = "wikilink")]
 #[rstest]
-// no wikilinks — returns original text node unchanged
+// no wikilinks: returns original text node unchanged
 #[case("plain text", vec![Node::Text(Text{value: "plain text".to_string(), position: None})])]
 // only a wikilink
 #[case("[[target]]", vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})])]
@@ -659,7 +659,7 @@ fn test_is_link_includes_wikilink(#[case] node: Node, #[case] expected: bool) {
 ])]
 // unclosed [[ treated as plain text
 #[case("[[unclosed", vec![Node::Text(Text{value: "[[unclosed".to_string(), position: None})])]
-// nested brackets invalid — treated as plain text
+// nested brackets invalid: treated as plain text
 #[case("[[in[ner]]]", vec![Node::Text(Text{value: "[[in[ner]]]".to_string(), position: None})])]
 // multibyte characters in surrounding text
 #[case("日本語 [[ターゲット]] テキスト", vec![
@@ -708,12 +708,12 @@ fn test_wikilink_with_value(#[case] node: Node, #[case] value: &str, #[case] exp
 
 #[cfg(feature = "wikilink")]
 #[rstest]
-// footnote with no wikilinks — values unchanged
+// footnote with no wikilinks: values unchanged
 #[case(
     Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None}),
     vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None})]
 )]
-// footnote with a wikilink in text — expanded to WikiLink node
+// footnote with a wikilink in text: expanded to WikiLink node
 #[case(
     Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "[[target]]".to_string(), position: None})], position: None}),
     vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})], position: None})]
@@ -2546,7 +2546,7 @@ fn test_attr_value_as_i64(#[case] value: AttrValue, #[case] expected: Option<i64
     Node::Callout(Callout { fold: None, kind: "TIP".to_string(), title: None, values: vec![], position: None }),
     "> [!TIP]"
 )]
-// multiline body: single Text with embedded '\n' — each line prefixed with "> "
+// multiline body: single Text with embedded '\n': each line prefixed with "> "
 #[case(
     Node::Callout(Callout { fold: None, kind: "INFO".to_string(), title: None,
         values: vec![Node::Text(Text { value: "line one\nline two".to_string(), position: None })],
@@ -2703,11 +2703,11 @@ fn test_callout_end_to_end() {
 ])]
 // multibyte target
 #[case("![[ノート]]", vec![Node::Embed(Embed { target: "ノート".to_string(), display: None, position: None })])]
-// no embed — plain text unchanged
+// no embed: plain text unchanged
 #[case("plain text", vec![Node::Text(Text { value: "plain text".to_string(), position: None })])]
-// unclosed embed — treated as plain text
+// unclosed embed: treated as plain text
 #[case("![[unclosed", vec![Node::Text(Text { value: "![[unclosed".to_string(), position: None })])]
-// lone ! before non-embed — treated as plain text
+// lone ! before non-embed: treated as plain text
 #[case("! not an embed", vec![Node::Text(Text { value: "! not an embed".to_string(), position: None })])]
 fn test_parse_embeds_in_text(#[case] input: &str, #[case] expected: Vec<Node>) {
     let mut result = Vec::new();
@@ -2859,7 +2859,7 @@ fn test_callout_with_wikilink(#[case] input: &str, #[case] expected_nodes: usize
 )]
 // callout after heading
 #[case("# Title\n\n> [!NOTE]\n> body", 2, "# Title\n\n> [!NOTE]\n> body\n")]
-// callout body with a multi-item list — second item must not be over-indented
+// callout body with a multi-item list: second item must not be over-indented
 #[case("> [!NOTE]\n> - item 1\n> - item 2", 1, "> [!NOTE]\n> - item 1\n> - item 2\n")]
 fn test_callout_combined_with_other_nodes(
     #[case] input: &str,
