@@ -422,3 +422,55 @@ fn html_renders_callouts(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(mq_markdown::to_html(input), expected);
     assert_eq!(Markdown::from_markdown_str(input).unwrap().to_html(), expected);
 }
+
+/// The HTML and the nodes are made from one reading of the source: what the callout node says is what
+/// the HTML shows.
+#[rstest]
+#[case::plain("> [!NOTE]\n> body\n")]
+#[case::title("> [!warning] Heads *up*\n> body\n")]
+#[case::folded("> [!tip]- Fold me\n> body\n")]
+#[case::open("> [!faq]+\n> body\n")]
+#[case::kind_with_dash("> [!my-type_1] T\n")]
+#[case::not_a_callout("> [! NOTE]\n> body\n")]
+fn html_shows_what_the_callout_node_holds(#[case] input: &str) {
+    let nodes = input.parse::<Markdown>().unwrap().nodes;
+    let html = mq_markdown::to_html(input);
+    let Some(callout) = find_callout(&nodes) else {
+        assert!(!html.contains("callout"), "{html}");
+        return;
+    };
+    assert!(
+        html.contains(&format!("data-callout=\"{}\"", callout.kind.to_lowercase())),
+        "{html}"
+    );
+    let tag = if callout.fold.is_some() {
+        "<details"
+    } else {
+        "<div class=\"callout\""
+    };
+    assert!(html.starts_with(tag), "{html}");
+    assert_eq!(html.contains(" open>"), callout.fold == Some('+'), "{html}");
+    if let Some(title) = &callout.title {
+        assert!(html.contains(&title.replace('<', "&lt;")), "{title} in {html}");
+    }
+}
+
+#[rstest]
+#[case::target("[[Page]]")]
+#[case::text("[[Page|shown]]")]
+#[case::heading("[[Page#Heading]]")]
+#[case::embed_note("![[Note]]")]
+#[case::embed_image("![[pic.png|alt|100]]")]
+fn html_shows_what_the_link_node_holds(#[case] input: &str) {
+    let nodes = input.parse::<Markdown>().unwrap().nodes;
+    let html = mq_markdown::to_html(input);
+    let target = nodes
+        .iter()
+        .find_map(|node| match node {
+            Node::WikiLink(link) => Some(link.target.clone()),
+            Node::Embed(embed) => Some(embed.target.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert!(html.contains(&target), "{target} in {html}");
+}
