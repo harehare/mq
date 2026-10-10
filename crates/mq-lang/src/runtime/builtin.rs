@@ -165,10 +165,19 @@ impl BuiltinFunction {
         BuiltinFunction { name, num_params, func }
     }
 }
-#[mq_macros::mq_fn(name = "partial", params = Range(1, u8::MAX))]
-fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    if args.is_empty() {
-        return Err(Error::InvalidNumberOfArguments(ident.to_string(), 1, 0));
+#[mq_macros::mq_fn(name = "partial", params = Range(2, u8::MAX))]
+fn partial_impl(
+    ident: &Ident,
+    runtime_value: &RuntimeValue,
+    mut args: Args,
+    _: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    // `f | partial(a, b)`: when the first argument is not a function, the piped one is applied.
+    if !matches!(args.first(), Some(RuntimeValue::Closure(_))) && matches!(runtime_value, RuntimeValue::Closure(_)) {
+        args.insert(0, runtime_value.clone());
+    }
+    if args.len() < 2 {
+        return Err(invalid_arity(ident, 2, args.len()));
     }
     let fn_value = args.remove(0);
     let provided = args;
