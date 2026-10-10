@@ -57,7 +57,7 @@ pub enum DefineValueError {
 pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
     /// VM state — see [`tarn::VmState`].
     pub(crate) vm: tarn::VmState<T, IO>,
-    pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    pub(crate) token_arena: Shared<SharedCell<Arena<Token>>>,
     pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
     /// Loaded `.mqc` programs, keyed by checksum.
     #[cfg(feature = "mqc")]
@@ -73,16 +73,16 @@ pub(crate) enum VmModulePrelude {
     Import(String, Option<String>),
 }
 
-fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+fn create_default_token_arena() -> Shared<SharedCell<Arena<Token>>> {
     let token_arena = Shared::new(SharedCell::new(Arena::new(2048)));
     token_alloc(
         &token_arena,
-        &Shared::new(Token {
+        Token {
             // Ensure at least one token for ArenaId::new(0)
             kind: TokenKind::Eof, // Dummy token
             range: Range::default(),
             module_id: ArenaId::new(0), // Dummy module_id
-        }),
+        },
     );
     token_arena
 }

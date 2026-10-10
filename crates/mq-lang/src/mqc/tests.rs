@@ -860,11 +860,11 @@ fn rewrite_chunks(bytes: &[u8], edit: impl FnOnce(&mut [Chunk])) -> Vec<u8> {
             .map(|_| {
                 crate::token_alloc(
                     &arena,
-                    &Shared::new(Token {
+                    Token {
                         range: Range::default(),
                         kind: TokenKind::Eof,
                         module_id: crate::Module::TOP_LEVEL_MODULE_ID,
-                    }),
+                    },
                 )
             })
             .collect::<Vec<_>>();

@@ -274,7 +274,7 @@ impl Handler {
 impl DebuggerHandler for Handler {
     fn on_step(&self, context: &DebugContext) -> DebuggerAction {
         let name = self.source_name(context);
-        let at = context.token.range.start;
+        let at = context.range.start;
         let mut state = self.state.lock().unwrap();
         state.steps += 1;
         let model = match state.models.get(&name) {

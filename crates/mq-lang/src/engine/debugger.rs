@@ -58,7 +58,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.vm.debugger_handler = Shared::new(SharedCell::new(handler));
     }
 
-    pub fn token_arena(&self) -> Shared<SharedCell<Arena<Shared<Token>>>> {
+    pub fn token_arena(&self) -> Shared<SharedCell<Arena<Token>>> {
         Shared::clone(&self.token_arena)
     }
 

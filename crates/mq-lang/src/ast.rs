@@ -8,7 +8,7 @@ pub mod node;
 pub mod parser;
 
 pub type Program = Vec<Shared<Node>>;
-pub type TokenId = ArenaId<Shared<Token>>;
+pub type TokenId = ArenaId<Token>;
 
 /// Serializes an AST `Program` to a JSON string.
 ///
