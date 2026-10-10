@@ -98,14 +98,14 @@ fn edit_parts(bytes: &[u8], edit: impl FnOnce(&mut [&mut [Chunk]])) -> Vec<u8> {
         let source = sections.iter().find(|section| section.tag == SOURCE).unwrap();
         let (_, spans) = decode_source(&source.payload).unwrap();
         let arena = Shared::clone(&engine().token_arena);
-        let placeholder = Shared::new(Token {
+        let placeholder = Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: crate::Module::TOP_LEVEL_MODULE_ID,
-        });
+        };
         let tokens = spans
             .iter()
-            .map(|_| crate::token_alloc(&arena, &placeholder))
+            .map(|_| crate::token_alloc(&arena, placeholder.clone()))
             .collect::<Vec<_>>();
         let code = sections.iter_mut().find(|section| section.tag == CODE).unwrap();
         let mut split = code::decode(&code.payload, &tokens, arena).unwrap();

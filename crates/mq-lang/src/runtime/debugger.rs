@@ -3,7 +3,7 @@ use itertools::Itertools;
 use super::runtime_value::RuntimeValue;
 use crate::Ident;
 use crate::ast::node as ast;
-use crate::{Shared, SharedCell, Token};
+use crate::{ModuleId, Range, Shared, SharedCell};
 
 use std::{collections::HashSet, fmt::Debug};
 
@@ -61,8 +61,10 @@ pub struct DebugContext {
     pub current_value: RuntimeValue,
     /// Current AST node being evaluated
     pub current_node: Shared<ast::Node>,
-    /// Current token being evaluated
-    pub token: Shared<Token>,
+    /// Source range of the token being evaluated
+    pub range: Range,
+    /// Module the token being evaluated belongs to
+    pub module_id: ModuleId,
     /// Call stack of AST nodes representing the current execution path
     pub call_stack: Vec<Shared<ast::Node>>,
     /// Live VM bindings for the paused frame.
@@ -83,11 +85,8 @@ impl Default for DebugContext {
                 token_id: crate::ast::TokenId::new(0),
                 expr: ast::Expr::Literal(ast::Literal::Number(0.0.into())),
             }),
-            token: Shared::new(Token {
-                kind: crate::TokenKind::Eof,
-                range: crate::Range::default(),
-                module_id: crate::ModuleId::new(0),
-            }),
+            range: Range::default(),
+            module_id: ModuleId::new(0),
             call_stack: Vec::new(),
             #[cfg(feature = "debugger")]
             vm_frame: VmDebugFrame::default(),
@@ -424,13 +423,13 @@ impl Debugger {
     }
 
     /// Returns the breakpoint that was hit at the current token location, if any.
-    pub fn get_hit_breakpoint(&self, context: &DebugContext, token: Shared<Token>) -> Option<Breakpoint> {
+    pub fn get_hit_breakpoint(&self, context: &DebugContext) -> Option<Breakpoint> {
         if !self.active {
             return None;
         }
 
-        let line = token.range.start.line as usize;
-        let column = token.range.start.column;
+        let line = context.range.start.line as usize;
+        let column = context.range.start.column;
 
         self.find_active_breakpoint(line, column, &context.source)
     }
@@ -650,7 +649,7 @@ pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
 
     /// Called when a runtime error propagates out of the top-level `eval()` call while the
     /// debugger is active, i.e. one not caught by any `try`/`catch` in the query. `message` is
-    /// the error's display text; `context.token` locates where the error is attributed.
+    /// the error's display text; `context.range` locates where the error is attributed.
     /// Like [`Self::on_log_point`] this never blocks on its own; implementors that want an
     /// "uncaught exceptions" style pause should wait for a debugger command themselves,
     /// mirroring [`Self::on_breakpoint_hit`]. The default is a no-op.
@@ -666,25 +665,21 @@ impl DebuggerHandler for DefaultDebuggerHandler {}
 mod tests {
     use rstest::rstest;
 
-    use crate::{Arena, ModuleId, Range, TokenKind, ast::TokenId};
+    use crate::{Arena, Token, TokenKind, ast::TokenId};
 
     use super::*;
 
-    fn make_token(line: usize, column: usize) -> Shared<Token> {
-        Shared::new(Token {
-            kind: TokenKind::Ident("dummy".into()),
-            range: Range {
-                start: crate::Position {
-                    line: line as u32,
-                    column,
-                },
-                end: crate::Position {
-                    line: line as u32,
-                    column: column + 1,
-                },
+    fn make_range(line: usize, column: usize) -> Range {
+        Range {
+            start: crate::Position {
+                line: line as u32,
+                column,
             },
-            module_id: ModuleId::new(0),
-        })
+            end: crate::Position {
+                line: line as u32,
+                column: column + 1,
+            },
+        }
     }
 
     fn make_node(token_id: TokenId) -> Shared<ast::Node> {
@@ -696,13 +691,18 @@ mod tests {
 
     fn make_debug_context(line: usize, column: usize) -> DebugContext {
         let mut arena = Arena::new(10);
-        let token = make_token(line, column);
-        let token_id = arena.alloc(Shared::clone(&token));
+        let range = make_range(line, column);
+        let token_id = arena.alloc(Token {
+            kind: TokenKind::Ident("dummy".into()),
+            range,
+            module_id: ModuleId::new(0),
+        });
         let node = make_node(token_id);
         DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: node,
-            token: Shared::clone(&token),
+            range,
+            module_id: ModuleId::new(0),
             call_stack: Vec::new(),
             #[cfg(feature = "debugger")]
             vm_frame: Default::default(),

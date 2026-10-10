@@ -6043,56 +6043,52 @@ pub enum Error {
 
 impl Error {
     #[cold]
-    pub fn to_runtime_error(
-        &self,
-        token_id: TokenId,
-        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
-    ) -> RuntimeError {
+    pub fn to_runtime_error(&self, token_id: TokenId, token_arena: Shared<SharedCell<Arena<Token>>>) -> RuntimeError {
         match self {
             Error::UserDefined(message) => RuntimeError::UserDefined {
                 message: message.to_owned(),
-                token: (*get_token(token_arena, token_id)).clone(),
+                token: get_token(&token_arena, token_id),
             },
             Error::InvalidBase64String(e) => {
-                RuntimeError::InvalidBase64String((*get_token(token_arena, token_id)).clone(), e.to_string())
+                RuntimeError::InvalidBase64String(get_token(&token_arena, token_id), e.to_string())
             }
             Error::NotDefined(name, candidates) => RuntimeError::NotDefined(
-                (*get_token(token_arena, token_id)).clone(),
+                get_token(&token_arena, token_id),
                 name.clone(),
                 candidates.clone().into(),
             ),
             Error::UndefinedReference(a, candidates) => RuntimeError::UndefinedReference(
-                (*get_token(token_arena, token_id)).clone(),
+                get_token(&token_arena, token_id),
                 a.clone(),
                 candidates.clone().into(),
             ),
             Error::InvalidDateTimeFormat(msg) => {
-                RuntimeError::DateTimeFormatError((*get_token(token_arena, token_id)).clone(), msg.clone())
+                RuntimeError::DateTimeFormatError(get_token(&token_arena, token_id), msg.clone())
             }
             Error::InvalidTypes(name, args) => RuntimeError::InvalidTypes {
-                token: (*get_token(token_arena, token_id)).clone(),
+                token: get_token(&token_arena, token_id),
                 name: name.clone(),
                 args: args.iter().map(|o| o.name().into()).collect::<Vec<_>>(),
             },
             Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments {
-                token: (*get_token(token_arena, token_id)).clone(),
+                token: get_token(&token_arena, token_id),
                 name: name.clone(),
                 expected: usize::from(*expected),
                 actual: usize::from(*got),
             },
             Error::InvalidRegularExpression(regex) => {
-                RuntimeError::InvalidRegularExpression((*get_token(token_arena, token_id)).clone(), regex.clone())
+                RuntimeError::InvalidRegularExpression(get_token(&token_arena, token_id), regex.clone())
             }
-            Error::Runtime(msg) => RuntimeError::Runtime((*get_token(token_arena, token_id)).clone(), msg.clone()),
-            Error::ZeroDivision => RuntimeError::ZeroDivision((*get_token(token_arena, token_id)).clone()),
+            Error::Runtime(msg) => RuntimeError::Runtime(get_token(&token_arena, token_id), msg.clone()),
+            Error::ZeroDivision => RuntimeError::ZeroDivision(get_token(&token_arena, token_id)),
             Error::AssignToImmutable(name) => {
-                RuntimeError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), name.clone())
+                RuntimeError::AssignToImmutable(get_token(&token_arena, token_id), name.clone())
             }
             Error::UndefinedVariable(name) => {
-                RuntimeError::UndefinedVariable((*get_token(token_arena, token_id)).clone(), name.clone())
+                RuntimeError::UndefinedVariable(get_token(&token_arena, token_id), name.clone())
             }
             Error::InvalidConvert(format) => {
-                RuntimeError::InvalidConvert((*get_token(token_arena, token_id)).clone(), format.clone())
+                RuntimeError::InvalidConvert(get_token(&token_arena, token_id), format.clone())
             }
             Error::Halt(code) => RuntimeError::Halt(*code),
         }

@@ -140,7 +140,7 @@ impl VmError {
             }
             VmError::Located(inner, token_id) => {
                 let token_id = *token_id;
-                let token = resolve_token(&token_arena, token_id);
+                let token = crate::get_token(&token_arena, token_id);
                 inner.to_runtime_error(token, token_id, token_arena)
             }
         }
@@ -159,13 +159,8 @@ fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena
             .unwrap_or_else(|| "<main>".to_string());
         match frame.token_id {
             Some(token_id) => {
-                let token = resolve_token(&token_arena, token_id);
-                let _ = write!(
-                    trace,
-                    "\n  at {name} ({}:{})",
-                    token.range.start.line,
-                    token.range.start.column + 1
-                );
+                let (range, _) = crate::token_location(&token_arena, token_id);
+                let _ = write!(trace, "\n  at {name} ({}:{})", range.start.line, range.start.column + 1);
             }
             None => {
                 let _ = write!(trace, "\n  at {name}");
@@ -173,23 +168,6 @@ fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena
         }
     }
     trace
-}
-
-/// Resolves `token_id` in `token_arena`, falling back to a placeholder token if out of range.
-fn resolve_token(token_arena: &crate::TokenArena, token_id: TokenId) -> crate::Token {
-    #[cfg(not(feature = "sync"))]
-    let found = token_arena.borrow().get_cloned(token_id);
-    #[cfg(feature = "sync")]
-    let found = token_arena.read().unwrap().get_cloned(token_id);
-
-    found.map_or_else(
-        || crate::Token {
-            range: crate::Range::default(),
-            kind: crate::TokenKind::Eof,
-            module_id: crate::ArenaId::new(0),
-        },
-        |token| (*token).clone(),
-    )
 }
 
 pub(super) fn locate(chunk: &Chunk, ip: usize, e: VmError) -> VmError {
@@ -226,7 +204,7 @@ fn placeholder_token_context() -> (crate::Token, TokenId, crate::TokenArena) {
         kind: crate::TokenKind::Eof,
         module_id: crate::ArenaId::new(0),
     };
-    let token_id = arena.alloc(Shared::new(token.clone()));
+    let token_id = arena.alloc(token.clone());
     let token_arena: crate::TokenArena = Shared::new(crate::SharedCell::new(arena));
     (token, token_id, token_arena)
 }
@@ -465,14 +443,14 @@ mod tests {
         for line in 1..=40 {
             origin_token_id = crate::token_alloc(
                 &origin_arena,
-                &Shared::new(crate::Token {
+                crate::Token {
                     range: crate::Range {
                         start: crate::Position { line, column: 1 },
                         end: crate::Position { line, column: 1 },
                     },
                     kind: crate::TokenKind::Eof,
                     module_id: crate::ArenaId::new(0),
-                }),
+                },
             );
         }
         let coroutine_failed = VmError::CoroutineFailed(

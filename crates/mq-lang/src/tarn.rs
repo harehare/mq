@@ -179,7 +179,7 @@ fn compile_error_to_runtime_error(
     use error::runtime::RuntimeError;
     // Fall back to the arena's dummy EOF token.
     let token_id = err.token_id().unwrap_or(TokenId::new(0));
-    let token = (*get_token(token_arena, token_id)).clone();
+    let token = get_token(&token_arena, token_id);
     match err {
         compiler::CompileError::UndefinedIdent(name, _) => RuntimeError::UndefinedReference(token, name, Box::new([])),
         compiler::CompileError::Unsupported(what, _) => RuntimeError::Runtime(token, format!("unsupported: {what}")),
@@ -197,7 +197,7 @@ pub(crate) fn vm_error_to_runtime_error(
     token_arena: TokenArena,
 ) -> error::runtime::RuntimeError {
     let token_id = err.token_id().unwrap_or(TokenId::new(0));
-    let token = (*get_token(Shared::clone(&token_arena), token_id)).clone();
+    let token = get_token(&token_arena, token_id);
     err.to_runtime_error(token, token_id, token_arena)
 }
 

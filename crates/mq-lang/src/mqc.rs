@@ -369,11 +369,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             .map(|span| {
                 token_alloc(
                     &self.token_arena,
-                    &Shared::new(Token {
+                    Token {
                         range: span.range,
                         kind: TokenKind::Eof,
                         module_id: module_ids[span.file as usize],
-                    }),
+                    },
                 )
             })
             .collect::<Vec<_>>();
@@ -417,16 +417,16 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let mut file_ids: Vec<(crate::ModuleId, u32)> = Vec::new();
         let mut spans = Vec::with_capacity(tokens.len());
         for token_id in tokens {
-            let token = crate::get_token(Shared::clone(&self.token_arena), *token_id);
-            let file = match file_ids.iter().find(|(id, _)| *id == token.module_id) {
+            let (range, module_id) = crate::token_location(&self.token_arena, *token_id);
+            let file = match file_ids.iter().find(|(id, _)| *id == module_id) {
                 Some((_, file)) => *file,
                 None => {
-                    let name = module_loader.module_name(token.module_id).into_owned();
+                    let name = module_loader.module_name(module_id).into_owned();
                     let text = match name.as_str() {
                         crate::Module::BUILTIN_MODULE => None,
                         _ => {
                             let text = module_loader
-                                .get_source_code(token.module_id, code.to_string())
+                                .get_source_code(module_id, code.to_string())
                                 .map_err(|error| {
                                     MqcError::Compile(Box::new(error::Error::from_error(
                                         code,
@@ -439,14 +439,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                     };
                     let file = files.len() as u32;
                     files.push(SourceFile { name, text });
-                    file_ids.push((token.module_id, file));
+                    file_ids.push((module_id, file));
                     file
                 }
             };
-            spans.push(Span {
-                file,
-                range: token.range,
-            });
+            spans.push(Span { file, range });
         }
         Ok((files, spans))
     }

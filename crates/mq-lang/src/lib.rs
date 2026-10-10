@@ -147,7 +147,7 @@ pub type SharedCell<T> = RefCell<T>;
 #[cfg(feature = "sync")]
 pub type SharedCell<T> = RwLock<T>;
 
-pub(crate) type TokenArena = Shared<SharedCell<Arena<Shared<Token>>>>;
+pub(crate) type TokenArena = Shared<SharedCell<Arena<Token>>>;
 
 /// Parses `code` into CST nodes, collecting errors instead of stopping at the first one.
 ///
@@ -271,34 +271,47 @@ pub fn bytes_input(bytes: &[u8]) -> Vec<RuntimeValue> {
 }
 
 #[inline(always)]
-pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId {
+pub(crate) fn token_alloc(arena: &TokenArena, token: Token) -> TokenId {
     #[cfg(not(feature = "sync"))]
     {
-        arena.borrow_mut().alloc(Shared::clone(token))
+        arena.borrow_mut().alloc(token)
     }
 
     #[cfg(feature = "sync")]
     {
-        arena.write().unwrap().alloc(Shared::clone(token))
+        arena.write().unwrap().alloc(token)
     }
 }
 
-/// Resolves `token_id`, or returns an EOF token at the start of the top-level query when the
-/// token is gone, e.g. from an `eval` arena that was dropped.
+/// Applies `f` to the token `token_id` resolves to, without cloning it. A token that is gone,
+/// e.g. from an `eval` arena that was dropped, resolves to an EOF token at the start of the
+/// top-level query.
 #[inline(always)]
-pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
+pub(crate) fn with_token<R>(arena: &TokenArena, token_id: TokenId, f: impl FnOnce(&Token) -> R) -> R {
     #[cfg(not(feature = "sync"))]
-    let found = arena.borrow().get_cloned(token_id);
+    let arena = arena.borrow();
     #[cfg(feature = "sync")]
-    let found = arena.read().unwrap().get_cloned(token_id);
+    let arena = arena.read().unwrap();
 
-    found.unwrap_or_else(|| {
-        Shared::new(Token {
+    arena.with(token_id, |token| match token {
+        Some(token) => f(token),
+        None => f(&Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: Module::TOP_LEVEL_MODULE_ID,
-        })
+        }),
     })
+}
+
+/// The range and module of the token `token_id` resolves to.
+pub(crate) fn token_location(arena: &TokenArena, token_id: TokenId) -> (Range, ModuleId) {
+    with_token(arena, token_id, |token| (token.range, token.module_id))
+}
+
+/// An owned copy of the token `token_id` resolves to. Prefer [`with_token`] unless the token
+/// has to outlive the arena borrow, as in error values.
+pub(crate) fn get_token(arena: &TokenArena, token_id: TokenId) -> Token {
+    with_token(arena, token_id, Token::clone)
 }
 
 /// The arena `arena` is layered on, or `arena` itself.
@@ -527,7 +540,7 @@ Some text.
 
     #[cfg(feature = "cst")]
     fn ast_shape(node: &AstNode, token_arena: &TokenArena) -> String {
-        let op = || get_token(Shared::clone(token_arena), node.token_id).to_string();
+        let op = || with_token(token_arena, node.token_id, |token| token.to_string());
         let fold = |operands: &[Shared<AstNode>]| {
             let mut shape = ast_shape(&operands[0], token_arena);
             for operand in &operands[1..] {
@@ -540,10 +553,9 @@ Some text.
             AstExpr::And(operands) | AstExpr::Or(operands) => fold(operands),
             AstExpr::Call(_, args)
                 if args.len() == 2
-                    && get_token(Shared::clone(token_arena), node.token_id)
-                        .kind
-                        .binary_op_precedence()
-                        .is_some() =>
+                    && with_token(token_arena, node.token_id, |token| {
+                        token.kind.binary_op_precedence().is_some()
+                    }) =>
             {
                 fold(args)
             }

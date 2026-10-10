@@ -71,11 +71,8 @@ impl DebuggerHandler for CoverageHandler {
         if let Some(module_name) = &context.source.name
             && is_trackable_module(module_name)
         {
-            self.0.record(
-                module_name,
-                &context.source.code,
-                context.token.range.start.line as usize,
-            );
+            self.0
+                .record(module_name, &context.source.code, context.range.start.line as usize);
         }
         // Keep single-stepping through every expression in the program.
         DebuggerAction::StepInto
