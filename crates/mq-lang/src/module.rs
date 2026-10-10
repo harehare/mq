@@ -18,7 +18,8 @@ use std::{borrow::Cow, cell::RefCell, path::PathBuf, sync::LazyLock};
 use crate::Token;
 
 struct BuiltinCache {
-    tokens: Vec<Shared<Token>>,
+    /// Every token of the pristine arena, starting with its dummy EOF token.
+    tokens: Shared<Vec<Token>>,
     module: Module,
 }
 
@@ -208,7 +209,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         #[cfg(feature = "sync")]
         let mut names = self.module_names.write().unwrap();
 
-        match names.as_slice().iter().position(|n| n == name) {
+        let position = names.iter().position(|n| n == name);
+        match position {
             Some(id) => id.into(),
             None => names.alloc(SmolStr::new(name)),
         }
@@ -221,12 +223,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         #[cfg(feature = "sync")]
         let names = self.module_names.read().unwrap();
 
-        names
-            .as_slice()
-            .iter()
-            .position(|n| n == name)
-            .unwrap_or(names.len())
-            .into()
+        names.iter().position(|n| n == name).unwrap_or(names.len()).into()
     }
 
     fn is_loaded(&self, key: &str) -> bool {
@@ -496,15 +493,22 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         };
 
         if pristine {
-            let cached =
-                BUILTIN_CACHE.with(|cache| cache.borrow().as_ref().map(|c| (c.tokens.clone(), c.module.clone())));
+            let cached = BUILTIN_CACHE.with(|cache| {
+                cache
+                    .borrow()
+                    .as_ref()
+                    .map(|cache| (Shared::clone(&cache.tokens), cache.module.clone()))
+            });
 
             if let Some((tokens, module)) = cached {
                 {
                     #[cfg(not(feature = "sync"))]
-                    token_arena.borrow_mut().extend_from_slice(&tokens);
+                    let mut arena = token_arena.borrow_mut();
                     #[cfg(feature = "sync")]
-                    token_arena.write().unwrap().extend_from_slice(&tokens);
+                    let mut arena = token_arena.write().unwrap();
+                    if !arena.share_prefix(Shared::clone(&tokens)) {
+                        arena.extend_from_slice(&tokens[1..]);
+                    }
                 }
                 let module_id = self.module_id_of(Module::BUILTIN_MODULE);
                 self.loaded_modules.insert(module_id);
@@ -522,7 +526,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                 let arena = token_arena.borrow();
                 #[cfg(feature = "sync")]
                 let arena = token_arena.read().unwrap();
-                arena.as_slice()[1..].iter().map(Shared::clone).collect::<Vec<_>>()
+                Shared::new(arena.to_vec())
             };
 
             BUILTIN_CACHE.with(|cache| {
@@ -647,37 +651,34 @@ impl ModuleLoader<DefaultModuleResolver> {
 
 #[cfg(test)]
 mod tests {
-    use rstest::{fixture, rstest};
-    use smallvec::smallvec;
-    use smol_str::SmolStr;
-
     use crate::{
         Range, Shared, SharedCell, Token, TokenKind,
         ast::node::{self as ast, IdentWithToken, Param},
         module::resolver::DefaultModuleResolver,
-        range::Position,
         token_alloc,
     };
+    use rstest::{fixture, rstest};
+    use smallvec::smallvec;
 
     use super::{Module, ModuleError, ModuleLoader};
 
     #[fixture]
-    fn token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
+    fn token_arena() -> Shared<SharedCell<crate::arena::Arena<Token>>> {
         Shared::new(SharedCell::new(crate::arena::Arena::new(10)))
     }
 
     /// Arena that mirrors the engine's initial state: one dummy EOF token at index 0.
     /// Required to exercise the "pristine" cache path in `load_builtin`.
     #[fixture]
-    fn pristine_token_arena() -> Shared<SharedCell<crate::arena::Arena<Shared<Token>>>> {
+    fn pristine_token_arena() -> Shared<SharedCell<crate::arena::Arena<Token>>> {
         let arena = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena,
-            &Shared::new(Token {
+            Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         arena
     }
@@ -690,12 +691,8 @@ mod tests {
         modules: Vec::new(),
         vars: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Let(
-                ast::Pattern::Ident(IdentWithToken::new_with_token("test", Some(Shared::new(Token{
-                    kind: TokenKind::Ident(SmolStr::new("test")),
-                    range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
-                    module_id: 1.into()
-                })))),
-                Shared::new(ast::Node{token_id: 2.into(), expr: ast::Expr::Literal(ast::Literal::String("value".to_string()))})
+                ast::Pattern::Ident(IdentWithToken::new_with_token("test", Some(1.into()))),
+                Shared::new(ast::Node{token_id: 3.into(), expr: ast::Expr::Literal(ast::Literal::String("value".to_string()))})
             )})],
     }))]
     #[case::load3("def test(): 1;".to_string(), Ok(Module{
@@ -703,11 +700,7 @@ mod tests {
         modules: Vec::new(),
         functions: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Def(
-            IdentWithToken::new_with_token("test", Some(Shared::new(Token{
-                kind: TokenKind::Ident(SmolStr::new("test")),
-                range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
-                module_id: 1.into()
-            }))),
+            IdentWithToken::new_with_token("test", Some(3.into())),
             Vec::new(),
             vec![
                 Shared::new(ast::Node{token_id: 2.into(), expr: ast::Expr::Literal(ast::Literal::Number(1.into()))})
@@ -720,22 +713,22 @@ mod tests {
         modules: Vec::new(),
         functions: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Def(
-                IdentWithToken::new_with_token("test", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
+                IdentWithToken::new_with_token("test", Some(7.into())),
                 vec![
-                    Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))),
-                    Param::new(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))),
+                    Param::new(IdentWithToken::new_with_token("a", Some(1.into()))),
+                    Param::new(IdentWithToken::new_with_token("b", Some(2.into()))),
                 ],
                 vec![
-                    Shared::new(ast::Node{token_id: 4.into(), expr: ast::Expr::Call(
-                    IdentWithToken::new_with_token("add", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
+                    Shared::new(ast::Node{token_id: 6.into(), expr: ast::Expr::Call(
+                    IdentWithToken::new_with_token("add", Some(6.into())),
                     smallvec![
-                        Shared::new(ast::Node{token_id: 2.into(),
+                        Shared::new(ast::Node{token_id: 4.into(),
                             expr:
-                                ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(4.into())))
                                 }),
-                        Shared::new(ast::Node{token_id: 3.into(),
+                        Shared::new(ast::Node{token_id: 5.into(),
                             expr:
-                                ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
+                                ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(5.into())))
                             })
                     ],
                 )})]
@@ -743,7 +736,7 @@ mod tests {
         vars: Vec::new(),
     }))]
     fn test_load(
-        token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
         #[case] program: String,
         #[case] expected: Result<Module, ModuleError>,
     ) {
@@ -761,7 +754,7 @@ mod tests {
         vars: Vec::new(),
     }))]
     fn test_load_standard_module(
-        token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
         #[case] module_name: &str,
         #[case] expected: Result<Module, ModuleError>,
     ) {
@@ -853,7 +846,7 @@ mod tests {
     /// parse or replayed from the thread-local cache.
     #[rstest]
     fn test_load_builtin_cache_arena_size_consistent(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let arena1 = pristine_token_arena;
         let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
@@ -866,11 +859,11 @@ mod tests {
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena2,
-            &Shared::new(Token {
+            Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();
@@ -886,7 +879,7 @@ mod tests {
     /// The module returned from cache must have the same function/var counts as a fresh parse.
     #[rstest]
     fn test_load_builtin_cache_module_counts_consistent(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         let module1 = loader1.load_builtin(pristine_token_arena).unwrap();
@@ -894,11 +887,11 @@ mod tests {
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena2,
-            &Shared::new(Token {
+            Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         let module2 = loader2.load_builtin(arena2).unwrap();
@@ -911,7 +904,7 @@ mod tests {
 
     #[rstest]
     fn test_module_ids_are_shared_with_derived_loaders(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let parent = ModuleLoader::new(DefaultModuleResolver::default());
         let mut first = parent.with_same_resolver();
@@ -942,7 +935,7 @@ mod tests {
 
     #[rstest]
     fn test_failed_load_still_registers_module_name(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let parent = ModuleLoader::new(DefaultModuleResolver::default());
         let mut child = parent.with_same_resolver();
@@ -958,7 +951,7 @@ mod tests {
     /// (TOP_LEVEL_MODULE is always 0).
     #[rstest]
     fn test_load_builtin_module_registered_at_id_one(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
         loader.load_builtin(pristine_token_arena).unwrap();
@@ -971,7 +964,7 @@ mod tests {
     /// so that error diagnostics resolve to the builtin source file rather than garbage.
     #[rstest]
     fn test_load_builtin_cache_tokens_have_builtin_module_id(
-        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
     ) {
         let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         loader1.load_builtin(pristine_token_arena).unwrap();
@@ -980,11 +973,11 @@ mod tests {
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena2,
-            &Shared::new(Token {
+            Token {
                 kind: TokenKind::Eof,
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
-            }),
+            },
         );
         let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
         loader2.load_builtin(Shared::clone(&arena2)).unwrap();
@@ -994,7 +987,7 @@ mod tests {
         let arena = arena2.borrow();
         #[cfg(feature = "sync")]
         let arena = arena2.read().unwrap();
-        for token in arena.as_slice()[1..].iter() {
+        for token in arena.iter().skip(1) {
             assert_eq!(
                 token.module_id, builtin_module_id,
                 "cached builtin token must have BUILTIN_MODULE_ID"

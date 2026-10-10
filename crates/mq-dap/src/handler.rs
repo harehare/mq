@@ -118,7 +118,7 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
     }
 
     fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
-        debug!(line = context.token.range.start.line + 1, "Step event");
+        debug!(line = context.range.start.line + 1, "Step event");
 
         // Check if pause was requested
         let is_pause = self.pause_requested.swap(false, SeqCst);
@@ -127,13 +127,13 @@ impl mq_lang::DebuggerHandler for DapHandlerWrapper {
         let message = if is_pause {
             DebuggerMessage::Paused {
                 thread_id: self.handler.thread_id,
-                line: context.token.range.start.line as usize + 1,
+                line: context.range.start.line as usize + 1,
                 context: context.clone(),
             }
         } else {
             DebuggerMessage::StepCompleted {
                 thread_id: self.handler.thread_id,
-                line: context.token.range.start.line as usize + 1,
+                line: context.range.start.line as usize + 1,
                 context: context.clone(),
             }
         };
@@ -422,7 +422,7 @@ mod tests {
         match received_message {
             DebuggerMessage::StepCompleted { thread_id, line, .. } => {
                 assert_eq!(thread_id, 1);
-                assert_eq!(line, 2); // context.token.range.start.line is 1, so +1 = 2
+                assert_eq!(line, 2); // context.range.start.line is 1, so +1 = 2
             }
             _ => panic!("Expected StepCompleted message"),
         }

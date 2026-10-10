@@ -1107,24 +1107,22 @@ impl<R: ModuleResolver> Compiler<R> {
     #[cfg(feature = "debugger")]
     fn debug_sources(&self) -> Vec<(ModuleId, Source)> {
         #[cfg(not(feature = "sync"))]
-        let token_ids = self
-            .token_arena
-            .borrow()
-            .as_slice()
-            .iter()
-            .map(|token| token.module_id)
-            .fold(Vec::new(), |mut ids, module_id| {
-                if !ids.contains(&module_id) {
-                    ids.push(module_id);
-                }
-                ids
-            });
+        let token_ids =
+            self.token_arena
+                .borrow()
+                .iter()
+                .map(|token| token.module_id)
+                .fold(Vec::new(), |mut ids, module_id| {
+                    if !ids.contains(&module_id) {
+                        ids.push(module_id);
+                    }
+                    ids
+                });
         #[cfg(feature = "sync")]
         let token_ids = self
             .token_arena
             .read()
             .unwrap()
-            .as_slice()
             .iter()
             .map(|token| token.module_id)
             .fold(Vec::new(), |mut ids, module_id| {
