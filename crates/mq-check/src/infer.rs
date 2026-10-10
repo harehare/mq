@@ -786,7 +786,6 @@ impl InferenceContext {
 
         result
     }
-
 }
 
 impl Default for InferenceContext {
