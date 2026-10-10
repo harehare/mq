@@ -121,18 +121,14 @@ impl ErrorReporter {
 enum ProgramKind {
     /// Top level, ends at EOF.
     Root,
-    /// Nested body, ends at `;` or `end`.
+    /// Nested body, ends at `;` or `end`, or before a `,` or closing bracket owned by the enclosing construct.
     Block,
-    /// Body of a lambda that is a call argument. Also ends before the `,` or `)` of the call.
-    ArgBody,
 }
 
 pub struct Parser<'a> {
     tokens: &'a [Shared<Token>],
     pos: usize,
     errors: ErrorReporter,
-    /// Set by `parse_arg` for the `fn`/`->` token it is about to parse.
-    fn_in_arg: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -141,7 +137,6 @@ impl<'a> Parser<'a> {
             tokens,
             pos: 0,
             errors: ErrorReporter::new(100),
-            fn_in_arg: false,
         }
     }
 
@@ -335,8 +330,10 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
-                // The `,` or `)` of the enclosing call (or EOF, which the call reports) ends the body.
-                TokenKind::Comma | TokenKind::RParen | TokenKind::Eof if kind == ProgramKind::ArgBody => {
+                // The `,` or closing bracket of the enclosing construct (or EOF, which it reports) ends the body.
+                TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace | TokenKind::Eof
+                    if !root =>
+                {
                     // Leave the trivia for the enclosing program, which owns this token.
                     self.pos -= leading_trivia.len();
                     break;
@@ -889,7 +886,6 @@ impl<'a> Parser<'a> {
             | TokenKind::Colon
             | TokenKind::Try
             | TokenKind::LBrace => {
-                self.fn_in_arg = matches!(token.kind, TokenKind::Fn | TokenKind::Arrow);
                 let expr = self.parse_expr(leading_trivia, false, false)?;
                 self.parse_implicit_pipeline(expr)
             }
@@ -970,11 +966,6 @@ impl<'a> Parser<'a> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
-        let kind = if std::mem::take(&mut self.fn_in_arg) {
-            ProgramKind::ArgBody
-        } else {
-            ProgramKind::Block
-        };
         // `fn: body` has no parameter list.
         let params =
             if matches!(token.kind, TokenKind::Fn) && self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
@@ -983,7 +974,7 @@ impl<'a> Parser<'a> {
                 self.parse_params()?
             };
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(kind, in_loop);
+        let program = self.parse_program(ProgramKind::Block, in_loop);
 
         let node = Node {
             kind: NodeKind::Fn {
@@ -11007,18 +10998,22 @@ Shared::new(Node {
     #[case::dangling_operator("f(fn(x): x +)")]
     #[case::unclosed_call("f(fn(x): x + 1")]
     #[case::stray_close_paren("f(fn(x): x + 1))")]
-    #[case::lambda_body_tail("f(fn(x): fn(y): x + y)")]
-    fn test_lambda_in_call_args_reports_malformed_input(#[case] code: &str) {
+    #[case::let_value("let g = fn(x): x + 1)")]
+    fn test_lambda_reports_malformed_input(#[case] code: &str) {
         let (_, errors) = crate::parse_recovery(code);
         assert!(errors.has_errors(), "{code:?} should report an error");
     }
 
     #[rstest]
-    #[case::let_value("let g = fn(x): x + 1)")]
+    #[case::paren_group("(fn(x): x + 1)(2)")]
     #[case::array_element("[fn(x): x, 1]")]
-    fn test_lambda_terminator_is_still_required_outside_call_args(#[case] code: &str) {
+    #[case::implicit_array_element("[fn: self, 1]")]
+    #[case::dict_value("{\"a\": fn(x): x, \"b\": 1}")]
+    #[case::lambda_body_tail("f(fn(x): fn(y): x + y)")]
+    #[case::after_pipe("f(1 | fn(x): x + 1, 2)")]
+    fn test_lambda_ends_at_the_closer_of_its_enclosing_construct(#[case] code: &str) {
         let (_, errors) = crate::parse_recovery(code);
-        assert!(errors.has_errors(), "{code:?} should report an error");
+        assert!(!errors.has_errors(), "{code:?} should not report an error");
     }
 
     #[rstest]

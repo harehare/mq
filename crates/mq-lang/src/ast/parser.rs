@@ -29,10 +29,8 @@ static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::buil
 enum ProgramKind {
     /// Top level, ends at EOF.
     Root,
-    /// Nested body, ends at `;` or `end`.
+    /// Nested body, ends at `;` or `end`, or before a `,` or closing bracket owned by the enclosing construct.
     Block,
-    /// Body of a lambda that is a call argument. Also ends before the `,` or `)` of the call.
-    ArgBody,
 }
 
 pub struct Parser<'a, 'alloc> {
@@ -42,8 +40,6 @@ pub struct Parser<'a, 'alloc> {
     token_arena: &'alloc mut Arena<Shared<Token>>,
     module_id: ModuleId,
     depth: usize,
-    /// Set by `parse_arg_expr` for the `fn`/`->` token it is about to parse.
-    fn_in_arg: bool,
 }
 
 impl<'a, 'alloc> Parser<'a, 'alloc> {
@@ -60,7 +56,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             token_arena,
             module_id,
             depth: 0,
-            fn_in_arg: false,
         }
     }
 
@@ -102,7 +97,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Pipe | TokenKind::SemiColon => {
                     return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
-                TokenKind::Comma | TokenKind::RParen if kind == ProgramKind::ArgBody => {
+                TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace if !root => {
                     return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
                 TokenKind::End => {
@@ -113,7 +108,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
-        while !(kind == ProgramKind::ArgBody && self.at_arg_end())
+        while !(!root && self.at_body_end())
             && let Some(token) = self.tokens.next()
         {
             match &token.kind {
@@ -162,12 +157,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(asts)
     }
 
-    /// True at the `,` or `)` that closes a call argument. EOF also counts, so the call
-    /// reports its own missing `)`.
-    fn at_arg_end(&mut self) -> bool {
-        self.tokens
-            .peek()
-            .is_some_and(|token| matches!(token.kind, TokenKind::Comma | TokenKind::RParen | TokenKind::Eof))
+    /// True at a `,` or closing bracket, which no statement can contain. The enclosing call, array
+    /// or dict owns it. EOF also counts, so the enclosing construct reports its own missing closer.
+    fn at_body_end(&mut self) -> bool {
+        self.tokens.peek().is_some_and(|token| {
+            matches!(
+                token.kind,
+                TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace | TokenKind::Eof
+            )
+        })
     }
 
     #[inline(always)]
@@ -1579,13 +1577,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(never)]
     fn parse_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.alloc_token(fn_token);
-        // Taken before the params, whose defaults may contain call arguments of their own.
-        let kind = self.take_fn_body_kind();
         let params = self.parse_params()?;
 
         self.consume_colon_or_do();
 
-        let program = self.parse_program(kind)?;
+        let program = self.parse_program(ProgramKind::Block)?;
 
         let fn_node = Shared::new(Node {
             token_id: fn_token_id,
@@ -1600,10 +1596,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(never)]
     fn parse_implicit_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.alloc_token(fn_token);
-        let kind = self.take_fn_body_kind();
         self.consume_colon();
 
-        let mut program = self.parse_program(kind)?;
+        let mut program = self.parse_program(ProgramKind::Block)?;
         program.insert(
             0,
             Shared::new(Node {
@@ -1625,15 +1620,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         });
 
         self.parse_postfix_ops(fn_node, fn_token)
-    }
-
-    /// Whether the lambda being parsed is a call argument, which lets its body end at `,` or `)`.
-    fn take_fn_body_kind(&mut self) -> ProgramKind {
-        if std::mem::take(&mut self.fn_in_arg) {
-            ProgramKind::ArgBody
-        } else {
-            ProgramKind::Block
-        }
     }
 
     #[inline(never)]
@@ -2543,7 +2529,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     // This typically involves a recursive call to `parse_expr`.
     #[inline(always)]
     fn parse_arg_expr(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
-        self.fn_in_arg = matches!(token.kind, TokenKind::Fn | TokenKind::Arrow);
         let first = self.parse_expr(token)?;
         if !self.is_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
             return Ok(first);
@@ -10077,7 +10062,6 @@ Shared::new(Node {
 
     #[rstest]
     #[case::let_value_without_terminator("let g = fn: self + 1)")]
-    #[case::array_element("[fn: self, 1]")]
     #[case::empty_body("f(fn: )")]
     #[case::empty_body_then_comma("f(fn:, 1)")]
     #[case::unclosed_call("f(fn: self")]
@@ -10089,17 +10073,34 @@ Shared::new(Node {
 
     #[rstest]
     #[case::let_value("let g = fn(x): x + 1)")]
-    #[case::paren_group("(fn(x): x + 1)(2)")]
-    #[case::array_element("[fn(x): x, 1]")]
-    #[case::dict_value("{\"a\": fn(x): x, \"b\": 1}")]
-    #[case::lambda_body_tail("f(fn(x): fn(y): x + y)")]
     #[case::empty_body("f(fn(x): )")]
     #[case::empty_body_then_comma("f(fn(x):, 1)")]
     #[case::dangling_operator("f(fn(x): x +)")]
     #[case::unclosed_call("f(fn(x): x + 1")]
     #[case::stray_close_paren("f(fn(x): x + 1))")]
-    fn test_lambda_terminator_is_still_required_elsewhere(#[case] source: &str) {
+    fn test_lambda_reports_malformed_input(#[case] source: &str) {
         assert!(parse_source(source).is_err(), "{source} should not parse");
+    }
+
+    #[rstest]
+    #[case::paren_group("(fn(x): x + 1)(2)")]
+    #[case::array_element("[fn(x): x, 1]")]
+    #[case::implicit_array_element("[fn: self, 1]")]
+    #[case::dict_value("{\"a\": fn(x): x, \"b\": 1}")]
+    #[case::lambda_body_tail("f(fn(x): fn(y): x + y)")]
+    #[case::after_pipe("f(1 | fn(x): x + 1, 2)")]
+    fn test_lambda_ends_at_the_closer_of_its_enclosing_construct(#[case] source: &str) {
+        parse_source(source).expect("source should parse");
+    }
+
+    #[test]
+    fn test_lambda_array_element_ends_before_comma() {
+        let program = parse_source("[fn(x): x + 1, 2]").expect("source should parse");
+        let Expr::Array(elements) = &program[0].expr else {
+            panic!("expected an array");
+        };
+        assert_eq!(elements.len(), 2);
+        assert!(matches!(&elements[0].expr, Expr::Fn(..)));
     }
 
     #[rstest]
