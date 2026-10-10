@@ -124,15 +124,17 @@ fn(parameters): program;
 fn(parameters): program end
 ```
 
-When the function is a call argument, the terminator can be omitted. The body then ends at the `,` or `)` that closes the argument:
+The terminator can be omitted when the function sits inside a call, array, dict or parenthesized group. The body then ends at the `,` or closing bracket that follows it:
 
 ```
 f(fn(parameters): program)
 
 f(fn(parameters): program, other_arg)
+
+[fn(parameters): program, other_element]
 ```
 
-The body includes any `|` pipeline steps. Parentheses, brackets, `if`/`else`, `do ... end`, `foreach` and `match` inside the body are consumed as usual, so only a `,` or `)` outside of them ends the body. Anywhere else (a `let` value, an array element, a dict value, a parenthesized group) the `;` or `end` is required.
+The body includes any `|` pipeline steps. Parentheses, brackets, `if`/`else`, `do ... end`, `foreach` and `match` inside the body are consumed as usual, so only a `,` or closing bracket outside of them ends the body. Elsewhere, such as a `let` value, the body runs until `;` or `end`.
 
 The `->` syntax is a shorthand alias for `fn`:
 
