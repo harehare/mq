@@ -87,7 +87,25 @@ Only the specified keys are overridden; unspecified keys use the default colors.
 | `36` | Cyan      |
 | `37` | White     |
 
+## Configuration Directory
+
+### `MQ_CONFIG_DIR`
+
+Directory where the REPL and the debugger keep their command history (`history.txt` and `dbg_history.txt`). When unset, the `mq` directory under the platform's config directory is used (for example `~/.config/mq` on Linux).
+
+```sh
+MQ_CONFIG_DIR=/tmp/mq-config mq repl
+```
+
 ## REPL Configuration
+
+### `EDITOR` / `VISUAL`
+
+The editor launched by the REPL's `/edit` command (also bound to `Alt+O`). `EDITOR` takes precedence over `VISUAL`, and `vi` is used when neither is set.
+
+```sh
+EDITOR=nano mq repl
+```
 
 ### `MQ_REPL_OUTPUT_LIMIT`
 
