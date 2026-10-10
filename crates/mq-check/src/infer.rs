@@ -74,12 +74,8 @@ pub struct DeferredAttrCall {
 /// its body, and we can propagate it to the call site and verify argument types.
 #[derive(Debug, Clone)]
 pub struct DeferredUserCall {
-    /// The call site symbol ID
-    pub call_symbol_id: SymbolId,
     /// The function definition symbol ID
     pub def_id: SymbolId,
-    /// The fresh (instantiated) parameter types at this call site
-    pub fresh_param_tys: Vec<Type>,
     /// The fresh (instantiated) return type at this call site
     pub fresh_ret_ty: Type,
     /// The actual argument types at the call site
@@ -117,8 +113,6 @@ pub struct DeferredRecordAccess {
 /// unification.
 #[derive(Debug, Clone)]
 pub struct DeferredSelectorAccess {
-    /// The selector symbol ID
-    pub symbol_id: SymbolId,
     /// The piped input type (may be a type variable before unification)
     pub piped_ty: Type,
     /// The field name being accessed
@@ -793,11 +787,6 @@ impl InferenceContext {
         result
     }
 
-    /// Gets all symbol types (for testing)
-    #[cfg(test)]
-    pub fn symbol_types(&self) -> &FxHashMap<SymbolId, Type> {
-        &self.symbol_types
-    }
 }
 
 impl Default for InferenceContext {

@@ -1636,7 +1636,6 @@ pub(super) fn generate_symbol_constraints(
                     let ty_var = ctx.fresh_var();
                     if let Some(name) = field_name {
                         ctx.add_deferred_selector_access(infer::DeferredSelectorAccess {
-                            symbol_id,
                             piped_ty: piped_ty.clone(),
                             field_name: name.to_string(),
                             selector: selector.clone(),
@@ -1927,9 +1926,7 @@ fn generate_call_constraints(
                             real_children.to_vec()
                         };
                         ctx.add_deferred_user_call(DeferredUserCall {
-                            call_symbol_id: symbol_id,
                             def_id,
-                            fresh_param_tys: param_tys.clone(),
                             fresh_ret_ty: ret_ty.as_ref().clone(),
                             arg_tys,
                             arg_symbol_ids,
