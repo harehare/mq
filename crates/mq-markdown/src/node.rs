@@ -1102,6 +1102,11 @@ impl Display for Node {
 }
 
 impl Node {
+    /// Renders this node as HTML, with the children of JSX elements read as Markdown.
+    pub fn to_html(&self) -> String {
+        crate::to_html(&for_html(|| self.to_string()))
+    }
+
     /// Maps this node and its fragment descendants, cloning the input tree first.
     pub fn map_values<E, F>(&self, f: &mut F) -> Result<Node, E>
     where

@@ -247,7 +247,7 @@ pub(super) fn to_html(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         RuntimeValue::String(s) => Ok(mq_markdown::to_html(s).into()),
         RuntimeValue::Symbol(s) => Ok(mq_markdown::to_html(&s.to_string()).into()),
-        RuntimeValue::Markdown(node_value, _) => Ok(mq_markdown::to_html(node_value.to_string().as_str()).into()),
+        RuntimeValue::Markdown(node_value, _) => Ok(node_value.to_html().into()),
         _ => Err(Error::InvalidTypes("to_html".to_string(), vec![value.clone()])),
     }
 }
@@ -1471,6 +1471,16 @@ mod tests {
             }
             _ => panic!("Expected String or None"),
         }
+    }
+
+    #[test]
+    fn test_to_html_reads_jsx_children_as_markdown() {
+        let node = mq_markdown::Markdown::from_mdx_str("<Foo>\n  *hello*\n</Foo>\n")
+            .unwrap()
+            .nodes
+            .remove(0);
+        let result = to_html(&RuntimeValue::Markdown(node.into(), None)).unwrap();
+        assert_eq!(result.to_string().trim_end(), "<Foo>\n<p><em>hello</em></p>\n</Foo>");
     }
 
     // Test flatten
