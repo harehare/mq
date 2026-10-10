@@ -20,6 +20,9 @@ pub struct DeferredOverload {
     pub op_name: SmolStr,
     /// The original type variables for the operands
     pub operand_tys: Vec<Type>,
+    /// For `partial`: the piped input, prepended as the function if the first operand turns out
+    /// not to be one. `None` once decided, or when the call does not depend on it.
+    pub unsettled_piped: Option<Type>,
     /// The source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -594,7 +597,7 @@ impl InferenceContext {
     ///
     /// Returns the matched function type and the resolved argument types after instantiation.
     pub fn resolve_overload(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
-        if name == "partial" {
+        if name == crate::builtin::PARTIAL {
             return self.partial_signature(arg_types);
         }
         let overloads = self.get_builtin_overloads(name)?;

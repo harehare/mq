@@ -765,6 +765,13 @@ fn test_dynamic_piped_input(#[case] code: &str, #[case] should_succeed: bool, #[
 #[case::piped_function_all_bound("def f(a, b): a; | f | partial(1, 2)", false)]
 #[case::piped_non_function("\"abc\" | partial(1)", false)]
 #[case::explicit_function_all_bound_ignores_piped("def f(a, b): a; | f | partial(f, 1, 2)", false)]
+#[case::piped_function_variable_bound("def f(a, b, c): a; | let x = 1 | f | partial(x, 2)", true)]
+#[case::piped_function_variable_bound_called(
+    "def f(a, b, c): a + b + c; | let x = 1 | let p = do f | partial(x, 2) end | p(3)",
+    true
+)]
+#[case::piped_function_variable_all_bound("def f(a, b): a; | let x = 1 | f | partial(x, 2)", false)]
+#[case::variable_function_ignores_piped("def f(a, b, c): a; | let g = f | let x = 1 | \"abc\" | partial(g, x)", true)]
 fn test_partial_arity(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{code}: {result:?}");

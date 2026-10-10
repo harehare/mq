@@ -9,6 +9,9 @@ use crate::kind_set::KindSet;
 use crate::types::Type;
 use mq_markdown::NodeKind;
 
+/// The name of `partial`, whose signature is derived per call instead of looked up.
+pub(crate) const PARTIAL: &str = "partial";
+
 /// Registers all builtin function and operator type signatures.
 pub fn register_all(ctx: &mut InferenceContext) {
     register_arithmetic(ctx);
@@ -1339,7 +1342,7 @@ fn register_utility(ctx: &mut InferenceContext) {
     // names the builtin and serves as its documented form.
     let (a, b, r) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
     ctx.register_builtin(
-        "partial",
+        PARTIAL,
         Type::function(
             vec![
                 Type::function(vec![Type::Var(a), Type::Var(b)], Type::Var(r)),

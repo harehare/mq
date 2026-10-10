@@ -14,6 +14,7 @@ use rustc_hash::FxHashMap;
 use crate::field_guard::FieldGuard;
 use crate::{
     TypeError,
+    builtin::PARTIAL,
     constraint::{Constraint, ConstraintOrigin},
     infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
     node_attr::{SelectorOutput, node_attr_type, node_selector_output},
@@ -665,10 +666,27 @@ pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
     true
 }
 
+/// Decides, once the first argument of a `partial` call is settled, whether the piped function
+/// is prepended: the runtime does so when that argument is not a function.
+fn settle_partial_piped(ctx: &mut InferenceContext, d: &mut DeferredOverload) {
+    let Some(first) = d.operand_tys.first() else {
+        return;
+    };
+    let first = ctx.resolve_type(first);
+    if first.is_pending_operand() {
+        return;
+    }
+    if let Some(piped) = d.unsettled_piped.take()
+        && !matches!(first, types::Type::Function(..))
+    {
+        d.operand_tys.insert(0, piped);
+    }
+}
+
 /// Whether `partial` has a function argument settled enough to judge the call. Its arity does
 /// not depend on the parameter types, which may still be unknown.
 fn partial_function_known(name: &str, operands: &[types::Type]) -> bool {
-    name == "partial" && operands.first().is_some_and(|ty| !ty.is_pending_operand())
+    name == PARTIAL && operands.first().is_some_and(|ty| !ty.is_pending_operand())
 }
 
 /// Resolves deferred overloads after the first round of unification.
@@ -678,7 +696,7 @@ fn partial_function_known(name: &str, operands: &[types::Type]) -> bool {
 /// Runs unification after each resolution so that type information propagates
 /// incrementally to subsequent deferred overloads.
 pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
-    let deferred = ctx.take_deferred_overloads();
+    let mut deferred = ctx.take_deferred_overloads();
     if deferred.is_empty() {
         return;
     }
@@ -696,6 +714,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
         let mut next_remaining = Vec::new();
 
         for &idx in &remaining_indices {
+            settle_partial_piped(ctx, &mut deferred[idx]);
             let d = &deferred[idx];
             let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
@@ -869,6 +888,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
             // Collect indices to store back; actual move happens after the loop
             // so that `deferred` is not moved while still borrowed.
             for &idx in &next_remaining {
+                settle_partial_piped(ctx, &mut deferred[idx]);
                 let d = &deferred[idx];
                 let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
