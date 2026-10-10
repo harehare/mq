@@ -102,10 +102,7 @@ impl<'de> serde::Deserialize<'de> for Ident {
 
 /// Returns all interned strings currently in the global string interner.
 pub fn all_symbols() -> Vec<String> {
-    interner_read()
-        .iter()
-        .map(|(_, s)| s.to_string())
-        .collect()
+    interner_read().iter().map(|(_, s)| s.to_string()).collect()
 }
 
 #[cfg(test)]
