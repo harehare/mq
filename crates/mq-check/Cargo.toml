@@ -29,7 +29,7 @@ clap = {workspace = true, features = ["derive"], optional = true}
 colored = {workspace = true, optional = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-hir = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "file-io"]}
+mq-lang = {workspace = true, features = ["cst", "file-io", "process-io"]}
 mq-markdown = {workspace = true}
 rustc-hash = {workspace = true}
 serde_json = {workspace = true, optional = true}
@@ -40,7 +40,7 @@ url = {workspace = true, optional = true}
 
 [dev-dependencies]
 mq-help = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "file-io", "debugger"]}
+mq-lang = {workspace = true, features = ["cst", "file-io", "process-io", "debugger"]}
 mq-test = {workspace = true}
 proptest = {workspace = true}
 rstest = {workspace = true}

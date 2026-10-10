@@ -14,7 +14,7 @@ version.workspace = true
 [dependencies]
 itertools = {workspace = true}
 mq-help = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "file-io"]}
+mq-lang = {workspace = true, features = ["cst", "file-io", "process-io"]}
 rustc-hash = {workspace = true}
 slotmap = {workspace = true}
 smol_str = {workspace = true}
