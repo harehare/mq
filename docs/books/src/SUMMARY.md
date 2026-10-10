@@ -15,6 +15,7 @@
   - [Language Bindings](start/language_bindings.md)
   - [Embed mq in Rust](start/embedding-rust.md)
   - [Example](start/example.md)
+  - [Input and Output Behavior](start/input-and-output.md)
   - [Modules](start/modules.md)
   - [Compiled Programs (Experimental)](start/compiled-programs.md)
 - [Cookbook](cookbook/index.md)

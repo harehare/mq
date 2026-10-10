@@ -3640,7 +3640,7 @@ x = 1
     BuiltinDoc {
         name: "to_h",
         aliases: &[],
-        description: "Creates a markdown heading node with the given value and depth.",
+        description: "Creates a markdown heading node with the given value and depth. A depth outside of 1 to 6 becomes the nearest of them.",
         params: &["value", "depth"],
         param_types: &["dynamic", "number"],
         returns: "markdown",

@@ -32,7 +32,9 @@ Another paragraph.
 
 ```markdown
 <CustomComponent prop="value" />
-<AnotherComponent>Content</AnotherComponent>
+<AnotherComponent>
+  Content
+</AnotherComponent>
 ```
 
 ## Notes

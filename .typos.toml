@@ -1,3 +1,7 @@
+[files]
+# HTML entity names from the HTML spec, which include short non-words
+extend-exclude = ["crates/mq-markdown/src/parser/inline/entities.rs"]
+
 [default.extend-words]
 # HashiCorp is a proper noun
 Hashi = "Hashi"
@@ -6,6 +10,8 @@ ist = "ist"
 # Intentional misspelling in the fuzzy-match-headings cookbook recipe
 instalation = "instalation"
 juxt = "juxt"
+# `import` with its first letter as a character reference (`&#105;mport`), as MDX text is written
+mport = "mport"
 reakpoint = "reakpoint"
 sction = "sction"
 

@@ -466,6 +466,12 @@ struct ProgramArgs {
     #[arg(long = "no-header", default_value_t = false)]
     no_header: bool,
 
+    /// Do not read frontmatter at the start of Markdown or MDX input: the lines between `---` or
+    /// `+++` are then text, a heading or a rule. Applies to `-I markdown` and `-I mdx`, and to
+    /// `.md` and `.mdx` files
+    #[arg(long = "no-frontmatter", default_value_t = false)]
+    no_frontmatter: bool,
+
     /// Search modules from the directory
     #[arg(short = 'L', long = "directory")]
     module_directories: Option<Vec<PathBuf>>,
@@ -693,9 +699,9 @@ struct OutputArgs {
     #[clap(long, default_value_t = false, conflicts_with = "quiet")]
     unbuffered: bool,
 
-    /// Set the list style for markdown output
-    #[clap(long, value_enum, default_value_t = ListStyle::Dash, conflicts_with = "quiet")]
-    list_style: ListStyle,
+    /// Set the list style for markdown output (default: keep the original)
+    #[clap(long, value_enum, conflicts_with = "quiet")]
+    list_style: Option<ListStyle>,
 
     /// Set the link title surround style for markdown output
     #[clap(long, value_enum, default_value_t = LinkTitleStyle::Double, conflicts_with = "quiet")]
@@ -1783,6 +1789,7 @@ impl Cli {
         }
 
         self.validate_csv_options()?;
+        self.validate_frontmatter_option()?;
         self.check_output_permitted()?;
 
         match &self.commands {
@@ -2022,6 +2029,20 @@ impl Cli {
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
+    fn validate_frontmatter_option(&self) -> miette::Result<()> {
+        if self.input.program.no_frontmatter
+            && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Markdown | InputFormat::Mdx))
+        {
+            return Err(miette!("--no-frontmatter only applies to -I markdown or -I mdx"));
+        }
+        Ok(())
+    }
+
+    /// How Markdown and MDX input is read.
+    fn parse_options(&self) -> mq_markdown::ParseOptions {
+        mq_markdown::ParseOptions::default().with_frontmatter(!self.input.program.no_frontmatter)
+    }
+
     fn validate_csv_options(&self) -> miette::Result<()> {
         if (self.input.program.csv_delimiter.is_some() || self.input.program.no_header)
             && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
@@ -2031,6 +2052,16 @@ impl Cli {
             ));
         }
         Ok(())
+    }
+
+    /// Whether the input of `file` is read as MDX, so that what is written for it is escaped as MDX.
+    fn is_mdx_input(&self, file: &Option<PathBuf>) -> bool {
+        match self.explicit_input_format() {
+            Some(format) => matches!(format, InputFormat::Mdx),
+            None => file
+                .as_ref()
+                .is_some_and(|file| matches!(InputFormat::from_path(file), InputFormat::Mdx)),
+        }
     }
 
     fn explicit_input_format(&self) -> Option<InputFormat> {
@@ -2139,8 +2170,8 @@ impl Cli {
                 }
             }) {
                 // Native formats
-                InputFormat::Markdown => mq_lang::parse_markdown_input(text)?,
-                InputFormat::Mdx => mq_lang::parse_mdx_input(text)?,
+                InputFormat::Markdown => mq_lang::parse_markdown_input_with(text, self.parse_options())?,
+                InputFormat::Mdx => mq_lang::parse_mdx_input_with(text, self.parse_options())?,
                 InputFormat::Html => mq_lang::parse_html_input(text)?,
                 InputFormat::Text => mq_lang::parse_text_input(text)?,
                 InputFormat::Null => mq_lang::null_input(),
@@ -2204,7 +2235,7 @@ impl Cli {
         };
 
         if self.quiet {
-            return self.print(runtime_values);
+            return self.print(runtime_values, self.is_mdx_input(file));
         }
 
         if let Some(input) = grep_input {
@@ -2218,7 +2249,7 @@ impl Cli {
             )?;
             grep::print_grep(runtime_values, &input, file, handle, before, after)
         } else {
-            self.print(runtime_values)
+            self.print(runtime_values, self.is_mdx_input(file))
         }
     }
 
@@ -2610,7 +2641,7 @@ impl Cli {
                     vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
                 )
                 .map_err(|e| *e)?;
-            self.print(separator)?;
+            self.print(separator, false)?;
         }
 
         self.emit_results(runtime_values, grep_input, file)
@@ -3022,15 +3053,15 @@ impl Cli {
         value
     }
 
-    fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
+    fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue], mdx: bool) -> mq_markdown::Markdown {
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
         markdown.set_options(mq_markdown::RenderOptions {
-            list_style: match self.output.list_style.clone() {
+            list_style: self.output.list_style.clone().map(|style| match style {
                 ListStyle::Dash => mq_markdown::ListStyle::Dash,
                 ListStyle::Plus => mq_markdown::ListStyle::Plus,
                 ListStyle::Star => mq_markdown::ListStyle::Star,
-            },
+            }),
             link_title_style: match self.output.link_title_style.clone() {
                 LinkTitleStyle::Double => mq_markdown::TitleSurroundStyle::Double,
                 LinkTitleStyle::Single => mq_markdown::TitleSurroundStyle::Single,
@@ -3040,6 +3071,7 @@ impl Cli {
                 LinkUrlStyle::None => mq_markdown::UrlSurroundStyle::None,
                 LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
             },
+            mdx,
         });
         markdown
     }
@@ -3047,7 +3079,7 @@ impl Cli {
     /// Renders `runtime_values` to a byte buffer without writing anywhere.
     /// `emit_diff` always passes `colorize: false` — it needs plain text to diff
     /// against the uncolored original, and colors the diff lines itself.
-    fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool) -> miette::Result<Vec<u8>> {
+    fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool, mdx: bool) -> miette::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
         match self.resolved_output_format() {
@@ -3073,20 +3105,20 @@ impl Cli {
                 }
             }
             OutputFormat::Html => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_html().as_bytes());
             }
             OutputFormat::Text => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_text().as_bytes());
             }
             OutputFormat::Markdown if colorize => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 let theme = mq_markdown::ColorTheme::from_env();
                 buf.extend_from_slice(markdown.to_colored_string_with_theme(&theme).as_bytes());
             }
             OutputFormat::Markdown => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_string().as_bytes());
             }
             OutputFormat::Table => {
@@ -3095,7 +3127,7 @@ impl Cli {
                 buf.extend_from_slice(format!("{}\n", table).as_bytes());
             }
             OutputFormat::Grep => {
-                let markdown = self.build_markdown(runtime_values);
+                let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_string().as_bytes());
             }
             OutputFormat::Gron => {
@@ -3133,7 +3165,7 @@ impl Cli {
         Ok(buf)
     }
 
-    fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
+    fn print(&self, runtime_values: mq_lang::RuntimeValues, mdx: bool) -> miette::Result<()> {
         let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
             runtime_values
                 .values()
@@ -3162,7 +3194,7 @@ impl Cli {
         )?;
 
         let colorize = self.output.color_output && !Self::is_no_color();
-        let buf = self.render(runtime_values, colorize)?;
+        let buf = self.render(runtime_values, colorize, mdx)?;
         Self::write_ignore_pipe(&mut handle, &buf)?;
         handle.finish()?;
 
@@ -3177,7 +3209,7 @@ impl Cli {
         content: &ContentData,
     ) -> miette::Result<()> {
         let original = content.as_str().unwrap_or("");
-        let rendered = self.render(runtime_values.values(), false)?;
+        let rendered = self.render(runtime_values.values(), false, self.is_mdx_input(file))?;
         let rendered = String::from_utf8_lossy(&rendered);
 
         if original != rendered {
@@ -4063,7 +4095,7 @@ mod tests {
             let cli = Cli {
                 input: InputArgs::default(),
                 output: OutputArgs {
-                    list_style: style.clone(),
+                    list_style: Some(style.clone()),
                     ..Default::default()
                 },
                 commands: None,
@@ -5903,6 +5935,65 @@ mod tests {
             ..Cli::default()
         };
         assert_eq!(cli.tabular_query_prefix(&InputFormat::Json), None);
+    }
+
+    fn frontmatter_cli(format: Option<InputFormat>, no_frontmatter: bool) -> Cli {
+        Cli {
+            input: InputArgs {
+                program: ProgramArgs {
+                    input_format: format,
+                    no_frontmatter,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Cli::default()
+        }
+    }
+
+    #[rstest]
+    #[case::markdown(InputFormat::Markdown)]
+    #[case::mdx(InputFormat::Mdx)]
+    fn test_frontmatter_is_read_unless_turned_off(#[case] format: InputFormat) {
+        let input = ContentData::Text("---\ntitle: x\n---\n\ntext".to_string());
+        let names = |cli: &Cli| -> Vec<String> {
+            cli.resolve_input(&None, &input)
+                .unwrap()
+                .iter()
+                .map(|value| match value {
+                    mq_lang::RuntimeValue::Markdown(node, _) => node.name().to_string(),
+                    other => other.to_string(),
+                })
+                .collect()
+        };
+
+        assert_eq!(names(&frontmatter_cli(Some(format.clone()), false)), ["yaml", "text"]);
+        assert_eq!(
+            names(&frontmatter_cli(Some(format), true)),
+            ["Horizontal_rule", "h2", "text"]
+        );
+    }
+
+    #[rstest]
+    #[case::markdown(Some(InputFormat::Markdown), true)]
+    #[case::mdx(Some(InputFormat::Mdx), true)]
+    #[case::by_extension(None, true)]
+    #[case::csv(Some(InputFormat::Csv), false)]
+    #[case::json(Some(InputFormat::Json), false)]
+    fn test_no_frontmatter_applies_to_markdown_and_mdx(#[case] format: Option<InputFormat>, #[case] valid: bool) {
+        assert_eq!(
+            frontmatter_cli(format, true).validate_frontmatter_option().is_ok(),
+            valid
+        );
+    }
+
+    #[test]
+    fn test_no_frontmatter_is_not_checked_when_it_is_not_given() {
+        assert!(
+            frontmatter_cli(Some(InputFormat::Csv), false)
+                .validate_frontmatter_option()
+                .is_ok()
+        );
     }
 
     #[test]

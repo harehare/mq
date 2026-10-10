@@ -211,7 +211,12 @@ pub(crate) fn parse_in_module(
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
 pub fn parse_mdx_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
-    let mdx = mq_markdown::Markdown::from_mdx_str(input)?;
+    parse_mdx_input_with(input, mq_markdown::ParseOptions::default())
+}
+
+/// Parses an MDX string with the given options and returns an iterator over `Value` nodes.
+pub fn parse_mdx_input_with(input: &str, options: mq_markdown::ParseOptions) -> miette::Result<Vec<RuntimeValue>> {
+    let mdx = mq_markdown::Markdown::from_mdx_str_with(input, options)?;
     Ok(mdx.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
@@ -232,7 +237,12 @@ pub fn parse_html_input_with_options(
 
 /// Parses a Markdown string and returns an iterator over `Value` nodes.
 pub fn parse_markdown_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
-    let md = mq_markdown::Markdown::from_markdown_str(input)?;
+    parse_markdown_input_with(input, mq_markdown::ParseOptions::default())
+}
+
+/// Parses a Markdown string with the given options and returns an iterator over `Value` nodes.
+pub fn parse_markdown_input_with(input: &str, options: mq_markdown::ParseOptions) -> miette::Result<Vec<RuntimeValue>> {
+    let md = mq_markdown::Markdown::from_markdown_str_with(input, options)?;
     Ok(md.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 

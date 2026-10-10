@@ -1,0 +1,282 @@
+//! Source lines and their positions.
+
+use super::block::CODE_INDENT;
+use super::flavor::Flavor;
+use crate::node::Point;
+
+/// Leading whitespace: how many columns it spans, where tabs go to the next multiple of four, and how
+/// many bytes it takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Indent {
+    pub(super) columns: usize,
+    pub(super) bytes: usize,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct Line<'a> {
+    pub(super) number: usize,
+    /// Byte offset of `text` within the original line, non-zero inside containers.
+    pub(super) column: usize,
+    pub(super) text: &'a str,
+    /// Line terminator that follows `text`; empty on the last line without one.
+    pub(super) eol: &'a str,
+    /// Whether this is the last line of the document.
+    pub(super) eof: bool,
+    /// Whether this is the last line of a list item.
+    pub(super) item_end: bool,
+    /// Whether the line continues a paragraph without its container prefix.
+    pub(super) lazy: bool,
+    /// The tabs of the line, to compute columns without scanning the line again.
+    pub(super) stops: &'a [TabStop],
+    /// Byte offset of the line in the document, to compare with `stops`.
+    pub(super) base: usize,
+    /// Columns left over from a tab that a container consumed only in part. They count as leading
+    /// whitespace of `text`.
+    pub(super) pad: usize,
+    /// The dialect of the document.
+    pub(super) flavor: Flavor,
+    /// For `*`, `-` and `_`: one past the offset in the line of the last byte that is neither that
+    /// character, nor a space or tab, or 0 if there is none. A thematic break is a run of one of them
+    /// and whitespace to the end of the line, so this tells at once, from any offset, that it is not.
+    pub(super) others: [usize; 3],
+}
+
+impl<'a> Line<'a> {
+    /// The indentation from which a line is code. Without indented code, indentation never matters.
+    pub(super) fn code_indent(&self) -> usize {
+        if self.flavor.has_indented_code() {
+            CODE_INDENT
+        } else {
+            usize::MAX
+        }
+    }
+
+    /// The zero-based visual column where `text` starts in the document.
+    fn start_column(&self) -> usize {
+        self.visual_column(self.column)
+    }
+
+    /// The zero-based visual column of the byte at `offset` in the line.
+    fn visual_column(&self, offset: usize) -> usize {
+        let at = self.base + offset;
+        let passed = self.stops.partition_point(|stop| stop.at < at);
+        match passed.checked_sub(1).map(|index| self.stops[index]) {
+            Some(stop) => stop.after + (at - stop.at - 1),
+            None => offset,
+        }
+    }
+
+    /// The leading whitespace.
+    pub(super) fn indent(&self) -> Indent {
+        let mut columns = self.pad;
+        let mut absolute = self.start_column();
+        for (index, byte) in self.text.bytes().enumerate() {
+            match byte {
+                b' ' => {
+                    columns += 1;
+                    absolute += 1;
+                }
+                b'\t' => {
+                    let width = (absolute / 4 + 1) * 4 - absolute;
+                    columns += width;
+                    absolute += width;
+                }
+                _ => return Indent { columns, bytes: index },
+            }
+        }
+        Indent {
+            columns,
+            bytes: self.text.len(),
+        }
+    }
+
+    pub(super) fn is_blank(&self) -> bool {
+        self.text.bytes().all(|b| matches!(b, b' ' | b'\t'))
+    }
+
+    /// The position of the byte at `byte` in `text`. Columns are in bytes, except that a tab advances
+    /// to the next multiple of four, as mdast positions count them.
+    pub(super) fn point(&self, byte: usize) -> Point {
+        let offset = self.column + byte;
+        let mut column = self.visual_column(offset) + 1;
+        // Whitespace at the start of a line inside a tab starts before the end of that tab, content
+        // starts where that tab ends.
+        if byte == 0 {
+            column -= self.pad;
+        }
+        Point {
+            line: self.number,
+            column,
+        }
+    }
+
+    /// Like [`Line::point`] for content that mdast places where the rest of a tab ends, instead
+    /// of before it: paragraphs and fences.
+    pub(super) fn content_point(&self, byte: usize) -> Point {
+        let mut point = self.point(byte);
+        if byte == 0 {
+            point.column += self.pad;
+        }
+        point
+    }
+
+    /// The same line with the first `bytes` bytes removed.
+    pub(super) fn skip(self, bytes: usize) -> Line<'a> {
+        Line {
+            column: self.column + bytes,
+            text: &self.text[bytes..],
+            pad: 0,
+            ..self
+        }
+    }
+
+    /// The same line with `columns` columns of leading whitespace removed. What is left of a tab that
+    /// is only consumed in part stays as padding.
+    pub(super) fn skip_columns(self, columns: usize) -> Line<'a> {
+        let mut remaining = columns;
+        let consumed = remaining.min(self.pad);
+        let mut pad = self.pad - consumed;
+        remaining -= consumed;
+
+        let mut absolute = self.start_column();
+        let mut bytes = 0;
+        for byte in self.text.bytes() {
+            if remaining == 0 {
+                break;
+            }
+            match byte {
+                b' ' => {
+                    remaining -= 1;
+                    absolute += 1;
+                }
+                b'\t' => {
+                    let width = (absolute / 4 + 1) * 4 - absolute;
+                    absolute += width;
+                    if width > remaining {
+                        pad = width - remaining;
+                        remaining = 0;
+                    } else {
+                        remaining -= width;
+                    }
+                }
+                _ => break,
+            }
+            bytes += 1;
+        }
+
+        Line {
+            column: self.column + bytes,
+            text: &self.text[bytes..],
+            pad,
+            ..self
+        }
+    }
+
+    pub(super) fn end(&self) -> Point {
+        self.point(self.text.len())
+    }
+}
+
+/// A tab in the document and the zero-based column right after it.
+#[derive(Clone, Copy)]
+pub(super) struct TabStop {
+    at: usize,
+    after: usize,
+}
+
+/// Every tab in `src` in order.
+pub(super) fn tab_stops(src: &str) -> Vec<TabStop> {
+    let mut stops = Vec::new();
+    // The byte offset and the column right after the last tab or line start.
+    let (mut anchor, mut anchor_column) = (0, 0);
+    for (index, byte) in src.bytes().enumerate() {
+        match byte {
+            b'\n' | b'\r' => (anchor, anchor_column) = (index + 1, 0),
+            b'\t' => {
+                let column = anchor_column + (index - anchor);
+                let after = (column / 4 + 1) * 4;
+                stops.push(TabStop { at: index, after });
+                (anchor, anchor_column) = (index + 1, after);
+            }
+            _ => {}
+        }
+    }
+    stops
+}
+
+/// The `Line::others` of `text`.
+fn last_others(text: &str) -> [usize; 3] {
+    let mut last = [0; 3];
+    for (index, byte) in text.bytes().enumerate() {
+        match byte {
+            b' ' | b'\t' => {}
+            b'*' => (last[1], last[2]) = (index + 1, index + 1),
+            b'-' => (last[0], last[2]) = (index + 1, index + 1),
+            b'_' => (last[0], last[1]) = (index + 1, index + 1),
+            _ => last = [index + 1; 3],
+        }
+    }
+    last
+}
+
+/// Splits `src` into lines on `\n`, `\r\n` and `\r`. A trailing terminator does not add a line.
+pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]) -> Vec<Line<'a>> {
+    let bytes = src.as_bytes();
+    let mut lines = Vec::new();
+    let (mut start, mut index) = (0, 0);
+    let mut next_stop = 0;
+    // The tabs between `start` and `end`.
+    let mut take_stops = |end: usize| {
+        let first = next_stop;
+        while stops.get(next_stop).is_some_and(|stop| stop.at < end) {
+            next_stop += 1;
+        }
+        &stops[first..next_stop]
+    };
+
+    while index < bytes.len() {
+        let end = index;
+        match bytes[index] {
+            b'\n' => index += 1,
+            b'\r' => index += if bytes.get(index + 1) == Some(&b'\n') { 2 } else { 1 },
+            _ => {
+                index += 1;
+                continue;
+            }
+        }
+        lines.push(Line {
+            number: lines.len() + 1,
+            column: 0,
+            text: &src[start..end],
+            eol: &src[end..index],
+            eof: index == bytes.len(),
+            item_end: false,
+            lazy: false,
+            stops: take_stops(end),
+            base: start,
+            pad: 0,
+            flavor,
+            others: last_others(&src[start..end]),
+        });
+        start = index;
+    }
+
+    if start < src.len() {
+        lines.push(Line {
+            number: lines.len() + 1,
+            column: 0,
+            text: &src[start..],
+            eol: "",
+            eof: true,
+            item_end: false,
+            lazy: false,
+            stops: take_stops(src.len()),
+            base: start,
+            pad: 0,
+            flavor,
+            others: last_others(&src[start..]),
+        });
+    }
+
+    lines
+}

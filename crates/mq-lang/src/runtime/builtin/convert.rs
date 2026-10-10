@@ -12,7 +12,7 @@ use url::Url;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ConvertKind {
     Blockquote,
-    Heading(u8),
+    Heading(mq_markdown::HeadingDepth),
     HorizontalRule,
     Link(String),
     ListItem,
@@ -57,12 +57,12 @@ impl TryFrom<&RuntimeValue> for Convert {
     fn try_from(value: &RuntimeValue) -> Result<Self, Self::Error> {
         match value {
             RuntimeValue::Symbol(symbol) => match symbol.to_string().as_str() {
-                "h1" => Ok(Convert::Markdown(ConvertKind::Heading(1))),
-                "h2" => Ok(Convert::Markdown(ConvertKind::Heading(2))),
-                "h3" => Ok(Convert::Markdown(ConvertKind::Heading(3))),
-                "h4" => Ok(Convert::Markdown(ConvertKind::Heading(4))),
-                "h5" => Ok(Convert::Markdown(ConvertKind::Heading(5))),
-                "h6" => Ok(Convert::Markdown(ConvertKind::Heading(6))),
+                "h1" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H1))),
+                "h2" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H2))),
+                "h3" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H3))),
+                "h4" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H4))),
+                "h5" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H5))),
+                "h6" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H6))),
 
                 "html" => Ok(Convert::Html),
                 "md5" => Ok(Convert::Md5),
@@ -75,12 +75,12 @@ impl TryFrom<&RuntimeValue> for Convert {
                 _ => Err(Error::InvalidConvert(symbol.to_string())),
             },
             RuntimeValue::String(s) => match s.as_str() {
-                "#" => Ok(Convert::Markdown(ConvertKind::Heading(1))),
-                "##" => Ok(Convert::Markdown(ConvertKind::Heading(2))),
-                "###" => Ok(Convert::Markdown(ConvertKind::Heading(3))),
-                "####" => Ok(Convert::Markdown(ConvertKind::Heading(4))),
-                "#####" => Ok(Convert::Markdown(ConvertKind::Heading(5))),
-                "######" => Ok(Convert::Markdown(ConvertKind::Heading(6))),
+                "#" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H1))),
+                "##" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H2))),
+                "###" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H3))),
+                "####" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H4))),
+                "#####" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H5))),
+                "######" => Ok(Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H6))),
                 ">" => Ok(Convert::Markdown(ConvertKind::Blockquote)),
                 "-" => Ok(Convert::Markdown(ConvertKind::ListItem)),
                 "~~" => Ok(Convert::Markdown(ConvertKind::Strikethrough)),
@@ -194,6 +194,7 @@ impl Convert {
             ),
             ConvertKind::ListItem => RuntimeValue::Markdown(
                 Shared::new(mq_markdown::Node::List(mq_markdown::List {
+                    marker: None,
                     values: vec![text.into()],
                     index: 0,
                     ordered: false,
@@ -230,6 +231,7 @@ impl Convert {
             ),
             ConvertKind::HorizontalRule => RuntimeValue::Markdown(
                 Shared::new(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+                    marker: None,
                     position: None,
                 })),
                 None,
@@ -245,7 +247,7 @@ pub(super) fn to_html(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         RuntimeValue::String(s) => Ok(mq_markdown::to_html(s).into()),
         RuntimeValue::Symbol(s) => Ok(mq_markdown::to_html(&s.to_string()).into()),
-        RuntimeValue::Markdown(node_value, _) => Ok(mq_markdown::to_html(node_value.to_string().as_str()).into()),
+        RuntimeValue::Markdown(node_value, _) => Ok(node_value.to_html().into()),
         _ => Err(Error::InvalidTypes("to_html".to_string(), vec![value.clone()])),
     }
 }
@@ -960,23 +962,41 @@ mod tests {
 
     // Test convert::try_from
     #[rstest]
-    #[case::h1_symbol(RuntimeValue::Symbol(Ident::new("h1")), Convert::Markdown(ConvertKind::Heading(1)))]
-    #[case::h2_symbol(RuntimeValue::Symbol(Ident::new("h2")), Convert::Markdown(ConvertKind::Heading(2)))]
-    #[case::h3_symbol(RuntimeValue::Symbol(Ident::new("h3")), Convert::Markdown(ConvertKind::Heading(3)))]
-    #[case::h4_symbol(RuntimeValue::Symbol(Ident::new("h4")), Convert::Markdown(ConvertKind::Heading(4)))]
-    #[case::h5_symbol(RuntimeValue::Symbol(Ident::new("h5")), Convert::Markdown(ConvertKind::Heading(5)))]
-    #[case::h6_symbol(RuntimeValue::Symbol(Ident::new("h6")), Convert::Markdown(ConvertKind::Heading(6)))]
+    #[case::h1_symbol(
+        RuntimeValue::Symbol(Ident::new("h1")),
+        Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H1))
+    )]
+    #[case::h2_symbol(
+        RuntimeValue::Symbol(Ident::new("h2")),
+        Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H2))
+    )]
+    #[case::h3_symbol(
+        RuntimeValue::Symbol(Ident::new("h3")),
+        Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H3))
+    )]
+    #[case::h4_symbol(
+        RuntimeValue::Symbol(Ident::new("h4")),
+        Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H4))
+    )]
+    #[case::h5_symbol(
+        RuntimeValue::Symbol(Ident::new("h5")),
+        Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H5))
+    )]
+    #[case::h6_symbol(
+        RuntimeValue::Symbol(Ident::new("h6")),
+        Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H6))
+    )]
     #[case::html_symbol(RuntimeValue::Symbol(Ident::new("html")), Convert::Html)]
     #[case::md5_symbol(RuntimeValue::Symbol(Ident::new("md5")), Convert::Md5)]
     #[case::sha256_symbol(RuntimeValue::Symbol(Ident::new("sha256")), Convert::Sha256)]
     #[case::text_symbol(RuntimeValue::Symbol(Ident::new("text")), Convert::Text)]
     #[case::sh_symbol(RuntimeValue::Symbol(Ident::new("sh")), Convert::Shell)]
-    #[case::h1_string(RuntimeValue::String(Shared::new("#".to_string())), Convert::Markdown(ConvertKind::Heading(1)))]
-    #[case::h2_string(RuntimeValue::String(Shared::new("##".to_string())), Convert::Markdown(ConvertKind::Heading(2)))]
-    #[case::h3_string(RuntimeValue::String(Shared::new("###".to_string())), Convert::Markdown(ConvertKind::Heading(3)))]
-    #[case::h4_string(RuntimeValue::String(Shared::new("####".to_string())), Convert::Markdown(ConvertKind::Heading(4)))]
-    #[case::h5_string(RuntimeValue::String(Shared::new("#####".to_string())), Convert::Markdown(ConvertKind::Heading(5)))]
-    #[case::h6_string(RuntimeValue::String(Shared::new("######".to_string())), Convert::Markdown(ConvertKind::Heading(6)))]
+    #[case::h1_string(RuntimeValue::String(Shared::new("#".to_string())), Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H1)))]
+    #[case::h2_string(RuntimeValue::String(Shared::new("##".to_string())), Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H2)))]
+    #[case::h3_string(RuntimeValue::String(Shared::new("###".to_string())), Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H3)))]
+    #[case::h4_string(RuntimeValue::String(Shared::new("####".to_string())), Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H4)))]
+    #[case::h5_string(RuntimeValue::String(Shared::new("#####".to_string())), Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H5)))]
+    #[case::h6_string(RuntimeValue::String(Shared::new("######".to_string())), Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H6)))]
     #[case::blockquote_string(RuntimeValue::String(Shared::new(">".to_string())), Convert::Markdown(ConvertKind::Blockquote))]
     #[case::list_item_string(RuntimeValue::String(Shared::new("-".to_string())), Convert::Markdown(ConvertKind::ListItem))]
     #[case::strikethrough_string(RuntimeValue::String(Shared::new("~~".to_string())), Convert::Markdown(ConvertKind::Strikethrough))]
@@ -1453,6 +1473,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_to_html_reads_jsx_children_as_markdown() {
+        let node = mq_markdown::Markdown::from_mdx_str("<Foo>\n  *hello*\n</Foo>\n")
+            .unwrap()
+            .nodes
+            .remove(0);
+        let result = to_html(&RuntimeValue::Markdown(node.into(), None)).unwrap();
+        assert_eq!(result.to_string().trim_end(), "<Foo>\n<p><em>hello</em></p>\n</Foo>");
+    }
+
     // Test flatten
     #[rstest]
     #[case::flat_array(
@@ -1639,6 +1669,7 @@ mod tests {
     #[case(5)]
     #[case(6)]
     fn test_convert_all_heading_levels(#[case] depth: u8) {
+        let depth = mq_markdown::HeadingDepth::new(depth).expect("a heading depth");
         let convert = Convert::Markdown(ConvertKind::Heading(depth));
         let input = RuntimeValue::String(Shared::new("Test".to_string()));
         let result = convert.convert(&input);
@@ -1746,7 +1777,7 @@ mod tests {
             position: None,
         });
         let input = RuntimeValue::new_markdown(markdown_node);
-        let convert = Convert::Markdown(ConvertKind::Heading(2));
+        let convert = Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H2));
 
         let result = convert.convert(&input);
 
@@ -1756,13 +1787,13 @@ mod tests {
         let mq_markdown::Node::Heading(heading) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Heading node")
         };
-        assert_eq!(heading.depth, 2);
+        assert_eq!(heading.depth, mq_markdown::HeadingDepth::H2);
     }
 
     // Test convert with number input
     #[test]
     fn test_convert_number_to_heading() {
-        let convert = Convert::Markdown(ConvertKind::Heading(1));
+        let convert = Convert::Markdown(ConvertKind::Heading(mq_markdown::HeadingDepth::H1));
         let input = RuntimeValue::Number(42.into());
         let result = convert.convert(&input);
 
@@ -1772,7 +1803,7 @@ mod tests {
         let mq_markdown::Node::Heading(heading) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Heading node")
         };
-        assert_eq!(heading.depth, 1);
+        assert_eq!(heading.depth, mq_markdown::HeadingDepth::H1);
         assert_eq!(heading.values.len(), 1);
     }
 

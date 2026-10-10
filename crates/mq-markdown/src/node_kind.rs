@@ -255,8 +255,8 @@ impl Node {
             Node::Embed(_) => NodeKind::Embed,
             Node::Definition(_) => NodeKind::Definition,
             Node::Delete(_) => NodeKind::Delete,
-            Node::Heading(Heading { depth, .. }) => match depth {
-                0 | 1 => NodeKind::H1,
+            Node::Heading(Heading { depth, .. }) => match depth.get() {
+                1 => NodeKind::H1,
                 2 => NodeKind::H2,
                 3 => NodeKind::H3,
                 4 => NodeKind::H4,

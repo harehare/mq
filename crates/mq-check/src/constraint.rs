@@ -158,7 +158,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // Pass 2.5: Process Assign symbols before other operators/calls.
     // This ensures that variable types are updated by assignments before
     // Refs and Calls in Pass 3 resolve against the (potentially stale) type.
-    // e.g., `var x = 10 | x = "hello" | upcase(x)` — the Assign updates
+    // e.g., `var x = 10 | x = "hello" | upcase(x)`: the Assign updates
     // x's type to String before upcase(x) resolves its argument type.
     for (symbol_id, kind) in &cats.assign_symbols {
         generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
@@ -667,7 +667,7 @@ pub(super) fn generate_symbol_constraints(
                     ctx.set_symbol_type(symbol_id, last_ty);
                 }
             } else {
-                // No HIR resolution — try builtin registry by name as fallback
+                // No HIR resolution: try builtin registry by name as fallback
                 if let Some(symbol) = hir.symbol(symbol_id)
                     && let Some(name) = &symbol.value
                     && ctx.get_builtin_overloads(name.as_str()).is_some()
@@ -757,7 +757,7 @@ pub(super) fn generate_symbol_constraints(
                                 },
                             ));
 
-                            // No need to re-bind subsequent Refs — Assigns are processed
+                            // No need to re-bind subsequent Refs: Assigns are processed
                             // in Pass 2.5 (before Refs/Calls in Pass 3), so Refs will
                             // pick up the updated variable type when they are processed.
                         } else {
@@ -904,7 +904,7 @@ pub(super) fn generate_symbol_constraints(
                         return;
                     }
 
-                    // Homogeneous or unresolved — unify all element types
+                    // Homogeneous or unresolved: unify all element types
                     let elem_ty = elem_tys[0].clone();
                     let range = get_symbol_range(hir, symbol_id);
                     for ty in &elem_tys[1..] {
@@ -1029,7 +1029,7 @@ pub(super) fn generate_symbol_constraints(
             if !children.is_empty() {
                 let range = get_symbol_range(hir, symbol_id);
 
-                // First child is the condition — mq is dynamically typed, so any
+                // First child is the condition: mq is dynamically typed, so any
                 // value can be used as a condition (truthy/falsy), not just Bool.
                 let _cond_ty = ctx.get_or_create_symbol_type(children[0]);
 
@@ -1072,7 +1072,7 @@ pub(super) fn generate_symbol_constraints(
                         true
                     };
 
-                    // Check if any branch is None or a Union containing None — in mq,
+                    // Check if any branch is None or a Union containing None: in mq,
                     // `if (...): value else: None` (or a while-loop branch that returns
                     // `Union(T, None)`) should not unify `value` with None; instead treat
                     // as different types so the overall if-expression preserves the None
@@ -1121,7 +1121,7 @@ pub(super) fn generate_symbol_constraints(
                         || (has_none_branch && resolved.len() >= 2)
                         || has_parameter_branch
                     {
-                        // Different concrete types across branches — use Union type.
+                        // Different concrete types across branches: use Union type.
                         // Include ALL resolved branch types (vars and concrete) so that
                         // branches whose types are not yet fully resolved can still be
                         // tracked and resolved later (e.g., `if (...): items else: None`
@@ -1129,7 +1129,7 @@ pub(super) fn generate_symbol_constraints(
                         let union_ty = Type::union(resolved.clone());
                         ctx.set_symbol_type(symbol_id, union_ty);
                     } else {
-                        // Homogeneous or unresolved — unify all branch types
+                        // Homogeneous or unresolved: unify all branch types
                         ctx.set_symbol_type(symbol_id, then_ty.clone());
                         for ty in &branch_tys[1..] {
                             ctx.add_constraint(Constraint::Equal(
@@ -1438,12 +1438,12 @@ pub(super) fn generate_symbol_constraints(
                     };
 
                     if !all_same && concrete.len() >= 2 {
-                        // Different concrete types in arms — use Union type
+                        // Different concrete types in arms: use Union type
                         let unique_types: Vec<Type> = concrete.into_iter().cloned().collect();
                         let union_ty = Type::union(unique_types);
                         ctx.set_symbol_type(symbol_id, union_ty);
                     } else if concrete.len() == 1 && !var_tys.is_empty() {
-                        // One concrete arm (e.g. `None`) plus still-unresolved arms — union
+                        // One concrete arm (e.g. `None`) plus still-unresolved arms: union
                         // them instead of unifying, or the unresolved type collapses to the
                         // concrete one. Mirrors `merge_loop_types`.
                         let mut unified_var = var_tys[0].clone();
@@ -1527,7 +1527,7 @@ pub(super) fn generate_symbol_constraints(
                     ));
                     ctx.set_symbol_type(symbol_id, try_ty);
                 } else {
-                    // A branch type is still pending deferred resolution — decide later.
+                    // A branch type is still pending deferred resolution: decide later.
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                     ctx.add_deferred_try_catch(infer::DeferredTryCatch {
@@ -1630,7 +1630,7 @@ pub(super) fn generate_symbol_constraints(
                         Type::Var(ty_var)
                     }
                 } else {
-                    // Piped type not yet resolved — defer to post-unification.
+                    // Piped type not yet resolved: defer to post-unification.
                     // Keep the selector so that if the piped type resolves to a Markdown node,
                     // the right type can be returned (e.g., `md.depth` → number).
                     let ty_var = ctx.fresh_var();
@@ -1734,7 +1734,7 @@ pub(super) fn generate_symbol_constraints(
             }
         }
 
-        // Block: pipe chain — compute type from children in pass 3.
+        // Block: pipe chain: compute type from children in pass 3.
         // Block has higher insertion order than its parent (If/Else/etc.), so in
         // the reverse-order pass 3 loop it is processed before its parent.  This
         // means the If handler can see the Block's real type (e.g. Union(T, None)
@@ -1919,7 +1919,7 @@ fn generate_call_constraints(
 
                         let real_children = &children[..children.len() - trailing_bracket_count];
                         let arg_symbol_ids = if prepend_piped {
-                            // piped input was prepended — include a placeholder
+                            // piped input was prepended: include a placeholder
                             let mut ids = vec![symbol_id]; // placeholder for piped arg
                             ids.extend_from_slice(real_children);
                             ids
@@ -2032,7 +2032,7 @@ fn generate_call_constraints(
                                     // Only constrain the index to Number when it is a literal
                                     // numeric index (e.g. v[0]). For variable indices
                                     // (e.g. a String key used for Dict access), skip this
-                                    // constraint — the correct element type is resolved via
+                                    // constraint: the correct element type is resolved via
                                     // resolve_deferred_tuple_accesses once the container's
                                     // type is known.
                                     if literal_index.is_some()
