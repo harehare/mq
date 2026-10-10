@@ -642,7 +642,7 @@ impl InferenceContext {
     }
 
     /// The signature of `partial(f, a1..ak)`. Its shape follows the arity of `f`, so it is derived
-    /// from the call: for `f: (p1..pn) -> r` and `k < n` it is `(f, p1..pk) -> (p(k+1)..pn) -> r`.
+    /// from the call: for `f: (p_1..p_n) -> r` and `k < n` it is `(f, p_1..p_k) -> (p_k+1..p_n) -> r`.
     /// An `f` that is not settled yet gets a signature that constrains nothing.
     fn partial_signature(&mut self, args: &[Type]) -> Option<Type> {
         let (func, bound) = args.split_first()?;
