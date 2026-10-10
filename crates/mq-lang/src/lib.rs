@@ -63,6 +63,7 @@ use std::sync::RwLock;
 
 pub use arena::{Arena, ArenaId};
 pub use ast::Program;
+pub use ast::constants::identifiers::IMPLICIT_FN_ARG;
 pub use ast::node::Expr as AstExpr;
 pub use ast::node::IdentWithToken;
 pub use ast::node::Literal as AstLiteral;

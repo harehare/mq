@@ -173,7 +173,7 @@ fn cookbook_count_words_in_document() {
     );
     let out = run(&[
         "-A",
-        "nodes | map(fn(n): to_text(n) | split(\" \") | len;) | fold(0, fn(acc, x): acc + x;)",
+        "nodes | map(fn: to_text | split(\" \") | len) | fold(0, fn(acc, x): acc + x)",
         path.to_str().unwrap(),
     ]);
     assert_eq!(out.trim(), "23");
@@ -913,8 +913,8 @@ fn cookbook_track_task_list_progress() {
 
     let summary = run(&[
         "-A",
-        r#"let total = count_by(fn(x): x | select(.list);)
-| let done = count_by(fn(x): x | select(.list.checked == true);)
+        r#"let total = count_by(fn(x): x | select(.list))
+| let done = count_by(fn(x): x | select(.list.checked == true))
 | s"${done}/${total} done""#,
         path.to_str().unwrap(),
     ]);
@@ -924,15 +924,15 @@ fn cookbook_track_task_list_progress() {
 #[test]
 fn cookbook_transform_arrays() {
     assert_eq!(
-        run(&["-I", "null", "map([1, 2, 3, 4, 5], fn(x): x + 1;)"]).trim(),
+        run(&["-I", "null", "map([1, 2, 3, 4, 5], fn(x): x + 1)"]).trim(),
         "[2, 3, 4, 5, 6]"
     );
     assert_eq!(
-        run(&["-I", "null", "filter([5, 15, 8, 20, 3], fn(x): x > 10;)"]).trim(),
+        run(&["-I", "null", "filter([5, 15, 8, 20, 3], fn(x): x > 10)"]).trim(),
         "[15, 20]"
     );
     assert_eq!(
-        run(&["-I", "null", "fold([1, 2, 3, 4], 0, fn(acc, x): acc + x;)"]).trim(),
+        run(&["-I", "null", "fold([1, 2, 3, 4], 0, fn(acc, x): acc + x)"]).trim(),
         "10"
     );
 }

@@ -24,6 +24,15 @@ pub(crate) const MAX_PARSE_DEPTH: usize = 512;
 
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::builtins::GET));
 
+/// How a program ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProgramKind {
+    /// Top level, ends at EOF.
+    Root,
+    /// Nested body, ends at `;` or `end`, or before a `,` or closing bracket owned by the enclosing construct.
+    Block,
+}
+
 pub struct Parser<'a, 'alloc> {
     tokens: Peekable<core::slice::Iter<'a, Token>>,
     token_base_address: usize,
@@ -51,7 +60,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     pub fn parse(&mut self) -> Result<Program, SyntaxError> {
-        self.parse_program(true)
+        self.parse_program(ProgramKind::Root)
     }
 
     /// Returns the shared representation for a token retained by the AST.
@@ -78,13 +87,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.token_arena.alloc(token)
     }
 
-    fn parse_program(&mut self, root: bool) -> Result<Program, SyntaxError> {
+    fn parse_program(&mut self, kind: ProgramKind) -> Result<Program, SyntaxError> {
+        let root = kind == ProgramKind::Root;
         let mut asts = Vec::with_capacity(64);
 
         // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::Pipe | TokenKind::SemiColon => {
+                    return Err(SyntaxError::UnexpectedToken((**token).clone()));
+                }
+                TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace if !root => {
                     return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
                 TokenKind::End => {
@@ -95,7 +108,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
-        while let Some(token) = self.tokens.next() {
+        while !(!root && self.at_body_end())
+            && let Some(token) = self.tokens.next()
+        {
             match &token.kind {
                 TokenKind::Pipe => continue, // Skip pipes.
                 TokenKind::Eof => break,     // End of file terminates the program.
@@ -140,6 +155,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         Ok(asts)
+    }
+
+    /// True at a `,` or closing bracket, which no statement can contain. The enclosing call, array
+    /// or dict owns it. EOF also counts, so the enclosing construct reports its own missing closer.
+    fn at_body_end(&mut self) -> bool {
+        self.tokens.peek().is_some_and(|token| {
+            matches!(
+                token.kind,
+                TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace | TokenKind::Eof
+            )
+        })
     }
 
     #[inline(always)]
@@ -429,6 +455,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Var => self.parse_var(token),
             TokenKind::Def => self.parse_def(token),
             TokenKind::Do => self.parse_block(token),
+            TokenKind::Fn if self.is_next_token(|kind| matches!(kind, TokenKind::Colon)) => {
+                self.parse_implicit_fn(token)
+            }
             TokenKind::Fn | TokenKind::Arrow => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
             TokenKind::Loop => self.parse_loop(token),
@@ -476,7 +505,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                     self.consume_colon_or_do();
 
-                    let program = self.parse_program(false)?;
+                    let program = self.parse_program(ProgramKind::Block)?;
 
                     // Only allow 'let', 'def', or 'module' at the top-level of a module block
                     for node in &program {
@@ -1519,7 +1548,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         self.consume_colon_or_do();
 
-        let program = self.parse_program(false)?;
+        let program = self.parse_program(ProgramKind::Block)?;
 
         Ok(Shared::new(Node {
             token_id: def_token_id,
@@ -1534,7 +1563,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(never)]
     fn parse_block(&mut self, do_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let do_token_id = self.alloc_token(do_token);
-        let program = self.parse_program(false)?;
+        let program = self.parse_program(ProgramKind::Block)?;
 
         // The End token is already consumed by parse_program when it encounters it
         // No need to expect another End token here
@@ -1552,7 +1581,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         self.consume_colon_or_do();
 
-        let program = self.parse_program(false)?;
+        let program = self.parse_program(ProgramKind::Block)?;
 
         let fn_node = Shared::new(Node {
             token_id: fn_token_id,
@@ -1560,6 +1589,36 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         });
 
         // Handle postfix operations: fn(...): ... end(args), fn(...): ... end(args)[N], etc.
+        self.parse_postfix_ops(fn_node, fn_token)
+    }
+
+    /// `fn: body`, parsed as `fn(%arg): %arg | body`.
+    #[inline(never)]
+    fn parse_implicit_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let fn_token_id = self.alloc_token(fn_token);
+        self.consume_colon();
+
+        let mut program = self.parse_program(ProgramKind::Block)?;
+        program.insert(
+            0,
+            Shared::new(Node {
+                token_id: fn_token_id,
+                expr: Expr::Ident(IdentWithToken::new(constants::identifiers::IMPLICIT_FN_ARG)),
+            }),
+        );
+
+        let fn_node = Shared::new(Node {
+            token_id: fn_token_id,
+            expr: Expr::Fn(
+                vec![Param {
+                    ident: IdentWithToken::new(constants::identifiers::IMPLICIT_FN_ARG),
+                    default: None,
+                    is_variadic: false,
+                }],
+                program,
+            ),
+        });
+
         self.parse_postfix_ops(fn_node, fn_token)
     }
 
@@ -1577,7 +1636,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match self.tokens.peek() {
             Some(_) => {
                 let cond = args.first().unwrap();
-                let body_program = self.parse_program(false)?;
+                let body_program = self.parse_program(ProgramKind::Block)?;
 
                 Ok(Shared::new(Node {
                     token_id,
@@ -1596,7 +1655,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         match self.tokens.peek() {
             Some(_) => {
-                let body_program = self.parse_program(false)?;
+                let body_program = self.parse_program(ProgramKind::Block)?;
 
                 Ok(Shared::new(Node {
                     token_id,
@@ -1621,7 +1680,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match self.tokens.peek() {
             Some(_) => {
                 let cond = args.first().unwrap();
-                let body_program = self.parse_program(false)?;
+                let body_program = self.parse_program(ProgramKind::Block)?;
 
                 Ok(Shared::new(Node {
                     token_id,
@@ -1733,7 +1792,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 self.consume_colon_or_do();
 
                 let each_values = Shared::clone(&args[1]);
-                let body_program = self.parse_program(false)?;
+                let body_program = self.parse_program(ProgramKind::Block)?;
 
                 Ok(Shared::new(Node {
                     token_id: self.alloc_token(foreach_token),
@@ -9911,6 +9970,155 @@ Shared::new(Node {
             }
             other => panic!("expected the inner UnexpectedEOFAfterToken, got {:?}", other),
         }
+    }
+
+    /// For each argument of the top-level call, the statement count of its body if it is a lambda.
+    fn lambda_arg_body_lens(source: &str) -> Vec<Option<usize>> {
+        let program = parse_source(source).expect("source should parse");
+        let [node] = program.as_slice() else {
+            panic!("expected a single top-level expression");
+        };
+        let Expr::Call(_, args) = &node.expr else {
+            panic!("expected a call, got {:?}", node.expr);
+        };
+        args.iter()
+            .map(|arg| match &arg.expr {
+                Expr::Fn(_, body) => Some(body.len()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[rstest]
+    #[case::only_arg("f(fn(x): x + 1)", vec![Some(1)])]
+    #[case::arrow("f(->(x): x + 1)", vec![Some(1)])]
+    #[case::last_arg("f(a, fn(x): x + 1)", vec![None, Some(1)])]
+    #[case::multiple_params("f(a, 0, fn(acc, x): acc + x)", vec![None, None, Some(1)])]
+    #[case::ends_at_comma("f(fn(x): x, 1)", vec![Some(1), None])]
+    #[case::lambda_between_args("f(a, fn(x): x, b)", vec![None, Some(1), None])]
+    #[case::two_lambdas("f(fn(x): x + 1, fn(x): x * 2)", vec![Some(1), Some(1)])]
+    #[case::pipe_stays_in_body("f(fn(x): x | g(.h))", vec![Some(2)])]
+    #[case::pipe_before_comma("f(fn(x): x | g(.h), 1)", vec![Some(2), None])]
+    #[case::call_with_commas_in_body("f(fn(x): g(x, 1, 2), 3)", vec![Some(1), None])]
+    #[case::array_in_body("f(fn(x): [x, 1], 2)", vec![Some(1), None])]
+    #[case::dict_in_body("f(fn(x): {\"a\": x, \"b\": 1}, 2)", vec![Some(1), None])]
+    #[case::paren_in_body("f(fn(x): (x + 1) * 2, 3)", vec![Some(1), None])]
+    #[case::if_else_in_body("f(fn(x): if (x): 1 else: 2, 3)", vec![Some(1), None])]
+    #[case::elif_in_body("f(fn(x): if (x): 1 elif (y): 2 else: 3)", vec![Some(1)])]
+    #[case::do_end_in_body("f(fn(x): do 1 | 2 end, 3)", vec![Some(1), None])]
+    #[case::foreach_in_body("f(fn(x): foreach (i, x): i end, 3)", vec![Some(1), None])]
+    #[case::match_in_body("f(fn(x): match (x): | 1: 2 | _: 3 end, 4)", vec![Some(1), None])]
+    #[case::nested_call_lambda("f(fn(x): g(x, fn(y): y + 1))", vec![Some(1)])]
+    #[case::nested_call_lambda_then_comma("f(fn(x): g(x, fn(y): y + 1), 2)", vec![Some(1), None])]
+    #[case::let_in_body("f(fn(x): let y = x + 1 | y, 2)", vec![Some(2), None])]
+    #[case::lambda_in_param_default("f(fn(x = g(fn(y): y)): x, 1)", vec![Some(1), None])]
+    #[case::semicolon_form("f(fn(x): x + 1;)", vec![Some(1)])]
+    #[case::semicolon_form_then_arg("f(fn(x): x; , 1)", vec![Some(1), None])]
+    #[case::end_form("f(fn(x): do x end; , 1)", vec![Some(1), None])]
+    #[case::inner_end_then_semicolon("f(fn(x): foreach (i, x): i end;)", vec![Some(1)])]
+    fn test_lambda_in_call_args_may_omit_terminator(#[case] source: &str, #[case] expected: Vec<Option<usize>>) {
+        assert_eq!(lambda_arg_body_lens(source), expected);
+    }
+
+    // Body lengths exclude the leading `fn:` argument statement.
+    #[rstest]
+    #[case::only_arg("f(fn: self + 1)", vec![Some(1)])]
+    #[case::last_arg("f(a, fn: self + 1)", vec![None, Some(1)])]
+    #[case::ends_at_comma("f(fn: self, 1)", vec![Some(1), None])]
+    #[case::pipe_stays_in_body("f(fn: g(1) | h(2))", vec![Some(2)])]
+    #[case::pipe_before_comma("f(fn: g | h, 1)", vec![Some(2), None])]
+    #[case::call_with_commas_in_body("f(fn: g(1, 2), 3)", vec![Some(1), None])]
+    #[case::nested("f(fn: g(fn: self + 1))", vec![Some(1)])]
+    #[case::nested_then_comma("f(fn: g(fn: self + 1), 2)", vec![Some(1), None])]
+    #[case::if_else_in_body("f(fn: if (self): 1 else: 2, 3)", vec![Some(1), None])]
+    #[case::semicolon_form("f(fn: self + 1;)", vec![Some(1)])]
+    #[case::end_form("f(fn: do self end;, 1)", vec![Some(1), None])]
+    fn test_lambda_without_params(#[case] source: &str, #[case] expected: Vec<Option<usize>>) {
+        let expected: Vec<_> = expected.into_iter().map(|len| len.map(|len| len + 1)).collect();
+        assert_eq!(lambda_arg_body_lens(source), expected);
+    }
+
+    #[test]
+    fn test_lambda_without_params_takes_one_argument() {
+        let program = parse_source("f(fn: self, fn(): 1)").expect("source should parse");
+        let Expr::Call(_, args) = &program[0].expr else {
+            panic!("expected a call");
+        };
+        let Expr::Fn(params, body) = &args[0].expr else {
+            panic!("expected a function");
+        };
+        let [param] = params.as_slice() else {
+            panic!("expected one parameter");
+        };
+        assert!(matches!(&body[0].expr, Expr::Ident(ident) if ident.name == param.ident.name));
+        assert!(matches!(&args[1].expr, Expr::Fn(params, _) if params.is_empty()));
+    }
+
+    #[test]
+    fn test_lambda_without_params_outside_call_args_with_terminator() {
+        let program = parse_source("let g = fn: self + 1;").expect("source should parse");
+        assert!(matches!(&program[0].expr, Expr::Let(..)));
+    }
+
+    #[rstest]
+    #[case::let_value_without_terminator("let g = fn: self + 1)")]
+    #[case::empty_body("f(fn: )")]
+    #[case::empty_body_then_comma("f(fn:, 1)")]
+    #[case::unclosed_call("f(fn: self")]
+    #[case::arrow_has_no_paramless_form("f(->: self)")]
+    #[case::missing_colon("f(fn self)")]
+    fn test_lambda_without_params_reports_malformed_input(#[case] source: &str) {
+        assert!(parse_source(source).is_err(), "{source} should not parse");
+    }
+
+    #[rstest]
+    #[case::let_value("let g = fn(x): x + 1)")]
+    #[case::empty_body("f(fn(x): )")]
+    #[case::empty_body_then_comma("f(fn(x):, 1)")]
+    #[case::dangling_operator("f(fn(x): x +)")]
+    #[case::unclosed_call("f(fn(x): x + 1")]
+    #[case::stray_close_paren("f(fn(x): x + 1))")]
+    fn test_lambda_reports_malformed_input(#[case] source: &str) {
+        assert!(parse_source(source).is_err(), "{source} should not parse");
+    }
+
+    #[rstest]
+    #[case::paren_group("(fn(x): x + 1)(2)")]
+    #[case::array_element("[fn(x): x, 1]")]
+    #[case::implicit_array_element("[fn: self, 1]")]
+    #[case::dict_value("{\"a\": fn(x): x, \"b\": 1}")]
+    #[case::lambda_body_tail("f(fn(x): fn(y): x + y)")]
+    #[case::after_pipe("f(1 | fn(x): x + 1, 2)")]
+    fn test_lambda_ends_at_the_closer_of_its_enclosing_construct(#[case] source: &str) {
+        parse_source(source).expect("source should parse");
+    }
+
+    #[test]
+    fn test_lambda_array_element_ends_before_comma() {
+        let program = parse_source("[fn(x): x + 1, 2]").expect("source should parse");
+        let Expr::Array(elements) = &program[0].expr else {
+            panic!("expected an array");
+        };
+        assert_eq!(elements.len(), 2);
+        assert!(matches!(&elements[0].expr, Expr::Fn(..)));
+    }
+
+    #[rstest]
+    #[case::empty_body("f(fn(x): )", TokenKind::RParen)]
+    #[case::empty_body_then_comma("f(fn(x):, 1)", TokenKind::Comma)]
+    fn test_lambda_in_call_args_with_empty_body_reports_the_delimiter(#[case] source: &str, #[case] kind: TokenKind) {
+        match parse_source(source) {
+            Err(SyntaxError::UnexpectedToken(token)) => assert_eq!(token.kind, kind),
+            other => panic!("expected UnexpectedToken, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_unclosed_call_after_unterminated_lambda_reports_missing_paren() {
+        assert!(matches!(
+            parse_source("f(fn(x): x + 1"),
+            Err(SyntaxError::ExpectedClosingParen(..))
+        ));
     }
 
     const STACK_KIB: usize = 2048;

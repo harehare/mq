@@ -459,6 +459,9 @@ impl<'a> CompileOptions<'a> {
     }
 }
 
+/// The argument of `fn: body` is bound to `self`, not called.
+static IMPLICIT_FN_ARG: LazyLock<Ident> = LazyLock::new(|| Ident::new(crate::IMPLICIT_FN_ARG));
+
 /// Names implemented by `builtin.mq`, rather than native Rust builtins.
 static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<Ident>> = LazyLock::new(|| {
     BUILTIN_FILE
@@ -1376,10 +1379,11 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn is_auto_call_candidate(node: &Node) -> bool {
-        matches!(
-            &node.expr,
-            Expr::Ident(_) | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
-        )
+        match &node.expr {
+            Expr::Ident(ident) => ident.name != *IMPLICIT_FN_ARG,
+            Expr::QualifiedAccess(_, AccessTarget::Ident(_)) => true,
+            _ => false,
+        }
     }
 
     /// Compiles a `def`/`fn` body into a chunk, marking it a generator if its own level

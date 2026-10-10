@@ -15,8 +15,8 @@ $ mq 'select(.list.checked == true)' TODO.md
 Count done vs. total:
 
 ```bash
-$ mq -A 'let total = count_by(fn(x): x | select(.list);)
-| let done = count_by(fn(x): x | select(.list.checked == true);)
+$ mq -A 'let total = count_by(fn(x): x | select(.list))
+| let done = count_by(fn(x): x | select(.list.checked == true))
 | s"${done}/${total} done"' TODO.md
 ```
 

@@ -722,6 +722,42 @@ end"#;
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
 
+    #[rstest]
+    #[case::bare("fn: self")]
+    #[case::call_arg("map([1], fn: self + 1)")]
+    #[case::nested("map([[1]], fn: map(fn: self + 1))")]
+    fn test_fn_without_params_takes_one_argument(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, code);
+
+        assert!(
+            hir.symbols()
+                .any(|(_, s)| matches!(&s.kind, SymbolKind::Function(params) if params.len() == 1))
+        );
+
+        let is_arg = |s: &Symbol| s.value.as_deref() == Some(mq_lang::IMPLICIT_FN_ARG);
+        let param = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Parameter && is_arg(s));
+        let arg_ref = hir.symbols().find(|(_, s)| s.kind == SymbolKind::Ref && is_arg(s));
+        let (param_id, _) = param.expect("hidden parameter");
+        let (ref_id, _) = arg_ref.expect("leading reference");
+        assert_eq!(hir.resolve_reference_symbol(ref_id), Some(param_id));
+    }
+
+    #[test]
+    fn test_fn_with_empty_params_takes_no_argument() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, "fn(): 1");
+
+        assert!(
+            hir.symbols()
+                .any(|(_, s)| matches!(&s.kind, SymbolKind::Function(params) if params.is_empty()))
+        );
+    }
+
     #[test]
     fn test_catch_error_binder_resolution() {
         let mut hir = Hir::default();

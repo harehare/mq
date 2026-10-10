@@ -518,6 +518,29 @@ mod tests {
     use mq_hir::{HirError, SymbolKind};
     use rstest::rstest;
 
+    #[rstest]
+    #[case::number_elements("[1, 2] | map(fn: self + 1)")]
+    #[case::pipe_in_body("[\"a b\"] | map(fn: split(\" \") | len)")]
+    #[case::nested("[[1, 2]] | map(fn: map(fn: self + 1))")]
+    #[case::in_function("def f(xs): map(xs, fn: self * 2); | f([1])")]
+    fn test_fn_without_params_type_checks(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+        let errors = TypeChecker::new().check(&hir);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[rstest]
+    #[case::fold_passes_two_arguments("fold([1, 2], 0, fn: self)")]
+    #[case::elements_not_numbers("[\"a\"] | map(fn: abs())")]
+    #[case::piped_call_in_body("[1] | map(fn: split(\" \"))")]
+    fn test_fn_without_params_rejects_incompatible_calls(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+        let errors = TypeChecker::new().check(&hir);
+        assert!(!errors.is_empty(), "{code} should not type check");
+    }
+
     #[test]
     fn test_generator_code_does_not_produce_type_errors() {
         let mut hir = Hir::default();

@@ -1,4 +1,4 @@
-use crate::Program;
+use crate::{IMPLICIT_FN_ARG, Ident, Program, Shared};
 
 use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment, UnaryOp};
 use std::fmt::Write;
@@ -244,14 +244,25 @@ impl Node {
                 }
             }
             Expr::Fn(params, program) => {
-                buf.push_str("fn(");
-                format_params(params, buf, indent);
-                buf.push(')');
-                if needs_block_syntax(program) {
-                    format_program_block(program, buf, indent);
-                } else if let Some(stmt) = program.first() {
-                    buf.push_str(": ");
-                    stmt.format_to_code(buf, indent);
+                if let Some(body) = implicit_fn_body(params, program) {
+                    buf.push_str("fn: ");
+                    for (i, stmt) in body.iter().enumerate() {
+                        if i > 0 {
+                            buf.push_str(" | ");
+                        }
+                        stmt.format_to_code(buf, indent);
+                    }
+                    buf.push(';');
+                } else {
+                    buf.push_str("fn(");
+                    format_params(params, buf, indent);
+                    buf.push(')');
+                    if needs_block_syntax(program) {
+                        format_program_block(program, buf, indent);
+                    } else if let Some(stmt) = program.first() {
+                        buf.push_str(": ");
+                        stmt.format_to_code(buf, indent);
+                    }
                 }
             }
             Expr::Match(value, arms) => {
@@ -518,6 +529,20 @@ fn format_pattern(pattern: &Pattern, buf: &mut String) {
                 format_pattern(p, buf);
             }
         }
+    }
+}
+
+/// The statements of `fn: body` after the synthetic leading argument reference.
+fn implicit_fn_body<'a>(params: &Params, program: &'a Program) -> Option<&'a [Shared<Node>]> {
+    let arg = Ident::new(IMPLICIT_FN_ARG);
+    let [param] = params.as_slice() else {
+        return None;
+    };
+    match program.split_first() {
+        Some((first, body)) if param.ident.name == arg && matches!(&first.expr, Expr::Ident(i) if i.name == arg) => {
+            Some(body)
+        }
+        _ => None,
     }
 }
 
@@ -1339,5 +1364,27 @@ mod tests {
 
         assert_eq!(program.len(), 1, "`{code}` should parse to one expression");
         assert_eq!(program[0].to_code(), code);
+    }
+
+    fn parse_code(code: &str) -> Program {
+        let tokens = crate::Lexer::new(crate::lexer::Options::default())
+            .tokenize(code, crate::Module::TOP_LEVEL_MODULE_ID)
+            .unwrap_or_else(|e| panic!("`{code}` failed to lex: {e:?}"));
+        let mut arena = crate::arena::Arena::new(16);
+        crate::ast::parser::Parser::new(tokens.iter(), &mut arena, crate::Module::TOP_LEVEL_MODULE_ID)
+            .parse()
+            .unwrap_or_else(|e| panic!("`{code}` failed to parse: {e:?}"))
+    }
+
+    #[rstest]
+    #[case::in_call_arg("f(fn: self + 1)", "f(fn: self + 1;)")]
+    #[case::multiple_statements("f(fn: self + 1 | self * 2)", "f(fn: self + 1 | self * 2;)")]
+    #[case::let_value("let g = fn: self;", "let g = fn: self;")]
+    #[case::nested("f(fn: g(fn: self + 1))", "f(fn: g(fn: self + 1;);)")]
+    #[case::explicit_params_unchanged("f(fn(x): x + 1)", "f(fn(x): x + 1)")]
+    fn test_to_code_implicit_fn_reparses(#[case] source: &str, #[case] expected: &str) {
+        let code = parse_code(source)[0].to_code();
+        assert_eq!(code, expected);
+        assert_eq!(parse_code(&code)[0].to_code(), code);
     }
 }

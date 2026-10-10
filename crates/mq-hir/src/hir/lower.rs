@@ -1178,6 +1178,8 @@ impl Hir {
                 insertion_order: 0,
             });
 
+            // `fn: body` has no parameter list at all, not even `()`.
+            let implicit_arg = params.is_empty();
             let params = || params.iter().filter(|param| !param.is_token());
             let symbol_id = self.add_symbol(Symbol {
                 value: None,
@@ -1233,6 +1235,30 @@ impl Hir {
                     self.add_expr(default_expr, source_id, default_scope_id, Some(symbol_id));
                 }
             });
+
+            // `fn: body` is `fn(%arg): %arg | body`.
+            if implicit_arg {
+                let arg_name = smol_str::SmolStr::from(mq_lang::IMPLICIT_FN_ARG);
+                param_info.push(crate::symbol::ParamInfo::from(mq_lang::IMPLICIT_FN_ARG));
+                self.add_symbol(Symbol {
+                    value: Some(arg_name.clone()),
+                    kind: SymbolKind::Parameter,
+                    source: SourceInfo::new(Some(source_id), None),
+                    scope: scope_id,
+                    doc: Vec::new(),
+                    parent: Some(symbol_id),
+                    insertion_order: 0,
+                });
+                self.add_symbol(Symbol {
+                    value: Some(arg_name),
+                    kind: SymbolKind::Ref,
+                    source: SourceInfo::new(Some(source_id), None),
+                    scope: scope_id,
+                    doc: Vec::new(),
+                    parent: Some(symbol_id),
+                    insertion_order: 0,
+                });
+            }
 
             self.symbols[symbol_id].kind = SymbolKind::Function(param_info);
 
