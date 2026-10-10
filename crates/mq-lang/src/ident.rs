@@ -1,9 +1,18 @@
-use std::sync::{LazyLock, RwLock};
+use std::sync::{LazyLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
 
 static STRING_INTERNER: LazyLock<RwLock<StringInterner<DefaultBackend>>> =
     LazyLock::new(|| RwLock::new(StringInterner::default()));
+
+// The interner is append-only, so a panic in an unrelated writer must not take down every later lookup.
+fn interner_read() -> RwLockReadGuard<'static, StringInterner<DefaultBackend>> {
+    STRING_INTERNER.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn interner_write() -> RwLockWriteGuard<'static, StringInterner<DefaultBackend>> {
+    STRING_INTERNER.write().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// An interned string identifier for efficient storage and comparison.
 ///
@@ -19,15 +28,15 @@ impl Ident {
     pub fn new(s: &str) -> Self {
         // Read-lock fast path for the common repeat-lookup case, avoiding the write lock
         // `get_or_intern` always takes.
-        if let Some(sym) = STRING_INTERNER.read().unwrap().get(s) {
+        if let Some(sym) = interner_read().get(s) {
             return Self(sym);
         }
-        Self(STRING_INTERNER.write().unwrap().get_or_intern(s))
+        Self(interner_write().get_or_intern(s))
     }
 
     /// Returns the identifier for `s` only if it is already interned.
     pub(crate) fn lookup(s: &str) -> Option<Self> {
-        STRING_INTERNER.read().unwrap().get(s).map(Self)
+        interner_read().get(s).map(Self)
     }
 
     /// Resolves the identifier and passes it to a callback function.
@@ -37,8 +46,10 @@ impl Ident {
     where
         F: FnOnce(&str) -> R,
     {
-        let interner = STRING_INTERNER.read().unwrap();
-        let resolved = interner.resolve(self.0).unwrap();
+        let interner = interner_read();
+        let resolved = interner
+            .resolve(self.0)
+            .expect("identifier symbols come from the global interner");
         f(resolved)
     }
 }
@@ -91,9 +102,7 @@ impl<'de> serde::Deserialize<'de> for Ident {
 
 /// Returns all interned strings currently in the global string interner.
 pub fn all_symbols() -> Vec<String> {
-    STRING_INTERNER
-        .read()
-        .unwrap()
+    interner_read()
         .iter()
         .map(|(_, s)| s.to_string())
         .collect()
