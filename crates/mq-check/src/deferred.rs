@@ -665,6 +665,12 @@ pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
     true
 }
 
+/// Whether `partial` has a function argument settled enough to judge the call. Its arity does
+/// not depend on the parameter types, which may still be unknown.
+fn partial_function_known(name: &str, operands: &[types::Type]) -> bool {
+    name == "partial" && operands.first().is_some_and(|ty| !ty.is_pending_operand())
+}
+
 /// Resolves deferred overloads after the first round of unification.
 ///
 /// Binary/unary operators whose operands were type variables during constraint
@@ -850,7 +856,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                     // Solve constraints incrementally
                     unify::solve_constraints(ctx);
                 }
-            } else if all_concrete {
+            } else if all_concrete || partial_function_known(&d.op_name, &resolved_operands) {
                 ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
             } else {
                 // Some operands resolved but no match — defer to next pass
@@ -893,7 +899,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                     }
                 } else {
                     let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
-                    if all_concrete {
+                    if all_concrete || partial_function_known(&d.op_name, &resolved_operands) {
                         ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                     } else {
                         // Still unresolved — store back for later processing

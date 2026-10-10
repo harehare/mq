@@ -743,3 +743,29 @@ fn test_dynamic_piped_input(#[case] code: &str, #[case] should_succeed: bool, #[
     let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {result:?}", description);
 }
+
+// partial is typed from the arity of its function argument
+#[rstest]
+#[case::two_params("def f(a, b): a + b; | partial(f, 1)", true)]
+#[case::five_params_one_bound("def f(a, b, c, d, e): a; | partial(f, 1)", true)]
+#[case::five_params_four_bound("def f(a, b, c, d, e): a; | partial(f, 1, 2, 3, 4)", true)]
+#[case::six_params_three_bound("def f(a, b, c, d, e, g): a; | let p = partial(f, 1, 2, 3) | p(4, 5, 6)", true)]
+#[case::reapplied(
+    "def f(a, b, c): a + b + c; | let p = partial(f, 1) | let q = partial(p, 2) | q(3)",
+    true
+)]
+#[case::lambda("let f = fn(a, b, c): a + b + c; | let p = partial(f, 1) | p(2, 3)", true)]
+#[case::all_bound("def f(a, b, c): a; | partial(f, 1, 2, 3)", false)]
+#[case::too_many_bound("def f(a, b): a; | partial(f, 1, 2)", false)]
+#[case::not_a_function("partial(\"x\", 1)", false)]
+#[case::no_arguments("partial()", false)]
+#[case::piped_function("def f(a, b, c): a; | f | partial(1)", true)]
+#[case::piped_function_five_params("def f(a, b, c, d, e): a; | f | partial(1)", true)]
+#[case::piped_function_multiple_bound("def f(a, b, c): a; | f | partial(1, 2)", true)]
+#[case::piped_function_all_bound("def f(a, b): a; | f | partial(1, 2)", false)]
+#[case::piped_non_function("\"abc\" | partial(1)", false)]
+#[case::explicit_function_all_bound_ignores_piped("def f(a, b): a; | f | partial(f, 1, 2)", false)]
+fn test_partial_arity(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types_with_builtins(code);
+    assert_eq!(result.is_empty(), should_succeed, "{code}: {result:?}");
+}

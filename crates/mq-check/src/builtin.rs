@@ -1334,20 +1334,20 @@ fn register_utility(ctx: &mut InferenceContext) {
     register_unary(ctx, "system", Type::String, Type::String);
     register_binary(ctx, "system", Type::String, Type::array(Type::String), Type::String);
 
-    // partial: (fn, bound args...) -> fn over the remaining parameters. The arity is not part of
-    // the signature, so each split of a function with up to four parameters is registered.
-    for total in 2..=4usize {
-        for bound in 1..total {
-            let params: Vec<Type> = (0..total).map(|_| Type::Var(ctx.fresh_var())).collect();
-            let ret = Type::Var(ctx.fresh_var());
-            let mut partial_params = vec![Type::function(params.clone(), ret.clone())];
-            partial_params.extend(params[..bound].iter().cloned());
-            ctx.register_builtin(
-                "partial",
-                Type::function(partial_params, Type::function(params[bound..].to_vec(), ret)),
-            );
-        }
-    }
+    // partial: (fn, bound args...) -> fn over the remaining parameters. The signature follows the
+    // arity of `fn`, so calls are typed by `InferenceContext::partial_signature`. This entry only
+    // names the builtin and serves as its documented form.
+    let (a, b, r) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
+    ctx.register_builtin(
+        "partial",
+        Type::function(
+            vec![
+                Type::function(vec![Type::Var(a), Type::Var(b)], Type::Var(r)),
+                Type::Var(a),
+            ],
+            Type::function(vec![Type::Var(b)], Type::Var(r)),
+        ),
+    );
 
     // coalesce / ?? : (None, a) -> a (left is None, return right; null-coalescing)
     for name in ["coalesce", "??"] {

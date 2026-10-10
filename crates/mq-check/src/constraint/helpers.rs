@@ -232,6 +232,9 @@ pub(super) fn build_piped_call_args(
     explicit_arg_tys: &[Type],
     func_name: &str,
 ) -> Vec<Type> {
+    if func_name == "partial" {
+        return build_partial_args(ctx, symbol_id, explicit_arg_tys);
+    }
     if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
         // Try explicit args first — if they already match an overload,
         // the piped input should not be prepended (it flows through unchanged)
@@ -248,6 +251,25 @@ pub(super) fn build_piped_call_args(
     } else {
         explicit_arg_tys.to_vec()
     }
+}
+
+/// The arguments of `partial`: its function, then the values bound to it. A single argument is
+/// always a bound value and the piped input is the function. With more, the first argument is the
+/// function unless it is known not to be one, in which case the piped input is.
+fn build_partial_args(ctx: &mut InferenceContext, symbol_id: SymbolId, explicit_arg_tys: &[Type]) -> Vec<Type> {
+    let piped = ctx.get_piped_input(symbol_id).cloned();
+    let piped = match explicit_arg_tys {
+        [] => return Vec::new(),
+        [_] => piped.unwrap_or_else(|| Type::Var(ctx.fresh_var())),
+        [first, ..] => {
+            let first = ctx.resolve_type(first);
+            match piped {
+                Some(piped) if !matches!(first, Type::Function(..)) && !first.is_pending_operand() => piped,
+                _ => return explicit_arg_tys.to_vec(),
+            }
+        }
+    };
+    std::iter::once(piped).chain(explicit_arg_tys.iter().cloned()).collect()
 }
 
 /// Resolves a call `f(args)` of a builtin and assigns the result type to `symbol_id`.

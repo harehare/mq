@@ -594,6 +594,9 @@ impl InferenceContext {
     ///
     /// Returns the matched function type and the resolved argument types after instantiation.
     pub fn resolve_overload(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        if name == "partial" {
+            return self.partial_signature(arg_types);
+        }
         let overloads = self.get_builtin_overloads(name)?;
 
         let mut best_match: Option<(Type, u32)> = None;
@@ -636,6 +639,28 @@ impl InferenceContext {
         let (ty, _score) = best_match?;
         let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
         Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
+    }
+
+    /// The signature of `partial(f, a1..ak)`. Its shape follows the arity of `f`, so it is derived
+    /// from the call: for `f: (p1..pn) -> r` and `k < n` it is `(f, p1..pk) -> (p(k+1)..pn) -> r`.
+    /// An `f` that is not settled yet gets a signature that constrains nothing.
+    fn partial_signature(&mut self, args: &[Type]) -> Option<Type> {
+        let (func, bound) = args.split_first()?;
+        let sig = match self.resolve_type(func) {
+            Type::Function(params, ret) if bound.len() < params.len() => {
+                let rest = params[bound.len()..].to_vec();
+                let sig_params = std::iter::once(Type::Function(params.clone(), ret.clone()))
+                    .chain(params[..bound.len()].iter().cloned())
+                    .collect();
+                Type::function(sig_params, Type::function(rest, *ret))
+            }
+            Type::Var(_) => {
+                let sig_params = (0..args.len()).map(|_| Type::Var(self.fresh_var())).collect();
+                Type::function(sig_params, Type::Var(self.fresh_var()))
+            }
+            _ => return None,
+        };
+        Some(self.instantiate_fresh(&sig))
     }
 
     /// Instantiates fresh type variables in a type to avoid contamination

@@ -83,6 +83,11 @@ impl Resolution {
 /// Whether adding one more argument in front (the piped input) would make the call match an
 /// overload of the builtin `name`.
 fn completed_by_piped_input(ctx: &mut InferenceContext, name: &str, args: &[Type]) -> bool {
+    // `partial(f, ...)` keeps its own function: the piped input only stands in for one that is
+    // missing, or is the function when a single argument is given.
+    if name == "partial" && args.len() > 1 && matches!(ctx.resolve_type(&args[0]), Type::Function(..)) {
+        return false;
+    }
     let piped = Type::Var(ctx.fresh_var());
     let with_piped: Vec<Type> = std::iter::once(piped).chain(args.iter().cloned()).collect();
     ctx.resolve_overload(name, &with_piped).is_some()
@@ -105,15 +110,22 @@ pub(super) fn resolve_builtin(ctx: &mut InferenceContext, call: &BuiltinCall<'_>
     let is_builtin = ctx.get_builtin_overloads(call.name).is_some();
 
     // Pick no overload for an argument that is not settled yet: it could be pinned to whatever
-    // the first matching overload accepts.
-    let waits = resolved_args.iter().any(Type::is_pending_operand)
+    // the first matching overload accepts. `partial` is typed from its function argument alone.
+    let by_function_arg = call.name == "partial";
+    let pending = if by_function_arg {
+        resolved_args.first().is_some_and(Type::is_pending_operand)
+    } else {
+        resolved_args.iter().any(Type::is_pending_operand)
+    };
+    let waits = pending
         && match call.kind {
             CallKind::Operator => true,
             CallKind::Function | CallKind::Piped => {
                 is_builtin
-                    && ctx
-                        .get_builtin_overloads(call.name)
-                        .is_some_and(|overloads| overloads.len() > 1)
+                    && (by_function_arg
+                        || ctx
+                            .get_builtin_overloads(call.name)
+                            .is_some_and(|overloads| overloads.len() > 1))
             }
         };
     if waits {
