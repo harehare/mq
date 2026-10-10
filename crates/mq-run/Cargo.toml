@@ -17,9 +17,8 @@ css-selector = ["mq-lang/css-selector"]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap", "debug-trace"]
 debug-trace = ["debugger", "mq-lang/debug-trace"]
 vm-profile = ["mq-lang/vm-profile"]
-default = ["std", "use_mimalloc", "http-import", "css-selector", "watch"]
+default = ["use_mimalloc", "http-import", "css-selector", "watch"]
 http-import = ["mq-lang/http-import-ureq"]
-std = []
 tiktoken = ["mq-lang/tiktoken"]
 use_mimalloc = ["mimalloc"]
 watch = ["dep:notify"]
@@ -69,7 +68,6 @@ nix = {workspace = true}
 doc = false
 name = "mq"
 path = "src/main.rs"
-required-features = ["std"]
 
 [[bin]]
 doc = false
