@@ -13,6 +13,9 @@ use crate::parser::mdx_flow::{FlowEnd, FlowStart, flow_end, flow_start};
 use crate::parser::table;
 
 /// MDX flow content that spans lines is followed for this many lines, which bounds the work.
+///
+/// Past the limit the flow is taken as ended here, so a lazy line after a longer expression in a
+/// container is placed differently than by the block parser, which has no limit.
 const MAX_FLOW_LINES: usize = 64;
 
 /// A container that is open in the collected lines, inside the one that collects them.
