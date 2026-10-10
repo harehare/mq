@@ -1,6 +1,6 @@
 //! Symbol categorization for multi-pass constraint generation.
 
-use mq_hir::{Hir, SymbolId, SymbolKind};
+use mq_hir::{Hir, Symbol, SymbolId, SymbolKind};
 use rustc_hash::FxHashSet;
 
 use super::helpers::is_module_symbol;
@@ -13,7 +13,8 @@ pub(super) struct SymbolCategories {
     pub(super) module_source_ids: FxHashSet<mq_hir::SourceId>,
     /// Pass 1: literals, variables, parameters, function definitions
     pub(super) pass1_symbols: Vec<(SymbolId, SymbolKind)>,
-    /// Pass 2: root-level symbols (parent=None, non-builtin, non-module)
+    /// Pass 2: root-level pipe stages (parent=None, non-builtin, non-module, not a `def`/`let`/
+    /// `var`/`fn` keyword)
     pub(super) root_symbols: Vec<SymbolId>,
     /// Pass 2.5: Assign symbols (processed before other Pass 3 symbols
     /// so that variable types are updated before Refs and Calls are resolved)
@@ -22,6 +23,10 @@ pub(super) struct SymbolCategories {
     pub(super) pass3_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 4: Function symbols (for body pipe chains)
     pub(super) pass4_functions: Vec<SymbolId>,
+}
+
+fn is_definition_keyword(symbol: &Symbol) -> bool {
+    symbol.kind == SymbolKind::Keyword && matches!(symbol.value.as_deref(), Some("def" | "let" | "var" | "fn"))
 }
 
 /// Categorizes all HIR symbols into processing buckets in a single pass.
@@ -51,8 +56,9 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
             continue;
         }
 
-        // Root symbols (pass 2)
-        if symbol.parent.is_none() {
+        // Root symbols (pass 2). The keyword that introduces a definition is not a pipe stage:
+        // counting it would hand the document to the keyword instead of to the next stage.
+        if symbol.parent.is_none() && !is_definition_keyword(symbol) {
             cats.root_symbols.push(symbol_id);
         }
 

@@ -4,12 +4,21 @@ use crate::Shared;
 use crate::runtime::runtime_value::RuntimeValue;
 use regex::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::sync::{LazyLock, RwLock};
+use std::sync::{LazyLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::Error;
 
-pub(super) static REGEX_CACHE: LazyLock<RwLock<FxHashMap<String, Regex>>> =
+static REGEX_CACHE: LazyLock<RwLock<FxHashMap<String, Regex>>> =
     LazyLock::new(|| RwLock::new(FxHashMap::with_hasher(FxBuildHasher)));
+
+// The cache only memoizes compiled patterns, so a poisoned lock is safe to keep using.
+fn regex_cache_read() -> RwLockReadGuard<'static, FxHashMap<String, Regex>> {
+    REGEX_CACHE.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn regex_cache_write() -> RwLockWriteGuard<'static, FxHashMap<String, Regex>> {
+    REGEX_CACHE.write().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Maximum user-supplied regex source retained in the process-wide cache.
 const MAX_REGEX_PATTERN_BYTES: usize = 16 * 1024;
@@ -29,7 +38,7 @@ fn compile_regex(pattern: &str) -> Result<Regex, Error> {
 }
 
 fn cache_regex(pattern: &str, regex: Regex) {
-    let mut cache = REGEX_CACHE.write().unwrap();
+    let mut cache = regex_cache_write();
     if !cache.contains_key(pattern)
         && cache.len() >= MAX_REGEX_CACHE_ENTRIES
         && let Some(evicted) = cache.keys().next().cloned()
@@ -40,7 +49,7 @@ fn cache_regex(pattern: &str, regex: Regex) {
 }
 
 pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         let matches: Vec<RuntimeValue> = re
             .find_iter(input)
             .map(|m| RuntimeValue::String(Shared::new(m.as_str().to_string())))
@@ -57,7 +66,7 @@ pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
 }
 
 pub(super) fn is_match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return Ok(re.is_match(input).into());
     }
     let re = compile_regex(pattern)?;
@@ -84,7 +93,7 @@ pub(super) fn capture_re_inner(re: &Regex, input: &str) -> Result<RuntimeValue, 
 }
 
 pub(super) fn capture_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return capture_re_inner(&re, input);
     }
     let re = compile_regex(pattern)?;
@@ -93,7 +102,7 @@ pub(super) fn capture_re(input: &str, pattern: &str) -> Result<RuntimeValue, Err
 }
 
 pub(super) fn replace_re(input: &str, pattern: &str, replacement: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return Ok(re.replace_all(input, replacement).to_string().into());
     }
     let re = compile_regex(pattern)?;
@@ -127,7 +136,7 @@ fn scan_re_inner(re: &Regex, input: &str) -> RuntimeValue {
 }
 
 pub(super) fn scan_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return Ok(scan_re_inner(&re, input));
     }
     let re = compile_regex(pattern)?;
@@ -198,7 +207,7 @@ fn regex_replace_matches_inner(re: &Regex, input: &str) -> Result<RuntimeValue, 
 }
 
 pub(super) fn regex_replace_matches(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return regex_replace_matches_inner(&re, input);
     }
     let re = compile_regex(pattern)?;
@@ -217,7 +226,7 @@ pub(super) fn regex_escape(text: &str) -> RuntimeValue {
 
 #[inline(always)]
 pub(super) fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return Ok(RuntimeValue::Array(Shared::new(
             re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),
         )));
@@ -268,7 +277,7 @@ fn split_record(input: &str, index: usize, start: usize, end: usize, terminator:
 /// Splits `input` on `pattern` like [`split_re`], but keeps each piece's byte
 /// range and the separator that followed it instead of discarding them.
 pub(super) fn split_records_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
-    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return split_records_re_inner(&re, input);
     }
     let re = compile_regex(pattern)?;
@@ -390,7 +399,7 @@ mod tests {
             assert!(is_match_re("text", &pattern).is_ok());
         }
 
-        assert!(REGEX_CACHE.read().unwrap().len() <= MAX_REGEX_CACHE_ENTRIES);
+        assert!(regex_cache_read().len() <= MAX_REGEX_CACHE_ENTRIES);
     }
 
     #[rstest]

@@ -2812,6 +2812,14 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::partial_multiple_args("def f(a, b, c): a + b + c; | let p = partial(f, 10, 20) | p(30)", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(60.into())].into()))]
 // partial: 2-param function can be partially applied — the scenario that triggered the redesign
 #[case::partial_two_param("def plus(a, b): a + b; | let plus10 = partial(plus, 10) | plus10(5)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(15.into())].into()))]
+// partial: a piped function takes the argument as its pre-filled one, like partial(f, 10)
+#[case::partial_piped_one_arg("def f(a, b, c): c; | let p = do f | partial(10) end | p(5, 42)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+// partial: a piped function with several pre-filled args
+#[case::partial_piped_multiple_args("def f(a, b, c): a + b + c; | let p = do f | partial(10, 20) end | p(30)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(60.into())].into()))]
+// partial: a function given explicitly wins over the piped one
+#[case::partial_explicit_function_wins("def f(a, b): a; | def g(a, b): b; | let p = do f | partial(g, 1) end | p(2)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+// partial: a function passed as the pre-filled arg of a piped function
+#[case::partial_piped_function_arg("def f(a, b): a(b); | def g(x): x + 1; | let p = do f | partial(g) end | p(1)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // property selector: quoted form (."key") is the only way to access dict keys
 #[case::property_selector_quoted_h1(r#"."h1""#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("h1"), RuntimeValue::String(Shared::new("title".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("title".to_string()))].into()))]
 #[case::property_selector_quoted_url(r#"."url""#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("url"), RuntimeValue::String(Shared::new("https://example.com".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("https://example.com".to_string()))].into()))]
@@ -3851,6 +3859,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::user_defined_error(r#"error("my custom error")"#, vec![RuntimeValue::None],)]
 // partial: too many pre-filled args (provides more args than function has params)
 #[case::partial_too_many_args("def f(a): a; | partial(f, 1, 2)", vec![RuntimeValue::None],)]
+// partial: no pre-filled args
+#[case::partial_no_args("def f(a, b): a; | partial(f)", vec![RuntimeValue::None],)]
 // partial: non-function as first arg
 #[case::partial_non_function(r#"partial("not_a_function", 1)"#, vec![RuntimeValue::None],)]
 // halt: non-number arg → type error

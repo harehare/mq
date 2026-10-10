@@ -24,18 +24,18 @@
 // Suppress false-positive warnings for fields used in thiserror/miette macros
 #![allow(unused_assignments)]
 
-pub mod builtin;
-pub mod constraint;
+pub(crate) mod builtin;
+pub(crate) mod constraint;
 pub(crate) mod deferred;
 pub(crate) mod exhaustiveness;
-pub mod field_guard;
-pub mod infer;
+pub(crate) mod field_guard;
+pub(crate) mod infer;
 pub mod kind_set;
-pub mod narrowing;
+pub(crate) mod narrowing;
 pub(crate) mod node_attr;
 pub mod type_expr;
 pub mod types;
-pub mod unify;
+pub(crate) mod unify;
 
 use miette::Diagnostic;
 use mq_hir::{Hir, SymbolId};

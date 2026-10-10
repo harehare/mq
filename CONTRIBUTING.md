@@ -65,11 +65,14 @@ Before contributing, please:
 
 ### Running Tests
 
-**Always run the full test suite before submitting changes:**
+Use `just`, not bare `cargo test`:
 
 ```bash
-just test-all
+just test-all   # fmt check, clippy, mq tests, doctests, all-features and workspace tests
+just test-mq    # .mq tests only; sufficient when the change is confined to crates/mq-lang
 ```
+
+Run `just test-all` before submitting changes that touch anything outside `crates/mq-lang`.
 
 ### Test Guidelines
 
@@ -92,19 +95,23 @@ just test-cov
 
 ### Before Submitting
 
-1. **Ensure tests pass**: Run `just test-all` and fix any failures
+1. **Ensure tests pass**: Run `just test-all` (or `just test-mq` for `crates/mq-lang`-only changes) and fix any failures
 2. **Update documentation**: Add or update documentation for new features
-3. **Follow commit conventions**: Use clear, descriptive commit messages
+3. **Follow commit conventions**: Use conventional commits with a leading emoji, e.g. `🐛 fix(lang): ...` or `⚡ perf(lang): ...`
 
 ### Documentation Requirements
 
 - Update `/docs` and crate-level `README.md` files for new features
 
-### Building Documentation
+### Generated Documentation
 
-```bash
-just docs
-```
+Do not hand-edit these files, and do not run `just docs` during normal development:
+
+- the `README.md` Options block
+- `docs/books/src/reference/cli.md`
+- `docs/books/src/builtins.html`
+
+They are regenerated from the released `mq` binary at release time, and CI checks that they match it. A new flag or builtin appears there only after the release that ships it.
 
 ## Bug Reports
 

@@ -375,66 +375,6 @@ fn occurs_check_transitive(
     }
 }
 
-/// Applies substitutions to resolve all type variables.
-///
-/// Uses a visited set to detect and break cycles in the substitution map,
-/// preventing stack overflow from mutually recursive type variable bindings.
-pub fn apply_substitution(ctx: &InferenceContext, ty: &Type) -> Type {
-    let mut visited = HashSet::new();
-    apply_substitution_inner(ctx, ty, &mut visited)
-}
-
-fn apply_substitution_inner(ctx: &InferenceContext, ty: &Type, visited: &mut HashSet<TypeVarId>) -> Type {
-    match ty {
-        Type::Var(var) => {
-            if !visited.insert(*var) {
-                return ty.clone(); // Cycle detected — return var unresolved
-            }
-            let result = if let Some(bound) = ctx.get_type_var(*var) {
-                apply_substitution_inner(ctx, &bound, visited)
-            } else {
-                ty.clone()
-            };
-            visited.remove(var);
-            result
-        }
-        Type::Array(elem) => Type::Array(Box::new(apply_substitution_inner(ctx, elem, visited))),
-        Type::Generator(yielded) => Type::Generator(Box::new(apply_substitution_inner(ctx, yielded, visited))),
-        Type::Tuple(elems) => Type::Tuple(
-            elems
-                .iter()
-                .map(|e| apply_substitution_inner(ctx, e, visited))
-                .collect(),
-        ),
-        Type::Dict(key, value) => Type::Dict(
-            Box::new(apply_substitution_inner(ctx, key, visited)),
-            Box::new(apply_substitution_inner(ctx, value, visited)),
-        ),
-        Type::Function(params, ret) => {
-            let new_params = params
-                .iter()
-                .map(|p| apply_substitution_inner(ctx, p, visited))
-                .collect();
-            Type::Function(new_params, Box::new(apply_substitution_inner(ctx, ret, visited)))
-        }
-        Type::Union(types) => {
-            let new_types = types
-                .iter()
-                .map(|t| apply_substitution_inner(ctx, t, visited))
-                .collect();
-            Type::union(new_types)
-        }
-        Type::Record(fields, rest) => {
-            let new_fields = fields
-                .iter()
-                .map(|(k, v)| (k.clone(), apply_substitution_inner(ctx, v, visited)))
-                .collect();
-            Type::Record(new_fields, Box::new(apply_substitution_inner(ctx, rest, visited)))
-        }
-        _ => ty.clone(),
-    }
-}
-
 /// Follows a type variable substitution chain iteratively until reaching
 /// a non-variable type or an unbound variable.
 fn resolve_var_chain(ctx: &InferenceContext, ty: &Type) -> Type {
@@ -450,45 +390,6 @@ fn resolve_var_chain(ctx: &InferenceContext, ty: &Type) -> Type {
             }
             _ => return current,
         }
-    }
-}
-
-/// Gets all free type variables in a type after applying current substitutions
-pub fn free_vars(ctx: &InferenceContext, ty: &Type) -> HashSet<TypeVarId> {
-    let resolved = apply_substitution(ctx, ty);
-    let mut vars = HashSet::new();
-    collect_free_vars(&resolved, &mut vars);
-    vars
-}
-
-fn collect_free_vars(ty: &Type, vars: &mut HashSet<TypeVarId>) {
-    match ty {
-        Type::Var(var) => {
-            vars.insert(*var);
-        }
-        Type::Array(elem) | Type::Generator(elem) => collect_free_vars(elem, vars),
-        Type::Tuple(elems) => {
-            for e in elems {
-                collect_free_vars(e, vars);
-            }
-        }
-        Type::Dict(key, value) => {
-            collect_free_vars(key, vars);
-            collect_free_vars(value, vars);
-        }
-        Type::Function(params, ret) => {
-            for param in params {
-                collect_free_vars(param, vars);
-            }
-            collect_free_vars(ret, vars);
-        }
-        Type::Record(fields, rest) => {
-            for v in fields.values() {
-                collect_free_vars(v, vars);
-            }
-            collect_free_vars(rest, vars);
-        }
-        _ => {}
     }
 }
 
@@ -774,46 +675,6 @@ mod tests {
         let mut visited = HashSet::new();
         // Should not stack overflow
         assert!(occurs_check_transitive(&ctx, v1, &Type::Var(v1), &mut visited));
-    }
-
-    #[test]
-    fn test_apply_substitution() {
-        let mut ctx = InferenceContext::new();
-        let v1 = ctx.fresh_var();
-        let v2 = ctx.fresh_var();
-
-        ctx.bind_type_var(v1, Type::array(Type::Var(v2)));
-        ctx.bind_type_var(v2, Type::Number);
-
-        let t = Type::Var(v1);
-        let applied = apply_substitution(&ctx, &t);
-        assert_eq!(applied, Type::array(Type::Number));
-
-        // Cycle
-        let v3 = ctx.fresh_var();
-        let v4 = ctx.fresh_var();
-        ctx.bind_type_var(v3, Type::Var(v4));
-        ctx.bind_type_var(v4, Type::Var(v3));
-        let applied_cycle = apply_substitution(&ctx, &Type::Var(v3));
-        assert!(matches!(applied_cycle, Type::Var(_)));
-    }
-
-    #[test]
-    fn test_free_vars() {
-        let mut ctx = InferenceContext::new();
-        let v1 = ctx.fresh_var();
-        let v2 = ctx.fresh_var();
-
-        let t = Type::tuple(vec![Type::Var(v1), Type::array(Type::Var(v2))]);
-        let vars = free_vars(&ctx, &t);
-        assert_eq!(vars.len(), 2);
-        assert!(vars.contains(&v1));
-        assert!(vars.contains(&v2));
-
-        ctx.bind_type_var(v1, Type::Number);
-        let vars2 = free_vars(&ctx, &t);
-        assert_eq!(vars2.len(), 1);
-        assert!(vars2.contains(&v2));
     }
 
     #[test]

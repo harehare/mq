@@ -20,6 +20,9 @@ pub struct DeferredOverload {
     pub op_name: SmolStr,
     /// The original type variables for the operands
     pub operand_tys: Vec<Type>,
+    /// For `partial`: the piped input, prepended as the function if the first operand turns out
+    /// not to be one. `None` once decided, or when the call does not depend on it.
+    pub unsettled_piped: Option<Type>,
     /// The source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -74,12 +77,8 @@ pub struct DeferredAttrCall {
 /// its body, and we can propagate it to the call site and verify argument types.
 #[derive(Debug, Clone)]
 pub struct DeferredUserCall {
-    /// The call site symbol ID
-    pub call_symbol_id: SymbolId,
     /// The function definition symbol ID
     pub def_id: SymbolId,
-    /// The fresh (instantiated) parameter types at this call site
-    pub fresh_param_tys: Vec<Type>,
     /// The fresh (instantiated) return type at this call site
     pub fresh_ret_ty: Type,
     /// The actual argument types at the call site
@@ -117,8 +116,6 @@ pub struct DeferredRecordAccess {
 /// unification.
 #[derive(Debug, Clone)]
 pub struct DeferredSelectorAccess {
-    /// The selector symbol ID
-    pub symbol_id: SymbolId,
     /// The piped input type (may be a type variable before unification)
     pub piped_ty: Type,
     /// The field name being accessed
@@ -600,6 +597,9 @@ impl InferenceContext {
     ///
     /// Returns the matched function type and the resolved argument types after instantiation.
     pub fn resolve_overload(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        if name == crate::builtin::PARTIAL {
+            return self.partial_signature(arg_types);
+        }
         let overloads = self.get_builtin_overloads(name)?;
 
         let mut best_match: Option<(Type, u32)> = None;
@@ -642,6 +642,28 @@ impl InferenceContext {
         let (ty, _score) = best_match?;
         let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
         Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
+    }
+
+    /// The signature of `partial(f, a1..ak)`. Its shape follows the arity of `f`, so it is derived
+    /// from the call: for `f: (p_1..p_n) -> r` and `1 <= k < n` it is `(f, p_1..p_k) -> (p_k+1..p_n) -> r`.
+    /// An `f` that is not settled yet gets a signature that constrains nothing.
+    fn partial_signature(&mut self, args: &[Type]) -> Option<Type> {
+        let (func, bound) = args.split_first()?;
+        let sig = match self.resolve_type(func) {
+            Type::Function(params, ret) if !bound.is_empty() && bound.len() < params.len() => {
+                let rest = params[bound.len()..].to_vec();
+                let sig_params = std::iter::once(Type::Function(params.clone(), ret.clone()))
+                    .chain(params[..bound.len()].iter().cloned())
+                    .collect();
+                Type::function(sig_params, Type::function(rest, *ret))
+            }
+            Type::Var(_) => {
+                let sig_params = (0..args.len()).map(|_| Type::Var(self.fresh_var())).collect();
+                Type::function(sig_params, Type::Var(self.fresh_var()))
+            }
+            _ => return None,
+        };
+        Some(self.instantiate_fresh(&sig))
     }
 
     /// Instantiates fresh type variables in a type to avoid contamination
@@ -791,12 +813,6 @@ impl InferenceContext {
         }
 
         result
-    }
-
-    /// Gets all symbol types (for testing)
-    #[cfg(test)]
-    pub fn symbol_types(&self) -> &FxHashMap<SymbolId, Type> {
-        &self.symbol_types
     }
 }
 

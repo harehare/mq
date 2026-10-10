@@ -112,7 +112,7 @@ pub fn extract_module_name(module_path: &str) -> &str {
 ///
 /// `github.com/{path}` (with or without `https://`/`http://` prefix) is expanded to
 /// `raw.githubusercontent.com/{path}` so that users can write
-/// `--allowed-domain github.com/alice/myrepo` instead of the full raw content URL.
+/// `--allow-http-import=github.com/alice/myrepo` instead of the full raw content URL.
 /// The scheme prefix is always stripped before storing.
 pub fn normalize_allowed_domain(domain: &str) -> String {
     let without_scheme = domain

@@ -2,10 +2,8 @@ name: Deploy docs
 
 on:
   push:
-    branches: ["main"]
-    paths:
-      - "docs/**"
-      - "packages/mq-playground/**"
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:

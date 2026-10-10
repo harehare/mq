@@ -571,7 +571,7 @@ impl Engine<DefaultModuleResolver> {
     /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
     ///
     /// The `mq` CLI calls this with `false` unless `--allow-http-import` is passed, so
-    /// imports are opt-in there; disabled regardless of `--allowed-domain`.
+    /// imports are opt-in there; the domain allowlist alone never enables them.
     pub fn set_http_import_enabled(&mut self, enabled: bool) {
         self.vm.module_loader.set_http_import_enabled(enabled);
         #[cfg(not(feature = "debugger"))]

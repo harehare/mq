@@ -381,7 +381,7 @@ in addition to local file names.
 > **Security note:** HTTP imports are disabled by default and must be enabled with
 > `--allow-http-import`. Once enabled, only URLs under `github.com/harehare` (resolved to
 > `raw.githubusercontent.com/harehare`) are allowed; importing from any other domain also
-> requires `--allowed-domain`. This is a separate permission from `--allow-net`, which only
+> requires `--allow-http-import=DOMAIN`. This is a separate permission from `--allow-net`, which only
 > gates the `http()`/`http_request()` builtins, not module resolution.
 
 ### Plain URL
@@ -441,9 +441,8 @@ content you locked, the same way `package-lock.json`/`deno.lock` work.
 
 | Flag                        | Description                                                                                                                             |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `--allow-http-import`       | Enable HTTP module imports. Disabled by default; `import`/`include` of a `github.com/...` or `https://...` URL fails without this.      |
+| `--allow-http-import[=DOMAIN,...]` | Enable HTTP module imports. Disabled by default; `import`/`include` of a `github.com/...` or `https://...` URL fails without this. `=DOMAIN` also allows an additional domain beyond the default (`raw.githubusercontent.com/harehare`); repeat the flag or comma-separate to add more. Use `github.com/{user}/{repo}` for one repository. |
 | `--refresh-modules`         | Discard cached mutable-ref modules and re-fetch them, updating their `mq.lock` entries.                                                 |
-| `--allowed-domain <domain>` | Allow HTTP imports from an additional domain beyond the default (`raw.githubusercontent.com/harehare`). Repeat to add multiple domains. Has no effect unless `--allow-http-import` (or `--allow-all`) is also passed. |
 | `--no-lockfile`             | Disable the `mq.lock` integrity check/update.                                                                                           |
 | `--frozen`                  | Fail instead of recording a new `mq.lock` entry. Use in CI once `mq.lock` is committed. Mutually exclusive with `--no-lockfile`.        |
 | `--lockfile <path>`         | Use `<path>` instead of `./mq.lock`.                                                                                                     |
@@ -458,10 +457,10 @@ mq --allow-http-import 'self' file.md
 mq --allow-http-import --refresh-modules 'self' file.md
 
 # Only allow imports from example.com (in addition to the built-in default)
-mq --allow-http-import --allowed-domain example.com 'self' file.md
+mq --allow-http-import=example.com 'self' file.md
 
 # Allow multiple domains
-mq --allow-http-import --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
+mq --allow-http-import=example.com,raw.githubusercontent.com 'self' file.md
 
 # Use a different lock file location
 mq --allow-http-import --lockfile config/mq.lock 'self' file.md

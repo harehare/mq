@@ -3,6 +3,7 @@
 use mq_hir::{Hir, SymbolId, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::builtin::PARTIAL;
 use crate::infer::InferenceContext;
 use crate::types::Type;
 use crate::walk_ancestors;
@@ -250,6 +251,36 @@ pub(super) fn build_piped_call_args(
     }
 }
 
+/// The arguments of `partial`: its function, then the values bound to it. A single argument is
+/// always a bound value and the piped input is the function. With more, the first argument is the
+/// function unless it is not one, in which case the piped input is.
+///
+/// While the first argument is not settled, the piped input is returned as well, for the
+/// deferred resolution to decide.
+fn build_partial_args(
+    ctx: &mut InferenceContext,
+    symbol_id: SymbolId,
+    explicit_arg_tys: &[Type],
+) -> (Vec<Type>, Option<Type>) {
+    let piped = ctx.get_piped_input(symbol_id).cloned();
+    let piped = match explicit_arg_tys {
+        [] => return (Vec::new(), None),
+        [_] => piped.unwrap_or_else(|| Type::Var(ctx.fresh_var())),
+        [first, ..] => {
+            let first = ctx.resolve_type(first);
+            match piped {
+                Some(piped) if first.is_pending_operand() => return (explicit_arg_tys.to_vec(), Some(piped)),
+                Some(piped) if !matches!(first, Type::Function(..)) => piped,
+                _ => return (explicit_arg_tys.to_vec(), None),
+            }
+        }
+    };
+    (
+        std::iter::once(piped).chain(explicit_arg_tys.iter().cloned()).collect(),
+        None,
+    )
+}
+
 /// Resolves a call `f(args)` of a builtin and assigns the result type to `symbol_id`.
 ///
 /// If `may_get_piped_input` is true (e.g., the call is an argument that is applied to each
@@ -281,18 +312,22 @@ pub(super) fn resolve_builtin_call_with_brackets(
     range: Option<mq_lang::Range>,
 ) {
     let trailing_bracket_count = hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
+    let real_arg_tys = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
+    let (arg_tys, unsettled_piped) = if func_name == PARTIAL {
+        build_partial_args(ctx, symbol_id, real_arg_tys)
+    } else {
+        (build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name), None)
+    };
 
+    let mut call = BuiltinCall::new(symbol_id, func_name, &arg_tys, range, CallKind::Function);
+    call.may_get_piped_input = might_receive_piped_input(hir, symbol_id);
+    call.unsettled_piped = unsettled_piped;
+    let result_ty = resolve_builtin(ctx, &call).into_type();
+    ctx.set_symbol_type(symbol_id, result_ty.clone());
     if trailing_bracket_count == 0 {
-        let arg_tys = build_piped_call_args(ctx, symbol_id, explicit_arg_tys, func_name);
-        let defer = might_receive_piped_input(hir, symbol_id);
-        resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
         return;
     }
 
-    let real_arg_tys = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
-    let arg_tys = build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name);
-    let defer = might_receive_piped_input(hir, symbol_id);
-    let result_ty = resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
     let current_ty = chain_bracket_accesses(hir, ctx, children, trailing_bracket_count, result_ty, range);
     ctx.set_symbol_type(symbol_id, current_ty);
 }

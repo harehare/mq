@@ -107,7 +107,7 @@ pub struct Cli {
     list: bool,
 
     /// Number of files to process before switching to parallel processing
-    #[arg(short = 'P', default_value_t = 10)]
+    #[arg(short = 'P', long, default_value_t = 10)]
     parallel_threshold: usize,
 
     #[arg(value_name = "QUERY OR FILE")]
@@ -478,18 +478,18 @@ struct ProgramArgs {
     #[arg(short = 'm', long)]
     import_module_names: Option<Vec<String>>,
 
-    /// Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default
+    /// Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default.
+    /// `--allow-http-import=DOMAIN` (repeat the flag, or comma-separate) also allows those
+    /// domains beyond the default. Use `github.com/{user}/{repo}` for one repository
+    /// (expanded automatically), or a plain domain like `example.com` for any path under
+    /// that host. The `=` is required so a bare domain isn't taken as a query/file positional.
     #[cfg(feature = "http-import")]
-    #[arg(long = "allow-http-import", default_value_t = false)]
-    allow_http_import: bool,
+    #[arg(long = "allow-http-import", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "DOMAIN")]
+    allow_http_import: Option<Vec<String>>,
 
-    /// Allow HTTP imports from additional domain(s) beyond the default. Has no effect
-    /// unless `--allow-http-import` (or `--allow-all`) is also passed.
-    /// Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically),
-    /// or a plain domain like `example.com` to allow any path under that host.
-    /// Repeat to allow multiple extra domains.
+    /// Same as `--allow-http-import=DOMAIN`, except it does not enable HTTP imports by itself.
     #[cfg(feature = "http-import")]
-    #[arg(long = "allowed-domain")]
+    #[arg(long = "allowed-domain", hide = true)]
     allowed_domains: Option<Vec<String>>,
 
     /// Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache.
@@ -512,7 +512,7 @@ struct ProgramArgs {
     no_lockfile: bool,
 
     /// Fail instead of recording a new mq.lock entry.
-    /// `--frozen`; use in CI so a new module's content is only ever trusted during a reviewable local run whose mq.lock diff gets committed, not silently during CI.
+    /// Use in CI so a new module's content is only trusted during a reviewable local run whose mq.lock diff gets committed.
     #[cfg(feature = "http-import")]
     #[arg(long = "frozen", default_value_t = false)]
     frozen: bool,
@@ -668,6 +668,23 @@ impl ProgramArgs {
             self.sandbox,
             Some(SandboxProfile::Networked) | Some(SandboxProfile::Unsafe)
         )
+    }
+
+    /// Whether HTTP module imports are enabled by any of `--allow-http-import`, `--allow-all` or `--sandbox`.
+    #[cfg(feature = "http-import")]
+    fn http_import_enabled(&self) -> bool {
+        self.allow_http_import.is_some() || self.allow_all || self.sandbox_enables_http_import()
+    }
+
+    /// Extra domains allowed for HTTP imports, from `--allow-http-import=DOMAIN` and `--allowed-domain`.
+    #[cfg(feature = "http-import")]
+    fn http_import_domains(&self) -> Vec<String> {
+        self.allow_http_import
+            .iter()
+            .chain(&self.allowed_domains)
+            .flatten()
+            .cloned()
+            .collect()
     }
 }
 
@@ -1955,13 +1972,10 @@ impl Cli {
 
         #[cfg(feature = "http-import")]
         {
-            engine.set_http_import_enabled(
-                self.input.program.allow_http_import
-                    || self.input.program.allow_all
-                    || self.input.program.sandbox_enables_http_import(),
-            );
-            if let Some(domains) = &self.input.program.allowed_domains {
-                engine.set_http_allowed_domains(domains.clone());
+            engine.set_http_import_enabled(self.input.program.http_import_enabled());
+            let domains = self.input.program.http_import_domains();
+            if !domains.is_empty() {
+                engine.set_http_allowed_domains(domains);
             }
             if self.input.program.no_lockfile {
                 engine.set_lockfile_enabled(false);
@@ -3797,6 +3811,27 @@ mod tests {
             };
             assert_eq!(args.sandbox_enables_http_import(), expected);
         }
+    }
+
+    #[cfg(feature = "http-import")]
+    #[rstest]
+    #[case(&["mq", "--allow-http-import", "self"], true, &[])]
+    #[case(&["mq", "--allow-http-import=a.com,github.com/u/r", "self"], true, &["a.com", "github.com/u/r"])]
+    #[case(&["mq", "--allow-http-import=a.com", "--allow-http-import=b.com", "self"], true, &["a.com", "b.com"])]
+    #[case(&["mq", "--allowed-domain", "a.com", "self"], false, &["a.com"])]
+    #[case(&["mq", "--allow-http-import=a.com", "--allowed-domain", "b.com", "self"], true, &["a.com", "b.com"])]
+    #[case(&["mq", "--allow-all", "--allowed-domain", "a.com", "self"], true, &["a.com"])]
+    #[case(&["mq", "self"], false, &[])]
+    fn test_http_import_flags(#[case] args: &[&str], #[case] enabled: bool, #[case] domains: &[&str]) {
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.input.program.http_import_enabled(), enabled);
+        assert_eq!(cli.input.program.http_import_domains(), domains);
+    }
+
+    #[cfg(feature = "http-import")]
+    #[test]
+    fn test_allow_http_import_conflicts_with_allow_all() {
+        assert!(Cli::try_parse_from(["mq", "--allow-all", "--allow-http-import=a.com", "self"]).is_err());
     }
 
     #[cfg(feature = "http-import")]

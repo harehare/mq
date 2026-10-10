@@ -30,7 +30,7 @@ These options shape the compiled program, so pass them after `mq compile` (for e
 | `-L`, `-M`, `-m` | Rejected. The modules are already compiled in. |
 | `-A` | Must match the compile-time setting. |
 | `-I`, `--csv-delimiter`, `--no-header` | Must produce the same input handling. For example, a program compiled with `-I csv` runs on CSV input only. |
-| `--allow-http-import`, `--allowed-domain`, `--frozen`, `--lockfile` | Used only by `mq compile`. |
+| `--allow-http-import`, `--frozen`, `--lockfile` | Used only by `mq compile`. |
 | `--watch` | Rejected. The `.mqc` file is loaded once and never reloaded. |
 
 Module-level `let` values are computed once, when the program is compiled.

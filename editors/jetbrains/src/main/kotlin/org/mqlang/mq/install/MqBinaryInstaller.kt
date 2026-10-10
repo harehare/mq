@@ -29,6 +29,7 @@ object MqBinaryInstaller {
             os.contains("mac") && (arch.contains("aarch64") || arch.contains("arm")) -> "aarch64-apple-darwin"
             os.contains("linux") && arch.contains("aarch64") -> "aarch64-unknown-linux-gnu"
             os.contains("linux") -> "x86_64-unknown-linux-gnu"
+            os.contains("win") && arch.contains("aarch64") -> "aarch64-pc-windows-msvc"
             os.contains("win") -> "x86_64-pc-windows-msvc"
             else -> null
         }

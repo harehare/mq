@@ -9,6 +9,9 @@ use crate::kind_set::KindSet;
 use crate::types::Type;
 use mq_markdown::NodeKind;
 
+/// The name of `partial`, whose signature is derived per call instead of looked up.
+pub(crate) const PARTIAL: &str = "partial";
+
 /// Registers all builtin function and operator type signatures.
 pub fn register_all(ctx: &mut InferenceContext) {
     register_arithmetic(ctx);
@@ -139,7 +142,7 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     }
 
     // Division, modulo, power: (number, number) -> number
-    register_many(ctx, &["/", "%", "^"], vec![Type::Number, Type::Number], Type::Number);
+    register_many(ctx, &["/", "%"], vec![Type::Number, Type::Number], Type::Number);
     register_many(
         ctx,
         &["div", "mod", "pow", "atan2", "hypot"],
@@ -164,7 +167,6 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
             "*",
             "/",
             "%",
-            "^",
             "add",
             "sub",
             "mul",
@@ -364,6 +366,39 @@ fn register_string(ctx: &mut InferenceContext) {
     for input in [Type::String, Type::markdown(), Type::None] {
         register_unary(ctx, "extract_urls", input, url_record.clone());
     }
+
+    // casefold, graphemes and grapheme_len take a string or a node's text; anything else gives
+    // none, an empty array or 0.
+    for input in [Type::String, Type::markdown(), Type::None] {
+        register_unary(ctx, "grapheme_len", input.clone(), Type::Number);
+        register_unary(ctx, "graphemes", input, Type::array(Type::String));
+    }
+    register_unary(ctx, "casefold", Type::String, Type::String);
+    register_unary(ctx, "casefold", Type::markdown(), Type::markdown());
+    register_unary(ctx, "casefold", Type::None, Type::None);
+    // unicode_normalize: (string | markdown | none, form) -> same
+    register_binary(ctx, "unicode_normalize", Type::String, Type::String, Type::String);
+    register_binary(
+        ctx,
+        "unicode_normalize",
+        Type::markdown(),
+        Type::String,
+        Type::markdown(),
+    );
+    register_binary(ctx, "unicode_normalize", Type::None, Type::String, Type::None);
+
+    // css family: (html, selector) -> [string]; css_attr also takes the attribute name and
+    // yields none for elements without it.
+    register_binary(ctx, "css", Type::String, Type::String, Type::array(Type::String));
+    register_binary(ctx, "css_text", Type::String, Type::String, Type::array(Type::String));
+    register_ternary(
+        ctx,
+        "css_attr",
+        Type::String,
+        Type::String,
+        Type::String,
+        Type::array(Type::union(vec![Type::String, Type::None])),
+    );
 
     // word_wrap: (string, number) -> string
     register_binary(ctx, "word_wrap", Type::String, Type::Number, Type::String);
@@ -1269,6 +1304,9 @@ fn register_datetime(ctx: &mut InferenceContext) {
         Type::String,
         Type::Number,
     );
+
+    // date_relative: (number, string) -> number
+    register_binary(ctx, "date_relative", Type::Number, Type::String, Type::Number);
 }
 
 /// I/O and control flow functions: print, stderr, error, halt, input
@@ -1295,6 +1333,25 @@ fn register_io(ctx: &mut InferenceContext) {
 
 /// Utility functions: coalesce, convert
 fn register_utility(ctx: &mut InferenceContext) {
+    // system: (command) -> string, (command, [string]) -> string
+    register_unary(ctx, "system", Type::String, Type::String);
+    register_binary(ctx, "system", Type::String, Type::array(Type::String), Type::String);
+
+    // partial: (fn, bound args...) -> fn over the remaining parameters. The signature follows the
+    // arity of `fn`, so calls are typed by `InferenceContext::partial_signature`. This entry only
+    // names the builtin and serves as its documented form.
+    let (a, b, r) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
+    ctx.register_builtin(
+        PARTIAL,
+        Type::function(
+            vec![
+                Type::function(vec![Type::Var(a), Type::Var(b)], Type::Var(r)),
+                Type::Var(a),
+            ],
+            Type::function(vec![Type::Var(b)], Type::Var(r)),
+        ),
+    );
+
     // coalesce / ?? : (None, a) -> a (left is None, return right; null-coalescing)
     for name in ["coalesce", "??"] {
         let a = ctx.fresh_var();
@@ -1503,6 +1560,27 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
     // Other markdown functions
     register_nullary(ctx, "to_hr", node_of(NodeKind::HorizontalRule));
+    register_nullary(ctx, "to_break", node_of(NodeKind::Break));
+    // (url, ident, title) -> definition; (value, ident) -> footnote; ident -> footnote reference
+    register_ternary(
+        ctx,
+        "to_definition",
+        Type::String,
+        Type::String,
+        Type::String,
+        node_of(NodeKind::Definition),
+    );
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "to_footnote",
+        Type::Var(a),
+        Type::String,
+        node_of(NodeKind::Footnote),
+    );
+    register_unary(ctx, "to_footnote_ref", Type::String, node_of(NodeKind::FootnoteRef));
+    let a = ctx.fresh_var();
+    register_unary(ctx, "to_md_html", Type::Var(a), node_of(NodeKind::Html));
     register_unary(ctx, "to_md_name", Type::markdown(), Type::String);
     let value = ctx.fresh_var();
     register_unary(ctx, "to_md_text", Type::Var(value), Type::String);
@@ -1645,6 +1723,11 @@ fn register_file_io(ctx: &mut InferenceContext) {
     // write_file: (string, string | bytes) -> none
     register_binary(ctx, "write_file", Type::String, Type::String, Type::None);
     register_binary(ctx, "write_file", Type::String, Type::Bytes, Type::None);
+
+    // embed_images: (markdown[, base_dir]) -> markdown; extract_images: (markdown, dir) -> markdown
+    register_unary(ctx, "embed_images", Type::markdown(), Type::markdown());
+    register_binary(ctx, "embed_images", Type::markdown(), Type::String, Type::markdown());
+    register_binary(ctx, "extract_images", Type::markdown(), Type::String, Type::markdown());
 }
 
 /// Networking functions: http(method, url) / http(method, url, body | headers) /
@@ -1665,6 +1748,46 @@ fn register_net(ctx: &mut InferenceContext) {
             Type::String,
         );
     }
+
+    // open_http takes the same arguments as http and streams the response body.
+    for method in [Type::String, Type::Symbol] {
+        register_binary(ctx, "open_http", method.clone(), Type::String, Type::Dynamic);
+        register_ternary(
+            ctx,
+            "open_http",
+            method.clone(),
+            Type::String,
+            Type::String,
+            Type::Dynamic,
+        );
+        register_ternary(
+            ctx,
+            "open_http",
+            method.clone(),
+            Type::String,
+            headers.clone(),
+            Type::Dynamic,
+        );
+        register_many(
+            ctx,
+            &["open_http"],
+            vec![method, Type::String, Type::String, headers.clone()],
+            Type::Dynamic,
+        );
+    }
+
+    // http_all: ([request]) -> [string], where each request is a dict with `url` and optional
+    // `method`, `body` and `headers`. The values differ in type, so the element stays open.
+    let request = ctx.fresh_var();
+    register_unary(
+        ctx,
+        "http_all",
+        Type::array(Type::Var(request)),
+        Type::array(Type::String),
+    );
+
+    // mock_fetch: (url, body) -> none
+    register_binary(ctx, "mock_fetch", Type::String, Type::String, Type::None);
 }
 
 fn register_bytes(ctx: &mut InferenceContext) {
@@ -1821,6 +1944,23 @@ mod tests {
         assert!(
             missing.is_empty(),
             "type signatures without a builtin definition: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn test_public_native_builtins_have_type_signatures() {
+        let mut ctx = crate::infer::InferenceContext::new();
+        super::register_all(&mut ctx);
+        let registered: std::collections::HashSet<&str> = ctx.builtin_names().collect();
+        let mut missing: Vec<&str> = mq_lang::BUILTIN_FUNCTION_NAMES
+            .iter()
+            .copied()
+            .filter(|name| !registered.contains(name))
+            .collect();
+        missing.sort_unstable();
+        assert!(
+            missing.is_empty(),
+            "public native builtins without a type signature: {missing:?}"
         );
     }
 
