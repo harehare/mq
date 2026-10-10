@@ -192,8 +192,12 @@ fn test_declared_input_type_checks_selectors(#[case] query: &str, #[case] input:
 #[rstest]
 #[case::def_then_call("def f(a): a; | upcase()", "number", false)]
 #[case::let_initializer("let x = upcase() | x", "number", false)]
+#[case::let_initializer_accepts_the_input("let x = upcase() | x", "string", true)]
+#[case::var_initializer_accepts_the_input("var x = upcase() | x", "string", true)]
 #[case::def_then_partial_without_bound_value("def f(a, b, c): a; | partial(f)", "markdown", false)]
 #[case::def_then_partial_with_bound_value("def f(a, b, c): a; | partial(f, 1)", "markdown", true)]
+#[case::piped_partial_without_bound_value("def f(a, b): a; | f | partial", "markdown", false)]
+#[case::piped_partial_with_bound_value("def f(a, b): a; | f | partial(1)", "markdown", true)]
 fn test_declared_input_type_flows_past_a_leading_definition(
     #[case] query: &str,
     #[case] input: &str,

@@ -645,12 +645,12 @@ impl InferenceContext {
     }
 
     /// The signature of `partial(f, a1..ak)`. Its shape follows the arity of `f`, so it is derived
-    /// from the call: for `f: (p_1..p_n) -> r` and `k < n` it is `(f, p_1..p_k) -> (p_k+1..p_n) -> r`.
+    /// from the call: for `f: (p_1..p_n) -> r` and `1 <= k < n` it is `(f, p_1..p_k) -> (p_k+1..p_n) -> r`.
     /// An `f` that is not settled yet gets a signature that constrains nothing.
     fn partial_signature(&mut self, args: &[Type]) -> Option<Type> {
         let (func, bound) = args.split_first()?;
         let sig = match self.resolve_type(func) {
-            Type::Function(params, ret) if bound.len() < params.len() => {
+            Type::Function(params, ret) if !bound.is_empty() && bound.len() < params.len() => {
                 let rest = params[bound.len()..].to_vec();
                 let sig_params = std::iter::once(Type::Function(params.clone(), ret.clone()))
                     .chain(params[..bound.len()].iter().cloned())

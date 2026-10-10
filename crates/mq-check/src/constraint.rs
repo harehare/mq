@@ -134,7 +134,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // receives the input document, which is `dynamic` unless the caller declared its type.
     if !cats.root_symbols.is_empty() {
         let input_type = ctx.input_type().clone();
-        ctx.set_piped_input(cats.root_symbols[0], input_type);
+        ctx.set_piped_input(cats.root_symbols[0], input_type.clone());
+        forward_input_to_initializer(hir, ctx, &children_index, cats.root_symbols[0], input_type);
     }
     for i in 1..cats.root_symbols.len() {
         let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, cats.root_symbols[i - 1]);
@@ -142,17 +143,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
         if let Some(source) = prev_source {
             ctx.set_piped_source(cats.root_symbols[i], source);
         }
-
-        // For root-level Variables (e.g. `let x = first()`), forward the piped type to
-        // the initializer Call/Ref so Pass 3 sees it before resolving the overload.
-        if let Some(sym) = hir.symbol(cats.root_symbols[i])
-            && matches!(sym.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
-        {
-            let init_children = get_children(&children_index, cats.root_symbols[i]);
-            if let Some(&init_id) = init_children.last() {
-                ctx.set_piped_input(init_id, prev_ty);
-            }
-        }
+        forward_input_to_initializer(hir, ctx, &children_index, cats.root_symbols[i], prev_ty);
     }
 
     // Pass 2.5: Process Assign symbols before other operators/calls.
@@ -185,6 +176,23 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     }
 
     children_index
+}
+
+/// For a root-level Variable (e.g. `let x = first()`), forwards the piped type to the
+/// initializer Call/Ref so Pass 3 sees it before resolving the overload.
+fn forward_input_to_initializer(
+    hir: &Hir,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+    symbol_id: SymbolId,
+    input: Type,
+) {
+    if let Some(sym) = hir.symbol(symbol_id)
+        && matches!(sym.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
+        && let Some(&init_id) = get_children(children_index, symbol_id).last()
+    {
+        ctx.set_piped_input(init_id, input);
+    }
 }
 
 fn infer_while_or_until(
