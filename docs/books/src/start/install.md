@@ -39,8 +39,10 @@ curl -L https://github.com/harehare/mq/releases/download/v0.9.2/mq-aarch64-apple
 curl -L https://github.com/harehare/mq/releases/download/v0.9.2/mq-x86_64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
 # Linux arm64
 curl -L https://github.com/harehare/mq/releases/download/v0.9.2/mq-aarch64-unknown-linux-gnu -o /usr/local/bin/mq && chmod +x /usr/local/bin/mq
-# Windows (PowerShell)
+# Windows x86_64 (PowerShell)
 Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.9.2/mq-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
+# Windows arm64 (PowerShell)
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.9.2/mq-aarch64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
 ## Homebrew
@@ -99,8 +101,10 @@ curl -L https://github.com/harehare/mq/releases/download/v0.9.2/mq-lsp-aarch64-a
 curl -L https://github.com/harehare/mq/releases/download/v0.9.2/mq-lsp-x86_64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
 # Linux arm64
 curl -L https://github.com/harehare/mq/releases/download/v0.9.2/mq-lsp-aarch64-unknown-linux-gnu -o /usr/local/bin/mq-lsp && chmod +x /usr/local/bin/mq-lsp
-# Windows (PowerShell)
+# Windows x86_64 (PowerShell)
 Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.9.2/mq-lsp-x86_64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
+# Windows arm64 (PowerShell)
+Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.9.2/mq-lsp-aarch64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq-lsp.exe"
 ```
 
 ## Shell Completion
