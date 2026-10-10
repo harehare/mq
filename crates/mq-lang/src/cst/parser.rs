@@ -11017,6 +11017,33 @@ Shared::new(Node {
     }
 
     #[rstest]
+    #[case::do_block("do 1")]
+    #[case::def("def f(): 1")]
+    #[case::def_do("def f() do 1")]
+    #[case::fn_params("fn(x): x")]
+    #[case::fn_no_params("fn: 1")]
+    #[case::if_body("if (true): 1")]
+    #[case::after_pipe("1 | fn(x): x")]
+    fn test_top_level_body_may_end_at_eof(#[case] code: &str) {
+        let (_, errors) = crate::parse_recovery(code);
+        assert!(!errors.has_errors(), "{code:?}: {errors:?}");
+    }
+
+    #[rstest]
+    #[case::call("f(do 1", "`)`")]
+    #[case::array("[do 1", "`]`")]
+    #[case::group("(do 1", "`)`")]
+    fn test_body_at_eof_leaves_missing_closer_to_enclosing_construct(#[case] code: &str, #[case] expected: &str) {
+        let (_, errors) = crate::parse_recovery(code);
+        let errors = errors.to_vec();
+        assert_eq!(errors.len(), 1, "{code:?}: {errors:?}");
+        assert!(
+            matches!(&errors[0], ParseError::Missing { expected: e, .. } if *e == expected),
+            "{code:?}: {errors:?}"
+        );
+    }
+
+    #[rstest]
     #[case::add("a + b", "(a + b)")]
     #[case::sub("a - b", "(a - b)")]
     #[case::mul("a * b", "(a * b)")]
