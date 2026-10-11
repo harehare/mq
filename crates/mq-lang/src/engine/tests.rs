@@ -1069,7 +1069,6 @@ fn test_dump_bytecode_renders_vm_instructions() {
     let instructions: Vec<_> = chunk
         .instructions
         .iter()
-        .filter(|instruction| !matches!(instruction.opcode.as_str(), "StmtBoundary" | "SyncCallNode"))
         .map(|instruction| (instruction.opcode.as_str(), instruction.operands.as_str()))
         .collect();
     assert_eq!(
@@ -1077,6 +1076,32 @@ fn test_dump_bytecode_renders_vm_instructions() {
         [("Const", "0"), ("Const", "1"), ("Add", ""), ("Return", "")]
     );
     assert_eq!(chunk.constants, ["1", "2"]);
+}
+
+#[rstest]
+#[case::builtin_call("upcase()")]
+#[case::breakpoint("breakpoint() | upcase()")]
+#[case::user_function("def f(x): x + 1; | f(1)")]
+#[case::nodes_split(".h | nodes | len()")]
+fn test_dump_bytecode_is_uninstrumented(#[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let compiled = engine.compile(query).unwrap();
+
+    let dump = engine.dump_bytecode(&compiled).unwrap();
+
+    let opcodes = dump
+        .phases
+        .iter()
+        .flat_map(|phase| &phase.chunks)
+        .flat_map(|chunk| &chunk.instructions)
+        .map(|instruction| instruction.opcode.as_str());
+    for opcode in opcodes {
+        assert!(
+            !["StmtBoundary", "SyncCallNode", "Breakpoint"].contains(&opcode),
+            "unexpected {opcode}"
+        );
+    }
 }
 
 // --- builtin cache tests ---

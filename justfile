@@ -30,7 +30,8 @@ bench-local:
 build:
     cargo build --release -p mq-run --bin mq
     cargo build --release -p mq-run --bin mq-dbg --features="debugger"
-    cargo build --release -p mq-lsp -p mq-crawler -p mq-test -p mq-bench
+    cargo build --release -p mq-lsp -p mq-crawler -p mq-bench
+    cargo build --release -p mq-test
     cargo build --release -p mq-check --features="cli"
     cargo build --release -p mq-lint --features="cli"
     cargo build --release -p mq-formatter
@@ -39,20 +40,16 @@ build:
 build-target target:
     cargo build --release --target {{target}} -p mq-run --bin mq
     cargo build --release --target {{target}} -p mq-run --bin mq-dbg --features="debugger"
-    cargo build --release --target {{target}} -p mq-lsp -p mq-crawler -p mq-test -p mq-bench
+    cargo build --release --target {{target}} -p mq-lsp -p mq-crawler -p mq-bench
+    cargo build --release --target {{target}} -p mq-test
     cargo build --release --target {{target}} -p mq-check --features="cli"
     cargo build --release --target {{target}} -p mq-lint --features="cli"
     cargo build --release --target {{target}} -p mq-formatter
 
-# Dumps the production Tarn bytecode for a query.
+# Dumps the Tarn bytecode a regular run executes for a query.
 # Example: just dump-bytecode '1 + 2'
 dump-bytecode query:
     cargo run -p mq-run --bin mq -- -C --dump-bytecode -I null '{{query}}'
-
-# Dumps the debugger-instrumented Tarn bytecode (with StmtBoundary) via mq-dbg.
-# Example: just dump-bytecode-dbg '1 + 2'
-dump-bytecode-dbg query:
-    cargo run -p mq-run --bin mq-dbg --features="debugger" -- -C --dump-bytecode -I null '{{query}}'
 
 # Profiles production Tarn bytecode without debugger-only boundaries. The profile changes
 # dispatch cost, so use it to find hot instructions, not to measure elapsed time.

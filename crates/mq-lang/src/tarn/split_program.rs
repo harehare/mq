@@ -1,13 +1,11 @@
 //! Engine bytecode split around `nodes`, shared by the cache and `.mqc`.
 #[cfg(not(feature = "debugger"))]
 use super::VmEnvCacheKey;
-use super::nodes_split::{
-    immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes, split_at_nodes,
-};
+use super::nodes_split::compile_split_parts;
 use super::{EngineRunContext, Error, VmEnv, compiler, interpreter, map_input_values, remaining_timeout};
 use crate::ast::Program;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::{Ident, ModuleLoader, ModuleResolver, Shared, SharedCell, TokenArena};
+use crate::{Ident, ModuleResolver, Shared, SharedCell};
 use std::fmt;
 #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
 use std::time::Instant;
@@ -117,7 +115,7 @@ impl SplitProgram {
     ) -> Result<Self, Error> {
         let preresolved_module_vars = super::resolve_module_prelude_globals(program, context, deadline)?;
         // Resolve on the context's loader so the clone below reuses loaded modules.
-        let (program, after, let_names) = Self::compile_parts(
+        let (program, after, let_names) = compile_split_parts(
             program,
             Shared::clone(&context.token_arena),
             context.module_loader.clone(),
@@ -125,59 +123,6 @@ impl SplitProgram {
             &preresolved_module_vars,
         )?;
         Ok(Self::new(program, after, let_names))
-    }
-
-    /// Compiles the per-input part and, for a `nodes` query, the aggregate part.
-    pub(crate) fn compile_parts<R: ModuleResolver>(
-        program: &Program,
-        token_arena: TokenArena,
-        module_loader: ModuleLoader<R>,
-        global_bindings: &[(Ident, RuntimeValue)],
-        preresolved_module_vars: &compiler::ResolvedModuleVars,
-    ) -> Result<(compiler::CompiledProgram, Option<compiler::CompiledProgram>, Vec<Ident>), Error> {
-        let mut global_names: Vec<Ident> = global_bindings.iter().map(|(name, _)| *name).collect();
-        global_names.sort_unstable();
-        let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
-            let let_names = let_names_before_nodes(before);
-            let immutable_let_names = immutable_let_names_before_nodes(before);
-            // `after` re-declares these, so skip them per input.
-            let per_input = if before.iter().all(|node| is_declaration(node)) {
-                Program::new()
-            } else {
-                before.to_vec()
-            };
-            let program_before = compiler::compile_uninstrumented_program_for_engine(
-                &per_input,
-                Shared::clone(&token_arena),
-                module_loader.clone(),
-                &[],
-                &[],
-                &global_names,
-                preresolved_module_vars,
-            )?;
-            let program_after = compiler::compile_uninstrumented_program_for_engine(
-                &program_after_nodes(before, after),
-                token_arena,
-                module_loader,
-                &let_names,
-                &immutable_let_names,
-                &global_names,
-                preresolved_module_vars,
-            )?;
-            (program_before, Some(program_after), let_names)
-        } else {
-            let program = compiler::compile_uninstrumented_program_for_engine(
-                program,
-                token_arena,
-                module_loader,
-                &[],
-                &[],
-                &global_names,
-                preresolved_module_vars,
-            )?;
-            (program, None, Vec::new())
-        };
-        Ok((program, after, let_names))
     }
 
     /// Runs every input, then the `nodes` part over all results.

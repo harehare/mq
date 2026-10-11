@@ -324,7 +324,6 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
 }
 
 /// Like [`compile_program_for_engine_with_bindings`], without debugger instrumentation.
-#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 pub(crate) fn compile_uninstrumented_program_for_engine<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,

@@ -1,7 +1,6 @@
 //! Builds a structured listing of compiled Tarn bytecode for `mq --dump-bytecode` and tests.
-#[cfg(feature = "debugger")]
-use super::nodes_split::{program_after_nodes, split_at_nodes};
-#[cfg(any(feature = "mqc", not(feature = "debugger")))]
+use super::nodes_split::compile_split_parts;
+#[cfg(feature = "mqc")]
 use super::split_program::SplitProgram;
 use super::{Error, bytecode, compiler};
 use crate::TokenArena;
@@ -72,7 +71,7 @@ pub(crate) fn dump_compiled_program(compiled: &SplitProgram, token_arena: &Token
     BytecodeDump { phases }
 }
 
-/// Compiles a program as the Engine VM path would and lists its bytecode.
+/// Compiles a program as a regular run would, without debugger instrumentation, and lists its bytecode.
 ///
 /// Module `let` values are not pre-resolved, so nothing in `program` or its modules runs.
 pub(crate) fn dump_bytecode<R: ModuleResolver>(
@@ -81,73 +80,21 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     global_bindings: &[(crate::Ident, RuntimeValue)],
 ) -> Result<BytecodeDump, Error> {
-    #[cfg(not(feature = "debugger"))]
-    {
-        let (per_input, after, _) = SplitProgram::compile_parts(
-            program,
-            token_arena.clone(),
-            module_loader,
-            global_bindings,
-            &compiler::ResolvedModuleVars::default(),
-        )?;
-        Ok(BytecodeDump {
-            phases: match after {
-                None => vec![build_phase("main", &per_input, &token_arena)],
-                Some(after) => vec![
-                    build_phase("per-input", &per_input, &token_arena),
-                    build_phase("nodes aggregate", &after, &token_arena),
-                ],
-            },
-        })
-    }
-    #[cfg(feature = "debugger")]
-    {
-        dump_instrumented_bytecode(program, token_arena, module_loader, global_bindings)
-    }
-}
-
-/// Lists the instrumented bytecode a debugger session runs.
-#[cfg(feature = "debugger")]
-fn dump_instrumented_bytecode<R: ModuleResolver>(
-    program: &Program,
-    token_arena: TokenArena,
-    module_loader: ModuleLoader<R>,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
-) -> Result<BytecodeDump, Error> {
-    let global_names: Vec<crate::Ident> = global_bindings.iter().map(|(ident, _)| *ident).collect();
-
-    let Some((before, after)) = split_at_nodes(program) else {
-        let compiled = compiler::compile_program_for_engine(
-            program,
-            token_arena.clone(),
-            module_loader,
-            &global_names,
-            &compiler::ResolvedModuleVars::default(),
-        )?;
-        return Ok(BytecodeDump {
-            phases: vec![build_phase("main", &compiled, &token_arena)],
-        });
-    };
-
-    let input_compiled = compiler::compile_program_for_engine(
-        &before.to_vec(),
-        token_arena.clone(),
-        module_loader.clone(),
-        &global_names,
-        &compiler::ResolvedModuleVars::default(),
-    )?;
-    let aggregate_compiled = compiler::compile_program_for_engine(
-        &program_after_nodes(before, after),
+    let (per_input, after, _) = compile_split_parts(
+        program,
         token_arena.clone(),
         module_loader,
-        &global_names,
+        global_bindings,
         &compiler::ResolvedModuleVars::default(),
     )?;
     Ok(BytecodeDump {
-        phases: vec![
-            build_phase("per-input", &input_compiled, &token_arena),
-            build_phase("nodes aggregate", &aggregate_compiled, &token_arena),
-        ],
+        phases: match after {
+            None => vec![build_phase("main", &per_input, &token_arena)],
+            Some(after) => vec![
+                build_phase("per-input", &per_input, &token_arena),
+                build_phase("nodes aggregate", &after, &token_arena),
+            ],
+        },
     })
 }
 

@@ -409,12 +409,13 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.eval_compiled_vm(compiled, input)
     }
 
-    /// Lists the Tarn bytecode that would be executed for `compiled`, without running it.
+    /// Lists the Tarn bytecode that a regular run would execute for `compiled`, without running it.
     ///
-    /// A `debugger` build lists the instrumented bytecode its debugger runs.
+    /// The listing is never debugger-instrumented, whether or not the `debugger` feature is enabled.
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<crate::BytecodeDump, Box<error::Error>> {
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(compiled.source.clone());
+        #[allow(clippy::infallible_destructuring_match)]
         let program = match &compiled.body {
             #[cfg(feature = "debugger")]
             ProgramBody::Ast(program) => program,
