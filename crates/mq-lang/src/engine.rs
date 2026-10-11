@@ -74,7 +74,7 @@ pub(crate) enum VmModulePrelude {
 }
 
 fn create_default_token_arena() -> Shared<SharedCell<Arena<Token>>> {
-    let token_arena = Shared::new(SharedCell::new(Arena::new(2048)));
+    let token_arena = Shared::new(SharedCell::new(Arena::new(1)));
     token_alloc(
         &token_arena,
         Token {

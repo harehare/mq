@@ -72,8 +72,9 @@ impl<T> ArenaId<T> {
 /// elements and still resolves the parent's ids, so it can be dropped once its ids are unused.
 #[derive(Debug, Clone, Default)]
 pub struct Arena<T> {
-    /// Leading elements shared with other arenas. Ids index it before `items`.
-    prefix: Option<Shared<Vec<T>>>,
+    /// Leading elements shared with other arenas, in the same id space as `items` and unlike
+    /// `parent`. Ids index it before `items`.
+    base: Option<Shared<Vec<T>>>,
     items: Vec<T>,
     parent: Option<Shared<SharedCell<Arena<T>>>>,
 }
@@ -85,8 +86,18 @@ impl<T: Clone + PartialEq> Arena<T> {
     /// Creates a new arena with the specified initial capacity.
     pub fn new(size: usize) -> Self {
         Arena {
-            prefix: None,
+            base: None,
             items: Vec::with_capacity(size),
+            parent: None,
+        }
+    }
+
+    /// Creates an arena whose leading elements are `base`, shared without copying. Ids handed
+    /// out by an arena holding the same leading elements keep resolving to them.
+    pub(crate) fn with_base(base: Shared<Vec<T>>) -> Self {
+        Arena {
+            base: Some(base),
+            items: Vec::new(),
             parent: None,
         }
     }
@@ -94,7 +105,7 @@ impl<T: Clone + PartialEq> Arena<T> {
     /// Creates an arena layered on `parent`.
     pub(crate) fn layered(parent: Shared<SharedCell<Arena<T>>>) -> Self {
         Arena {
-            prefix: None,
+            base: None,
             items: Vec::new(),
             parent: Some(parent),
         }
@@ -133,7 +144,7 @@ impl<T: Clone + PartialEq> Arena<T> {
 
     /// Returns the number of elements in the arena.
     pub fn len(&self) -> usize {
-        self.prefix_len() + self.items.len()
+        self.base_len() + self.items.len()
     }
 
     /// Returns `true` if the arena contains no elements.
@@ -143,28 +154,7 @@ impl<T: Clone + PartialEq> Arena<T> {
 
     /// Returns `true` if the arena contains the specified value.
     pub fn contains(&self, value: T) -> bool {
-        self.prefix.as_ref().is_some_and(|prefix| prefix.contains(&value)) || self.items.contains(&value)
-    }
-
-    /// Extends the arena by cloning elements from a slice.
-    pub fn extend_from_slice(&mut self, items: &[T]) {
-        self.items.extend_from_slice(items);
-    }
-
-    /// Makes `prefix` the leading elements of this arena without copying them. Applies only to an
-    /// arena that holds nothing but the first element of `prefix`, so every id it handed out
-    /// still resolves to the same element. Returns whether it applied.
-    pub(crate) fn share_prefix(&mut self, prefix: Shared<Vec<T>>) -> bool {
-        if self.prefix.is_some()
-            || self.parent.is_some()
-            || self.items.len() != 1
-            || prefix.first() != self.items.first()
-        {
-            return false;
-        }
-        self.items.clear();
-        self.prefix = Some(prefix);
-        true
+        self.base.as_ref().is_some_and(|base| base.contains(&value)) || self.items.contains(&value)
     }
 
     /// A copy of every element, in id order.
@@ -190,21 +180,21 @@ impl<T> Arena<T> {
             return None;
         }
         let index = (id.id & !LAYER_BIT) as usize;
-        match &self.prefix {
-            Some(prefix) if index < prefix.len() => prefix.get(index),
-            Some(prefix) => self.items.get(index - prefix.len()),
+        match &self.base {
+            Some(base) if index < base.len() => base.get(index),
+            Some(base) => self.items.get(index - base.len()),
             None => self.items.get(index),
         }
     }
 
     /// Iterates over the elements this arena itself holds, in id order.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        let prefix = self.prefix.as_deref().map_or(&[][..], Vec::as_slice);
-        prefix.iter().chain(&self.items)
+        let base = self.base.as_deref().map_or(&[][..], Vec::as_slice);
+        base.iter().chain(&self.items)
     }
 
-    fn prefix_len(&self) -> usize {
-        self.prefix.as_ref().map_or(0, |prefix| prefix.len())
+    fn base_len(&self) -> usize {
+        self.base.as_ref().map_or(0, |base| base.len())
     }
 }
 
@@ -286,35 +276,17 @@ mod tests {
     }
 
     #[test]
-    fn test_shared_prefix_resolves_ids_and_continues_after_it() {
-        let prefix = Shared::new(vec![10, 11, 12]);
-        let mut arena = Arena::new(4);
-        let first = arena.alloc(10);
-        assert!(arena.share_prefix(Shared::clone(&prefix)));
+    fn test_base_resolves_ids_and_continues_after_it() {
+        let mut arena = Arena::with_base(Shared::new(vec![10, 11, 12]));
 
         let next = arena.alloc(13);
-        assert_eq!(arena[first], 10);
+        assert_eq!(arena[ArenaId::new(0)], 10);
         assert_eq!(arena[ArenaId::new(2)], 12);
         assert_eq!(next.raw(), 3);
         assert_eq!(arena[next], 13);
         assert_eq!(arena.len(), 4);
         assert!(arena.contains(11) && arena.contains(13));
         assert_eq!(arena.to_vec(), vec![10, 11, 12, 13]);
-    }
-
-    #[test]
-    fn test_share_prefix_requires_a_matching_first_element() {
-        let prefix = Shared::new(vec![10, 11]);
-
-        let mut other_first = Arena::new(2);
-        other_first.alloc(99);
-        assert!(!other_first.share_prefix(Shared::clone(&prefix)));
-        assert_eq!(other_first.to_vec(), vec![99]);
-
-        let mut already_grown = Arena::new(2);
-        already_grown.alloc(10);
-        already_grown.alloc(11);
-        assert!(!already_grown.share_prefix(prefix));
     }
 
     #[test]

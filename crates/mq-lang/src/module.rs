@@ -506,9 +506,9 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                     let mut arena = token_arena.borrow_mut();
                     #[cfg(feature = "sync")]
                     let mut arena = token_arena.write().unwrap();
-                    if !arena.share_prefix(Shared::clone(&tokens)) {
-                        arena.extend_from_slice(&tokens[1..]);
-                    }
+                    // A pristine arena holds only the dummy EOF, which is `tokens[0]`.
+                    debug_assert!(arena.iter().eq(tokens.first()));
+                    *arena = Arena::with_base(Shared::clone(&tokens));
                 }
                 let module_id = self.module_id_of(Module::BUILTIN_MODULE);
                 self.loaded_modules.insert(module_id);
