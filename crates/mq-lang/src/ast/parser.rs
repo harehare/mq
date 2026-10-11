@@ -858,11 +858,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_attribute_access(
-        &mut self,
-        base_node: Shared<Node>,
-        token_id: TokenId,
-    ) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_attribute_access(&mut self, base_node: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
         let selector_token = match self.tokens.peek() {
             Some(t) => *t,
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
@@ -893,9 +889,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             Ok(Shared::new(Node {
-                token_id: attr_literal_token_id,
+                token_id: self.alloc_token(selector_token),
                 expr: Expr::Call(
-                    IdentWithToken::new_with_token(constants::builtins::ATTR, Some(token_id)),
+                    IdentWithToken::new_with_token(constants::builtins::ATTR, Some(attr_literal_token_id)),
                     smallvec![base_node, attr_literal],
                 ),
             }))
@@ -911,7 +907,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             token_id,
             expr: Expr::Self_,
         });
-        let node = self.parse_attribute_access(self_node, token_id)?;
+        let node = self.parse_attribute_access(self_node)?;
 
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::LBracket) => self.parse_bracket_access(node, token),
@@ -1147,7 +1143,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     )),
                 });
 
-                self.parse_attribute_access(base_node, token_id)
+                self.parse_attribute_access(base_node)
             }
             Some(TokenKind::DoubleColon) => {
                 // Parse qualified access: module::function(), module::ident, or module::module2::method
@@ -1267,7 +1263,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let result = self.parse_bracket_access(call_node, ident_token)?;
                     self.parse_postfix_ops(result, ident_token)
                 } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Selector(_))) {
-                    self.parse_attribute_access(call_node, token_id)
+                    self.parse_attribute_access(call_node)
                 } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
                     Ok(call_node)
                 } else {
@@ -3257,7 +3253,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Call(
-                    IdentWithToken::new_with_token(constants::builtins::ATTR, Some(0.into())),
+                    IdentWithToken::new_with_token(constants::builtins::ATTR, Some(1.into())),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
@@ -8003,7 +7999,7 @@ Shared::new(Node {
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(0.into())),
+                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(1.into())),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
@@ -8029,7 +8025,7 @@ Shared::new(Node {
                         Shared::new(Node {
                             token_id: 3.into(),
                             expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(0.into())),
+                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(1.into())),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
@@ -8062,7 +8058,7 @@ Shared::new(Node {
                         Shared::new(Node {
                             token_id: 3.into(),
                             expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(1.into())),
+                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(2.into())),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
@@ -8086,7 +8082,7 @@ Shared::new(Node {
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(0.into())),
+                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(1.into())),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
@@ -10292,6 +10288,25 @@ Shared::new(Node {
             panic!("expected dynamic call");
         };
         assert_ne!(program[0].token_id, callee.token_id);
+    }
+
+    #[rstest]
+    #[case::self_("self.url")]
+    #[case::ident("v.url")]
+    #[case::call("f().url")]
+    fn test_attr_call_and_its_literal_have_distinct_ids(#[case] code: &str) {
+        let (program, arena) = parse_with_arena(code);
+        let Expr::Call(attr, args) = &program[0].expr else {
+            panic!("expected attr call");
+        };
+        assert_eq!(attr.name, Ident::new(constants::builtins::ATTR));
+        assert_ne!(program[0].token_id, args[1].token_id);
+        assert_eq!(
+            attr.token,
+            Some(args[1].token_id),
+            "attr resolves to the selector token"
+        );
+        assert_eq!(arena[args[1].token_id].kind, TokenKind::Selector(".url".into()));
     }
 
     fn parse_shape(code: &str) -> Result<String, SyntaxError> {
