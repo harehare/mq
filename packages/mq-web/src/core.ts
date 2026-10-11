@@ -1,6 +1,7 @@
 import init, {
   Options,
   Diagnostic,
+  BytecodeDump,
   DefinedValue,
   InlayHint,
   HoverResult,
@@ -11,6 +12,7 @@ import init, {
 interface WasmModule {
   run: (code: string, content: string, options: Options) => Promise<string>;
   toAst: (code: string) => Promise<string>;
+  dumpBytecode: (code: string) => Promise<BytecodeDump>;
   format: (code: string) => Promise<string>;
   diagnostics: (
     code: string,
@@ -50,6 +52,7 @@ async function initWasm(): Promise<WasmModule> {
       wasmModule = {
         run: wasmImport.run,
         toAst: wasmImport.toAst,
+        dumpBytecode: wasmImport.dumpBytecode,
         format: wasmImport.format,
         diagnostics: wasmImport.diagnostics,
         inlayHints: wasmImport.inlayHints,
@@ -93,6 +96,14 @@ export async function run(
 export async function toAst(code: string): Promise<string> {
   const wasm = await initWasm();
   return await wasm.toAst(code);
+}
+
+/**
+ * List the VM bytecode that mq code compiles to, without running it.
+ */
+export async function dumpBytecode(code: string): Promise<BytecodeDump> {
+  const wasm = await initWasm();
+  return await wasm.dumpBytecode(code);
 }
 
 /**

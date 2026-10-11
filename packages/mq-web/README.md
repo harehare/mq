@@ -70,6 +70,14 @@ Format mq code.
 
 Returns: `Promise<string>` - The formatted code
 
+#### `dumpBytecode(code)`
+
+List the VM bytecode that mq code compiles to, without running it.
+
+- `code`: string - The mq code to compile
+
+Returns: `Promise<BytecodeDump>` - Phases, chunks, instructions and constants
+
 #### `diagnostics(code)`
 
 Get diagnostics for mq code.

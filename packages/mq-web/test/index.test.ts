@@ -3,6 +3,7 @@ import {
   run,
   format,
   toAst,
+  dumpBytecode,
   toHtml,
   htmlToMarkdown,
   diagnostics,
@@ -59,6 +60,22 @@ describe("toAst", () => {
     const result = await toAst(".[]");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
+  });
+});
+
+describe("dumpBytecode", () => {
+  it("lists the bytecode of a query without running it", async () => {
+    const dump = await dumpBytecode("def f(x): x + 1; | f(1)");
+    expect(dump.phases[0].name).toBe("main");
+    const opcodes = dump.phases[0].chunks.flatMap((chunk) =>
+      chunk.instructions.map((instruction) => instruction.opcode),
+    );
+    expect(opcodes).toContain("Return");
+    expect(opcodes).not.toContain("StmtBoundary");
+  });
+
+  it("rejects a syntax error", async () => {
+    await expect(dumpBytecode("1 +")).rejects.toBeDefined();
   });
 });
 

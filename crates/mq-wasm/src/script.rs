@@ -35,6 +35,36 @@ export interface HoverResult {
   content: string;
 }
 
+export interface BytecodeLocation {
+  line: number;
+  column: number;
+}
+
+export interface BytecodeInstruction {
+  pc: number;
+  opcode: string;
+  operands?: string;
+  location: BytecodeLocation | null;
+}
+
+export interface BytecodeChunk {
+  index: number;
+  local_count: number;
+  locals: string[];
+  upvalues: string[];
+  instructions: BytecodeInstruction[];
+  constants: string[];
+}
+
+export interface BytecodePhase {
+  name: string;
+  chunks: BytecodeChunk[];
+}
+
+export interface BytecodeDump {
+  phases: BytecodePhase[];
+}
+
 export interface Options {
     isUpdate: boolean,
     inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | 'raw' | null,
@@ -716,6 +746,23 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
         })
 }
 
+/// Lists the VM bytecode `code` compiles to, without running it.
+#[wasm_bindgen(js_name=dumpBytecode, skip_typescript)]
+pub async fn dump_bytecode(code: &str) -> Result<JsValue, JsValue> {
+    let resolver = WasmModuleResolver::new();
+    resolver.initialize().await;
+    resolver.preload_modules(code).await;
+
+    let mut engine = mq_lang::Engine::new(resolver);
+    engine.load_builtin_module();
+
+    let compiled = engine.compile(code).map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    let dump = engine
+        .dump_bytecode(&compiled)
+        .map_err(|e| JsValue::from_str(&format!("{}", e)))?;
+    serde_wasm_bindgen::to_value(&dump).map_err(|e| JsValue::from_str(&format!("Failed to serialize bytecode: {}", e)))
+}
+
 #[wasm_bindgen(js_name=toAst)]
 pub async fn to_ast(code: &str) -> Result<String, JsValue> {
     let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
@@ -1321,6 +1368,18 @@ mod tests {
     }
 
     #[allow(unused)]
+    #[wasm_bindgen_test]
+    async fn test_dump_bytecode_lists_phases() {
+        let dump = dump_bytecode("1 + 2").await.unwrap();
+        let phases = js_sys::Reflect::get(&dump, &JsValue::from_str("phases")).unwrap();
+        assert_eq!(js_sys::Array::from(&phases).length(), 1);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_dump_bytecode_rejects_syntax_error() {
+        assert!(dump_bytecode("1 +").await.is_err());
+    }
+
     #[wasm_bindgen_test]
     async fn test_script_run_simple() {
         let result = run(

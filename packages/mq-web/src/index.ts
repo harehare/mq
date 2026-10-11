@@ -12,10 +12,15 @@
  */
 
 // Re-export everything from core and types
-export { run, format, diagnostics, inlayHints, definedValues, hover, toAst, toHtml, htmlToMarkdown, clearHttpCache, clearAllHttpCache } from "./core.js";
+export { run, format, diagnostics, inlayHints, definedValues, hover, toAst, dumpBytecode, toHtml, htmlToMarkdown, clearHttpCache, clearAllHttpCache } from "./core.js";
 
 export type {
   Options,
+  BytecodeDump,
+  BytecodePhase,
+  BytecodeChunk,
+  BytecodeInstruction,
+  BytecodeLocation,
   Diagnostic,
   InlayHint,
   HoverResult,
