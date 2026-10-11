@@ -218,8 +218,8 @@ impl DebuggerHandler {
             }
         }
 
-        let (start, snippet) = self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
-        Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
+        let (start, snippet) = self.get_source_code_with_context(context, context.range.start.line as usize, 5);
+        Self::print_source_code(start, context.range.start.line as usize + 1, snippet);
         #[cfg(feature = "debug-trace")]
         if self.dump_stack {
             self.print_operand_stack(context);
@@ -265,12 +265,12 @@ impl DebuggerHandler {
                 }
                 Command::List => {
                     let (start, snippet) =
-                        self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
-                    Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
+                        self.get_source_code_with_context(context, context.range.start.line as usize, 5);
+                    Self::print_source_code(start, context.range.start.line as usize + 1, snippet);
                 }
                 Command::LongList => {
                     let lines: Vec<String> = context.source.code.lines().map(|s| s.to_string()).collect();
-                    Self::print_source_code(0, context.token.range.start.line as usize + 1, lines);
+                    Self::print_source_code(0, context.range.start.line as usize + 1, lines);
                 }
                 Command::Info => {
                     println!(
@@ -373,7 +373,7 @@ impl DebuggerHandler {
     #[cfg(feature = "debug-trace")]
     fn print_operand_stack(&self, context: &DebugContext) {
         let source_name = context.source.name.as_deref().unwrap_or("<query>");
-        let position = &context.token.range.start;
+        let position = &context.range.start;
         if self.color_output {
             println!("{}", "Tarn VM operand stack".bright_cyan().bold());
             println!(
@@ -648,7 +648,7 @@ impl Validator for DebuggerLineHelper {
 #[cfg(test)]
 mod tests {
     use mq_lang::ModuleId;
-    use mq_lang::{self, DebugContext, Shared};
+    use mq_lang::{self, DebugContext};
 
     use super::*;
 
@@ -759,14 +759,11 @@ mod tests {
             name: None,
             code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
         };
-        context.token = Shared::new(mq_lang::Token {
-            range: mq_lang::Range {
-                start: mq_lang::Position { line: 4, column: 0 },
-                end: mq_lang::Position { line: 4, column: 1 },
-            },
-            kind: mq_lang::TokenKind::Eof,
-            module_id: ModuleId::new(0),
-        });
+        context.range = mq_lang::Range {
+            start: mq_lang::Position { line: 4, column: 0 },
+            end: mq_lang::Position { line: 4, column: 1 },
+        };
+        context.module_id = ModuleId::new(0);
         let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);
         let (start, snippet) = handler.get_source_code_with_context(&context, 4, 2);
         assert_eq!(start, 2);

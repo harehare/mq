@@ -3,7 +3,7 @@ use super::{compiler, interpreter};
 use crate::runtime::host::HostFunctions;
 use crate::{
     Breakpoint, DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, ModuleResolver, RuntimeValue, Shared,
-    SharedCell, Source, TokenArena, get_token,
+    SharedCell, Source, TokenArena, token_location,
 };
 
 /// Adapts VM boundary events to the shared debugger API.
@@ -138,7 +138,7 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
 }
 
 impl<R: ModuleResolver> VmDebuggerHook<R> {
-    fn build_context(&mut self, event: DebugEvent) -> (DebugContext, Shared<crate::Token>, Vec<(Ident, RuntimeValue)>) {
+    fn build_context(&mut self, event: DebugEvent) -> (DebugContext, Vec<(Ident, RuntimeValue)>) {
         let DebugEvent {
             token_id,
             node,
@@ -149,11 +149,12 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
             #[cfg(feature = "debug-trace")]
             operand_stack,
         } = event;
-        let token = get_token(Shared::clone(&self.token_arena), token_id);
+        let (range, module_id) = token_location(&self.token_arena, token_id);
         let context = DebugContext {
             current_value,
             current_node: node,
-            token: Shared::clone(&token),
+            range,
+            module_id,
             call_stack,
             vm_frame,
             #[cfg(feature = "debug-trace")]
@@ -161,12 +162,12 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
             source: self
                 .sources
                 .iter()
-                .find(|(module_id, _)| *module_id == token.module_id)
+                .find(|(id, _)| *id == module_id)
                 .map(|(_, source)| source.clone())
                 .unwrap_or_else(|| self.source.clone()),
         };
         self.last_context = Some(context.clone());
-        (context, token, bindings)
+        (context, bindings)
     }
 }
 
@@ -176,20 +177,16 @@ impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
             return Ok(());
         }
 
-        let (context, token, bindings) = self.build_context(event);
+        let (context, bindings) = self.build_context(event);
 
-        let breakpoint = self
-            .debugger
-            .read()
-            .unwrap()
-            .get_hit_breakpoint(&context, Shared::clone(&token));
+        let breakpoint = self.debugger.read().unwrap().get_hit_breakpoint(&context);
         if let Some(breakpoint) = breakpoint {
             if !self.breakpoint_matches(&breakpoint, &bindings)? {
                 return Ok(());
             }
             if let Some(message) = &breakpoint.log_message {
                 if let Some(message) =
-                    self.interpolate_log_message(message, &context.current_value, &bindings, token.module_id)
+                    self.interpolate_log_message(message, &context.current_value, &bindings, context.module_id)
                 {
                     self.handler
                         .read()
@@ -212,11 +209,11 @@ impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
             return Ok(());
         }
 
-        let (context, token, _bindings) = self.build_context(event);
+        let (context, _bindings) = self.build_context(event);
         let breakpoint = Breakpoint {
             id: 0,
-            line: token.range.start.line as usize,
-            column: Some(token.range.start.column),
+            line: context.range.start.line as usize,
+            column: Some(context.range.start.column),
             enabled: true,
             ..Default::default()
         };

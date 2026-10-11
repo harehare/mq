@@ -257,15 +257,15 @@ fn negating_a_non_number_reports_an_error() {
 }
 
 #[rstest::fixture]
-fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+fn token_arena() -> Shared<SharedCell<Arena<Token>>> {
     let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
     token_alloc(
         &token_arena,
-        &Shared::new(Token {
+        Token {
             kind: TokenKind::Eof,
             range: Range::default(),
             module_id: 1.into(),
-        }),
+        },
     );
     token_arena
 }
@@ -2787,10 +2787,7 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
     )
     .unwrap();
     let function_token_id = compiled.chunks[1].debug_nodes[0].0;
-    let function_line = get_token(Shared::clone(&token_arena), function_token_id)
-        .range
-        .start
-        .line as usize;
+    let function_line = get_token(&token_arena, function_token_id).range.start.line as usize;
 
     let debugger = Shared::new(SharedCell::new(crate::Debugger::new()));
     debugger.write().unwrap().activate();
@@ -2894,7 +2891,7 @@ fn vm_debugger_hook_applies_live_frame_writes(
     let line = compiled.chunks[target_chunk]
         .debug_nodes
         .iter()
-        .map(|(token_id, _)| get_token(Shared::clone(&token_arena), *token_id).range.start.line as usize)
+        .map(|(token_id, _)| get_token(&token_arena, *token_id).range.start.line as usize)
         .max()
         .unwrap();
 
@@ -3034,10 +3031,7 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
     )
     .unwrap();
     let function_token_id = compiled.chunks[1].debug_nodes[0].0;
-    let function_line = get_token(Shared::clone(&token_arena), function_token_id)
-        .range
-        .start
-        .line as usize;
+    let function_line = get_token(&token_arena, function_token_id).range.start.line as usize;
 
     let debugger = Shared::new(SharedCell::new(crate::Debugger::new()));
     debugger.write().unwrap().activate();

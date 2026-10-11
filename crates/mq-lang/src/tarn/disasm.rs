@@ -5,9 +5,9 @@ use super::split_program::SplitProgram;
 use super::{Error, bytecode, compiler};
 use crate::TokenArena;
 use crate::ast::Program;
-use crate::get_token;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::{ModuleLoader, ModuleResolver, Shared};
+use crate::token_location;
+use crate::{ModuleLoader, ModuleResolver};
 use serde::Serialize;
 
 /// Compiled Tarn bytecode, one [`BytecodePhase`] per compiled program.
@@ -137,10 +137,10 @@ fn build_phase(name: &str, compiled: &compiler::CompiledProgram, token_arena: &T
                         opcode: opcode.to_string(),
                         operands: operands.to_string(),
                         location: chunk.token_at(pc).map(|token_id| {
-                            let token = get_token(Shared::clone(token_arena), token_id);
+                            let (range, _) = token_location(token_arena, token_id);
                             BytecodeLocation {
-                                line: token.range.start.line as usize + 1,
-                                column: token.range.start.column as usize + 1,
+                                line: range.start.line as usize + 1,
+                                column: range.start.column + 1,
                             }
                         }),
                     }
