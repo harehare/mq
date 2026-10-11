@@ -411,6 +411,42 @@ fn cookbook_fill_blank_csv_cells() {
 }
 
 #[test]
+fn cookbook_sort_csv_rows() {
+    let path = write_temp(
+        "cookbook_sort_csv_rows.csv",
+        "name,age,city\nAlice,30,Tokyo\nBob,9,Osaka\nCarol,100,Tokyo\nDave,-5,Kyoto\n",
+    );
+    let path = path.to_str().unwrap();
+
+    let asc = run(&[r#"csv::sort_rows("age") | csv::csv_stringify(",")"#, path]);
+    assert_eq!(
+        asc.trim(),
+        "name,age,city\nDave,-5,Kyoto\nBob,9,Osaka\nAlice,30,Tokyo\nCarol,100,Tokyo"
+    );
+
+    let desc = run(&[r#"csv::sort_rows(self, "age", true) | csv::csv_stringify(",")"#, path]);
+    assert_eq!(
+        desc.trim(),
+        "name,age,city\nCarol,100,Tokyo\nAlice,30,Tokyo\nBob,9,Osaka\nDave,-5,Kyoto"
+    );
+
+    let mixed = run(&[
+        r#"csv::sort_rows({"city": "asc", "age": "desc"}) | csv::csv_stringify(",")"#,
+        path,
+    ]);
+    assert_eq!(
+        mixed.trim(),
+        "name,age,city\nDave,-5,Kyoto\nBob,9,Osaka\nCarol,100,Tokyo\nAlice,30,Tokyo"
+    );
+
+    let multi = run(&[r#"csv::sort_rows(["city", "age"]) | csv::csv_stringify(",")"#, path]);
+    assert_eq!(
+        multi.trim(),
+        "name,age,city\nDave,-5,Kyoto\nBob,9,Osaka\nAlice,30,Tokyo\nCarol,100,Tokyo"
+    );
+}
+
+#[test]
 fn cookbook_fill_blank_table_cells() {
     let path = write_temp(
         "cookbook_fill_blank_table_cells.md",

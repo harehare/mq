@@ -224,3 +224,82 @@ def test_csv_to_json_escapes_control_characters():
   let result = csv::csv_to_json([{"a": "x\ry\u0001"}])
   | assert_eq(json::json_parse(result), [{"a": "x\ry\u0001"}])
 end
+
+# -- sort_rows --
+
+def test_sort_rows_numeric_strings_by_value():
+  let result = csv::sort_rows([{"n": "10"}, {"n": "9"}, {"n": "-5"}, {"n": "2.5"}], "n")
+  | assert_eq(map(result, fn(r): r["n"];), ["-5", "2.5", "9", "10"])
+end
+
+def test_sort_rows_array_rows_keep_header():
+  let result = csv::sort_rows([["name", "age"], ["Bob", "9"], ["Carol", "100"], ["Alice", "30"]], "age")
+  | assert_eq(result, [["name", "age"], ["Bob", "9"], ["Alice", "30"], ["Carol", "100"]])
+end
+
+def test_sort_rows_index_column_without_header_name():
+  let result = csv::sort_rows([["name", "age"], ["Bob", "9"], ["Alice", "30"]], 0)
+  | assert_eq(result, [["name", "age"], ["Alice", "30"], ["Bob", "9"]])
+end
+
+def test_sort_rows_multiple_columns():
+  let result = csv::sort_rows([{"c": "Tokyo", "n": "2"}, {"c": "Osaka", "n": "1"}, {"c": "Tokyo", "n": "1"}], ["c", "n"])
+  | assert_eq(map(result, fn(r): r["c"] + r["n"];), ["Osaka1", "Tokyo1", "Tokyo2"])
+end
+
+def test_sort_rows_desc_is_stable():
+  let result = csv::sort_rows([{"k": "1", "id": "a"}, {"k": "2", "id": "b"}, {"k": "1", "id": "c"}], "k", true)
+  | assert_eq(map(result, fn(r): r["id"];), ["b", "a", "c"])
+end
+
+def test_sort_rows_empty_cells_last():
+  let result = csv::sort_rows([{"n": ""}, {"n": "b"}, {"n": "3"}], "n")
+  | assert_eq(map(result, fn(r): r["n"];), ["3", "b", ""])
+end
+
+def test_sort_rows_dict_mixed_orders():
+  let rows = [{"c": "Tokyo", "n": "30"}, {"c": "Osaka", "n": "9"}, {"c": "Tokyo", "n": "100"}, {"c": "Kyoto", "n": "-5"}]
+  | let result = csv::sort_rows(rows, {"c": "asc", "n": "desc"})
+  | assert_eq(map(result, fn(r): r["c"] + r["n"];), ["Kyoto-5", "Osaka9", "Tokyo100", "Tokyo30"])
+end
+
+def test_sort_rows_dict_key_order_is_priority():
+  let rows = [{"a": "1", "b": "2"}, {"a": "2", "b": "1"}, {"a": "1", "b": "1"}]
+  | let result = csv::sort_rows(rows, {"b": "asc", "a": "desc"})
+  | assert_eq(map(result, fn(r): r["a"] + r["b"];), ["21", "11", "12"])
+end
+
+def test_sort_rows_dict_single_column_desc():
+  let result = csv::sort_rows([{"n": "2"}, {"n": "10"}, {"n": "9"}], {"n": "desc"})
+  | assert_eq(map(result, fn(r): r["n"];), ["10", "9", "2"])
+end
+
+def test_sort_rows_dict_array_rows_keep_header():
+  let result = csv::sort_rows([["c", "n"], ["a", "1"], ["b", "1"], ["a", "2"]], {"n": "asc", "c": "desc"})
+  | assert_eq(result, [["c", "n"], ["b", "1"], ["a", "1"], ["a", "2"]])
+end
+
+def test_sort_rows_dict_ignores_desc_flag():
+  let result = csv::sort_rows([{"n": "1"}, {"n": "2"}], {"n": "asc"}, true)
+  | assert_eq(map(result, fn(r): r["n"];), ["1", "2"])
+end
+
+def test_sort_rows_array_uses_desc_flag_for_all_columns():
+  let rows = [{"a": "1", "b": "1"}, {"a": "2", "b": "1"}, {"a": "1", "b": "2"}]
+  | let result = csv::sort_rows(rows, ["a", "b"], true)
+  | assert_eq(map(result, fn(r): r["a"] + r["b"];), ["21", "12", "11"])
+end
+
+def test_sort_rows_invalid_order_errors():
+  let result = try: csv::sort_rows([{"n": "1"}], {"n": "up"}) catch: "err"
+  | assert_eq(result, "err")
+end
+
+def test_sort_rows_unknown_column_errors():
+  let result = try: csv::sort_rows([["a"], ["1"]], "zzz") catch: "err"
+  | assert_eq(result, "err")
+end
+
+def test_sort_rows_empty_input():
+  assert_eq(csv::sort_rows([], "a"), [])
+end
