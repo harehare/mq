@@ -296,11 +296,12 @@ end
 
 # Test execution helper functions
 
-# Runs a single test function and captures the result
+# Runs a single test function and captures the result.
+# An error raised by the test body is recorded as a failure, so it cannot abort the remaining tests.
 def _run_test(test_name, test_func):
   let test_count = 1
   | let start_time = now()
-  | let result = test_func()
+  | let result = try: test_func() catch(e): {"error": true, "message": "Error: " + e["message"]}
   | let end_time = now()
   | let duration = end_time - start_time
   | if (is_dict(result) && contains(result, "error")):

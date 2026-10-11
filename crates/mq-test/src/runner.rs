@@ -263,8 +263,11 @@ impl TestRunner {
         // Behind a `Mutex` so files can be run in parallel.
         let module_paths: Mutex<FxHashMap<String, PathBuf>> = Mutex::new(FxHashMap::default());
         let any_failed = AtomicBool::new(false);
-        // Files that failed to read/parse/evaluate, reported as a rollup at the end.
-        let file_errors: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+        // Files that failed to read/parse/evaluate, with the rendered error. Printed together
+        // after every file has run, so one broken file cannot bury another's report.
+        let file_errors: Mutex<Vec<(PathBuf, String)>> = Mutex::new(Vec::new());
+        // Files that ran but had at least one failing test.
+        let failed_files: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
         // Per-file JSON test results, only populated (and only printed) when `format` is
         // `Json` — kept separate from `file_errors` because it needs the full per-test
         // detail (name/status/duration/error), not just the failing file's path.
@@ -275,8 +278,10 @@ impl TestRunner {
                 Ok(content) => content,
                 Err(e) => {
                     any_failed.store(true, Ordering::Relaxed);
-                    file_errors.lock().unwrap().push(file.clone());
-                    eprintln!("# {}\n\n❌ Failed to read file: {e}\n\n---\n", file.display());
+                    file_errors.lock().unwrap().push((
+                        file.clone(),
+                        format!("# {}\n\n❌ Failed to read file: {e}\n\n---\n", file.display()),
+                    ));
                     if self.format == OutputFormat::Json {
                         json_results.lock().unwrap().push(serde_json::json!({
                             "file": file.display().to_string(),
@@ -355,6 +360,7 @@ impl TestRunner {
                             let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
                             if !passed {
                                 any_failed.store(true, Ordering::Relaxed);
+                                failed_files.lock().unwrap().push(file.clone());
                             }
                         }
                         OutputFormat::Json => {
@@ -374,6 +380,7 @@ impl TestRunner {
                             });
                             if file_failed {
                                 any_failed.store(true, Ordering::Relaxed);
+                                failed_files.lock().unwrap().push(file.clone());
                             }
                             json_results.lock().unwrap().push(serde_json::json!({
                                 "file": file.display().to_string(),
@@ -399,14 +406,16 @@ impl TestRunner {
                 }
                 Err(e) => {
                     any_failed.store(true, Ordering::Relaxed);
-                    file_errors.lock().unwrap().push(file.clone());
                     if self.format == OutputFormat::Json {
                         json_results.lock().unwrap().push(serde_json::json!({
                             "file": file.display().to_string(),
                             "error": e.to_string(),
                         }));
                     }
-                    eprintln!("{}", Self::render_file_error(file, *e));
+                    file_errors
+                        .lock()
+                        .unwrap()
+                        .push((file.clone(), Self::render_file_error(file, *e)));
                 }
             }
         };
@@ -453,18 +462,16 @@ impl TestRunner {
             }
         }
 
-        let file_errors = file_errors.into_inner().unwrap();
-        if !file_errors.is_empty() {
-            let list = file_errors
-                .iter()
-                .map(|f| format!("  - {}", f.display()))
-                .collect::<Vec<_>>()
-                .join("\n");
-            eprintln!(
-                "⚠ {} of {} file(s) failed to run and were skipped:\n{list}",
-                file_errors.len(),
-                test_files.len()
-            );
+        let mut file_errors = file_errors.into_inner().unwrap();
+        let mut failed_files = failed_files.into_inner().unwrap();
+        // Parallel runs finish in arbitrary order; sort so the output is stable.
+        file_errors.sort_by(|a, b| a.0.cmp(&b.0));
+        failed_files.sort();
+        for (_, message) in &file_errors {
+            eprintln!("{message}");
+        }
+        if test_files.len() > 1 && !(file_errors.is_empty() && failed_files.is_empty()) {
+            eprintln!("{}", Self::format_rollup(&failed_files, &file_errors, test_files.len()));
         }
 
         if self.format == OutputFormat::Json {
@@ -475,6 +482,27 @@ impl TestRunner {
         }
 
         Ok(!any_failed.load(Ordering::Relaxed))
+    }
+
+    /// One-glance list of the files that went wrong, printed after every file has run.
+    fn format_rollup(failed_files: &[PathBuf], file_errors: &[(PathBuf, String)], total: usize) -> String {
+        let mut lines = vec![format!(
+            "{} of {total} file(s) did not pass: {} with failing tests, {} failed to run",
+            failed_files.len() + file_errors.len(),
+            failed_files.len(),
+            file_errors.len()
+        )];
+        lines.extend(
+            failed_files
+                .iter()
+                .map(|f| format!("  ❌ {} (tests failed)", f.display())),
+        );
+        lines.extend(
+            file_errors
+                .iter()
+                .map(|(f, _)| format!("  ⚠ {} (failed to run)", f.display())),
+        );
+        lines.join("\n")
     }
 
     /// Wraps the per-file JSON results (each already `{"file": ..., "tests": [...]}` or
@@ -1958,6 +1986,45 @@ mod tests {
         assert!(!passed, "run() must report failure when any test fails");
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_still_run() {
+        let mut engine = mq_lang::Engine::with_io(
+            mq_lang::DefaultModuleResolver::default(),
+            mq_lang::Shared::new(mq_lang::MemIo::default()),
+        );
+        engine.load_builtin_module();
+
+        let query = r#"include "test" | run_tests_data([
+            test_case("boom", fn(): error("boom");),
+            test_case("after", fn(): true;)
+        ])"#;
+        let result = engine
+            .eval(query, mq_lang::null_input().into_iter())
+            .expect("an erroring test must not abort the evaluation");
+        let tests = result.values().first().cloned().unwrap().to_json_value();
+
+        assert_eq!(tests[0]["name"], "boom");
+        assert_eq!(tests[0]["status"], "failed");
+        assert_eq!(tests[0]["error"], "Error: boom");
+        assert_eq!(tests[1]["name"], "after");
+        assert_eq!(tests[1]["status"], "passed");
+    }
+
+    #[test]
+    fn test_format_rollup_lists_failing_and_unrunnable_files_separately() {
+        let report = TestRunner::format_rollup(
+            &[PathBuf::from("b.mq")],
+            &[(PathBuf::from("c.mq"), "rendered".to_string())],
+            4,
+        );
+
+        assert_eq!(
+            report,
+            "2 of 4 file(s) did not pass: 1 with failing tests, 1 failed to run\n  \
+             ❌ b.mq (tests failed)\n  ⚠ c.mq (failed to run)"
+        );
     }
 
     #[test]
