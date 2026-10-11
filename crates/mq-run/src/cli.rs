@@ -1109,6 +1109,15 @@ impl Cli {
     }
 
     /// Generate a shell completion script for the given shell and print it to stdout.
+    fn new_repl(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> mq_repl::Repl {
+        let repl = mq_repl::Repl::with_engine(engine, input);
+        if cfg!(feature = "debugger") {
+            repl.with_name("mq-dbg")
+        } else {
+            repl
+        }
+    }
+
     fn generate_completion(shell: &CompletionShell) -> miette::Result<()> {
         let mut command = Cli::command();
         let name = command.get_name().to_string();
@@ -1820,12 +1829,11 @@ impl Cli {
                     }
                     _ => vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))],
                 };
-                mq_repl::Repl::with_engine(engine, input).run()
+                Self::new_repl(engine, input).run()
             }
             None if self.query.is_none() => {
                 let engine = self.create_engine()?;
-                mq_repl::Repl::with_engine(engine, vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))])
-                    .run()
+                Self::new_repl(engine, vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))]).run()
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
