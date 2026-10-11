@@ -442,6 +442,7 @@ impl Helper for MqLineHelper {}
 
 pub struct Repl {
     command_context: Rc<RefCell<CommandContext>>,
+    name: &'static str,
 }
 
 pub fn config_dir() -> Option<std::path::PathBuf> {
@@ -463,13 +464,20 @@ impl Repl {
     pub fn with_engine(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
         Self {
             command_context: Rc::new(RefCell::new(CommandContext::new(engine, input))),
+            name: "mq",
         }
     }
 
-    fn print_welcome() {
+    /// Sets the program name shown in the welcome banner.
+    pub fn with_name(mut self, name: &'static str) -> Self {
+        self.name = name;
+        self
+    }
+
+    fn print_welcome(name: &str) {
         let version = mq_lang::DefaultEngine::version();
         let lines = [
-            format!("{} {}", logo_primary("mq").bold(), text_muted(&format!("v{version}")),),
+            format!("{} {}", logo_primary(name).bold(), text_muted(&format!("v{version}")),),
             text_muted("Query. Filter. Transform Markdown.").to_string(),
             format!("Type {} to see available commands.", logo_primary("/help")),
         ];
@@ -521,7 +529,7 @@ impl Repl {
             }
         }
 
-        Self::print_welcome();
+        Self::print_welcome(self.name);
 
         let mut pager = Pager::default();
 
