@@ -173,6 +173,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/sort-csv-rows</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/fill-blank-table-cells</loc>
     <priority>1.0</priority>
   </url>

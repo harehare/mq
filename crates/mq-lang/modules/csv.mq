@@ -187,12 +187,12 @@ def _fill_is_missing(v, missing):
 end
 
 # Splits rows into [header, data]. Array rows treat the first row as the header.
-def _fill_split(rows):
+def _rows_split(rows):
   if (is_array(first(rows))): [first(rows), rows[1:len(rows)]] else: [None, rows]
 end
 
 # Resolves a column name to an array index. Dict rows and numeric columns pass through.
-def _fill_col(header, c):
+def _rows_col(header, c):
   if (is_none(header) || !is_string(c)):
     c
   else:
@@ -218,8 +218,8 @@ end
 
 # Fills data rows (no header) top to bottom. `header` is None for dict rows.
 def _fill_forward(header, data, cols, group_by, missing, max_gap):
-  let col_ids = map(cols, fn(c): _fill_col(header, c);)
-  | let group_ids = map(group_by, fn(g): _fill_col(header, g);)
+  let col_ids = map(cols, fn(c): _rows_col(header, c);)
+  | let group_ids = map(group_by, fn(g): _rows_col(header, g);)
   | let init = {"rows": [], "last": {}, "gap": {}}
   | let filled = fold(data, init, fn(acc, row):
       let gkey = to_string(map(group_ids, fn(g): row[g];))
@@ -228,7 +228,7 @@ def _fill_forward(header, data, cols, group_by, missing, max_gap):
   | filled["rows"]
 end
 
-def _fill_with_header(header, data):
+def _rows_with_header(header, data):
   if (is_none(header)): data else: [header] + data
 end
 
@@ -250,8 +250,8 @@ def forward_fill(rows, cols, group_by = [], missing = "both", max_gap = None):
     rows
   else:
     do
-      let parts = _fill_split(rows)
-      | _fill_with_header(parts[0], _fill_forward(parts[0], parts[1], cols, group_by, missing, max_gap))
+      let parts = _rows_split(rows)
+      | _rows_with_header(parts[0], _fill_forward(parts[0], parts[1], cols, group_by, missing, max_gap))
     end
 end
 
@@ -270,8 +270,8 @@ def backward_fill(rows, cols, group_by = [], missing = "both", max_gap = None):
     rows
   else:
     do
-      let parts = _fill_split(rows)
-      | _fill_with_header(parts[0], reverse(_fill_forward(parts[0], reverse(parts[1]), cols, group_by, missing, max_gap)))
+      let parts = _rows_split(rows)
+      | _rows_with_header(parts[0], reverse(_fill_forward(parts[0], reverse(parts[1]), cols, group_by, missing, max_gap)))
     end
 end
 
@@ -290,13 +290,74 @@ def constant_fill(rows, defaults, missing = "both"):
     rows
   else:
     do
-      let parts = _fill_split(rows)
+      let parts = _rows_split(rows)
       | let header = parts[0]
       | let cols = keys(defaults)
       | let filled = map(parts[1], fn(row):
           fold(cols, row, fn(r, c):
-            let idx = _fill_col(header, c)
+            let idx = _rows_col(header, c)
             | if (_fill_is_missing(r[idx], missing)): set(r, idx, defaults[c]) else: r;);)
-      | _fill_with_header(header, filled)
+      | _rows_with_header(header, filled)
+    end
+end
+
+# Orders numbers (and numeric strings) numerically first, then other strings, then empty cells.
+def _sort_key(v):
+  if (is_number(v)):
+    [0, v, ""]
+  elif (is_none(v) || v == ""):
+    [2, 0, ""]
+  elif (test(to_string(v), "^-?[0-9]+(\\.[0-9]+)?$")):
+    [0, to_number(v), ""]
+  else:
+    [1, 0, to_string(v)]
+end
+
+# Resolves a column and its order ("asc" | "desc") to [column id, descending?].
+def _sort_spec(header, col, order):
+  if (order != "asc" && order != "desc"):
+    error("csv: sort order must be \"asc\" or \"desc\", got " + to_string(order))
+  else:
+    [_rows_col(header, col), order == "desc"]
+end
+
+# `cols` is a column, an array of columns (all in the `desc` order), or a dict of column to order.
+def _sort_specs(header, cols, desc):
+  if (is_dict(cols)):
+    map(keys(cols), fn(c): _sort_spec(header, c, cols[c]);)
+  else:
+    map(if (is_array(cols)): cols else: [cols], fn(c): _sort_spec(header, c, if (desc): "desc" else: "asc");)
+end
+
+# Sorts rows by one or more columns, keeping the header row first for array rows. `cols` is a
+# column name, an array of names (indexes for array rows), or a dict of column name to "asc" or
+# "desc" to order each column separately, in key order. Later columns break ties. `desc` sets the
+# order for a name or an array and is ignored for a dict. Numeric cells sort by value, other cells
+# as text, and empty cells last (first when descending). The sort is stable.
+#
+# Example:
+# ```
+# import "csv" | csv::sort_rows([{"n": "10"}, {"n": "9"}], "n")
+# #=> [{"n": "9"}, {"n": "10"}]
+# ```
+# Example:
+# ```
+# import "csv" | csv::sort_rows([{"c": "a", "n": "1"}, {"c": "a", "n": "2"}], {"c": "asc", "n": "desc"})
+# #=> [{"c": "a", "n": "2"}, {"c": "a", "n": "1"}]
+# ```
+#
+# Returns: array
+def sort_rows(rows, cols, desc = false):
+  if (len(rows) == 0):
+    rows
+  else:
+    do
+      let parts = _rows_split(rows)
+      | let header = parts[0]
+      | let specs = _sort_specs(header, cols, desc)
+      | let sorted = fold(reverse(specs), parts[1], fn(acc, spec):
+          let key = fn(row): _sort_key(row[spec[0]]);
+          | if (spec[1]): reverse(sort_by(reverse(acc), key)) else: sort_by(acc, key);)
+      | _rows_with_header(header, sorted)
     end
 end

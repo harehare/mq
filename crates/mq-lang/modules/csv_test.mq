@@ -224,3 +224,34 @@ def test_csv_to_json_escapes_control_characters():
   let result = csv::csv_to_json([{"a": "x\ry\u0001"}])
   | assert_eq(json::json_parse(result), [{"a": "x\ry\u0001"}])
 end
+
+# -- sort_rows --
+
+# @parametrize([
+# [[{"n": "10"}, {"n": "9"}, {"n": "-5"}, {"n": "2.5"}], "n", false, [{"n": "-5"}, {"n": "2.5"}, {"n": "9"}, {"n": "10"}]],
+# [[["name", "age"], ["Bob", "9"], ["Carol", "100"], ["Alice", "30"]], "age", false, [["name", "age"], ["Bob", "9"], ["Alice", "30"], ["Carol", "100"]]],
+# [[["name", "age"], ["Bob", "9"], ["Alice", "30"]], 0, false, [["name", "age"], ["Alice", "30"], ["Bob", "9"]]],
+# [[{"c": "Tokyo", "n": "2"}, {"c": "Osaka", "n": "1"}, {"c": "Tokyo", "n": "1"}], ["c", "n"], false, [{"c": "Osaka", "n": "1"}, {"c": "Tokyo", "n": "1"}, {"c": "Tokyo", "n": "2"}]],
+# [[{"k": "1", "id": "a"}, {"k": "2", "id": "b"}, {"k": "1", "id": "c"}], "k", true, [{"k": "2", "id": "b"}, {"k": "1", "id": "a"}, {"k": "1", "id": "c"}]],
+# [[{"n": ""}, {"n": "b"}, {"n": "3"}], "n", false, [{"n": "3"}, {"n": "b"}, {"n": ""}]],
+# [[{"a": "1", "b": "1"}, {"a": "2", "b": "1"}, {"a": "1", "b": "2"}], ["a", "b"], true, [{"a": "2", "b": "1"}, {"a": "1", "b": "2"}, {"a": "1", "b": "1"}]],
+# [[{"c": "Tokyo", "n": "30"}, {"c": "Osaka", "n": "9"}, {"c": "Tokyo", "n": "100"}, {"c": "Kyoto", "n": "-5"}], {"c": "asc", "n": "desc"}, false, [{"c": "Kyoto", "n": "-5"}, {"c": "Osaka", "n": "9"}, {"c": "Tokyo", "n": "100"}, {"c": "Tokyo", "n": "30"}]],
+# [[{"a": "1", "b": "2"}, {"a": "2", "b": "1"}, {"a": "1", "b": "1"}], {"b": "asc", "a": "desc"}, false, [{"a": "2", "b": "1"}, {"a": "1", "b": "1"}, {"a": "1", "b": "2"}]],
+# [[{"n": "2"}, {"n": "10"}, {"n": "9"}], {"n": "desc"}, false, [{"n": "10"}, {"n": "9"}, {"n": "2"}]],
+# [[["c", "n"], ["a", "1"], ["b", "1"], ["a", "2"]], {"n": "asc", "c": "desc"}, false, [["c", "n"], ["b", "1"], ["a", "1"], ["a", "2"]]],
+# [[{"n": "1"}, {"n": "2"}], {"n": "asc"}, true, [{"n": "1"}, {"n": "2"}]],
+# [[], "a", false, []],
+# ])
+def test_sort_rows(rows, cols, desc, expected):
+  let result = csv::sort_rows(rows, cols, desc)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
+# [[["a"], ["1"]], "zzz"],
+# [[{"n": "1"}], {"n": "up"}],
+# ])
+def test_sort_rows_errors(rows, cols):
+  let result = try: csv::sort_rows(rows, cols) catch: "err"
+  | assert_eq(result, "err")
+end

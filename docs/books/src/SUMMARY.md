@@ -41,6 +41,7 @@
   - [Convert a Markdown table to CSV](cookbook/convert-table-to-csv.md)
   - [Convert CSV to a Markdown table](cookbook/convert-csv-to-markdown-table.md)
   - [Fill blank cells in a CSV column](cookbook/fill-blank-csv-cells.md)
+  - [Sort CSV rows by column](cookbook/sort-csv-rows.md)
   - [Fill blank cells in a Markdown table](cookbook/fill-blank-table-cells.md)
   - [Reshape a table between wide and long form](cookbook/reshape-table-pivot.md)
   - [Write a reusable custom function](cookbook/define-custom-function.md)
