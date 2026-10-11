@@ -286,8 +286,8 @@ impl BenchRunner {
             iterations: durations.len(),
             mean_ns: sum_ns / durations.len() as u128,
             median_ns: durations[durations.len() / 2].as_nanos(),
-            min_ns: durations.first().unwrap().as_nanos(),
-            max_ns: durations.last().unwrap().as_nanos(),
+            min_ns: durations[0].as_nanos(),
+            max_ns: durations[durations.len() - 1].as_nanos(),
         })
     }
 
