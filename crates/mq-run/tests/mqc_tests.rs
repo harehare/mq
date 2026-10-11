@@ -517,7 +517,6 @@ fn test_run_reads_runtime_names_outside_module(#[case] query: &str) {
     }
 }
 
-#[cfg(feature = "debug-trace")]
 #[rstest]
 #[case::builtin_call("upcase()", &["phase: main", "CallBuiltin upcase"])]
 #[case::nodes_split(".h | nodes | len()", &["phase: per-input", "phase: nodes aggregate"])]
@@ -537,7 +536,6 @@ fn test_run_dumps_loaded_bytecode(#[case] query: &str, #[case] expected: &[&str]
     assert!(!dump.contains("StmtBoundary"), "{dump}");
 }
 
-#[cfg(feature = "debug-trace")]
 #[test]
 fn test_dump_bytecode_does_not_run_program() {
     let dir = TempDir::new().unwrap();
@@ -553,7 +551,6 @@ fn test_dump_bytecode_does_not_run_program() {
     assert!(output.get_output().stderr.is_empty());
 }
 
-#[cfg(feature = "debug-trace")]
 #[test]
 fn test_dump_bytecode_json() {
     let dir = TempDir::new().unwrap();
@@ -572,7 +569,6 @@ fn test_dump_bytecode_json() {
     );
 }
 
-#[cfg(feature = "debug-trace")]
 #[test]
 fn test_dump_bytecode_markdown() {
     let dir = TempDir::new().unwrap();
@@ -587,7 +583,6 @@ fn test_dump_bytecode_markdown() {
     assert!(dump.contains("`CallBuiltin upcase"), "{dump}");
 }
 
-#[cfg(feature = "debug-trace")]
 #[test]
 fn test_dump_bytecode_rejects_unknown_format() {
     let dir = TempDir::new().unwrap();

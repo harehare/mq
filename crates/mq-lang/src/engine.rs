@@ -411,19 +411,24 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
     /// Lists the Tarn bytecode that would be executed for `compiled`, without running it.
     ///
-    /// Available only with the `debug-trace` feature, for tools such as `mq-dbg`.
-    #[cfg(feature = "debug-trace")]
+    /// A `debugger` build lists the instrumented bytecode its debugger runs.
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<crate::BytecodeDump, Box<error::Error>> {
+        #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(compiled.source.clone());
-        #[allow(clippy::infallible_destructuring_match)]
         let program = match &compiled.body {
+            #[cfg(feature = "debugger")]
             ProgramBody::Ast(program) => program,
+            #[cfg(not(feature = "debugger"))]
+            ProgramBody::Cached { program, .. } => program,
             #[cfg(feature = "mqc")]
             ProgramBody::Precompiled(precompiled) => {
                 return Ok(tarn::dump_compiled_program(precompiled, &self.token_arena));
             }
         };
+        #[cfg(feature = "debugger")]
         let global_bindings = self.vm.global_bindings_snapshot();
+        #[cfg(not(feature = "debugger"))]
+        let (global_bindings, _) = self.vm.global_bindings_snapshot_with_key();
         let vm_program = tarn::build_program(program, Shared::clone(&self.token_arena), &self.vm_module_prelude)?;
         let vm_program = vm_program.as_ref().unwrap_or(program);
 

@@ -44,9 +44,14 @@ build-target target:
     cargo build --release --target {{target}} -p mq-lint --features="cli"
     cargo build --release --target {{target}} -p mq-formatter
 
-# Dumps Tarn bytecode for a query via mq-dbg, verifying debugger => debug-trace wiring.
+# Dumps the production Tarn bytecode for a query.
 # Example: just dump-bytecode '1 + 2'
 dump-bytecode query:
+    cargo run -p mq-run --bin mq -- -C --dump-bytecode -I null '{{query}}'
+
+# Dumps the debugger-instrumented Tarn bytecode (with StmtBoundary) via mq-dbg.
+# Example: just dump-bytecode-dbg '1 + 2'
+dump-bytecode-dbg query:
     cargo run -p mq-run --bin mq-dbg --features="debugger" -- -C --dump-bytecode -I null '{{query}}'
 
 # Profiles production Tarn bytecode without debugger-only boundaries. The profile changes

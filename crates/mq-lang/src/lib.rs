@@ -102,7 +102,6 @@ pub use runtime::dict::{DictIntoIter, DictIter, DictIterMut, DictKey};
 pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
 pub use runtime::runtime_value::{DictMap, FromValueError, RuntimeValue, RuntimeValues, from_value};
 pub use selector::{AttrKind, SELECTOR_NAMES, Selector};
-#[cfg(feature = "debug-trace")]
 pub use tarn::{BytecodeChunk, BytecodeDump, BytecodeInstruction, BytecodeLocation, BytecodePhase};
 
 pub type DefaultEngine = Engine<DefaultModuleResolver>;

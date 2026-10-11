@@ -14,7 +14,6 @@ pub(crate) mod compiler;
 mod debug_symbols;
 #[cfg(feature = "debugger")]
 mod debugger;
-#[cfg(feature = "debug-trace")]
 mod disasm;
 pub(crate) mod interpreter;
 mod nodes_split;
@@ -26,11 +25,9 @@ pub(crate) mod value;
 
 #[cfg(not(feature = "debugger"))]
 pub(crate) use cache::CachedProgram;
-#[cfg(feature = "debug-trace")]
 pub(crate) use disasm::dump_bytecode;
-#[cfg(all(feature = "debug-trace", feature = "mqc"))]
+#[cfg(feature = "mqc")]
 pub(crate) use disasm::dump_compiled_program;
-#[cfg(feature = "debug-trace")]
 pub use disasm::{BytecodeChunk, BytecodeDump, BytecodeInstruction, BytecodeLocation, BytecodePhase};
 use nodes_split::{
     ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,

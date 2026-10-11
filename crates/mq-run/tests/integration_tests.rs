@@ -44,6 +44,22 @@ fn test_cli_halt_exits_with_code(#[case] query: &str, #[case] code: i32, #[case]
 }
 
 #[test]
+fn test_cli_dump_bytecode_lists_optimized_bytecode_without_running() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let output = cmd
+        .args(["--dump-bytecode", "def f(x): x + 1; | f(1)"])
+        .write_stdin("# title\n")
+        .assert()
+        .success();
+    let dump = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    assert!(dump.contains("phase: main"), "{dump}");
+    assert!(dump.contains("CallStaticExact1"), "{dump}");
+    assert!(!dump.contains("StmtBoundary"), "{dump}");
+    assert!(!dump.contains("# title"), "{dump}");
+}
+
+#[test]
 fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
 

@@ -1,6 +1,7 @@
 //! Builds a structured listing of compiled Tarn bytecode for `mq --dump-bytecode` and tests.
+#[cfg(feature = "debugger")]
 use super::nodes_split::{program_after_nodes, split_at_nodes};
-#[cfg(feature = "mqc")]
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 use super::split_program::SplitProgram;
 use super::{Error, bytecode, compiler};
 use crate::TokenArena;
@@ -72,7 +73,42 @@ pub(crate) fn dump_compiled_program(compiled: &SplitProgram, token_arena: &Token
 }
 
 /// Compiles a program as the Engine VM path would and lists its bytecode.
+///
+/// Module `let` values are not pre-resolved, so nothing in `program` or its modules runs.
 pub(crate) fn dump_bytecode<R: ModuleResolver>(
+    program: &Program,
+    token_arena: TokenArena,
+    module_loader: ModuleLoader<R>,
+    global_bindings: &[(crate::Ident, RuntimeValue)],
+) -> Result<BytecodeDump, Error> {
+    #[cfg(not(feature = "debugger"))]
+    {
+        let (per_input, after, _) = SplitProgram::compile_parts(
+            program,
+            token_arena.clone(),
+            module_loader,
+            global_bindings,
+            &compiler::ResolvedModuleVars::default(),
+        )?;
+        Ok(BytecodeDump {
+            phases: match after {
+                None => vec![build_phase("main", &per_input, &token_arena)],
+                Some(after) => vec![
+                    build_phase("per-input", &per_input, &token_arena),
+                    build_phase("nodes aggregate", &after, &token_arena),
+                ],
+            },
+        })
+    }
+    #[cfg(feature = "debugger")]
+    {
+        dump_instrumented_bytecode(program, token_arena, module_loader, global_bindings)
+    }
+}
+
+/// Lists the instrumented bytecode a debugger session runs.
+#[cfg(feature = "debugger")]
+fn dump_instrumented_bytecode<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,

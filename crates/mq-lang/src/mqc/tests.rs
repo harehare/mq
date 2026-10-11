@@ -436,7 +436,6 @@ fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
     assert_eq!(actual, expected, "query: {query}");
 }
 
-#[cfg(feature = "debug-trace")]
 #[rstest]
 #[case::single_phase("upcase()", &["main"], 1)]
 #[case::nodes_split(".h | nodes | len()", &["per-input", "nodes aggregate"], 1)]
@@ -450,7 +449,6 @@ fn test_dump_bytecode_lists_loaded_program(#[case] query: &str, #[case] phases: 
     assert_eq!(dump.phases[0].chunks.len(), first_chunks);
 }
 
-#[cfg(feature = "debug-trace")]
 #[test]
 fn test_dump_bytecode_lists_builtin_call_with_location() {
     let mut engine = engine();
@@ -465,7 +463,6 @@ fn test_dump_bytecode_lists_builtin_call_with_location() {
     assert!(call.location.is_some(), "{call:?}");
 }
 
-#[cfg(feature = "debug-trace")]
 #[rstest]
 #[case::builtin_call("upcase()")]
 #[case::breakpoint("breakpoint() | upcase()")]

@@ -1055,7 +1055,6 @@ fn test_compile_empty_code(#[case] query: &str) {
     assert!(compiled.program().unwrap().is_empty());
 }
 
-#[cfg(feature = "debug-trace")]
 #[test]
 fn test_dump_bytecode_renders_vm_instructions() {
     let mut engine = DefaultEngine::default();

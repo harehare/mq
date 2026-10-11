@@ -35,7 +35,6 @@ use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
 use mq_help as help;
 
-#[cfg(feature = "debug-trace")]
 mod bytecode;
 mod mqc;
 
@@ -147,8 +146,7 @@ pub struct Cli {
     vm_profile: bool,
 
     /// Print the Tarn VM bytecode to stdout and exit without running the program or reading
-    /// input. Pass a format as `--dump-bytecode=json` (mq-dbg `debug-trace` build only).
-    #[cfg(feature = "debug-trace")]
+    /// input. Pass a format as `--dump-bytecode=json`.
     #[arg(
         long = "dump-bytecode",
         value_name = "FORMAT",
@@ -2301,7 +2299,6 @@ impl Cli {
         Ok(cache.programs.len() - 1)
     }
 
-    #[cfg(feature = "debug-trace")]
     fn dump_compiled_bytecode(
         &self,
         engine: &mut mq_lang::DefaultEngine,
@@ -2318,7 +2315,6 @@ impl Cli {
     }
 
     /// Dumps the bytecode of each distinct program without reading input or running it.
-    #[cfg(feature = "debug-trace")]
     fn dump_bytecode_only(&self) -> miette::Result<()> {
         let query = self.get_query()?;
         let files = match self.resolved_files()? {
@@ -2331,15 +2327,6 @@ impl Cli {
             self.set_file_vars(&mut engine, &mut cache, file.as_deref());
             self.program_index(&mut engine, &mut cache, &query, file)?;
         }
-        Ok(())
-    }
-
-    #[cfg(not(feature = "debug-trace"))]
-    fn dump_compiled_bytecode(
-        &self,
-        _engine: &mut mq_lang::DefaultEngine,
-        _program: &mq_lang::CompiledProgram,
-    ) -> miette::Result<()> {
         Ok(())
     }
 
@@ -2358,7 +2345,6 @@ impl Cli {
     }
 
     fn execute_once(&self) -> miette::Result<()> {
-        #[cfg(feature = "debug-trace")]
         if self.dump_bytecode.is_some() {
             return self.dump_bytecode_only();
         }
