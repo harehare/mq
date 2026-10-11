@@ -463,7 +463,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.http_depth = self.http_depth.saturating_sub(1);
     }
 
-    pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
+    pub(crate) fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
         // The builtin module outlives any one query, so its tokens stay in the engine's arena.
         let token_arena = root_token_arena(&token_arena);
         if self.is_loaded(Module::BUILTIN_MODULE) {
@@ -479,7 +479,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
 
         // Cache is only valid when both arenas are in their initial state (builtin
-        // module_id == 1, tokens right after the dummy EOF). Fall back to full parse otherwise.
+        // module_id == 1, tokens right after the dummy EOF) and the arena's only token is the
+        // cache's first token. Fall back to full parse otherwise.
         let builtin_id_is_one = self.peek_module_id_of(Module::BUILTIN_MODULE) == 1.into();
         let pristine = self.loaded_modules.len() == 1 && builtin_id_is_one && {
             #[cfg(not(feature = "sync"))]
@@ -500,14 +501,20 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                     .map(|cache| (Shared::clone(&cache.tokens), cache.module.clone()))
             });
 
+            let cached = cached.filter(|(tokens, _)| {
+                #[cfg(not(feature = "sync"))]
+                let arena = token_arena.borrow();
+                #[cfg(feature = "sync")]
+                let arena = token_arena.read().unwrap();
+                arena.iter().eq(tokens.first())
+            });
+
             if let Some((tokens, module)) = cached {
                 {
                     #[cfg(not(feature = "sync"))]
                     let mut arena = token_arena.borrow_mut();
                     #[cfg(feature = "sync")]
                     let mut arena = token_arena.write().unwrap();
-                    // A pristine arena holds only the dummy EOF, which is `tokens[0]`.
-                    debug_assert!(arena.iter().eq(tokens.first()));
                     *arena = Arena::with_base(Shared::clone(&tokens));
                 }
                 let module_id = self.module_id_of(Module::BUILTIN_MODULE);
@@ -874,6 +881,35 @@ mod tests {
 
         assert_eq!(size1, size2, "arena size must match between cache and fresh parse");
         assert!(size1 > 1, "builtin tokens must be added to the arena");
+    }
+
+    /// An arena whose only token differs from the cached first token must keep that token.
+    #[rstest]
+    fn test_load_builtin_cache_skipped_when_first_token_differs(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
+    ) {
+        let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
+        loader1.load_builtin(pristine_token_arena).unwrap();
+
+        let custom = Token {
+            kind: TokenKind::Eof,
+            range: Range {
+                start: crate::Position { line: 7, column: 3 },
+                end: crate::Position { line: 7, column: 3 },
+            },
+            module_id: Module::TOP_LEVEL_MODULE_ID,
+        };
+        let arena = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
+        token_alloc(&arena, custom.clone());
+        let mut loader2 = ModuleLoader::new(DefaultModuleResolver::default());
+        loader2.load_builtin(Shared::clone(&arena)).unwrap();
+
+        #[cfg(not(feature = "sync"))]
+        let arena = arena.borrow();
+        #[cfg(feature = "sync")]
+        let arena = arena.read().unwrap();
+        assert_eq!(arena.iter().next(), Some(&custom));
+        assert!(arena.len() > 1, "builtin tokens must be added to the arena");
     }
 
     /// The module returned from cache must have the same function/var counts as a fresh parse.
