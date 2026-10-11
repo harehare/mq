@@ -3117,7 +3117,8 @@ impl Cli {
                 buf.extend_from_slice(gron_str.as_bytes());
             }
             OutputFormat::Csv => {
-                let csv_str = crate::output::csv::runtime_values_to_csv(runtime_values)?;
+                let theme = colorize.then(mq_markdown::ColorTheme::from_env);
+                let csv_str = crate::output::csv::runtime_values_to_csv(runtime_values, theme.as_ref())?;
                 buf.extend_from_slice(csv_str.as_bytes());
             }
             OutputFormat::Toml => {
