@@ -272,6 +272,8 @@ function via a separate comment line placed right above it.
 
 A failing test in one file no longer stops other files from running: every discovered file always runs to completion, and `mq-test` exits non-zero if any test in any file failed.
 
+An error raised inside a test body (e.g. `error(...)` or a call to an undefined function) is recorded as that test's failure, so the remaining tests in the file still run. Errors that prevent a whole file from running (e.g. a syntax error) are printed to stderr together after all files have finished, followed by a list of every file that failed or could not run.
+
 ### Test Helpers
 
 Tests use the built-in `assert_eq` and related helpers from the `test` module:
