@@ -58,7 +58,7 @@ pub(crate) fn syntax_diagnostics(hir: &Hir, source_id: SourceId) -> Vec<CheckDia
     let mut diagnostics: Vec<CheckDiagnostic> = hir
         .errors()
         .iter()
-        .filter(|error| hir_error_symbol(error).source.source_id == Some(source_id))
+        .filter(|error| error.symbol().source.source_id == Some(source_id))
         .map(|error| CheckDiagnostic {
             severity: Severity::Error,
             code: hir_error_code(error),
@@ -88,19 +88,12 @@ fn hir_error_code(error: &HirError) -> &'static str {
         HirError::UnresolvedSymbol { .. } => "hir::unresolved_symbol",
         HirError::ModuleNotFound { .. } => "hir::module_not_found",
         HirError::YieldOutsideFunction { .. } => "hir::yield_outside_function",
-    }
-}
-
-pub(crate) fn hir_error_symbol(error: &HirError) -> &Symbol {
-    match error {
-        HirError::UnresolvedSymbol { symbol, .. }
-        | HirError::ModuleNotFound { symbol, .. }
-        | HirError::YieldOutsideFunction { symbol } => symbol,
+        _ => "hir::unknown",
     }
 }
 
 pub(crate) fn hir_error_range(error: &HirError) -> mq_lang::Range {
-    hir_error_symbol(error).source.text_range.unwrap_or_default()
+    error.symbol().source.text_range.unwrap_or_default()
 }
 
 /// Returns a stable rule code for a [`HirWarning`] variant.
@@ -149,6 +142,7 @@ fn type_error_code(error: &TypeError) -> &'static str {
         TypeError::NullablePropagation { .. } => "typechecker::nullable_propagation",
         TypeError::UnreachableCode { .. } => "typechecker::unreachable_code",
         TypeError::NonExhaustiveMatch { .. } => "typechecker::non_exhaustive_patterns",
+        _ => "typechecker::unknown",
     }
 }
 

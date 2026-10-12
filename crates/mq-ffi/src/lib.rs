@@ -109,12 +109,11 @@ impl From<MqConversionOptions> for ConversionOptions {
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string())
         };
-        ConversionOptions {
-            extract_scripts_as_code_blocks: options.extract_scripts_as_code_blocks,
-            generate_front_matter: options.generate_front_matter,
-            use_title_as_h1: options.use_title_as_h1,
-            base_url,
-        }
+        ConversionOptions::default()
+            .with_extract_scripts_as_code_blocks(options.extract_scripts_as_code_blocks)
+            .with_generate_front_matter(options.generate_front_matter)
+            .with_use_title_as_h1(options.use_title_as_h1)
+            .with_base_url(base_url)
     }
 }
 

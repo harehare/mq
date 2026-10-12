@@ -4,6 +4,7 @@ use thiserror::Error;
 use crate::{Hir, ScopeId, ScopeKind, Symbol, SymbolKind};
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum HirError {
     #[error(
         "Unresolved symbol: {}",
@@ -20,6 +21,17 @@ pub enum HirError {
     ModuleNotFound { symbol: Symbol, module_name: SmolStr },
     #[error("`yield` outside a function")]
     YieldOutsideFunction { symbol: Symbol },
+}
+
+impl HirError {
+    /// The symbol the error is reported on.
+    pub fn symbol(&self) -> &Symbol {
+        match self {
+            HirError::UnresolvedSymbol { symbol, .. }
+            | HirError::ModuleNotFound { symbol, .. }
+            | HirError::YieldOutsideFunction { symbol } => symbol,
+        }
+    }
 }
 
 #[derive(Debug, Error)]

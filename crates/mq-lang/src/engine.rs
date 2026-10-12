@@ -30,6 +30,7 @@ use crate::{
 
 /// An error returned when a value cannot be added to an [`Engine`] environment.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DefineValueError {
     /// The value contains execution state that belongs to a particular VM.
     #[error("cannot define a VM-bound {0}")]

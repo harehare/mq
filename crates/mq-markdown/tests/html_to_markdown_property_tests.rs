@@ -82,10 +82,7 @@ proptest! {
         let html = format!(
             r#"<html><head><meta name="description" content="{desc}"></head><body><p>Body</p></body></html>"#
         );
-        let options = ConversionOptions {
-            generate_front_matter: true,
-            ..Default::default()
-        };
+        let options = ConversionOptions::default().with_generate_front_matter(true);
         let md = convert_html_to_markdown(&html, options).unwrap();
         prop_assert!(md.contains(&desc), "description missing from front matter:\n{md}");
     }

@@ -153,10 +153,31 @@ pub const EMPTY_NODE: Node = Node::Text(Text {
 });
 
 #[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
 pub struct RenderOptions {
     pub list_style: ListStyle,
     pub link_url_style: UrlSurroundStyle,
     pub link_title_style: TitleSurroundStyle,
+}
+
+impl RenderOptions {
+    /// Sets `list_style`.
+    pub fn with_list_style(mut self, list_style: ListStyle) -> Self {
+        self.list_style = list_style;
+        self
+    }
+
+    /// Sets `link_url_style`.
+    pub fn with_link_url_style(mut self, link_url_style: UrlSurroundStyle) -> Self {
+        self.link_url_style = link_url_style;
+        self
+    }
+
+    /// Sets `link_title_style`.
+    pub fn with_link_title_style(mut self, link_title_style: TitleSurroundStyle) -> Self {
+        self.link_title_style = link_title_style;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -785,12 +806,17 @@ pub struct HorizontalRule {
     pub position: Option<Position>,
 }
 
+/// A Markdown node.
+///
+/// Some variants exist only when their feature (`callout`, `embed`, `wikilink`) is enabled,
+/// and more may be added. Match with a wildcard arm.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "json",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase", untagged)
 )]
+#[non_exhaustive]
 pub enum Node {
     Blockquote(Blockquote),
     Break(Break),

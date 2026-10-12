@@ -78,11 +78,9 @@ fn parse_input_type(src: &str) -> Result<mq_check::types::Type, String> {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let type_check_config = mq_check::TypeCheckerOptions {
-        strict_array: cli.type_check.strict_array,
-        input_type: cli.type_check.input_type.clone(),
-        ..Default::default()
-    };
+    let type_check_config = mq_check::TypeCheckerOptions::default()
+        .with_strict_array(cli.type_check.strict_array)
+        .with_input_type(cli.type_check.input_type.clone());
 
     let mut lint_config = mq_lint::LintConfig::default();
     for rule_id in &cli.lint.disable_lint_rule {

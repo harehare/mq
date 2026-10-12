@@ -46,13 +46,10 @@ def y(): test;
 | let a = 2
 | import "a.mq"
 def b(): test;"#;
-    let config = FormatterConfig {
-        indent_width: 2,
-        sort_imports: true,
-        sort_functions: true,
-        sort_fields: true,
-        max_width: None,
-    };
+    let config = FormatterConfig::default()
+        .with_sort_imports(true)
+        .with_sort_functions(true)
+        .with_sort_fields(true);
     let mut formatter = Formatter::new(Some(config));
     formatter.format(code).unwrap();
 }

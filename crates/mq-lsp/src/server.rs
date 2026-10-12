@@ -361,10 +361,8 @@ impl LanguageServer for Backend {
         // Replace the whole original text, not the formatted length.
         let end = document_end_position(&text);
         let formatted_text = tokio::task::spawn_blocking(move || {
-            let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-                indent_width: 2,
-                ..Default::default()
-            }));
+            let mut formatter =
+                mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig::default().with_indent_width(2)));
             match nodes {
                 Some(nodes) => formatter.format_with_cst(&mut Vec::clone(&nodes)),
                 None => formatter.format(&text),
@@ -454,11 +452,8 @@ impl LanguageServer for Backend {
         }
 
         let formatted_range = tokio::task::spawn_blocking(move || {
-            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-                indent_width: 2,
-                ..Default::default()
-            }))
-            .format(&selected)
+            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig::default().with_indent_width(2)))
+                .format(&selected)
         })
         .await
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?
@@ -632,6 +627,7 @@ impl Backend {
 }
 
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct LspConfig {
     module_paths: Vec<PathBuf>,
     enable_type_checking: bool,
@@ -813,12 +809,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let expected = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-            indent_width: 2,
-            ..Default::default()
-        }))
-        .format(text)
-        .unwrap();
+        let expected =
+            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig::default().with_indent_width(2)))
+                .format(text)
+                .unwrap();
         assert_eq!(edits[0].new_text, expected);
         assert_eq!(edits[0].range.end, document_end_position(text));
 
@@ -2494,10 +2488,7 @@ mod tests {
         let config = LspConfig::new(
             vec![],
             true,
-            mq_check::TypeCheckerOptions {
-                strict_array: true,
-                ..Default::default()
-            },
+            mq_check::TypeCheckerOptions::default().with_strict_array(true),
             true,
             lint_config,
         );
@@ -2513,10 +2504,7 @@ mod tests {
         let config = LspConfig::new(
             vec![],
             true,
-            mq_check::TypeCheckerOptions {
-                input_type: Some(input_type.clone()),
-                ..Default::default()
-            },
+            mq_check::TypeCheckerOptions::default().with_input_type(Some(input_type.clone())),
             false,
             mq_lint::LintConfig::default(),
         );
@@ -2733,10 +2721,7 @@ mod tests {
             config: LspConfig::new(
                 vec![],
                 true,
-                mq_check::TypeCheckerOptions {
-                    strict_array: true,
-                    ..Default::default()
-                },
+                mq_check::TypeCheckerOptions::default().with_strict_array(true),
                 false,
                 mq_lint::LintConfig::default(),
             ),
@@ -2784,10 +2769,7 @@ mod tests {
             config: LspConfig::new(
                 vec![],
                 true,
-                mq_check::TypeCheckerOptions {
-                    strict_array: false,
-                    ..Default::default()
-                },
+                mq_check::TypeCheckerOptions::default().with_strict_array(false),
                 false,
                 mq_lint::LintConfig::default(),
             ),

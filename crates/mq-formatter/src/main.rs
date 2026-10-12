@@ -52,13 +52,14 @@ struct Cli {
 fn main() -> miette::Result<()> {
     let cli = Cli::parse();
 
-    let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-        indent_width: cli.indent_width,
-        sort_imports: cli.sort_imports,
-        sort_fields: cli.sort_fields,
-        sort_functions: cli.sort_functions,
-        max_width: cli.max_width,
-    }));
+    let mut formatter = mq_formatter::Formatter::new(Some(
+        mq_formatter::FormatterConfig::default()
+            .with_indent_width(cli.indent_width)
+            .with_sort_imports(cli.sort_imports)
+            .with_sort_fields(cli.sort_fields)
+            .with_sort_functions(cli.sort_functions)
+            .with_max_width(cli.max_width),
+    ));
 
     if let Some(files) = &cli.files
         && files.len() == 1

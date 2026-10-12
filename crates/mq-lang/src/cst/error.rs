@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::{Shared, Token, TokenKind, selector};
 
 #[derive(Error, Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
+#[non_exhaustive]
 pub enum ParseError {
     #[error("Unexpected token `{0}`")]
     UnexpectedToken(Shared<Token>),

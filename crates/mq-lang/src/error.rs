@@ -13,6 +13,7 @@ use crate::{
 
 #[allow(clippy::useless_conversion)]
 #[derive(Debug, thiserror::Error, PartialEq)]
+#[non_exhaustive]
 pub enum InnerError {
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
@@ -54,6 +55,7 @@ impl InnerError {
 /// Represents a high-level error with diagnostic information for the user.
 #[derive(PartialEq, Debug, thiserror::Error)]
 #[error("{cause}")]
+#[non_exhaustive]
 pub struct Error {
     /// The underlying cause of the error.
     pub cause: InnerError,

@@ -52,10 +52,7 @@ fn test_bundled_mq_files_format_idempotently() {
     assert!(paths.len() > 2, "no bundled .mq files found under {root}");
 
     for max_width in [None, Some(60)] {
-        let config = mq_formatter::FormatterConfig {
-            max_width,
-            ..Default::default()
-        };
+        let config = mq_formatter::FormatterConfig::default().with_max_width(max_width);
         for path in &paths {
             let code = std::fs::read_to_string(path).unwrap();
             let formatted = mq_formatter::Formatter::new(Some(config.clone()))

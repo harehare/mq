@@ -419,20 +419,14 @@ fn test_narrowing_selector_various_structural() {
 /// Helper function to run type checker with strict array mode enabled
 fn check_types_strict_array(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
-        strict_array: true,
-        ..Default::default()
-    });
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions::default().with_strict_array(true));
     checker.check(&hir)
 }
 
 /// Helper function to run type checker with tuple mode enabled
 fn check_types_tuple(code: &str) -> Vec<TypeError> {
     let hir = create_hir(code);
-    let mut checker = TypeChecker::with_options(TypeCheckerOptions {
-        strict_array: false,
-        ..Default::default()
-    });
+    let mut checker = TypeChecker::with_options(TypeCheckerOptions::default().with_strict_array(false));
     checker.check(&hir)
 }
 

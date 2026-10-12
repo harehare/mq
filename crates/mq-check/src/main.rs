@@ -48,11 +48,10 @@ struct Cli {
 
 impl Cli {
     fn type_checker_options(&self) -> TypeCheckerOptions {
-        TypeCheckerOptions {
-            strict_array: self.strict_array,
-            no_exhaustive_patterns: self.no_exhaustive_patterns,
-            input_type: self.input_type.clone(),
-        }
+        TypeCheckerOptions::default()
+            .with_strict_array(self.strict_array)
+            .with_no_exhaustive_patterns(self.no_exhaustive_patterns)
+            .with_input_type(self.input_type.clone())
     }
 }
 
@@ -252,7 +251,7 @@ fn check_syntax(w: &mut impl Write, hir: &mq_hir::Hir, source_id: mq_hir::Source
     let errors: Vec<(String, mq_lang::Range)> = hir
         .errors()
         .iter()
-        .filter(|error| format::hir_error_symbol(error).source.source_id == Some(source_id))
+        .filter(|error| error.symbol().source.source_id == Some(source_id))
         .map(|error| (error.to_string(), format::hir_error_range(error)))
         .collect();
     let warnings: Vec<(String, mq_lang::Range)> = hir
@@ -425,6 +424,7 @@ fn error_title(error: &TypeError) -> String {
         TypeError::NonExhaustiveMatch { missing, .. } => {
             format!("non-exhaustive patterns: missing case for {missing}")
         }
+        _ => error.to_string(),
     }
 }
 
@@ -560,10 +560,8 @@ mod tests {
 
     #[test]
     fn test_input_type_is_applied_to_the_checked_source() {
-        let options = TypeCheckerOptions {
-            input_type: Some(mq_check::type_expr::parse_type("code").unwrap()),
-            ..Default::default()
-        };
+        let options =
+            TypeCheckerOptions::default().with_input_type(Some(mq_check::type_expr::parse_type("code").unwrap()));
         let diagnostics = collect_check_diagnostics(".depth", None, false, &options);
         assert!(diagnostics.iter().any(|d| d.code == "typechecker::undefined_attribute"));
         let diagnostics = collect_check_diagnostics(".depth", None, false, &TypeCheckerOptions::default());

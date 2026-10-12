@@ -4,6 +4,7 @@ use dap::prelude::Command;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum MqAdapterError {
     #[error("Unhandled command: {0:?}")]
     UnhandledCommand(Box<Command>),

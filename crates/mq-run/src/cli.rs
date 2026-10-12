@@ -3047,22 +3047,23 @@ impl Cli {
     fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
         let mut markdown =
             mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
-        markdown.set_options(mq_markdown::RenderOptions {
-            list_style: match self.output.list_style.clone() {
-                ListStyle::Dash => mq_markdown::ListStyle::Dash,
-                ListStyle::Plus => mq_markdown::ListStyle::Plus,
-                ListStyle::Star => mq_markdown::ListStyle::Star,
-            },
-            link_title_style: match self.output.link_title_style.clone() {
-                LinkTitleStyle::Double => mq_markdown::TitleSurroundStyle::Double,
-                LinkTitleStyle::Single => mq_markdown::TitleSurroundStyle::Single,
-                LinkTitleStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
-            },
-            link_url_style: match self.output.link_url_style.clone() {
-                LinkUrlStyle::None => mq_markdown::UrlSurroundStyle::None,
-                LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
-            },
-        });
+        markdown.set_options(
+            mq_markdown::RenderOptions::default()
+                .with_list_style(match self.output.list_style.clone() {
+                    ListStyle::Dash => mq_markdown::ListStyle::Dash,
+                    ListStyle::Plus => mq_markdown::ListStyle::Plus,
+                    ListStyle::Star => mq_markdown::ListStyle::Star,
+                })
+                .with_link_title_style(match self.output.link_title_style.clone() {
+                    LinkTitleStyle::Double => mq_markdown::TitleSurroundStyle::Double,
+                    LinkTitleStyle::Single => mq_markdown::TitleSurroundStyle::Single,
+                    LinkTitleStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
+                })
+                .with_link_url_style(match self.output.link_url_style.clone() {
+                    LinkUrlStyle::None => mq_markdown::UrlSurroundStyle::None,
+                    LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
+                }),
+        );
         markdown
     }
 

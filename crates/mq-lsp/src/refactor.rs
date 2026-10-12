@@ -214,12 +214,9 @@ fn deletion_range(container: &[Shared<CstNode>], idx: usize) -> MqRange {
 }
 
 fn format_snippet(code: &str) -> String {
-    mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
-        indent_width: 2,
-        ..Default::default()
-    }))
-    .format(code)
-    .unwrap_or_else(|_| code.to_string())
+    mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig::default().with_indent_width(2)))
+        .format(code)
+        .unwrap_or_else(|_| code.to_string())
 }
 
 fn single_edit_action(

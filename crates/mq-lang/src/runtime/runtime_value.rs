@@ -60,6 +60,7 @@ pub enum ResumeBuiltin {
 /// program execution, including numbers, strings, markdown nodes, functions,
 /// and more complex data structures.
 #[derive(Clone, Default)]
+#[non_exhaustive]
 pub enum RuntimeValue {
     /// A numeric value.
     Number(Number),

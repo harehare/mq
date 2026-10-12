@@ -2,6 +2,7 @@ use tower_lsp_server::ls_types;
 use tower_lsp_server::ls_types::NumberOrString;
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum LspError {
     SyntaxError(mq_lang::Diagnostic),
     TypeError(mq_check::TypeError),

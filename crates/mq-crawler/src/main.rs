@@ -226,12 +226,11 @@ async fn main() {
         v
     });
 
-    let retry_config = mq_crawler::http_client::RetryConfig {
-        max_retries: args.max_retries,
-        initial_backoff: std::time::Duration::from_secs_f64(args.retry_initial_backoff.max(0.0)),
-        max_backoff: std::time::Duration::from_secs_f64(args.retry_max_backoff.max(0.0)),
-        backoff_multiplier: args.retry_backoff_multiplier,
-    };
+    let retry_config = mq_crawler::http_client::RetryConfig::default()
+        .with_max_retries(args.max_retries)
+        .with_initial_backoff(std::time::Duration::from_secs_f64(args.retry_initial_backoff.max(0.0)))
+        .with_max_backoff(std::time::Duration::from_secs_f64(args.retry_max_backoff.max(0.0)))
+        .with_backoff_multiplier(args.retry_backoff_multiplier);
 
     let header_map = match build_header_map(&args.headers, &args.cookie) {
         Ok(header_map) => header_map,
@@ -309,12 +308,11 @@ async fn main() {
             std::time::Duration::from_secs_f64(headless_wait_secs)
         };
 
-        let wait_config = mq_crawler::http_client::ChromiumWaitConfig {
-            fixed_delay,
-            wait_for_selector: args.headless_wait_for_selector.clone(),
-            network_idle: args.headless_network_idle,
-            strategy_timeout,
-        };
+        let wait_config = mq_crawler::http_client::ChromiumWaitConfig::default()
+            .with_fixed_delay(fixed_delay)
+            .with_wait_for_selector(args.headless_wait_for_selector.clone())
+            .with_network_idle(args.headless_network_idle)
+            .with_strategy_timeout(strategy_timeout);
 
         mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path, wait_config, retry_config.clone())
             .await
@@ -381,12 +379,10 @@ async fn main() {
         args.output,
         args.concurrency,
         format,
-        mq_markdown::ConversionOptions {
-            extract_scripts_as_code_blocks: args.conversion.extract_scripts_as_code_blocks,
-            generate_front_matter: args.conversion.generate_front_matter,
-            use_title_as_h1: args.conversion.use_title_as_h1,
-            base_url: None,
-        },
+        mq_markdown::ConversionOptions::default()
+            .with_extract_scripts_as_code_blocks(args.conversion.extract_scripts_as_code_blocks)
+            .with_generate_front_matter(args.conversion.generate_front_matter)
+            .with_use_title_as_h1(args.conversion.use_title_as_h1),
         args.depth,
         effective_allowed,
         sitemap_seed_urls,

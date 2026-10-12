@@ -91,6 +91,7 @@ fn escape_property_key(key: &str) -> String {
 /// for HTML. Each variant matches a specific type of markdown element.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Eq, Clone)]
+#[non_exhaustive]
 pub enum Selector {
     /// Matches blockquote elements (e.g., `> quoted text`).
     Blockquote,

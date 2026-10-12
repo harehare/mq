@@ -228,12 +228,11 @@ pub struct ConversionOptions {
 
 impl From<ConversionOptions> for mq_markdown::ConversionOptions {
     fn from(options: ConversionOptions) -> Self {
-        Self {
-            extract_scripts_as_code_blocks: options.extract_scripts_as_code_blocks,
-            generate_front_matter: options.generate_front_matter,
-            use_title_as_h1: options.use_title_as_h1,
-            base_url: Some(options.base_url).filter(|s| !s.is_empty()),
-        }
+        mq_markdown::ConversionOptions::default()
+            .with_extract_scripts_as_code_blocks(options.extract_scripts_as_code_blocks)
+            .with_generate_front_matter(options.generate_front_matter)
+            .with_use_title_as_h1(options.use_title_as_h1)
+            .with_base_url(Some(options.base_url).filter(|s| !s.is_empty()))
     }
 }
 
@@ -687,31 +686,38 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
                     })
                     .collect(),
             );
-            markdown.set_options(mq_markdown::RenderOptions {
-                list_style: options
-                    .list_style
-                    .map(|style| match style {
-                        ListStyle::Dash => mq_markdown::ListStyle::Dash,
-                        ListStyle::Plus => mq_markdown::ListStyle::Plus,
-                        ListStyle::Star => mq_markdown::ListStyle::Star,
-                    })
-                    .unwrap_or_default(),
-                link_title_style: options
-                    .link_title_style
-                    .map(|style| match style {
-                        TitleSurroundStyle::Double => mq_markdown::TitleSurroundStyle::Double,
-                        TitleSurroundStyle::Single => mq_markdown::TitleSurroundStyle::Single,
-                        TitleSurroundStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
-                    })
-                    .unwrap_or_default(),
-                link_url_style: options
-                    .link_url_style
-                    .map(|style| match style {
-                        UrlSurroundStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
-                        UrlSurroundStyle::None => mq_markdown::UrlSurroundStyle::None,
-                    })
-                    .unwrap_or_default(),
-            });
+            markdown.set_options(
+                mq_markdown::RenderOptions::default()
+                    .with_list_style(
+                        options
+                            .list_style
+                            .map(|style| match style {
+                                ListStyle::Dash => mq_markdown::ListStyle::Dash,
+                                ListStyle::Plus => mq_markdown::ListStyle::Plus,
+                                ListStyle::Star => mq_markdown::ListStyle::Star,
+                            })
+                            .unwrap_or_default(),
+                    )
+                    .with_link_title_style(
+                        options
+                            .link_title_style
+                            .map(|style| match style {
+                                TitleSurroundStyle::Double => mq_markdown::TitleSurroundStyle::Double,
+                                TitleSurroundStyle::Single => mq_markdown::TitleSurroundStyle::Single,
+                                TitleSurroundStyle::Paren => mq_markdown::TitleSurroundStyle::Paren,
+                            })
+                            .unwrap_or_default(),
+                    )
+                    .with_link_url_style(
+                        options
+                            .link_url_style
+                            .map(|style| match style {
+                                UrlSurroundStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
+                                UrlSurroundStyle::None => mq_markdown::UrlSurroundStyle::None,
+                            })
+                            .unwrap_or_default(),
+                    ),
+            );
             markdown.to_string()
         })
 }

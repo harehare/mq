@@ -9,6 +9,7 @@ use crate::number::Number;
 use crate::range::{Position, Range};
 
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct Options {
     pub ignore_errors: bool,
     pub include_spaces: bool,

@@ -14,6 +14,7 @@ use std::{
 /// Represents a function parameter with an optional default value
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[non_exhaustive]
 pub struct Param {
     pub ident: IdentWithToken,
     pub default: Option<Shared<Node>>,
@@ -210,6 +211,7 @@ impl Node {
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Debug, Eq, Clone)]
+#[non_exhaustive]
 pub struct IdentWithToken {
     pub name: Ident,
     #[cfg_attr(feature = "ast-json", serde(skip_serializing, skip_deserializing, default))]
@@ -264,6 +266,7 @@ pub enum StringSegment {
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[non_exhaustive]
 pub enum Pattern {
     Literal(Literal),
     Ident(IdentWithToken),
@@ -277,6 +280,7 @@ pub enum Pattern {
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[non_exhaustive]
 pub struct MatchArm {
     pub pattern: Pattern,
     pub guard: Option<Shared<Node>>,
@@ -285,6 +289,7 @@ pub struct MatchArm {
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[non_exhaustive]
 pub enum Literal {
     String(String),
     Bytes(Vec<u8>),
@@ -302,6 +307,7 @@ impl From<&str> for Literal {
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[non_exhaustive]
 pub enum AccessTarget {
     Call(IdentWithToken, Box<Args>),
     Ident(IdentWithToken),
@@ -334,6 +340,7 @@ impl Display for Literal {
 /// Compiles directly to a VM opcode; see `Expr::BinaryOp`.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -375,6 +382,7 @@ impl Display for BinaryOp {
 /// A prefix operator (`!` or `-`). Compiles directly to a VM opcode; see `Expr::UnaryOp`.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum UnaryOp {
     Not,
     Neg,
@@ -397,6 +405,7 @@ impl Display for UnaryOp {
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[non_exhaustive]
 pub enum Expr {
     As(IdentWithToken, Shared<Node>),
     Block(Program),

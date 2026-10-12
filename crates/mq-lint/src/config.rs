@@ -6,6 +6,7 @@ use crate::RuleId;
 
 /// Per-rule enable/disable flag.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RuleConfig {
     pub enabled: bool,
 }
@@ -45,6 +46,7 @@ impl Default for ComplexityThresholds {
 
 /// Top-level linter configuration.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct LintConfig {
     /// Per-rule overrides. Rules not listed here use their default enabled state.
     pub rules: HashMap<RuleId, RuleConfig>,

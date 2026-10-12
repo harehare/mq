@@ -150,7 +150,8 @@ pub(crate) fn selector_kinds(selector: &mq_lang::Selector) -> Option<KindSet> {
         Selector::MdxTextExpression => one(NodeKind::MdxTextExpression),
         Selector::MdxJsEsm => one(NodeKind::MdxJsEsm),
         Selector::MdxJsxFlowElement => one(NodeKind::MdxJsxFlowElement),
-        Selector::Recursive | Selector::Attr(_) | Selector::Property(_) => return None,
+        // `Selector` is `#[non_exhaustive]`: unknown selectors narrow nothing.
+        _ => return None,
     })
 }
 

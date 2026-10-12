@@ -478,12 +478,10 @@ mod tests {
     </html>"#;
         let result = parse_html_input_with_options(
             input,
-            mq_markdown::ConversionOptions {
-                extract_scripts_as_code_blocks: true,
-                generate_front_matter: true,
-                use_title_as_h1: true,
-                base_url: None,
-            },
+            mq_markdown::ConversionOptions::default()
+                .with_extract_scripts_as_code_blocks(true)
+                .with_generate_front_matter(true)
+                .with_use_title_as_h1(true),
         );
         assert!(result.is_ok());
         assert_eq!(

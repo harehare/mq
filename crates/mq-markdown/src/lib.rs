@@ -43,10 +43,7 @@
 //! use mq_markdown::{Markdown, RenderOptions, ListStyle};
 //!
 //! let mut doc = "- Item 1\n- Item 2".parse::<Markdown>().unwrap();
-//! doc.set_options(RenderOptions {
-//!     list_style: ListStyle::Plus,
-//!     ..Default::default()
-//! });
+//! doc.set_options(RenderOptions::default().with_list_style(ListStyle::Plus));
 //!
 //! // Now renders with "+" instead of "-"
 //! println!("{}", doc);

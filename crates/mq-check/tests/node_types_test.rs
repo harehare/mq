@@ -170,10 +170,10 @@ fn test_attribute_of_a_constructed_node_is_checked() {
 fn errors_with_input(code: &str, input_type: &str) -> Vec<mq_check::TypeError> {
     let mut hir = Hir::default();
     hir.add_code(None, code);
-    TypeChecker::with_options(mq_check::TypeCheckerOptions {
-        input_type: Some(mq_check::type_expr::parse_type(input_type).unwrap()),
-        ..Default::default()
-    })
+    TypeChecker::with_options(
+        mq_check::TypeCheckerOptions::default()
+            .with_input_type(Some(mq_check::type_expr::parse_type(input_type).unwrap())),
+    )
     .check(&hir)
 }
 

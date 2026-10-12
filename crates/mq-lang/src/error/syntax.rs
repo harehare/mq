@@ -5,6 +5,7 @@ use crate::{Token, module::ModuleId, selector};
 
 /// Errors that occur during parsing of mq source code.
 #[derive(Error, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum SyntaxError {
     /// An environment variable was not found.
     #[error("Undefined environment variable `{1}`")]

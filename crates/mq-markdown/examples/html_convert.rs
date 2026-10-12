@@ -15,12 +15,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    let options = ConversionOptions {
-        extract_scripts_as_code_blocks: false,
-        generate_front_matter: false,
-        use_title_as_h1: false,
-        base_url: None,
-    };
+    let options = ConversionOptions::default();
 
     match convert_html_to_markdown(&html, options) {
         Ok(md) => print!("{}", md),

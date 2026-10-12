@@ -88,6 +88,7 @@ impl<'a> IntoIterator for &'a TypeEnv {
 /// Type checking errors
 #[derive(Debug, Error, Clone, Diagnostic)]
 #[allow(unused_assignments)]
+#[non_exhaustive]
 pub enum TypeError {
     #[error("Type mismatch: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::type_mismatch))]
@@ -263,6 +264,7 @@ pub(crate) fn walk_ancestors(
 
 /// Options for configuring the type checker behavior
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct TypeCheckerOptions {
     /// When true, arrays must contain elements of a single type.
     /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.
@@ -272,6 +274,26 @@ pub struct TypeCheckerOptions {
     /// The type of the input document `.` (see [`type_expr::parse_type`]). When `None` the input
     /// is `dynamic`.
     pub input_type: Option<types::Type>,
+}
+
+impl TypeCheckerOptions {
+    /// Sets `strict_array`.
+    pub fn with_strict_array(mut self, strict_array: bool) -> Self {
+        self.strict_array = strict_array;
+        self
+    }
+
+    /// Sets `no_exhaustive_patterns`.
+    pub fn with_no_exhaustive_patterns(mut self, no_exhaustive_patterns: bool) -> Self {
+        self.no_exhaustive_patterns = no_exhaustive_patterns;
+        self
+    }
+
+    /// Sets `input_type`.
+    pub fn with_input_type(mut self, input_type: Option<types::Type>) -> Self {
+        self.input_type = input_type;
+        self
+    }
 }
 
 /// Wall-clock time of each phase of [`TypeChecker::check_profiled`], in execution order.

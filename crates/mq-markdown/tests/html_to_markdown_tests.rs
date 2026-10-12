@@ -37,82 +37,52 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 )]
 #[case::script_tag_inline_javascript_default_type(
     "<script>alert('Hello');</script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```\nalert('Hello');\n```",
 )]
 #[case::script_tag_inline_javascript_text_javascript(
     "<script type=\"text/javascript\">console.log(1);</script>",
-    ConversionOptions{
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```javascript\nconsole.log(1);\n```"
 )]
 #[case::script_tag_inline_javascript_application_javascript(
     "<script type=\"application/javascript\">let a = 1;</script>",
-    ConversionOptions{
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```javascript\nlet a = 1;\n```"
 )]
 #[case::script_tag_inline_javascript_module(
     "<script type=\"module\">import { B } from './mod.js';</script>",
-    ConversionOptions{
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```javascript\nimport { B } from './mod.js';\n```"
 )]
 #[case::script_tag_inline_json_ld(
     "<script type=\"application/ld+json\">{\"@context\":\"schema.org\"}</script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```json\n{\"@context\":\"schema.org\"}\n```"
 )]
 #[case::script_tag_inline_json(
     "<script type=\"application/json\">{\"key\":\"value\"}</script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```json\n{\"key\":\"value\"}\n```"
 )]
 #[case::script_tag_unknown_type(
     "<script type=\"text/custom\">content</script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```\ncontent\n```"
 )]
 #[case::script_tag_empty_content(
     "<script></script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```\n\n```"
 )]
 #[case::script_tag_external_src_ignored_when_option_true(
     "<script src=\"app.js\"></script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     ""
 )]
 #[case::script_tag_with_html_comments_and_cdata(
     "<script><!-- alert(1); // --><![CDATA[\nalert(2);\n//]]></script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     &format!("```\n{}\n```", "<!-- alert(1); // --><![CDATA[\nalert(2);\n//]]>")
 )]
 #[case::front_matter_disabled(
@@ -122,171 +92,107 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 )]
 #[case::front_matter_title_only(
     "<html><head><title>My Title</title></head><body><p>Body</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\ntitle: My Title\n---\n\nBody",
 )]
 #[case::front_matter_description(
     "<html><head><meta name=\"description\" content=\"Page description.\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\ndescription: Page description.\n---\n\nB",
 )]
 #[case::front_matter_keywords_single(
     "<html><head><meta name=\"keywords\" content=\"rust\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nkeywords:\n  - rust\n---\n\nB",
 )]
 #[case::front_matter_keywords_multiple_comma_separated(
     "<html><head><meta name=\"keywords\" content=\"rust, web, html\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB",
 )]
 #[case::front_matter_keywords_comma_space_separated(
     "<html><head><meta name=\"keywords\" content=\"rust, web,  html \"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB",
 )]
 #[case::front_matter_author(
     "<html><head><meta name=\"author\" content=\"Jules Verne\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nauthor: Jules Verne\n---\n\nB",
 )]
 #[case::front_matter_all_present(
     "<html><head><title>Full Test</title><meta name=\"description\" content=\"Desc here\"><meta name=\"keywords\" content=\"key1,key2\"><meta name=\"author\" content=\"Author Name\"></head><body><p>Content</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n  - key1\n  - key2\ntitle: Full Test\n---\n\nContent",
 )]
 #[case::front_matter_no_head_tag(
     "<html><body><p>Only body</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "Only body",
 )]
 #[case::front_matter_empty_head(
     "<html><head></head><body><p>Body</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "Body",
 )]
 #[case::front_matter_no_relevant_tags_in_head(
     "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body><p>Body</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "Body", // No relevant tags for front matter
 )]
 #[case::front_matter_with_script_extraction_option(
     "<html><head><title>Script Page</title></head><body><script>let x=1;</script><p>Text</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true).with_extract_scripts_as_code_blocks(true),
     "---\ntitle: Script Page\n---\n\n```\nlet x=1;\n```\n\nText",
 )]
 #[case::front_matter_html_fragment_no_head(
     "<p>Just a paragraph</p><meta name=\"description\" content=\"Hidden\">",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "Just a paragraph", // Meta tag not in <head> context
 )]
 #[case::front_matter_og_description_fallback(
     "<html><head><meta property=\"og:description\" content=\"OGP desc\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\ndescription: OGP desc\n---\n\nB",
 )]
 #[case::front_matter_name_description_wins_over_og(
     "<html><head><meta name=\"description\" content=\"Named desc\"><meta property=\"og:description\" content=\"OGP desc\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\ndescription: Named desc\n---\n\nB",
 )]
 #[case::front_matter_schema_author_wins_over_twitter_handle(
     r#"<html><head><meta name="twitter:creator" content="@jverne"><script type="application/ld+json">{"@type":"Article","author":{"name":"Jules Verne"}}</script></head><body><p>B</p></body></html>"#,
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nauthor: Jules Verne\n---\n\nB",
 )]
 #[case::front_matter_twitter_creator_fallback(
     "<html><head><meta name=\"twitter:creator\" content=\"@jverne\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nauthor: \"@jverne\"\n---\n\nB",
 )]
 #[case::front_matter_article_published_time(
     "<html><head><meta property=\"article:published_time\" content=\"2024-01-02T00:00:00Z\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\npublished: \"2024-01-02T00:00:00Z\"\n---\n\nB",
 )]
 #[case::front_matter_og_image_and_site_name(
     "<html><head><meta property=\"og:image\" content=\"https://example.com/a.png\"><meta property=\"og:site_name\" content=\"Example Site\"></head><body><p>B</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nimage: \"https://example.com/a.png\"\nsite: Example Site\n---\n\nB",
 )]
 #[case::front_matter_multibyte_description_and_author(
     "<html><head><meta name=\"description\" content=\"日本語の説明文です\"><meta name=\"author\" content=\"山田太郎\"></head><body><p>本文</p></body></html>",
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nauthor: 山田太郎\ndescription: 日本語の説明文です\n---\n\n本文",
 )]
 #[case::front_matter_json_ld_article(
     r#"<html><head><script type="application/ld+json">{"@type":"Article","headline":"JSON-LD Title","author":{"name":"Ada Lovelace"},"datePublished":"2023-05-01"}</script></head><body><p>B</p></body></html>"#,
-    ConversionOptions {
-        generate_front_matter: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_generate_front_matter(true),
     "---\nauthor: Ada Lovelace\npublished: 2023-05-01\n---\n\nB",
 )]
 #[case::script_tag_leading_newline_stripping(
     "<script>\n  var x = 1;\n</script>",
-    ConversionOptions {
-        extract_scripts_as_code_blocks: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_extract_scripts_as_code_blocks(true),
     "```\n  var x = 1;\n```",
 )]
 #[case::table_with_align_attribute(
@@ -1218,34 +1124,22 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::h1_not_closed("<h1>Hello World", ConversionOptions::default(), "# Hello World")]
 #[case::use_title_as_h1_true(
     "<html><head><title>My Document</title></head><body><p>Body text</p></body></html>",
-    ConversionOptions {
-        use_title_as_h1: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_use_title_as_h1(true),
     "# My Document\n\nBody text"
 )]
 #[case::use_title_as_h1_true_with_no_body(
     "<html><head><title>Only Title</title></head><body></body></html>",
-    ConversionOptions {
-        use_title_as_h1: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_use_title_as_h1(true),
     "# Only Title"
 )]
 #[case::use_title_as_h1_true_with_no_title(
     "<html><head></head><body><p>Body only</p></body></html>",
-    ConversionOptions {
-        use_title_as_h1: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_use_title_as_h1(true),
     "Body only"
 )]
 #[case::use_title_as_h1_false(
     "<html><head><title>My Document</title></head><body><p>Body text</p></body></html>",
-    ConversionOptions {
-        use_title_as_h1: false,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_use_title_as_h1(false),
     "Body text"
 )]
 #[case::use_title_as_h1_true_with_main(
@@ -1253,10 +1147,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         "<html><head><title>Page Title</title></head>",
         "<body><nav>Nav</nav><main><p>Main content</p></main></body></html>"
     ),
-    ConversionOptions {
-        use_title_as_h1: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_use_title_as_h1(true),
     "# Page Title\n\nMain content"
 )]
 #[case::use_title_as_h1_true_with_article(
@@ -1264,10 +1155,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         "<html><head><title>Article Title</title></head>",
         "<body><aside>Sidebar</aside><article><p>Article content</p></article></body></html>"
     ),
-    ConversionOptions {
-        use_title_as_h1: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_use_title_as_h1(true),
     "# Article Title\n\nArticle content"
 )]
 #[case::use_title_as_h1_true_with_role_main(
@@ -1275,10 +1163,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         "<html><head><title>Role Main Title</title></head>",
         "<body><div role=\"main\"><p>Role main content</p></div></body></html>"
     ),
-    ConversionOptions {
-        use_title_as_h1: true,
-        ..ConversionOptions::default()
-    },
+    ConversionOptions::default().with_use_title_as_h1(true),
     "# Role Main Title\n\nRole main content"
 )]
 #[case::pre_with_code_and_text(
@@ -1902,10 +1787,7 @@ fn test_html_comment_stripped() {
 fn test_base_url_resolves_relative_links_and_images() {
     let html = r#"<p><a href="/absolute-path">a</a> and <a href="../sibling">b</a> and
         <img src="pic.png" alt="x"> and <a href="https://other.com/x">already-absolute</a></p>"#;
-    let options = ConversionOptions {
-        base_url: Some("https://example.com/blog/post/".to_string()),
-        ..Default::default()
-    };
+    let options = ConversionOptions::default().with_base_url(Some("https://example.com/blog/post/".to_string()));
     let md = convert_html_to_markdown(html, options).unwrap();
     assert!(md.contains("[a](https://example.com/absolute-path)"));
     assert!(md.contains("[b](https://example.com/blog/sibling)"));
@@ -1925,10 +1807,7 @@ fn test_base_href_tag_resolves_relative_links_when_no_explicit_base_url() {
 fn test_explicit_base_url_takes_priority_over_base_href_tag() {
     let html = r#"<html><head><base href="https://ignored.example.com/"></head>
         <body><p><a href="rel">link</a></p></body></html>"#;
-    let options = ConversionOptions {
-        base_url: Some("https://example.com/blog/".to_string()),
-        ..Default::default()
-    };
+    let options = ConversionOptions::default().with_base_url(Some("https://example.com/blog/".to_string()));
     let md = convert_html_to_markdown(html, options).unwrap();
     assert!(md.contains("[link](https://example.com/blog/rel)"));
 }

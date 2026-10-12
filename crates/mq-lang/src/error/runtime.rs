@@ -12,6 +12,7 @@ type ArgType = Vec<SmolStr>;
 type ErrorToken = Token;
 
 #[derive(Error, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum RuntimeError {
     /// An uncaught runtime error annotated with the VM frames active at the failure point.
     #[error("{source}\n{trace}")]

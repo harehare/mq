@@ -59,12 +59,45 @@ enum SortPriority {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct FormatterConfig {
     pub indent_width: usize,
     pub sort_imports: bool,
     pub sort_functions: bool,
     pub sort_fields: bool,
     pub max_width: Option<usize>,
+}
+
+impl FormatterConfig {
+    /// Sets `indent_width`.
+    pub fn with_indent_width(mut self, indent_width: usize) -> Self {
+        self.indent_width = indent_width;
+        self
+    }
+
+    /// Sets `sort_imports`.
+    pub fn with_sort_imports(mut self, sort_imports: bool) -> Self {
+        self.sort_imports = sort_imports;
+        self
+    }
+
+    /// Sets `sort_functions`.
+    pub fn with_sort_functions(mut self, sort_functions: bool) -> Self {
+        self.sort_functions = sort_functions;
+        self
+    }
+
+    /// Sets `sort_fields`.
+    pub fn with_sort_fields(mut self, sort_fields: bool) -> Self {
+        self.sort_fields = sort_fields;
+        self
+    }
+
+    /// Sets `max_width`.
+    pub fn with_max_width(mut self, max_width: Option<usize>) -> Self {
+        self.max_width = max_width;
+        self
+    }
 }
 
 impl Default for FormatterConfig {

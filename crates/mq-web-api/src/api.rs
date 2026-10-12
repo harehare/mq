@@ -352,13 +352,12 @@ pub fn check(request: CheckApiRequest) -> CheckApiResponse {
 
 /// Formats mq query code using the given formatting options.
 pub fn format_query(request: FormatApiRequest) -> miette::Result<FormatApiResponse> {
-    let config = FormatterConfig {
-        indent_width: request.indent_width.unwrap_or(2),
-        sort_imports: request.sort_imports.unwrap_or(false),
-        sort_functions: request.sort_functions.unwrap_or(false),
-        sort_fields: request.sort_fields.unwrap_or(false),
-        max_width: request.max_width,
-    };
+    let config = FormatterConfig::default()
+        .with_indent_width(request.indent_width.unwrap_or(2))
+        .with_sort_imports(request.sort_imports.unwrap_or(false))
+        .with_sort_functions(request.sort_functions.unwrap_or(false))
+        .with_sort_fields(request.sort_fields.unwrap_or(false))
+        .with_max_width(request.max_width);
     let formatted = Formatter::new(Some(config))
         .format(&request.query)
         .map_err(|e| miette!("Format error: {}", e))?;
@@ -487,6 +486,7 @@ fn type_error_kind(e: &mq_check::TypeError) -> String {
         mq_check::TypeError::NullablePropagation { .. } => "nullable_propagation",
         mq_check::TypeError::UnreachableCode { .. } => "unreachable_code",
         mq_check::TypeError::NonExhaustiveMatch { .. } => "non_exhaustive_match",
+        _ => "unknown",
     }
     .to_string()
 }

@@ -15,6 +15,7 @@ use url::Url;
 ///
 /// Retries on network errors, `429`, and `5xx`; other client errors (e.g. `404`) are not retried.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct RetryConfig {
     /// Retry attempts after the initial request fails.
     pub max_retries: u32,
@@ -24,6 +25,32 @@ pub struct RetryConfig {
     pub max_backoff: Duration,
     /// Multiplier applied to the backoff delay after each attempt.
     pub backoff_multiplier: f64,
+}
+
+impl RetryConfig {
+    /// Sets `max_retries`.
+    pub fn with_max_retries(mut self, max_retries: u32) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+
+    /// Sets `initial_backoff`.
+    pub fn with_initial_backoff(mut self, initial_backoff: Duration) -> Self {
+        self.initial_backoff = initial_backoff;
+        self
+    }
+
+    /// Sets `max_backoff`.
+    pub fn with_max_backoff(mut self, max_backoff: Duration) -> Self {
+        self.max_backoff = max_backoff;
+        self
+    }
+
+    /// Sets `backoff_multiplier`.
+    pub fn with_backoff_multiplier(mut self, backoff_multiplier: f64) -> Self {
+        self.backoff_multiplier = backoff_multiplier;
+        self
+    }
 }
 
 impl Default for RetryConfig {
@@ -54,6 +81,7 @@ impl RetryConfig {
 
 /// Default `Authorization` header credentials for a `reqwest`-based [`HttpClient`].
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum AuthConfig {
     /// `Authorization: Basic <base64(user:pass)>`.
     Basic { username: String, password: Option<String> },
@@ -81,6 +109,7 @@ impl FetchError {
 /// Multiple strategies can be combined; they are executed in order:
 /// network-idle / selector wait first, then the fixed delay.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ChromiumWaitConfig {
     /// Optional fixed delay applied after all other strategies complete.
     pub fixed_delay: Duration,
@@ -93,6 +122,32 @@ pub struct ChromiumWaitConfig {
     /// Maximum time to wait for `wait_for_selector` or `network_idle`.
     /// Defaults to 30 seconds.
     pub strategy_timeout: Duration,
+}
+
+impl ChromiumWaitConfig {
+    /// Sets `fixed_delay`.
+    pub fn with_fixed_delay(mut self, fixed_delay: Duration) -> Self {
+        self.fixed_delay = fixed_delay;
+        self
+    }
+
+    /// Sets `wait_for_selector`.
+    pub fn with_wait_for_selector(mut self, wait_for_selector: Option<String>) -> Self {
+        self.wait_for_selector = wait_for_selector;
+        self
+    }
+
+    /// Sets `network_idle`.
+    pub fn with_network_idle(mut self, network_idle: bool) -> Self {
+        self.network_idle = network_idle;
+        self
+    }
+
+    /// Sets `strategy_timeout`.
+    pub fn with_strategy_timeout(mut self, strategy_timeout: Duration) -> Self {
+        self.strategy_timeout = strategy_timeout;
+        self
+    }
 }
 
 /// Enum for different HTTP client implementations
