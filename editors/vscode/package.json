@@ -9,7 +9,7 @@
   "private": true,
   "version": "0.9.3",
   "engines": {
-    "vscode": "^1.138.0"
+    "vscode": "^1.140.0"
   },
   "repository": {
     "type": "git",
