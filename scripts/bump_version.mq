@@ -1,25 +1,16 @@
-def gradle_version(line):
+def gradle_version(line, version):
   if (starts_with(line, "pluginVersion = ")):
     s"pluginVersion = ${version}"
   else: line
 end
 
-def npm_version(line):
+def npm_version(line, version):
   if (starts_with(trim(line), "\"version\": ")):
     s"  \"version\": \"${version}\","
   else: line
 end
 
-def py_version(line):
-  if (line != "[project]" && starts_with(line, "[")):
-    s"
-${line}"
-  elif (starts_with(line, "version = ")):
-    s"version = \"${version}\""
-  else: line
-end
-
-def crates_version(line):
+def crates_version(line, version):
   if (contains(line, "path = \"crates/")):
     gsub(line, "version = \"[0-9]+.[0-9]+.[0-9]+\"", s"version = \"${version}\"")
   elif (starts_with(line, "version = \"")):
