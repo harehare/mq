@@ -362,6 +362,39 @@ impl PartialOrd for RuntimeValue {
     }
 }
 
+impl RuntimeValue {
+    /// Total order for `sort`/`sort_by`: same types use `partial_cmp`, mixed types are ordered by type.
+    pub fn sort_cmp(&self, other: &Self) -> Ordering {
+        fn rank(v: &RuntimeValue) -> u8 {
+            match v {
+                RuntimeValue::None => 0,
+                RuntimeValue::Boolean(_) => 1,
+                RuntimeValue::Number(_) => 2,
+                RuntimeValue::String(_) => 3,
+                RuntimeValue::Symbol(_) => 4,
+                RuntimeValue::Markdown(_, _) => 5,
+                RuntimeValue::Bytes(_) => 6,
+                RuntimeValue::Array(_) => 7,
+                RuntimeValue::Dict(_) => 8,
+                _ => 9,
+            }
+        }
+
+        match (self, other) {
+            (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a
+                .iter()
+                .zip(b.iter())
+                .map(|(x, y)| x.sort_cmp(y))
+                .find(|o| o.is_ne())
+                .unwrap_or_else(|| a.len().cmp(&b.len())),
+            _ => match rank(self).cmp(&rank(other)) {
+                Ordering::Equal => self.partial_cmp(other).unwrap_or(Ordering::Equal),
+                o => o,
+            },
+        }
+    }
+}
+
 impl std::fmt::Display for RuntimeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let value: Cow<'_, str> = match self {

@@ -2582,7 +2582,7 @@ fn sort_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => {
             let mut vec = std::mem::take(array);
-            runtime_value::array_mut(&mut vec).sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            runtime_value::array_mut(&mut vec).sort_by(|a, b| a.sort_cmp(b));
 
             let vec = Shared::unwrap_or_clone(vec)
                 .into_iter()
@@ -2607,11 +2607,7 @@ fn _sort_by_impl_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
         [RuntimeValue::Array(array)] => {
             let mut vec = std::mem::take(array);
             runtime_value::array_mut(&mut vec).sort_by(|a, b| match (a, b) {
-                (RuntimeValue::Array(a1), RuntimeValue::Array(a2)) => a1
-                    .first()
-                    .unwrap()
-                    .partial_cmp(a2.first().unwrap())
-                    .unwrap_or(std::cmp::Ordering::Equal),
+                (RuntimeValue::Array(a1), RuntimeValue::Array(a2)) => a1.first().unwrap().sort_cmp(a2.first().unwrap()),
                 _ => unreachable!("_sort_by_impl should only be called with an array of arrays"),
             });
             let vec = Shared::unwrap_or_clone(vec)
