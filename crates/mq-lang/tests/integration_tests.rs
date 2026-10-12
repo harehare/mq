@@ -3514,6 +3514,10 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::diff_arrays_len("_diff(array(1, 2, 3), array(1, 4, 3)) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 // sort: array of strings (triggers position-clearing path for non-markdown)
 #[case::sort_strings(r#"sort(["b", "a", "c"]) | first"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a".to_string()))].into()))]
+// sort: mixed types are ordered by type (none < bool < number < string < array)
+#[case::sort_mixed_types(r#"sort(["b", 2, true, [1], 1, "a", false]) | to_string"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r#"[false, true, 1, 2, "a", "b", [1]]"#.to_string()))].into()))]
+#[case::sort_nested_mixed_types(r#"sort([["a", 1], [1, "z"], [1, 2]]) | to_string"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r#"[[1, 2], [1, "z"], ["a", 1]]"#.to_string()))].into()))]
+#[case::sort_by_mixed_keys(r#"sort_by(["b", 2, 1, "a"], fn(x): x;) | to_string"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r#"[1, 2, "a", "b"]"#.to_string()))].into()))]
 // from_date: RFC3339 string → number
 #[case::from_date_rfc3339_type(r#"type(from_date("2024-06-01T00:00:00Z"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
 // url_encode: number fallback (non-string/non-markdown uses to_string fallback)

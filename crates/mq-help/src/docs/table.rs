@@ -3240,7 +3240,7 @@ x
     BuiltinDoc {
         name: "sort",
         aliases: &[],
-        description: "Sorts the elements of the given array.",
+        description: "Sorts the elements of the given array. Mixed types are ordered by type: none, bool, number, string, symbol, markdown, bytes, array, dict.",
         params: &["array"],
         param_types: &["array"],
         returns: "array",
