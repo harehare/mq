@@ -195,10 +195,8 @@ Options:
           Load additional modules from specified files
   -m, --import-module-names <IMPORT_MODULE_NAMES>
           Import modules by name, making them available as `name::fn()` in queries
-      --allow-http-import
-          Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default
-      --allowed-domain <ALLOWED_DOMAINS>
-          Allow HTTP imports from additional domain(s) beyond the default. Has no effect unless `--allow-http-import` (or `--allow-all`) is also passed. Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically), or a plain domain like `example.com` to allow any path under that host. Repeat to allow multiple extra domains
+      --allow-http-import[=<DOMAIN>...]
+          Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default. `--allow-http-import=DOMAIN` (repeat the flag, or comma-separate) also allows those domains beyond the default. Use `github.com/{user}/{repo}` for one repository (expanded automatically), or a plain domain like `example.com` for any path under that host. The `=` is required so a bare domain isn't taken as a query/file positional
       --refresh-modules
           Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache. Versioned (tagged) modules are never re-fetched regardless of this flag
       --clear-cache
@@ -206,7 +204,7 @@ Options:
       --no-lockfile
           Disable the mq.lock integrity check for HTTP imports. By default a fetched URL's content is checked against mq.lock, and a mismatch is rejected unless --refresh-modules is also passed
       --frozen
-          Fail instead of recording a new mq.lock entry. `--frozen`; use in CI so a new module's content is only ever trusted during a reviewable local run whose mq.lock diff gets committed, not silently during CI
+          Fail instead of recording a new mq.lock entry. Use in CI so a new module's content is only trusted during a reviewable local run whose mq.lock diff gets committed
       --lockfile <PATH>
           Path to the mq.lock file used for HTTP import integrity checks. Defaults to ./mq.lock (relative to the current directory)
   -N, --allow-net[=<DOMAIN>...]
@@ -214,7 +212,7 @@ Options:
   -R, --allow-read[=<PATH>...]
           Allow the `read_file`/`read_file_bytes`/`open_file`/`collection`/`walk_files`/`file_exists`/`file_info`/`embed_images` functions to read from the filesystem. Disabled by default. Pass with no value to allow reading anywhere, or `--allow-read=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict reads to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
   -W, --allow-write[=<PATH>...]
-          Allow the `write_file`/`extract_images` functions to write to the filesystem. Disabled by default. Pass with no value to allow writing anywhere, or `--allow-write=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict writes to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
+          Allow the `write_file`/`extract_images` functions to write to the filesystem. Under `--sandbox`, this also gates `-o`/`--output` (and `--append`, `--no-clobber`, `--atomic-output`), which are rejected unless the target is allowed. Without `--sandbox`, `-o` is not restricted. Disabled by default. Pass with no value to allow writing anywhere, or `--allow-write=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict writes to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
       --allow-run[=<COMMAND>...]
           Allow the `system` function to execute external commands. Disabled by default. Commands run directly (never through a shell), so shell metacharacters in arguments are never interpreted. Pass with no value to allow any command, or `--allow-run=COMMAND` (repeat the flag, or comma-separate, to add more) to restrict execution to just those commands. The `=` is required so a bare command after the flag isn't swallowed as a query/file positional instead
   -E, --allow-env[=<NAME>...]
@@ -222,7 +220,7 @@ Options:
   -a, --allow-all
           Grant every sandboxed permission at once (read/write/net/run/env), and also enable HTTP module imports as if --allow-http-import were passed. Disabled by default. Cannot be combined with the individual --allow-* flags above
       --sandbox <SANDBOX>
-          Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags [possible values: strict, read-only, networked, unsafe]
+          Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags, except --allow-write, which adds write access (including `-o`/`--output`) on top of the preset. Under a preset, `-o`/`--output` is denied unless write access is granted [possible values: strict, read-only, networked, unsafe]
   -f, --from-file
           load filter from the file
       --args <NAME> <VALUE>
@@ -291,7 +289,7 @@ Options:
           Set both input and output format at once (shorthand for `-I FORMAT -F FORMAT`). An explicit `-I`/`-F` overrides this for that side. Only accepts formats valid on both sides; e.g. `-I mdx` or `-F table` still require the dedicated flag [possible values: markdown, html, text, json, gron, raw, csv, toml, toon, xml, yaml]
       --list
           List all available subcommands (built-in and external)
-  -P <PARALLEL_THRESHOLD>
+  -P, --parallel-threshold <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --argv [<ARGV>...]
           Positional string arguments, available as ARGS."positional" in queries
