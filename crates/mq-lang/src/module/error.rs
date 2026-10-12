@@ -6,6 +6,7 @@ use std::borrow::Cow;
 
 /// Errors that can occur while loading or resolving mq modules.
 #[derive(Debug, PartialEq, Error)]
+#[non_exhaustive]
 pub enum ModuleError {
     #[error("Module `{0}` is already loaded")]
     AlreadyLoaded(Cow<'static, str>),

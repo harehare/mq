@@ -56,6 +56,7 @@ const RECOMPILE_HELP: &str = "Recompile the program from its source with this ve
 
 /// An error from compiling to or loading a `.mqc` file.
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[non_exhaustive]
 pub enum MqcError {
     #[error("not an mq bytecode file")]
     #[diagnostic(code(mq::mqc::not_mqc))]
