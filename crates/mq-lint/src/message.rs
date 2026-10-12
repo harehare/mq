@@ -11,6 +11,7 @@ use std::str::FromStr;
 
 /// Unique identifier for a lint rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum RuleId {
     UnusedVariable,
     UnusedFunction,
@@ -149,6 +150,7 @@ impl FromStr for RuleId {
 /// A diagnostic finding, carrying whatever data its rule needs to render a
 /// message and help text. Each variant corresponds to exactly one [`RuleId`].
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum LintMessage {
     UnusedVariable {
         name: String,

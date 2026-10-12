@@ -6,6 +6,7 @@ use thiserror::Error;
 /// already use (e.g. `ModuleError` for module resolution, the builtin
 /// evaluator's own error type) rather than surface it to `miette` directly.
 #[derive(Debug, Clone, PartialEq, Error)]
+#[non_exhaustive]
 pub enum IoError {
     #[error("{0} not found")]
     NotFound(Cow<'static, str>),
