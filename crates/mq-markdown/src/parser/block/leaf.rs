@@ -41,9 +41,9 @@ pub(super) struct LeafState<'a> {
     html: Option<HtmlKind>,
     /// A table that has not ended yet. Its rows cannot be continued lazily.
     table: bool,
-    /// The number of cells of the last line when it was paragraph text, which a delimiter row with as
-    /// many cells can turn into a header.
-    header: Option<usize>,
+    /// The last line when it was paragraph text, which a delimiter row with as many cells can turn
+    /// into a header.
+    header: Option<Line<'a>>,
     paragraph: bool,
     /// The text of the open paragraph when it starts like a definition, which a setext underline does
     /// not turn into a heading when there is nothing else in it.
@@ -212,8 +212,8 @@ impl<'a> LeafState<'a> {
                 }
             } else if self.paragraph
                 && !line.lazy
-                && header.is_some()
-                && table::delimiter_cells(&line) == header
+                && let Some(cells) = table::delimiter_cells(&line)
+                && header.as_ref().and_then(table::header_width) == Some(cells)
                 && !interrupts_paragraph(&line)
             {
                 self.table = true;
@@ -298,7 +298,7 @@ impl<'a> LeafState<'a> {
                 }
                 return;
             }
-            self.header = table::header_width(&line);
+            self.header = Some(line);
             if self.paragraph {
                 if let Some(text) = &mut self.definitions {
                     text.push('\n');
