@@ -1,5 +1,6 @@
 //! Shared input generation for the fuzz targets: `interpreter` feeds generated scripts
-//! through [`mq_lang::DefaultEngine`], and `mqc` loads corrupted `.mqc` files.
+//! through [`mq_lang::DefaultEngine`], `mqc` loads corrupted `.mqc` files, and `markdown` and
+//! `markdown_scaling` read and render generated Markdown and MDX.
 
 use arbitrary::Arbitrary;
 use itertools::Itertools;
@@ -174,5 +175,209 @@ pub fn load_and_run_mqc(input: &MqcInput) {
     if let Ok(program) = engine.load(&mqc) {
         let input = mq_lang::parse_markdown_input("# a\n\n## b\n").unwrap();
         let _ = engine.eval_compiled(&program, input.into_iter());
+    }
+}
+
+/// Markup that the `markdown` targets join into documents, so that they reach the block and inline
+/// rules that random bytes seldom do.
+const MARKDOWN_TOKENS: &[&str] = &[
+    "\n",
+    "\n\n",
+    "\r\n",
+    "\r",
+    " ",
+    "  ",
+    "    ",
+    "\t",
+    "  \n",
+    "\\",
+    "\0",
+    "\u{feff}",
+    "# ",
+    "###### ",
+    "> ",
+    ">",
+    "- ",
+    "* ",
+    "+ ",
+    "1. ",
+    "1) ",
+    "- [ ] ",
+    "- [x] ",
+    "---",
+    "***",
+    "___",
+    "===",
+    "+++\n",
+    "---\n",
+    "```",
+    "~~~",
+    "``",
+    "`",
+    "*",
+    "**",
+    "_",
+    "__",
+    "~",
+    "~~",
+    "[",
+    "]",
+    "](",
+    ")",
+    "![",
+    "[^1]",
+    "[^1]: ",
+    "[a]: ",
+    "<",
+    ">",
+    "</",
+    "/>",
+    "<div>",
+    "</div>",
+    "<!--",
+    "-->",
+    "<?",
+    "<![CDATA[",
+    "<script>",
+    "<a href=\"",
+    "\"",
+    "'",
+    "<https://a.b>",
+    "https://a.b",
+    "www.a.b",
+    "a@b.c",
+    "|",
+    "| --- |",
+    "| :-: |",
+    "&amp;",
+    "&#35;",
+    "&#x0;",
+    "&bogus;",
+    "$",
+    "$$",
+    "{",
+    "}",
+    "{...a}",
+    "<Foo bar={",
+    "import a from \"b\"\n",
+    "export const a = 1\n",
+    "[[",
+    "]]",
+    "![[",
+    "|",
+    "> [!NOTE]\n",
+    "> [!",
+    "#tag",
+    "^id",
+    "%%",
+    "a",
+    "b",
+    "0",
+    "é",
+    "日本語",
+];
+
+/// The longest source a generated input makes, so that repeats do not slow each run down.
+const MARKDOWN_MAX_LEN: usize = 1 << 20;
+
+#[derive(Debug, Clone, Arbitrary)]
+enum MarkdownPart {
+    Token(u8),
+    Repeat(u8, u8),
+    Text(String),
+}
+
+/// A Markdown or MDX document put together from markup tokens, repeats of one token and free text.
+#[derive(Debug, Clone, Arbitrary)]
+pub struct MarkdownInput {
+    mdx: bool,
+    frontmatter: bool,
+    parts: Vec<MarkdownPart>,
+}
+
+impl MarkdownInput {
+    fn source(&self) -> String {
+        let token = |index: u8| MARKDOWN_TOKENS[usize::from(index) % MARKDOWN_TOKENS.len()];
+        let mut source = String::new();
+        for part in &self.parts {
+            match part {
+                MarkdownPart::Token(index) => source.push_str(token(*index)),
+                MarkdownPart::Repeat(index, count) => {
+                    for _ in 0..*count {
+                        source.push_str(token(*index));
+                    }
+                }
+                MarkdownPart::Text(text) => source.push_str(text),
+            }
+            if source.len() >= MARKDOWN_MAX_LEN {
+                break;
+            }
+        }
+        source
+    }
+}
+
+/// Reads `source` and writes it as Markdown, HTML, text and JSON. A `Result::Err` from the reader is
+/// fine (MDX reports unclosed expressions and elements); a panic, an abort or a stack overflow is not.
+fn read_and_render(source: &str, mdx: bool, frontmatter: bool) {
+    use mq_markdown::{Markdown, ParseOptions};
+
+    let options = ParseOptions::default().with_frontmatter(frontmatter);
+    let _ = mq_markdown::to_html(source);
+    let parsed = if mdx {
+        Markdown::from_mdx_str_with(source, options)
+    } else {
+        Markdown::from_markdown_str_with(source, options)
+    };
+    if let Ok(markdown) = parsed {
+        let _ = markdown.to_string();
+        let _ = markdown.to_html();
+        let _ = markdown.to_text();
+        let _ = markdown.to_json();
+    }
+}
+
+/// Reads and renders the generated document.
+pub fn read_markdown(input: &MarkdownInput) {
+    read_and_render(&input.source(), input.mdx, input.frontmatter);
+}
+
+/// Fails when the time to read and render a document grows faster than its size.
+///
+/// The document, cut at `BASE_LEN` bytes, is repeated up to that length and again to four times that. Work that is linear
+/// takes four times as long, quadratic work sixteen times; the check allows `MAX_RATIO`. A run that
+/// is over is measured once more, as a single run can hit a pause.
+pub fn check_markdown_scaling(input: &MarkdownInput) {
+    use std::time::{Duration, Instant};
+
+    const BASE_LEN: usize = 16 * 1024;
+    const MAX_RATIO: u32 = 12;
+    const FLOOR: Duration = Duration::from_millis(1);
+
+    let source = input.source();
+    let end = (0..=BASE_LEN.min(source.len()))
+        .rev()
+        .find(|&end| source.is_char_boundary(end))
+        .unwrap_or(0);
+    let source = &source[..end];
+    if source.is_empty() {
+        return;
+    }
+    let base = source.repeat(BASE_LEN.div_ceil(source.len()));
+    let large = base.repeat(4);
+    let time = |text: &str| {
+        let start = Instant::now();
+        read_and_render(text, input.mdx, input.frontmatter);
+        start.elapsed()
+    };
+
+    let base_time = time(&base).min(time(&base)).max(FLOOR);
+    let allowed = base_time * MAX_RATIO;
+    if time(&large) > allowed && time(&large) > allowed {
+        panic!(
+            "time grows faster than the size: {base_time:?} for {} bytes, more than {allowed:?} for {} bytes",
+            base.len(),
+            large.len()
+        );
     }
 }

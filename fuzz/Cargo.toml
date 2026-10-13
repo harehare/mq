@@ -13,6 +13,7 @@ arbitrary = { workspace = true }
 itertools = { workspace = true }
 libfuzzer-sys = { workspace = true }
 mq-lang = { workspace = true, features = ["mqc"] }
+mq-markdown = { workspace = true, features = ["json", "obsidian"] }
 sha2 = { workspace = true }
 
 [lib]
@@ -30,4 +31,18 @@ bench = false
 doc = false
 name = "mqc"
 path = "fuzz_targets/mqc.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "markdown"
+path = "fuzz_targets/markdown.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "markdown_scaling"
+path = "fuzz_targets/markdown_scaling.rs"
 test = false
