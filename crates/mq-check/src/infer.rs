@@ -346,7 +346,6 @@ impl InferenceContext {
         std::mem::take(&mut self.errors)
     }
 
-    /// Sets the piped input type for a symbol
     /// Marks `function` as being analysed as a predicate; false when it already is (recursion).
     pub fn begin_predicate(&mut self, function: SymbolId) -> bool {
         if self.predicate_stack.contains(&function) {
@@ -411,6 +410,7 @@ impl InferenceContext {
         self.piped_sources.get(&symbol).copied()
     }
 
+    /// Sets the piped input type for a symbol
     pub fn set_piped_input(&mut self, symbol: SymbolId, ty: Type) {
         self.piped_inputs.insert(symbol, ty);
     }

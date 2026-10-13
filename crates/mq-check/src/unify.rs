@@ -4,7 +4,8 @@ use crate::TypeError;
 use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::infer::InferenceContext;
 use crate::types::{Type, TypeVarId};
-use std::collections::{BTreeMap, HashSet};
+use rustc_hash::FxHashSet;
+use std::collections::BTreeMap;
 
 /// Solves type constraints through unification
 pub fn solve_constraints(ctx: &mut InferenceContext) {
@@ -69,7 +70,7 @@ pub fn unify(
             // Transitive occurs check: ensure var doesn't occur in ty even through
             // substitution chains, preventing cyclic bindings like
             // Var(a)→Union(Var(b),T) + Var(b)→Union(Var(a),T).
-            let mut oc_visited = HashSet::new();
+            let mut oc_visited = FxHashSet::default();
             if occurs_check_transitive(ctx, var, ty, &mut oc_visited) {
                 // Binding would create an infinite type (e.g. Var(a) = Tuple(Var(a))).
                 // This arises from valid dynamic patterns like `if (is_array(x)): x else: [x]`
@@ -323,7 +324,7 @@ fn occurs_check_transitive(
     ctx: &InferenceContext,
     var: TypeVarId,
     ty: &Type,
-    visited: &mut HashSet<TypeVarId>,
+    visited: &mut FxHashSet<TypeVarId>,
 ) -> bool {
     match ty {
         Type::Var(v) => {
@@ -629,13 +630,13 @@ mod tests {
         // v1 -> v2
         ctx.bind_type_var(v1, Type::Var(v2));
 
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         // v2 occurs in v1? Yes, because v1 -> v2
         assert!(occurs_check_transitive(&ctx, v2, &Type::Var(v1), &mut visited));
 
         // Cycle: v1 -> v2, v2 -> v1
         ctx.bind_type_var(v2, Type::Var(v1));
-        let mut visited = HashSet::new();
+        let mut visited = FxHashSet::default();
         // Should not stack overflow
         assert!(occurs_check_transitive(&ctx, v1, &Type::Var(v1), &mut visited));
     }
