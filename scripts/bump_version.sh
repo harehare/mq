@@ -31,24 +31,20 @@ else
 fi
 
 export MQ_VERSION="$NEW_VERSION"
+MQ="${MQ:-mq}"
 
 echo "Bumping version: ${CURRENT_VERSION} -> ${MQ_VERSION}"
 
+# Update the workspace Cargo.toml
 tmpfile=$(mktemp)
-mq -I text --args version $MQ_VERSION 'import "bump_version" | bump_version::crates_version(version)' ../Cargo.toml > "$tmpfile"
-tmpfile2=$(mktemp)
-awk -v transformed="$tmpfile" '
-    BEGIN { while ((getline line < transformed) > 0) t[++n] = line }
-    { if ($0 == "") print ""; else print t[++i] }
-' ../Cargo.toml > "$tmpfile2" && mv "$tmpfile2" ../Cargo.toml
-rm -f "$tmpfile"
+"$MQ" -I raw --args version $MQ_VERSION 'import "bump_version" | bump_version::crates_version(self, version)' ../Cargo.toml > "$tmpfile" && mv "$tmpfile" ../Cargo.toml
 
 # Update package.json files
 for dir in ../packages ../editors; do
     for package in "$dir"/*; do
         if [ -f "$package/package.json" ]; then
             tmpfile=$(mktemp)
-            mq -I text --args version $MQ_VERSION 'import "bump_version" | bump_version::npm_version(version)' "$package/package.json" > "$tmpfile" && mv "$tmpfile" "$package/package.json"
+            "$MQ" -I raw --args version $MQ_VERSION 'import "bump_version" | bump_version::npm_version(self, version)' "$package/package.json" > "$tmpfile" && mv "$tmpfile" "$package/package.json"
         fi
     done
 done
@@ -57,15 +53,15 @@ done
 JETBRAINS_GRADLE_PROPERTIES="../editors/jetbrains/gradle.properties"
 if [ -f "$JETBRAINS_GRADLE_PROPERTIES" ]; then
     tmpfile=$(mktemp)
-    mq -I text --args version $MQ_VERSION 'import "bump_version" | bump_version::gradle_version(version)' "$JETBRAINS_GRADLE_PROPERTIES" > "$tmpfile" && mv "$tmpfile" "$JETBRAINS_GRADLE_PROPERTIES"
+    "$MQ" -I text --args version $MQ_VERSION 'import "bump_version" | bump_version::gradle_version(version)' "$JETBRAINS_GRADLE_PROPERTIES" > "$tmpfile" && mv "$tmpfile" "$JETBRAINS_GRADLE_PROPERTIES"
 fi
 
 # Update README.md with the new version
-mq -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_block_version(VERSION)' $README > README.md.tmp \
+"$MQ" -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_block_version(VERSION)' $README > README.md.tmp \
   && mv README.md.tmp $README
 
 # Update INSTALL_DOC.md with the new version
-mq -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_block_version(VERSION)' $INSTALL_DOC > INSTALL_DOC.md.tmp \
+"$MQ" -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_block_version(VERSION)' $INSTALL_DOC > INSTALL_DOC.md.tmp \
   && mv INSTALL_DOC.md.tmp $INSTALL_DOC
 
 echo "Done. Review with 'git diff', then:"
