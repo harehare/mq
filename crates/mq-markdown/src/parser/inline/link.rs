@@ -126,7 +126,10 @@ pub(super) fn close(scanner: &mut Scanner<'_>) -> bool {
     }
 
     scanner.note_depth(depth);
-    scanner.items.push(Item::Node { node, depth });
+    scanner.items.push(Item::Node {
+        node: Box::new(node),
+        depth,
+    });
     scanner.pos = end;
     scanner.run = end;
     true

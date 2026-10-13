@@ -65,9 +65,10 @@ pub(super) enum Item {
         end: usize,
         value: Value,
     },
-    /// A finished node and how deeply it nests: a leaf is 1.
+    /// A finished node and how deeply it nests: a leaf is 1. It is boxed to keep the items small, which
+    /// are moved around while delimiters are matched.
     Node {
-        node: Node,
+        node: Box<Node>,
         depth: usize,
     },
     Delim(Delim),
@@ -220,7 +221,7 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
             }
             Item::Node { node, .. } => {
                 finish(&mut current, &mut nodes);
-                nodes.push(node);
+                nodes.push(*node);
                 continue;
             }
             Item::Jsx(tag) => {
@@ -519,7 +520,13 @@ impl Scanner<'_> {
     }
 
     fn push_node(&mut self, node: Node, end: usize) {
-        self.push(Item::Node { node, depth: 1 }, end);
+        self.push(
+            Item::Node {
+                node: Box::new(node),
+                depth: 1,
+            },
+            end,
+        );
     }
 
     fn escape(&mut self) {
@@ -590,7 +597,10 @@ impl Scanner<'_> {
                 position: Some(self.context.position(start, pos + eol)),
             });
             self.note_depth(1);
-            self.items.push(Item::Node { node, depth: 1 });
+            self.items.push(Item::Node {
+                node: Box::new(node),
+                depth: 1,
+            });
         } else {
             self.items.push(Item::Text {
                 start: pos,
