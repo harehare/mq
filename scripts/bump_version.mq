@@ -8,18 +8,21 @@ def gradle_version(line, version):
 end
 
 def npm_version(text, version):
-  json::json_stringify(set(json::json_parse(text), "version", version), {indent: 2})
+  var data = json::json_parse(text)
+  | data["version"] = version
+  | json::json_stringify(data, {indent: 2})
 end
 
 # Bumps the workspace package version and every workspace dependency that points into `crates/`.
 def crates_version(text, version):
-  let data = toml::toml_parse(text)
-  | let workspace = data["workspace"]
-  | let deps = map_values(workspace["dependencies"], fn(dep):
-      if (is_dict(dep) && starts_with(get_or(dep, :path, ""), "crates/")): set(dep, "version", version) else: dep
-    end)
-  | let package = set(workspace["package"], "version", version)
-  | toml::toml_stringify(set(data, "workspace", set(set(workspace, "package", package), "dependencies", deps)))
+  var data = toml::toml_parse(text)
+  | data["workspace"]["package"]["version"] = version
+  | foreach (name, keys(data["workspace"]["dependencies"])):
+      let dep = data["workspace"]["dependencies"][name]
+      | if (is_dict(dep) && starts_with(get_or(dep, :path, ""), "crates/")):
+          data["workspace"]["dependencies"][name]["version"] = version
+    end
+  | toml::toml_stringify(data)
 end
 
 def code_block_version(line, version):
