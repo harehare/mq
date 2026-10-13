@@ -207,8 +207,7 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
     for item in items {
         let (start, end, text): (usize, usize, Cow<'_, str>) = match item {
             Item::Text { start, end, value } => match value {
-                // The backslash of an escape is not part of the position of the text it starts.
-                Value::Slice(span) => (span.start, end, Cow::Borrowed(span.of(src))),
+                Value::Slice(span) => (start, end, Cow::Borrowed(span.of(src))),
                 Value::Owned(value) => (start, end, Cow::Owned(value)),
             },
             Item::Delim(delim) => {

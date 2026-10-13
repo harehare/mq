@@ -3267,7 +3267,7 @@ text " " @1:7-1:8
 expression_text "b" @1:8-1:11
 "#
 )]
-#[case::escaped("\\<a/> \\{b}", r#"text "<a/> {b}" @1:2-1:11"#)]
+#[case::escaped("\\<a/> \\{b}", r#"text "<a/> {b}" @1:1-1:11"#)]
 #[case::attr_entities("<a b=\"&lt;&#x41;\" />", r#"jsx_flow <a b="<A"> @1:1-1:21"#)]
 #[case::attr_multiline_literal("<a b='x\ny' />", r#"jsx_flow <a b="x\ny"> @1:1-2:6"#)]
 #[case::closing_spaces(

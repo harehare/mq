@@ -154,6 +154,8 @@ fn attributes(#[case] input: &str, #[case] name: &str, #[case] expected: &str) {
 #[case::ideographic_space("あ\u{3000}い", 0, (1, 1), (1, 4))]
 #[case::table_cell("| あ | い |\n|---|---|", 0, (1, 1), (1, 5))]
 #[case::bom("\u{feff}# a", 0, (1, 1), (1, 4))]
+#[case::escape_at_the_start("\\*a", 0, (1, 1), (1, 4))]
+#[case::escape_after_text("a\\*b", 0, (1, 1), (1, 5))]
 #[case::after_footnote("a[^1]\n\n[^1]: b", 1, (1, 2), (1, 6))]
 fn positions(#[case] input: &str, #[case] index: usize, #[case] start: (usize, usize), #[case] end: (usize, usize)) {
     let nodes = parse(input);
