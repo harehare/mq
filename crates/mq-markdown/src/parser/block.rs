@@ -500,10 +500,15 @@ fn list_item(
         index += 1;
     }
 
+    // Blank lines that end an open fence are code, and not the end of the item.
+    if blanks.first().is_some_and(|blank| state.fence_holds(blank)) {
+        inner.append(&mut blanks);
+    }
+
     let checkbox = inner
         .iter()
         .position(|line| !line.is_blank())
-        .and_then(|index| task_checkbox(&inner[index], inner.get(index + 1)));
+        .and_then(|index| task_checkbox(&inner[index..]));
 
     // Trailing blank lines belong to whatever follows the item, but still extend its position.
     let reaches_end = index == lines.len();
@@ -550,7 +555,8 @@ fn list_item(
 
 /// Recognises a GFM task marker (`[ ] ` or `[x] `) at the start of an item's content, returning
 /// the checked state and the bytes to skip.
-fn task_checkbox(line: &Line<'_>, next: Option<&Line<'_>>) -> Option<bool> {
+fn task_checkbox(lines: &[Line<'_>]) -> Option<bool> {
+    let line = &lines[0];
     if !line.flavor.has_gfm() {
         return None;
     }
@@ -560,12 +566,20 @@ fn task_checkbox(line: &Line<'_>, next: Option<&Line<'_>>) -> Option<bool> {
         [b'[', b'x' | b'X', b']'] => true,
         _ => return None,
     };
-    // Whitespace follows the marker, which a line ending is when the item goes on in the next line.
+    // Whitespace follows the marker, which a line ending is when the paragraph goes on in the next line.
     match bytes.get(3) {
         Some(b' ' | b'\t') => Some(checked),
-        None if next.is_some_and(|next| !next.is_blank()) => Some(checked),
+        None if continues_paragraph(lines) => Some(checked),
         _ => None,
     }
+}
+
+/// Whether the paragraph that starts at `lines[0]` goes on in `lines[1]`, as opposed to a blank line,
+/// another block, a table or a setext underline.
+fn continues_paragraph(lines: &[Line<'_>]) -> bool {
+    lines.get(1).is_some_and(|next| {
+        !interrupts_paragraph(next) && setext_depth(next).is_none() && !table::starts_at(lines, 0, interrupts_paragraph)
+    })
 }
 
 /// Removes the checkbox from the text of the first paragraph of an item, and the paragraph when nothing

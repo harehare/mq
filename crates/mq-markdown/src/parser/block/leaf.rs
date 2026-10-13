@@ -41,8 +41,8 @@ pub(super) struct LeafState<'a> {
     html: Option<HtmlKind>,
     /// A table that has not ended yet. Its rows cannot be continued lazily.
     table: bool,
-    /// The number of cells of the last line when it was paragraph text with a pipe, which a delimiter
-    /// row with as many cells can turn into a header.
+    /// The number of cells of the last line when it was paragraph text, which a delimiter row with as
+    /// many cells can turn into a header.
     header: Option<usize>,
     paragraph: bool,
     /// The text of the open paragraph when it starts like a definition, which a setext underline does
@@ -82,6 +82,12 @@ impl<'a> LeafState<'a> {
         if !self.paragraph {
             self.definitions = None;
         }
+    }
+
+    /// Whether the blank `line` is part of the fence that is open, which a container does not end for
+    /// the blank lines that come last in it.
+    pub(super) fn fence_holds(&self, blank: &Line<'a>) -> bool {
+        self.fence.is_some() && self.strip_prefixes(*blank).0 == self.open.len()
     }
 
     /// Removes the prefixes of the open containers from `line`, and returns how many of them it has.
@@ -292,7 +298,7 @@ impl<'a> LeafState<'a> {
                 }
                 return;
             }
-            self.header = rest.contains('|').then(|| table::row_cells(&line));
+            self.header = table::header_width(&line);
             if self.paragraph {
                 if let Some(text) = &mut self.definitions {
                     text.push('\n');

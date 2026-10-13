@@ -75,10 +75,27 @@ use rstest::rstest;
     "-\n  [x] b\n",
     "<ul>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> b</li>\n</ul>\n"
 )]
-#[case::raw_html_ignores_other_closing_tags(
+#[case::raw_html_ends_at_any_raw_closing_tag(
     "<script>\n</style>\n*hello*\n</script>\n",
-    "&lt;script>\n&lt;/style>\n*hello*\n&lt;/script>\n"
+    "&lt;script>\n&lt;/style>\n<p><em>hello</em>\n&lt;/script></p>\n"
 )]
+#[case::raw_html_ends_at_pre_in_a_script(
+    "<script>\nfoo\n</pre>\n*a*\n",
+    "&lt;script>\nfoo\n</pre>\n<p><em>a</em></p>\n"
+)]
+#[case::blank_lines_in_an_unclosed_fence_keep_the_list_tight(
+    "- ```\n  a\n\n- b\n",
+    "<ul>\n<li>\n<pre><code>a\n\n</code></pre>\n</li>\n<li>b</li>\n</ul>\n"
+)]
+#[case::blank_line_in_an_unclosed_fence_is_code(
+    "- ```\n\n> a\n",
+    "<ul>\n<li>\n<pre><code>\n</code></pre>\n</li>\n</ul>\n<blockquote>\n<p>a</p>\n</blockquote>\n"
+)]
+#[case::task_before_a_fence_is_not_a_task(
+    "- [ ]\n  ```\n  c\n  ```\n",
+    "<ul>\n<li>[ ]\n<pre><code>c\n</code></pre>\n</li>\n</ul>\n"
+)]
+#[case::task_before_a_heading_is_not_a_task("- [ ]\n  # h\n", "<ul>\n<li>[ ]\n<h1>h</h1>\n</li>\n</ul>\n")]
 #[case::footnote_with_blank_line_after_marker(
     "a[^1]\n\n[^1]:\n\n    text\n",
     "<p>a<sup><a href=\"#user-content-fn-1\" id=\"user-content-fnref-1\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-1\">\n<p>text <a href=\"#user-content-fnref-1\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n"
@@ -473,6 +490,9 @@ fn mdx_jsx_flow_children_are_rendered_as_markdown(#[case] input: &str, #[case] e
 )]
 #[case::definition_then_underline_in_a_quote("> [r]: /u\n> ===\nlazy\n", "<p>===\nlazy</p>")]
 #[case::item_content_after_a_blank_line("> - a\n>\n>   b\n>   ===\nlazy\n", "<h1>b</h1>")]
+#[case::line_after_a_lone_pipe_and_a_delimiter_in_a_quote("> a\n|\n> |-|\n| - |\n", "<p>a\n|\n|-|\n| - |</p>")]
+#[case::line_after_a_table_without_header_pipe("> a\n> -|\nlazy\n", "</table>\n</blockquote>\n<p>lazy</p>")]
+#[case::line_after_a_table_with_delimiter_pipes("> a\n> |-|\nlazy\n", "</table>\n</blockquote>\n<p>lazy</p>")]
 #[case::line_lazy_for_an_inner_quote("> > q\n> a\n> ===\nlazy\n", "<p>q\na\n===\nlazy</p>")]
 fn lazy_lines_continue_the_paragraph_of_the_innermost_container(#[case] input: &str, #[case] expected: &str) {
     let html = to_html(input);

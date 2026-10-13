@@ -88,6 +88,20 @@ fn align(content: &str) -> Option<TableAlignKind> {
     })
 }
 
+/// The cells of `line` as the header row of a table.
+fn header_cells<'a>(line: &Line<'a>) -> Option<Vec<Cell<'a>>> {
+    // A lone pipe is both the leading and the trailing one of a row, which then has no cells.
+    (line.text.trim_matches([' ', '\t']) != "|").then(|| split_row(line))
+}
+
+/// The number of cells of `line` when a delimiter row with as many cells can make it a header.
+pub(super) fn header_width(line: &Line<'_>) -> Option<usize> {
+    if !line.flavor.has_gfm() {
+        return None;
+    }
+    header_cells(line).map(|cells| cells.len())
+}
+
 /// The alignments of a table that starts with `lines[start]` as its header, if it is one.
 fn header<'a>(
     lines: &[Line<'a>],
@@ -116,11 +130,7 @@ fn header<'a>(
         return None;
     }
 
-    // A lone pipe is both the leading and the trailing one of a row, which then has no cells.
-    if head.text.trim_matches([' ', '\t']) == "|" {
-        return None;
-    }
-    let cells = split_row(head);
+    let cells = header_cells(head)?;
     let aligns = split_row(delimiter)
         .iter()
         .map(|cell| align(cell.content))
@@ -194,11 +204,6 @@ pub(super) fn parse(
     }
 
     Some((items, index))
-}
-
-/// The number of cells in the row `line`.
-pub(super) fn row_cells(line: &Line<'_>) -> usize {
-    split_row(line).len()
 }
 
 /// The number of cells of `line` when it is a delimiter row such as `|:-|-:|`.

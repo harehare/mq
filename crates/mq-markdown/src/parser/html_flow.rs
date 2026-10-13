@@ -5,8 +5,8 @@ use super::scan::skip_blanks;
 /// The kind of an HTML block, which decides how it ends.
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum Kind {
-    /// `<script`, `<pre`, `<style` or `<textarea`: ends at a line with the matching closing tag.
-    Raw(&'static str),
+    /// `<script`, `<pre`, `<style` or `<textarea`: ends at a line with any of their closing tags.
+    Raw,
     /// `<!--`: ends at a line with `-->`.
     Comment,
     /// `<?`: ends at a line with `?>`.
@@ -127,11 +127,8 @@ fn tag(text: &str, closing: bool) -> Option<Kind> {
     }
     let name = text[..name_end].to_ascii_lowercase();
 
-    if !closing
-        && !self_closing
-        && let Some(raw) = RAW_NAMES.iter().find(|raw| **raw == name)
-    {
-        Some(Kind::Raw(raw))
+    if !closing && !self_closing && RAW_NAMES.contains(&name.as_str()) {
+        Some(Kind::Raw)
     } else if BLOCK_NAMES.contains(&name.as_str()) {
         // A slash has to be the start of `/>`.
         (!self_closing || after.starts_with(b"/>")).then_some(Kind::Basic)
@@ -243,7 +240,7 @@ pub(super) fn first_line_offset(kind: Kind) -> usize {
         Kind::Instruction => 1,
         Kind::Declaration => 3,
         Kind::Cdata => 9,
-        Kind::Raw(_) | Kind::Basic | Kind::Complete => 1,
+        Kind::Raw | Kind::Basic | Kind::Complete => 1,
     }
 }
 
@@ -254,19 +251,23 @@ pub(super) fn ends_in(kind: Kind, text: &str) -> bool {
         Kind::Instruction => text.contains("?>"),
         Kind::Declaration => text.contains('>'),
         Kind::Cdata => text.contains("]]>"),
-        Kind::Raw(name) => has_raw_end(text, name),
+        Kind::Raw => has_raw_end(text),
         Kind::Basic | Kind::Complete => false,
     }
 }
 
-/// Whether `text` has the closing tag of the raw element `name`, such as `</script>`.
-fn has_raw_end(text: &str, name: &str) -> bool {
+/// Whether `text` has the closing tag of any raw element, such as `</script>` or `</pre>`.
+fn has_raw_end(text: &str) -> bool {
     let bytes = text.as_bytes();
     let mut index = 0;
     while let Some(found) = text[index..].find("</") {
         let from = index + found + 2;
         let letters = bytes[from..].iter().take_while(|b| b.is_ascii_alphabetic()).count();
-        if bytes.get(from + letters) == Some(&b'>') && text[from..from + letters].eq_ignore_ascii_case(name) {
+        if bytes.get(from + letters) == Some(&b'>')
+            && RAW_NAMES
+                .iter()
+                .any(|name| text[from..from + letters].eq_ignore_ascii_case(name))
+        {
             return true;
         }
         index = from;
