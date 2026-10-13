@@ -11,7 +11,8 @@
 //! ## Error Location Reporting
 //!
 //! Type errors carry the [`mq_lang::Range`] of the offending symbol, taken from the HIR.
-//! Use [`TypeError::location`] to read it.
+//! Use [`TypeError::location`] to read it, or [`TypeError::span`] for a byte span in the
+//! source to use as a miette label.
 
 // Suppress false-positive warnings for fields used in thiserror/miette macros
 #![allow(unused_assignments)]
@@ -209,6 +210,20 @@ impl TypeError {
             | TypeError::NonExhaustiveMatch { location, .. } => *location,
             _ => None,
         }
+    }
+
+    /// Returns the byte span of the error in `source`, for use as a miette label.
+    ///
+    /// `source` must be the text the checked HIR was built from.
+    pub fn span(&self, source: &str) -> Option<miette::SourceSpan> {
+        let range = self.location()?;
+        let offset = |position: &mq_lang::Position| {
+            miette::SourceOffset::from_location(source, position.line as usize, position.column).offset()
+        };
+        let start = offset(&range.start);
+        let end = offset(&range.end).max(start);
+
+        Some(miette::SourceSpan::new(start.into(), end - start))
     }
 }
 
@@ -589,6 +604,41 @@ mod tests {
     #[case(TypeError::TypeVarNotFound("a".into()), None)]
     fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<mq_lang::Range>) {
         assert_eq!(err.location(), expected);
+    }
+
+    #[rstest]
+    #[case::first_line("1 + \"a\"", 1, 5, 1, 8, 4, 3)]
+    #[case::later_line("let x = 1\n| x + \"a\"", 2, 7, 2, 10, 16, 3)]
+    #[case::multibyte("\"あい\" + 1", 1, 8, 1, 9, 11, 1)]
+    fn test_type_error_span(
+        #[case] source: &str,
+        #[case] start_line: u32,
+        #[case] start_column: usize,
+        #[case] end_line: u32,
+        #[case] end_column: usize,
+        #[case] offset: usize,
+        #[case] len: usize,
+    ) {
+        let err = TypeError::UndefinedSymbol {
+            name: "x".into(),
+            location: Some(mq_lang::Range {
+                start: mq_lang::Position {
+                    line: start_line,
+                    column: start_column,
+                },
+                end: mq_lang::Position {
+                    line: end_line,
+                    column: end_column,
+                },
+            }),
+        };
+        let span = err.span(source).unwrap();
+        assert_eq!((span.offset(), span.len()), (offset, len));
+    }
+
+    #[test]
+    fn test_type_error_span_without_location() {
+        assert!(TypeError::TypeVarNotFound("a".into()).span("1").is_none());
     }
 
     #[test]
