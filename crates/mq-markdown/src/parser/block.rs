@@ -12,12 +12,13 @@ use super::inline;
 use super::line::{Indent, Line, split_lines, tab_stops};
 use super::mdx_flow::{FlowOutcome, absorbed_until, blocks_lazy_continuation, probe_mdx_flow};
 use super::table;
+mod collect;
 mod leaf;
 mod rule;
 
 use super::tree::{Block, FootnoteBlock, InlineBlock, InlineKind, InlineSource, Item, ListBlock, QuoteBlock};
 use crate::node::{HeadingDepth, Html, ListMarker, Node, Point, Position, Toml, Yaml};
-use leaf::LeafState;
+use collect::Collector;
 use rule::{BlockRule, Cx, Rules, fallback};
 
 /// Lines indented by this many columns or more are code, not other blocks.
@@ -206,23 +207,19 @@ fn blockquote(
     interrupting: Interrupt,
     blocks: &mut Vec<Block>,
 ) -> usize {
-    let mut inner = Vec::new();
-    let mut state = LeafState::new(interrupting, depth);
+    let mut collector = Collector::new(depth, interrupting);
     let mut index = start;
 
     while let Some(line) = lines.get(index) {
-        let stripped = match strip_blockquote(*line) {
-            Some(stripped) => stripped,
+        match strip_blockquote(*line) {
+            Some(stripped) => collector.push(stripped),
             // Lazy continuation of a paragraph.
-            None if state.continues_with(line) && !blocks_lazy_continuation(lines, index) => {
-                Line { lazy: true, ..*line }
-            }
+            None if collector.lazy(lines, index) => {}
             None => break,
-        };
-        state.feed(&stripped);
-        inner.push(stripped);
+        }
         index += 1;
     }
+    let inner = collector.lines;
 
     let children = parse_blocks(&inner, depth + 1, interrupting);
     let mut end = inner.last().map_or_else(|| lines[start].end(), Line::end);
@@ -471,46 +468,34 @@ fn list_item(
     interrupting: Interrupt,
 ) -> (Item, usize) {
     let first = marker.content(lines[start]);
-    let mut inner = vec![first];
-    let mut state = LeafState::new(interrupting, depth);
-    state.feed(&first);
-    let mut blanks = Vec::new();
+    let mut collector = Collector::new(depth, interrupting);
+    collector.push(first);
     let mut last_blank_has_whitespace = false;
     let mut index = start + 1;
 
     while let Some(line) = lines.get(index) {
         if line.is_blank() {
             // An item that starts with a blank line cannot continue after another one.
-            if first.is_blank() && inner.len() == 1 {
+            if first.is_blank() && collector.lines.len() == 1 {
                 break;
             }
             last_blank_has_whitespace = !line.text.is_empty();
-            blanks.push(line.skip_columns(marker.width));
+            collector.blank(line.skip_columns(marker.width));
         } else if line.lazy {
-            state.feed(line);
-            inner.push(*line);
+            collector.push(*line);
         } else if line.indent().columns >= marker.width {
-            for blank in &blanks {
-                state.feed(blank);
-            }
-            inner.append(&mut blanks);
-            let stripped = line.skip_columns(marker.width);
-            state.feed(&stripped);
-            inner.push(stripped);
-        } else if blanks.is_empty() && state.continues_with(line) && !blocks_lazy_continuation(lines, index) {
-            let lazy = Line { lazy: true, ..*line };
-            state.feed(&lazy);
-            inner.push(lazy);
-        } else {
+            collector.push(line.skip_columns(marker.width));
+        } else if !collector.lazy(lines, index) {
             break;
         }
         index += 1;
     }
-
-    // Blank lines that end an open fence are code, and not the end of the item.
-    if blanks.first().is_some_and(|blank| state.fence_holds(blank)) {
-        inner.append(&mut blanks);
-    }
+    collector.keep_fence_blanks();
+    let Collector {
+        lines: mut inner,
+        blanks,
+        ..
+    } = collector;
 
     let checkbox = inner
         .iter()
@@ -882,33 +867,23 @@ fn footnote(
     interrupting: Interrupt,
     blocks: &mut Vec<Block>,
 ) -> usize {
-    let first = lines[start].skip(marker.content);
-    let mut inner = vec![first];
-    let mut state = LeafState::new(interrupting, depth);
-    state.feed(&first);
-    let mut blanks = Vec::new();
+    let mut collector = Collector::new(depth, interrupting);
+    collector.push(lines[start].skip(marker.content));
     let mut index = start + 1;
 
     while let Some(line) = lines.get(index) {
         if line.is_blank() {
-            blanks.push(line.skip(line.text.len()));
+            collector.blank(line.skip(line.text.len()));
         } else if line.indent().columns >= FOOTNOTE_INDENT {
-            for blank in &blanks {
-                state.feed(blank);
-            }
-            inner.append(&mut blanks);
-            let stripped = line.skip_columns(FOOTNOTE_INDENT);
-            state.feed(&stripped);
-            inner.push(stripped);
-        } else if blanks.is_empty() && state.continues_with(line) && !blocks_lazy_continuation(lines, index) {
-            let lazy = Line { lazy: true, ..*line };
-            state.feed(&lazy);
-            inner.push(lazy);
-        } else {
+            collector.push(line.skip_columns(FOOTNOTE_INDENT));
+        } else if !collector.lazy(lines, index) {
             break;
         }
         index += 1;
     }
+    let Collector {
+        lines: inner, blanks, ..
+    } = collector;
 
     // Trailing blank lines belong to whatever follows, but still extend the position.
     index -= blanks.len();
