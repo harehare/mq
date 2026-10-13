@@ -590,6 +590,15 @@ mod tests {
     #[case::dash_rule_under_text_stays_a_rule("Foo\n--- -\n", 2, "Foo\n\n---\n")]
     #[case::dash_rule_under_emphasis_stays_a_rule("*Foo*\n- - -\n", 2, "*Foo*\n\n---\n")]
     #[case::star_rule_under_text_needs_no_blank_line("Foo\n***\n", 2, "Foo\n***\n")]
+    #[cfg_attr(
+        feature = "wikilink",
+        case::dash_rule_under_wikilink_stays_a_rule("[[note]]\n- - -\n", 2, "[[note]]\n\n---\n")
+    )]
+    #[cfg_attr(
+        feature = "embed",
+        case::dash_rule_under_embed_stays_a_rule("![[note]]\n- - -\n", 2, "![[note]]\n\n---\n")
+    )]
+    #[case::dash_rule_under_inline_html_stays_a_rule("<b>x</b>\n- - -\n", 4, "<b>x</b>\n\n---\n")]
     // items whose marker sits alone on its own line must stay tight, not go loose
     #[case::list_tight_despite_marker_on_own_line("-\n  foo\n-\n  bar", 2, "- foo\n- bar\n")]
     // an empty task item must not take the paragraph after it
@@ -642,6 +651,8 @@ mod tests {
         1,
         "<Chart color=\"#fcb32c\" year={year} />\n"
     )]
+    #[case::dash_rule_under_text_expression("a {b}\n- - -\n", 3, "a {b}\n\n---\n")]
+    #[case::dash_rule_under_jsx_text("a <b />\n- - -\n", 3, "a <b />\n\n---\n")]
     fn test_markdown_from_mdx_str(#[case] input: &str, #[case] expected_nodes: usize, #[case] expected_output: &str) {
         let md = Markdown::from_mdx_str(input).unwrap();
         assert_eq!(md.nodes.len(), expected_nodes);

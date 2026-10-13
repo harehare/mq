@@ -1685,6 +1685,9 @@ impl Node {
                 | Self::Image(_)
                 | Self::ImageRef(_)
                 | Self::FootnoteRef(_)
+                | Self::Html(_)
+                | Self::MdxJsxTextElement(_)
+                | Self::MdxTextExpression(_)
         )
     }
 
