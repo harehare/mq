@@ -47,6 +47,10 @@ pub type Result<T> = std::result::Result<T, TypeError>;
 pub struct TypeEnv(FxHashMap<SymbolId, TypeScheme>);
 
 impl TypeEnv {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self(FxHashMap::with_capacity_and_hasher(capacity, Default::default()))
+    }
+
     pub fn insert(&mut self, symbol_id: SymbolId, scheme: TypeScheme) {
         self.0.insert(symbol_id, scheme);
     }
@@ -335,6 +339,7 @@ impl TypeChecker {
         if let Some(input_type) = &self.options.input_type {
             ctx.set_input_type(input_type.clone());
         }
+        ctx.reserve(hir.symbols().count());
 
         builtin::register_all(&mut ctx);
         laps.lap("register_builtins");

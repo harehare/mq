@@ -315,6 +315,12 @@ impl InferenceContext {
         }
     }
 
+    /// Reserves room for the types and constraints of `symbols` symbols.
+    pub fn reserve(&mut self, symbols: usize) {
+        self.symbol_types.reserve(symbols);
+        self.constraints.reserve(symbols);
+    }
+
     /// Returns whether strict array mode is enabled
     pub fn strict_array(&self) -> bool {
         self.strict_array
@@ -797,7 +803,7 @@ impl InferenceContext {
 
     /// Finalizes inference and returns symbol type schemes
     pub fn finalize(self) -> TypeEnv {
-        let mut result = TypeEnv::default();
+        let mut result = TypeEnv::with_capacity(self.symbol_types.len());
 
         for (symbol, ty) in &self.symbol_types {
             let resolved = self.resolve_type(ty);
