@@ -67,7 +67,8 @@ env = ["RUST_BACKTRACE=1"]
 ```bash
 cargo build --release -p mq-run --bin mq
 cargo build --release -p mq-run --bin mq-dbg --features="debugger"
-cargo build --release -p mq-lsp -p mq-crawler -p mq-test
+cargo build --release -p mq-lsp
+cargo build --release -p mq-crawler -p mq-test
 cargo build --release -p mq-check --features="cli"
 cargo build --release -p mq-lint --features="cli"
 cargo build --release -p mq-formatter
@@ -85,7 +86,8 @@ env = ["RUST_BACKTRACE=1"]
 ```bash
 cargo build --release --target $MX_PARAM_TARGET -p mq-run --bin mq
 cargo build --release --target $MX_PARAM_TARGET -p mq-run --bin mq-dbg --features="debugger"
-cargo build --release --target $MX_PARAM_TARGET -p mq-lsp -p mq-crawler -p mq-test
+cargo build --release --target $MX_PARAM_TARGET -p mq-lsp
+cargo build --release --target $MX_PARAM_TARGET -p mq-crawler -p mq-test
 cargo build --release --target $MX_PARAM_TARGET -p mq-check --features="cli"
 cargo build --release --target $MX_PARAM_TARGET -p mq-lint --features="cli"
 cargo build --release --target $MX_PARAM_TARGET -p mq-formatter

@@ -126,7 +126,6 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
                 ctx.add_error(TypeError::UndefinedField {
                     field: access.field_name.clone(),
                     record_ty: var_ty.display_renumbered(),
-                    span: access.range.as_ref().map(unify::range_to_span),
                     location: access.range,
                 });
             }
@@ -172,7 +171,6 @@ pub(crate) fn resolve_deferred_call_return_accesses(ctx: &mut InferenceContext) 
                     ctx.add_error(TypeError::UndefinedField {
                         field: access.field_name.clone(),
                         record_ty: return_ty.display_renumbered(),
-                        span: access.range.as_ref().map(unify::range_to_span),
                         location: access.range,
                     });
                 }
@@ -239,7 +237,6 @@ pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) -> boo
                 SelectorOutput::MissingAttr(attr) => ctx.add_error(TypeError::UndefinedAttribute {
                     attr,
                     node_ty: resolved.display_renumbered(),
-                    span: access.range.as_ref().map(unify::range_to_span),
                     location: access.range,
                 }),
             }
@@ -255,7 +252,6 @@ pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) -> boo
                 ctx.add_error(TypeError::UndefinedField {
                     field: access.field_name.clone(),
                     record_ty: resolved.display_renumbered(),
-                    span: access.range.as_ref().map(unify::range_to_span),
                     location: access.range,
                 });
             }
@@ -785,7 +781,6 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                                 ctx.add_error(TypeError::NullablePropagation {
                                     op: d.op_name.to_string(),
                                     nullable_arg: nullable_args.join(", "),
-                                    span: d.range.as_ref().map(unify::range_to_span),
                                     location: d.range,
                                     context: Some(
                                         "guard with `if x != none: ...` to avoid `none` propagation".to_string(),
@@ -805,7 +800,6 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         ctx.add_error(TypeError::UnificationError {
                             left: format!("`{}` cannot be applied to all members of ({})", d.op_name, args_str),
                             right: format!("`{}` does not support `{}`", bad_member.display_renumbered(), d.op_name),
-                            span: d.range.as_ref().map(unify::range_to_span),
                             location: d.range,
                             context: Some(format!(
                                 "consider narrowing the type with `if is_{}(x): ...` before using `{}`",
@@ -830,7 +824,6 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         ctx.add_error(TypeError::UnificationError {
                             left: format!("`{}` with arguments ({})", d.op_name, args_str),
                             right: "union members return inconsistent types".to_string(),
-                            span: d.range.as_ref().map(unify::range_to_span),
                             location: d.range,
                             context: None,
                         });
@@ -1040,7 +1033,6 @@ pub(crate) fn resolve_attr_calls(ctx: &mut InferenceContext) -> bool {
             None => ctx.add_error(TypeError::UndefinedAttribute {
                 attr: call.attr_name.clone(),
                 node_ty: types::Type::Node(kinds).display_renumbered(),
-                span: call.range.as_ref().map(unify::range_to_span),
                 location: call.range,
             }),
         }

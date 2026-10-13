@@ -205,6 +205,35 @@ fn new_hir(no_builtins: bool) -> Hir {
     hir
 }
 
+/// Whether `code` holds only blank lines and `#` comments.
+///
+/// The recovery parser reports an error for a program without expressions, which is valid here.
+fn is_expression_free(code: &str) -> bool {
+    code.lines().all(|line| {
+        let line = line.trim_start_matches([' ', '\t', '\r']);
+        line.is_empty() || line.starts_with('#')
+    })
+}
+
+/// Parses `code` into `hir`, returning its source id and parse errors.
+///
+/// `Hir::add_code` drops parse errors, so the source is parsed here and added as nodes.
+fn load_source(
+    hir: &mut Hir,
+    source_url: Option<Url>,
+    code: &str,
+) -> (mq_hir::SourceId, Vec<(String, mq_lang::Range)>) {
+    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let url = source_url.unwrap_or_else(|| Url::parse("file:///").unwrap());
+    let (source_id, _) = hir.add_nodes(url, &nodes);
+    let errors = if is_expression_free(code) {
+        Vec::new()
+    } else {
+        errors.error_ranges(code)
+    };
+    (source_id, errors)
+}
+
 /// Runs syntax and type checks on a single source, returning every diagnostic found.
 /// Type checking is skipped when syntax errors are present, matching the text report's behavior.
 fn collect_check_diagnostics(
@@ -214,9 +243,9 @@ fn collect_check_diagnostics(
     type_checker_options: &TypeCheckerOptions,
 ) -> Vec<format::CheckDiagnostic> {
     let mut hir = new_hir(no_builtins);
-    let (source_id, _) = hir.add_code(source_url, code);
+    let (source_id, parse_errors) = load_source(&mut hir, source_url, code);
 
-    let mut diagnostics = format::syntax_diagnostics(&hir, source_id);
+    let mut diagnostics = format::syntax_diagnostics(&hir, source_id, &parse_errors);
     let has_syntax_errors = diagnostics.iter().any(|d| d.severity == format::Severity::Error);
 
     if !has_syntax_errors {
@@ -231,13 +260,13 @@ fn collect_check_diagnostics(
 /// Runs syntax and type checks on a single source, returns `true` if any errors were found.
 fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &CheckOptions<'_>) -> io::Result<bool> {
     let mut hir = new_hir(opts.no_builtins);
-    let (source_id, _) = hir.add_code(source_url, code);
+    let (source_id, parse_errors) = load_source(&mut hir, source_url, code);
 
     if let Some(lbl) = opts.label {
         writeln!(w, "{} {}", "──".dimmed(), lbl.bold())?;
     }
 
-    let syntax_errors = check_syntax(w, &hir, source_id)?;
+    let syntax_errors = check_syntax(w, &format::syntax_diagnostics(&hir, source_id, &parse_errors))?;
     if syntax_errors {
         return Ok(true);
     }
@@ -245,46 +274,28 @@ fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &Ch
     check_type(w, code, &hir, opts.show_types, &opts.type_checker_options)
 }
 
-/// Checks HIR for syntax errors/warnings in `source_id` and writes them in a unified format.
-/// Diagnostics of the modules the source includes or imports are not reported.
-/// Returns `true` if any errors or warnings were found.
-fn check_syntax(w: &mut impl Write, hir: &mq_hir::Hir, source_id: mq_hir::SourceId) -> io::Result<bool> {
-    let errors: Vec<(String, mq_lang::Range)> = hir
-        .errors()
-        .iter()
-        .filter(|error| format::hir_error_symbol(error).source.source_id == Some(source_id))
-        .map(|error| (error.to_string(), format::hir_error_range(error)))
-        .collect();
-    let warnings: Vec<(String, mq_lang::Range)> = hir
-        .warnings()
-        .iter()
-        .filter(|warning| format::hir_warning_symbol(warning).source.source_id == Some(source_id))
-        .map(|warning| (warning.to_string(), format::hir_warning_range(warning)))
-        .collect();
-
-    if errors.is_empty() && warnings.is_empty() {
+/// Writes syntax errors and warnings in a unified format.
+/// Returns `true` if any errors were found.
+fn check_syntax(w: &mut impl Write, diagnostics: &[format::CheckDiagnostic]) -> io::Result<bool> {
+    if diagnostics.is_empty() {
         return Ok(false);
     }
 
-    for (message, range) in &errors {
-        writeln!(
-            w,
-            "  {} {} {} {}",
-            format!("{}:{}", range.start.line, range.start.column).dimmed(),
-            "│".dimmed(),
-            "error:".bright_red().bold(),
-            message.white(),
-        )?;
-    }
+    let (errors, warnings): (Vec<_>, Vec<_>) = diagnostics.iter().partition(|d| d.severity == format::Severity::Error);
 
-    for (message, range) in &warnings {
+    for (label, diagnostic) in errors
+        .iter()
+        .map(|d| ("error:".bright_red().bold(), d))
+        .chain(warnings.iter().map(|d| ("warning:".bright_yellow().bold(), d)))
+    {
+        let range = diagnostic.range.unwrap_or_default();
         writeln!(
             w,
             "  {} {} {} {}",
             format!("{}:{}", range.start.line, range.start.column).dimmed(),
             "│".dimmed(),
-            "warning:".bright_yellow().bold(),
-            message.white(),
+            label,
+            diagnostic.message.white(),
         )?;
     }
 
@@ -650,6 +661,61 @@ mod tests {
         // Calling it must not be read as a bracket access (`slice`) on a variable.
         let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
         assert!(diagnostics.is_empty(), "{code}: {diagnostics:?}");
+    }
+
+    #[rstest]
+    #[case::unclosed_paren("if (")]
+    #[case::missing_value("let x = | x")]
+    #[case::bad_parameter_list("def f(: 1;")]
+    fn test_syntax_errors_are_reported_and_skip_type_checking(#[case] code: &str) {
+        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        assert!(!diagnostics.is_empty(), "{code}");
+        assert!(
+            diagnostics
+                .iter()
+                .all(|d| d.code == "mq::syntax" && d.severity == format::Severity::Error),
+            "{code}: {diagnostics:?}"
+        );
+
+        let mut out = Vec::new();
+        let opts = CheckOptions {
+            show_types: false,
+            label: None,
+            no_builtins: false,
+            type_checker_options: TypeCheckerOptions::default(),
+        };
+        assert!(check_file(&mut out, code, None, &opts).unwrap());
+        assert!(String::from_utf8(out).unwrap().contains("syntax error"));
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank_lines("\n  \n\t\n")]
+    #[case::comment("# only a comment")]
+    #[case::comments_and_blanks("# a\n\n  # b\n")]
+    fn test_expression_free_source_has_no_errors(#[case] code: &str) {
+        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        assert!(diagnostics.is_empty(), "{code:?}: {diagnostics:?}");
+
+        let mut out = Vec::new();
+        let opts = CheckOptions {
+            show_types: false,
+            label: None,
+            no_builtins: false,
+            type_checker_options: TypeCheckerOptions::default(),
+        };
+        assert!(!check_file(&mut out, code, None, &opts).unwrap());
+    }
+
+    #[rstest]
+    #[case::unclosed_string("\"abc")]
+    #[case::comment_then_incomplete("# c\nif (")]
+    fn test_syntax_errors_after_comments_are_still_reported(#[case] code: &str) {
+        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        assert!(
+            !diagnostics.is_empty() && diagnostics.iter().all(|d| d.code == "mq::syntax"),
+            "{code:?}: {diagnostics:?}"
+        );
     }
 
     #[test]

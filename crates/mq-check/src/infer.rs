@@ -2,7 +2,7 @@
 
 use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
-use crate::{TypeEnv, TypeError, unify};
+use crate::{TypeEnv, TypeError};
 use mq_hir::SymbolId;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -315,6 +315,12 @@ impl InferenceContext {
         }
     }
 
+    /// Reserves room for the types and constraints of `symbols` symbols.
+    pub fn reserve(&mut self, symbols: usize) {
+        self.symbol_types.reserve(symbols);
+        self.constraints.reserve(symbols);
+    }
+
     /// Returns whether strict array mode is enabled
     pub fn strict_array(&self) -> bool {
         self.strict_array
@@ -346,7 +352,6 @@ impl InferenceContext {
         std::mem::take(&mut self.errors)
     }
 
-    /// Sets the piped input type for a symbol
     /// Marks `function` as being analysed as a predicate; false when it already is (recursion).
     pub fn begin_predicate(&mut self, function: SymbolId) -> bool {
         if self.predicate_stack.contains(&function) {
@@ -411,6 +416,7 @@ impl InferenceContext {
         self.piped_sources.get(&symbol).copied()
     }
 
+    /// Sets the piped input type for a symbol
     pub fn set_piped_input(&mut self, symbol: SymbolId, ty: Type) {
         self.piped_inputs.insert(symbol, ty);
     }
@@ -539,7 +545,6 @@ impl InferenceContext {
         self.add_error(TypeError::Mismatch {
             expected: resolved_t1.display_renumbered(),
             found: resolved_t2.display_renumbered(),
-            span: range.as_ref().map(unify::range_to_span),
             location: range,
             context: origin.to_context_string(),
         });
@@ -584,7 +589,6 @@ impl InferenceContext {
         self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),
             right: "no matching overload".to_string(),
-            span: range.as_ref().map(unify::range_to_span),
             location: range,
             context,
         });
@@ -799,7 +803,7 @@ impl InferenceContext {
 
     /// Finalizes inference and returns symbol type schemes
     pub fn finalize(self) -> TypeEnv {
-        let mut result = TypeEnv::default();
+        let mut result = TypeEnv::with_capacity(self.symbol_types.len());
 
         for (symbol, ty) in &self.symbol_types {
             let resolved = self.resolve_type(ty);

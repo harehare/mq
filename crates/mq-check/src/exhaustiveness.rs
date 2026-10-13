@@ -29,7 +29,6 @@ use crate::infer::InferenceContext;
 use crate::kind_set::KindSet;
 use crate::narrowing::type_name_to_type;
 use crate::types::Type;
-use crate::unify::range_to_span;
 
 /// What a single pattern accepts.
 #[derive(Debug, Clone, PartialEq)]
@@ -325,7 +324,6 @@ pub(crate) fn check_match_exhaustiveness(
             let range = hir.symbol(match_id).and_then(|s| s.source.text_range);
             errors.push(TypeError::NonExhaustiveMatch {
                 missing: missing.clone(),
-                span: range.as_ref().map(range_to_span),
                 location: range,
                 context: Some(format!(
                     "add a wildcard arm `| _: ...` or cover the missing case(s): {missing}"

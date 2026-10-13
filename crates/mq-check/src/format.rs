@@ -49,23 +49,37 @@ pub(crate) enum OutputFormat {
     Sarif,
 }
 
-/// Returns the syntax errors and warnings that `hir` reports for `source_id` as
-/// [`CheckDiagnostic`]s.
+/// Returns the parse errors of the source and the syntax errors and warnings that `hir` reports
+/// for `source_id` as [`CheckDiagnostic`]s.
 ///
 /// `hir` also holds the modules the source includes or imports. Their diagnostics are
 /// positions in other files, so reporting them against `source_id` would be misleading.
-pub(crate) fn syntax_diagnostics(hir: &Hir, source_id: SourceId) -> Vec<CheckDiagnostic> {
-    let mut diagnostics: Vec<CheckDiagnostic> = hir
-        .errors()
+pub(crate) fn syntax_diagnostics(
+    hir: &Hir,
+    source_id: SourceId,
+    parse_errors: &[(String, mq_lang::Range)],
+) -> Vec<CheckDiagnostic> {
+    let mut diagnostics: Vec<CheckDiagnostic> = parse_errors
         .iter()
-        .filter(|error| hir_error_symbol(error).source.source_id == Some(source_id))
-        .map(|error| CheckDiagnostic {
+        .map(|(message, range)| CheckDiagnostic {
             severity: Severity::Error,
-            code: hir_error_code(error),
-            message: error.to_string(),
-            range: Some(hir_error_range(error)),
+            code: "mq::syntax",
+            message: message.clone(),
+            range: Some(*range),
         })
         .collect();
+
+    diagnostics.extend(
+        hir.errors()
+            .iter()
+            .filter(|error| hir_error_symbol(error).source.source_id == Some(source_id))
+            .map(|error| CheckDiagnostic {
+                severity: Severity::Error,
+                code: hir_error_code(error),
+                message: error.to_string(),
+                range: Some(hir_error_range(error)),
+            }),
+    );
 
     diagnostics.extend(
         hir.warnings()
@@ -91,7 +105,7 @@ fn hir_error_code(error: &HirError) -> &'static str {
     }
 }
 
-pub(crate) fn hir_error_symbol(error: &HirError) -> &Symbol {
+fn hir_error_symbol(error: &HirError) -> &Symbol {
     match error {
         HirError::UnresolvedSymbol { symbol, .. }
         | HirError::ModuleNotFound { symbol, .. }
@@ -99,7 +113,7 @@ pub(crate) fn hir_error_symbol(error: &HirError) -> &Symbol {
     }
 }
 
-pub(crate) fn hir_error_range(error: &HirError) -> mq_lang::Range {
+fn hir_error_range(error: &HirError) -> mq_lang::Range {
     hir_error_symbol(error).source.text_range.unwrap_or_default()
 }
 
@@ -110,13 +124,13 @@ fn hir_warning_code(warning: &HirWarning) -> &'static str {
     }
 }
 
-pub(crate) fn hir_warning_symbol(warning: &HirWarning) -> &Symbol {
+fn hir_warning_symbol(warning: &HirWarning) -> &Symbol {
     match warning {
         HirWarning::UnreachableCode { symbol } => symbol,
     }
 }
 
-pub(crate) fn hir_warning_range(warning: &HirWarning) -> mq_lang::Range {
+fn hir_warning_range(warning: &HirWarning) -> mq_lang::Range {
     hir_warning_symbol(warning).source.text_range.unwrap_or_default()
 }
 
