@@ -60,6 +60,16 @@ impl fmt::Display for Markdown {
     }
 }
 
+/// The line where the block before a node ends. An item that ends in a fence without a closing one
+/// ends at the start of the line after it, which is not yet a line of its own.
+fn last_line(position: &Position, node: Option<&Node>) -> usize {
+    if matches!(node, Some(Node::List(_))) && position.end.column == 1 && position.end.line > position.start.line {
+        position.end.line - 1
+    } else {
+        position.end.line
+    }
+}
+
 impl Markdown {
     pub fn new(nodes: Vec<Node>) -> Self {
         Self {
@@ -104,6 +114,8 @@ impl Markdown {
         let mut buffer = String::with_capacity(nodes.len() * 50);
 
         for (i, node) in nodes.iter().enumerate() {
+            let prev_node = i.checked_sub(1).and_then(|j| nodes.get(j));
+
             if let Node::TableCell(TableCell {
                 row, column, values, ..
             }) = node
@@ -133,14 +145,14 @@ impl Markdown {
                             // Insert newlines before the first row of a table
                             let mut new_line_count = pre_position
                                 .as_ref()
-                                .map(|p| pos.start.line.saturating_sub(p.end.line))
+                                .map(|p| pos.start.line.saturating_sub(last_line(p, prev_node)))
                                 .unwrap_or_else(|| if is_first { 0 } else { 1 })
                                 .min(2);
                             // A footnote ends where the next line starts, and a single newline after a
                             // block quote reads back as lazy continuation: a table needs a blank line.
                             if new_line_count < 2
                                 && i > 0
-                                && matches!(nodes[i - 1], Node::Footnote(_) | Node::Blockquote(_))
+                                && matches!(prev_node, Some(Node::Footnote(_) | Node::Blockquote(_)))
                             {
                                 new_line_count = 2;
                             }
@@ -190,8 +202,6 @@ impl Markdown {
             current_table = None;
             in_table = false;
 
-            let prev_node = i.checked_sub(1).and_then(|j| nodes.get(j));
-
             let value = if let Node::List(list) = node
                 && is_continuation(i)
             {
@@ -221,7 +231,7 @@ impl Markdown {
                 .render_with_theme(&self.options, theme)
             } else {
                 list_indent_stack.clear();
-                render_before(node, nodes.get(i + 1), &self.options, theme)
+                render_before(node, &nodes[..i], nodes.get(i + 1), &self.options, theme)
             };
 
             if value.is_empty() || value == "\n" {
@@ -232,7 +242,7 @@ impl Markdown {
             if let Some(pos) = node.position() {
                 let mut new_line_count = pre_position
                     .as_ref()
-                    .map(|p| pos.start.line.saturating_sub(p.end.line))
+                    .map(|p| pos.start.line.saturating_sub(last_line(p, prev_node)))
                     .unwrap_or_else(|| if is_first { 0 } else { 1 })
                     .min(2);
 
@@ -585,6 +595,15 @@ mod tests {
     // an empty task item must not take the paragraph after it
     #[case::empty_task_item_then_paragraph("- [ ] \n\npara", 2, "- [ ] \n\npara\n")]
     #[case::empty_checked_ordered_task_item_then_paragraph("1. [x] \n\npara", 2, "1. [x] \n\npara\n")]
+    // a fence that is not closed ends with its item, and what follows needs a line of its own
+    #[case::quote_after_an_unclosed_fence_in_an_item("- ```\n  a\n> q\n", 2, "- ```\n  a\n  ```\n> q\n")]
+    // emphasis next to emphasis, or nested at its edge, keeps its own run of delimiters
+    #[case::adjacent_emphasis("_*_*] x*_", 3, "*\\**_\\] x_\\_\n")]
+    #[case::emphasis_in_emphasis_at_an_edge("***a*b*", 2, "\\*_*a*b_\n")]
+    #[case::emphasis_after_emphasis_after_a_nested_one("\\**_*a***b**)", 4, "\\*_\\_*a*_*b*\\*)\n")]
+    #[case::strong_after_emphasis("*a*__b__", 2, "*a*__b__\n")]
+    #[case::emphasis_nested_three_deep("***a***", 1, "***a***\n")]
+    #[case::reference_then_colon_is_not_a_definition("[x] a\n\n[x]: /u", 3, "[x] a\n\n[x]: /u\n")]
     // an indented code block right after a list must not read back as list continuation
     #[case::code_after_list_uses_fence(" -    one\n\n     two", 2, "- one\n\n```\n two\n```\n")]
     // a block quote nested in a list item needs its continuation line's own indent

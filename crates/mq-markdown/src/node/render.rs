@@ -174,14 +174,7 @@ impl Node {
                 format!("{}~~{}~~{}", ds, render_values(values, options, theme), de)
             }
             Self::Emphasis(Emphasis { values, .. }) => {
-                // A lone nested Emphasis child needs the other delimiter, or adjacent
-                // `*` `*` pairs fuse into `**` and reparse as Strong instead.
-                let delim = if matches!(values.as_slice(), [Self::Emphasis(_)]) {
-                    "_"
-                } else {
-                    "*"
-                };
-                render_emphasis(values, delim, options, theme)
+                render_emphasis(values, emphasis_delimiter(values), options, theme)
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
                 format!(
@@ -439,29 +432,7 @@ impl Node {
                 format!("{{{}}}", indent_expression(&mdx_text_expression.value))
             }
             Self::MdxJsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
-            Self::Strong(Strong { values, .. }) => {
-                let (ss, se) = &theme.strong;
-                let last = values.len().saturating_sub(1);
-                let content = values
-                    .iter()
-                    .enumerate()
-                    .map(|(index, value)| match value {
-                        // Emphasis at an end uses the other delimiter, or `*` and `**` fuse into `***`.
-                        // An underscore does not open or close next to a letter or digit, so those keep `*`.
-                        Self::Emphasis(Emphasis { values: inner, .. })
-                            if (index == 0 || index == last)
-                                && !index
-                                    .checked_sub(1)
-                                    .is_some_and(|before| ends_with_word_char(&values[before]))
-                                && !values.get(index + 1).is_some_and(starts_with_word_char) =>
-                        {
-                            render_emphasis(inner, "_", options, theme)
-                        }
-                        value => value.render_with_theme(options, theme),
-                    })
-                    .collect::<String>();
-                format!("{}**{}**{}", ss, content, se)
-            }
+            Self::Strong(Strong { values, .. }) => render_strong(values, "**", options, theme),
             Self::Yaml(Yaml { value, .. }) => {
                 let (fs, fe) = &theme.frontmatter;
                 format!("{}---\n{}\n---{}", fs, value, fe)
@@ -604,6 +575,48 @@ fn indent_continuation(content: &str, width: usize) -> String {
     result
 }
 
+/// The delimiter of emphasis around `values`. Emphasis nested at an edge takes the other one, or the
+/// two runs fuse into `**` and read back as strong emphasis.
+fn emphasis_delimiter(values: &[Node]) -> &'static str {
+    let edge = [values.first(), values.last()]
+        .into_iter()
+        .flatten()
+        .find_map(|node| match node {
+            Node::Emphasis(Emphasis { values, .. }) => Some(values),
+            _ => None,
+        });
+    match edge.map(|inner| emphasis_delimiter(inner)) {
+        Some("_") => "*",
+        Some(_) => "_",
+        None => "*",
+    }
+}
+
+/// Renders strong emphasis around `values` with the delimiter `delim`.
+fn render_strong(values: &[Node], delim: &str, options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
+    let (ss, se) = &theme.strong;
+    let last = values.len().saturating_sub(1);
+    let content = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| match value {
+            // Emphasis at an end uses the other delimiter, or `*` and `**` fuse into `***`.
+            // An underscore does not open or close next to a letter or digit, so those keep `*`.
+            Node::Emphasis(Emphasis { values: inner, .. })
+                if (index == 0 || index == last)
+                    && !index
+                        .checked_sub(1)
+                        .is_some_and(|before| ends_with_word_char(&values[before]))
+                    && !values.get(index + 1).is_some_and(starts_with_word_char) =>
+            {
+                render_emphasis(inner, "_", options, theme)
+            }
+            value => value.render_with_theme(options, theme),
+        })
+        .collect::<String>();
+    format!("{ss}{delim}{content}{delim}{se}")
+}
+
 fn render_emphasis(values: &[Node], delim: &str, options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
     let (es, ee) = &theme.emphasis;
     format!("{es}{delim}{}{delim}{ee}", render_values(values, options, theme))
@@ -638,10 +651,37 @@ fn starts_with_word_char(node: &Node) -> bool {
 /// Renders `value`, escaping a `!` that ends its text when `next` starts a link, which would make an image.
 pub(crate) fn render_before(
     value: &Node,
+    before: &[Node],
     next: Option<&Node>,
     options: &RenderOptions,
     theme: &ColorTheme<'_>,
 ) -> String {
+    // Emphasis right after other emphasis takes the other delimiter, or the two fuse into one run.
+    if let Node::Emphasis(Emphasis { values, .. }) = value
+        && let Some((prev, earlier)) = before.split_last()
+        && matches!(prev, Node::Emphasis(_) | Node::Strong(_))
+        && !matches!(values.first(), Some(Node::Emphasis(_)))
+        && !matches!(values.last(), Some(Node::Emphasis(_)))
+        && !next.is_some_and(starts_with_word_char)
+    {
+        let delim = if render_before(prev, earlier, Some(value), options, theme).ends_with('_') {
+            "*"
+        } else {
+            "_"
+        };
+        return render_emphasis(values, delim, options, theme);
+    }
+    // Strong right after emphasis that ends in `*` takes `__`, or the runs of `*` fuse.
+    if let Node::Strong(Strong { values, .. }) = value
+        && let Some((prev, earlier)) = before.split_last()
+        && matches!(prev, Node::Emphasis(_) | Node::Strong(_))
+        && !next.is_some_and(starts_with_word_char)
+        && render_before(prev, earlier, Some(value), options, theme).ends_with('*')
+    {
+        return render_strong(values, "__", options, theme);
+    }
+    // A reference followed by a colon at the start of a line would read back as a definition.
+    let after_reference = matches!(before.last(), Some(Node::LinkRef(_) | Node::FootnoteRef(_)));
     let mut rendered = value.render_with_theme(options, theme);
     let starts_link = match next {
         Some(Node::Link(_) | Node::LinkRef(_)) => true,
@@ -649,6 +689,9 @@ pub(crate) fn render_before(
         Some(Node::WikiLink(_)) => true,
         _ => false,
     };
+    if after_reference && matches!(value, Node::Text(_)) && rendered.starts_with(':') {
+        rendered.insert(0, '\\');
+    }
     if starts_link && matches!(value, Node::Text(Text { position: Some(_), .. })) && rendered.ends_with('!') {
         rendered.insert(rendered.len() - 1, '\\');
     }
@@ -661,7 +704,7 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let rendered = || render_before(value, values.get(index + 1), options, theme);
+            let rendered = || render_before(value, &values[..index], values.get(index + 1), options, theme);
             if let Some(pos) = value.position() {
                 let new_line_count = pre_position
                     .as_ref()
@@ -717,7 +760,7 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
             render_table_run(values, index, options, theme)
         } else {
             (
-                render_before(first, values.get(index + 1), options, theme),
+                render_before(first, &values[..index], values.get(index + 1), options, theme),
                 first.position(),
                 index + 1,
             )
