@@ -159,7 +159,7 @@ pub(super) fn parse(source: &InlineSource, doc: Document<'_>) -> Result<Vec<Node
     };
     let mut scanner = Scanner {
         context: &context,
-        items: Vec::new(),
+        items: Vec::with_capacity(source.text.len() / 12 + 4),
         openers: Vec::new(),
         depths: Vec::new(),
         inactive_below: 0,
@@ -190,7 +190,7 @@ pub(super) fn to_nodes(items: Vec<Item>, context: &Context<'_>) -> Vec<Node> {
     } else {
         items
     };
-    let mut nodes = Vec::new();
+    let mut nodes = Vec::with_capacity(items.len());
     // Elements that are open, with the nodes that came before them.
     let mut open: Vec<(TextTag, Vec<Node>)> = Vec::new();
     let mut current: Option<(usize, usize, String)> = None;

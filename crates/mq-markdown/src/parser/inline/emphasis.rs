@@ -108,7 +108,9 @@ impl Slots {
     /// Moves `items` into a list.
     fn new(items: &mut Vec<Item>) -> Self {
         let total = items.len();
-        let mut slots = Vec::with_capacity(total + 1);
+        // Every pair of delimiters that match adds the slot of its node.
+        let delimiters = items.iter().filter(|item| matches!(item, Item::Delim(_))).count();
+        let mut slots = Vec::with_capacity(total + delimiters / 2 + 1);
         slots.push(Slot {
             item: None,
             prev: Self::HEAD,

@@ -68,6 +68,13 @@ impl Frames {
         }
     }
 
+    fn extend(&mut self, nodes: Vec<Node>) {
+        match self.open.last_mut() {
+            Some((_, children)) => children.extend(nodes),
+            None => self.root.extend(nodes),
+        }
+    }
+
     fn tag(&mut self, tag: JsxTag) -> Result<(), MdxError> {
         match tag.kind {
             TagKind::Open if self.open.len() >= MAX_NESTING => {
@@ -128,13 +135,13 @@ fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Resu
             Block::Inline(block) => {
                 let mut out = Vec::new();
                 inline_block(block, doc, &mut out)?;
-                out.into_iter().for_each(|node| frames.push(node));
+                frames.extend(out);
             }
             Block::Quote(quote) => frames.push(quote_node(quote, doc)?),
             Block::List(list) => {
                 let mut out = Vec::new();
                 list_nodes(list, 0, doc, &mut out)?;
-                out.into_iter().for_each(|node| frames.push(node));
+                frames.extend(out);
             }
             Block::Footnote(footnote) => {
                 let mut values = Vec::new();
