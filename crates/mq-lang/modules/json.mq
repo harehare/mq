@@ -32,7 +32,56 @@ def json_try_parse(input):
   catch(e): {ok: false, value: None, error: {message: e["message"]}}
 end
 
+def _json_escape_control_char(code):
+  if (code < 32):
+    "\\u00" + slice("0123456789abcdef", code / 16, code / 16 + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
+  else:
+    implode([code])
+end
+
+def _json_escape_common(str):
+  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t") | replace("\r", "\\r")
+end
+
+def _json_escape_string(str):
+  let escaped = _json_escape_common(str)
+  | if (test(escaped, "[\\x00-\\x1f]")): join(map(explode(escaped), _json_escape_control_char), "") else: escaped
+end
+
+# Joins already-serialized members, one per line when `indent` is positive.
+def _json_wrap(open, close, items, indent, depth):
+  if (indent <= 0):
+    open + join(items, ", ") + close
+  elif (is_empty(items)):
+    open + close
+  else:
+    do
+      let inner = "\n" + repeat(" ", indent * (depth + 1))
+      | open + inner + join(items, "," + inner) + "\n" + repeat(" ", indent * depth) + close
+    end
+end
+
+def _json_stringify(data, indent, depth):
+  if (is_string(data)):
+    "\"" + _json_escape_string(data) + "\""
+  elif (is_number(data)):
+    # JSON has no inf/NaN; emit null like JSON.stringify does.
+    if (in(["inf", "-inf", "NaN"], to_string(data))): "null" else: to_string(data)
+  elif (is_bool(data)):
+    to_string(data)
+  elif (is_none(data)):
+    "null"
+  elif (is_array(data)):
+    _json_wrap("[", "]", map(data, fn(v): _json_stringify(v, indent, depth + 1);), indent, depth)
+  elif (is_dict(data)):
+    _json_wrap("{", "}", map(entries(data), fn(e): "\"" + _json_escape_string(first(e)) + "\": " + _json_stringify(last(e), indent, depth + 1);), indent, depth)
+  else:
+    to_string(data)
+end
+
 # Serializes a value to a JSON string.
+#
+# `options.indent` is the number of spaces per nesting level; the default 0 keeps everything on one line.
 #
 # Example:
 # ```
@@ -44,54 +93,19 @@ end
 # import "json" | json::json_stringify({"a": "he said \"hi\"\nbye"})
 # #=> {"a": "he said \"hi\"\nbye"}
 # ```
+# Example:
+# ```
+# import "json" | json::json_stringify({"a": [1]}, {indent: 2})
+# #=> {
+#   "a": [
+#     1
+#   ]
+# }
+# ```
 #
 # Returns: string
-def json_stringify(data):
-  def _escape_control_char(code):
-    if (code < 32):
-      "\\u00" + slice("0123456789abcdef", code / 16, code / 16 + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
-    else:
-      implode([code])
-  end
-
-  def _escape_common(str):
-    replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t") | replace("\r", "\\r")
-  end
-
-  def _escape_string(str):
-    let escaped = _escape_common(str)
-    | if (test(escaped, "[\\x00-\\x1f]")): join(map(explode(escaped), _escape_control_char), "") else: escaped
-  end
-
-  def _format_json_stringify(data):
-    "\"" + _escape_string(data) + "\""
-  end
-
-  def _json_array_stringify(data):
-    "[" + join(map(data, json_stringify), ", ") + "]"
-  end
-
-  def _json_object_stringify(data):
-    "{" + join(
-      map(entries(data),
-        fn(entry): "\"" + _escape_string(first(entry)) + "\": " + json_stringify(last(entry));), ", ") + "}"
-  end
-
-  | if (is_string(data)):
-      _format_json_stringify(data)
-    elif (is_number(data)):
-      # JSON has no inf/NaN; emit null like JSON.stringify does.
-      if (in(["inf", "-inf", "NaN"], to_string(data))): "null" else: to_string(data)
-    elif (is_bool(data)):
-      to_string(data)
-    elif (is_none(data)):
-      "null"
-    elif (is_array(data)):
-      _json_array_stringify(data)
-    elif (is_dict(data)):
-      _json_object_stringify(data)
-    else:
-      to_string(data)
+def json_stringify(data, options = {}):
+  _json_stringify(data, get_or(options, :indent, 0), 0)
 end
 
 # Splits a JSON Pointer (RFC 6901) into its unescaped reference tokens.
