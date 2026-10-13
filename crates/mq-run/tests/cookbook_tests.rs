@@ -1150,7 +1150,7 @@ fn cookbook_read_toml_values() {
     ]);
     assert_eq!(
         table.trim(),
-        "| Key | Value |\n| --- | --- |\n| clap | {\"features\": [\"derive\"], \"version\": \"4.5\"} |\n| miette | 7 |\n| serde | 1.0 |"
+        "| Key | Value |\n| --- | --- |\n| serde | 1.0 |\n| clap | {\"version\": \"4.5\", \"features\": [\"derive\"]} |\n| miette | 7 |"
     );
 
     let version = run(&[
