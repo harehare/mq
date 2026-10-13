@@ -205,6 +205,16 @@ fn new_hir(no_builtins: bool) -> Hir {
     hir
 }
 
+/// Whether `code` holds only blank lines and `#` comments.
+///
+/// The recovery parser reports an error for a program without expressions, which is valid here.
+fn is_expression_free(code: &str) -> bool {
+    code.lines().all(|line| {
+        let line = line.trim_start_matches([' ', '\t', '\r']);
+        line.is_empty() || line.starts_with('#')
+    })
+}
+
 /// Parses `code` into `hir`, returning its source id and parse errors.
 ///
 /// `Hir::add_code` drops parse errors, so the source is parsed here and added as nodes.
@@ -216,7 +226,12 @@ fn load_source(
     let (nodes, errors) = mq_lang::parse_recovery(code);
     let url = source_url.unwrap_or_else(|| Url::parse("file:///").unwrap());
     let (source_id, _) = hir.add_nodes(url, &nodes);
-    (source_id, errors.error_ranges(code))
+    let errors = if is_expression_free(code) {
+        Vec::new()
+    } else {
+        errors.error_ranges(code)
+    };
+    (source_id, errors)
 }
 
 /// Runs syntax and type checks on a single source, returning every diagnostic found.
@@ -671,6 +686,36 @@ mod tests {
         };
         assert!(check_file(&mut out, code, None, &opts).unwrap());
         assert!(String::from_utf8(out).unwrap().contains("syntax error"));
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank_lines("\n  \n\t\n")]
+    #[case::comment("# only a comment")]
+    #[case::comments_and_blanks("# a\n\n  # b\n")]
+    fn test_expression_free_source_has_no_errors(#[case] code: &str) {
+        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        assert!(diagnostics.is_empty(), "{code:?}: {diagnostics:?}");
+
+        let mut out = Vec::new();
+        let opts = CheckOptions {
+            show_types: false,
+            label: None,
+            no_builtins: false,
+            type_checker_options: TypeCheckerOptions::default(),
+        };
+        assert!(!check_file(&mut out, code, None, &opts).unwrap());
+    }
+
+    #[rstest]
+    #[case::unclosed_string("\"abc")]
+    #[case::comment_then_incomplete("# c\nif (")]
+    fn test_syntax_errors_after_comments_are_still_reported(#[case] code: &str) {
+        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        assert!(
+            !diagnostics.is_empty() && diagnostics.iter().all(|d| d.code == "mq::syntax"),
+            "{code:?}: {diagnostics:?}"
+        );
     }
 
     #[test]
