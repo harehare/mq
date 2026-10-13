@@ -35,7 +35,7 @@ version = "0.9.3"
 mq-check = {path = "crates/mq-check", version = "0.9.3"}
 mq-test = {path = "crates/mq-test", version = "0.9.3"}
 mq-dap = {path = "crates/mq-dap", version = "0.9.3"}
-mq-formatter = {path = "crates/mq-formatter", version = "0.9.3"}
+mq-formatter = {path = "crates/mq-formatter", version = "0.9.3", default-features = false}
 mq-help = {path = "crates/mq-help", version = "0.9.3", default-features = false}
 mq-hir = {path = "crates/mq-hir", version = "0.9.3"}
 mq-lang = {path = "crates/mq-lang", version = "0.9.3"}
