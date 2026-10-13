@@ -45,6 +45,44 @@ fn embed_doc() -> String {
         .collect()
 }
 
+fn ascii_prose_doc() -> String {
+    (0..500)
+        .map(|i| format!("# Heading {i}\n\nSome *emphasis*, **strong** text with `code` and a [link](https://example.com/{i}) in paragraph {i}.\n\n- item *a*\n- item **b**\n\n"))
+        .collect()
+}
+
+fn japanese_prose_doc() -> String {
+    (0..500)
+        .map(|i| format!("# 見出し {i}\n\n日本語の *強調* や **太字** を含む文章と `コード`、[リンク](https://example.com/{i}) を段落 {i} に入れます。\n\n- 項目 *あ*\n- 項目 **い**\n\n"))
+        .collect()
+}
+
+/// One very long line, so that a position near its end is far from the start of the line.
+fn japanese_long_line_doc() -> String {
+    (0..3000)
+        .map(|i| format!("語{i}は *強調* と `コード` です。"))
+        .collect::<String>()
+        + "\n"
+}
+
+#[divan::bench(name = "parse/ascii_prose")]
+fn parse_ascii_prose(bencher: divan::Bencher) {
+    let doc = ascii_prose_doc();
+    bencher.bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
+}
+
+#[divan::bench(name = "parse/japanese_prose")]
+fn parse_japanese_prose(bencher: divan::Bencher) {
+    let doc = japanese_prose_doc();
+    bencher.bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
+}
+
+#[divan::bench(name = "parse/japanese_long_line")]
+fn parse_japanese_long_line(bencher: divan::Bencher) {
+    let doc = japanese_long_line_doc();
+    bencher.bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
+}
+
 fn table_doc() -> String {
     let rows = (0..100)
         .map(|i| format!("| Item {i} | {} | テーブル {i} |\n", i * 10))

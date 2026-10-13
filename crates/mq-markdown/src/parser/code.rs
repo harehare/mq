@@ -87,7 +87,7 @@ pub(super) fn fenced_code(
     });
 
     let position = Some(Position {
-        start: lines[start].content_point(indent),
+        start: lines[start].point(indent),
         end,
     });
     let mut value = String::with_capacity(body.iter().map(|(pad, text, eol)| pad + text.len() + eol.len()).sum());

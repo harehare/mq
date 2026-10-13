@@ -28,6 +28,9 @@ pub(super) struct Line<'a> {
     pub(super) lazy: bool,
     /// The tabs of the line, to compute columns without scanning the line again.
     pub(super) stops: &'a [TabStop],
+    /// The whole line without its terminator, whatever a container removed from `text`, to turn byte
+    /// offsets into columns.
+    pub(super) whole: &'a str,
     /// Byte offset of the line in the document, to compare with `stops`.
     pub(super) base: usize,
     /// Columns left over from a tab that a container consumed only in part. They count as leading
@@ -94,30 +97,13 @@ impl<'a> Line<'a> {
         self.text.bytes().all(|b| matches!(b, b' ' | b'\t'))
     }
 
-    /// The position of the byte at `byte` in `text`. Columns are in bytes, except that a tab advances
-    /// to the next multiple of four, as mdast positions count them.
+    /// The position of the byte at `byte` in `text`. Columns are in UTF-16 code units, and a tab is one.
     pub(super) fn point(&self, byte: usize) -> Point {
         let offset = self.column + byte;
-        let mut column = self.visual_column(offset) + 1;
-        // Whitespace at the start of a line inside a tab starts before the end of that tab, content
-        // starts where that tab ends.
-        if byte == 0 {
-            column -= self.pad;
-        }
         Point {
             line: self.number,
-            column,
+            column: offset - extra_bytes(&self.whole.as_bytes()[..offset.min(self.whole.len())]) + 1,
         }
-    }
-
-    /// Like [`Line::point`] for content that mdast places where the rest of a tab ends, instead
-    /// of before it: paragraphs and fences.
-    pub(super) fn content_point(&self, byte: usize) -> Point {
-        let mut point = self.point(byte);
-        if byte == 0 {
-            point.column += self.pad;
-        }
-        point
     }
 
     /// The same line with the first `bytes` bytes removed.
@@ -204,6 +190,17 @@ pub(super) fn tab_stops(src: &str) -> Vec<TabStop> {
     stops
 }
 
+/// How many of `bytes`, which are whole characters, are more than UTF-16 code units: each continuation
+/// byte is one, except that a character of four bytes is two code units.
+pub(super) fn extra_bytes(bytes: &[u8]) -> usize {
+    let (mut continuation, mut astral) = (0, 0);
+    for &byte in bytes {
+        continuation += usize::from(byte & 0xC0 == 0x80);
+        astral += usize::from(byte >= 0xF0);
+    }
+    continuation - astral
+}
+
 /// The `Line::others` of `text`.
 fn last_others(text: &str) -> [usize; 3] {
     let mut last = [0; 3];
@@ -253,6 +250,7 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
             item_end: false,
             lazy: false,
             stops: take_stops(end),
+            whole: &src[start..end],
             base: start,
             pad: 0,
             flavor,
@@ -271,6 +269,7 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
             item_end: false,
             lazy: false,
             stops: take_stops(src.len()),
+            whole: &src[start..],
             base: start,
             pad: 0,
             flavor,

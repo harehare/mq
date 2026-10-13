@@ -240,8 +240,8 @@ impl fmt::Display for MdxDiagnostic {
 
 impl std::error::Error for MdxDiagnostic {}
 
-/// The byte offset of `point` in `content`, where columns count bytes and a tab goes to the next
-/// multiple of four, as the positions of nodes do.
+/// The byte offset of `point` in `content`, where columns count UTF-16 code units, as the positions of
+/// nodes do.
 fn offset_of(content: &str, point: &Point) -> Option<usize> {
     let mut start = 0;
     for _ in 1..point.line {
@@ -256,11 +256,7 @@ fn offset_of(content: &str, point: &Point) -> Option<usize> {
         if column + 1 >= point.column {
             return Some(start + index);
         }
-        column = if char == '\t' {
-            (column / 4 + 1) * 4
-        } else {
-            column + char.len_utf8()
-        };
+        column += char.len_utf16();
     }
     Some(start + line.len())
 }
@@ -274,8 +270,9 @@ mod tests {
     #[case::first("abc", 1, 2, Some(1))]
     #[case::second_line("a\nbc", 2, 2, Some(3))]
     #[case::crlf("a\r\nbc", 2, 1, Some(3))]
-    #[case::tab("\tx", 1, 5, Some(1))]
-    #[case::multibyte("éx", 1, 3, Some(2))]
+    #[case::tab("\tx", 1, 2, Some(1))]
+    #[case::multibyte("éx", 1, 2, Some(2))]
+    #[case::astral("😀x", 1, 3, Some(4))]
     #[case::end_of_line("ab\ncd", 1, 3, Some(2))]
     #[case::missing_line("ab", 3, 1, None)]
     fn offset_of_point(

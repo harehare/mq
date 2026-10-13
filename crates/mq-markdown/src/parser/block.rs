@@ -43,7 +43,14 @@ pub(super) fn parse(src: &str, flavor: Flavor, read_frontmatter: bool) -> Vec<Bl
     let mut lines = split_lines(src, flavor, &stops);
     // A byte order mark at the start of the document is not content.
     if let Some(first) = lines.first_mut().filter(|line| line.text.starts_with('\u{feff}')) {
-        *first = first.skip('\u{feff}'.len_utf8());
+        let mark = '\u{feff}'.len_utf8();
+        // Columns start after it.
+        *first = Line {
+            text: &first.text[mark..],
+            whole: &first.whole[mark..],
+            base: first.base + mark,
+            ..*first
+        };
     }
     match read_frontmatter.then(|| frontmatter(&lines)).flatten() {
         Some((node, next)) => {
@@ -818,13 +825,7 @@ fn paragraph_source(lines: &[Line<'_>]) -> InlineSource {
         } else {
             text
         };
-        let offset = offset_in(line.text, text);
-        let point = if index == 0 {
-            line.content_point(offset)
-        } else {
-            line.point(offset)
-        };
-        (text, line.eol, point)
+        (text, line.eol, line.point(offset_in(line.text, text)))
     }))
 }
 

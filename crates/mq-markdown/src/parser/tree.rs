@@ -4,6 +4,7 @@
 //! it runs in [`super::resolve`] once all blocks are known.
 
 use super::error::MdxError;
+use super::line::extra_bytes;
 use super::mdx::TagKind;
 use super::scan::eol_len;
 use crate::node::{HeadingDepth, ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
@@ -23,9 +24,11 @@ pub(super) struct InlineSource {
     pub(super) lines: Vec<LineStart>,
     /// Whether this is the content of a table cell, where `\|` in code stands for `|`.
     pub(super) table: bool,
-    /// The tabs in `text` and the document column right after each, which make columns differ from
-    /// byte offsets.
-    tabs: Vec<(usize, usize)>,
+    /// For each line, how many bytes of `text` before it are more than code units. Empty for ASCII.
+    line_extra: Vec<usize>,
+    /// An offset in `text` and how many bytes before it are more than code units: positions are mostly
+    /// asked for in order, or near each other.
+    cursor: std::cell::Cell<(usize, usize)>,
 }
 
 impl InlineSource {
@@ -45,32 +48,43 @@ impl InlineSource {
             }
         }
         let mut source = Self {
-            tabs: Vec::new(),
             text,
             lines: starts,
             table: false,
+            line_extra: Vec::new(),
+            cursor: std::cell::Cell::new((0, 0)),
         };
-        source.index_tabs();
+        source.index_lines();
         source
     }
 
-    /// Finds the tabs of every line and the column after them.
-    fn index_tabs(&mut self) {
-        self.tabs.clear();
-        if !self.text.contains('\t') {
+    /// Finds how far each line is in code units from its offset in bytes.
+    fn index_lines(&mut self) {
+        self.line_extra.clear();
+        self.cursor.set((0, 0));
+        if self.text.is_ascii() {
             return;
         }
-        for (index, line) in self.lines.iter().enumerate() {
-            let end = self.lines.get(index + 1).map_or(self.text.len(), |next| next.offset);
-            // The offset and the zero-based column right after the last tab or line start.
-            let (mut anchor, mut anchor_column) = (line.offset, line.point.column - 1);
-            for (at, _) in self.text[line.offset..end].match_indices('\t') {
-                let at = line.offset + at;
-                let after = ((anchor_column + (at - anchor)) / 4 + 1) * 4;
-                self.tabs.push((at, after));
-                (anchor, anchor_column) = (at + 1, after);
-            }
+        let mut extra = 0;
+        let mut from = 0;
+        for line in &self.lines {
+            extra += extra_bytes(&self.text.as_bytes()[from..line.offset]);
+            from = line.offset;
+            self.line_extra.push(extra);
         }
+    }
+
+    /// How many bytes of `text` before `offset` are more than UTF-16 code units.
+    fn extra_before(&self, offset: usize) -> usize {
+        let bytes = self.text.as_bytes();
+        let (at, extra) = self.cursor.get();
+        let extra = if offset >= at {
+            extra + extra_bytes(&bytes[at..offset])
+        } else {
+            extra - extra_bytes(&bytes[offset..at])
+        };
+        self.cursor.set((offset, extra));
+        extra
     }
 
     /// Removes the first `marker` bytes and the one space, tab or line ending that follows them, and the
@@ -116,7 +130,7 @@ impl InlineSource {
             point: line.point.clone(),
         });
         self.lines = std::iter::once(first).chain(rest).collect();
-        self.index_tabs();
+        self.index_lines();
     }
 
     /// The index of the line that `offset` is on.
@@ -141,15 +155,15 @@ impl InlineSource {
 
     /// The position of the byte at `offset` in `text`.
     pub(super) fn point(&self, offset: usize) -> Point {
-        let LineStart { offset: start, point } = &self.lines[self.line_index(offset)];
-        let passed = self.tabs.partition_point(|&(at, _)| at < offset);
-        let column = match passed.checked_sub(1).map(|index| self.tabs[index]) {
-            Some((at, after)) if at >= *start => after + (offset - at - 1) + 1,
-            _ => point.column + (offset - start),
+        let index = self.line_index(offset);
+        let LineStart { offset: start, point } = &self.lines[index];
+        let extra = match self.line_extra.get(index) {
+            Some(before) => self.extra_before(offset) - before,
+            None => 0,
         };
         Point {
             line: point.line,
-            column,
+            column: point.column + (offset - start) - extra,
         }
     }
 }

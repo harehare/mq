@@ -1076,7 +1076,9 @@ pub struct Position {
     serde(rename_all = "camelCase")
 )]
 pub struct Point {
+    /// The one-based line.
     pub line: usize,
+    /// The one-based column, counted in UTF-16 code units. A tab is one column.
     pub column: usize,
 }
 

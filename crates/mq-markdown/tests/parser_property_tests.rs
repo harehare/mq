@@ -99,7 +99,19 @@ fn byte_offset(input: &str, line: usize, column: usize) -> Option<usize> {
         current += 1;
         start = index;
     }
-    Some(start + column - 1)
+    // Columns count UTF-16 code units. An offset inside a character is returned as such.
+    let target = column - 1;
+    let mut units = 0;
+    for (offset, char) in input[start..].char_indices() {
+        if matches!(char, '\n' | '\r') || units >= target {
+            return Some(start + offset + target.saturating_sub(units).min(usize::from(units < target)));
+        }
+        units += char.len_utf16();
+        if units > target {
+            return Some(start + offset + 1);
+        }
+    }
+    Some(input.len())
 }
 
 fn walk(nodes: Vec<Node>) -> Vec<Node> {

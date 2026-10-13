@@ -238,7 +238,7 @@ fn tree(nodes: &[Node]) -> String {
 #[case::paragraph_no_eol("hello", "<p>hello</p>", r#"text "hello" @1:1-1:6"#)]
 #[case::paragraph_multiline("a\nb\nc\n", "<p>a\nb\nc</p>\n", r#"text "a\nb\nc" @1:1-3:2"#)]
 #[case::paragraph_indented_continuation("a\n    b\n", "<p>a\nb</p>\n", r#"text "a\nb" @1:1-2:6"#)]
-#[case::paragraph_trailing_space("あい\n  うえ  \n", "<p>あい\nうえ</p>\n", r#"text "あい\nうえ" @1:1-2:9"#)]
+#[case::paragraph_trailing_space("あい\n  うえ  \n", "<p>あい\nうえ</p>\n", r#"text "あい\nうえ" @1:1-2:5"#)]
 #[case::two_paragraphs(
     "a\n\nb\n",
     "<p>a</p>\n<p>b</p>\n",
@@ -312,8 +312,8 @@ heading 2 @1:1-1:16
     "# あ h #\n",
     "<h1>あ h</h1>\n",
     r#"
-heading 1 @1:1-1:10
-  text "あ h" @1:3-1:8
+heading 1 @1:1-1:8
+  text "あ h" @1:3-1:6
 "#
 )]
 #[case::atx_interrupts_paragraph(
@@ -503,8 +503,8 @@ hr marker='-' @2:1-2:4
     "> あ\n> い\n",
     "<blockquote>\n<p>あ\nい</p>\n</blockquote>\n",
     r#"
-blockquote @1:1-2:6
-  text "あ\nい" @1:3-2:6
+blockquote @1:1-2:4
+  text "あ\nい" @1:3-2:4
 "#
 )]
 #[case::bullet(
@@ -804,10 +804,10 @@ list level=0 index=0 marker=- @1:3-3:6
     "- あ\n- い\n",
     "<ul>\n<li>あ</li>\n<li>い</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:3-1:6
-  text "あ" @1:3-1:6
-list level=0 index=1 marker=- @2:3-2:6
-  text "い" @2:3-2:6
+list level=0 index=0 marker=- @1:3-1:4
+  text "あ" @1:3-1:4
+list level=0 index=1 marker=- @2:3-2:4
+  text "い" @2:3-2:4
 "#
 )]
 #[case::list_after_paragraph_blank(
@@ -1150,15 +1150,15 @@ cell 1:1 @3:5-3:8
     "| あ | い |\n|---|---|\n| う | え |\n",
     "<table>\n<thead>\n<tr>\n<th>あ</th>\n<th>い</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>う</td>\n<td>え</td>\n</tr>\n</tbody>\n</table>\n",
     r#"
-cell 0:0 @1:1-1:7
-  text "あ" @1:3-1:6
-cell 0:1 @1:7-1:14
-  text "い" @1:9-1:12
+cell 0:0 @1:1-1:5
+  text "あ" @1:3-1:4
+cell 0:1 @1:5-1:10
+  text "い" @1:7-1:8
 align none,none @2:1-2:1
-cell 1:0 @3:1-3:7
-  text "う" @3:3-3:6
-cell 1:1 @3:7-3:14
-  text "え" @3:9-3:12
+cell 1:0 @3:1-3:5
+  text "う" @3:3-3:4
+cell 1:1 @3:5-3:10
+  text "え" @3:7-3:8
 "#
 )]
 #[case::not_table_setext(
@@ -1508,14 +1508,14 @@ align none,none @2:1-2:1
     "あ*い*う `え` [お](か)",
     "<p>あ<em>い</em>う <code>え</code> <a href=\"%E3%81%8B\">お</a></p>",
     r#"
-text "あ" @1:1-1:4
-emphasis @1:4-1:9
-  text "い" @1:5-1:8
-text "う " @1:9-1:13
-code_inline "え" @1:13-1:18
-text " " @1:18-1:19
-link "か" @1:19-1:29
-  text "お" @1:20-1:23
+text "あ" @1:1-1:2
+emphasis @1:2-1:5
+  text "い" @1:3-1:4
+text "う " @1:5-1:7
+code_inline "え" @1:7-1:10
+text " " @1:10-1:11
+link "か" @1:11-1:17
+  text "お" @1:12-1:13
 "#
 )]
 #[case::inline_crlf_break(
@@ -2428,10 +2428,10 @@ align none,center @2:1-2:1
     r#"
 list level=0 index=0 marker=- @1:3-1:4
   text "a" @1:3-1:4
-list level=1 index=0 marker=- @2:7-2:8
-  text "b" @2:7-2:8
-list level=2 index=0 marker=- @3:11-3:12
-  text "c" @3:11-3:12
+list level=1 index=0 marker=- @2:4-2:5
+  text "b" @2:4-2:5
+list level=2 index=0 marker=- @3:5-3:6
+  text "c" @3:5-3:6
 "#
 )]
 #[case::tab_nested_ordered(
@@ -2440,41 +2440,41 @@ list level=2 index=0 marker=- @3:11-3:12
     r#"
 list level=0 index=0 ordered start=1 marker=. @1:4-1:5
   text "a" @1:4-1:5
-list level=1 index=0 ordered start=1 marker=. @2:8-2:9
-  text "b" @2:8-2:9
-list level=2 index=0 ordered start=1 marker=. @3:12-3:13
-  text "c" @3:12-3:13
+list level=1 index=0 ordered start=1 marker=. @2:5-2:6
+  text "b" @2:5-2:6
+list level=2 index=0 ordered start=1 marker=. @3:6-3:7
+  text "c" @3:6-3:7
 "#
 )]
 #[case::tab_list_code(
     "- a\n\n\t\tcode\n",
     "<ul>\n<li>\n<p>a</p>\n<pre><code>  code\n</code></pre>\n</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:3-3:13
+list level=0 index=0 marker=- @1:3-3:7
   text "a" @1:3-1:4
-  code "  code" @3:3-3:13
+  code "  code" @3:2-3:7
 "#
 )]
 #[case::tab_in_text(
     "a\tb\t*c*\n",
     "<p>a\tb\t<em>c</em></p>\n",
     r#"
-text "a\tb\t" @1:1-1:9
-emphasis @1:9-1:12
-  text "c" @1:10-1:11
+text "a\tb\t" @1:1-1:5
+emphasis @1:5-1:8
+  text "c" @1:6-1:7
 "#
 )]
 #[case::tab_code_block(
     "\tcode\n\t\tmore\n",
     "<pre><code>code\n\tmore\n</code></pre>\n",
-    r#"code "code\n\tmore" @1:1-2:13"#
+    r#"code "code\n\tmore" @1:1-2:7"#
 )]
 #[case::tab_after_marker(
     "-\ta\n",
     "<ul>\n<li>a</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:5-1:6
-  text "a" @1:5-1:6
+list level=0 index=0 marker=- @1:3-1:4
+  text "a" @1:3-1:4
 "#
 )]
 #[case::atx_leading_sequences(
@@ -2521,8 +2521,8 @@ heading 1 @1:1-1:7
     "#\t# a",
     "<h1># a</h1>",
     r##"
-heading 1 @1:1-1:8
-  text "# a" @1:5-1:8
+heading 1 @1:1-1:6
+  text "# a" @1:3-1:6
 "##
 )]
 #[case::atx_closing_and_leading(
@@ -2557,34 +2557,34 @@ list level=0 index=0 marker=- @1:3-3:3
     "\u{feff}# a\n",
     "<h1>a</h1>\n",
     r#"
-heading 1 @1:4-1:7
-  text "a" @1:6-1:7
+heading 1 @1:1-1:4
+  text "a" @1:3-1:4
 "#
 )]
-#[case::bom_frontmatter("\u{feff}---\na: b\n---\n", "", r#"yaml "a: b" @1:4-3:4"#)]
-#[case::bom_text("\u{feff}a\n", "<p>a</p>\n", r#"text "a" @1:4-1:5"#)]
-#[case::www_multibyte_after_ww("wwß x", "<p>wwß x</p>", r#"text "wwß x" @1:1-1:7"#)]
-#[case::www_combining("ww\u{301}.a.com", "<p>ww\u{301}.a.com</p>", r#"text "ww\u{301}.a.com" @1:1-1:11"#)]
+#[case::bom_frontmatter("\u{feff}---\na: b\n---\n", "", r#"yaml "a: b" @1:1-3:4"#)]
+#[case::bom_text("\u{feff}a\n", "<p>a</p>\n", r#"text "a" @1:1-1:2"#)]
+#[case::www_multibyte_after_ww("wwß x", "<p>wwß x</p>", r#"text "wwß x" @1:1-1:6"#)]
+#[case::www_combining("ww\u{301}.a.com", "<p>ww\u{301}.a.com</p>", r#"text "ww\u{301}.a.com" @1:1-1:10"#)]
 #[case::www_cjk(
     "www.あ.com/パス x",
     "<p><a href=\"http://www.%E3%81%82.com/%E3%83%91%E3%82%B9\">www.あ.com/パス</a> x</p>",
     r#"
-link "http://www.あ.com/パス" @1:1-1:19
-  text "www.あ.com/パス" @1:1-1:19
-text " x" @1:19-1:21
+link "http://www.あ.com/パス" @1:1-1:13
+  text "www.あ.com/パス" @1:1-1:13
+text " x" @1:13-1:15
 "#
 )]
 #[case::http_cjk(
     "http://あ.jp/パス ok",
     "<p><a href=\"http://%E3%81%82.jp/%E3%83%91%E3%82%B9\">http://あ.jp/パス</a> ok</p>",
     r#"
-link "http://あ.jp/パス" @1:1-1:21
-  text "http://あ.jp/パス" @1:1-1:21
-text " ok" @1:21-1:24
+link "http://あ.jp/パス" @1:1-1:15
+  text "http://あ.jp/パス" @1:1-1:15
+text " ok" @1:15-1:18
 "#
 )]
-#[case::email_cjk_domain("a@あ.com", "<p>a@あ.com</p>", r#"text "a@あ.com" @1:1-1:10"#)]
-#[case::email_cjk_local("あ@b.com", "<p>あ@b.com</p>", r#"text "あ@b.com" @1:1-1:10"#)]
+#[case::email_cjk_domain("a@あ.com", "<p>a@あ.com</p>", r#"text "a@あ.com" @1:1-1:8"#)]
+#[case::email_cjk_local("あ@b.com", "<p>あ@b.com</p>", r#"text "あ@b.com" @1:1-1:8"#)]
 #[case::html_inline_continuation(
     "<img a\n     b=\"c\">",
     "<p><img a\nb=\"c\"></p>",
@@ -2593,7 +2593,7 @@ text " ok" @1:21-1:24
 #[case::html_inline_continuation_tab(
     "<img a\n\t\tb=\"c\">",
     "<p><img a\nb=\"c\"></p>",
-    r#"html "<img a\nb=\"c\">" @1:1-2:15"#
+    r#"html "<img a\nb=\"c\">" @1:1-2:9"#
 )]
 #[case::table_trailing_space(
     "| a | b |  \n|-|-|  \n| c | d |  \n",
@@ -2631,7 +2631,7 @@ cell 1:1 @3:3-3:7
     r#"
 cell 0:0 @1:1-1:5
   text "a" @1:3-1:4
-cell 0:1 @1:5-1:13
+cell 0:1 @1:5-1:11
   text "b" @1:7-1:8
 align none,none @2:1-2:1
 cell 1:0 @3:1-3:5
@@ -2644,15 +2644,15 @@ cell 1:1 @3:5-3:13
     "| あ | 🎉 |\n|:-|-:|\n| é | ß |\n",
     "<table>\n<thead>\n<tr>\n<th align=\"left\">あ</th>\n<th align=\"right\">🎉</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\">é</td>\n<td align=\"right\">ß</td>\n</tr>\n</tbody>\n</table>\n",
     r#"
-cell 0:0 @1:1-1:7
-  text "あ" @1:3-1:6
-cell 0:1 @1:7-1:15
-  text "🎉" @1:9-1:13
+cell 0:0 @1:1-1:5
+  text "あ" @1:3-1:4
+cell 0:1 @1:5-1:11
+  text "🎉" @1:7-1:9
 align left,right @2:1-2:1
-cell 1:0 @3:1-3:6
-  text "é" @3:3-3:5
-cell 1:1 @3:6-3:12
-  text "ß" @3:8-3:10
+cell 1:0 @3:1-3:5
+  text "é" @3:3-3:4
+cell 1:1 @3:5-3:10
+  text "ß" @3:7-3:8
 "#
 )]
 #[case::table_single_column_colon(
@@ -2721,49 +2721,49 @@ list level=0 index=0 ordered start=1 marker=. @3:1-3:3
     "- a\n\n\t[P](h) x\n",
     "<ul>\n<li>\n<p>a</p>\n<p><a href=\"h\">P</a> x</p>\n</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:3-3:13
+list level=0 index=0 marker=- @1:3-3:10
   text "a" @1:3-1:4
-  link "h" @3:5-3:11
-    text "P" @3:6-3:7
-  text " x" @3:11-3:13
+  link "h" @3:2-3:8
+    text "P" @3:3-3:4
+  text " x" @3:8-3:10
 "#
 )]
 #[case::fence_after_partial_tab(
     "- a\n\n\t```ts\n\t\tx\n\t```\n",
     "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-ts\">\tx\n</code></pre>\n</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:3-5:8
+list level=0 index=0 marker=- @1:3-5:5
   text "a" @1:3-1:4
-  code "\tx" lang="ts" fence @3:5-5:8
+  code "\tx" lang="ts" fence @3:2-5:5
 "#
 )]
 #[case::math_after_partial_tab(
     "- a\n\n\t$$\n\tm\n\t$$\n",
     "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-math math-display\">m\n</code></pre>\n</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:3-5:7
+list level=0 index=0 marker=- @1:3-5:4
   text "a" @1:3-1:4
-  math "m" @3:5-5:7
+  math "m" @3:2-5:4
 "#
 )]
 #[case::quote_after_partial_tab(
     "- a\n\n\t> q\n",
     "<ul>\n<li>\n<p>a</p>\n<blockquote>\n<p>q</p>\n</blockquote>\n</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:3-3:8
+list level=0 index=0 marker=- @1:3-3:5
   text "a" @1:3-1:4
-  blockquote @3:3-3:8
-    text "q" @3:7-3:8
+  blockquote @3:2-3:5
+    text "q" @3:4-3:5
 "#
 )]
 #[case::heading_after_partial_tab(
     "- a\n\n\t# h\n",
     "<ul>\n<li>\n<p>a</p>\n<h1>h</h1>\n</li>\n</ul>\n",
     r#"
-list level=0 index=0 marker=- @1:3-3:8
+list level=0 index=0 marker=- @1:3-3:5
   text "a" @1:3-1:4
-  heading 1 @3:3-3:8
-    text "h" @3:7-3:8
+  heading 1 @3:2-3:5
+    text "h" @3:4-3:5
 "#
 )]
 #[case::control_character_references(
@@ -2845,62 +2845,62 @@ text "1." @2:1-2:3
     "*あ*。*い*",
     "<p><em>あ</em>。<em>い</em></p>",
     r#"
-emphasis @1:1-1:6
-  text "あ" @1:2-1:5
-text "。" @1:6-1:9
-emphasis @1:9-1:14
-  text "い" @1:10-1:13
+emphasis @1:1-1:4
+  text "あ" @1:2-1:3
+text "。" @1:4-1:5
+emphasis @1:5-1:8
+  text "い" @1:6-1:7
 "#
 )]
 #[case::strong_cjk(
     "**日本語**です",
     "<p><strong>日本語</strong>です</p>",
     r#"
-strong @1:1-1:14
-  text "日本語" @1:3-1:12
-text "です" @1:14-1:20
+strong @1:1-1:8
+  text "日本語" @1:3-1:6
+text "です" @1:8-1:10
 "#
 )]
 #[case::underscore_accent(
     "_é_ _ß_",
     "<p><em>é</em> <em>ß</em></p>",
     r#"
-emphasis @1:1-1:5
-  text "é" @1:2-1:4
-text " " @1:5-1:6
-emphasis @1:6-1:10
-  text "ß" @1:7-1:9
+emphasis @1:1-1:4
+  text "é" @1:2-1:3
+text " " @1:4-1:5
+emphasis @1:5-1:8
+  text "ß" @1:6-1:7
 "#
 )]
-#[case::fullwidth_markers("＊a＊ ＿b＿", "<p>＊a＊ ＿b＿</p>", r#"text "＊a＊ ＿b＿" @1:1-1:16"#)]
+#[case::fullwidth_markers("＊a＊ ＿b＿", "<p>＊a＊ ＿b＿</p>", r#"text "＊a＊ ＿b＿" @1:1-1:8"#)]
 #[case::emphasis_after_cjk_punctuation(
     "。*a*、**b**",
     "<p>。<em>a</em>、<strong>b</strong></p>",
     r#"
-text "。" @1:1-1:4
-emphasis @1:4-1:7
-  text "a" @1:5-1:6
-text "、" @1:7-1:10
-strong @1:10-1:15
-  text "b" @1:12-1:13
+text "。" @1:1-1:2
+emphasis @1:2-1:5
+  text "a" @1:3-1:4
+text "、" @1:5-1:6
+strong @1:6-1:11
+  text "b" @1:8-1:9
 "#
 )]
 #[case::combining_mark(
     "e\u{301}*a*",
     "<p>e\u{301}<em>a</em></p>",
     r#"
-text "e\u{301}" @1:1-1:4
-emphasis @1:4-1:7
-  text "a" @1:5-1:6
+text "e\u{301}" @1:1-1:3
+emphasis @1:3-1:6
+  text "a" @1:4-1:5
 "#
 )]
 #[case::emoji_zwj(
     "👨\u{200d}👩\u{200d}👧 *a*",
     "<p>👨\u{200d}👩\u{200d}👧 <em>a</em></p>",
     r#"
-text "👨\u{200d}👩\u{200d}👧 " @1:1-1:20
-emphasis @1:20-1:23
-  text "a" @1:21-1:22
+text "👨\u{200d}👩\u{200d}👧 " @1:1-1:10
+emphasis @1:10-1:13
+  text "a" @1:11-1:12
 "#
 )]
 #[case::fence_cjk_info(
@@ -2929,92 +2929,92 @@ list level=0 index=0 marker=- @1:3-3:6
     "<pre><code class=\"language-math math-display\">あ\n</code></pre>\n<p><code class=\"language-math math-inline\">い</code></p>\n",
     r#"
 math "あ" @1:1-3:3
-math_inline "い" @5:1-5:6
+math_inline "い" @5:1-5:4
 "#
 )]
 #[case::heading_cjk(
     "# 見出し\n\n見出し2\n===\n",
     "<h1>見出し</h1>\n<h1>見出し2</h1>\n",
     r#"
-heading 1 @1:1-1:12
-  text "見出し" @1:3-1:12
+heading 1 @1:1-1:6
+  text "見出し" @1:3-1:6
 heading 1 @3:1-4:4
-  text "見出し2" @3:1-3:11
+  text "見出し2" @3:1-3:5
 "#
 )]
 #[case::link_cjk(
     "[あ](http://い.jp/う \"え\")",
     "<p><a href=\"http://%E3%81%84.jp/%E3%81%86\" title=\"え\">あ</a></p>",
     r#"
-link "http://い.jp/う" title="え" @1:1-1:31
-  text "あ" @1:2-1:5
+link "http://い.jp/う" title="え" @1:1-1:23
+  text "あ" @1:2-1:3
 "#
 )]
 #[case::reference_cjk(
     "[あ]\n\n[あ]: /u\n",
     "<p><a href=\"/u\">あ</a></p>\n",
     r#"
-link_ref "あ" label="あ" @1:1-1:6
-  text "あ" @1:2-1:5
-definition "あ" "/u" label="あ" @3:1-3:10
+link_ref "あ" label="あ" @1:1-1:4
+  text "あ" @1:2-1:3
+definition "あ" "/u" label="あ" @3:1-3:8
 "#
 )]
 #[case::footnote_cjk(
     "あ[^い]\n\n[^い]: う\n",
     "<p>あ<sup><a href=\"#user-content-fn-%E3%81%84\" id=\"user-content-fnref-%E3%81%84\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-%E3%81%84\">\n<p>う <a href=\"#user-content-fnref-%E3%81%84\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n",
     r#"
-text "あ" @1:1-1:4
-footnote_ref "い" label="い" @1:4-1:10
-footnote "い" @3:1-3:12
-  text "う" @3:9-3:12
+text "あ" @1:1-1:2
+footnote_ref "い" label="い" @1:2-1:6
+footnote "い" @3:1-3:8
+  text "う" @3:7-3:8
 "#
 )]
 #[case::ideographic_space(
     "a\u{3000}b\n\u{3000}c",
     "<p>a\u{3000}b\n\u{3000}c</p>",
-    r#"text "a\u{3000}b\n\u{3000}c" @1:1-2:5"#
+    r#"text "a\u{3000}b\n\u{3000}c" @1:1-2:3"#
 )]
 #[case::nbsp_around_emphasis(
     "a\u{a0}*b*\u{a0}c",
     "<p>a\u{a0}<em>b</em>\u{a0}c</p>",
     r#"
-text "a\u{a0}" @1:1-1:4
-emphasis @1:4-1:7
-  text "b" @1:5-1:6
-text "\u{a0}c" @1:7-1:10
+text "a\u{a0}" @1:1-1:3
+emphasis @1:3-1:6
+  text "b" @1:4-1:5
+text "\u{a0}c" @1:6-1:8
 "#
 )]
 #[case::entity_cjk_context(
     "あ&amp;い&#12354;&#x1F389;",
     "<p>あ&amp;いあ🎉</p>",
-    r#"text "あ&いあ🎉" @1:1-1:29"#
+    r#"text "あ&いあ🎉" @1:1-1:25"#
 )]
 #[case::autolink_cjk(
     "<http://あ.jp/パス>",
     "<p><a href=\"http://%E3%81%82.jp/%E3%83%91%E3%82%B9\">http://あ.jp/パス</a></p>",
     r#"
-link "http://あ.jp/パス" @1:1-1:23
-  text "http://あ.jp/パス" @1:2-1:22
+link "http://あ.jp/パス" @1:1-1:17
+  text "http://あ.jp/パス" @1:2-1:16
 "#
 )]
 #[case::code_span_cjk(
     "`あ`と``い`う``",
     "<p><code>あ</code>と<code>い`う</code></p>",
     r#"
-code_inline "あ" @1:1-1:6
-text "と" @1:6-1:9
-code_inline "い`う" @1:9-1:20
+code_inline "あ" @1:1-1:4
+text "と" @1:4-1:5
+code_inline "い`う" @1:5-1:12
 "#
 )]
 #[case::hard_break_cjk(
     "あ  \nい\\\nう",
     "<p>あ<br />\nい<br />\nう</p>",
     r#"
-text "あ" @1:1-1:4
-break @1:4-2:1
-text "い" @2:1-2:4
-break @2:4-3:1
-text "う" @3:1-3:4
+text "あ" @1:1-1:2
+break @1:2-2:1
+text "い" @2:1-2:2
+break @2:2-3:1
+text "う" @3:1-3:2
 "#
 )]
 #[case::nul_in_text("a\0b", "<p>a�b</p>", r#"text "a\0b" @1:1-1:4"#)]
@@ -3408,25 +3408,25 @@ list level=0 index=0 marker=- @1:8-1:9
 #[case::expression_lone_cr("{\r }", r#"expression_flow "\r" @1:1-2:3"#)]
 #[case::expression_cr_indent("{a\r   b\r\n c\n  d}", r#"expression_flow "a\r b\r\nc\nd" @1:1-4:5"#)]
 #[case::tilde_not_delimiter("*~*a", r#"text "*~*a" @1:1-1:5"#)]
-#[case::tilde_strong_not_delimiter("**~**あ", r#"text "**~**あ" @1:1-1:9"#)]
+#[case::tilde_strong_not_delimiter("**~**あ", r#"text "**~**あ" @1:1-1:7"#)]
 #[case::dollar_after_name("<a$/>", "error: Unexpected character `$` (U+0024) after name")]
 #[case::dollar_after_space("<a $b/>", "jsx_flow <a $b> @1:1-1:8")]
-#[case::cjk_tag_name("<あ b=\"c\" />", r#"jsx_flow <あ b="c"> @1:1-1:14"#)]
-#[case::fullwidth_underscore_name("<a＿b />", "jsx_flow <a＿b> @1:1-1:10")]
+#[case::cjk_tag_name("<あ b=\"c\" />", r#"jsx_flow <あ b="c"> @1:1-1:12"#)]
+#[case::fullwidth_underscore_name("<a＿b />", "jsx_flow <a＿b> @1:1-1:8")]
 #[case::jsx_text_cjk(
     "あ <b>い</b> う",
     r#"
-text "あ " @1:1-1:5
-jsx_text <b> @1:5-1:15
-  text "い" @1:8-1:11
-text " う" @1:15-1:19
+text "あ " @1:1-1:3
+jsx_text <b> @1:3-1:11
+  text "い" @1:6-1:7
+text " う" @1:11-1:13
 "#
 )]
 #[case::expression_cjk(
     "{あ} い",
     r#"
-expression_text "あ" @1:1-1:6
-text " い" @1:6-1:10
+expression_text "あ" @1:1-1:4
+text " い" @1:4-1:6
 "#
 )]
 fn mdx(#[case] input: &str, #[case] expected: &str) {
