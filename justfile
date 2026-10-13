@@ -30,7 +30,8 @@ bench-local:
 build:
     MQ_FORBID_DEBUGGER=1 cargo build --release -p mq-run --bin mq
     cargo build --release -p mq-run --bin mq-dbg --features="debugger"
-    cargo build --release -p mq-lsp -p mq-crawler -p mq-bench
+    cargo build --release -p mq-lsp
+    cargo build --release -p mq-crawler -p mq-bench
     cargo build --release -p mq-test
     cargo build --release -p mq-check --features="cli"
     cargo build --release -p mq-lint --features="cli"
@@ -40,7 +41,8 @@ build:
 build-target target:
     MQ_FORBID_DEBUGGER=1 cargo build --release --target {{target}} -p mq-run --bin mq
     cargo build --release --target {{target}} -p mq-run --bin mq-dbg --features="debugger"
-    cargo build --release --target {{target}} -p mq-lsp -p mq-crawler -p mq-bench
+    cargo build --release --target {{target}} -p mq-lsp
+    cargo build --release --target {{target}} -p mq-crawler -p mq-bench
     cargo build --release --target {{target}} -p mq-test
     cargo build --release --target {{target}} -p mq-check --features="cli"
     cargo build --release --target {{target}} -p mq-lint --features="cli"
