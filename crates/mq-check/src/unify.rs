@@ -6,23 +6,6 @@ use crate::infer::InferenceContext;
 use crate::types::{Type, TypeVarId};
 use std::collections::{BTreeMap, HashSet};
 
-/// Converts a Range to a simplified miette::SourceSpan for error reporting.
-/// Note: This creates an approximate span based on line/column information.
-/// For accurate byte-level spans, the original source text would be needed.
-pub fn range_to_span(range: &mq_lang::Range) -> miette::SourceSpan {
-    // Create an approximate offset based on line and column
-    // This is a simple heuristic: assume average line length of 80 chars
-    let line_offset = (range.start.line.saturating_sub(1) as usize) * 80;
-    let offset = line_offset + range.start.column.saturating_sub(1);
-
-    // Calculate approximate length based on end position
-    let end_line_offset = (range.end.line.saturating_sub(1) as usize) * 80;
-    let end_offset = end_line_offset + range.end.column.saturating_sub(1);
-    let length = end_offset.saturating_sub(offset).max(1);
-
-    miette::SourceSpan::new(offset.into(), length)
-}
-
 /// Solves type constraints through unification
 pub fn solve_constraints(ctx: &mut InferenceContext) {
     let constraints = ctx.take_constraints();
@@ -190,7 +173,6 @@ pub fn unify(
                 ctx.add_error(TypeError::WrongArity {
                     expected: params1.len(),
                     found: params2.len(),
-                    span: range.as_ref().map(range_to_span),
                     location: range,
                     context: Some(format!(
                         "Expected a function with {} parameter(s), but found one with {}. Check the function signature.",
@@ -488,25 +470,6 @@ mod tests {
 
         // T = number should pass occurs check
         assert!(!occurs_check(var, &Type::Number));
-    }
-
-    #[test]
-    fn test_range_to_span() {
-        let range = mq_lang::Range {
-            start: mq_lang::Position { line: 1, column: 1 },
-            end: mq_lang::Position { line: 1, column: 11 },
-        };
-        let span = range_to_span(&range);
-        assert_eq!(span.offset(), 0);
-        assert_eq!(span.len(), 10);
-
-        let range2 = mq_lang::Range {
-            start: mq_lang::Position { line: 2, column: 5 },
-            end: mq_lang::Position { line: 2, column: 10 },
-        };
-        let span2 = range_to_span(&range2);
-        assert_eq!(span2.offset(), 80 + 4);
-        assert_eq!(span2.len(), 5);
     }
 
     #[test]

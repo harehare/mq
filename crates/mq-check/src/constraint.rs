@@ -28,7 +28,6 @@ use crate::infer::{
 use crate::narrowing::{analyze_condition, selector_kinds};
 use crate::node_attr::{SelectorOutput, node_selector_output};
 use crate::types::Type;
-use crate::unify::range_to_span;
 use crate::{TypeError, field_guard::field_guard, infer};
 use mq_hir::{Hir, SymbolId, SymbolKind};
 
@@ -891,7 +890,6 @@ pub(super) fn generate_symbol_constraints(
                             .join(", ");
                         ctx.add_error(TypeError::HeterogeneousArray {
                             types: types_str,
-                            span: range.as_ref().map(range_to_span),
                             location: range,
                         });
                     }
@@ -1609,7 +1607,6 @@ pub(super) fn generate_symbol_constraints(
                             ctx.add_error(TypeError::UndefinedAttribute {
                                 attr,
                                 node_ty: resolved.display_renumbered(),
-                                span: range.as_ref().map(range_to_span),
                                 location: range,
                             });
                             Type::Var(ctx.fresh_var())
@@ -1624,7 +1621,6 @@ pub(super) fn generate_symbol_constraints(
                             ctx.add_error(TypeError::UndefinedField {
                                 field: name.to_string(),
                                 record_ty: resolved.display_renumbered(),
-                                span: range.as_ref().map(range_to_span),
                                 location: range,
                             });
                             let ty_var = ctx.fresh_var();
@@ -1893,7 +1889,6 @@ fn generate_call_constraints(
                                 ctx.add_error(TypeError::WrongArity {
                                     expected: param_tys.len(),
                                     found: arg_tys.len(),
-                                    span: range.as_ref().map(range_to_span),
                                     location: range,
                                     context: Some(format!(
                                         "`{}` expects {} argument(s), but {} were provided. Check the call site or the function's parameter list.",

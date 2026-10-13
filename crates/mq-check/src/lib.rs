@@ -6,20 +6,12 @@
 //! - Polymorphic functions (generics)
 //! - Type constraints and unification
 //! - Integration with mq-hir for symbol and scope information
-//! - Error location reporting with source spans
+//! - Error location reporting with source ranges
 //!
 //! ## Error Location Reporting
 //!
-//! Type errors include location information (line and column numbers) extracted from
-//! the HIR symbols. This information is converted to `miette::SourceSpan` for diagnostic
-//! display. The span information helps users identify exactly where type errors occur
-//! in their source code.
-//!
-//! Example error output:
-//! ```text
-//! Error: Type mismatch: expected number, found string
-//!   Span: SourceSpan { offset: 42, length: 6 }
-//! ```
+//! Type errors carry the [`mq_lang::Range`] of the offending symbol, taken from the HIR.
+//! Use [`TypeError::location`] to read it.
 
 // Suppress false-positive warnings for fields used in thiserror/miette macros
 #![allow(unused_assignments)]
@@ -95,8 +87,6 @@ pub enum TypeError {
     Mismatch {
         expected: String,
         found: String,
-        #[label("type mismatch here")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
         #[help]
         context: Option<String>,
@@ -107,8 +97,6 @@ pub enum TypeError {
     UnificationError {
         left: String,
         right: String,
-        #[label("cannot unify these types")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
         #[help]
         context: Option<String>,
@@ -119,8 +107,6 @@ pub enum TypeError {
     OccursCheck {
         var: String,
         ty: String,
-        #[label("infinite type")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
     #[error("Undefined symbol: {name}")]
@@ -128,8 +114,6 @@ pub enum TypeError {
     #[allow(dead_code)]
     UndefinedSymbol {
         name: String,
-        #[label("undefined symbol")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
@@ -138,8 +122,6 @@ pub enum TypeError {
     WrongArity {
         expected: usize,
         found: usize,
-        #[label("wrong number of arguments")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
         #[help]
         context: Option<String>,
@@ -150,8 +132,6 @@ pub enum TypeError {
     UndefinedField {
         field: String,
         record_ty: String,
-        #[label("field not found")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
     #[error("Attribute `{attr}` does not exist on {node_ty}")]
@@ -160,8 +140,6 @@ pub enum TypeError {
     UndefinedAttribute {
         attr: String,
         node_ty: String,
-        #[label("no such attribute")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
     #[error("Heterogeneous array: elements have mixed types [{types}]")]
@@ -169,8 +147,6 @@ pub enum TypeError {
     #[allow(dead_code)]
     HeterogeneousArray {
         types: String,
-        #[label("mixed types in array")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
     #[error("Type variable not found: {0}")]
@@ -187,8 +163,6 @@ pub enum TypeError {
     NullablePropagation {
         op: String,
         nullable_arg: String,
-        #[label("this argument may be `none`")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
         #[help]
         context: Option<String>,
@@ -200,8 +174,6 @@ pub enum TypeError {
     #[allow(dead_code)]
     UnreachableCode {
         reason: String,
-        #[label("this branch is unreachable")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
     /// Emitted when a match expression does not cover all possible values of the matched type.
@@ -210,8 +182,6 @@ pub enum TypeError {
     #[allow(dead_code)]
     NonExhaustiveMatch {
         missing: String,
-        #[label("match expression is not exhaustive")]
-        span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
         #[help]
         context: Option<String>,
@@ -390,7 +360,6 @@ impl TypeChecker {
         for (reason, range) in dead_branches {
             ctx.add_error(TypeError::UnreachableCode {
                 reason,
-                span: range.as_ref().map(unify::range_to_span),
                 location: range,
             });
         }
@@ -400,7 +369,6 @@ impl TypeChecker {
         for (reason, range) in dead_arms {
             ctx.add_error(TypeError::UnreachableCode {
                 reason,
-                span: range.as_ref().map(unify::range_to_span),
                 location: range,
             });
         }
@@ -611,8 +579,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
-    #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), span: None, location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
+    #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
+    #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
     #[case(TypeError::TypeVarNotFound("a".into()), None)]
     fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<mq_lang::Range>) {
         assert_eq!(err.location(), expected);

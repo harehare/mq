@@ -2,7 +2,7 @@
 
 use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
-use crate::{TypeEnv, TypeError, unify};
+use crate::{TypeEnv, TypeError};
 use mq_hir::SymbolId;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
@@ -539,7 +539,6 @@ impl InferenceContext {
         self.add_error(TypeError::Mismatch {
             expected: resolved_t1.display_renumbered(),
             found: resolved_t2.display_renumbered(),
-            span: range.as_ref().map(unify::range_to_span),
             location: range,
             context: origin.to_context_string(),
         });
@@ -584,7 +583,6 @@ impl InferenceContext {
         self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),
             right: "no matching overload".to_string(),
-            span: range.as_ref().map(unify::range_to_span),
             location: range,
             context,
         });
