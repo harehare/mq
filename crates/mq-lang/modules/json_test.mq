@@ -289,3 +289,14 @@ end
 def test_json_to_markdown_table_edge_cases(input, expected):
   assert_eq(json::json_to_markdown_table(input), expected)
 end
+
+# @parametrize([
+#   [{"a": 1}, 2, "{\n  \"a\": 1\n}"],
+#   [{"a": [1, {"b": []}], "c": {}}, 2, "{\n  \"a\": [\n    1,\n    {\n      \"b\": []\n    }\n  ],\n  \"c\": {}\n}"],
+#   [[1, 2], 4, "[\n    1,\n    2\n]"],
+#   [{"a": [1]}, 0, "{\"a\": [1]}"],
+# ])
+def test_json_stringify_indent(data, indent, expected):
+  assert_eq(json::json_stringify(data, {indent: indent}), expected)
+  | assert_eq(json::json_parse(expected), data)
+end

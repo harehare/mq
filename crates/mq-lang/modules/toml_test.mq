@@ -85,16 +85,31 @@ def test_toml_stringify_keeps_scalars_out_of_tables(input):
   assert_eq(toml::toml_parse(toml::toml_stringify(input)), input)
 end
 
-# Nested tables are emitted as dotted `[a.b]` headers, not inline tables.
+# Shallow tables get dotted `[a.b]` headers, a table holding only sub-tables gets none, and leaf
+# tables nested three or more levels deep are inline.
 # @parametrize([
-#   [{"t": {"u": {"v": 1}}, "z": 3}, "z = 3\n\n[t]\n\n[t.u]\nv = 1"],
+#   [{"t": {"u": {"v": 1}}, "z": 3}, "z = 3\n\n[t.u]\nv = 1"],
 #   [{"a": 1, "t": {"x": 2}}, "a = 1\n\n[t]\nx = 2"],
+#   [{"t": {}, "z": 3}, "z = 3\n\n[t]"],
 #   [{"m": [{"a": {"b": 1}, "c": 2}]}, "[[m]]\nc = 2\n\n[m.a]\nb = 1"],
 #   [{"m": [{"a": [{"b": 1}]}]}, "[[m]]\n\n[[m.a]]\nb = 1"],
+#   [{"w": {"p": {"v": 1}, "d": {"x": {"path": "a", "v": 1}}}}, "[w.p]\nv = 1\n\n[w.d]\nx = {path = \"a\", v = 1}"],
 # ])
 def test_toml_stringify_nested_tables(input, expected):
   assert_eq(toml::toml_stringify(input), expected)
   | assert_eq(toml::toml_parse(expected), input)
+end
+
+# Keys keep their document order and long arrays wrap one element per line.
+def test_toml_stringify_keeps_key_order_and_wraps_long_arrays():
+  let input = "z = 1\na = 2\nlist = [\n  \"aaaaaaaaaaaaaaaaaaaa\",\n  \"bbbbbbbbbbbbbbbbbbbb\",\n  \"cccccccccccccccccccc\",\n  \"dddddddddddddddddddd\",\n]"
+  | assert_eq(toml::toml_stringify(toml::toml_parse(input)), input)
+end
+
+# Re-stringifying already formatted output is a no-op, so a later edit only shows the changed value.
+def test_toml_stringify_is_idempotent():
+  let input = "[workspace]\nresolver = \"3\"\n\n[workspace.package]\nversion = \"1.0.0\"\n\n[workspace.dependencies]\na = {path = \"crates/a\", version = \"1.0.0\"}\nb = \"2\"\n\n[profile.release]\nlto = true"
+  | assert_eq(toml::toml_stringify(toml::toml_parse(input)), input)
 end
 
 # Datetimes have no mq equivalent and parse to their string form; inf/nan must survive a round trip.
