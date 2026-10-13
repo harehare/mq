@@ -28,8 +28,10 @@ enum Open {
 }
 
 /// MDX flow content that goes on in the next line.
-struct Pending {
+struct Pending<'a> {
     text: String,
+    /// Terminator of the last line in `text`, which separates it from the next line.
+    eol: &'a str,
     lines: usize,
 }
 
@@ -48,7 +50,7 @@ pub(super) struct LeafState<'a> {
     /// The text of the open paragraph when it starts like a definition, which a setext underline does
     /// not turn into a heading when there is nothing else in it.
     definitions: Option<String>,
-    flow: Option<Pending>,
+    flow: Option<Pending<'a>>,
     /// Restrictions on the next fed line, the first line of a container that interrupted a paragraph.
     restricted: Interrupt,
     /// How many containers can still be open before the depth limit, which no longer open any.
@@ -180,8 +182,9 @@ impl<'a> LeafState<'a> {
             }
 
             if let Some(pending) = &mut self.flow {
-                pending.text.push_str(line.eol);
+                pending.text.push_str(pending.eol);
                 pending.text.push_str(line.text);
+                pending.eol = line.eol;
                 pending.lines += 1;
                 let end = if pending.lines < MAX_FLOW_LINES {
                     flow_end(&pending.text)
@@ -293,6 +296,7 @@ impl<'a> LeafState<'a> {
                 if matches!(start, FlowStart::Pending) {
                     self.flow = Some(Pending {
                         text: line.text.to_string(),
+                        eol: line.eol,
                         lines: 1,
                     });
                 }
