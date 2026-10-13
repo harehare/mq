@@ -93,15 +93,6 @@ end
 # import "json" | json::json_stringify({"a": "he said \"hi\"\nbye"})
 # #=> {"a": "he said \"hi\"\nbye"}
 # ```
-# Example:
-# ```
-# import "json" | json::json_stringify({"a": [1]}, {indent: 2})
-# #=> {
-#   "a": [
-#     1
-#   ]
-# }
-# ```
 #
 # Returns: string
 def json_stringify(data, options = {}):
