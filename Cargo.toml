@@ -120,7 +120,7 @@ tabled = {version = "0.22.0", default-features = false, features = ["std", "ansi
 tempfile = "3.27"
 thiserror = "2.0.18"
 tokio = "1.52.2"
-toml = "1.1"
+toml = {version = "1.1", features = ["preserve_order"]}
 toon-format = {version = "0.5", default-features = false}
 tower = "0.5.3"
 tower-http = "0.7.0"

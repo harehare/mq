@@ -30,26 +30,50 @@ def _toml_keys(d): filter(keys(d), fn(k): !is_none(d[k]););
 
 def _is_toml_table(value): is_dict(value) || (is_array(value) && !is_empty(value) && is_empty(filter(value, fn(v): !is_dict(v);)));
 
+# Shallow dicts and dicts holding other tables get a `[header]`; deeper leaf dicts stay inline.
+def _is_toml_header(value, depth):
+  is_dict(value) && (depth <= 2 || !is_empty(filter(_toml_keys(value), fn(k): _is_toml_table(value[k]);)))
+end
+
+def _is_toml_section(value, depth): _is_toml_header(value, depth) || (!is_dict(value) && _is_toml_table(value));
+
 # Scalars and inline arrays must precede tables: a key after a `[table]` header belongs to that table.
-def _toml_ordered_keys(data):
-  let groups = partition(_toml_keys(data), fn(k): _is_toml_table(data[k]);)
+def _toml_ordered_keys(data, depth):
+  let groups = partition(_toml_keys(data), fn(k): _is_toml_section(data[k], depth);)
   | groups[1] + groups[0]
 end
 
 # `path` holds the already-quoted keys of the enclosing table, used to build dotted headers.
 def _toml_table_lines(path, data):
-  flat_map(_toml_ordered_keys(data), fn(k): _toml_entry_lines(path, k, data[k]);)
+  let depth = len(path) + 1
+  | flat_map(_toml_ordered_keys(data, depth), fn(k): _toml_entry_lines(path, k, data[k]);)
+end
+
+# Arrays whose single-line form exceeds this width are wrapped one element per line.
+def _toml_array_lines(key, value):
+  let line = _toml_key(key) + " = " + _toml_stringify_value(value)
+  | if (is_array(value) && !is_empty(value) && len(line) > 80):
+      [_toml_key(key) + " = ["] + map(value, fn(v): "  " + _toml_stringify_value(v) + ",";) + ["]"]
+    else:
+      [line]
+end
+
+# A table made only of sub-tables needs no header of its own.
+def _toml_header_lines(path, name, value):
+  let body = _toml_table_lines(path, value)
+  | let has_direct = !is_empty(filter(_toml_keys(value), fn(k): !_is_toml_section(value[k], len(path) + 1);))
+  | if (has_direct || is_empty(_toml_keys(value))): ["", "[" + name + "]"] + body else: body
 end
 
 def _toml_entry_lines(path, key, value):
   let full = path + [_toml_key(key)]
   | let name = join(full, ".")
-  | if (is_dict(value)):
-      ["", "[" + name + "]"] + _toml_table_lines(full, value)
-    elif (_is_toml_table(value)):
+  | if (_is_toml_header(value, len(full))):
+      _toml_header_lines(full, name, value)
+    elif (is_array(value) && _is_toml_table(value)):
       flat_map(value, fn(entry): ["", "[[" + name + "]]"] + _toml_table_lines(full, entry);)
     else:
-      [_toml_key(key) + " = " + _toml_stringify_value(value)]
+      _toml_array_lines(key, value)
 end
 
 def _toml_stringify_value(value):
