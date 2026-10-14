@@ -108,3 +108,6 @@ mutants.out
 
 .vercel
 .env*
+
+# mq-task up-to-date cache
+.mq-task/
