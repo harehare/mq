@@ -300,6 +300,11 @@ impl Markdown {
                     new_line_count = if cur_list.spread { 2 } else { 1 };
                 }
 
+                // The last row of a table ends with its own line ending, so one more makes the blank line.
+                if matches!(prev_node, Some(Node::TableCell(_) | Node::TableAlign(_))) {
+                    new_line_count = 1;
+                }
+
                 pre_position = Some(pos.clone());
 
                 for _ in 0..new_line_count {
@@ -527,6 +532,9 @@ mod tests {
         10,
         "| A | B |\n| - | - |\n| 1 | 2 |\n\n| C | D |\n| - | - |\n| 3 | 4 |\n"
     )]
+    // the line ending of the last row is part of the blank line before what follows
+    #[case::table_then_paragraph("| A |\n|---|\n| 1 |\n\npara\n", 4, "| A |\n| - |\n| 1 |\n\npara\n")]
+    #[case::table_then_rule("| A |\n|---|\n| 1 |\n---\n", 4, "| A |\n| - |\n| 1 |\n\n---\n")]
     // adjacent tables of different widths must not share column layout.
     #[case::tables_adjacent_different_widths(
         "| A | B |\n|---|---|\n| 1 | 2 |\n\n| C |\n|---|\n| 3 |\n",
