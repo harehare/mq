@@ -768,15 +768,50 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
         .collect::<String>()
 }
 
+/// Writes an item, or the rest of one that follows the items nested in it, inside a container.
+///
+/// `indents` holds the column of the content of each open item. It is kept out of the container loop
+/// so that the frame of that recursion stays small.
+#[inline(never)]
+fn render_list_item(
+    node: &Node,
+    item: &List,
+    rest: bool,
+    indents: &mut Vec<usize>,
+    options: &RenderOptions,
+    theme: &ColorTheme<'_>,
+) -> String {
+    if rest {
+        // Indented to the content of the item and written without a marker.
+        indents.truncate(item.level as usize + 1);
+        let indent = indents.last().copied().unwrap_or(0);
+        return indent_lines(&render_values_block(&item.values, options, theme), indent);
+    }
+    // Nested items are indented to the content of the item that holds them.
+    indents.truncate(item.level as usize);
+    let own_indent = indents.last().copied().unwrap_or(0);
+    let delta = own_indent as isize - item.level as isize * 2;
+    indents.push(own_indent + list_own_prefix_width(item.ordered, item.index, item.start));
+    reindent_all_lines(&node.render_with_theme(options, theme), delta)
+}
+
 /// Like `render_values` but without column-offset–based indentation.
 ///
 /// Inside blockquotes and callouts, node positions include the `> ` prefix offset,
 /// so applying column-based spacing causes double-indentation. This variant preserves
 /// blank lines between values (via newline counting) but ignores the column position.
 pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
+    // The children of an item that come after the items nested in it, as at the top level.
+    let reordered = crate::markdown::list_order::reorder(values);
+    let (values, continuation) = match &reordered {
+        Some(reordered) => (reordered.nodes.as_slice(), reordered.continuation.as_slice()),
+        None => (values, [].as_slice()),
+    };
     let mut result = String::new();
     let mut pre_position: Option<Position> = None;
     let mut index = 0;
+    // The column of the content of the open items, one for each level.
+    let mut list_indent_stack: Vec<usize> = Vec::new();
     // The last node written, to tell paragraphs from the inline nodes of one when there are no positions.
     let mut previous: Option<&Node> = None;
     // What `render_before` returned for `previous`, or `None` when it is part of a table.
@@ -785,9 +820,18 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
     while index < values.len() {
         let first = &values[index];
         // The cells of a table are laid out together, as at the top level.
-        let (rendered, position, next) = if is_table_part(first) {
+        let (mut rendered, position, next) = if is_table_part(first) {
+            list_indent_stack.clear();
             render_table_run(values, index, options, theme)
+        } else if let Node::List(item) = first {
+            let rest = continuation.get(index) == Some(&true);
+            (
+                render_list_item(first, item, rest, &mut list_indent_stack, options, theme),
+                first.position(),
+                index + 1,
+            )
         } else {
+            list_indent_stack.clear();
             (
                 render_before(
                     first,
@@ -810,6 +854,10 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
                 .unwrap_or_default();
             pre_position = Some(pos);
             result.push_str(&"\n".repeat(new_line_count));
+            // An item that starts on the line of the marker that holds it follows it directly.
+            if new_line_count == 0 && matches!((previous, first), (Some(Node::List(_)), Node::List(_))) {
+                rendered = rendered.trim_start().to_string();
+            }
         } else {
             // Text never follows text inside one paragraph, so without positions that is a new one.
             if pre_position.is_none() && matches!((previous, first), (Some(Node::Text(_)), Node::Text(_))) {

@@ -13,7 +13,7 @@ use miette::miette;
 use std::{fmt, str::FromStr};
 use table_layout::{TableLayout, write_padded_cell};
 
-mod list_order;
+pub(crate) mod list_order;
 mod table_layout;
 
 /// What reading Markdown or MDX turns on.
@@ -638,6 +638,10 @@ mod tests {
     #[case::reference_then_colon_is_not_a_definition("[x] a\n\n[x]: /u", 3, "[x] a\n\n[x]: /u\n")]
     #[case::bang_before_a_link_in_the_next_paragraph("a!\n\n[b](u)", 2, "a!\n\n[b](u)\n")]
     #[case::colon_after_a_reference_in_the_next_paragraph("[x]\n\n:a\n\n[x]: /u", 3, "[x]\n\n:a\n\n[x]: /u\n")]
+    // lists in a block quote: items on one line, the rest of an item after nested ones, nested under an ordered one
+    #[case::quote_list_in_list_on_one_line("> - - - x", 1, "> - - - x\n")]
+    #[case::quote_paragraph_after_nested_item("> - a\n>   - b\n>\n>   para", 1, "> - a\n>   - b\n> \n>   para\n")]
+    #[case::quote_bullet_nested_under_ordered("> 1. a\n>    - b", 1, "> 1. a\n>    - b\n")]
     // an indented code block right after a list must not read back as list continuation
     #[case::code_after_list_uses_fence(" -    one\n\n     two", 2, "- one\n\n```\n two\n```\n")]
     // a block quote nested in a list item needs its continuation line's own indent

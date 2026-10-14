@@ -7,11 +7,11 @@
 use crate::node::{List, Node, Position};
 
 /// Nodes in source order.
-pub(super) struct Reordered {
-    pub(super) nodes: Vec<Node>,
+pub(crate) struct Reordered {
+    pub(crate) nodes: Vec<Node>,
     /// For each node, whether it holds the rest of an item that follows the items nested in it. It is
     /// rendered as its content, indented to the content of the item, without a marker.
-    pub(super) continuation: Vec<bool>,
+    pub(crate) continuation: Vec<bool>,
 }
 
 impl Reordered {
@@ -27,7 +27,7 @@ impl Reordered {
 }
 
 /// Returns the nodes in source order, or `None` when they already are.
-pub(super) fn reorder(nodes: &[Node]) -> Option<Reordered> {
+pub(crate) fn reorder(nodes: &[Node]) -> Option<Reordered> {
     // Some child of an item starts after the item nested right after it.
     let needed = nodes.windows(2).any(|pair| match (&pair[0], &pair[1]) {
         (Node::List(item), Node::List(next)) if next.level > item.level => {
