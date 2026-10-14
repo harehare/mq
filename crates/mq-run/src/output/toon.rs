@@ -44,7 +44,7 @@ mod tests {
         ])),
         "[2]: a,b"
     )]
-    #[case::empty_array(RuntimeValue::Array(Shared::new(vec![])), "[0]:")]
+    #[case::empty_array(RuntimeValue::Array(Shared::new(vec![])), "[]")]
     #[case::empty_dict(RuntimeValue::Dict(Shared::new(DictMap::default())), "")]
     #[case::empty_string_needs_quoting(RuntimeValue::String(Shared::new("".to_string())), "\"\"")]
     #[case::numeric_like_string_needs_quoting(RuntimeValue::String(Shared::new("123".to_string())), "\"123\"")]

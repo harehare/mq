@@ -33,7 +33,7 @@ end
 # ```
 # Example:
 # ```
-# import "toon" | toon::toon_try_parse(": : :")["ok"]
+# import "toon" | toon::toon_try_parse("[2]: 1")["ok"]
 # #=> false
 # ```
 #
