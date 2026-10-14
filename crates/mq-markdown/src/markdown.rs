@@ -6,7 +6,7 @@ use crate::html_to_markdown::ConversionOptions;
 use crate::node::ListStyle;
 use crate::node::{
     Code, ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, indent_lines, list_own_prefix_width,
-    reindent_all_lines, render_before, render_cell_values, render_values_block,
+    reindent_all_lines, render_before, render_cell_values, render_values_block, separated_from,
 };
 #[cfg(any(feature = "json", feature = "html-to-markdown"))]
 use miette::miette;
@@ -259,27 +259,7 @@ impl Markdown {
                     .unwrap_or_else(|| if is_first { 0 } else { 1 })
                     .min(2);
 
-                // Single newline after a block quote reads back as lazy continuation.
-                if new_line_count < 2 && prev_node.is_some_and(Node::is_blockquote_like) {
-                    new_line_count = 2;
-                }
-
-                // A line of dashes right under paragraph text reads back as a setext heading.
-                if new_line_count < 2
-                    && value.starts_with("---")
-                    && matches!(node, Node::HorizontalRule(_))
-                    && prev_node.is_some_and(Node::is_paragraph_text)
-                {
-                    new_line_count = 2;
-                }
-
-                // A footnote ends where the next line starts, so a block after it needs a blank line.
-                if new_line_count < 2
-                    && matches!(prev_node, Some(Node::Footnote(_)))
-                    && !matches!(node, Node::Footnote(_))
-                {
-                    new_line_count = 2;
-                }
+                new_line_count = separated_from(new_line_count, prev_node, node, &value);
 
                 // An item that starts on the line of the marker that holds it follows it directly.
                 let value =
@@ -642,6 +622,10 @@ mod tests {
     #[case::quote_list_in_list_on_one_line("> - - - x", 1, "> - - - x\n")]
     #[case::quote_paragraph_after_nested_item("> - a\n>   - b\n>\n>   para", 1, "> - a\n>   - b\n> \n>   para\n")]
     #[case::quote_bullet_nested_under_ordered("> 1. a\n>    - b", 1, "> 1. a\n>    - b\n")]
+    // inside a container a block after a quote or footnote needs a blank line, and empty math stays empty
+    #[case::quote_after_nested_quote("> > a\n> >\n> b", 1, "> > a\n> \n> b\n")]
+    #[case::paragraph_after_footnote_in_item("- [^1]: b\n\n  c", 1, "- [^1]: b\n\n  c\n")]
+    #[case::empty_math("$$\n$$", 1, "$$\n$$\n")]
     // an indented code block right after a list must not read back as list continuation
     #[case::code_after_list_uses_fence(" -    one\n\n     two", 2, "- one\n\n```\n two\n```\n")]
     // a block quote nested in a list item needs its continuation line's own indent

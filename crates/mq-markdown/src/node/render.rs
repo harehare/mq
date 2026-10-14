@@ -342,7 +342,11 @@ impl Node {
             Self::Math(Math { value, .. }) => {
                 let (ms, me) = &theme.math;
                 let fence = "$".repeat((longest_run(value, '$') + 1).max(2));
-                format!("{}{}\n{}\n{}{}", ms, fence, value, fence, me)
+                if value.is_empty() {
+                    format!("{}{}\n{}{}", ms, fence, fence, me)
+                } else {
+                    format!("{}{}\n{}\n{}{}", ms, fence, value, fence, me)
+                }
             }
             // Only escape text parsed from real markdown (has a position); programmatic
             // values like JSON output or attr lookups must stay untouched.
@@ -768,6 +772,23 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
         .collect::<String>()
 }
 
+/// The number of line endings to write before `node` after `previous`, raised to a blank line where
+/// the node would otherwise read back as part of `previous`.
+pub(crate) fn separated_from(count: usize, previous: Option<&Node>, node: &Node, rendered: &str) -> usize {
+    if count >= 2 {
+        return count;
+    }
+    // A single line ending after a block quote reads back as lazy continuation.
+    let lazy = previous.is_some_and(Node::is_blockquote_like);
+    // A line of dashes right under paragraph text reads back as a setext heading.
+    let setext = matches!(node, Node::HorizontalRule(_))
+        && rendered.starts_with("---")
+        && previous.is_some_and(Node::is_paragraph_text);
+    // A footnote ends where the next line starts, so a block after it needs a blank line.
+    let footnote = matches!(previous, Some(Node::Footnote(_))) && !matches!(node, Node::Footnote(_));
+    if lazy || setext || footnote { 2 } else { count }
+}
+
 /// Writes an item, or the rest of one that follows the items nested in it, inside a container.
 ///
 /// `indents` holds the column of the content of each open item. It is kept out of the container loop
@@ -793,6 +814,38 @@ fn render_list_item(
     let delta = own_indent as isize - item.level as isize * 2;
     indents.push(own_indent + list_own_prefix_width(item.ordered, item.index, item.start));
     reindent_all_lines(&node.render_with_theme(options, theme), delta)
+}
+
+/// Writes what separates `node` from the one written before it, and trims `rendered` when it follows
+/// the marker that holds it. Not inlined, to keep the frame of the container loop small.
+#[inline(never)]
+fn separate(
+    result: &mut String,
+    rendered: &mut String,
+    pre_position: &mut Option<Position>,
+    position: Option<Position>,
+    previous: Option<&Node>,
+    node: &Node,
+) {
+    if let Some(pos) = position {
+        let new_line_count = pre_position
+            .as_ref()
+            .map(|p: &Position| pos.start.line.saturating_sub(p.end.line))
+            .unwrap_or_default();
+        let new_line_count = separated_from(new_line_count, previous, node, rendered);
+        *pre_position = Some(pos);
+        result.push_str(&"\n".repeat(new_line_count));
+        // An item that starts on the line of the marker that holds it follows it directly.
+        if new_line_count == 0 && matches!((previous, node), (Some(Node::List(_)), Node::List(_))) {
+            *rendered = rendered.trim_start().to_string();
+        }
+    } else {
+        // Text never follows text inside one paragraph, so without positions that is a new one.
+        if pre_position.is_none() && matches!((previous, node), (Some(Node::Text(_)), Node::Text(_))) {
+            result.push_str("\n\n");
+        }
+        *pre_position = None;
+    }
 }
 
 /// Like `render_values` but without column-offset–based indentation.
@@ -847,24 +900,7 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
         };
         index = next;
 
-        if let Some(pos) = position {
-            let new_line_count = pre_position
-                .as_ref()
-                .map(|p: &Position| pos.start.line.saturating_sub(p.end.line))
-                .unwrap_or_default();
-            pre_position = Some(pos);
-            result.push_str(&"\n".repeat(new_line_count));
-            // An item that starts on the line of the marker that holds it follows it directly.
-            if new_line_count == 0 && matches!((previous, first), (Some(Node::List(_)), Node::List(_))) {
-                rendered = rendered.trim_start().to_string();
-            }
-        } else {
-            // Text never follows text inside one paragraph, so without positions that is a new one.
-            if pre_position.is_none() && matches!((previous, first), (Some(Node::Text(_)), Node::Text(_))) {
-                result.push_str("\n\n");
-            }
-            pre_position = None;
-        }
+        separate(&mut result, &mut rendered, &mut pre_position, position, previous, first);
         previous = Some(&values[index - 1]);
         result.push_str(&rendered);
         previous_rendered = (!is_table_part(first)).then_some(rendered);
