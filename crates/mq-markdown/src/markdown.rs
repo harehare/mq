@@ -624,6 +624,8 @@ mod tests {
     #[case::emphasis_in_emphasis_at_an_edge("***a*b*", 2, "\\*_*a*b_\n")]
     #[case::emphasis_after_emphasis_after_a_nested_one("\\**_*a***b**)", 4, "\\*_\\_*a*_*b*\\*)\n")]
     #[case::strong_after_emphasis("*a*__b__", 2, "*a*__b__\n")]
+    #[case::emphasis_in_the_next_paragraph("*a*\n\n*b*", 2, "*a*\n\n*b*\n")]
+    #[case::strong_in_the_next_paragraph("*a*\n\n**b**", 2, "*a*\n\n**b**\n")]
     #[case::emphasis_nested_three_deep("***a***", 1, "***a***\n")]
     #[case::reference_then_colon_is_not_a_definition("[x] a\n\n[x]: /u", 3, "[x] a\n\n[x]: /u\n")]
     // an indented code block right after a list must not read back as list continuation

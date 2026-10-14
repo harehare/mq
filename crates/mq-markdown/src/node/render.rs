@@ -648,6 +648,15 @@ fn starts_with_word_char(node: &Node) -> bool {
     matches!(node, Node::Text(Text { value, .. }) if value.starts_with(|c: char| c.is_alphanumeric()))
 }
 
+/// Whether `value` starts where the last of `before` ends, so the two share a run of delimiters.
+/// Nodes without positions are taken to touch.
+fn touches_previous(before: &[Node], value: &Node) -> bool {
+    match (before.last().and_then(Node::position), value.position()) {
+        (Some(previous), Some(position)) => previous.end == position.start,
+        _ => true,
+    }
+}
+
 /// Renders `value`, escaping a `!` that ends its text when `next` starts a link, which would make an image.
 ///
 /// `previous` is what this function returned for the last of `before`, with `value` as `next`.
@@ -662,6 +671,7 @@ pub(crate) fn render_before(
     // Emphasis right after other emphasis takes the other delimiter, or the two fuse into one run.
     if let Node::Emphasis(Emphasis { values, .. }) = value
         && matches!(before.last(), Some(Node::Emphasis(_) | Node::Strong(_)))
+        && touches_previous(before, value)
         && !matches!(values.first(), Some(Node::Emphasis(_)))
         && !matches!(values.last(), Some(Node::Emphasis(_)))
         && !next.is_some_and(starts_with_word_char)
@@ -676,6 +686,7 @@ pub(crate) fn render_before(
     // Strong right after emphasis that ends in `*` takes `__`, or the runs of `*` fuse.
     if let Node::Strong(Strong { values, .. }) = value
         && matches!(before.last(), Some(Node::Emphasis(_) | Node::Strong(_)))
+        && touches_previous(before, value)
         && !next.is_some_and(starts_with_word_char)
         && previous.is_some_and(|previous| previous.ends_with('*'))
     {
