@@ -50,6 +50,14 @@ fn parse(input: &str) -> String {
 }
 
 #[rstest]
+#[case::wikilink_in_a_cell("| a |\n| - |\n| [[x\\|y]] |", "wikilink(x|y)")]
+#[case::embed_in_a_cell("| a |\n| - |\n| ![[x\\|400]] |", "embed(x|400)")]
+#[case::outside_a_table("[[x\\|y]]", "wikilink(x\\|y)")]
+fn escaped_pipe_in_a_table_cell(#[case] input: &str, #[case] expected: &str) {
+    assert!(parse(input).contains(expected), "{}", parse(input));
+}
+
+#[rstest]
 #[case::plain("[[Page]]", "wikilink(Page|)")]
 #[case::alias("[[Page|Alias]]", "wikilink(Page|Alias)")]
 #[case::heading("[[Page#Heading]]", "wikilink(Page#Heading|)")]

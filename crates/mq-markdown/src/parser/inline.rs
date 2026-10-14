@@ -448,6 +448,14 @@ impl Scanner<'_> {
             return None;
         }
         let content = &src[open..close];
+        // In a table cell `\|` stands for the pipe, as in a code span.
+        let unescaped;
+        let content = if self.context.source.table && content.contains("\\|") {
+            unescaped = content.replace("\\|", "|");
+            unescaped.as_str()
+        } else {
+            content
+        };
         let (target, label) = match content.split_once('|') {
             Some((target, label)) => (target.trim(), Some(label.trim().to_string())),
             None => (content.trim(), None),
