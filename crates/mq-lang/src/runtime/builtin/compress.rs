@@ -373,7 +373,7 @@ mod tests {
 
     fn heading(depth: u8, value: &str) -> Node {
         Node::Heading(Heading {
-            depth,
+            depth: mq_markdown::HeadingDepth::new(depth).expect("a heading depth"),
             values: vec![text(value)],
             position: None,
         })
@@ -381,6 +381,7 @@ mod tests {
 
     fn list_item(value: &str, index: usize) -> Node {
         Node::List(List {
+            marker: None,
             values: vec![text(value)],
             index,
             level: 0,

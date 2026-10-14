@@ -150,7 +150,7 @@ const markdown = `- Apple
 - Banana
 - Cherry`;
 
-// Change list style
+// Change list style (without listStyle, each list keeps the marker it was written with)
 const starList = await run(".[]", markdown, { listStyle: "star" });
 // Output: * Apple\n* Banana\n* Cherry
 

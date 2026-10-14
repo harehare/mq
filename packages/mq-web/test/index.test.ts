@@ -16,6 +16,15 @@ describe("run", () => {
     expect(result).toBe("- item 1\n- item 2\n");
   });
 
+  it.each([
+    ["-", "- a\n- b\n"],
+    ["*", "* a\n* b\n"],
+    ["+", "+ a\n+ b\n"],
+  ])("keeps the list marker %s without a list style", async (_marker, markdown) => {
+    const result = await run(".[]", markdown);
+    expect(result).toBe(markdown);
+  });
+
   it("changes list style to star", async () => {
     const markdown = "- First item\n- Second item\n- Third item";
     const result = await run(".[]", markdown, { listStyle: "star" });

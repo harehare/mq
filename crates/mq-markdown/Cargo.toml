@@ -14,13 +14,13 @@ version.workspace = true
 [dependencies]
 ego-tree = {workspace = true, optional = true}
 itertools = {workspace = true}
-markdown = {workspace = true}
 miette = {workspace = true}
 rustc-hash = {workspace = true}
 scraper = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive"], optional = true}
 serde_json = {workspace = true, optional = true}
 smol_str = {workspace = true}
+unicode-id = {workspace = true}
 unicode-width = {workspace = true}
 url = {workspace = true, optional = true}
 yaml-rust2 = {workspace = true, optional = true}
@@ -34,6 +34,10 @@ ureq = {workspace = true}
 [[bench]]
 harness = false
 name = "benchmark"
+
+[[example]]
+name = "html_convert"
+required-features = ["html-to-markdown"]
 
 [features]
 callout = []

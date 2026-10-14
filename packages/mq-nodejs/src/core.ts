@@ -61,7 +61,7 @@ export async function run(
   return await wasmModule.run(code, content, {
     isUpdate: false,
     inputFormat: "markdown",
-    listStyle: "dash",
+    listStyle: null,
     linkUrlStyle: "none",
     linkTitleStyle: "paren",
     ...options,

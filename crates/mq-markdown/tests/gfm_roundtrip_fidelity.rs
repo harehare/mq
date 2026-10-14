@@ -69,19 +69,7 @@ fn parse_spec_examples(text: &str) -> Vec<SpecExample> {
 /// Examples where the round trip currently changes rendered meaning, by
 /// number in the spec revision pinned above. Remove an entry once it's
 /// fixed; add one (with its section) if a new gap turns up.
-const KNOWN_FAILURES: &[usize] = &[
-    5, 6, 7, // Tabs
-    229, 269, // List items
-    271, 272, 295, // Lists
-    // 300, 306, 346, 479, 480, 599: URL-shaped text disables backslash
-    // escapes even in link text (GFM extended autolink scanning).
-    300, 306, // Backslash escapes
-    346, // Code spans
-    479, 480, // Emphasis and strong emphasis
-    522, 534, // Links
-    570, 589, // Images
-    599, 602, // Autolinks
-];
+const KNOWN_FAILURES: &[usize] = &[];
 
 #[test]
 #[ignore = "fetches spec.txt over the network; run via `just test-gfm-spec`"]

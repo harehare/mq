@@ -3,6 +3,7 @@ fn main() {
 }
 
 // Build 100-paragraph document with wikilinks in each paragraph.
+#[cfg(feature = "wikilink")]
 fn wikilink_doc() -> String {
     (0..100)
         .map(|i| format!("# Heading {i}\n\nText with [[target{i}]] and [[another{i}|Display {i}]].\n\n"))
@@ -10,6 +11,7 @@ fn wikilink_doc() -> String {
 }
 
 // Same shape but no [[...]] patterns.
+#[cfg(feature = "wikilink")]
 fn plain_doc() -> String {
     (0..100)
         .map(|i| format!("# Heading {i}\n\nText without any wikilink patterns here.\n\n"))
@@ -17,6 +19,7 @@ fn plain_doc() -> String {
 }
 
 // 100 callouts of various kinds.
+#[cfg(feature = "callout")]
 fn callout_doc() -> String {
     (0..100)
         .map(|i| {
@@ -27,6 +30,7 @@ fn callout_doc() -> String {
 }
 
 // 100 plain blockquotes (no callout header).
+#[cfg(feature = "callout")]
 fn plain_blockquote_doc() -> String {
     (0..100)
         .map(|i| format!("> Plain blockquote {i} without any callout header.\n\n"))
@@ -34,10 +38,49 @@ fn plain_blockquote_doc() -> String {
 }
 
 // 100 embeds spread through paragraphs.
+#[cfg(feature = "embed")]
 fn embed_doc() -> String {
     (0..100)
         .map(|i| format!("# Heading {i}\n\nSee ![[note{i}.md]] for details.\n\n"))
         .collect()
+}
+
+fn ascii_prose_doc() -> String {
+    (0..500)
+        .map(|i| format!("# Heading {i}\n\nSome *emphasis*, **strong** text with `code` and a [link](https://example.com/{i}) in paragraph {i}.\n\n- item *a*\n- item **b**\n\n"))
+        .collect()
+}
+
+fn japanese_prose_doc() -> String {
+    (0..500)
+        .map(|i| format!("# 見出し {i}\n\n日本語の *強調* や **太字** を含む文章と `コード`、[リンク](https://example.com/{i}) を段落 {i} に入れます。\n\n- 項目 *あ*\n- 項目 **い**\n\n"))
+        .collect()
+}
+
+/// One very long line, so that a position near its end is far from the start of the line.
+fn japanese_long_line_doc() -> String {
+    (0..3000)
+        .map(|i| format!("語{i}は *強調* と `コード` です。"))
+        .collect::<String>()
+        + "\n"
+}
+
+#[divan::bench(name = "parse/ascii_prose")]
+fn parse_ascii_prose(bencher: divan::Bencher) {
+    let doc = ascii_prose_doc();
+    bencher.bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
+}
+
+#[divan::bench(name = "parse/japanese_prose")]
+fn parse_japanese_prose(bencher: divan::Bencher) {
+    let doc = japanese_prose_doc();
+    bencher.bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
+}
+
+#[divan::bench(name = "parse/japanese_long_line")]
+fn parse_japanese_long_line(bencher: divan::Bencher) {
+    let doc = japanese_long_line_doc();
+    bencher.bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
 }
 
 fn table_doc() -> String {
@@ -55,51 +98,18 @@ fn render_table(bencher: divan::Bencher) {
     bencher.bench(|| markdown.to_string());
 }
 
-// Full end-to-end: mdast parse + expand_wikilinks (wikilinks present, early-exit skipped).
+// Full end-to-end parse of a document with wikilinks.
 #[cfg(feature = "wikilink")]
 #[divan::bench(name = "from_markdown_str/with_wikilinks")]
 fn from_markdown_str_with_wikilinks() -> mq_markdown::Markdown {
     mq_markdown::Markdown::from_markdown_str(&wikilink_doc()).unwrap()
 }
 
-// Full end-to-end: mdast parse only (early-exit fires, expand_wikilinks skipped).
+// Full end-to-end parse of a document without wikilinks.
 #[cfg(feature = "wikilink")]
 #[divan::bench(name = "from_markdown_str/without_wikilinks")]
 fn from_markdown_str_without_wikilinks() -> mq_markdown::Markdown {
     mq_markdown::Markdown::from_markdown_str(&plain_doc()).unwrap()
-}
-
-// Isolate expand_wikilinks alone (wikilinks present).
-#[cfg(feature = "wikilink")]
-#[divan::bench(name = "expand_wikilinks/with_wikilinks")]
-fn expand_wikilinks_with(bencher: divan::Bencher) {
-    let doc = wikilink_doc();
-    let nodes = mq_markdown::Markdown::from_markdown_str_no_expand(&doc).unwrap();
-    bencher.bench(|| mq_markdown::Node::expand_wikilinks(nodes.clone()));
-}
-
-// Isolate expand_wikilinks alone (no wikilinks — measures pure traversal cost before early-exit).
-#[cfg(feature = "wikilink")]
-#[divan::bench(name = "expand_wikilinks/without_wikilinks")]
-fn expand_wikilinks_without(bencher: divan::Bencher) {
-    let doc = plain_doc();
-    let nodes = mq_markdown::Markdown::from_markdown_str_no_expand(&doc).unwrap();
-    bencher.bench(|| mq_markdown::Node::expand_wikilinks(nodes.clone()));
-}
-
-// Isolate the early-exit check (contains("[[")) vs full expand_wikilinks for plain doc.
-#[cfg(feature = "wikilink")]
-#[divan::bench(name = "contains_check/with_wikilinks")]
-fn contains_check_with() {
-    let doc = wikilink_doc();
-    divan::black_box(doc.contains("[["));
-}
-
-#[cfg(feature = "wikilink")]
-#[divan::bench(name = "contains_check/without_wikilinks")]
-fn contains_check_without() {
-    let doc = plain_doc();
-    divan::black_box(doc.contains("[["));
 }
 
 // Callout: end-to-end parse with callout headers (mdast + try_parse_callout per blockquote).
@@ -123,17 +133,44 @@ fn from_markdown_str_with_embeds() -> mq_markdown::Markdown {
     mq_markdown::Markdown::from_markdown_str(&embed_doc()).unwrap()
 }
 
-// Early-exit check for embeds.
-#[cfg(feature = "embed")]
-#[divan::bench(name = "contains_check/with_embeds")]
-fn contains_check_embed_with() {
-    let doc = embed_doc();
-    divan::black_box(doc.contains("![["));
+// Real-world documents: the README and the book sources, concatenated.
+fn real_doc() -> String {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|ext| ext == "md") {
+                out.push(path);
+            }
+        }
+    }
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut paths = vec![root.join("README.md")];
+    walk(&root.join("docs/books/src"), &mut paths);
+    paths.sort();
+    paths
+        .iter()
+        .filter_map(|path| std::fs::read_to_string(path).ok())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
-#[cfg(feature = "embed")]
-#[divan::bench(name = "contains_check/without_embeds")]
-fn contains_check_embed_without() {
-    let doc = plain_doc();
-    divan::black_box(doc.contains("![["));
+#[divan::bench(name = "from_markdown_str/real_docs")]
+fn from_markdown_str_real_docs(bencher: divan::Bencher) {
+    let doc = real_doc();
+    bencher
+        .counter(divan::counter::BytesCount::of_str(&doc))
+        .bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
+}
+
+// Many short lines, to stress line splitting.
+#[divan::bench(name = "from_markdown_str/many_lines")]
+fn from_markdown_str_many_lines(bencher: divan::Bencher) {
+    let doc = "line of plain text\n".repeat(20_000);
+    bencher
+        .counter(divan::counter::BytesCount::of_str(&doc))
+        .bench(|| mq_markdown::Markdown::from_markdown_str(&doc).unwrap());
 }
