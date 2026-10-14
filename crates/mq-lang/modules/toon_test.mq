@@ -19,7 +19,7 @@ def test_toon_try_parse_ok():
 end
 
 def test_toon_try_parse_error():
-  let result = toon::toon_try_parse(": : :")
+  let result = toon::toon_try_parse("[2]: 1")
   | assert_eq(result["ok"], false)
   | assert_eq(result["value"], None)
   | assert_eq(is_string(result["error"]["message"]), true)
