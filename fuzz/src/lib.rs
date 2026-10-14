@@ -277,9 +277,12 @@ const MARKDOWN_TOKENS: &[&str] = &[
     "日本語",
 ];
 
-/// The longest source a generated input makes. `to_json` writes about 100 times the source, so a larger
-/// source makes a run slow and its memory use high.
+/// The longest source a generated input makes, so that repeats do not slow each run down.
 const MARKDOWN_MAX_LEN: usize = 64 * 1024;
+
+/// The longest source that is written as JSON. The output is pretty printed, so nested nodes make it a
+/// few thousand times the source (165 MB for 64 KiB of `[^1]: `), which fills the memory of a run.
+const JSON_MAX_LEN: usize = 8 * 1024;
 
 #[derive(Debug, Clone, Arbitrary)]
 enum MarkdownPart {
@@ -334,7 +337,9 @@ fn read_and_render(source: &str, mdx: bool, frontmatter: bool) {
         let _ = markdown.to_string();
         let _ = markdown.to_html();
         let _ = markdown.to_text();
-        let _ = markdown.to_json();
+        if source.len() <= JSON_MAX_LEN {
+            let _ = markdown.to_json();
+        }
     }
 }
 
