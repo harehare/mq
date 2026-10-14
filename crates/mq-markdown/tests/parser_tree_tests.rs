@@ -2553,6 +2553,11 @@ list level=0 index=0 marker=- @1:3-3:3
 "#
 )]
 #[case::indented_code_trailing_blank("    code\n\n\n", "<pre><code>code\n</code></pre>\n", r#"code "code" @1:1-1:9"#)]
+#[case::indented_code_trailing_spaces(
+    "    code\n        \n",
+    "<pre><code>code\n</code></pre>\n",
+    r#"code "code" @1:1-2:9"#
+)]
 #[case::bom_heading(
     "\u{feff}# a\n",
     "<h1>a</h1>\n",

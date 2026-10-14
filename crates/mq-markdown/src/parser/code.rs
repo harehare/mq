@@ -170,14 +170,12 @@ pub(super) fn indented_code(lines: &[Line<'_>], start: usize, blocks: &mut Vec<B
         start: lines[start].point(0),
         end: lines[last_code].end(),
     };
-    // Mirrors the `mdast` conversion: a value whose line count differs from the span is reported as fenced.
-    let fence = value.lines().count() != position.end.line - position.start.line + 1;
 
     blocks.push(Block::Node(Node::Code(Code {
         value,
         lang: None,
         meta: None,
-        fence,
+        fence: false,
         position: Some(position),
     })));
 
