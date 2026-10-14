@@ -648,11 +648,11 @@ fn starts_with_word_char(node: &Node) -> bool {
     matches!(node, Node::Text(Text { value, .. }) if value.starts_with(|c: char| c.is_alphanumeric()))
 }
 
-/// Whether `value` starts where the last of `before` ends, so the two share a run of delimiters.
+/// Whether `second` starts where `first` ends, so the two are written next to each other.
 /// Nodes without positions are taken to touch.
-fn touches_previous(before: &[Node], value: &Node) -> bool {
-    match (before.last().and_then(Node::position), value.position()) {
-        (Some(previous), Some(position)) => previous.end == position.start,
+fn touches(first: &Node, second: &Node) -> bool {
+    match (first.position(), second.position()) {
+        (Some(first), Some(second)) => first.end == second.start,
         _ => true,
     }
 }
@@ -671,10 +671,10 @@ pub(crate) fn render_before(
     // Emphasis right after other emphasis takes the other delimiter, or the two fuse into one run.
     if let Node::Emphasis(Emphasis { values, .. }) = value
         && matches!(before.last(), Some(Node::Emphasis(_) | Node::Strong(_)))
-        && touches_previous(before, value)
+        && before.last().is_some_and(|last| touches(last, value))
         && !matches!(values.first(), Some(Node::Emphasis(_)))
         && !matches!(values.last(), Some(Node::Emphasis(_)))
-        && !next.is_some_and(starts_with_word_char)
+        && !next.is_some_and(|next| touches(value, next) && starts_with_word_char(next))
     {
         let delim = if previous.is_some_and(|previous| previous.ends_with('_')) {
             "*"
@@ -686,21 +686,23 @@ pub(crate) fn render_before(
     // Strong right after emphasis that ends in `*` takes `__`, or the runs of `*` fuse.
     if let Node::Strong(Strong { values, .. }) = value
         && matches!(before.last(), Some(Node::Emphasis(_) | Node::Strong(_)))
-        && touches_previous(before, value)
-        && !next.is_some_and(starts_with_word_char)
+        && before.last().is_some_and(|last| touches(last, value))
+        && !next.is_some_and(|next| touches(value, next) && starts_with_word_char(next))
         && previous.is_some_and(|previous| previous.ends_with('*'))
     {
         return render_strong(values, "__", options, theme);
     }
     // A reference followed by a colon at the start of a line would read back as a definition.
-    let after_reference = matches!(before.last(), Some(Node::LinkRef(_) | Node::FootnoteRef(_)));
+    let after_reference = matches!(before.last(), Some(Node::LinkRef(_) | Node::FootnoteRef(_)))
+        && before.last().is_some_and(|last| touches(last, value));
     let mut rendered = value.render_with_theme(options, theme);
-    let starts_link = match next {
-        Some(Node::Link(_) | Node::LinkRef(_)) => true,
-        #[cfg(feature = "wikilink")]
-        Some(Node::WikiLink(_)) => true,
-        _ => false,
-    };
+    let starts_link = next.is_some_and(|next| touches(value, next))
+        && match next {
+            Some(Node::Link(_) | Node::LinkRef(_)) => true,
+            #[cfg(feature = "wikilink")]
+            Some(Node::WikiLink(_)) => true,
+            _ => false,
+        };
     if after_reference && matches!(value, Node::Text(_)) && rendered.starts_with(':') {
         rendered.insert(0, '\\');
     }
