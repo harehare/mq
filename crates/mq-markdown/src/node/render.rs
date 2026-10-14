@@ -649,22 +649,24 @@ fn starts_with_word_char(node: &Node) -> bool {
 }
 
 /// Renders `value`, escaping a `!` that ends its text when `next` starts a link, which would make an image.
+///
+/// `previous` is what this function returned for the last of `before`, with `value` as `next`.
 pub(crate) fn render_before(
     value: &Node,
     before: &[Node],
+    previous: Option<&str>,
     next: Option<&Node>,
     options: &RenderOptions,
     theme: &ColorTheme<'_>,
 ) -> String {
     // Emphasis right after other emphasis takes the other delimiter, or the two fuse into one run.
     if let Node::Emphasis(Emphasis { values, .. }) = value
-        && let Some((prev, earlier)) = before.split_last()
-        && matches!(prev, Node::Emphasis(_) | Node::Strong(_))
+        && matches!(before.last(), Some(Node::Emphasis(_) | Node::Strong(_)))
         && !matches!(values.first(), Some(Node::Emphasis(_)))
         && !matches!(values.last(), Some(Node::Emphasis(_)))
         && !next.is_some_and(starts_with_word_char)
     {
-        let delim = if render_before(prev, earlier, Some(value), options, theme).ends_with('_') {
+        let delim = if previous.is_some_and(|previous| previous.ends_with('_')) {
             "*"
         } else {
             "_"
@@ -673,10 +675,9 @@ pub(crate) fn render_before(
     }
     // Strong right after emphasis that ends in `*` takes `__`, or the runs of `*` fuse.
     if let Node::Strong(Strong { values, .. }) = value
-        && let Some((prev, earlier)) = before.split_last()
-        && matches!(prev, Node::Emphasis(_) | Node::Strong(_))
+        && matches!(before.last(), Some(Node::Emphasis(_) | Node::Strong(_)))
         && !next.is_some_and(starts_with_word_char)
-        && render_before(prev, earlier, Some(value), options, theme).ends_with('*')
+        && previous.is_some_and(|previous| previous.ends_with('*'))
     {
         return render_strong(values, "__", options, theme);
     }
@@ -700,11 +701,20 @@ pub(crate) fn render_before(
 
 pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
     let mut pre_position: Option<Position> = None;
+    let mut previous: Option<String> = None;
     values
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let rendered = || render_before(value, &values[..index], values.get(index + 1), options, theme);
+            let raw = render_before(
+                value,
+                &values[..index],
+                previous.as_deref(),
+                values.get(index + 1),
+                options,
+                theme,
+            );
+            let rendered = || raw.as_str();
             if let Some(pos) = value.position() {
                 let new_line_count = pre_position
                     .as_ref()
@@ -724,7 +734,7 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
 
                 pre_position = Some(pos);
 
-                if space.is_empty() {
+                let piece = if space.is_empty() {
                     format!("{}{}", "\n".repeat(new_line_count), rendered())
                 } else {
                     format!(
@@ -732,10 +742,14 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
                         "\n".repeat(new_line_count),
                         rendered().lines().map(|line| format!("{}{}", space, line)).join("\n")
                     )
-                }
+                };
+                previous = Some(raw);
+                piece
             } else {
                 pre_position = None;
-                rendered()
+                let piece = raw.clone();
+                previous = Some(raw);
+                piece
             }
         })
         .collect::<String>()
@@ -752,6 +766,8 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
     let mut index = 0;
     // The last node written, to tell paragraphs from the inline nodes of one when there are no positions.
     let mut previous: Option<&Node> = None;
+    // What `render_before` returned for `previous`, or `None` when it is part of a table.
+    let mut previous_rendered: Option<String> = None;
 
     while index < values.len() {
         let first = &values[index];
@@ -760,7 +776,14 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
             render_table_run(values, index, options, theme)
         } else {
             (
-                render_before(first, &values[..index], values.get(index + 1), options, theme),
+                render_before(
+                    first,
+                    &values[..index],
+                    previous_rendered.as_deref(),
+                    values.get(index + 1),
+                    options,
+                    theme,
+                ),
                 first.position(),
                 index + 1,
             )
@@ -783,6 +806,7 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
         }
         previous = Some(&values[index - 1]);
         result.push_str(&rendered);
+        previous_rendered = (!is_table_part(first)).then_some(rendered);
     }
     result
 }

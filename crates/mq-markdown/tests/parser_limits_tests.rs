@@ -134,3 +134,39 @@ fn emphasis_matches_as_before(#[case] input: &str, #[case] expected: &str) {
 fn thematic_breaks_are_told_from_other_lines(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(mq_markdown::to_html(input), expected);
 }
+
+/// A run of emphasis nodes that follow each other is written with alternating delimiters, which must
+/// not rewrite every node before it: that took seconds for a few thousand nodes.
+#[test]
+fn adjacent_emphasis_renders_in_linear_time() {
+    let markdown = Markdown::from_markdown_str(&"*_".repeat(20_000)).unwrap();
+    let start = std::time::Instant::now();
+    let _ = markdown.to_string();
+    let _ = markdown.to_html();
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn adjacent_emphasis_alternates_its_delimiters() {
+    use mq_markdown::{Emphasis, Heading, HeadingDepth, Node};
+
+    let emphasis = |text: &str| {
+        Node::Emphasis(Emphasis {
+            values: vec![text.to_string().into()],
+            position: None,
+        })
+    };
+    let nodes = vec![emphasis("a"), emphasis("b"), emphasis("c")];
+    assert_eq!(Markdown::new(nodes.clone()).to_string().trim_end(), "*a*\n_b_\n*c*");
+
+    let heading = Node::Heading(Heading {
+        depth: HeadingDepth::H1,
+        values: nodes,
+        position: None,
+    });
+    assert_eq!(Markdown::new(vec![heading]).to_string().trim_end(), "# *a*_b_*c*");
+}

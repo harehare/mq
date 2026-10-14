@@ -103,6 +103,8 @@ impl Markdown {
         // Sibling list items only carry a `level`, not a parent link; reconstructs
         // nested-list indentation from the nearest open ancestor at each level.
         let mut list_indent_stack: Vec<usize> = Vec::new();
+        // What `render_before` returned for the node before, to pick a delimiter that does not fuse with it.
+        let mut previous_rendered: Option<String> = None;
 
         let reordered = list_order::reorder(&self.nodes);
         let nodes: &[Node] = reordered.as_ref().map_or(&self.nodes, |reordered| &reordered.nodes);
@@ -202,6 +204,8 @@ impl Markdown {
             current_table = None;
             in_table = false;
 
+            let previous = previous_rendered.take();
+            let mut plain = false;
             let value = if let Node::List(list) = node
                 && is_continuation(i)
             {
@@ -231,8 +235,17 @@ impl Markdown {
                 .render_with_theme(&self.options, theme)
             } else {
                 list_indent_stack.clear();
-                render_before(node, &nodes[..i], nodes.get(i + 1), &self.options, theme)
+                plain = true;
+                render_before(
+                    node,
+                    &nodes[..i],
+                    previous.as_deref(),
+                    nodes.get(i + 1),
+                    &self.options,
+                    theme,
+                )
             };
+            previous_rendered = plain.then(|| value.clone());
 
             if value.is_empty() || value == "\n" {
                 pre_position = None;
