@@ -3093,3 +3093,13 @@ fn heading_depth_is_a_number_in_json() {
     assert_eq!(serde_json::from_str::<Heading>(&json).unwrap(), heading);
     assert!(serde_json::from_str::<Heading>(&json.replace("\"depth\":3", "\"depth\":7")).is_err());
 }
+
+#[test]
+fn heading_depth_compares_with_u8() {
+    assert!(HeadingDepth::H2 == 2u8);
+    assert!(2u8 == HeadingDepth::H2);
+    assert!(HeadingDepth::H2 < 3u8);
+    assert!(3u8 > HeadingDepth::H2);
+    assert_eq!(usize::from(HeadingDepth::H3), 3);
+    assert_eq!(i64::from(HeadingDepth::H3), 3);
+}

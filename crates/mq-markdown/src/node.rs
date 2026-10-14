@@ -683,6 +683,42 @@ impl From<HeadingDepth> for u8 {
     }
 }
 
+impl PartialEq<u8> for HeadingDepth {
+    fn eq(&self, other: &u8) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<HeadingDepth> for u8 {
+    fn eq(&self, other: &HeadingDepth) -> bool {
+        *self == other.0
+    }
+}
+
+impl PartialOrd<u8> for HeadingDepth {
+    fn partial_cmp(&self, other: &u8) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl PartialOrd<HeadingDepth> for u8 {
+    fn partial_cmp(&self, other: &HeadingDepth) -> Option<std::cmp::Ordering> {
+        self.partial_cmp(&other.0)
+    }
+}
+
+impl From<HeadingDepth> for usize {
+    fn from(depth: HeadingDepth) -> Self {
+        usize::from(depth.0)
+    }
+}
+
+impl From<HeadingDepth> for i64 {
+    fn from(depth: HeadingDepth) -> Self {
+        i64::from(depth.0)
+    }
+}
+
 impl Display for HeadingDepth {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
