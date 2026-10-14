@@ -277,8 +277,9 @@ const MARKDOWN_TOKENS: &[&str] = &[
     "日本語",
 ];
 
-/// The longest source a generated input makes, so that repeats do not slow each run down.
-const MARKDOWN_MAX_LEN: usize = 1 << 20;
+/// The longest source a generated input makes. `to_json` writes about 100 times the source, so a larger
+/// source makes a run slow and its memory use high.
+const MARKDOWN_MAX_LEN: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Arbitrary)]
 enum MarkdownPart {
