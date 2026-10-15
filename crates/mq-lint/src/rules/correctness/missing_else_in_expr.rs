@@ -1,7 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
-/// Flags: an `if` expression without an `else` branch.
+/// Reports `if` expressions that have no `else` branch.
 pub struct MissingElseInExpr;
 
 impl LintRule for MissingElseInExpr {

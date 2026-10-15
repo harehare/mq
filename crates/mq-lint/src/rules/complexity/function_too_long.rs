@@ -1,6 +1,6 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
-/// Flags: a function body longer than the configured line limit.
+/// Reports function bodies longer than the configured line limit.
 pub struct FunctionTooLong;
 
 impl LintRule for FunctionTooLong {

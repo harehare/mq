@@ -42,7 +42,7 @@ impl KindSet {
         self.0 & Self::bit(kind) != 0
     }
 
-    /// Whether the environment has no entries.
+    /// Whether the set is empty.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
@@ -52,7 +52,7 @@ impl KindSet {
         self.0 == Self::ALL.0
     }
 
-    /// Number of entries.
+    /// Number of kinds in the set.
     pub const fn len(self) -> usize {
         self.0.count_ones() as usize
     }

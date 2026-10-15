@@ -1,7 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
-/// Flags: a function with more parameters than the configured limit.
+/// Reports functions with more parameters than the configured limit.
 pub struct TooManyParams;
 
 impl LintRule for TooManyParams {

@@ -3,7 +3,7 @@ use rustc_hash::FxHashSet;
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, ScopeKind, SymbolId, SymbolKind};
 
-/// Flags: a function parameter that is never used.
+/// Reports function parameters that are never used.
 pub struct UnusedParameter;
 
 fn is_in_scope_subtree(ctx: &LintContext<'_>, scope_id: ScopeId, target_scope_id: ScopeId) -> bool {

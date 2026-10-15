@@ -1,7 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
-/// Flags: code after a `break` or `continue`.
+/// Reports code that follows a `break` or `continue` in the same block.
 pub struct UnreachableCode;
 
 impl LintRule for UnreachableCode {

@@ -1,7 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
-/// Flags: a name that is not `snake_case`.
+/// Reports function and variable names that are not `snake_case`.
 pub struct NamingConvention;
 
 impl LintRule for NamingConvention {

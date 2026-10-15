@@ -1858,17 +1858,17 @@ impl Node {
         }
     }
 
-    /// Returns `true` if this node is an inline code.
+    /// Returns `true` if this node is inline code.
     pub fn is_inline_code(&self) -> bool {
         matches!(self, Self::CodeInline(_))
     }
 
-    /// Returns `true` if this node is an inline math.
+    /// Returns `true` if this node is inline math.
     pub fn is_inline_math(&self) -> bool {
         matches!(self, Self::MathInline(_))
     }
 
-    /// Returns `true` if this node is a strongly emphasized text.
+    /// Returns `true` if this node is strongly emphasized text.
     pub fn is_strong(&self) -> bool {
         matches!(self, Self::Strong(_))
     }
@@ -1878,7 +1878,7 @@ impl Node {
         matches!(self, Self::List(_))
     }
 
-    /// Returns `true` if this node is an emphasized text.
+    /// Returns `true` if this node is emphasized text.
     pub fn is_emphasis(&self) -> bool {
         matches!(self, Self::Emphasis(_))
     }
@@ -1997,17 +1997,17 @@ impl Node {
         matches!(self, Self::MdxJsxFlowElement(MdxJsxFlowElement { .. }))
     }
 
-    /// Returns `true` if this node is a MDX ESM statement.
+    /// Returns `true` if this node is an MDX ESM statement.
     pub fn is_mdx_js_esm(&self) -> bool {
         matches!(self, Self::MdxJsEsm(MdxJsEsm { .. }))
     }
 
-    /// Returns `true` if this node is a TOML front matter.
+    /// Returns `true` if this node is TOML front matter.
     pub fn is_toml(&self) -> bool {
         matches!(self, Self::Toml { .. })
     }
 
-    /// Returns `true` if this node is a YAML front matter.
+    /// Returns `true` if this node is YAML front matter.
     pub fn is_yaml(&self) -> bool {
         matches!(self, Self::Yaml { .. })
     }
@@ -2017,7 +2017,7 @@ impl Node {
         matches!(self, Self::Break { .. })
     }
 
-    /// Returns `true` if this node is a inline MDX expression.
+    /// Returns `true` if this node is an inline MDX expression.
     pub fn is_mdx_text_expression(&self) -> bool {
         matches!(self, Self::MdxTextExpression(MdxTextExpression { .. }))
     }
@@ -2027,12 +2027,12 @@ impl Node {
         matches!(self, Self::FootnoteRef { .. })
     }
 
-    /// Returns `true` if this node is an reference-style image.
+    /// Returns `true` if this node is a reference-style image.
     pub fn is_image_ref(&self) -> bool {
         matches!(self, Self::ImageRef(_))
     }
 
-    /// Returns `true` if this node is a inline JSX element.
+    /// Returns `true` if this node is an inline JSX element.
     pub fn is_mdx_jsx_text_element(&self) -> bool {
         matches!(self, Self::MdxJsxTextElement(MdxJsxTextElement { .. }))
     }

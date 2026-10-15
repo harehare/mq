@@ -203,7 +203,7 @@ pub enum NodeKind {
     Else {
         /// The `:` token.
         colon: Option<Shared<Node>>,
-        /// The body evaluated when the condition holds.
+        /// The body of the `else` branch.
         then_branch: Shared<Node>,
     },
     /// An environment variable reference.

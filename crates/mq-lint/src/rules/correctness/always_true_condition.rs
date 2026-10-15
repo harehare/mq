@@ -1,7 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
-/// Flags: an `if` condition that is a constant.
+/// Reports `if` conditions that are a `true` or `false` literal.
 pub struct AlwaysTrueCondition;
 
 impl LintRule for AlwaysTrueCondition {

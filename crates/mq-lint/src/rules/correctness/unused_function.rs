@@ -3,7 +3,7 @@ use rustc_hash::FxHashSet;
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
-/// Flags: a function that is never called.
+/// Reports functions that are never called.
 pub struct UnusedFunction;
 
 impl LintRule for UnusedFunction {

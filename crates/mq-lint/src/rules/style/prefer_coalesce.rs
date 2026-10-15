@@ -3,7 +3,7 @@ use mq_hir::{Symbol, SymbolId, SymbolKind};
 use crate::fix::Core;
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 
-/// Flags: an `if`/`else` null check expressible with `??`.
+/// Reports `if (x == none)` and `if (x != none)` checks that `x ?? fallback` replaces.
 pub struct PreferCoalesce;
 
 /// True if `id` has no children (e.g. a bare `Ref`/`Selector`, not a call).
@@ -89,8 +89,8 @@ fn find_coalesce_match(ctx: &LintContext<'_>, if_id: SymbolId) -> Option<Coalesc
 /// The fallback branch is a leaf (a bare literal/selector) or not, but either way its own end
 /// isn't reliably tracked once it has children (e.g. a call's closing `)`). So instead of slicing
 /// the fallback's own range, this bounds it by whichever neighboring token *is* reliable: `else`'s
-/// own start when the fallback comes first (the `==` shape), or — since nothing follows it when
-/// the fallback comes last (the `!=` shape) — by simply not replacing it at all, leaving its
+/// own start when the fallback comes first (the `==` shape), or, since nothing follows it when
+/// the fallback comes last (the `!=` shape), by simply not replacing it at all, leaving its
 /// original text in place right after the edit.
 fn build_fix(ctx: &LintContext<'_>, if_start: mq_lang::Position, m: &CoalesceMatch) -> Option<(mq_lang::Range, Fix)> {
     let value_range = ctx.hir.symbol(m.value_branch_id)?.source.text_range?;

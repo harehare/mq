@@ -1,7 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
-/// Flags: a match with more arms than the configured limit.
+/// Reports `match` expressions with more arms than the configured limit.
 pub struct TooManyMatchArms;
 
 impl LintRule for TooManyMatchArms {

@@ -148,9 +148,9 @@ pub enum TypeError {
     #[allow(dead_code)]
     /// A call passes the wrong number of arguments.
     WrongArity {
-        /// The expected type.
+        /// The expected number of arguments.
         expected: usize,
-        /// The type that was found.
+        /// The number of arguments passed.
         found: usize,
         /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
