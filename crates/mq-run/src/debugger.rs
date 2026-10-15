@@ -26,7 +26,7 @@ pub enum Command {
     Continue,
     /// Clear a breakpoint, or all breakpoints.
     Clear(Option<BreakpointId>),
-    /// Unparseable input, carrying the message.
+    /// Unparsable input, carrying the message.
     Error(String),
     /// Evaluate an expression.
     Eval(String),
