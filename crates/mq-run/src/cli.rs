@@ -500,6 +500,12 @@ struct ProgramArgs {
     #[arg(long = "refresh-modules", default_value_t = false)]
     refresh_modules: bool,
 
+    /// Remove all HTTP module cache including versioned (tagged) modules and lock files.
+    /// Use this to fully reset the cache when something goes wrong.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "clear-cache", default_value_t = false)]
+    clear_cache: bool,
+
     /// Disable the mq.lock integrity check for HTTP imports.
     /// By default a fetched URL's content is checked against mq.lock, and a mismatch is
     /// rejected unless --refresh-modules is also passed.
@@ -867,13 +873,12 @@ enum Commands {
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
-    /// List all available subcommands (built-in and external)
-    List,
-    /// Manage the HTTP module cache
-    #[cfg(feature = "http-import")]
-    Cache {
-        #[command(subcommand)]
-        action: CacheCommand,
+    /// List built-in and external subcommands
+    #[command(name = "commands")]
+    Subcommands {
+        /// Print machine-readable JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
     },
     /// Generate a shell completion script and print it to stdout
     Completion {
@@ -914,15 +919,6 @@ enum Commands {
     },
 }
 
-/// Actions of the `cache` subcommand.
-#[cfg(feature = "http-import")]
-#[derive(Debug, Subcommand)]
-enum CacheCommand {
-    /// Remove all HTTP module cache including versioned (tagged) modules and lock files.
-    /// Use this to fully reset the cache when something goes wrong.
-    Clear,
-}
-
 /// Shell targets supported by the `completion` subcommand.
 #[derive(Clone, Debug, clap::ValueEnum)]
 enum CompletionShell {
@@ -956,6 +952,17 @@ impl Cli {
             Some(mq_bin_dir)
         } else {
             None
+        }
+    }
+
+    /// Resolve `mq-NAME` in `~/.local/bin` first, then `PATH`.
+    fn external_command_path(name: &str) -> Option<PathBuf> {
+        let command_bin = format!("mq-{}", name);
+        let local_path = Self::get_external_commands_dir().unwrap_or_default().join(&command_bin);
+        if local_path.exists() {
+            Some(local_path)
+        } else {
+            which(&command_bin).ok()
         }
     }
 
@@ -1084,43 +1091,62 @@ impl Cli {
         Ok(())
     }
 
-    /// List all available subcommands (built-in and external)
-    fn list_commands(&self) -> miette::Result<()> {
-        let mut output = vec![
-            format!("{}", "Built-in subcommands:".bold().cyan()),
-            format!(
-                "  {} - Start a REPL session for interactive query execution",
-                "repl".green()
-            ),
-            format!(
-                "  {} - Generate a shell completion script and print it to stdout",
-                "completion".green()
-            ),
-            format!(
-                "  {} - Compile a query to .mqc bytecode (experimental)",
-                "compile".green()
-            ),
-            format!(
-                "  {} - List all available subcommands (built-in and external)",
-                "list".green()
-            ),
-        ];
+    /// Print built-in subcommands (from the clap definition) and external `mq-*` commands.
+    fn run_commands(json: bool) -> miette::Result<()> {
+        let builtin: Vec<(String, String)> = Self::command()
+            .get_subcommands()
+            .filter(|command| !command.is_hide_set())
+            .map(|command| {
+                let about = command.get_about().map(|about| about.to_string()).unwrap_or_default();
+                let summary = about.split_once(". ").map_or(about.as_str(), |(first, _)| first);
+                (
+                    command.get_name().to_string(),
+                    summary.trim_end_matches('.').to_string(),
+                )
+            })
+            .collect();
+        let external: Vec<(String, Option<PathBuf>)> = Self::find_external_commands()
+            .into_iter()
+            .map(|name| {
+                let path = Self::external_command_path(&name);
+                (name, path)
+            })
+            .collect();
 
-        #[cfg(feature = "http-import")]
-        output.push(format!("  {} - Manage the HTTP module cache", "cache".green()));
+        if json {
+            let value = serde_json::json!({
+                "builtin": builtin
+                    .iter()
+                    .map(|(name, description)| serde_json::json!({ "name": name, "description": description }))
+                    .collect::<Vec<_>>(),
+                "external": external
+                    .iter()
+                    .map(|(name, path)| serde_json::json!({ "name": name, "path": path }))
+                    .collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&value).into_diagnostic()?);
+            return Ok(());
+        }
 
-        #[cfg(feature = "debugger")]
-        output.push(format!("  {} - Start a debug adapter for mq", "dap".green()));
-
-        let external_commands = Self::find_external_commands();
-        if !external_commands.is_empty() {
-            output.push("".to_string());
+        let width = builtin
+            .iter()
+            .map(|(name, _)| name.len())
+            .chain(external.iter().map(|(name, _)| name.len()))
+            .max()
+            .unwrap_or(0);
+        let mut output = vec![format!("{}", "Built-in subcommands:".bold().cyan())];
+        for (name, description) in &builtin {
+            output.push(format!("  {:<width$}  {}", name.green(), description));
+        }
+        if !external.is_empty() {
+            output.push(String::new());
             output.push(format!(
                 "{}",
                 "External subcommands (from ~/.local/bin and PATH):".bold().yellow()
             ));
-            for cmd in external_commands {
-                output.push(format!("  {}", cmd.bright_yellow()));
+            for (name, path) in &external {
+                let path = path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+                output.push(format!("  {:<width$}  {}", name.bright_yellow(), path));
             }
         }
 
@@ -1742,10 +1768,84 @@ impl Cli {
     }
 
     pub fn run(&self) -> miette::Result<()> {
-        if matches!(self.commands, Some(Commands::List)) {
-            return self.list_commands();
+        if let Some(result) = self.run_standalone_command() {
+            return result;
         }
 
+        self.load_bytecode()?;
+
+        if let Some(result) = self.run_external_command() {
+            return result;
+        }
+
+        self.validate_csv_options()?;
+        self.validate_frontmatter_option()?;
+
+        match &self.commands {
+            Some(Commands::Repl { files }) => return self.run_repl(files.as_deref()),
+            None if self.query.is_none() => return self.run_repl(None),
+            _ => {}
+        }
+
+        self.validate_output_options()?;
+        self.run_query()
+    }
+
+    /// Runs the subcommands that take no query or input document, so none of the query
+    /// input/output flag validation applies to them.
+    fn run_standalone_command(&self) -> Option<miette::Result<()>> {
+        match self.commands.as_ref()? {
+            Commands::Subcommands { json } => Some(Self::run_commands(*json)),
+            Commands::Completion { shell } => Some(Self::generate_completion(shell)),
+            Commands::Help { name, json, markdown } => Some(Self::run_help(name.as_deref(), *json, *markdown)),
+            Commands::Compile {
+                query,
+                from_file,
+                output,
+                program,
+            } => {
+                if self.format.is_some() {
+                    return Some(Err(miette!(
+                        "-T/--format has no effect on `mq compile`; pass -I/--input-format after `compile` instead"
+                    )));
+                }
+                if self.input.program != ProgramArgs::default() || self.input.from_file {
+                    return Some(Err(miette!(
+                        "Pass compile options after `compile`: mq compile [OPTIONS] QUERY"
+                    )));
+                }
+                Some(Self::compile_bytecode(query, *from_file, output.as_deref(), program))
+            }
+            #[cfg(feature = "debugger")]
+            Commands::Dap => Some(mq_dap::start().map_err(|e| miette!(e.to_string()))),
+            Commands::Repl { .. } => None,
+        }
+    }
+
+    /// Runs `mq-NAME` when the query is the bare name of an external subcommand.
+    ///
+    /// clap parses `mq test arg1` as query="test", files=["arg1"], so this is detected here.
+    fn run_external_command(&self) -> Option<miette::Result<()>> {
+        if self.input.from_file || self.commands.is_some() || self.bytecode.get().is_some() {
+            return None;
+        }
+        let query_value = self.query.as_ref()?;
+        if !query_value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return None;
+        }
+        let command_path = Self::external_command_path(query_value)?;
+        let mut args = vec![query_value.clone()];
+        if let Some(files) = &self.files {
+            args.extend(files.iter().map(|p| p.to_string_lossy().to_string()));
+        }
+        Some(self.execute_external_command(command_path, &args))
+    }
+
+    /// Checks the output flags against the resolved output format.
+    fn validate_output_options(&self) -> miette::Result<()> {
         if (self.output.before_context.is_some()
             || self.output.after_context.is_some()
             || self.output.context.is_some())
@@ -1754,60 +1854,6 @@ impl Cli {
             return Err(miette!(
                 "--before-context, --after-context, and --context are only valid with -F grep"
             ));
-        }
-
-        if let Some(Commands::Compile {
-            query,
-            from_file,
-            output,
-            program,
-        }) = &self.commands
-        {
-            if self.format.is_some() {
-                return Err(miette!(
-                    "-T/--format has no effect on `mq compile`; pass -I/--input-format after `compile` instead"
-                ));
-            }
-            if self.input.program != ProgramArgs::default() || self.input.from_file {
-                return Err(miette!(
-                    "Pass compile options after `compile`: mq compile [OPTIONS] QUERY"
-                ));
-            }
-            return Self::compile_bytecode(query, *from_file, output.as_deref(), program);
-        }
-        self.load_bytecode()?;
-
-        // Check if query is actually an external subcommand
-        // This handles the case where clap parses "mq test arg1" as query="test", files=["arg1"]
-        if !self.input.from_file
-            && self.commands.is_none()
-            && self.bytecode.get().is_none()
-            && let Some(query_value) = &self.query
-        {
-            // Only treat as external command if query_value is a valid file name
-            if query_value
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-            {
-                let command_path = {
-                    let command_bin = format!("mq-{}", query_value);
-                    let command_path = Self::get_external_commands_dir().unwrap_or_default().join(&command_bin);
-
-                    if !command_path.exists() {
-                        which(&command_bin).ok()
-                    } else {
-                        Some(command_path)
-                    }
-                };
-
-                if let Some(command_path) = command_path {
-                    let mut args = vec![query_value.clone()];
-                    if let Some(files) = &self.files {
-                        args.extend(files.iter().map(|p| p.to_string_lossy().to_string()));
-                    }
-                    return self.execute_external_command(command_path, &args);
-                }
-            }
         }
 
         if !matches!(self.explicit_input_format(), Some(InputFormat::Markdown) | None) && self.output.update {
@@ -1828,72 +1874,57 @@ impl Cli {
             return Err(miette!("--indent/--tab are only valid with -F json or -F xml"));
         }
 
-        self.validate_csv_options()?;
-        self.validate_frontmatter_option()?;
-        self.check_output_permitted()?;
+        self.check_output_permitted()
+    }
 
-        match &self.commands {
-            Some(Commands::Repl { files }) => {
-                let engine = self.create_engine()?;
-                let input = match files {
-                    Some(files) if !files.is_empty() => {
-                        let files = Self::expand_glob_patterns(files)?;
-                        if files.iter().any(|f| Self::is_stdin_path(f)) {
-                            return Err(miette!("`-` (stdin) is not supported by the repl command"));
-                        }
-                        let contents = self.read_files_content(&files)?;
-                        let mut combined = Vec::new();
-                        for (file, content) in &contents {
-                            combined.extend(self.resolve_input(file, content)?);
-                        }
-                        combined
-                    }
-                    _ => vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))],
-                };
-                Self::new_repl(engine, input).run()
-            }
-            None if self.query.is_none() => {
-                let engine = self.create_engine()?;
-                Self::new_repl(engine, vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))]).run()
-            }
-            #[cfg(feature = "debugger")]
-            Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
-            Some(Commands::List) => unreachable!("handled before input validation"),
-            #[cfg(feature = "http-import")]
-            Some(Commands::Cache {
-                action: CacheCommand::Clear,
-            }) => {
-                let mut engine = self.create_engine()?;
-                engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))
-            }
-            Some(Commands::Completion { shell }) => Self::generate_completion(shell),
-            Some(Commands::Help { name, json, markdown }) => Self::run_help(name.as_deref(), *json, *markdown),
-            Some(Commands::Compile { .. }) => unreachable!("handled before input validation"),
-            #[cfg(feature = "watch")]
-            None if self.input.watch => self.run_watch(),
-            None => {
-                let result = self.execute_once();
-
-                // --exit-status / -e: exit with code 1 if no truthy value was
-                // produced. Mirrors jq's behaviour: false and null are falsy;
-                // everything else (including empty string, 0, [], {}) is truthy.
-                if self.output.exit_status {
-                    let had_truthy = HAD_TRUTHY_OUTPUT.load(Ordering::Relaxed);
-                    if !had_truthy {
-                        result?;
-                        std::process::exit(1);
-                    }
+    fn run_repl(&self, files: Option<&[PathBuf]>) -> miette::Result<()> {
+        let engine = self.create_engine()?;
+        let input = match files {
+            Some(files) if !files.is_empty() => {
+                let files = Self::expand_glob_patterns(files)?;
+                if files.iter().any(|f| Self::is_stdin_path(f)) {
+                    return Err(miette!("`-` (stdin) is not supported by the repl command"));
                 }
-
-                // --diff: exit 1 if anything would change, for CI gating.
-                if self.output.diff && HAD_DIFF.load(Ordering::Relaxed) {
-                    result?;
-                    std::process::exit(1);
+                let contents = self.read_files_content(&files)?;
+                let mut combined = Vec::new();
+                for (file, content) in &contents {
+                    combined.extend(self.resolve_input(file, content)?);
                 }
+                combined
+            }
+            _ => vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))],
+        };
+        Self::new_repl(engine, input).run()
+    }
 
-                result
+    fn run_query(&self) -> miette::Result<()> {
+        #[cfg(feature = "watch")]
+        {
+            if self.input.watch {
+                return self.run_watch();
             }
         }
+
+        let result = self.execute_once();
+
+        // --exit-status / -e: exit with code 1 if no truthy value was
+        // produced. Mirrors jq's behaviour: false and null are falsy;
+        // everything else (including empty string, 0, [], {}) is truthy.
+        if self.output.exit_status {
+            let had_truthy = HAD_TRUTHY_OUTPUT.load(Ordering::Relaxed);
+            if !had_truthy {
+                result?;
+                std::process::exit(1);
+            }
+        }
+
+        // --diff: exit 1 if anything would change, for CI gating.
+        if self.output.diff && HAD_DIFF.load(Ordering::Relaxed) {
+            result?;
+            std::process::exit(1);
+        }
+
+        result
     }
 
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
@@ -2023,7 +2054,9 @@ impl Cli {
             if let Some(path) = &self.input.program.lockfile_path {
                 engine.set_lockfile_path(path.clone());
             }
-            if self.input.program.refresh_modules {
+            if self.input.program.clear_cache {
+                engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))?;
+            } else if self.input.program.refresh_modules {
                 engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
         }
@@ -4079,25 +4112,28 @@ mod tests {
     }
 
     #[test]
-    fn test_list_and_cache_are_subcommands() {
+    fn test_actions_are_subcommands_not_flags() {
         assert!(matches!(
-            Cli::try_parse_from(["mq", "list"]).unwrap().commands,
-            Some(Commands::List)
+            Cli::try_parse_from(["mq", "commands"]).unwrap().commands,
+            Some(Commands::Subcommands { json: false })
         ));
+        assert!(Cli::try_parse_from(["mq", "list"]).unwrap().commands.is_none());
         assert!(Cli::try_parse_from(["mq", "--list"]).is_err());
-        assert!(Cli::try_parse_from(["mq", "--clear-cache"]).is_err());
     }
 
     #[cfg(feature = "http-import")]
     #[test]
-    fn test_cache_clear_subcommand() {
-        let cli = Cli::try_parse_from(["mq", "cache", "clear"]).unwrap();
-        assert!(matches!(
-            cli.commands,
-            Some(Commands::Cache {
-                action: CacheCommand::Clear
-            })
-        ));
+    fn test_clear_cache_flag() {
+        let cli = Cli::try_parse_from(["mq", "--clear-cache", "self"]).unwrap();
+        assert!(cli.input.program.clear_cache);
+    }
+
+    #[rstest]
+    #[case::completion(&["mq", "--compact", "completion", "bash"])]
+    #[case::help(&["mq", "--compact", "help", "map"])]
+    #[case::commands(&["mq", "--compact", "commands"])]
+    fn test_standalone_commands_ignore_output_flags(#[case] args: &[&str]) {
+        assert!(Cli::try_parse_from(args).unwrap().run().is_ok());
     }
 
     #[rstest]
@@ -5570,9 +5606,9 @@ mod tests {
     }
 
     #[test]
-    fn test_list_commands() {
+    fn test_run_commands() {
         let cli = Cli {
-            commands: Some(Commands::List),
+            commands: Some(Commands::Subcommands { json: false }),
             ..Cli::default()
         };
 

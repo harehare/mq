@@ -426,8 +426,8 @@ Fetched modules are cached in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
 - **Later use, content unchanged**: succeeds silently.
 - **Later use, content changed**: fails with an error explaining the mismatch. Re-run with
   `--refresh-modules` to accept the new content and update `mq.lock` (for a versioned/tagged
-  URL, whose cache `--refresh-modules` doesn't touch, use `mq cache clear` instead).
-- `--refresh-modules` / `mq cache clear` also drop the corresponding entries from `mq.lock`
+  URL, whose cache `--refresh-modules` doesn't touch, use `--clear-cache` instead).
+- `--refresh-modules` / `--clear-cache` also drop the corresponding entries from `mq.lock`
   (mutable-ref entries only, and all entries respectively), matching their disk-cache behavior.
 - Pass `--no-lockfile` to disable the check entirely (no file is read or written).
 - Pass `--lockfile <path>` to use a different location instead of `./mq.lock`. Missing parent

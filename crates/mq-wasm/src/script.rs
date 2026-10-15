@@ -611,7 +611,7 @@ pub async fn clear_http_cache() -> Result<(), JsValue> {
     Ok(())
 }
 
-/// Removes all HTTP module cache and deletes `mq.lock` (matches `mq cache clear`).
+/// Removes all HTTP module cache and deletes `mq.lock` (matches `--clear-cache`).
 #[wasm_bindgen(js_name=clearAllHttpCache)]
 pub async fn clear_all_http_cache() -> Result<(), JsValue> {
     #[cfg(feature = "opfs")]
