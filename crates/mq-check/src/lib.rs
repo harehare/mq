@@ -488,10 +488,9 @@ impl TypeChecker {
 
         // Collect errors before finalizing
         let mut errors = ctx.take_errors();
-        errors.retain(|e| !e.location().is_some_and(|r| is_module_range(&r)));
-        // A stage threaded twice reports the same error twice.
+        // Module diagnostics are never reported. A stage threaded twice reports its error twice.
         let mut seen = rustc_hash::FxHashSet::default();
-        errors.retain(|e| seen.insert(format!("{e:?}")));
+        errors.retain(|e| !e.location().is_some_and(|r| is_module_range(&r)) && seen.insert(format!("{e:?}")));
 
         // Store inferred types
         self.symbol_types = ctx.finalize();

@@ -35,10 +35,6 @@ pub(super) fn generate_block_constraints(
         thread_pipe_stage(hir, children[i - 1], children[i], ctx, children_index);
     }
 
-    // Propagate piped input through UnaryOp to inner Call/Ref children.
-    // e.g., `x | !is_empty()` — piped input flows through `!` to `is_empty()`
-    propagate_piped_input_through_unary_ops(hir, children, ctx, children_index);
-
     // The Block's type is the last meaningful (non-Keyword) child's type.
     // Keyword children like `end` are syntax delimiters with no semantic type;
     // using them would give a fresh Var that later gets unified away, losing
@@ -105,9 +101,6 @@ pub(super) fn generate_function_body_pipe_constraints(
     for i in 1..body_children.len() {
         thread_pipe_stage(hir, body_children[i - 1], body_children[i], ctx, children_index);
     }
-
-    // Propagate piped input through UnaryOp to inner Call/Ref children
-    propagate_piped_input_through_unary_ops(hir, &body_children, ctx, children_index);
 }
 
 /// Hands the output of `prev` to `stage` as its piped input and re-processes the stages
@@ -120,7 +113,7 @@ pub(super) fn thread_pipe_stage(
     children_index: &ChildrenIndex,
 ) {
     let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, prev);
-    ctx.set_piped_input(stage, prev_ty);
+    ctx.set_piped_input(stage, prev_ty.clone());
     if let Some(source) = prev_source {
         ctx.set_piped_source(stage, source);
     }
@@ -137,44 +130,32 @@ pub(super) fn thread_pipe_stage(
         SymbolKind::Variable | SymbolKind::DestructuringBinding => {
             propagate_piped_input_to_variable_initializer(hir, stage, ctx, children_index);
         }
+        // `x | !f()` and `x | f() == y`: the piped value flows through the operator to `f()`,
+        // and the operator's own type is then re-derived from its operands.
+        SymbolKind::UnaryOp | SymbolKind::BinaryOp => {
+            propagate_into_operands(hir, stage, &prev_ty, ctx, children_index);
+            generate_symbol_constraints(hir, stage, symbol.kind.clone(), ctx, children_index);
+        }
         _ => {}
     }
 }
 
-/// Like [`thread_pipe_stage`] for a unary/binary operator stage: hands the input to the
-/// operands and then re-derives the operator's own type from them.
-pub(super) fn thread_operator_stage(
+/// Calls `f` with every Call/Ref operand of the unary/binary operator `operator_id`,
+/// looking through nested operators.
+pub(super) fn for_each_operand_call(
     hir: &Hir,
-    prev: SymbolId,
-    stage: SymbolId,
-    ctx: &mut InferenceContext,
+    operator_id: SymbolId,
     children_index: &ChildrenIndex,
+    f: &mut impl FnMut(SymbolId, &SymbolKind),
 ) {
-    let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, prev);
-    ctx.set_piped_input(stage, prev_ty.clone());
-    if let Some(source) = prev_source {
-        ctx.set_piped_source(stage, source);
-    }
-    propagate_into_operands(hir, stage, &prev_ty, ctx, children_index);
-    if let Some(symbol) = hir.symbol(stage) {
-        generate_symbol_constraints(hir, stage, symbol.kind.clone(), ctx, children_index);
-    }
-}
-
-/// Propagates piped input through UnaryOp and BinaryOp nodes to their inner Call/Ref operands.
-///
-/// When a pipe chain contains `x | !f()` or `x | f() == y`, the piped value from `x` flows
-/// through the operator to `f()`. This function handles that propagation and re-processes
-/// the inner Call/Ref to pick up the piped input.
-fn propagate_piped_input_through_unary_ops(
-    hir: &Hir,
-    children: &[SymbolId],
-    ctx: &mut InferenceContext,
-    children_index: &ChildrenIndex,
-) {
-    for &child_id in children.iter().skip(1) {
-        if let Some(piped_ty) = ctx.get_piped_input(child_id).cloned() {
-            propagate_into_operands(hir, child_id, &piped_ty, ctx, children_index);
+    for &operand_id in get_children(children_index, operator_id) {
+        let Some(operand) = hir.symbol(operand_id) else {
+            continue;
+        };
+        match operand.kind {
+            SymbolKind::Call | SymbolKind::Ref => f(operand_id, &operand.kind),
+            SymbolKind::UnaryOp | SymbolKind::BinaryOp => for_each_operand_call(hir, operand_id, children_index, f),
+            _ => {}
         }
     }
 }
@@ -186,27 +167,10 @@ fn propagate_into_operands(
     ctx: &mut InferenceContext,
     children_index: &ChildrenIndex,
 ) {
-    if !hir
-        .symbol(operator_id)
-        .is_some_and(|s| matches!(s.kind, SymbolKind::UnaryOp | SymbolKind::BinaryOp))
-    {
-        return;
-    }
-    for &inner_id in get_children(children_index, operator_id) {
-        let Some(inner_sym) = hir.symbol(inner_id) else {
-            continue;
-        };
-        match inner_sym.kind {
-            SymbolKind::Call | SymbolKind::Ref => {
-                ctx.set_piped_input(inner_id, piped_ty.clone());
-                generate_symbol_constraints(hir, inner_id, inner_sym.kind.clone(), ctx, children_index);
-            }
-            SymbolKind::UnaryOp | SymbolKind::BinaryOp => {
-                propagate_into_operands(hir, inner_id, piped_ty, ctx, children_index);
-            }
-            _ => {}
-        }
-    }
+    for_each_operand_call(hir, operator_id, children_index, &mut |id, kind| {
+        ctx.set_piped_input(id, piped_ty.clone());
+        generate_symbol_constraints(hir, id, kind.clone(), ctx, children_index);
+    });
 }
 
 /// Propagates piped input from a Variable to its initializer expression (last child).
@@ -242,11 +206,6 @@ fn propagate_piped_input_to_variable_initializer(
     }
 }
 
-/// Resolves the body type of an elif/else branch.
-///
-/// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
-/// For Else: children are [body] — returns body type.
-/// For other kinds: returns the symbol's type directly.
 /// What a pipe stage passes on to the next one, as its type and the symbol that holds it.
 /// A function definition passes on its own input unchanged instead of its function type.
 pub(super) fn pipe_stage_output(hir: &Hir, ctx: &mut InferenceContext, stage: SymbolId) -> (Type, Option<SymbolId>) {
@@ -259,6 +218,11 @@ pub(super) fn pipe_stage_output(hir: &Hir, ctx: &mut InferenceContext, stage: Sy
     (ctx.get_or_create_symbol_type(stage), Some(stage))
 }
 
+/// Resolves the body type of an elif/else branch.
+///
+/// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
+/// For Else: children are [body] — returns body type.
+/// For other kinds: returns the symbol's type directly.
 pub(super) fn resolve_branch_body_type(
     hir: &Hir,
     branch_id: SymbolId,

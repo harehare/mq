@@ -23,7 +23,7 @@ pub(super) fn find_enclosing_function(hir: &Hir, symbol_id: SymbolId) -> Option<
 /// on every `get_children` call.
 pub(crate) type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
 
-/// Builds the children index from all HIR symbols in a single pass.
+/// Builds the children index from all non-builtin HIR symbols in a single pass.
 ///
 /// Children are sorted by their insertion order so that the order within each
 /// child list reflects the source-level order (left-to-right in a pipe chain,
@@ -33,7 +33,9 @@ pub(crate) type ChildrenIndex = FxHashMap<SymbolId, Vec<SymbolId>>;
 pub(crate) fn build_children_index(hir: &Hir) -> ChildrenIndex {
     let mut index: ChildrenIndex = FxHashMap::default();
     for (id, symbol) in hir.symbols() {
-        if let Some(parent) = symbol.parent {
+        if let Some(parent) = symbol.parent
+            && !hir.is_builtin_symbol(symbol)
+        {
             index.entry(parent).or_default().push(id);
         }
     }
