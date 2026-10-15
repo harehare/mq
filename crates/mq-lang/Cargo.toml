@@ -103,8 +103,3 @@ tempfile = {workspace = true}
 [[bench]]
 harness = false
 name = "benchmark"
-
-[[bench]]
-harness = false
-name = "cst_benchmark"
-required-features = ["cst"]
