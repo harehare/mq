@@ -18,6 +18,7 @@ fn capability_flag(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Flags: a call to a capability-gated function.
 pub struct DangerousCapabilityCall;
 
 impl LintRule for DangerousCapabilityCall {

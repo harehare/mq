@@ -1,3 +1,5 @@
+//! Compiled query (mqc) CLI tests.
+
 use assert_cmd::cargo;
 use rstest::rstest;
 use std::fs;

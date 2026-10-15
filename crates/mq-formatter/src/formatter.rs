@@ -10,6 +10,7 @@ const NEW_LINE: &str = "\r\n";
 const NEW_LINE: &str = "\n";
 
 #[derive(Clone, Debug, Default)]
+/// Formats mq source code according to a [`FormatterConfig`].
 pub struct Formatter {
     config: FormatterConfig,
     output: String,
@@ -59,11 +60,17 @@ enum SortPriority {
 }
 
 #[derive(Clone, Debug)]
+/// Formatting options.
 pub struct FormatterConfig {
+    /// Number of spaces per indent level.
     pub indent_width: usize,
+    /// Sort `import`/`include` statements.
     pub sort_imports: bool,
+    /// Sort top-level function definitions.
     pub sort_functions: bool,
+    /// Sort dict fields.
     pub sort_fields: bool,
+    /// Maximum line width before wrapping, if any.
     pub max_width: Option<usize>,
 }
 
@@ -111,6 +118,7 @@ pub fn needs_pipe(node: &CstNode) -> bool {
 }
 
 impl Formatter {
+    /// Creates a formatter; `None` uses [`FormatterConfig::default`].
     pub fn new(config: Option<FormatterConfig>) -> Self {
         Self {
             config: config.unwrap_or_default(),
@@ -120,6 +128,7 @@ impl Formatter {
         }
     }
 
+    /// Formats `code`, returning the CST error reporter if it fails to parse.
     pub fn format(&mut self, code: &str) -> Result<String, mq_lang::CstErrorReporter> {
         if code.is_empty() {
             return Ok(String::new());
@@ -1688,6 +1697,7 @@ impl Formatter {
     }
 
     #[inline(always)]
+    /// Indent level of the last line written to the output.
     pub fn current_line_indent(&self) -> usize {
         // Find the last newline position
         let start = self.output.rfind('\n').map_or(0, |pos| pos + 1);
@@ -1720,6 +1730,7 @@ impl Formatter {
     }
 
     #[inline(always)]
+    /// Whether the last output line ends with a pipe.
     pub fn is_last_line_pipe(&self) -> bool {
         let output = self.output.trim_end_matches('\n');
         // Find the last newline position

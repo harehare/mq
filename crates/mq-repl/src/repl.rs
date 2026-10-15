@@ -440,6 +440,7 @@ impl Completer for MqLineHelper {
 
 impl Helper for MqLineHelper {}
 
+/// Interactive read-eval-print loop.
 pub struct Repl {
     command_context: Rc<RefCell<CommandContext>>,
     name: &'static str,
@@ -452,6 +453,7 @@ pub fn config_dir() -> Option<std::path::PathBuf> {
 }
 
 impl Repl {
+    /// Returns the mq configuration directory (`MQ_CONFIG_DIR`, else the platform config dir joined with `mq`).
     pub fn new(input: Vec<mq_lang::RuntimeValue>) -> Self {
         let mut engine = mq_lang::DefaultEngine::default();
 
@@ -489,6 +491,7 @@ impl Repl {
         println!();
     }
 
+    /// Runs the loop until the user exits.
     pub fn run(&self) -> miette::Result<()> {
         let config = Config::builder()
             .history_ignore_space(true)

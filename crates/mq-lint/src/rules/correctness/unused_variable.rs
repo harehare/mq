@@ -3,6 +3,7 @@ use rustc_hash::FxHashSet;
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Flags: a variable that is never used.
 pub struct UnusedVariable;
 
 /// True if `sym` is a `${name}` interpolation embed rather than an actual `let`/`var` declaration

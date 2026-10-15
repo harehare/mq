@@ -109,6 +109,7 @@ async fn shutdown_signal() {
     }
 }
 
+/// Runs the server until a shutdown signal is received.
 pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting mq-web-api server with config: {:?}", config);
 

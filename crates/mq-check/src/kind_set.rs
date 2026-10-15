@@ -37,26 +37,32 @@ impl KindSet {
             .fold(Self::EMPTY, |set, kind| set.union(Self::of(kind)))
     }
 
+    /// Whether `kind` is in the set.
     pub const fn contains(self, kind: NodeKind) -> bool {
         self.0 & Self::bit(kind) != 0
     }
 
+    /// Whether the environment has no entries.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
+    /// Whether every kind is in the set.
     pub const fn is_all(self) -> bool {
         self.0 == Self::ALL.0
     }
 
+    /// Number of entries.
     pub const fn len(self) -> usize {
         self.0.count_ones() as usize
     }
 
+    /// The kinds in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
+    /// The kinds in both sets.
     pub const fn intersect(self, other: Self) -> Self {
         Self(self.0 & other.0)
     }
@@ -66,10 +72,12 @@ impl KindSet {
         Self(self.0 & !other.0)
     }
 
+    /// Whether every kind of `self` is in `other`.
     pub const fn is_subset_of(self, other: Self) -> bool {
         self.0 & !other.0 == 0
     }
 
+    /// Whether the sets share any kind.
     pub const fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }

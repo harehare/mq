@@ -10,8 +10,11 @@ use crate::Range;
 /// hint strings explaining how to fix the issue.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diagnostic {
+    /// The error message.
     pub message: String,
+    /// Where the problem is, if known.
     pub range: Option<Range>,
+    /// Suggestions for fixing the problem.
     pub hints: Vec<String>,
 }
 

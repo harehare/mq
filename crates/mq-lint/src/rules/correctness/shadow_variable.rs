@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, SymbolKind};
 
+/// Flags: a variable that shadows one from an outer scope.
 pub struct ShadowVariable;
 
 impl LintRule for ShadowVariable {

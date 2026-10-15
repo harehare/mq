@@ -10,6 +10,9 @@ name = "mq-test"
 repository.workspace = true
 version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
 glob = {workspace = true}

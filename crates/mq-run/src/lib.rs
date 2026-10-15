@@ -44,11 +44,13 @@
 //! ```
 
 pub(crate) mod atomic_output;
+/// Command-line interface.
 pub mod cli;
 pub(crate) mod grep;
 pub(crate) mod output;
 
 #[cfg(feature = "debugger")]
+/// Interactive debugger.
 pub mod debugger;
 
 pub use cli::Cli;

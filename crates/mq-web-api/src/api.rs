@@ -9,12 +9,16 @@ use utoipa::ToSchema;
 /// Maximum number of documents allowed in a single `POST /api/v1/batch` request.
 pub const MAX_BATCH_SIZE: usize = 100;
 
+/// Request body for `POST /api/v1/query`.
 #[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct ApiRequest {
+    /// The mq query to run.
     #[schema(example = ".h")]
     pub query: String,
+    /// Input document.
     #[schema(example = "## Markdown Content\n\nThis is an example markdown string.")]
     pub input: Option<String>,
+    /// Format of `input`. Defaults to `markdown`.
     pub input_format: Option<InputFormat>,
     /// Names of builtin modules to load (e.g. "json", "csv", "table").
     #[schema(example = json!(["table"]))]
@@ -28,8 +32,10 @@ pub struct ApiRequest {
     pub aggregate: Option<bool>,
 }
 
+/// Response body for query endpoints.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct QueryApiResponse {
+    /// One rendered string per result value.
     pub results: Vec<String>,
 }
 
@@ -37,16 +43,21 @@ pub struct QueryApiResponse {
 /// of `inputs`, avoiding one HTTP round trip per document.
 #[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct BatchApiRequest {
+    /// The mq query to run on each input.
     #[schema(example = ".h")]
     pub query: String,
     /// At most [`MAX_BATCH_SIZE`] entries are accepted.
     pub inputs: Vec<String>,
+    /// Format of every input. Defaults to `markdown`.
     pub input_format: Option<InputFormat>,
     /// Names of builtin modules to load (e.g. "json", "csv", "table").
     #[schema(example = json!(["table"]))]
     pub modules: Option<Vec<String>>,
+    /// String variable definitions passed to the engine (name to value).
     pub args: Option<HashMap<String, String>>,
+    /// Output format for query results. Defaults to `markdown`.
     pub output_format: Option<OutputFormat>,
+    /// When true, aggregates all input nodes before applying the query.
     pub aggregate: Option<bool>,
 }
 
@@ -62,41 +73,56 @@ pub struct BatchItemResult {
 /// Response body for `POST /api/v1/batch`. `items` is ordered like `inputs`.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct BatchApiResponse {
+    /// Per-document results.
     pub items: Vec<BatchItemResult>,
 }
 
+/// Format of the input document.
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum InputFormat {
+    /// Markdown.
     #[default]
     #[serde(rename = "markdown")]
     Markdown,
+    /// MDX.
     #[serde(rename = "mdx")]
     Mdx,
+    /// Plain text.
     #[serde(rename = "text")]
     Text,
+    /// HTML.
     #[serde(rename = "html")]
     Html,
+    /// Raw string, not parsed.
     #[serde(rename = "raw")]
     Raw,
+    /// No input.
     #[serde(rename = "null")]
     Null,
     /// Module-backed formats: fed as raw text and parsed by the corresponding
     /// builtin mq module (same mechanism as the CLI's `-I` flag).
     #[serde(rename = "csv")]
     Csv,
+    /// Tab-separated values, parsed by the `csv` module.
     #[serde(rename = "tsv")]
     Tsv,
+    /// Pipe-separated values, parsed by the `csv` module.
     #[serde(rename = "psv")]
     Psv,
+    /// JSON, parsed by the `json` module.
     #[serde(rename = "json")]
     Json,
+    /// YAML, parsed by the `yaml` module.
     #[serde(rename = "yaml")]
     Yaml,
+    /// TOML, parsed by the `toml` module.
     #[serde(rename = "toml")]
     Toml,
+    /// XML, parsed by the `xml` module.
     #[serde(rename = "xml")]
     Xml,
+    /// TOON, parsed by the `toon` module.
     #[serde(rename = "toon")]
     Toon,
 }
@@ -140,6 +166,7 @@ pub enum OutputFormat {
 /// Request body for `POST /api/check`.
 #[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct CheckApiRequest {
+    /// The mq query to type-check.
     #[schema(example = "upcase() | downcase()")]
     pub query: String,
 }
@@ -147,10 +174,15 @@ pub struct CheckApiRequest {
 /// A single type-check or syntax error.
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone)]
 pub struct CheckError {
+    /// Error description.
     pub message: String,
+    /// Start line of the error.
     pub start_line: Option<u32>,
+    /// Start column of the error.
     pub start_column: Option<u32>,
+    /// End line of the error.
     pub end_line: Option<u32>,
+    /// End column of the error.
     pub end_column: Option<u32>,
     /// Error kind: `"syntax_error"`, `"type_mismatch"`, `"undefined_symbol"`,
     /// `"unification_error"`, `"wrong_arity"`, `"undefined_field"`,
@@ -169,38 +201,51 @@ pub struct CheckApiResponse {
 /// Request body for `POST /api/format`.
 #[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct FormatApiRequest {
+    /// The mq query to format.
     #[schema(example = "if(a):1 elif(b):2 else:3")]
     pub query: String,
+    /// Spaces per indentation level.
     pub indent_width: Option<usize>,
+    /// Sort `import` statements.
     pub sort_imports: Option<bool>,
+    /// Sort function definitions.
     pub sort_functions: Option<bool>,
+    /// Sort dict fields.
     pub sort_fields: Option<bool>,
+    /// Maximum line width.
     pub max_width: Option<usize>,
 }
 
 /// Response body for `POST /api/format`.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FormatApiResponse {
+    /// The formatted query.
     pub formatted: String,
 }
 
 /// A runnable example paired with its verified expected output.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ExampleDoc {
+    /// Example query.
     pub code: String,
+    /// Output of the example query.
     pub expected: String,
 }
 
 /// Documentation for a single builtin function.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FunctionDoc {
+    /// Function name.
     pub name: String,
+    /// What the function does.
     pub description: String,
+    /// Parameter names.
     pub params: Vec<String>,
     /// Parallel to `params`; a type name (e.g. "string", "number") or "dynamic" per param.
     pub param_types: Vec<String>,
     /// Type name of the returned value.
     pub returns: String,
+    /// Runnable examples.
     pub examples: Vec<ExampleDoc>,
     /// Cargo feature flag required to use this function, if any (e.g. "file-io"). Functions
     /// requiring a capability not enabled on this deployment are omitted from listings.
@@ -210,33 +255,43 @@ pub struct FunctionDoc {
 /// Response body for `GET /api/functions`.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct FunctionsApiResponse {
+    /// All builtin functions available on this deployment.
     pub functions: Vec<FunctionDoc>,
 }
 
 /// Documentation for a single builtin selector.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct SelectorDoc {
+    /// Selector name.
     pub name: String,
     /// Other names that select the same thing (e.g. `.p` for `.text`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<String>,
+    /// What the selector does.
     pub description: String,
+    /// Parameter names.
     pub params: Vec<String>,
+    /// Parallel to `params`; a type name per parameter.
     pub param_types: Vec<String>,
+    /// Type name of the returned value.
     pub returns: String,
+    /// Runnable examples.
     pub examples: Vec<ExampleDoc>,
+    /// Cargo feature flag required to use this selector, if any.
     pub capability: Option<String>,
 }
 
 /// Response body for `GET /api/selectors`.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct SelectorsApiResponse {
+    /// All builtin selectors.
     pub selectors: Vec<SelectorDoc>,
 }
 
 /// Request body for `POST /api/lint`.
 #[derive(Deserialize, Serialize, ToSchema, Clone, Debug)]
 pub struct LintApiRequest {
+    /// The mq query to lint.
     #[schema(example = "def f(x): let y = 1; x;")]
     pub query: String,
 }
@@ -246,22 +301,30 @@ pub struct LintApiRequest {
 pub struct LintDiagnostic {
     /// Identifier of the lint rule that produced this diagnostic (e.g. `"unused_variable"`).
     pub rule_id: String,
+    /// Diagnostic message.
     pub message: String,
     /// Severity: `"style"`, `"perf"`, `"warn"`, or `"error"`.
     pub severity: String,
+    /// Suggested fix text, if any.
     pub help: Option<String>,
+    /// Start line of the finding.
     pub start_line: Option<u32>,
+    /// Start column of the finding.
     pub start_column: Option<u32>,
+    /// End line of the finding.
     pub end_line: Option<u32>,
+    /// End column of the finding.
     pub end_column: Option<u32>,
 }
 
 /// Response body for `POST /api/lint`.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct LintApiResponse {
+    /// Diagnostics found. Empty means no findings.
     pub diagnostics: Vec<LintDiagnostic>,
 }
 
+/// Runs `request` and returns the rendered results, aborting after `timeout`.
 pub fn query(request: ApiRequest, timeout: std::time::Duration) -> miette::Result<QueryApiResponse> {
     execute_query(request, timeout)
 }

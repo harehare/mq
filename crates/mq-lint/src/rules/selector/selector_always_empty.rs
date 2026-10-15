@@ -3,6 +3,7 @@ use mq_lang::Selector;
 
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
+/// Flags: two selectors piped together that can never both match.
 pub struct SelectorAlwaysEmpty;
 
 /// Conservative: only flags same-variant value mismatches (plus `.todo`/`.done`)

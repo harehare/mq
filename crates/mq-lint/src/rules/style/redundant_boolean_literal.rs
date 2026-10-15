@@ -1,6 +1,7 @@
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{SymbolId, SymbolKind};
 
+/// Flags: an `if`/`else` that only returns boolean literals.
 pub struct RedundantBooleanLiteral;
 
 impl LintRule for RedundantBooleanLiteral {

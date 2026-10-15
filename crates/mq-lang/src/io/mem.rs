@@ -79,32 +79,38 @@ impl MemIo {
         self.open_readers.load(Ordering::SeqCst)
     }
 
+    /// Adds a file at `path`.
     pub fn with_file(self, path: impl Into<PathBuf>, content: impl Into<Vec<u8>>) -> Self {
         self.files.lock().unwrap().insert(path.into(), content.into());
         self
     }
 
+    /// Sets an environment variable.
     pub fn with_env(self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.env.lock().unwrap().insert(key.into(), value.into());
         self
     }
 
+    /// Sets the body returned by `fetch` and `http_request` for `url`.
     pub fn with_fetch_response(self, url: impl Into<String>, body: impl Into<String>) -> Self {
         self.fetch_responses.lock().unwrap().insert(url.into(), body.into());
         self
     }
 
+    /// Sets the stdout returned for running `command` with `args`.
     pub fn with_command_response(self, command: impl Into<String>, args: &[String], output: impl Into<String>) -> Self {
         let key = command_key(&command.into(), args);
         self.command_responses.lock().unwrap().insert(key, output.into());
         self
     }
 
+    /// Sets the home directory.
     pub fn with_home(mut self, path: impl Into<PathBuf>) -> Self {
         self.home = Some(path.into());
         self
     }
 
+    /// Sets the current directory.
     pub fn with_cwd(mut self, path: impl Into<PathBuf>) -> Self {
         self.cwd = Some(path.into());
         self
@@ -125,6 +131,7 @@ impl MemIo {
         this
     }
 
+    /// Lines written to stdout so far, if console capture is on.
     pub fn stdout_lines(&self) -> Vec<String> {
         self.console
             .as_ref()
@@ -132,6 +139,7 @@ impl MemIo {
             .unwrap_or_default()
     }
 
+    /// Lines written to stderr so far, if console capture is on.
     pub fn stderr_lines(&self) -> Vec<String> {
         self.console
             .as_ref()

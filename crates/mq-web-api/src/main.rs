@@ -1,3 +1,4 @@
+//! Binary entry point of the mq web API server.
 #[cfg(feature = "use_mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

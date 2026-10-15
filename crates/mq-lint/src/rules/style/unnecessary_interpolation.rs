@@ -2,6 +2,7 @@ use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severit
 use mq_hir::SymbolKind;
 use rustc_hash::FxHashMap;
 
+/// Flags: an interpolated string containing a single expression.
 pub struct UnnecessaryInterpolation;
 
 impl LintRule for UnnecessaryInterpolation {

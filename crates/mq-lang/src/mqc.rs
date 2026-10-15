@@ -58,49 +58,76 @@ const RECOMPILE_HELP: &str = "Recompile the program from its source with this ve
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 #[non_exhaustive]
 pub enum MqcError {
+    /// The input is not a `.mqc` file.
     #[error("not an mq bytecode file")]
     #[diagnostic(code(mq::mqc::not_mqc))]
     NotMqc,
+    /// The file structure is invalid.
     #[error("malformed .mqc file: {0}")]
     #[diagnostic(code(mq::mqc::malformed), help("{}", RECOMPILE_HELP))]
     Malformed(Cow<'static, str>),
+    /// The contents do not match the stored checksum.
     #[error(".mqc checksum mismatch; the file is corrupted")]
     #[diagnostic(code(mq::mqc::checksum), help("{}", RECOMPILE_HELP))]
     ChecksumMismatch,
+    /// The file exceeds the size limit.
     #[error(".mqc file is {size} bytes; the limit is {limit}")]
     #[diagnostic(code(mq::mqc::too_large))]
-    TooLarge { size: u64, limit: u64 },
+    TooLarge {
+        /// Actual size in bytes.
+        size: u64,
+        /// Maximum size in bytes.
+        limit: u64,
+    },
+    /// The container format version is not supported.
     #[error("unsupported .mqc container version {0}")]
     #[diagnostic(code(mq::mqc::version), help("{}", RECOMPILE_HELP))]
     UnsupportedContainerVersion(u16),
+    /// A section uses an unsupported version.
     #[error("unsupported version {version} of the {tag} section")]
     #[diagnostic(code(mq::mqc::version), help("{}", RECOMPILE_HELP))]
-    UnsupportedSectionVersion { tag: String, version: u16 },
+    UnsupportedSectionVersion {
+        /// Section tag.
+        tag: String,
+        /// Version found in the file.
+        version: u16,
+    },
+    /// The file has a required section this build does not know.
     #[error("unknown required section {0}")]
     #[diagnostic(code(mq::mqc::section), help("{}", RECOMPILE_HELP))]
     UnknownRequiredSection(String),
+    /// A section appears more than once.
     #[error("duplicate section {0}")]
     #[diagnostic(code(mq::mqc::section))]
     DuplicateSection(String),
+    /// A required section is absent.
     #[error("missing required section {0}")]
     #[diagnostic(code(mq::mqc::section))]
     MissingSection(&'static str),
+    /// The file was compiled for a different VM version or ABI.
     #[error(
         "compiled by mq {found_version} (VM ABI {found_abi}), but this is mq {expected_version} (VM ABI {expected_abi})"
     )]
     #[diagnostic(code(mq::mqc::abi), help("{}", RECOMPILE_HELP))]
     IncompatibleVm {
+        /// mq version that compiled the file.
         found_version: String,
+        /// VM ABI of the compiling build.
         found_abi: u32,
+        /// mq version of this build.
         expected_version: String,
+        /// VM ABI of this build.
         expected_abi: u32,
     },
+    /// The program uses builtins this build lacks.
     #[error("requires functions this build does not provide: {}", .0.join(", "))]
     #[diagnostic(code(mq::mqc::features), help("Run it with an mq build that has the same features."))]
     MissingBuiltins(Vec<String>),
+    /// A value cannot be stored in a `.mqc` file.
     #[error("cannot save {0} in a .mqc file")]
     #[diagnostic(code(mq::mqc::unsupported_value))]
     UnsupportedValue(String),
+    /// An environment variable would be baked in at compile time.
     #[error("${0} would be read at compile time and saved in the program")]
     #[diagnostic(
         code(mq::mqc::env),
@@ -109,9 +136,11 @@ pub enum MqcError {
         )
     )]
     EnvironmentAtCompileTime(String),
+    /// The bytecode failed validation.
     #[error("invalid bytecode: {0}")]
     #[diagnostic(code(mq::mqc::invalid_bytecode), help("{}", RECOMPILE_HELP))]
     InvalidBytecode(String),
+    /// A module-level `let` read a name that is only known at run time.
     #[error("\"{name}\" is not defined when module-level `let`s are computed")]
     #[diagnostic(
         code(mq::mqc::module_let_runtime_value),
@@ -120,10 +149,13 @@ pub enum MqcError {
         )
     )]
     ModuleLevelNotDefined {
+        /// The undefined name.
         name: String,
+        /// The underlying error.
         #[source]
         source: Box<error::Error>,
     },
+    /// Compiling the source failed.
     #[error(transparent)]
     #[diagnostic(transparent)]
     Compile(Box<error::Error>),

@@ -1,3 +1,5 @@
+//! Formatter integration tests.
+
 use assert_cmd::cargo;
 
 #[test]

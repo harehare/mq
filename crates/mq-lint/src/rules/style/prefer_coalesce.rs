@@ -3,6 +3,7 @@ use mq_hir::{Symbol, SymbolId, SymbolKind};
 use crate::fix::Core;
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 
+/// Flags: an `if`/`else` null check expressible with `??`.
 pub struct PreferCoalesce;
 
 /// True if `id` has no children (e.g. a bare `Ref`/`Selector`, not a call).

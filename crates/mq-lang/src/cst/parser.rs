@@ -15,6 +15,7 @@ use super::{
 use itertools::Itertools;
 use thiserror::Error;
 
+/// Collects parse errors, capped at a maximum count.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub struct ErrorReporter {
     errors: BTreeSet<ParseError>,
@@ -37,6 +38,7 @@ impl Default for ErrorReporter {
 }
 
 impl ErrorReporter {
+    /// Creates a reporter that keeps at most `max_errors` errors.
     pub fn new(max_errors: usize) -> Self {
         Self {
             errors: BTreeSet::new(),
@@ -44,6 +46,7 @@ impl ErrorReporter {
         }
     }
 
+    /// Creates a reporter pre-filled with `errors`.
     pub fn with_error(errors: Vec<ParseError>, max_errors: usize) -> Self {
         let mut h = BTreeSet::new();
         h.extend(errors);
@@ -51,12 +54,14 @@ impl ErrorReporter {
         Self { errors: h, max_errors }
     }
 
+    /// Records `error` unless the limit is reached.
     pub fn report(&mut self, error: ParseError) {
         if self.errors.len() < self.max_errors {
             self.errors.insert(error);
         }
     }
 
+    /// Returns the collected errors as diagnostics.
     pub fn to_vec(&self) -> Vec<ParseError> {
         self.errors
             .iter()
@@ -74,6 +79,7 @@ impl ErrorReporter {
             .collect()
     }
 
+    /// Whether any error was reported.
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
@@ -97,6 +103,7 @@ impl ErrorReporter {
             .collect::<Vec<_>>()
     }
 
+    /// Returns each error message with its source range in `text`.
     pub fn error_ranges(&self, text: &str) -> Vec<(String, Range)> {
         self.to_vec()
             .iter()
@@ -125,6 +132,7 @@ enum ProgramKind {
     Block,
 }
 
+/// Error-recovering parser that builds a lossless CST from tokens.
 pub struct Parser<'a> {
     tokens: &'a [Shared<Token>],
     pos: usize,
@@ -132,6 +140,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
+    /// Creates a parser over `tokens`.
     pub fn new(tokens: &'a [Shared<Token>]) -> Self {
         Self {
             tokens,
@@ -168,6 +177,7 @@ impl<'a> Parser<'a> {
         self.advance().ok_or(ParseError::UnexpectedEOFDetected)
     }
 
+    /// Parses the tokens into top-level nodes and the errors found along the way.
     pub fn parse(&mut self) -> (Vec<Shared<Node>>, ErrorReporter) {
         let nodes = self.parse_program(ProgramKind::Root, false);
         (nodes, std::mem::take(&mut self.errors))

@@ -73,6 +73,7 @@ impl MqAdapter {
         }
     }
 
+    /// Receiver for messages from the debugger handler, if running.
     pub fn debugger_message_rx(&self) -> &Option<Receiver<DebuggerMessage>> {
         &self.debugger_message_rx
     }

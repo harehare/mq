@@ -52,22 +52,27 @@ impl TypeEnv {
         Self(FxHashMap::with_capacity_and_hasher(capacity, Default::default()))
     }
 
+    /// Associates `scheme` with `symbol_id`, replacing any previous entry.
     pub fn insert(&mut self, symbol_id: SymbolId, scheme: TypeScheme) {
         self.0.insert(symbol_id, scheme);
     }
 
+    /// The scheme for `symbol_id`, if any.
     pub fn get(&self, symbol_id: &SymbolId) -> Option<&TypeScheme> {
         self.0.get(symbol_id)
     }
 
+    /// All symbol-to-scheme entries.
     pub fn get_all(&self) -> &FxHashMap<SymbolId, TypeScheme> {
         &self.0
     }
 
+    /// Number of entries.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Whether the environment has no entries.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -89,76 +94,111 @@ pub enum TypeError {
     #[error("Type mismatch: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::type_mismatch))]
     #[allow(dead_code)]
+    /// Expected and found types differ.
     Mismatch {
+        /// The expected type.
         expected: String,
+        /// The type that was found.
         found: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
         #[help]
+        /// Extra hint shown as help.
         context: Option<String>,
     },
     #[error("Cannot unify types: {left} and {right}")]
     #[diagnostic(code(typechecker::unification_error))]
     #[allow(dead_code)]
+    /// Two types cannot be unified.
     UnificationError {
+        /// Left-hand type.
         left: String,
+        /// Right-hand type.
         right: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
         #[help]
+        /// Extra hint shown as help.
         context: Option<String>,
     },
     #[error("Occurs check failed: type variable {var} occurs in {ty}")]
     #[diagnostic(code(typechecker::occurs_check))]
     #[allow(dead_code)]
+    /// A type variable occurs inside the type it is bound to.
     OccursCheck {
+        /// The type variable.
         var: String,
+        /// The type containing the variable.
         ty: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
     },
     #[error("Undefined symbol: {name}")]
     #[diagnostic(code(typechecker::undefined_symbol))]
     #[allow(dead_code)]
+    /// A symbol is used but never defined.
     UndefinedSymbol {
+        /// Name of the undefined symbol.
         name: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
     },
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::wrong_arity))]
     #[allow(dead_code)]
+    /// A call passes the wrong number of arguments.
     WrongArity {
+        /// The expected type.
         expected: usize,
+        /// The type that was found.
         found: usize,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
         #[help]
+        /// Extra hint shown as help.
         context: Option<String>,
     },
     #[error("Undefined field `{field}` in record type {record_ty}")]
     #[diagnostic(code(typechecker::undefined_field))]
     #[allow(dead_code)]
+    /// A record type has no such field.
     UndefinedField {
+        /// Name of the missing field.
         field: String,
+        /// The record type that lacks the field.
         record_ty: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
     },
     #[error("Attribute `{attr}` does not exist on {node_ty}")]
     #[diagnostic(code(typechecker::undefined_attribute))]
     #[allow(dead_code)]
+    /// A node type has no such attribute.
     UndefinedAttribute {
+        /// Name of the missing attribute.
         attr: String,
+        /// The node type that lacks the attribute.
         node_ty: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
     },
     #[error("Heterogeneous array: elements have mixed types [{types}]")]
     #[diagnostic(code(typechecker::heterogeneous_array))]
     #[allow(dead_code)]
+    /// Array elements have mixed types.
     HeterogeneousArray {
+        /// Comma-separated element types.
         types: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
     },
     #[error("Type variable not found: {0}")]
     #[diagnostic(code(typechecker::type_var_not_found))]
+    /// A type variable id has no binding.
     TypeVarNotFound(String),
     #[error("Internal error: {0}")]
     #[diagnostic(code(typechecker::internal_error))]
+    /// An unexpected internal failure.
     Internal(String),
     /// Emitted when an operation receives a nullable argument and may silently
     /// propagate `none` instead of producing the expected concrete type.
@@ -166,10 +206,14 @@ pub enum TypeError {
     #[diagnostic(code(typechecker::nullable_propagation))]
     #[allow(dead_code)]
     NullablePropagation {
+        /// The operation being checked.
         op: String,
+        /// The argument that may be `none`.
         nullable_arg: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
         #[help]
+        /// Extra hint shown as help.
         context: Option<String>,
     },
     /// Emitted when a branch is statically determined to be unreachable based on
@@ -178,7 +222,9 @@ pub enum TypeError {
     #[diagnostic(code(typechecker::unreachable_code))]
     #[allow(dead_code)]
     UnreachableCode {
+        /// Why the branch is unreachable.
         reason: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
     },
     /// Emitted when a match expression does not cover all possible values of the matched type.
@@ -186,9 +232,12 @@ pub enum TypeError {
     #[diagnostic(code(typechecker::non_exhaustive_patterns))]
     #[allow(dead_code)]
     NonExhaustiveMatch {
+        /// Description of the uncovered case.
         missing: String,
+        /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
         #[help]
+        /// Extra hint shown as help.
         context: Option<String>,
     },
 }

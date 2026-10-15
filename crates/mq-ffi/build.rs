@@ -1,3 +1,5 @@
+//! Generates the C header.
+
 use std::env;
 use std::path::Path;
 

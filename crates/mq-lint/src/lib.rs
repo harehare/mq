@@ -58,6 +58,7 @@ impl std::fmt::Display for Severity {
 pub struct Diagnostic {
     /// The message data that identifies the rule and renders its text.
     pub kind: LintMessage,
+    /// How serious the finding is.
     pub severity: Severity,
     /// Source location of the finding, if available.
     pub range: Option<mq_lang::Range>,
@@ -66,6 +67,7 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
+    /// Creates a diagnostic without a range or fix.
     pub fn new(kind: LintMessage, severity: Severity) -> Self {
         Self {
             kind,
@@ -75,11 +77,13 @@ impl Diagnostic {
         }
     }
 
+    /// Sets the source range.
     pub fn with_range(mut self, range: mq_lang::Range) -> Self {
         self.range = Some(range);
         self
     }
 
+    /// Attaches a suggested fix.
     pub fn with_fix(mut self, fix: Fix) -> Self {
         self.fix = Some(fix);
         self
@@ -103,12 +107,16 @@ impl Diagnostic {
 
 /// Context passed to each [`LintRule`] during analysis.
 pub struct LintContext<'a> {
+    /// The HIR of the analyzed program.
     pub hir: &'a Hir,
+    /// The source being linted.
     pub source_id: SourceId,
+    /// Linter configuration.
     pub config: &'a LintConfig,
 }
 
 impl<'a> LintContext<'a> {
+    /// Creates a context for linting `source_id`.
     pub fn new(hir: &'a Hir, source_id: SourceId, config: &'a LintConfig) -> Self {
         Self { hir, source_id, config }
     }
@@ -174,6 +182,7 @@ impl Linter {
         }
     }
 
+    /// Runs every enabled rule and collects their diagnostics.
     pub fn run(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         self.rules
             .iter()

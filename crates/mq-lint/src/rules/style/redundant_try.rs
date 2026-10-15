@@ -2,6 +2,7 @@ use mq_hir::SymbolKind;
 
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 
+/// Flags: `try ... catch: none`, which is what `?` does.
 pub struct RedundantTry;
 
 impl LintRule for RedundantTry {

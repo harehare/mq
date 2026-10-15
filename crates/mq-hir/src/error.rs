@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::{Hir, ScopeId, ScopeKind, Symbol, SymbolKind};
 
+/// Error found while building or resolving the HIR.
 #[derive(Debug, Error)]
 pub enum HirError {
     #[error(
@@ -12,23 +13,42 @@ pub enum HirError {
             .map(|name| format!("{symbol}. A name with a similar spelling exists: `{name}`."))
             .unwrap_or_else(|| symbol.to_string())
     )]
+    /// A call or reference that matches no declaration.
     UnresolvedSymbol {
+        /// The unresolved symbol.
         symbol: Symbol,
+        /// A similarly spelled declared name, if any.
         similar_name: Option<SmolStr>,
     },
+    /// An `include` of a module that cannot be loaded.
     #[error("Included module not found: {module_name}")]
-    ModuleNotFound { symbol: Symbol, module_name: SmolStr },
+    ModuleNotFound {
+        /// The `include` symbol.
+        symbol: Symbol,
+        /// The module name that failed to resolve.
+        module_name: SmolStr,
+    },
+    /// `yield` used outside a function.
     #[error("`yield` outside a function")]
-    YieldOutsideFunction { symbol: Symbol },
+    YieldOutsideFunction {
+        /// The offending `yield` keyword symbol.
+        symbol: Symbol,
+    },
 }
 
+/// Non-fatal diagnostic found in the HIR.
 #[derive(Debug, Error)]
 pub enum HirWarning {
+    /// Code that follows a `halt()` call.
     #[error("Unreachable code after halt() function call")]
-    UnreachableCode { symbol: Symbol },
+    UnreachableCode {
+        /// A symbol that follows a `halt()` call in the same parent.
+        symbol: Symbol,
+    },
 }
 
 impl Hir {
+    /// Returns unresolved symbols, missing included modules and misplaced `yield`s.
     pub fn errors(&self) -> Vec<HirError> {
         self.symbols
             .iter()
@@ -70,6 +90,7 @@ impl Hir {
             .collect::<Vec<_>>()
     }
 
+    /// Returns warnings such as code that follows a `halt()` call.
     pub fn warnings(&self) -> Vec<HirWarning> {
         let mut warnings = Vec::new();
 
@@ -114,6 +135,7 @@ impl Hir {
         warnings
     }
 
+    /// Returns each error message with its source range.
     pub fn error_ranges(&self) -> Vec<(String, mq_lang::Range)> {
         self.errors()
             .iter()
@@ -164,6 +186,7 @@ impl Hir {
         }
     }
 
+    /// Returns each warning message with its source range.
     pub fn warning_ranges(&self) -> Vec<(String, mq_lang::Range)> {
         self.warnings()
             .iter()

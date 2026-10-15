@@ -4,46 +4,87 @@ use crate::node::{Heading, Node};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum NodeKind {
+    /// A block quote.
     Blockquote,
+    /// A hard line break.
     Break,
+    /// An Obsidian-style callout.
     Callout,
+    /// An Obsidian-style file embed.
     Embed,
+    /// A link reference definition.
     Definition,
+    /// Strikethrough text.
     Delete,
+    /// A heading of depth 1.
     H1,
+    /// A heading of depth 2.
     H2,
+    /// A heading of depth 3.
     H3,
+    /// A heading of depth 4.
     H4,
+    /// A heading of depth 5.
     H5,
+    /// A heading of depth 6.
     H6,
+    /// Emphasized text.
     Emphasis,
+    /// A footnote definition.
     Footnote,
+    /// A footnote reference.
     FootnoteRef,
+    /// Raw HTML.
     Html,
+    /// YAML front matter.
     Yaml,
+    /// TOML front matter.
     Toml,
+    /// An inline image.
     Image,
+    /// A reference-style image.
     ImageRef,
+    /// Inline code.
     CodeInline,
+    /// Inline math.
     MathInline,
+    /// An inline link.
     Link,
+    /// A reference-style link.
     LinkRef,
+    /// An Obsidian-style wikilink.
     WikiLink,
+    /// A math block.
     Math,
+    /// A list item.
     List,
+    /// The delimiter row of a table, giving the column alignments.
     TableAlign,
+    /// A table row.
     TableRow,
+    /// A table cell.
     TableCell,
+    /// A code block.
     Code,
+    /// Strongly emphasized text.
     Strong,
+    /// A thematic break.
     HorizontalRule,
+    /// A block-level MDX expression.
     MdxFlowExpression,
+    /// A block-level JSX element.
     MdxJsxFlowElement,
+    /// An inline JSX element.
     MdxJsxTextElement,
+    /// An inline MDX expression.
     MdxTextExpression,
+    /// MDX ESM `import` or `export`.
     MdxJsEsm,
+    /// Plain text.
     Text,
+    /// A sequence of nodes with no wrapper.
     Fragment,
+    /// An empty node.
     Empty,
 }
 
@@ -143,8 +184,11 @@ impl NodeKind {
 /// The type of a node attribute as returned by [`Node::attr`](crate::Node::attr).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttrType {
+    /// A string.
     String,
+    /// An integer.
     Integer,
+    /// A boolean.
     Boolean,
     /// An array of nodes.
     Nodes,
@@ -153,8 +197,11 @@ pub enum AttrType {
 /// An attribute a node kind has, with its type. `optional` attributes are `none` when absent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AttrSpec {
+    /// The element name, or `None` for a fragment.
     pub name: &'static str,
+    /// The type of the attribute.
     pub ty: AttrType,
+    /// Whether the attribute is `none` when absent.
     pub optional: bool,
 }
 

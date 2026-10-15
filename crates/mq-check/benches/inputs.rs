@@ -1,9 +1,12 @@
+//! Type checker benchmarks.
+
 //! Benchmark inputs shared by `benchmark.rs` and `examples/phase_profile.rs`.
 
 /// Named inputs: a tiny program, real-world code of builtin.mq size, and synthetic code with
 /// `N` functions sharing parameter names (the quadratic case in name resolution and calls).
 pub const INPUTS: &[&str] = &["small", "builtin", "synthetic_200", "synthetic_1000", "synthetic_4000"];
 
+/// Returns the source text for the named benchmark input.
 pub fn input(name: &str) -> String {
     match name {
         "small" => "def f(x): x + 1; | f(2)".to_string(),

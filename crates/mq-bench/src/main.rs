@@ -1,3 +1,5 @@
+//! Command-line runner for `bench_` functions in `.mq` files.
+
 mod runner;
 
 use clap::Parser;

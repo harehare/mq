@@ -15,6 +15,9 @@ version.workspace = true
 cli = ["dep:clap", "dep:glob", "dep:miette", "miette/fancy-no-backtrace"]
 default = ["cli"]
 
+[lints]
+workspace = true
+
 [dependencies]
 clap = {workspace = true, features = ["derive"], optional = true}
 glob = {version = "0.3.3", optional = true}

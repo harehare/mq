@@ -16,6 +16,9 @@ version.workspace = true
 catalog = ["dep:colored", "dep:mq-lang", "dep:serde"]
 default = ["catalog"]
 
+[lints]
+workspace = true
+
 [dependencies]
 colored = {workspace = true, optional = true}
 mq-lang = {workspace = true, features = ["cst", "http"], optional = true}

@@ -1,3 +1,5 @@
+//! Extracts table content from Markdown.
+
 fn main() {
     let markdown_content = "
 # Product List

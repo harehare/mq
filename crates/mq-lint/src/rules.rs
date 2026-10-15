@@ -1,10 +1,16 @@
 //! All lint rules, organized by category.
 
+/// The `complexity` rules.
 pub mod complexity;
+/// The `correctness` rules.
 pub mod correctness;
+/// The `module` rules.
 pub mod module;
+/// The `security` rules.
 pub mod security;
+/// The `selector` rules.
 pub mod selector;
+/// The `style` rules.
 pub mod style;
 
 use crate::LintRule;

@@ -1,6 +1,7 @@
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Flags: concatenation of string literals.
 pub struct ConstantStringConcat;
 
 impl LintRule for ConstantStringConcat {

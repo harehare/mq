@@ -4,6 +4,7 @@ use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severit
 use mq_hir::{SymbolId, SymbolKind};
 use mq_lang::Range;
 
+/// Flags: a `var` that is never reassigned.
 pub struct PreferLetOverVar;
 
 impl LintRule for PreferLetOverVar {

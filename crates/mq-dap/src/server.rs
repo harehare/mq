@@ -9,6 +9,7 @@ use crate::log::DebugConsoleWriter;
 
 type DynResult<T> = miette::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// Starts the DAP server on stdio.
 pub fn start() -> DynResult<()> {
     let (debug_writer, log_rx) = DebugConsoleWriter::new();
 

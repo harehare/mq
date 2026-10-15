@@ -56,9 +56,17 @@ impl RetryConfig {
 #[derive(Debug, Clone)]
 pub enum AuthConfig {
     /// `Authorization: Basic <base64(user:pass)>`.
-    Basic { username: String, password: Option<String> },
+    Basic {
+        /// User name.
+        username: String,
+        /// Password, if any.
+        password: Option<String>,
+    },
     /// `Authorization: Bearer <token>`.
-    Bearer { token: String },
+    Bearer {
+        /// The bearer token.
+        token: String,
+    },
 }
 
 /// Transient (worth retrying) vs. fatal failures.
@@ -98,7 +106,9 @@ pub struct ChromiumWaitConfig {
 /// Enum for different HTTP client implementations
 #[derive(Debug, Clone)]
 pub enum HttpClient {
+    /// Plain HTTP client with retry settings.
     Reqwest(ReqwestClient, RetryConfig),
+    /// WebDriver-driven browser with retry settings.
     Fantoccini(fantoccini::Client, RetryConfig),
     /// Headless Chrome via CDP.
     /// `new_page()` waits for the `load` event, which covers synchronous JS

@@ -11,6 +11,9 @@ readme = "README.md"
 repository.workspace = true
 version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 crossbeam-channel = {workspace = true}
 dap = {workspace = true}

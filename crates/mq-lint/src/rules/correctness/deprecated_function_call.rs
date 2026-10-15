@@ -2,6 +2,7 @@ use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 use rustc_hash::FxHashSet;
 
+/// Flags: a call to a deprecated function.
 pub struct DeprecatedFunctionCall;
 
 impl LintRule for DeprecatedFunctionCall {

@@ -16,6 +16,9 @@ default = ["use_mimalloc"]
 use_mimalloc = ["mimalloc"]
 otel = ["opentelemetry", "opentelemetry-otlp", "opentelemetry_sdk", "tracing-opentelemetry"]
 
+[lints]
+workspace = true
+
 [dependencies]
 axum = {workspace = true}
 colored = {workspace = true}

@@ -1,3 +1,5 @@
+//! Debugger binary.
+
 #![cfg(feature = "debugger")]
 
 use clap::Parser;

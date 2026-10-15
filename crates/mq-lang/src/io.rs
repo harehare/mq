@@ -112,7 +112,9 @@ pub struct FileMetadata {
 /// choose to (see [`SandboxedIo`] for a decorator that does); `Io` itself is
 /// purely a capability abstraction, not a policy.
 pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
+    /// Reads the file at `path` as UTF-8 text.
     fn read_to_string(&self, path: &Path) -> Result<String, IoError>;
+    /// Reads the file at `path` as bytes.
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError>;
 
     /// Opens `path` for incremental reading, backing `open_file`. The default reads the whole
@@ -121,7 +123,9 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
         Ok(Box::new(std::io::Cursor::new(self.read_bytes(path)?)))
     }
 
+    /// Writes `content` to `path`, replacing the file.
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError>;
+    /// Whether `path` exists.
     fn exists(&self, path: &Path) -> Result<bool, IoError>;
 
     /// Size of the file at `path`, in bytes.
@@ -136,6 +140,7 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     /// Falls back to the original path unchanged if canonicalization fails.
     fn canonicalize(&self, path: &Path) -> PathBuf;
 
+    /// Value of the environment variable `name`.
     fn env_var(&self, name: &str) -> Result<String, IoError>;
 
     /// All accessible environment-variable pairs, backing the `env()` builtin.
@@ -184,7 +189,9 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
             .collect()
     }
 
+    /// The user home directory, if known.
     fn home_dir(&self) -> Option<PathBuf>;
+    /// The current working directory, if known.
     fn current_dir(&self) -> Option<PathBuf>;
 
     /// Runs `command` with `args` as a child process — never through a shell, so shell

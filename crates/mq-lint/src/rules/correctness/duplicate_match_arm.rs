@@ -3,6 +3,7 @@ use rustc_hash::FxHashSet;
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Flags: a match arm with a pattern already matched earlier.
 pub struct DuplicateMatchArm;
 
 impl LintRule for DuplicateMatchArm {

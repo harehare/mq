@@ -4,11 +4,13 @@ use crossbeam_channel::{Receiver, Sender};
 use tracing_subscriber::fmt::MakeWriter;
 
 #[derive(Clone)]
+/// Writer that forwards tracing output to a channel for the debug console.
 pub struct DebugConsoleWriter {
     sender: Option<Sender<String>>,
 }
 
 impl DebugConsoleWriter {
+    /// Creates a writer and the receiver of the lines it captures.
     pub fn new() -> (Self, Receiver<String>) {
         let (tx, rx) = crossbeam_channel::unbounded();
         let writer = Self { sender: Some(tx) };

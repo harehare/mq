@@ -105,7 +105,9 @@ pub use selector::{AttrKind, SELECTOR_NAMES, Selector};
 #[cfg(feature = "debug-trace")]
 pub use tarn::{BytecodeChunk, BytecodeDump, BytecodeInstruction, BytecodeLocation, BytecodePhase};
 
+/// An [`Engine`] using the default module resolver.
 pub type DefaultEngine = Engine<DefaultModuleResolver>;
+/// A [`ModuleLoader`] using the default module resolver.
 pub type DefaultModuleLoader = ModuleLoader<DefaultModuleResolver>;
 pub use suggest::{suggest_name, suggest_selector};
 
@@ -133,17 +135,20 @@ pub use runtime::debugger::{
 
 use crate::ast::TokenId;
 
+/// The result of evaluating a query.
 pub type MqResult = Result<RuntimeValues, Box<Error>>;
 
 /// Type alias for reference-counted pointer, switches between Shared and Arc depending on "sync" feature.
 #[cfg(not(feature = "sync"))]
 pub type Shared<T> = Rc<T>;
+/// Reference-counted pointer: `Rc`, or `Arc` with the `sync` feature.
 #[cfg(feature = "sync")]
 pub type Shared<T> = Arc<T>;
 
 /// Type alias for interior mutability, switches between SharedCell and RwLock depending on "sync" feature.
 #[cfg(not(feature = "sync"))]
 pub type SharedCell<T> = RefCell<T>;
+/// Interior-mutability cell: `RefCell`, or `RwLock` with the `sync` feature.
 #[cfg(feature = "sync")]
 pub type SharedCell<T> = RwLock<T>;
 
@@ -183,6 +188,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
     CstParser::new(&token_vec).parse()
 }
 
+/// Parses `code` into an AST program, allocating tokens in `token_arena`.
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
     parse_in_module(code, token_arena, Module::TOP_LEVEL_MODULE_ID)
         .map_err(|e| Box::new(error::Error::from_error(code, e, DefaultModuleLoader::default())))
@@ -221,12 +227,14 @@ pub fn parse_mdx_input_with(input: &str, options: mq_markdown::ParseOptions) -> 
     Ok(mdx.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
+/// Parses an HTML string, converting it to Markdown nodes.
 #[cfg(feature = "html-to-markdown")]
 pub fn parse_html_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     let html = mq_markdown::Markdown::from_html_str(input)?;
     Ok(html.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
+/// Parses an HTML string with the given conversion options, converting it to Markdown nodes.
 #[cfg(feature = "html-to-markdown")]
 pub fn parse_html_input_with_options(
     input: &str,

@@ -82,6 +82,7 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
     long_about = None,
     disable_help_subcommand = true
 )]
+/// The `mq` command-line interface.
 pub struct Cli {
     /// Suppress normal query output while preserving diagnostics, exit status, and query side effects.
     #[arg(short = 'q', long, global = true, default_value_t = false)]
@@ -421,6 +422,9 @@ impl From<IoFormat> for OutputFormat {
 }
 
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
+/// Bullet marker for list output.
+// Variant docs would change `--help` output.
+#[allow(missing_docs)]
 pub enum ListStyle {
     #[default]
     Dash,
@@ -429,6 +433,9 @@ pub enum ListStyle {
 }
 
 #[derive(Debug, Clone, PartialEq, Default, clap::ValueEnum)]
+/// Quote style for link titles.
+// Variant docs would change `--help` output.
+#[allow(missing_docs)]
 pub enum LinkTitleStyle {
     #[default]
     Double,
@@ -437,6 +444,9 @@ pub enum LinkTitleStyle {
 }
 
 #[derive(Debug, Clone, PartialEq, Default, clap::ValueEnum)]
+/// Wrapping style for link URLs.
+// Variant docs would change `--help` output.
+#[allow(missing_docs)]
 pub enum LinkUrlStyle {
     #[default]
     None,
@@ -1637,12 +1647,12 @@ impl Cli {
         out
     }
 
-    /// Prints an uncaught error to stderr per `--error-format`.
     /// The exit code requested by `halt(code)`, if `err` came from it.
     pub fn halt_exit_code(err: &miette::Report) -> Option<i32> {
         err.downcast_ref::<mq_lang::Error>().and_then(mq_lang::Error::exit_code)
     }
 
+    /// Prints an uncaught error to stderr per `--error-format`.
     pub fn report_error(&self, err: &miette::Report) {
         match self.error_format {
             ErrorFormat::Human => {
@@ -1727,6 +1737,7 @@ impl Cli {
         Some(json)
     }
 
+    /// Runs the command or query.
     pub fn run(&self) -> miette::Result<()> {
         if self.list {
             return self.list_commands();

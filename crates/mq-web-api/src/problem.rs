@@ -8,6 +8,7 @@ use serde::ser::SerializeMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+/// An RFC 9457 `application/problem+json` error body.
 pub struct ProblemDetails {
     status: StatusCode,
     details: HashMap<Cow<'static, str>, String>,
@@ -28,6 +29,7 @@ impl Serialize for ProblemDetails {
 }
 
 impl ProblemDetails {
+    /// Creates a problem with the given HTTP status.
     pub fn new(status: StatusCode) -> Self {
         Self {
             status,
@@ -35,16 +37,19 @@ impl ProblemDetails {
         }
     }
 
+    /// Sets the `type` member.
     pub fn with_type(mut self, value: &str) -> Self {
         self.details.insert(Cow::Borrowed("type"), value.to_string());
         self
     }
 
+    /// Adds an extension member.
     pub fn with_detail(mut self, key: &str, value: &str) -> Self {
         self.details.insert(Cow::Owned(key.to_string()), value.to_string());
         self
     }
 
+    /// Sets the `title` member.
     pub fn with_title(mut self, value: &str) -> Self {
         self.details.insert(Cow::Borrowed("title"), value.to_string());
         self

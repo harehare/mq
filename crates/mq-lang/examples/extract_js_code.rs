@@ -1,3 +1,5 @@
+//! Extracts JavaScript code blocks from Markdown.
+
 fn main() {
     let markdown_content = "
 # Example

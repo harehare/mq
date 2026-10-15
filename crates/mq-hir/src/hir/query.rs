@@ -65,6 +65,7 @@ impl Hir {
             .collect()
     }
 
+    /// Returns the documentation of builtin functions.
     #[inline(always)]
     pub fn builtins(&self) -> impl Iterator<Item = &'static mq_help::BuiltinDoc> {
         self.builtin.docs.functions()
@@ -77,20 +78,24 @@ impl Hir {
         self.bracket_key_counts.get(&call).copied().unwrap_or(0)
     }
 
+    /// Returns the symbol with the given id.
     pub fn symbol(&self, symbol_id: SymbolId) -> Option<&Symbol> {
         self.symbols.get(symbol_id)
     }
 
+    /// Iterates over all symbols.
     #[inline(always)]
     pub fn symbols(&self) -> impl Iterator<Item = (SymbolId, &Symbol)> {
         self.symbols.iter()
     }
 
+    /// Returns the scope with the given id.
     #[inline(always)]
     pub fn scope(&self, scope_id: ScopeId) -> Option<&Scope> {
         self.scopes.get(scope_id)
     }
 
+    /// Iterates over all scopes.
     #[inline(always)]
     pub fn scopes(&self) -> impl Iterator<Item = (ScopeId, &Scope)> {
         self.scopes.iter()

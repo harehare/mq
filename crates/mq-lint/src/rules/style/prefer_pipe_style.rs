@@ -2,6 +2,7 @@ use mq_hir::SymbolKind;
 
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
+/// Flags: a nested call that reads better as a pipe.
 pub struct PreferPipeStyle;
 
 impl LintRule for PreferPipeStyle {

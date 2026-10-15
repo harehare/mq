@@ -82,6 +82,7 @@ impl DebuggerHandler for CoverageHandler {
 /// Coverage result for a single test file.
 #[derive(Debug, Clone)]
 pub struct FileCoverage {
+    /// Path of the test file.
     pub file: PathBuf,
     executable_lines: BTreeSet<usize>,
     visited_lines: FxHashSet<usize>,

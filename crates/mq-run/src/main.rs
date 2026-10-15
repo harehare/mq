@@ -1,3 +1,5 @@
+//! The `mq` binary.
+
 use clap::Parser;
 
 #[cfg(feature = "use_mimalloc")]

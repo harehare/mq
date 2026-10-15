@@ -3,6 +3,7 @@ use rustc_hash::FxHashMap;
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Flags: a function name also defined in another module.
 pub struct AmbiguousQualifiedAccess;
 
 impl LintRule for AmbiguousQualifiedAccess {

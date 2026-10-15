@@ -136,6 +136,7 @@ fn token_modifier(token_modifier: ls_types::SemanticTokenModifier) -> u32 {
     TOKEN_MODIFIER.iter().position(|t| t == &token_modifier).unwrap() as u32
 }
 
+/// Token types advertised to clients; the index is the token type id.
 pub const TOKEN_TYPE: &[ls_types::SemanticTokenType] = &[
     SemanticTokenType::COMMENT,
     SemanticTokenType::FUNCTION,
@@ -151,6 +152,7 @@ pub const TOKEN_TYPE: &[ls_types::SemanticTokenType] = &[
     SemanticTokenType::VARIABLE,
 ];
 
+/// Token modifiers advertised to clients; the index is the modifier bit.
 pub const TOKEN_MODIFIER: &[ls_types::SemanticTokenModifier] = &[
     SemanticTokenModifier::DEFINITION,
     SemanticTokenModifier::DEFAULT_LIBRARY,

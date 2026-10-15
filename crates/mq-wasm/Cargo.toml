@@ -16,6 +16,9 @@ version.workspace = true
 crate-type = ["cdylib"]
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 itertools = {workspace = true}
 js-sys = {workspace = true}

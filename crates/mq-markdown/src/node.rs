@@ -29,21 +29,37 @@ mod tests;
 /// wrap the corresponding markdown element during colored rendering.
 #[derive(Debug, Clone, Default)]
 pub struct ColorTheme<'a> {
+    /// Style for headings.
     pub heading: ColorPair<'a>,
+    /// Style for code blocks.
     pub code: ColorPair<'a>,
+    /// Style for inline code.
     pub code_inline: ColorPair<'a>,
+    /// Style for emphasis.
     pub emphasis: ColorPair<'a>,
+    /// Style for strong text.
     pub strong: ColorPair<'a>,
+    /// Style for link text.
     pub link: ColorPair<'a>,
+    /// Style for link destinations.
     pub link_url: ColorPair<'a>,
+    /// Style for images.
     pub image: ColorPair<'a>,
+    /// Style for block quote markers.
     pub blockquote_marker: ColorPair<'a>,
+    /// Style for strikethrough.
     pub delete: ColorPair<'a>,
+    /// Style for thematic breaks.
     pub horizontal_rule: ColorPair<'a>,
+    /// Style for HTML.
     pub html: ColorPair<'a>,
+    /// Style for front matter.
     pub frontmatter: ColorPair<'a>,
+    /// Style for list markers.
     pub list_marker: ColorPair<'a>,
+    /// Style for table separators.
     pub table_separator: ColorPair<'a>,
+    /// Style for math.
     pub math: ColorPair<'a>,
 }
 
@@ -52,6 +68,7 @@ const EMPTY: Cow<'_, str> = Cow::Borrowed("");
 const RESET: Cow<'_, str> = Cow::Borrowed("\x1b[0m");
 
 impl ColorTheme<'_> {
+    /// A theme that adds no styling.
     pub const PLAIN: ColorTheme<'static> = ColorTheme {
         heading: (EMPTY, EMPTY),
         code: (EMPTY, EMPTY),
@@ -71,6 +88,7 @@ impl ColorTheme<'_> {
         math: (EMPTY, EMPTY),
     };
 
+    /// The default ANSI colored theme.
     #[cfg(feature = "color")]
     pub const COLORED: ColorTheme<'static> = ColorTheme {
         heading: (Cow::Borrowed("\x1b[1m\x1b[36m"), RESET),
@@ -156,21 +174,28 @@ impl ColorTheme<'_> {
 
 pub(crate) type Level = u8;
 
+/// Options for writing nodes as Markdown.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RenderOptions {
     /// Bullet marker for lists. `None` keeps each list's original marker (`-` if unknown).
     pub list_style: Option<ListStyle>,
+    /// How link destinations are wrapped.
     pub link_url_style: UrlSurroundStyle,
+    /// How link titles are quoted.
     pub link_title_style: TitleSurroundStyle,
     /// Write for MDX: text that MDX would read as an expression or as ESM is escaped.
     pub mdx: bool,
 }
 
+/// Bullet marker used when writing lists.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum ListStyle {
+    /// `-`
     #[default]
     Dash,
+    /// `+`
     Plus,
+    /// `*`
     Star,
 }
 
@@ -286,6 +311,7 @@ impl HorizontalRuleMarker {
     }
 }
 
+/// A link destination.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -294,35 +320,46 @@ impl HorizontalRuleMarker {
 )]
 pub struct Url(pub(crate) String);
 
+/// How a link destination is wrapped when written.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum UrlSurroundStyle {
+    /// Written as is.
     #[default]
     None,
+    /// Wrapped in `<>`.
     Angle,
 }
 
 impl Url {
+    /// Creates a value from `value`.
     pub fn new(value: String) -> Self {
         Self(value)
     }
 
+    /// The destination as written.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    /// Writes the node as Markdown with the given options.
     pub fn to_string_with(&self, options: &RenderOptions) -> Cow<'_, str> {
         Cow::Owned(render_link_destination(&self.0, &options.link_url_style))
     }
 }
 
+/// How a link title is quoted when written.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum TitleSurroundStyle {
+    /// Wrapped in `"`.
     #[default]
     Double,
+    /// Wrapped in `'`.
     Single,
+    /// Wrapped in `()`.
     Paren,
 }
 
+/// A link title.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -338,19 +375,23 @@ impl Display for Title {
 }
 
 impl Title {
+    /// Creates a value from `value`.
     pub fn new(value: String) -> Self {
         Self(value)
     }
 
+    /// The title text.
     pub fn to_value(&self) -> String {
         self.0.clone()
     }
 
+    /// Writes the node as Markdown with the given options.
     pub fn to_string_with(&self, options: &RenderOptions) -> Cow<'_, str> {
         Cow::Owned(render_link_title(&self.0, &options.link_title_style))
     }
 }
 
+/// The alignment of a table column.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -358,9 +399,13 @@ impl Title {
     serde(rename_all = "camelCase")
 )]
 pub enum TableAlignKind {
+    /// Left aligned.
     Left,
+    /// Right aligned.
     Right,
+    /// Centered.
     Center,
+    /// No alignment given.
     None,
 }
 
@@ -387,6 +432,7 @@ impl Display for TableAlignKind {
     }
 }
 
+/// A list item.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -394,10 +440,15 @@ impl Display for TableAlignKind {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct List {
+    /// The content of the item.
     pub values: Vec<Node>,
+    /// Index of the item in its list.
     pub index: usize,
+    /// Nesting level of the list.
     pub level: Level,
+    /// Whether the list is ordered.
     pub ordered: bool,
+    /// Task state: `None` if the item is not a task.
     pub checked: Option<bool>,
     /// Whether the whole list is loose (blank line between/within items).
     pub spread: bool,
@@ -407,10 +458,12 @@ pub struct List {
     /// Source marker. `None` keeps the default of the list kind: `-` for bullets, `.` for ordered lists.
     #[cfg_attr(feature = "json", serde(default, skip_serializing_if = "Option::is_none"))]
     pub marker: Option<ListMarker>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A table cell.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -418,13 +471,18 @@ pub struct List {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct TableCell {
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Index of the column.
     pub column: usize,
+    /// Index of the row.
     pub row: usize,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A table row.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -432,11 +490,14 @@ pub struct TableCell {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct TableRow {
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// The delimiter row of a table, giving the column alignments.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -444,11 +505,14 @@ pub struct TableRow {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct TableAlign {
+    /// Alignment of each column.
     pub align: Vec<TableAlignKind>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A sequence of nodes with no wrapper.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -456,9 +520,11 @@ pub struct TableAlign {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Fragment {
+    /// Child nodes.
     pub values: Vec<Node>,
 }
 
+/// A code block.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -466,14 +532,20 @@ pub struct Fragment {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Code {
+    /// The code.
     pub value: String,
+    /// The language of the info string.
     pub lang: Option<String>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
+    /// The rest of the info string after the language.
     pub meta: Option<String>,
+    /// Whether the block is fenced rather than indented.
     pub fence: bool,
 }
 
+/// An inline image.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -481,13 +553,18 @@ pub struct Code {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Image {
+    /// The alternative text.
     pub alt: String,
+    /// The destination.
     pub url: String,
+    /// The title, if any.
     pub title: Option<String>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A reference-style image.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -495,12 +572,17 @@ pub struct Image {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct ImageRef {
+    /// The alternative text.
     pub alt: String,
+    /// The normalized identifier of the reference.
     pub ident: String,
+    /// The identifier as written in the source.
     pub label: Option<String>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
+/// An inline link.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -508,9 +590,13 @@ pub struct ImageRef {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Link {
+    /// The destination.
     pub url: Url,
+    /// The title, if any.
     pub title: Option<Title>,
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -533,6 +619,7 @@ pub struct Callout {
     pub title: Option<String>,
     /// Body content nodes (the lines after the header).
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -550,6 +637,7 @@ pub struct Embed {
     pub target: String,
     /// Optional display hint after `|` (size for images, heading for notes).
     pub display: Option<String>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -567,10 +655,12 @@ pub struct WikiLink {
     pub target: String,
     /// Optional display text (the part after `|`).
     pub text: Option<String>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A footnote reference.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -578,12 +668,16 @@ pub struct WikiLink {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct FootnoteRef {
+    /// The normalized identifier of the reference.
     pub ident: String,
+    /// The identifier as written in the source.
     pub label: Option<String>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A footnote definition.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -591,12 +685,16 @@ pub struct FootnoteRef {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Footnote {
+    /// The normalized identifier of the reference.
     pub ident: String,
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A reference-style link.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -604,9 +702,13 @@ pub struct Footnote {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct LinkRef {
+    /// The normalized identifier of the reference.
     pub ident: String,
+    /// The identifier as written in the source.
     pub label: Option<String>,
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -627,11 +729,17 @@ impl fmt::Debug for HeadingDepth {
 }
 
 impl HeadingDepth {
+    /// Depth 1.
     pub const H1: Self = Self(1);
+    /// Depth 2.
     pub const H2: Self = Self(2);
+    /// Depth 3.
     pub const H3: Self = Self(3);
+    /// Depth 4.
     pub const H4: Self = Self(4);
+    /// Depth 5.
     pub const H5: Self = Self(5);
+    /// Depth 6.
     pub const H6: Self = Self(6);
 
     /// The depth `depth`, if it is from 1 to 6.
@@ -648,6 +756,7 @@ impl HeadingDepth {
         Self(depth.clamp(1, 6) as u8)
     }
 
+    /// The depth as a number.
     pub const fn get(self) -> u8 {
         self.0
     }
@@ -737,6 +846,7 @@ impl Display for InvalidHeadingDepth {
 
 impl std::error::Error for InvalidHeadingDepth {}
 
+/// A heading.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -744,12 +854,16 @@ impl std::error::Error for InvalidHeadingDepth {}
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Heading {
+    /// The depth of the heading.
     pub depth: HeadingDepth,
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A link reference definition.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(
     feature = "json",
@@ -757,13 +871,19 @@ pub struct Heading {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Definition {
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
+    /// The destination of the definition.
     pub url: Url,
+    /// The title, if any.
     pub title: Option<Title>,
+    /// The normalized identifier of the reference.
     pub ident: String,
+    /// The identifier as written in the source.
     pub label: Option<String>,
 }
+/// Plain text.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -771,11 +891,14 @@ pub struct Definition {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Text {
+    /// The text.
     pub value: String,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// Raw HTML.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -783,11 +906,14 @@ pub struct Text {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Html {
+    /// The HTML source.
     pub value: String,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// TOML front matter.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -795,11 +921,14 @@ pub struct Html {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Toml {
+    /// The TOML source.
     pub value: String,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// YAML front matter.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -807,11 +936,14 @@ pub struct Toml {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Yaml {
+    /// The YAML source.
     pub value: String,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// Inline code.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -819,11 +951,14 @@ pub struct Yaml {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct CodeInline {
+    /// The content.
     pub value: SmolStr,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// Inline math.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -831,11 +966,14 @@ pub struct CodeInline {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MathInline {
+    /// The content.
     pub value: SmolStr,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A math block.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -843,11 +981,14 @@ pub struct MathInline {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Math {
+    /// The LaTeX source.
     pub value: String,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A block-level MDX expression.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -855,11 +996,14 @@ pub struct Math {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxFlowExpression {
+    /// The source of the expression.
     pub value: SmolStr,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A block-level JSX element.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -867,10 +1011,14 @@ pub struct MdxFlowExpression {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxJsxFlowElement {
+    /// The child nodes.
     pub children: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
+    /// The element name, or `None` for a fragment.
     pub name: Option<String>,
+    /// The attributes of the element.
     pub attributes: Vec<MdxAttributeContent>,
 }
 
@@ -882,7 +1030,9 @@ pub struct MdxJsxFlowElement {
 )]
 /// An attribute of a JSX element: a property such as `a="b"`, or an expression such as `{...props}`.
 pub enum MdxAttributeContent {
+    /// An expression such as `{...props}`.
     Expression(SmolStr),
+    /// A property such as `a="b"`.
     Property(MdxJsxAttribute),
 }
 
@@ -894,7 +1044,9 @@ pub enum MdxAttributeContent {
 )]
 /// A property of a JSX element, with the value it has after its quotes or braces.
 pub struct MdxJsxAttribute {
+    /// The name of the property.
     pub name: SmolStr,
+    /// The value, or `None` for a property with none.
     pub value: Option<MdxAttributeValue>,
 }
 
@@ -906,10 +1058,13 @@ pub struct MdxJsxAttribute {
 )]
 /// The value of a JSX property: a string, or an expression in braces.
 pub enum MdxAttributeValue {
+    /// An expression in braces.
     Expression(SmolStr),
+    /// A string.
     Literal(SmolStr),
 }
 
+/// An inline JSX element.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -917,13 +1072,18 @@ pub enum MdxAttributeValue {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxJsxTextElement {
+    /// The child nodes.
     pub children: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
+    /// The element name, or `None` for a fragment.
     pub name: Option<SmolStr>,
+    /// The attributes of the element.
     pub attributes: Vec<MdxAttributeContent>,
 }
 
+/// An inline MDX expression.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -931,11 +1091,14 @@ pub struct MdxJsxTextElement {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxTextExpression {
+    /// The source of the expression.
     pub value: SmolStr,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// MDX ESM `import` or `export`.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -943,11 +1106,14 @@ pub struct MdxTextExpression {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct MdxJsEsm {
+    /// The source of the statements.
     pub value: SmolStr,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A block quote.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -955,11 +1121,14 @@ pub struct MdxJsEsm {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Blockquote {
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// Strikethrough text.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -967,11 +1136,14 @@ pub struct Blockquote {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Delete {
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// Emphasized text.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -979,11 +1151,14 @@ pub struct Delete {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Emphasis {
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// Strongly emphasized text.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -991,11 +1166,14 @@ pub struct Emphasis {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Strong {
+    /// Child nodes.
     pub values: Vec<Node>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A hard line break.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -1003,10 +1181,12 @@ pub struct Strong {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Break {
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A thematic break.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -1017,10 +1197,12 @@ pub struct HorizontalRule {
     /// Source marker. `None` renders as `***`.
     #[cfg_attr(feature = "json", serde(default, skip_serializing_if = "Option::is_none"))]
     pub marker: Option<HorizontalRuleMarker>,
+    /// Where the node is in the source, if known.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
 
+/// A Markdown node.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "json",
@@ -1028,44 +1210,80 @@ pub struct HorizontalRule {
     serde(rename_all = "camelCase", untagged)
 )]
 pub enum Node {
+    /// A block quote.
     Blockquote(Blockquote),
+    /// A hard line break.
     Break(Break),
+    /// An Obsidian-style callout.
     #[cfg(feature = "callout")]
     Callout(Callout),
+    /// An Obsidian-style file embed.
     #[cfg(feature = "embed")]
     Embed(Embed),
+    /// A link reference definition.
     Definition(Definition),
+    /// Strikethrough text.
     Delete(Delete),
+    /// A heading.
     Heading(Heading),
+    /// Emphasized text.
     Emphasis(Emphasis),
+    /// A footnote definition.
     Footnote(Footnote),
+    /// A footnote reference.
     FootnoteRef(FootnoteRef),
+    /// Raw HTML.
     Html(Html),
+    /// YAML front matter.
     Yaml(Yaml),
+    /// TOML front matter.
     Toml(Toml),
+    /// An inline image.
     Image(Image),
+    /// A reference-style image.
     ImageRef(ImageRef),
+    /// Inline code.
     CodeInline(CodeInline),
+    /// Inline math.
     MathInline(MathInline),
+    /// An inline link.
     Link(Link),
+    /// A reference-style link.
     LinkRef(LinkRef),
+    /// An Obsidian-style wikilink.
     #[cfg(feature = "wikilink")]
     WikiLink(WikiLink),
+    /// A math block.
     Math(Math),
+    /// A list item.
     List(List),
+    /// The delimiter row of a table, giving the column alignments.
     TableAlign(TableAlign),
+    /// A table row.
     TableRow(TableRow),
+    /// A table cell.
     TableCell(TableCell),
+    /// A code block.
     Code(Code),
+    /// Strongly emphasized text.
     Strong(Strong),
+    /// A thematic break.
     HorizontalRule(HorizontalRule),
+    /// A block-level MDX expression.
     MdxFlowExpression(MdxFlowExpression),
+    /// A block-level JSX element.
     MdxJsxFlowElement(MdxJsxFlowElement),
+    /// An inline JSX element.
     MdxJsxTextElement(MdxJsxTextElement),
+    /// An inline MDX expression.
     MdxTextExpression(MdxTextExpression),
+    /// MDX ESM `import` or `export`.
     MdxJsEsm(MdxJsEsm),
+    /// Plain text.
     Text(Text),
+    /// A sequence of nodes with no wrapper.
     Fragment(Fragment),
+    /// An empty node.
     #[default]
     Empty,
 }
@@ -1094,6 +1312,7 @@ impl PartialOrd for Node {
     }
 }
 
+/// A span of the source.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "json",
@@ -1101,10 +1320,13 @@ impl PartialOrd for Node {
     serde(rename_all = "camelCase")
 )]
 pub struct Position {
+    /// Where the node starts.
     pub start: Point,
+    /// Where the node ends.
     pub end: Point,
 }
 
+/// A location in the source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "json",
@@ -1222,6 +1444,7 @@ impl Node {
         }
     }
 
+    /// Converts a clone of this node into a fragment of its children.
     pub fn to_fragment(&self) -> Node {
         self.clone().into_fragment()
     }
@@ -1242,6 +1465,7 @@ impl Node {
         }
     }
 
+    /// Replaces the children of this node with those of `fragment`.
     pub fn apply_fragment(&mut self, fragment: Node) {
         Self::_apply_fragment(self, fragment)
     }
@@ -1331,6 +1555,7 @@ impl Node {
         }
     }
 
+    /// Returns the child nodes, or the node itself if it has none.
     pub fn node_values(&self) -> Vec<Node> {
         match self {
             Self::Blockquote(v) => v.values.clone(),
@@ -1345,6 +1570,7 @@ impl Node {
         }
     }
 
+    /// Returns the child at `index`, if any.
     pub fn find_at_index(&self, index: usize) -> Option<Node> {
         match self {
             Self::Blockquote(v) => v.values.get(index).cloned(),
@@ -1361,6 +1587,7 @@ impl Node {
         }
     }
 
+    /// Returns the text content of the node.
     pub fn value(&self) -> String {
         match self {
             Self::Blockquote(v) => values_to_value(&v.values),
@@ -1405,6 +1632,7 @@ impl Node {
         }
     }
 
+    /// Returns the node name, such as `"heading"` or `"code"`.
     pub fn name(&self) -> SmolStr {
         match self {
             Self::Blockquote(_) => "blockquote".into(),
@@ -1471,6 +1699,7 @@ impl Node {
         }
     }
 
+    /// Sets the position of the node.
     pub fn set_position(&mut self, pos: Option<Position>) {
         match self {
             Self::Blockquote(v) => v.position = pos,
@@ -1514,6 +1743,7 @@ impl Node {
         }
     }
 
+    /// Returns the position of the node, if known.
     pub fn position(&self) -> Option<Position> {
         match self {
             Self::Blockquote(v) => v.position.clone(),
@@ -1599,14 +1829,17 @@ impl Node {
         }
     }
 
+    /// Returns `true` if this node is empty.
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
     }
 
+    /// Returns `true` if this node is a fragment.
     pub fn is_fragment(&self) -> bool {
         matches!(self, Self::Fragment(_))
     }
 
+    /// Returns `true` if this node is a fragment with no nodes.
     pub fn is_empty_fragment(&self) -> bool {
         if let Self::Fragment(_) = self {
             Self::_fragment_inner_nodes(self).is_empty()
@@ -1625,30 +1858,37 @@ impl Node {
         }
     }
 
+    /// Returns `true` if this node is an inline code.
     pub fn is_inline_code(&self) -> bool {
         matches!(self, Self::CodeInline(_))
     }
 
+    /// Returns `true` if this node is an inline math.
     pub fn is_inline_math(&self) -> bool {
         matches!(self, Self::MathInline(_))
     }
 
+    /// Returns `true` if this node is a strongly emphasized text.
     pub fn is_strong(&self) -> bool {
         matches!(self, Self::Strong(_))
     }
 
+    /// Returns `true` if this node is a list item.
     pub fn is_list(&self) -> bool {
         matches!(self, Self::List(_))
     }
 
+    /// Returns `true` if this node is an emphasized text.
     pub fn is_emphasis(&self) -> bool {
         matches!(self, Self::Emphasis(_))
     }
 
+    /// Returns `true` if this node is a strikethrough.
     pub fn is_delete(&self) -> bool {
         matches!(self, Self::Delete(_))
     }
 
+    /// Returns `true` if this node is a link.
     pub fn is_link(&self) -> bool {
         #[cfg(feature = "wikilink")]
         {
@@ -1660,6 +1900,7 @@ impl Node {
         }
     }
 
+    /// Returns `true` if this node is a reference-style link.
     pub fn is_link_ref(&self) -> bool {
         matches!(self, Self::LinkRef(_))
     }
@@ -1682,18 +1923,22 @@ impl Node {
         matches!(self, Self::Embed(_))
     }
 
+    /// Returns `true` if this node is a text node.
     pub fn is_text(&self) -> bool {
         matches!(self, Self::Text(_))
     }
 
+    /// Returns `true` if this node is an image.
     pub fn is_image(&self) -> bool {
         matches!(self, Self::Image(_))
     }
 
+    /// Returns `true` if this node is a thematic break.
     pub fn is_horizontal_rule(&self) -> bool {
         matches!(self, Self::HorizontalRule { .. })
     }
 
+    /// Returns `true` if this node is a block quote.
     pub fn is_blockquote(&self) -> bool {
         matches!(self, Self::Blockquote(_))
     }
@@ -1737,66 +1982,82 @@ impl Node {
         }
     }
 
+    /// Returns `true` if this node is a raw HTML node.
     pub fn is_html(&self) -> bool {
         matches!(self, Self::Html { .. })
     }
 
+    /// Returns `true` if this node is a footnote definition.
     pub fn is_footnote(&self) -> bool {
         matches!(self, Self::Footnote(_))
     }
 
+    /// Returns `true` if this node is a block-level JSX element.
     pub fn is_mdx_jsx_flow_element(&self) -> bool {
         matches!(self, Self::MdxJsxFlowElement(MdxJsxFlowElement { .. }))
     }
 
+    /// Returns `true` if this node is a MDX ESM statement.
     pub fn is_mdx_js_esm(&self) -> bool {
         matches!(self, Self::MdxJsEsm(MdxJsEsm { .. }))
     }
 
+    /// Returns `true` if this node is a TOML front matter.
     pub fn is_toml(&self) -> bool {
         matches!(self, Self::Toml { .. })
     }
 
+    /// Returns `true` if this node is a YAML front matter.
     pub fn is_yaml(&self) -> bool {
         matches!(self, Self::Yaml { .. })
     }
 
+    /// Returns `true` if this node is a hard line break.
     pub fn is_break(&self) -> bool {
         matches!(self, Self::Break { .. })
     }
 
+    /// Returns `true` if this node is a inline MDX expression.
     pub fn is_mdx_text_expression(&self) -> bool {
         matches!(self, Self::MdxTextExpression(MdxTextExpression { .. }))
     }
 
+    /// Returns `true` if this node is a footnote reference.
     pub fn is_footnote_ref(&self) -> bool {
         matches!(self, Self::FootnoteRef { .. })
     }
 
+    /// Returns `true` if this node is an reference-style image.
     pub fn is_image_ref(&self) -> bool {
         matches!(self, Self::ImageRef(_))
     }
 
+    /// Returns `true` if this node is a inline JSX element.
     pub fn is_mdx_jsx_text_element(&self) -> bool {
         matches!(self, Self::MdxJsxTextElement(MdxJsxTextElement { .. }))
     }
 
+    /// Returns `true` if this node is a math block.
     pub fn is_math(&self) -> bool {
         matches!(self, Self::Math(_))
     }
 
+    /// Returns `true` if this node is a block-level MDX expression.
     pub fn is_mdx_flow_expression(&self) -> bool {
         matches!(self, Self::MdxFlowExpression(MdxFlowExpression { .. }))
     }
 
+    /// Returns `true` if this node is a link reference definition.
     pub fn is_definition(&self) -> bool {
         matches!(self, Self::Definition(_))
     }
 
+    /// Returns `true` if this node is a table delimiter row.
     pub fn is_table_align(&self) -> bool {
         matches!(self, Self::TableAlign(_))
     }
 
+    /// Returns `true` if this node is a code block, of language `lang` when given.
     pub fn is_code(&self, lang: Option<SmolStr>) -> bool {
         if let Self::Code(Code { lang: node_lang, .. }) = &self {
             if lang.is_none() {
@@ -1809,6 +2070,7 @@ impl Node {
         }
     }
 
+    /// Returns `true` if this node is a heading, of depth `depth` when given.
     pub fn is_heading(&self, depth: Option<u8>) -> bool {
         if let Self::Heading(Heading {
             depth: heading_depth, ..

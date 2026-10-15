@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Flags: code after a `break` or `continue`.
 pub struct UnreachableCode;
 
 impl LintRule for UnreachableCode {

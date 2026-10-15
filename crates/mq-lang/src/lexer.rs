@@ -8,9 +8,12 @@ use crate::module::ModuleId;
 use crate::number::Number;
 use crate::range::{Position, Range};
 
+/// Options for the lexer.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
+    /// Emit `Unknown` tokens instead of failing on unrecognized text.
     pub ignore_errors: bool,
+    /// Emit whitespace, tab and newline tokens.
     pub include_spaces: bool,
 }
 

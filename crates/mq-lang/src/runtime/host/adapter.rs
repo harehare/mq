@@ -119,6 +119,7 @@ impl<T: ValueAdapter> ValueAdapter for Option<T> {
 /// each typed arity below so a single closure can only ever match one implementation — hosts
 /// never need to name `Marker` or this trait themselves.
 pub trait IntoHostFunction<Marker> {
+    /// Boxes the closure as a host function.
     fn into_host_fn(self) -> Shared<dyn HostFunction>;
 }
 

@@ -61,15 +61,21 @@ export function clearAllHttpCache(): Promise<void>;
 "#;
 
 #[derive(Serialize, Deserialize)]
+/// Kind of a defined value.
 pub enum DefinedValueType {
+    /// A function.
     Function,
+    /// A selector.
     Selector,
+    /// A variable.
     Variable,
+    /// A module.
     Module,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// A function, selector, variable or module defined in a query.
 pub struct DefinedValue {
     name: String,
     args: Option<Vec<String>>,
@@ -79,6 +85,7 @@ pub struct DefinedValue {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// A syntax or type diagnostic with its source range.
 pub struct Diagnostic {
     start_line: u32,
     start_column: u32,
@@ -89,6 +96,7 @@ pub struct Diagnostic {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// A type hint shown at a source position.
 pub struct InlayHint {
     line: u32,
     column: u32,
@@ -97,6 +105,7 @@ pub struct InlayHint {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Hover text for a position.
 pub struct HoverResult {
     content: String,
 }
@@ -117,18 +126,25 @@ struct Options {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Input document format.
 pub enum InputFormat {
     #[serde(rename = "markdown")]
+    /// Markdown.
     Markdown,
     #[serde(rename = "mdx")]
+    /// MDX.
     Mdx,
     #[serde(rename = "text")]
+    /// Plain text.
     Text,
     #[serde(rename = "html")]
+    /// HTML.
     Html,
     #[serde(rename = "null")]
+    /// No input.
     Null,
     #[serde(rename = "raw")]
+    /// Raw string input.
     Raw,
 }
 
@@ -147,12 +163,16 @@ impl FromStr for InputFormat {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Bullet marker for list output.
 pub enum ListStyle {
     #[serde(rename = "dash")]
+    /// `-` bullets.
     Dash,
     #[serde(rename = "plus")]
+    /// `+` bullets.
     Plus,
     #[serde(rename = "star")]
+    /// `*` bullets.
     Star,
 }
 
@@ -171,12 +191,16 @@ impl FromStr for ListStyle {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Quote style for link titles.
 pub enum TitleSurroundStyle {
     #[serde(rename = "double")]
+    /// Double quotes.
     Double,
     #[serde(rename = "single")]
+    /// Single quotes.
     Single,
     #[serde(rename = "paren")]
+    /// Parentheses.
     Paren,
 }
 
@@ -195,10 +219,13 @@ impl FromStr for TitleSurroundStyle {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Wrapping style for link URLs.
 pub enum UrlSurroundStyle {
     #[serde(rename = "angle")]
+    /// Angle brackets.
     Angle,
     #[serde(rename = "none")]
+    /// No wrapping.
     None,
 }
 
@@ -217,9 +244,13 @@ impl FromStr for UrlSurroundStyle {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[wasm_bindgen]
 #[serde(rename_all = "camelCase")]
+/// Options for HTML to Markdown conversion.
 pub struct ConversionOptions {
+    /// Extract script tags as code blocks.
     pub extract_scripts_as_code_blocks: bool,
+    /// Generate front matter from the HTML metadata.
     pub generate_front_matter: bool,
+    /// Use the `<title>` as the top-level heading.
     pub use_title_as_h1: bool,
     /// Base URL for resolving relative `href`/`src` values; empty falls back to `<base href>`.
     #[wasm_bindgen(getter_with_clone)]
@@ -313,6 +344,7 @@ impl mq_lang::HttpFetcher for WasmFetcher {
 }
 
 #[derive(Debug, Clone)]
+/// Module resolver for the browser, fetching HTTP imports through the host.
 pub struct WasmModuleResolver {
     /// HTTP resolver: handles URL normalization, domain allow-list, and delegates fetch to WasmFetcher.
     http_resolver: Rc<RefCell<mq_lang::HttpModuleResolver<WasmFetcher>>>,
@@ -355,6 +387,7 @@ impl Default for WasmModuleResolver {
 }
 
 impl WasmModuleResolver {
+    /// Creates a resolver with an empty cache.
     pub fn new() -> Self {
         Self::default()
     }
@@ -636,6 +669,7 @@ pub async fn clear_all_http_cache() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen(js_name=run, skip_typescript)]
+/// Runs `code` against `content` and returns the output.
 pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
     let options: Options = serde_wasm_bindgen::from_value(options)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
@@ -715,6 +749,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
 }
 
 #[wasm_bindgen(js_name=toAst)]
+/// Parses `code` and returns its AST as JSON.
 pub async fn to_ast(code: &str) -> Result<String, JsValue> {
     let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
     mq_lang::parse(code, token_arena)
@@ -725,6 +760,7 @@ pub async fn to_ast(code: &str) -> Result<String, JsValue> {
 }
 
 #[wasm_bindgen(js_name=format)]
+/// Formats `code`.
 pub async fn format(code: &str) -> Result<String, JsValue> {
     mq_formatter::Formatter::default()
         .format(code)
@@ -732,17 +768,20 @@ pub async fn format(code: &str) -> Result<String, JsValue> {
 }
 
 #[wasm_bindgen(js_name=htmlToMarkdown)]
+/// Converts HTML to Markdown.
 pub async fn html_to_markdown(html_input: &str, options: Option<ConversionOptions>) -> Result<String, JsValue> {
     mq_markdown::convert_html_to_markdown(html_input, options.map(Into::into).unwrap_or_default())
         .map_err(|e| JsValue::from_str(&format!("Failed to convert HTML to Markdown: {}", e)))
 }
 
 #[wasm_bindgen(js_name=toHtml)]
+/// Renders Markdown as HTML.
 pub async fn to_html(markdown_input: &str) -> String {
     mq_markdown::to_html(markdown_input)
 }
 
 #[wasm_bindgen(js_name=diagnostics, skip_typescript)]
+/// Returns syntax diagnostics, plus type errors when `enable_type_check` is set.
 pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue {
     let (_, errors) = mq_lang::parse_recovery(code);
     let mut errors = errors
@@ -781,6 +820,7 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
 }
 
 #[wasm_bindgen(js_name=inlayHints, skip_typescript)]
+/// Returns type hints for `code`.
 pub async fn inlay_hints(code: &str) -> JsValue {
     let mut hir = mq_hir::Hir::default();
     hir.add_code(None, code);
@@ -827,6 +867,7 @@ pub async fn inlay_hints(code: &str) -> JsValue {
 }
 
 #[wasm_bindgen(js_name=definedValues, skip_typescript)]
+/// Lists the values defined by `code`, or by `module` if given.
 pub async fn defined_values(code: &str, module: Option<String>) -> Result<JsValue, JsValue> {
     let mut hir = mq_hir::Hir::default();
     hir.add_code(None, code);

@@ -8,6 +8,7 @@ use crate::{
 };
 
 impl Hir {
+    /// Finds the symbol at `position` in the given source.
     pub fn find_symbol_in_position(
         &self,
         source_id: SourceId,
@@ -38,6 +39,7 @@ impl Hir {
         })
     }
 
+    /// Finds the innermost scope containing `position` in the given source.
     pub fn find_scope_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<(ScopeId, Scope)> {
         self.sources.get(source_id)?;
 
@@ -52,6 +54,7 @@ impl Hir {
             .map(|(scope_id, _)| (scope_id, self.scopes[scope_id].clone()))
     }
 
+    /// Returns the symbols declared in `scope_id` and its parent scopes.
     pub fn find_symbols_in_scope(&self, scope_id: ScopeId) -> Vec<Arc<Symbol>> {
         self.symbol_ids_in_scope(scope_id)
             .into_iter()
@@ -116,6 +119,7 @@ impl Hir {
         symbol_ids
     }
 
+    /// Returns all symbols that belong to the given source.
     pub fn find_symbols_in_source(&self, source_id: SourceId) -> Vec<Arc<Symbol>> {
         self.symbols
             .iter()
@@ -131,6 +135,7 @@ impl Hir {
             .collect::<Vec<_>>()
     }
 
+    /// Returns the module scope of the given source.
     pub fn find_scope_by_source(&self, source_id: &SourceId) -> ScopeId {
         self.source_scopes[source_id]
     }

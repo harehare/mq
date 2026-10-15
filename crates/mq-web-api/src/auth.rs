@@ -6,10 +6,13 @@ use std::{collections::HashMap, collections::HashSet, fmt::Write as _};
 
 use crate::config::AuthConfig;
 
+/// Permission granted to an API key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Scope {
+    /// Access to read-only endpoints.
     Read,
+    /// Access to query execution endpoints.
     Query,
 }
 
@@ -35,19 +38,25 @@ struct ApiKeyDef {
     rate_limit_per_window: Option<i64>,
 }
 
+/// An API key's identity, scopes and rate limit.
 #[derive(Debug, Clone)]
 pub struct ApiKeyRecord {
+    /// Display name of the key.
     pub name: String,
+    /// Scopes granted to the key.
     pub scopes: HashSet<Scope>,
+    /// Per-window request limit overriding the global one.
     pub rate_limit_per_window: Option<i64>,
 }
 
 impl ApiKeyRecord {
+    /// Whether the key was granted `scope`.
     pub fn has_scope(&self, scope: Scope) -> bool {
         self.scopes.contains(&scope)
     }
 }
 
+/// Set of configured API keys, stored by hash.
 #[derive(Debug)]
 pub struct ApiKeyStore {
     by_hash: HashMap<String, ApiKeyRecord>,
@@ -89,6 +98,7 @@ impl ApiKeyStore {
         Self { by_hash }
     }
 
+    /// Loads keys from the keys file or the raw key list. Returns `None` when auth is disabled.
     pub fn from_config(config: &AuthConfig) -> Option<Self> {
         if !config.enabled {
             return None;
@@ -112,14 +122,17 @@ impl ApiKeyStore {
         Some(store)
     }
 
+    /// Looks up the record of a presented key.
     pub fn authenticate(&self, presented: &str) -> Option<&ApiKeyRecord> {
         self.by_hash.get(&hash_key(presented))
     }
 
+    /// Returns the number of configured keys.
     pub fn len(&self) -> usize {
         self.by_hash.len()
     }
 
+    /// Returns `true` if no keys are configured.
     pub fn is_empty(&self) -> bool {
         self.by_hash.is_empty()
     }

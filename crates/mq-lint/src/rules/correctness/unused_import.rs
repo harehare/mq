@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Flags: an imported module that is never used.
 pub struct UnusedImport;
 
 impl LintRule for UnusedImport {

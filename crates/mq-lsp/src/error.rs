@@ -2,9 +2,13 @@ use tower_lsp_server::ls_types;
 use tower_lsp_server::ls_types::NumberOrString;
 
 #[derive(Debug, Clone)]
+/// A diagnostic produced by the language server.
 pub enum LspError {
+    /// A syntax error.
     SyntaxError(mq_lang::Diagnostic),
+    /// A type checking error.
     TypeError(mq_check::TypeError),
+    /// A lint warning.
     LintWarning(mq_lint::Diagnostic),
 }
 

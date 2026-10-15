@@ -3,8 +3,8 @@ use robots_txt::{Robots, matcher::SimpleMatcher};
 use std::sync::OnceLock;
 use url::Url;
 
-// A simple wrapper for robots.txt handling.
-// It stores the text content and caches the parsed Robots structure.
+/// Wrapper for robots.txt handling.
+/// Stores the text content and caches the parsed Robots structure.
 #[derive(Debug)]
 pub struct RobotsTxt {
     robots_text: Option<String>,

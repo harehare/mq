@@ -18,34 +18,53 @@ use tokio::time::sleep;
 use url::Url;
 
 #[derive(Clone, Debug, Default)]
+/// Format of the crawl statistics written to stderr.
 pub enum OutputFormat {
     #[default]
+    /// Human-readable text.
     Text,
+    /// JSON.
     Json,
 }
 
 #[derive(Debug, Default)]
+/// Counters and timing collected during a crawl.
 pub struct CrawlResult {
+    /// When the crawl started.
     pub start_time: Option<Instant>,
+    /// When the crawl finished.
     pub end_time: Option<Instant>,
+    /// Pages fetched and processed successfully.
     pub pages_crawled: usize,
+    /// Pages skipped because robots.txt disallows them.
     pub pages_skipped_robots: usize,
+    /// Pages that failed to fetch or process.
     pub pages_failed: usize,
+    /// Links found across all pages.
     pub links_discovered: usize,
+    /// Total pages visited.
     pub total_pages_visited: usize,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+/// Serializable summary of a [`CrawlResult`].
 pub struct CrawlResultStats {
+    /// Pages fetched and processed successfully.
     pub pages_crawled: usize,
+    /// Pages skipped because robots.txt disallows them.
     pub pages_skipped_robots: usize,
+    /// Pages that failed to fetch or process.
     pub pages_failed: usize,
+    /// Links found across all pages.
     pub links_discovered: usize,
+    /// Total pages visited.
     pub total_pages_visited: usize,
+    /// Crawl duration in seconds.
     pub duration_secs: Option<f64>,
 }
 
 impl CrawlResult {
+    /// Elapsed time, if the crawl has started and finished.
     pub fn duration(&self) -> Option<Duration> {
         if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
             Some(end.duration_since(start))
@@ -54,6 +73,7 @@ impl CrawlResult {
         }
     }
 
+    /// Converts to the serializable statistics form.
     pub fn to_stats(&self) -> CrawlResultStats {
         CrawlResultStats {
             pages_crawled: self.pages_crawled,
@@ -65,6 +85,7 @@ impl CrawlResult {
         }
     }
 
+    /// Writes the statistics to stderr in `format`.
     pub fn write_stats_to_stderr(&self, format: &OutputFormat) {
         let stderr = io::stderr();
         let mut handle = stderr.lock();
@@ -164,6 +185,7 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
 }
 
 #[derive(Debug, Clone)]
+/// Crawls pages from a start URL and applies an mq query to each page.
 pub struct Crawler {
     allowed_domains: Option<Vec<String>>,
     checkpoint_interval_pages: usize,
@@ -190,6 +212,7 @@ pub struct Crawler {
 
 impl Crawler {
     #[allow(clippy::too_many_arguments)]
+    /// Creates a crawler for `start_url`.
     pub async fn new(
         http_client: HttpClient,
         start_url: Url,
@@ -288,6 +311,7 @@ impl Crawler {
         Ok(arc_robots)
     }
 
+    /// Runs the crawl to completion.
     pub async fn run(&mut self) -> Result<(), String> {
         // Record start time
         {

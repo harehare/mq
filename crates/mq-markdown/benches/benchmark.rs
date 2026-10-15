@@ -1,3 +1,5 @@
+//! Markdown benchmarks.
+
 fn main() {
     divan::main();
 }

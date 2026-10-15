@@ -1,3 +1,5 @@
+//! Integration tests for the mq-lang engine.
+
 use mq_lang::{DefaultEngine, DictMap, Engine, Ident, MqResult, RuntimeValue, Shared};
 use rstest::{fixture, rstest};
 

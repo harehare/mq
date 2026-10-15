@@ -81,6 +81,7 @@ impl Error {
         }
     }
 
+    /// Builds an error, resolving module source code through `module_loader` for diagnostics.
     #[cold]
     pub fn from_error(
         top_level_source_code: impl Into<String>,

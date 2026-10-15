@@ -39,6 +39,7 @@ impl<Inner: Io + Default> Default for SandboxedIo<Inner> {
 }
 
 impl<Inner: Io> SandboxedIo<Inner> {
+    /// Wraps `inner` with every permission denied.
     pub fn new(inner: Inner) -> Self {
         Self {
             inner,

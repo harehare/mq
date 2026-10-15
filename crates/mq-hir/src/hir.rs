@@ -13,8 +13,10 @@ use crate::{
 mod lower;
 mod query;
 
+/// High-level intermediate representation of mq sources: their symbols, scopes and references.
 #[derive(Debug)]
 pub struct Hir {
+    /// Builtin module state.
     pub builtin: Builtin,
     pub(crate) module_loader: mq_lang::ModuleLoader,
     pub(crate) scopes: SlotMap<ScopeId, Scope>,
@@ -79,6 +81,7 @@ impl Hir {
         }
     }
 
+    /// Registers an empty source and its module scope.
     pub fn add_new_source(&mut self, url: Option<Url>) -> (SourceId, ScopeId) {
         let source_id = self.add_source(Source::new(url));
         let scope_id = self.add_scope(Scope::new(
@@ -91,6 +94,7 @@ impl Hir {
         (source_id, scope_id)
     }
 
+    /// Adds `code` to an existing source and scope.
     pub fn add_line_of_code(&mut self, source_id: SourceId, scope_id: ScopeId, code: &str) {
         let (nodes, _) = mq_lang::parse_recovery(code);
 
@@ -101,6 +105,7 @@ impl Hir {
         });
     }
 
+    /// Parses `code` and adds it as a source, returning its ids.
     pub fn add_code(&mut self, url: Option<Url>, code: &str) -> (SourceId, ScopeId) {
         let (nodes, _) = mq_lang::parse_recovery(code);
 
@@ -126,6 +131,7 @@ impl Hir {
         self.resolve();
     }
 
+    /// Loads the builtin module into the HIR once, unless builtins are disabled.
     pub fn add_builtin(&mut self) {
         if self.builtin.loaded || self.builtin.disabled {
             return;
@@ -174,6 +180,7 @@ impl Hir {
         }
     }
 
+    /// Adds an already parsed source, replacing the contents of any source with the same URL.
     pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
         self.add_builtin();
 
@@ -200,6 +207,7 @@ impl Hir {
         (source_id, scope_id)
     }
 
+    /// Returns the source registered under `url`.
     pub fn source_by_url(&self, url: &Url) -> Option<SourceId> {
         self.sources
             .iter()

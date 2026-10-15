@@ -1,3 +1,5 @@
+//! Extracts list items from Markdown.
+
 fn main() {
     let markdown_content = "
 - item 1

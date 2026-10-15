@@ -18,11 +18,16 @@ pub type TriviaList = SmallVec<[Trivia; 1]>;
 /// `elif` clauses attached to an `if`.
 pub type Elifs = SmallVec<[Shared<Node>; 2]>;
 
+/// Whitespace, newlines and comments attached to a node.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Trivia {
+    /// A run of spaces.
     Whitespace(Shared<Token>),
+    /// A line break.
     NewLine,
+    /// A run of tabs.
     Tab(Shared<Token>),
+    /// A `#` comment.
     Comment(Shared<Token>),
 }
 
@@ -38,22 +43,27 @@ impl Display for Trivia {
 }
 
 impl Trivia {
+    /// Returns `true` for a whitespace trivia.
     pub fn is_whitespace(&self) -> bool {
         matches!(self, Trivia::Whitespace(_))
     }
 
+    /// Returns `true` for a newline trivia.
     pub fn is_new_line(&self) -> bool {
         matches!(self, Trivia::NewLine)
     }
 
+    /// Returns `true` for a tab trivia.
     pub fn is_tab(&self) -> bool {
         matches!(self, Trivia::Tab(_))
     }
 
+    /// Returns `true` for a comment trivia.
     pub fn is_comment(&self) -> bool {
         matches!(self, Trivia::Comment(_))
     }
 
+    /// Returns the comment text, or `None` for other trivia.
     pub fn comment(&self) -> Option<&str> {
         match self {
             Trivia::Comment(token) => match &token.kind {
@@ -64,6 +74,7 @@ impl Trivia {
         }
     }
 
+    /// Source range of the trivia; newlines have a default range.
     pub fn range(&self) -> Range {
         match self {
             Trivia::Comment(token) => token.range,
@@ -74,42 +85,63 @@ impl Trivia {
     }
 }
 
+/// A concrete syntax tree node with its token and surrounding trivia.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Node {
+    /// The kind of this node.
     pub kind: NodeKind,
+    /// The main token of this node, if it has one.
     pub token: Option<Shared<Token>>,
+    /// Trivia before the token.
     pub leading_trivia: TriviaList,
+    /// Trivia after the token.
     pub trailing_trivia: TriviaList,
 }
 
+/// The kind of a CST node together with its structural children.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum NodeKind {
+    /// An array literal.
     Array {
+        /// Child nodes in source order, including delimiter tokens.
         items: ArgList,
     },
+    /// An `as` binding.
     As {
+        /// The expression.
         expr: Shared<Node>,
+        /// The name node.
         name: Shared<Node>,
     },
     /// `lhs = rhs` or a compound assignment (`+=`, `-=`, ...); `op` identifies which.
     Assign {
+        /// The operator.
         op: BinaryOp,
+        /// The left-hand side.
         lhs: Shared<Node>,
+        /// The right-hand side.
         rhs: Shared<Node>,
     },
+    /// A binary operation.
     BinaryOp {
+        /// The operator.
         op: BinaryOp,
+        /// The left-hand side.
         lhs: Shared<Node>,
+        /// The right-hand side.
         rhs: Shared<Node>,
     },
     /// A `do...end` block, an implicit pipeline (`foo(a | b)`), or a selector
     /// descendant-chain grouping; all share the same flat `program` shape.
     Block {
+        /// Body nodes in source order.
         program: ArgList,
     },
     /// `break` or `break: value`.
     Break {
+        /// The `:` token.
         colon: Option<Shared<Node>>,
+        /// The optional value.
         value: Option<Shared<Node>>,
     },
     /// A function call (`ident(args)`) or a bracket/slice access desugared to the
@@ -117,236 +149,389 @@ pub enum NodeKind {
     /// `args` is the flat, token-interleaved list `parse_args`/`parse_bracket_access`
     /// produce, in source order.
     Call {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
     },
     /// A call whose callee is an arbitrary expression, e.g. `(f)(x)` or `a[0](x)`.
     CallDynamic {
+        /// The expression that evaluates to the function to call.
         callee: Shared<Node>,
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
     },
+    /// A `continue` expression.
     Continue,
+    /// A function definition.
     Def {
+        /// The name node.
         name: Shared<Node>,
+        /// Parameter nodes in source order, including delimiter tokens.
         params: Option<ArgList>,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Body nodes in source order.
         program: ArgList,
     },
+    /// A dict literal.
     Dict {
+        /// Dict entries in source order, including delimiter tokens.
         entries: ArgList,
     },
+    /// A `key: value` dict entry.
     DictEntry {
+        /// The key node.
         key: Shared<Node>,
+        /// The `:` token.
         colon: Shared<Node>,
+        /// The optional value.
         value: Shared<Node>,
     },
+    /// A `do` keyword.
     Do,
+    /// An `end` keyword.
     End,
+    /// An `elif` clause.
     Elif {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
+        /// The `:` token.
         colon: Option<Shared<Node>>,
+        /// The body evaluated when the condition holds.
         then_branch: Shared<Node>,
     },
+    /// An `else` clause.
     Else {
+        /// The `:` token.
         colon: Option<Shared<Node>>,
+        /// The body evaluated when the condition holds.
         then_branch: Shared<Node>,
     },
+    /// An environment variable reference.
     Env,
+    /// End of input.
     #[default]
     Eof,
     /// Source the parser could not make sense of. `children` holds, in source order, the
     /// tokens (and any nodes) consumed during recovery, so the text round-trips losslessly.
     Error {
+        /// Nodes consumed during error recovery, in source order.
         children: ArgList,
     },
+    /// An anonymous function.
     Fn {
+        /// Parameter nodes in source order, including delimiter tokens.
         params: ArgList,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Body nodes in source order.
         program: ArgList,
     },
+    /// A `foreach` loop.
     Foreach {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Body nodes in source order.
         program: ArgList,
     },
+    /// A parenthesized expression.
     Group {
+        /// The opening `(`.
         lparen: Shared<Node>,
+        /// The expression.
         expr: Shared<Node>,
+        /// The closing `)`.
         rparen: Shared<Node>,
     },
     /// An identifier; `attr` is a trailing attribute selector (`x.attr`).
     Ident {
+        /// Optional trailing attribute selector.
         attr: Option<Shared<Node>>,
     },
+    /// An `if` expression.
     If {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
+        /// The `:` token.
         colon: Option<Shared<Node>>,
+        /// The body evaluated when the condition holds.
         then_branch: Shared<Node>,
+        /// The `elif` branches.
         elifs: Elifs,
+        /// The `else` branch, if any.
         else_branch: Option<Shared<Node>>,
     },
     /// `import "path"` or `import "path" as alias`.
     Import {
+        /// The module path string.
         path: Shared<Node>,
+        /// The `as` token.
         as_token: Option<Shared<Node>>,
+        /// The alias name.
         alias: Option<Shared<Node>>,
     },
+    /// An `include` statement.
     Include {
+        /// The module path string.
         path: Shared<Node>,
     },
+    /// An interpolated string literal.
     InterpolatedString,
+    /// A `let` binding.
     Let {
+        /// The left-hand side.
         lhs: Shared<Node>,
+        /// The `=` token.
         eq_token: Shared<Node>,
+        /// The right-hand side.
         rhs: Shared<Node>,
     },
+    /// A `loop` expression.
     Loop {
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Body nodes in source order.
         program: ArgList,
     },
+    /// A `var` binding.
     Var {
+        /// The left-hand side.
         lhs: Shared<Node>,
+        /// The `=` token.
         eq_token: Shared<Node>,
+        /// The right-hand side.
         rhs: Shared<Node>,
     },
+    /// A literal value.
     Literal,
     /// A zero-width placeholder for a required token that is absent
     /// (e.g. the `)` of an unclosed call). `expected` describes the token.
     Missing {
+        /// Description of the missing token.
         expected: &'static str,
         /// Where the token would have been, so the node has a zero-width range.
         position: Position,
     },
+    /// A `match` expression.
     Match {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Match arms in source order.
         arms: ArgList,
+        /// The closing `end` token, if any.
         end_token: Option<Shared<Node>>,
     },
     /// `| pattern [if (guard)]: body`. `guard_args` is the flat, token-interleaved
     /// `(...)` list `parse_args` produces (present iff `if_token` is).
     MatchArm {
+        /// The leading `|` token.
         pipe: Shared<Node>,
+        /// The pattern node.
         pattern: Shared<Node>,
+        /// The `if` token of the guard, if any.
         if_token: Option<Shared<Node>>,
+        /// The parenthesized guard expression, if any.
         guard_args: Option<ArgList>,
+        /// The `:` token.
         colon: Shared<Node>,
+        /// The body node.
         body: Shared<Node>,
     },
+    /// A `module` definition.
     Module {
+        /// The name node.
         name: Shared<Node>,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Body nodes in source order.
         program: ArgList,
     },
+    /// The `nodes` keyword.
     Nodes,
     /// `p1 || p2 || ...`; `items` interleaves the patterns with their `||` tokens.
     OrPattern {
+        /// Child nodes in source order, including delimiter tokens.
         items: ArgList,
     },
     /// A `def`/`fn`/`catch` parameter; `token` is its name.
     Param {
+        /// The leading `*` of a variadic parameter.
         asterisk: Option<Shared<Node>>,
+        /// The `=` token.
         eq_token: Option<Shared<Node>>,
+        /// The default value expression.
         default: Option<Shared<Node>>,
     },
     /// Wildcard/literal/ident/type/array/dict pattern (one tag, several grammars,
     /// like `Call`). Leaf patterns carry no items; array/dict patterns hold the
     /// flat, token-interleaved `[...]`/`{...}` list.
     Pattern {
+        /// Child nodes in source order, including delimiter tokens.
         items: ArgList,
     },
     /// `a::b::c` or `a::b(args)`; `items` interleaves idents, `::` tokens and any call args.
     QualifiedAccess {
+        /// Child nodes in source order, including delimiter tokens.
         items: ArgList,
     },
     /// A selector. `items` holds bracket tokens for `.[n]` or a trailing attribute selector.
     Selector {
+        /// Child nodes in source order, including delimiter tokens.
         items: ArgList,
     },
     /// A `:name` symbol literal.
     Symbol {
+        /// The `:` token.
         colon: Shared<Node>,
+        /// The name node.
         name: Shared<Node>,
     },
+    /// A selector call with arguments.
     SelectorCall {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
     },
+    /// The `self` keyword, optionally with an attribute selector.
     Self_ {
+        /// Optional trailing attribute selector.
         attr: Option<Shared<Node>>,
     },
+    /// A `self` attribute access.
     SelfAttr,
+    /// A spread (`...expr`).
     Spread {
+        /// The operand.
         operand: Shared<Node>,
     },
+    /// A bare token such as a delimiter or operator.
     Token,
+    /// A `try` expression.
     Try {
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// The body node.
         body: Shared<Node>,
+        /// The `catch` clause, if any.
         catch: Option<Shared<Node>>,
     },
     /// `params` is the optional `(e)` error binder.
     Catch {
+        /// Parameter nodes in source order, including delimiter tokens.
         params: Option<ArgList>,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// The body node.
         body: Shared<Node>,
     },
+    /// An `unless` expression.
     Unless {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
+        /// The `:` token.
         colon: Option<Shared<Node>>,
+        /// The body evaluated when the condition holds.
         then_branch: Shared<Node>,
     },
+    /// An `until` loop.
     Until {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Body nodes in source order.
         program: ArgList,
     },
+    /// A unary operation.
     UnaryOp {
+        /// The operator.
         op: UnaryOp,
+        /// The operand.
         operand: Shared<Node>,
     },
+    /// A `while` loop.
     While {
+        /// Argument or condition nodes in source order, including delimiter tokens.
         args: ArgList,
+        /// The `:` or `do` token that opens the body.
         colon_or_do: Option<Shared<Node>>,
+        /// Body nodes in source order.
         program: ArgList,
     },
+    /// A `yield` expression.
     Yield {
+        /// The `:` token.
         colon: Option<Shared<Node>>,
+        /// The optional value.
         value: Option<Shared<Node>>,
     },
 }
 
+/// A binary operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
+    /// `&&`
     And,
+    /// `convert` (`@`)
     Convert,
+    /// `=`
     Assign,
+    /// `??`
     Coalesce,
+    /// `/`
     Division,
+    /// `/=`
     DivisionEqual,
+    /// `//=`
     DoubleDivisionEqual,
+    /// `|=`
     PipeEqual,
+    /// `==`
     Equal,
+    /// `>`
     Gt,
+    /// `>=`
     Gte,
+    /// `<`
     Lt,
+    /// `<=`
     Lte,
+    /// `-`
     Minus,
+    /// `-=`
     MinusEqual,
+    /// `%`
     Modulo,
+    /// `%=`
     ModuloEqual,
+    /// `*`
     Multiplication,
+    /// `*=`
     MultiplicationEqual,
+    /// `!=`
     NotEqual,
+    /// `||`
     Or,
+    /// `+`
     Plus,
+    /// `+=`
     PlusEqual,
+    /// `..`
     RangeOp,
+    /// `=~`
     RegexMatch,
+    /// `!~`
     NotRegexMatch,
+    /// `<<`
     LeftShift,
+    /// `>>`
     RightShift,
 }
 
 impl BinaryOp {
+    /// Whether the operator assigns to its left-hand side.
     pub fn is_assignment(&self) -> bool {
         matches!(
             self,
@@ -362,9 +547,12 @@ impl BinaryOp {
     }
 }
 
+/// A unary operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
+    /// `!`
     Not,
+    /// `-` prefix
     Negate,
 }
 
@@ -378,6 +566,7 @@ impl Display for Node {
 }
 
 impl Node {
+    /// Creates a synthetic `|` node, optionally preceded by a newline.
     pub fn new_pipe(with_new_line: bool) -> Self {
         Node {
             kind: NodeKind::Token,
@@ -399,10 +588,12 @@ impl Node {
         }
     }
 
+    /// Whether a newline precedes this node.
     pub fn has_new_line(&self) -> bool {
         self.leading_trivia.contains(&Trivia::NewLine)
     }
 
+    /// Range of the main token; a missing node has a zero-width range at its position.
     pub fn range(&self) -> Range {
         if let NodeKind::Missing { position, .. } = self.kind {
             return Range {
@@ -596,6 +787,7 @@ impl Node {
         }
     }
 
+    /// The name node.
     pub fn name(&self) -> Option<SmolStr> {
         self.token.as_ref().map(|token| match &token.kind {
             TokenKind::Ident(name) | TokenKind::Selector(name) => name.clone(),
@@ -603,10 +795,12 @@ impl Node {
         })
     }
 
+    /// Whether this is a bare token node.
     pub fn is_token(&self) -> bool {
         matches!(self.kind, NodeKind::Token)
     }
 
+    /// Whether this is the end-of-input node.
     pub fn is_eof(&self) -> bool {
         matches!(self.kind, NodeKind::Eof)
     }
@@ -621,20 +815,24 @@ impl Node {
         self.is_error() || self.children().any(|child| child.has_error())
     }
 
+    /// Whether this is an anonymous function.
     pub fn is_fn(&self) -> bool {
         matches!(self.kind, NodeKind::Fn { .. })
     }
 
+    /// Whether this is a function definition.
     pub fn is_def(&self) -> bool {
         matches!(self.kind, NodeKind::Def { .. })
     }
 
+    /// Whether this node is a `|` token.
     pub fn is_pipe(&self) -> bool {
         self.token
             .as_ref()
             .is_some_and(|token| matches!(token.kind, TokenKind::Pipe))
     }
 
+    /// Comments in the leading trivia with their ranges.
     pub fn comments(&self) -> Vec<Comment> {
         self.leading_trivia
             .iter()
@@ -647,10 +845,12 @@ impl Node {
         self.children().filter(|child| !child.is_token())
     }
 
+    /// Like [`non_token_children`](Self::non_token_children), collected.
     pub fn children_without_token(&self) -> SmallVec<[Shared<Node>; 4]> {
         self.children().filter(|child| !child.is_token()).cloned().collect()
     }
 
+    /// Splits the children into header nodes (name, params, condition) and body nodes, dropping tokens.
     pub fn split_cond_and_program(&self) -> (Vec<Shared<Node>>, Vec<Shared<Node>>) {
         match &self.kind {
             NodeKind::Def {
@@ -721,6 +921,7 @@ impl Node {
         )
     }
 
+    /// The left and right operands of a binary or assignment node.
     pub fn binary_op(&self) -> Option<(&Shared<Node>, &Shared<Node>)> {
         match &self.kind {
             NodeKind::BinaryOp { lhs, rhs, .. } | NodeKind::Assign { lhs, rhs, .. } => Some((lhs, rhs)),
@@ -728,6 +929,7 @@ impl Node {
         }
     }
 
+    /// The operand of a unary operation node.
     pub fn unary_op(&self) -> Option<Shared<Node>> {
         match &self.kind {
             NodeKind::UnaryOp { operand, .. } => Some(Shared::clone(operand)),

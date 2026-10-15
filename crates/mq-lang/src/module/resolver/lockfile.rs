@@ -30,7 +30,10 @@ pub enum LockCheck {
     /// The existing entry's hash matches the freshly fetched content.
     Match,
     /// The existing entry's hash does not match; the remote content has drifted.
-    Mismatch { locked: String },
+    Mismatch {
+        /// The hash recorded in the lock file.
+        locked: String,
+    },
 }
 
 /// A parsed `mq.lock` file: maps a fetched module URL to the SHA-256 hex digest of the

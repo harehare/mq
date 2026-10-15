@@ -24,6 +24,9 @@ pkg-fmt = "bin"
 pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
 disabled-strategies = ["quick-install"]
 
+[lints]
+workspace = true
+
 [dependencies]
 clap = {workspace = true, features = ["derive"], optional = true}
 colored = {workspace = true, optional = true}

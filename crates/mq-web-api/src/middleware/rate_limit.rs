@@ -9,6 +9,7 @@ use tracing::{debug, warn};
 
 use crate::rate_limiter::{RateLimitError, RateLimiter};
 
+/// Applies the rate limit per client and sets rate limit headers on the response.
 pub async fn rate_limit_middleware(
     State(rate_limiter): State<Arc<RateLimiter>>,
     request: Request,

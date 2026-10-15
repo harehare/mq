@@ -1,3 +1,5 @@
+//! Command-line type checker for mq programs.
+
 mod format;
 
 use std::io::{self, BufWriter, Read, Write};

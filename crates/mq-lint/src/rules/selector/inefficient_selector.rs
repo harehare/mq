@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Flags: a `..` followed by a specific selector.
 pub struct InefficientSelector;
 
 impl LintRule for InefficientSelector {

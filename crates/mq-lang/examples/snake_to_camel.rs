@@ -1,3 +1,5 @@
+//! Converts snake_case text to camelCase using the builtin module.
+
 fn main() {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();

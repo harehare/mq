@@ -1,25 +1,43 @@
+//! Language server binary.
+
 use std::path::PathBuf;
 
 use clap::Parser;
 
 use crate::server::LspConfig;
 
+/// Server capability advertisement.
 pub mod capabilities;
+/// Quick fixes and refactoring code actions.
 pub mod code_action;
+/// Completion items.
 pub mod completions;
+/// Document symbols.
 pub mod document_symbol;
+/// Error types.
 pub mod error;
+/// Command execution.
 pub mod execute_command;
+/// Folding ranges.
 pub mod folding_range;
+/// Go to definition.
 pub mod goto_definition;
+/// Hover information.
 pub mod hover;
+/// Inlay hints.
 pub mod inlay_hints;
 pub mod refactor;
+/// Find references.
 pub mod references;
+/// Rename symbols.
 pub mod rename;
+/// Semantic token highlighting.
 pub mod semantic_tokens;
+/// The LSP server.
 pub mod server;
+/// Signature help.
 pub mod signature_help;
+/// Workspace symbols.
 pub mod workspace_symbol;
 
 #[derive(Parser, Debug)]
