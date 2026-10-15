@@ -32,28 +32,7 @@ pub(super) fn generate_block_constraints(
     // Set piped input and re-process each child before moving to the next,
     // so that resolved types propagate correctly through the chain.
     for i in 1..children.len() {
-        let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, children[i - 1]);
-        ctx.set_piped_input(children[i], prev_ty);
-        if let Some(source) = prev_source {
-            ctx.set_piped_source(children[i], source);
-        }
-
-        // Re-process Call/Ref children that received piped input,
-        // since they were already processed in Pass 3 before piped inputs were set
-        if let Some(child_symbol) = hir.symbol(children[i]) {
-            match &child_symbol.kind {
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_) => {
-                    generate_symbol_constraints(hir, children[i], child_symbol.kind.clone(), ctx, children_index);
-                }
-                // For Variable (`let x = expr`), propagate piped input to the initializer
-                // (last child) so that `items | let x = first()` correctly passes `items`
-                // to `first()`.
-                SymbolKind::Variable | SymbolKind::DestructuringBinding => {
-                    propagate_piped_input_to_variable_initializer(hir, children[i], ctx, children_index);
-                }
-                _ => {}
-            }
-        }
+        thread_pipe_stage(hir, children[i - 1], children[i], ctx, children_index);
     }
 
     // Propagate piped input through UnaryOp to inner Call/Ref children.
@@ -124,35 +103,49 @@ pub(super) fn generate_function_body_pipe_constraints(
     // Set piped input and re-process each child before moving to the next,
     // so that resolved types propagate correctly through the chain.
     for i in 1..body_children.len() {
-        let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, body_children[i - 1]);
-        ctx.set_piped_input(body_children[i], prev_ty);
-        if let Some(source) = prev_source {
-            ctx.set_piped_source(body_children[i], source);
-        }
-
-        // Re-process Call/Ref children that received piped input
-        if let Some(child_symbol) = hir.symbol(body_children[i]) {
-            match &child_symbol.kind {
-                SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_) => {
-                    generate_symbol_constraints(hir, body_children[i], child_symbol.kind.clone(), ctx, children_index);
-                }
-                SymbolKind::Variable => {
-                    propagate_piped_input_to_variable_initializer(hir, body_children[i], ctx, children_index);
-                }
-                _ => {}
-            }
-        }
+        thread_pipe_stage(hir, body_children[i - 1], body_children[i], ctx, children_index);
     }
 
     // Propagate piped input through UnaryOp to inner Call/Ref children
     propagate_piped_input_through_unary_ops(hir, &body_children, ctx, children_index);
 }
 
-/// Propagates piped input through UnaryOp nodes to their inner Call/Ref children.
+/// Hands the output of `prev` to `stage` as its piped input and re-processes the stages
+/// that read it, since they were already processed before the input was known.
+pub(super) fn thread_pipe_stage(
+    hir: &Hir,
+    prev: SymbolId,
+    stage: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, prev);
+    ctx.set_piped_input(stage, prev_ty);
+    if let Some(source) = prev_source {
+        ctx.set_piped_source(stage, source);
+    }
+
+    let Some(symbol) = hir.symbol(stage) else {
+        return;
+    };
+    match &symbol.kind {
+        SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_) => {
+            generate_symbol_constraints(hir, stage, symbol.kind.clone(), ctx, children_index);
+        }
+        // For Variable (`let x = expr`), propagate piped input to the initializer
+        // (last child) so that `items | let x = first()` passes `items` to `first()`.
+        SymbolKind::Variable | SymbolKind::DestructuringBinding => {
+            propagate_piped_input_to_variable_initializer(hir, stage, ctx, children_index);
+        }
+        _ => {}
+    }
+}
+
+/// Propagates piped input through UnaryOp and BinaryOp nodes to their inner Call/Ref operands.
 ///
-/// When a pipe chain contains `x | !f()`, the piped value from `x` flows through
-/// the `!` (UnaryOp) to `f()` (Call). This function handles that propagation and
-/// re-processes the inner Call/Ref to pick up the piped input.
+/// When a pipe chain contains `x | !f()` or `x | f() == y`, the piped value from `x` flows
+/// through the operator to `f()`. This function handles that propagation and re-processes
+/// the inner Call/Ref to pick up the piped input.
 pub(super) fn propagate_piped_input_through_unary_ops(
     hir: &Hir,
     children: &[SymbolId],
@@ -160,19 +153,38 @@ pub(super) fn propagate_piped_input_through_unary_ops(
     children_index: &ChildrenIndex,
 ) {
     for &child_id in children.iter().skip(1) {
-        if let Some(child_symbol) = hir.symbol(child_id)
-            && matches!(child_symbol.kind, SymbolKind::UnaryOp)
-            && let Some(piped_ty) = ctx.get_piped_input(child_id).cloned()
-        {
-            let inner_children = get_children(children_index, child_id);
-            for &inner_id in inner_children {
-                if let Some(inner_sym) = hir.symbol(inner_id)
-                    && matches!(inner_sym.kind, SymbolKind::Call | SymbolKind::Ref)
-                {
-                    ctx.set_piped_input(inner_id, piped_ty.clone());
-                    generate_symbol_constraints(hir, inner_id, inner_sym.kind.clone(), ctx, children_index);
-                }
+        if let Some(piped_ty) = ctx.get_piped_input(child_id).cloned() {
+            propagate_into_operands(hir, child_id, &piped_ty, ctx, children_index);
+        }
+    }
+}
+
+fn propagate_into_operands(
+    hir: &Hir,
+    operator_id: SymbolId,
+    piped_ty: &Type,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    if !hir
+        .symbol(operator_id)
+        .is_some_and(|s| matches!(s.kind, SymbolKind::UnaryOp | SymbolKind::BinaryOp))
+    {
+        return;
+    }
+    for &inner_id in get_children(children_index, operator_id) {
+        let Some(inner_sym) = hir.symbol(inner_id) else {
+            continue;
+        };
+        match inner_sym.kind {
+            SymbolKind::Call | SymbolKind::Ref => {
+                ctx.set_piped_input(inner_id, piped_ty.clone());
+                generate_symbol_constraints(hir, inner_id, inner_sym.kind.clone(), ctx, children_index);
             }
+            SymbolKind::UnaryOp | SymbolKind::BinaryOp => {
+                propagate_into_operands(hir, inner_id, piped_ty, ctx, children_index);
+            }
+            _ => {}
         }
     }
 }

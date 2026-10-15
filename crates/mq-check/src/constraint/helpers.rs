@@ -1,7 +1,7 @@
 //! Helper functions for constraint generation.
 
 use mq_hir::{Hir, SymbolId, SymbolKind};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use crate::builtin::PARTIAL;
 use crate::infer::InferenceContext;
@@ -72,7 +72,8 @@ pub(crate) fn get_non_keyword_children(
 
 /// Helper function to get the range of a symbol
 pub(super) fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang::Range> {
-    hir.symbol(symbol_id).and_then(|symbol| symbol.source.text_range)
+    hir.symbol(symbol_id)
+        .and_then(|symbol| crate::symbol_range(hir, symbol))
 }
 
 /// Returns the element type an array child contributes to its enclosing `[...]`.
@@ -106,21 +107,6 @@ pub(super) fn spread_element_type(
     ));
 
     Type::Var(elem_var)
-}
-
-/// Checks if a symbol belongs to a module source (include/import/module).
-///
-/// Symbols from included/imported modules are trusted library code and should
-/// not be type-checked, similar to builtin symbols.
-pub(super) fn is_module_symbol(
-    _hir: &Hir,
-    symbol: &mq_hir::Symbol,
-    module_source_ids: &FxHashSet<mq_hir::SourceId>,
-) -> bool {
-    symbol
-        .source
-        .source_id
-        .is_some_and(|sid| module_source_ids.contains(&sid))
 }
 
 /// Checks if a symbol is a foreach iterable reference.
@@ -202,12 +188,16 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
     ) {
         return true;
     }
-    // Check grandparent: if parent is UnaryOp inside a pipe-capable construct
-    if matches!(parent.kind, SymbolKind::UnaryOp)
-        && let Some(grandparent_id) = parent.parent
-        && let Some(grandparent) = hir.symbol(grandparent_id)
-    {
-        return matches!(grandparent.kind, SymbolKind::Block | SymbolKind::Function(_));
+    // An operand of unary/binary operators that sit directly in a pipe-capable construct
+    if matches!(parent.kind, SymbolKind::UnaryOp | SymbolKind::BinaryOp) {
+        let mut ancestor = parent;
+        while matches!(ancestor.kind, SymbolKind::UnaryOp | SymbolKind::BinaryOp) {
+            let Some(next) = ancestor.parent.and_then(|id| hir.symbol(id)) else {
+                return false;
+            };
+            ancestor = next;
+        }
+        return matches!(ancestor.kind, SymbolKind::Block | SymbolKind::Function(_));
     }
     // Check grandparent: if parent is Variable (let binding) inside a pipe-capable construct,
     // e.g. `items | let x = first()` — the Call inside the Variable will receive piped

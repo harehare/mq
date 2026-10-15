@@ -321,7 +321,7 @@ pub(crate) fn check_match_exhaustiveness(
         }
 
         if let Some(missing) = missing_cases(&match_ty, &arms, ctx) {
-            let range = hir.symbol(match_id).and_then(|s| s.source.text_range);
+            let range = hir.symbol(match_id).and_then(|s| crate::symbol_range(hir, s));
             errors.push(TypeError::NonExhaustiveMatch {
                 missing: missing.clone(),
                 location: range,

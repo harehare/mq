@@ -657,8 +657,8 @@ mod tests {
     #[case("include \"test\" | assert_eq({a: 1}, {a: 1})")]
     #[case("include \"test\" | def f(): assert_eq([1], [2]); | f()")]
     fn test_collect_check_diagnostics_calls_included_functions_with_any_arguments(#[case] code: &str) {
-        // Module sources are not type-checked, so an included function has no function type.
-        // Calling it must not be read as a bracket access (`slice`) on a variable.
+        // Calling an included function must not be read as a bracket access (`slice`) on a
+        // variable.
         let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
         assert!(diagnostics.is_empty(), "{code}: {diagnostics:?}");
     }

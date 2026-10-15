@@ -25,6 +25,8 @@ pub struct Hir {
     /// Refs resolved via included sources rather than their own scope chain.
     pub(crate) fallback_references: FxHashSet<SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
+    /// Sources loaded by `include` and `import`.
+    pub(crate) module_sources: FxHashSet<SourceId>,
     pub(crate) symbol_insertion_counter: u32,
     /// Declarations a reference can resolve to, by name.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
@@ -71,6 +73,7 @@ impl Hir {
             references: FxHashMap::default(),
             fallback_references: FxHashSet::default(),
             source_symbols: FxHashMap::default(),
+            module_sources: FxHashSet::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
             leaking_scopes: FxHashMap::default(),

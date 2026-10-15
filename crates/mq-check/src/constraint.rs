@@ -19,7 +19,8 @@ use helpers::{
     resolve_builtin_call_with_brackets, resolve_pattern_type, resolve_whole_type_pattern, spread_element_type,
 };
 use pipe::{
-    generate_block_constraints, generate_function_body_pipe_constraints, pipe_stage_output, resolve_branch_body_type,
+    generate_block_constraints, generate_function_body_pipe_constraints, pipe_stage_output,
+    propagate_piped_input_through_unary_ops, resolve_branch_body_type, thread_pipe_stage,
 };
 
 use crate::infer::{
@@ -167,6 +168,18 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
         generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
     }
 
+    // Pass 3.5: Thread the root pipe chain again now that the stages have types, so a stage
+    // whose input was unknown in Pass 2 (e.g. an array literal) reaches the stages after it.
+    for pair in cats.root_symbols.windows(2) {
+        if hir
+            .symbol(pair[1])
+            .is_some_and(|s| matches!(s.kind, SymbolKind::Call | SymbolKind::Ref))
+        {
+            thread_pipe_stage(hir, pair[0], pair[1], ctx, &children_index);
+        }
+    }
+    propagate_piped_input_through_unary_ops(hir, &cats.root_symbols, ctx, &children_index);
+
     // Pass 4: Process Function body pipe chains
     // (Block symbols are now processed in pass 3, in reverse insertion order,
     //  so they are typed before their parent If/Else nodes.)
@@ -177,8 +190,9 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     children_index
 }
 
-/// For a root-level Variable (e.g. `let x = first()`), forwards the piped type to the
-/// initializer Call/Ref so Pass 3 sees it before resolving the overload.
+/// For a root-level Variable (e.g. `let x = first()`) or unary/binary operator
+/// (e.g. `!f()`, `f() == y`), forwards the piped type to the inner Call/Ref so Pass 3
+/// sees it before resolving the overload.
 fn forward_input_to_initializer(
     hir: &Hir,
     ctx: &mut InferenceContext,
@@ -186,11 +200,27 @@ fn forward_input_to_initializer(
     symbol_id: SymbolId,
     input: Type,
 ) {
-    if let Some(sym) = hir.symbol(symbol_id)
-        && matches!(sym.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
-        && let Some(&init_id) = get_children(children_index, symbol_id).last()
-    {
-        ctx.set_piped_input(init_id, input);
+    let Some(sym) = hir.symbol(symbol_id) else {
+        return;
+    };
+    match sym.kind {
+        SymbolKind::Variable | SymbolKind::DestructuringBinding => {
+            if let Some(&init_id) = get_children(children_index, symbol_id).last() {
+                ctx.set_piped_input(init_id, input);
+            }
+        }
+        SymbolKind::UnaryOp | SymbolKind::BinaryOp => {
+            for &operand_id in get_children(children_index, symbol_id) {
+                match hir.symbol(operand_id).map(|s| &s.kind) {
+                    Some(SymbolKind::Call | SymbolKind::Ref) => ctx.set_piped_input(operand_id, input.clone()),
+                    Some(SymbolKind::UnaryOp | SymbolKind::BinaryOp) => {
+                        forward_input_to_initializer(hir, ctx, children_index, operand_id, input.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1935,13 +1965,6 @@ fn generate_call_constraints(
                             arg_symbol_ids,
                             range,
                         });
-                    } else if def_symbol.is_some_and(|s| s.is_function()) {
-                        // A function declared in an included module: module sources are not
-                        // type-checked, so the declaration has no function type. The call is
-                        // a real call, not a bracket access on a variable, so leave its
-                        // result unconstrained.
-                        let ty_var = ctx.fresh_var();
-                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                     } else {
                         // Check for potential Record field access via bracket notation
                         // (e.g., v[:key]). Only trigger when the argument is a

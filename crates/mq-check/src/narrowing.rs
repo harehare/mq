@@ -728,7 +728,7 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> 
                         .and_then(|s| s.value.as_deref())
                         .unwrap_or("the variable");
                     for &else_branch_id in &narrowing.else_branch_ids {
-                        let range = hir.symbol(else_branch_id).and_then(|s| s.source.text_range);
+                        let range = hir.symbol(else_branch_id).and_then(|s| crate::symbol_range(hir, s));
                         dead_branches.push((
                             format!(
                                 "else-branch is unreachable: all possible types of `{}` match the predicate",
@@ -865,7 +865,7 @@ fn detect_dead_then_branch(
     let types_match = std::mem::discriminant(&var_ty) == std::mem::discriminant(&entry.narrowed_type);
 
     if !types_match {
-        let range = hir.symbol(then_branch_id).and_then(|s| s.source.text_range);
+        let range = hir.symbol(then_branch_id).and_then(|s| crate::symbol_range(hir, s));
         Some((
             format!(
                 "condition is always false: variable has type `{}`, predicate tests for `{}`",
@@ -971,7 +971,7 @@ pub(crate) fn resolve_cross_arm_narrowings(
                 .symbol(*def_id)
                 .and_then(|s| s.value.as_deref())
                 .unwrap_or("the variable");
-            let range = hir.symbol(*branch_id).and_then(|s| s.source.text_range);
+            let range = hir.symbol(*branch_id).and_then(|s| crate::symbol_range(hir, s));
             dead_branches.push((
                 format!(
                     "match arm is unreachable: all types of `{}` are covered by preceding arms",
