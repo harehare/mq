@@ -2746,7 +2746,6 @@ version = "0.9.3"
 dependencies = [
  "assert_cmd",
  "clap",
- "codspeed-divan-compat",
  "glob",
  "miette",
  "mq-lang",
@@ -2779,7 +2778,6 @@ dependencies = [
 name = "mq-hir"
 version = "0.9.3"
 dependencies = [
- "codspeed-divan-compat",
  "itertools 0.15.0",
  "mq-help",
  "mq-lang",
@@ -2900,7 +2898,6 @@ dependencies = [
 name = "mq-markdown"
 version = "0.9.3"
 dependencies = [
- "codspeed-divan-compat",
  "ego-tree",
  "itertools 0.15.0",
  "miette",
