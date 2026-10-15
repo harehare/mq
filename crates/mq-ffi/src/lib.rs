@@ -76,12 +76,17 @@ use std::os::raw::c_char;
 use std::path::PathBuf;
 use std::ptr;
 
+/// Opaque handle to an mq engine.
 pub type MqContext = c_void;
 
 #[repr(C)]
+/// Result of a query: `values` on success, `error_msg` on failure.
 pub struct MqResult {
+    /// Array of `values_len` result strings.
     pub values: *mut *mut c_char,
+    /// Number of entries in `values`.
     pub values_len: usize,
+    /// Error message, or null on success.
     pub error_msg: *mut c_char,
 }
 

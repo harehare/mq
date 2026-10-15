@@ -10,15 +10,19 @@ use crate::reference;
 /// A single documented parameter, as shown by `mq help`.
 #[derive(Debug, Clone, Serialize)]
 pub struct HelpParam {
+    /// Parameter name.
     pub name: String,
     #[serde(rename = "type")]
+    /// Parameter type name.
     pub type_name: String,
 }
 
 /// A runnable example paired with its verified expected output.
 #[derive(Debug, Clone, Serialize)]
 pub struct HelpExample {
+    /// Example source.
     pub code: String,
+    /// Expected output of `code`.
     pub expected: String,
 }
 
@@ -28,13 +32,21 @@ pub struct HelpExample {
 /// `/selectors/{name}` endpoints, so CLI and Web API can't drift apart.
 #[derive(Debug, Clone, Serialize)]
 pub struct HelpEntry {
+    /// Function or selector name.
     pub name: String,
+    /// Entry kind (e.g. "function", "selector").
     pub kind: &'static str,
+    /// Parameters in declaration order.
     pub params: Vec<HelpParam>,
+    /// Return type name.
     pub returns: String,
+    /// Description text.
     pub description: String,
+    /// Verified examples.
     pub examples: Vec<HelpExample>,
+    /// Cargo feature required to use the item, if any.
     pub capability: Option<String>,
+    /// Standard module that defines the item, if any.
     pub related_module: Option<String>,
     /// Other names that resolve to this entry (e.g. `.p` for `.text`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -151,9 +163,13 @@ pub fn all_names() -> Vec<String> {
 /// A standard module's header doc (if any) plus the functions it defines.
 #[derive(Debug, Clone, Serialize)]
 pub struct HelpModule {
+    /// Module name.
     pub name: String,
+    /// Header description.
     pub description: String,
+    /// Header examples.
     pub examples: Vec<HelpExample>,
+    /// Functions defined by the module.
     pub functions: Vec<HelpEntry>,
 }
 

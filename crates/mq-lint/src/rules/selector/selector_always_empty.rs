@@ -3,6 +3,7 @@ use mq_lang::Selector;
 
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
+/// Reports consecutive selectors that cannot both match, such as `.h1` then `.h2`.
 pub struct SelectorAlwaysEmpty;
 
 /// Conservative: only flags same-variant value mismatches (plus `.todo`/`.done`)

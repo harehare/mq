@@ -47,12 +47,19 @@
 //! - `handler`: Request and event handlers
 //! - `server`: DAP server implementation
 
+/// DAP adapter state and request dispatch.
 pub mod adapter;
+/// Error types.
 pub mod error;
+/// Debug execution engine.
 pub mod executor;
+/// Debugger handlers bridging the engine and the server.
 pub mod handler;
+/// Log output routed to the debug console.
 pub mod log;
+/// DAP message types.
 pub mod protocol;
+/// DAP server entry point.
 pub mod server;
 
 pub use server::start;

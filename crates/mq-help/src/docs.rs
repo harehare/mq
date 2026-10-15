@@ -10,7 +10,9 @@ pub use table::BUILTIN_DOC;
 /// (see `doc_examples` tests), so examples cannot silently rot.
 #[derive(Clone, Debug)]
 pub struct BuiltinExample {
+    /// Source code of the example.
     pub code: &'static str,
+    /// Expected output.
     pub expected: &'static str,
 }
 
@@ -28,16 +30,21 @@ pub enum DocKind {
 /// Documentation for a native builtin function or selector.
 #[derive(Clone, Debug)]
 pub struct BuiltinDoc {
+    /// Function or selector name.
     pub name: &'static str,
     /// Other names that select the same thing (e.g. `.p` for `.text`). Only selectors have them.
     pub aliases: &'static [&'static str],
+    /// What the entry describes.
     pub kind: DocKind,
+    /// Description text.
     pub description: &'static str,
+    /// Parameter names.
     pub params: &'static [&'static str],
     /// Parallel to `params`; a type name (e.g. "string", "number") or "dynamic" per param.
     pub param_types: &'static [&'static str],
     /// Type name of the returned value (e.g. "array", "bool", "dynamic").
     pub returns: &'static str,
+    /// Examples with verified output.
     pub examples: &'static [BuiltinExample],
     /// Cargo feature flag required to use this item, if any (e.g. "file-io").
     pub capability: Option<&'static str>,

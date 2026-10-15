@@ -54,14 +54,17 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         Shared::clone(&self.vm.debugger)
     }
 
+    /// Installs the handler called on breakpoints and steps.
     pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
         self.vm.debugger_handler = Shared::new(SharedCell::new(handler));
     }
 
+    /// The arena holding all tokens parsed by this engine.
     pub fn token_arena(&self) -> Shared<SharedCell<Arena<Token>>> {
         Shared::clone(&self.token_arena)
     }
 
+    /// Name of the module with the given id.
     pub fn get_module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
         self.vm.module_loader.module_name(module_id)
     }
@@ -74,6 +77,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             .map_err(|e| Box::new(error::Error::from_error("", e.into(), module_loader.clone())))
     }
 
+    /// Source code of the module with the given id.
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, Box<error::Error>> {
         let module_loader = &self.vm.module_loader;
         let source_code = module_loader.get_source_code_for_debug(module_id);

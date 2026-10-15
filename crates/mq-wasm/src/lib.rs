@@ -4,4 +4,5 @@
 //! and WASM-compatible environments to process markdown, MDX, and HTML
 //! using the mq query language.
 //!
+/// JavaScript-facing API.
 pub mod script;

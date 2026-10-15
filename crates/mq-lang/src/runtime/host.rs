@@ -88,6 +88,7 @@ pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// (which back [`Shared`] depending on the `sync` feature), so an explicit method keeps
 /// invocation through `Shared<dyn HostFunction>` unambiguous.
 pub trait HostFunction: HostFunctionSyncBound + 'static {
+    /// Invokes the function with evaluated arguments.
     fn call(&self, args: &[RuntimeValue]) -> HostFnResult;
 }
 

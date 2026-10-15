@@ -8,6 +8,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Error)]
 #[non_exhaustive]
 pub enum IoError {
+    /// The named resource does not exist.
     #[error("{0} not found")]
     NotFound(Cow<'static, str>),
     /// The operation was refused by the concrete `Io` implementation (e.g.
@@ -15,6 +16,7 @@ pub enum IoError {
     /// disabled).
     #[error("{0}")]
     PermissionDenied(Cow<'static, str>),
+    /// Any other failure.
     #[error("{0}")]
     Other(Cow<'static, str>),
 }

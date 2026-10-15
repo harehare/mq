@@ -1,3 +1,5 @@
+//! Runner for `.mq` test files with coverage and reporting.
+
 mod coverage;
 mod highlight;
 mod html;

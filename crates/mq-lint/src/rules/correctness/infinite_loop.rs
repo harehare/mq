@@ -2,6 +2,7 @@ use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolId;
 use mq_hir::SymbolKind;
 
+/// Reports `loop` expressions that contain no `break`.
 pub struct InfiniteLoop;
 
 impl LintRule for InfiniteLoop {

@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Reports interpolated strings with more `${...}` expressions than the configured limit.
 pub struct ComplexInterpolation;
 
 impl LintRule for ComplexInterpolation {

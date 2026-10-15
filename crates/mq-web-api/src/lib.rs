@@ -60,17 +60,26 @@
 //! - `RATE_LIMIT_WINDOW` - Time window in seconds
 //! - `AUTH_ENABLED` - Require an API key (default: false)
 //!
+/// Query and format request types and execution.
 pub mod api;
 pub mod auth;
 pub mod banner;
+/// Periodic cleanup of rate limiter state.
 pub mod cleanup;
+/// Server configuration.
 pub mod config;
+/// HTTP request handlers.
 pub mod handlers;
+/// Authentication and rate limiting middleware.
 pub mod middleware;
+/// RFC 9457 problem details responses.
 pub mod problem;
 pub mod query_cache;
+/// Request rate limiting.
 pub mod rate_limiter;
+/// Router construction.
 pub mod routes;
+/// Server startup and shutdown.
 pub mod server;
 
 pub use api::{ApiRequest, InputFormat, query};

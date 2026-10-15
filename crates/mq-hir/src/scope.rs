@@ -2,23 +2,38 @@ use crate::SourceInfo;
 use crate::source::SourceId;
 use crate::symbol::SymbolId;
 
-slotmap::new_key_type! { pub struct ScopeId; }
+slotmap::new_key_type! {
+    /// Identifier of a [`Scope`].
+    pub struct ScopeId;
+}
 
+/// A lexical scope of symbols.
 #[derive(Debug, Clone)]
 pub struct Scope {
+    /// Where the scope appears in the source.
     pub source: SourceInfo,
+    /// What opened the scope.
     pub kind: ScopeKind,
+    /// The enclosing scope.
     pub parent_id: Option<ScopeId>,
+    /// Directly nested scopes.
     pub children: Vec<ScopeId>,
 }
 
+/// The construct that opened a [`Scope`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum ScopeKind {
+    /// A source file or inline module.
     Module(SourceId),
+    /// A function body.
     Function(SymbolId),
+    /// A `let` binding.
     Let(SymbolId),
+    /// A block body.
     Block(SymbolId),
+    /// A loop body.
     Loop(SymbolId),
+    /// A match arm.
     MatchArm(SymbolId),
     /// A parameter's default-value expression. Runs before the function body starts, so it is
     /// not itself "inside" the enclosing `Function` scope (see `is_outside_function`).
@@ -26,6 +41,7 @@ pub enum ScopeKind {
 }
 
 impl Scope {
+    /// Creates a scope with no children.
     pub fn new(source: SourceInfo, kind: ScopeKind, parent_id: Option<ScopeId>) -> Self {
         Self {
             source,
@@ -35,15 +51,18 @@ impl Scope {
         }
     }
 
+    /// Registers a nested scope.
     pub fn add_child(&mut self, child_id: ScopeId) {
         self.children.push(child_id);
     }
 
+    /// Whether this is a module scope.
     #[inline(always)]
     pub fn is_module(&self) -> bool {
         matches!(self.kind, ScopeKind::Module(_))
     }
 
+    /// Returns the symbol that opened the scope, or `None` for a module.
     pub fn symbol_id(&self) -> Option<SymbolId> {
         match self.kind {
             ScopeKind::Function(symbol_id) => Some(symbol_id),

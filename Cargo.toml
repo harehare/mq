@@ -23,6 +23,9 @@ members = [
 ]
 resolver = "3"
 
+[workspace.lints.rust]
+missing_docs = "warn"
+
 [workspace.package]
 authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 edition = "2024"

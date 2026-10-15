@@ -1,3 +1,5 @@
+//! Command-line interface of the mq linter.
+
 mod format;
 
 use std::io::{self, BufWriter, Read, Write};

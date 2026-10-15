@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use rustc_hash::FxHashMap;
 
+/// Reports modules that are imported more than once.
 pub struct DuplicateImport;
 
 impl LintRule for DuplicateImport {

@@ -100,6 +100,7 @@ impl<T: ModuleResolver> Default for Engine<T, SandboxedIo<NativeIo>> {
 // `let engine: Engine<T, MyIo> = Engine::new(resolver);` (this only fixes the *value* passed at
 // construction; use `set_io` afterwards to install it).
 impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
+    /// Creates an engine with the given module resolver and a sandboxed native `Io` that denies all access by default.
     pub fn new(module_resolver: T) -> Self {
         let token_arena = create_default_token_arena();
         let module_loader = ModuleLoader::new(module_resolver);
@@ -551,6 +552,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             .map_err(|e| Box::new(error::Error::from_error("", e.into(), module_loader.clone())))
     }
 
+    /// The mq-lang crate version.
     pub const fn version() -> &'static str {
         env!("CARGO_PKG_VERSION")
     }

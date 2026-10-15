@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, ScopeKind};
 
+/// Reports code nested deeper than the configured limit.
 pub struct DeeplyNested;
 
 impl LintRule for DeeplyNested {

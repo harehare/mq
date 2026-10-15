@@ -632,6 +632,7 @@ impl Backend {
 }
 
 #[derive(Debug, Clone, Default)]
+/// Language server settings.
 pub struct LspConfig {
     module_paths: Vec<PathBuf>,
     enable_type_checking: bool,
@@ -668,6 +669,7 @@ impl LspConfig {
     }
 }
 
+/// Runs the language server on stdio.
 pub async fn start(config: LspConfig) {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();

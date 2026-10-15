@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Reports modules that have no doc comment.
 pub struct MissingModuleDoc;
 
 impl LintRule for MissingModuleDoc {

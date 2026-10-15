@@ -7,6 +7,7 @@ use crate::{ModuleId, Range, Shared, SharedCell};
 
 use std::{collections::HashSet, fmt::Debug};
 
+/// How execution proceeds after a stop.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default, Hash)]
 pub enum DebuggerCommand {
     /// Continue normal execution.
@@ -48,9 +49,12 @@ pub struct Breakpoint {
     pub log_message: Option<String>,
 }
 
+/// A named piece of source code.
 #[derive(Debug, Clone, Default)]
 pub struct Source {
+    /// File name, if any.
     pub name: Option<String>,
+    /// The source text.
     pub code: String,
 }
 
@@ -359,14 +363,17 @@ impl Debugger {
         id
     }
 
+    /// Pushes a call node onto the call stack.
     pub fn push_call_stack(&mut self, node: Shared<ast::Node>) {
         self.call_stack.push(node);
     }
 
+    /// Pops the innermost call node.
     pub fn pop_call_stack(&mut self) {
         self.call_stack.pop();
     }
 
+    /// A copy of the current call stack, outermost first.
     pub fn current_call_stack(&self) -> Vec<Shared<ast::Node>> {
         self.call_stack.clone()
     }
@@ -434,6 +441,7 @@ impl Debugger {
         self.find_active_breakpoint(line, column, &context.source)
     }
 
+    /// Applies `next_action` and sets the command it implies.
     pub fn next(&mut self, next_action: DebuggerAction) {
         self.handle_debugger_action(next_action.clone());
         self.current_command = next_action.clone().into();
@@ -630,8 +638,10 @@ impl From<DebuggerAction> for DebuggerCommand {
     }
 }
 
+/// Receives debugger events during execution.
 pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
     // Called when a breakpoint is hit.
+    /// Called when a breakpoint is hit.
     fn on_breakpoint_hit(&self, _breakpoint: &Breakpoint, _context: &DebugContext) -> DebuggerAction {
         // Default behavior: continue execution
         DebuggerAction::Continue

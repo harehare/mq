@@ -7,10 +7,13 @@ use crate::{ArenaId, module::ModuleId, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 
+/// A piece of an interpolated string.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub enum StringSegment {
+    /// Literal text and its range.
     Text(String, Range),
+    /// The source of a `${...}` expression and its range.
     Expr(SmolStr, Range),
 }
 
@@ -27,11 +30,15 @@ fn default_module_id() -> ModuleId {
     ArenaId::new(0)
 }
 
+/// A lexed token with its source range.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub struct Token {
+    /// Source range of the token.
     pub range: Range,
+    /// The kind of the token.
     pub kind: TokenKind,
+    /// The module the token came from.
     #[cfg_attr(
         feature = "ast-json",
         serde(skip_serializing, skip_deserializing, default = "default_module_id")
@@ -39,96 +46,179 @@ pub struct Token {
     pub module_id: ModuleId,
 }
 
-#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 /// Represents the kind of a token in the mq language.
 ///
 /// TokenKind variants are sorted alphabetically for maintainability.
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum TokenKind {
+    /// `&&`
     And,
+    /// `->`
     Arrow,
+    /// `as`
     As,
+    /// `@`
     Convert,
+    /// `*`
     Asterisk,
+    /// `true` or `false`.
     BoolLiteral(bool),
+    /// A bytes literal.
     BytesLiteral(Vec<u8>),
+    /// `break`
     Break,
+    /// `catch`
     Catch,
+    /// `??`
     Coalesce,
+    /// `:`
     Colon,
+    /// `::`
     DoubleColon,
+    /// `//=`
     DoubleSlashEqual,
+    /// `...`
     DotDotDot,
+    /// `,`
     Comma,
+    /// A comment, without the leading `#`.
     Comment(String),
+    /// `continue`
     Continue,
+    /// `def`
     Def,
+    /// `do`
     Do,
+    /// `elif`
     Elif,
+    /// `else`
     Else,
+    /// `end`
     End,
+    /// An environment variable reference such as `$HOME`.
     Env(SmolStr),
+    /// End of input.
     Eof,
+    /// `=`
     Equal,
+    /// `==`
     EqEq,
+    /// `fn`
     Fn,
+    /// `foreach`
     Foreach,
+    /// `>`
     Gt,
+    /// `>=`
     Gte,
+    /// An identifier.
     Ident(SmolStr),
+    /// `if`
     If,
+    /// `include`
     Include,
+    /// A string with `${...}` segments.
     InterpolatedString(Vec<StringSegment>),
+    /// `import`
     Import,
+    /// `{`
     LBrace,
+    /// `[`
     LBracket,
+    /// `let`
     Let,
+    /// `<<`
     LeftShift,
+    /// `loop`
     Loop,
+    /// `<`
     Lt,
+    /// `<=`
     Lte,
+    /// `match`
     Match,
+    /// `module`
     Module,
+    /// `-`
     Minus,
+    /// `-=`
     MinusEqual,
+    /// `!=`
     NeEq,
+    /// A line break.
     NewLine,
+    /// `nodes`
     Nodes,
+    /// `None`
     None,
+    /// `!`
     Not,
+    /// A number literal.
     NumberLiteral(Number),
+    /// `||`
     Or,
+    /// `%`
     Percent,
+    /// `%=`
     PercentEqual,
+    /// `|`
     Pipe,
+    /// `|=`
     PipeEqual,
+    /// `+`
     Plus,
+    /// `+=`
     PlusEqual,
+    /// `?`
     Question,
+    /// `}`
     RBrace,
+    /// `..`
     DoubleDot,
+    /// `]`
     RBracket,
+    /// `>>`
     RightShift,
+    /// `)`
     RParen,
+    /// A selector such as `.h1`.
     Selector(SmolStr),
+    /// `self`
     Self_,
+    /// `;`
     SemiColon,
+    /// `/`
     Slash,
+    /// `/=`
     SlashEqual,
+    /// A string literal.
     StringLiteral(String),
+    /// `*=`
     StarEqual,
+    /// A run of tabs; the field is the count.
     Tab(usize),
+    /// `=~`
     TildeEqual,
+    /// `!~`
     NotTildeEqual,
+    /// `try`
     Try,
     /// Text the lexer could not tokenize; only produced when `ignore_errors` is set.
     Unknown(String),
+    /// `unless`
     Unless,
+    /// `until`
     Until,
+    /// A run of spaces; the field is the count.
     Whitespace(usize),
+    /// `while`
     While,
+    /// `(`
     LParen,
+    /// `var`
     Var,
+    /// `yield`
     Yield,
 }
 
@@ -187,6 +277,7 @@ impl TokenKind {
 }
 
 impl Token {
+    /// Creates a token of `kind` with a default range and module id.
     pub fn new(kind: TokenKind) -> Self {
         Self {
             kind,
@@ -195,11 +286,13 @@ impl Token {
         }
     }
 
+    /// Whether this is the end-of-input token.
     #[inline(always)]
     pub fn is_eof(&self) -> bool {
         matches!(self.kind, TokenKind::Eof)
     }
 
+    /// Whether this is a selector token.
     #[inline(always)]
     pub fn is_selector(&self) -> bool {
         matches!(self.kind, TokenKind::Selector(_))

@@ -13,39 +13,73 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum RuleId {
+    /// A variable that is never used.
     UnusedVariable,
+    /// A function that is never called.
     UnusedFunction,
+    /// An imported module that is never used.
     UnusedImport,
+    /// Code after a `break` or `continue`.
     UnreachableCode,
+    /// A loop without a `break`.
     InfiniteLoop,
+    /// A call to a deprecated function.
     DeprecatedFunctionCall,
+    /// A match arm with a pattern already matched earlier.
     DuplicateMatchArm,
+    /// A module imported more than once.
     DuplicateImport,
+    /// A variable that shadows one from an outer scope.
     ShadowVariable,
+    /// An `if` expression without an `else` branch.
     MissingElseInExpr,
+    /// An `if` condition that is a constant.
     AlwaysTrueCondition,
+    /// A function body longer than the configured line limit.
     FunctionTooLong,
+    /// A function with more parameters than the configured limit.
     TooManyParams,
+    /// Nesting deeper than the configured limit.
     DeeplyNested,
+    /// A match with more arms than the configured limit.
     TooManyMatchArms,
+    /// An interpolated string with more expressions than the configured limit.
     ComplexInterpolation,
+    /// A `..` followed by a specific selector.
     InefficientSelector,
+    /// A recursive `..` selector without a depth limit.
     MissingDepthGuard,
+    /// Two selectors piped together that can never both match.
     SelectorAlwaysEmpty,
+    /// A module without a doc comment.
     MissingModuleDoc,
+    /// A function name also defined in another module.
     AmbiguousQualifiedAccess,
+    /// A `var` that is never reassigned.
     PreferLetOverVar,
+    /// A nested call that reads better as a pipe.
     PreferPipeStyle,
+    /// An `if`/`else` null check expressible with `??`.
     PreferCoalesce,
+    /// The generic `.h` selector used instead of `.h1` to `.h6`.
     PreferSpecificHeading,
+    /// `try ... catch: none`, which is what `?` does.
     RedundantTry,
+    /// A name that is not `snake_case`.
     NamingConvention,
+    /// A comparison with a boolean literal.
     BooleanComparison,
+    /// An `if`/`else` that only returns boolean literals.
     RedundantBooleanLiteral,
+    /// An interpolated string containing a single expression.
     UnnecessaryInterpolation,
+    /// A function parameter that is never used.
     UnusedParameter,
+    /// Concatenation of string literals.
     ConstantStringConcat,
+    /// An `if`/`else` with a negated condition.
     NegatedCondition,
+    /// A call to a capability-gated function.
     DangerousCapabilityCall,
 }
 
@@ -152,100 +186,172 @@ impl FromStr for RuleId {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum LintMessage {
+    /// A variable that is never used.
     UnusedVariable {
+        /// Name of the offending item.
         name: String,
     },
+    /// A function that is never called.
     UnusedFunction {
+        /// Name of the offending item.
         name: String,
     },
+    /// An imported module that is never used.
     UnusedImport {
+        /// Name of the offending item.
         name: String,
     },
+    /// Code after a `break` or `continue`.
     UnreachableCode {
+        /// The `break` or `continue` keyword.
         keyword: String,
     },
+    /// A loop without a `break`.
     InfiniteLoop,
+    /// A match arm with a pattern already matched earlier.
     DuplicateMatchArm {
+        /// The duplicated pattern text.
         pattern: String,
     },
+    /// A module imported more than once.
     DuplicateImport {
+        /// Name of the offending item.
         name: String,
     },
+    /// A call to a deprecated function.
     DeprecatedFunctionCall {
+        /// Name of the offending item.
         name: String,
     },
+    /// A variable that shadows one from an outer scope.
     ShadowVariable {
+        /// Name of the offending item.
         name: String,
     },
+    /// An `if` expression without an `else` branch.
     MissingElseInExpr,
+    /// An `if` condition that is a constant.
     AlwaysTrueCondition {
+        /// The constant condition value.
         value: String,
     },
+    /// A function body longer than the configured line limit.
     FunctionTooLong {
+        /// Name of the offending item.
         name: String,
+        /// Actual line count.
         line_count: usize,
+        /// Configured limit.
         max_lines: usize,
     },
+    /// A function with more parameters than the configured limit.
     TooManyParams {
+        /// Name of the offending item.
         name: String,
+        /// Actual parameter count.
         count: usize,
+        /// Configured limit.
         max: usize,
     },
+    /// Nesting deeper than the configured limit.
     DeeplyNested {
+        /// Actual nesting depth.
         depth: usize,
+        /// Configured limit.
         max_depth: usize,
     },
+    /// A match with more arms than the configured limit.
     TooManyMatchArms {
+        /// Actual arm count.
         arm_count: usize,
+        /// Configured limit.
         max_arms: usize,
     },
+    /// An interpolated string with more expressions than the configured limit.
     ComplexInterpolation {
+        /// Actual expression count.
         expr_count: usize,
+        /// Configured limit.
         max_exprs: usize,
     },
+    /// A `..` followed by a specific selector.
     InefficientSelector,
+    /// A recursive `..` selector without a depth limit.
     MissingDepthGuard,
+    /// Two selectors piped together that can never both match.
     SelectorAlwaysEmpty {
+        /// The first selector.
         first: String,
+        /// The second selector.
         second: String,
     },
+    /// A module without a doc comment.
     MissingModuleDoc {
+        /// Name of the offending item.
         name: String,
     },
+    /// A function name also defined in another module.
     AmbiguousQualifiedAccess {
+        /// The ambiguous function name.
         fn_name: String,
+        /// The module the call is in.
         this_module: String,
+        /// The other module defining the function.
         other_module: String,
     },
+    /// A `var` that is never reassigned.
     PreferLetOverVar {
+        /// Name of the offending item.
         name: String,
     },
+    /// A nested call that reads better as a pipe.
     PreferPipeStyle {
+        /// Name of the outer call.
         outer_name: String,
+        /// Name of the inner call.
         inner_name: String,
     },
+    /// An `if`/`else` null check expressible with `??`.
     PreferCoalesce,
+    /// The generic `.h` selector used instead of `.h1` to `.h6`.
     PreferSpecificHeading,
+    /// `try ... catch: none`, which is what `?` does.
     RedundantTry,
+    /// A name that is not `snake_case`.
     NamingConvention {
+        /// Name of the offending item.
         name: String,
+        /// The suggested snake_case name.
         suggested: String,
     },
+    /// A comparison with a boolean literal.
     BooleanComparison {
+        /// The comparison operator.
         op: String,
+        /// The boolean literal compared against.
         bool_val: String,
     },
+    /// An `if`/`else` that only returns boolean literals.
     RedundantBooleanLiteral {
+        /// The literal returned by the `then` branch.
         then_val: String,
     },
+    /// An interpolated string containing a single expression.
     UnnecessaryInterpolation,
+    /// A function parameter that is never used.
     UnusedParameter {
+        /// Name of the offending item.
         name: String,
     },
+    /// Concatenation of string literals.
     ConstantStringConcat,
+    /// An `if`/`else` with a negated condition.
     NegatedCondition,
+    /// A call to a capability-gated function.
     DangerousCapabilityCall {
+        /// Name of the offending item.
         name: String,
+        /// The CLI flag that enables the function.
         flag: String,
     },
 }
@@ -421,7 +527,7 @@ impl fmt::Display for LintMessage {
                 )
             }
             LintMessage::AlwaysTrueCondition { value } => {
-                write!(f, "condition is always `{value}` — this branch is never/always taken")
+                write!(f, "condition is always `{value}`, so this branch is never/always taken")
             }
             LintMessage::FunctionTooLong {
                 name,
@@ -487,7 +593,7 @@ impl fmt::Display for LintMessage {
             LintMessage::RedundantBooleanLiteral { .. } => {
                 write!(
                     f,
-                    "redundant boolean literal in `if`/`else` — condition already is the result"
+                    "redundant boolean literal in `if`/`else`, the condition already is the result"
                 )
             }
             LintMessage::UnnecessaryInterpolation => {
@@ -503,7 +609,7 @@ impl fmt::Display for LintMessage {
             LintMessage::NegatedCondition => {
                 write!(
                     f,
-                    "negated condition in `if`/`else` — consider swapping the branches and inverting the condition"
+                    "negated condition in `if`/`else`, consider swapping the branches and inverting the condition"
                 )
             }
             LintMessage::DangerousCapabilityCall { name, flag } => {

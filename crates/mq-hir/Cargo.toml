@@ -11,6 +11,9 @@ readme = "../../README.md"
 repository.workspace = true
 version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 itertools = {workspace = true}
 mq-help = {workspace = true}

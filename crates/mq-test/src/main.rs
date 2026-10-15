@@ -1,3 +1,5 @@
+//! Command-line runner for `.mq` tests.
+
 mod coverage;
 mod highlight;
 mod html;

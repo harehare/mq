@@ -1,9 +1,12 @@
+//! CLI integration tests.
+
 use assert_cmd::cargo;
 use rstest::rstest;
 use scopeguard::defer;
 use std::io::Write;
 use std::{fs::File, path::PathBuf};
 
+/// Writes `content` to a temp file and returns the temp dir and file path.
 pub fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
     let temp_dir = std::env::temp_dir();
     let temp_file_path = temp_dir.join(name);
@@ -14,6 +17,7 @@ pub fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
     (temp_dir, temp_file_path)
 }
 
+/// Writes gzip-compressed `content` to a temp file and returns the temp dir and file path.
 pub fn create_gzip_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
     use flate2::Compression;
     use flate2::write::GzEncoder;

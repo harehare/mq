@@ -43,7 +43,10 @@
 //! - Converts HTML pages to markdown
 //! - Tracks statistics about the crawl
 //!
+/// The crawler and its results.
 pub mod crawler;
+/// HTTP client implementations.
 pub mod http_client;
+/// robots.txt handling.
 pub mod robots;
 pub mod sitemap;

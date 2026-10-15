@@ -22,12 +22,19 @@ struct DiscoveredBench {
 /// Timing summary for a single bench function.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchRecord {
+    /// Source file of the benchmark.
     pub file: String,
+    /// Benchmark name.
     pub name: String,
+    /// Number of timed iterations.
     pub iterations: usize,
+    /// Mean time per iteration in nanoseconds.
     pub mean_ns: u128,
+    /// Median time per iteration in nanoseconds.
     pub median_ns: u128,
+    /// Fastest iteration in nanoseconds.
     pub min_ns: u128,
+    /// Slowest iteration in nanoseconds.
     pub max_ns: u128,
 }
 

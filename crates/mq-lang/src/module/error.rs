@@ -8,14 +8,19 @@ use std::borrow::Cow;
 #[derive(Debug, PartialEq, Error)]
 #[non_exhaustive]
 pub enum ModuleError {
+    /// The module was already loaded.
     #[error("Module `{0}` is already loaded")]
     AlreadyLoaded(Cow<'static, str>),
+    /// The module could not be found.
     #[error("Module `{0}` not found")]
     NotFound(Cow<'static, str>),
+    /// Reading the module failed.
     #[error("IO error: {0}")]
     IOError(Cow<'static, str>),
+    /// The module has a syntax error.
     #[error(transparent)]
     SyntaxError(#[from] SyntaxError),
+    /// The module declaration is malformed.
     #[error("Invalid module, expected IDENT or BINDING")]
     InvalidModule,
     /// HTTP imports are only permitted at the top level; modules may not fetch remote dependencies.

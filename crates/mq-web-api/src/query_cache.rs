@@ -19,10 +19,14 @@ use crate::api::{ApiRequest, InputFormat, OutputFormat, QueryApiResponse};
 
 const NONDETERMINISTIC_BUILTINS: &[&str] = &["now", "uuid", "uuid_v4", "uuid_v7", "rand", "rand_int", "random_string"];
 
+/// Settings for [`QueryCache`].
 #[derive(Debug, Clone)]
 pub struct QueryCacheConfig {
+    /// Whether caching is on.
     pub enabled: bool,
+    /// How long an entry stays valid.
     pub ttl: Duration,
+    /// Maximum number of entries.
     pub max_entries: usize,
     /// Maximum bytes retained by one cache key and response combined.
     pub max_entry_bytes: usize,
@@ -65,6 +69,7 @@ pub struct QueryCache {
 }
 
 impl QueryCache {
+    /// Creates an empty cache.
     pub fn new(config: QueryCacheConfig) -> Self {
         Self {
             store: Mutex::new(CacheStore::default()),
@@ -72,6 +77,7 @@ impl QueryCache {
         }
     }
 
+    /// Returns the cached response for `key` unless it has expired.
     pub async fn get(&self, key: &str) -> Option<QueryApiResponse> {
         if !self.config.enabled {
             return None;
@@ -89,6 +95,7 @@ impl QueryCache {
         store.entries.get(key).map(|entry| entry.response.clone())
     }
 
+    /// Stores a response, evicting entries as needed. Responses over the size limits are skipped.
     pub async fn insert(&self, key: String, response: QueryApiResponse) {
         if !self.config.enabled
             || self.config.max_entries == 0
@@ -127,11 +134,13 @@ impl QueryCache {
         );
     }
 
+    /// Returns the number of cached entries.
     #[cfg(test)]
     pub async fn entry_count(&self) -> usize {
         self.store.lock().await.entries.len()
     }
 
+    /// Returns the bytes retained by all entries.
     #[cfg(test)]
     pub async fn total_bytes(&self) -> usize {
         self.store.lock().await.total_bytes

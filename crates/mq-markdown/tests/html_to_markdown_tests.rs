@@ -1,3 +1,5 @@
+//! HTML to Markdown conversion tests.
+
 #![recursion_limit = "256"]
 #![cfg(feature = "html-to-markdown")]
 use mq_markdown::{ConversionOptions, convert_html_to_markdown};

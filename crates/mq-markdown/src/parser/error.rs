@@ -8,7 +8,9 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MdxFound {
+    /// A character.
     Char(char),
+    /// The end of the input.
     EndOfFile,
 }
 
@@ -25,16 +27,27 @@ impl fmt::Display for MdxFound {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MdxPlace {
+    /// Before the name.
     BeforeName,
+    /// After the name.
     AfterName,
+    /// Before a member name after `.`.
     BeforeMemberName,
+    /// Before a local name after `:`.
     BeforeLocalName,
+    /// Before an attribute name.
     BeforeAttributeName,
+    /// In an attribute name.
     InAttributeName,
+    /// Before a local attribute name after `:`.
     BeforeLocalAttributeName,
+    /// In a local attribute name.
     InLocalAttributeName,
+    /// After an attribute name.
     AfterAttributeName,
+    /// Before an attribute value.
     BeforeAttributeValue,
+    /// After the `/` of a self-closing tag.
     AfterSelfClosingSlash,
 }
 
@@ -61,11 +74,19 @@ impl fmt::Display for MdxPlace {
 #[non_exhaustive]
 pub enum MdxErrorKind {
     /// A character, or the end of the input, where a JSX tag cannot have it.
-    Unexpected { found: MdxFound, place: MdxPlace },
+    Unexpected {
+        /// What the tag has there.
+        found: MdxFound,
+        /// The part of the tag it is in.
+        place: MdxPlace,
+    },
     /// An expression without the `}` that closes its `{`.
     UnclosedExpression,
     /// An attribute value without its closing quote.
-    UnclosedAttributeValue { quote: char },
+    UnclosedAttributeValue {
+        /// The quote that opens the value.
+        quote: char,
+    },
     /// A closing tag that ends with `/>`.
     SelfClosingSlashInClosingTag,
     /// A closing tag with attributes.
@@ -73,20 +94,34 @@ pub enum MdxErrorKind {
     /// A line of an expression or a tag inside a container that lacks the prefix of the container.
     LazyLine,
     /// Elements nested deeper than the parser follows.
-    TooDeep { limit: usize },
+    TooDeep {
+        /// The deepest nesting the parser follows.
+        limit: usize,
+    },
     /// A closing tag without an element open.
     UnopenedClosingTag,
     /// A closing tag whose name is not that of the open element. Elements on lines of their own say
     /// where the open one starts.
     MismatchedClosingTag {
+        /// The name of the closing tag, or `None` for a fragment.
         closing: Option<String>,
+        /// The name of the open element, or `None` for a fragment.
         opening: Option<String>,
+        /// Where the open element starts, when it is on lines of its own.
         opened_at: Option<Point>,
     },
     /// An element on lines of its own that is not closed in its container.
-    UnclosedFlowElement { name: Option<String>, opened_at: Point },
+    UnclosedFlowElement {
+        /// The name of the element, or `None` for a fragment.
+        name: Option<String>,
+        /// Where the element starts.
+        opened_at: Point,
+    },
     /// An element in text that is not closed in its paragraph.
-    UnclosedTextElement { name: Option<String> },
+    UnclosedTextElement {
+        /// The name of the element, or `None` for a fragment.
+        name: Option<String>,
+    },
 }
 
 impl fmt::Display for MdxErrorKind {
@@ -183,6 +218,7 @@ impl MdxError {
         Self { kind, position }
     }
 
+    /// What is wrong with the MDX.
     pub fn kind(&self) -> &MdxErrorKind {
         &self.kind
     }
@@ -227,6 +263,7 @@ pub struct MdxDiagnostic {
 }
 
 impl MdxDiagnostic {
+    /// The error.
     pub fn error(&self) -> &MdxError {
         &self.error
     }

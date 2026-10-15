@@ -27,6 +27,7 @@ impl std::fmt::Debug for DapDebuggerHandler {
 }
 
 impl DapDebuggerHandler {
+    /// Creates a handler that reports stops over `message_tx`.
     pub fn new(message_tx: Sender<DebuggerMessage>) -> Self {
         Self {
             message_tx,
@@ -47,6 +48,7 @@ pub struct DapHandlerWrapper {
 }
 
 impl DapHandlerWrapper {
+    /// Wraps `handler` with the command channel and shared pause and exception flags.
     pub fn new(
         handler: DapDebuggerHandler,
         command_rx: Receiver<DapCommand>,

@@ -40,9 +40,12 @@ impl Default for ParseOptions {
     }
 }
 
+/// A Markdown document.
 #[derive(Debug, Clone)]
 pub struct Markdown {
+    /// The top-level nodes.
     pub nodes: Vec<Node>,
+    /// Options used when writing the nodes.
     pub options: RenderOptions,
 }
 
@@ -71,6 +74,7 @@ fn last_line(position: &Position, node: Option<&Node>) -> usize {
 }
 
 impl Markdown {
+    /// Creates a document from `nodes`.
     pub fn new(nodes: Vec<Node>) -> Self {
         Self {
             nodes,
@@ -78,6 +82,7 @@ impl Markdown {
         }
     }
 
+    /// Sets the options used when writing the nodes.
     pub fn set_options(&mut self, options: RenderOptions) {
         self.options = options;
     }
@@ -320,6 +325,7 @@ impl Markdown {
         buffer
     }
 
+    /// Reads MDX with the default options.
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
         Self::from_mdx_str_with(content, ParseOptions::default())
     }
@@ -335,10 +341,12 @@ impl Markdown {
         })
     }
 
+    /// Renders the document as HTML.
     pub fn to_html(&self) -> String {
         to_html(&crate::node::for_html(|| self.to_string()))
     }
 
+    /// Returns the plain text of each node, one per line.
     pub fn to_text(&self) -> String {
         let mut result = String::with_capacity(self.nodes.len() * 20); // Reasonable estimate
         for node in &self.nodes {
@@ -348,6 +356,7 @@ impl Markdown {
         result
     }
 
+    /// Serializes the nodes to a JSON string.
     #[cfg(feature = "json")]
     pub fn to_json(&self) -> miette::Result<String> {
         let nodes = self
@@ -358,11 +367,13 @@ impl Markdown {
         serde_json::to_string_pretty(&nodes).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
     }
 
+    /// Converts HTML to Markdown, then reads it with the default options.
     #[cfg(feature = "html-to-markdown")]
     pub fn from_html_str(content: &str) -> miette::Result<Self> {
         Self::from_html_str_with_options(content, ConversionOptions::default())
     }
 
+    /// Converts HTML to Markdown with the given options, then reads it.
     #[cfg(feature = "html-to-markdown")]
     pub fn from_html_str_with_options(content: &str, options: ConversionOptions) -> miette::Result<Self> {
         html_to_markdown::convert_html_to_markdown(content, options)
@@ -375,6 +386,7 @@ impl Markdown {
             })
     }
 
+    /// Reads Markdown with the default options.
     pub fn from_markdown_str(content: &str) -> miette::Result<Self> {
         Self::from_markdown_str_with(content, ParseOptions::default())
     }

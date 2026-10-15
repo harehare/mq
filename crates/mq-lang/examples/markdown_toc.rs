@@ -1,3 +1,5 @@
+//! Builds a table of contents from Markdown headings.
+
 fn main() {
     let markdown_content = "
 # [header1](https://example.com)

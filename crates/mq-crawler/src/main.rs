@@ -1,3 +1,5 @@
+//! Command-line web crawler that converts pages to Markdown.
+
 use clap::Parser;
 use fantoccini::wd::TimeoutConfiguration;
 use mq_crawler::crawler::Crawler;

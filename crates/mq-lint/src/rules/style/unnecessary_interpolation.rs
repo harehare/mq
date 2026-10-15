@@ -2,6 +2,7 @@ use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severit
 use mq_hir::SymbolKind;
 use rustc_hash::FxHashMap;
 
+/// Reports strings that only interpolate a single expression, such as `"${x}"`.
 pub struct UnnecessaryInterpolation;
 
 impl LintRule for UnnecessaryInterpolation {

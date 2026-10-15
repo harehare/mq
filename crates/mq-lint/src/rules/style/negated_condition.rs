@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{SymbolId, SymbolKind};
 
+/// Reports `if`/`else` expressions whose condition is negated with `!`.
 pub struct NegatedCondition;
 
 impl LintRule for NegatedCondition {

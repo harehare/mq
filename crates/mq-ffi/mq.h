@@ -6,11 +6,26 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+/**
+ * Opaque handle to an mq engine.
+ */
 typedef void mq_context_t;
 
+/**
+ * Result of a query: `values` on success, `error_msg` on failure.
+ */
 typedef struct mq_result_t {
+  /**
+   * Array of `values_len` result strings.
+   */
   char **values;
+  /**
+   * Number of entries in `values`.
+   */
   uintptr_t values_len;
+  /**
+   * Error message, or null on success.
+   */
   char *error_msg;
 } mq_result_t;
 

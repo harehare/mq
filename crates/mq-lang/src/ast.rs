@@ -7,6 +7,7 @@ pub mod constants;
 pub mod node;
 pub mod parser;
 
+/// A sequence of top-level or block-level nodes.
 pub type Program = Vec<Shared<Node>>;
 pub type TokenId = ArenaId<Token>;
 

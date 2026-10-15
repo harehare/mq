@@ -53,20 +53,24 @@ impl Param {
     }
 }
 
+/// Function parameters.
 pub type Params = Vec<Param>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = Vec<Cond>;
 pub type MatchArms = Vec<MatchArm>;
 
+/// An AST node: an expression plus the id of the token it was parsed from.
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 pub struct Node {
+    /// Id of the node's main token in the token arena.
     #[cfg_attr(
         feature = "ast-json",
         serde(skip_serializing, skip_deserializing, default = "default_token_id")
     )]
     pub token_id: TokenId,
+    /// The expression this node holds.
     pub expr: Expr,
 }
 
@@ -76,16 +80,19 @@ fn default_token_id() -> TokenId {
 }
 
 impl Node {
+    /// Serializes the node to pretty-printed JSON.
     #[cfg(feature = "ast-json")]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
 
+    /// Deserializes a node from JSON; token ids are not restored.
     #[cfg(feature = "ast-json")]
     pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json_str)
     }
 
+    /// Source range of the node, computed from its token and children.
     pub fn range(&self, arena: Shared<Arena<Token>>) -> Range {
         match &self.expr {
             Expr::Block(program)
@@ -203,15 +210,19 @@ impl Node {
         }
     }
 
+    /// Whether this node is the `nodes` keyword.
     pub fn is_nodes(&self) -> bool {
         matches!(&self.expr, Expr::Nodes)
     }
 }
 
+/// An identifier paired with the token it was parsed from.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, Debug, Eq, Clone)]
 pub struct IdentWithToken {
+    /// The identifier name.
     pub name: Ident,
+    /// Id of the identifier token, if known.
     #[cfg_attr(feature = "ast-json", serde(skip_serializing, skip_deserializing, default))]
     pub token: Option<TokenId>,
 }
@@ -235,10 +246,12 @@ impl PartialOrd for IdentWithToken {
 }
 
 impl IdentWithToken {
+    /// Creates an identifier with no token.
     pub fn new(name: &str) -> Self {
         Self::new_with_token(name, None)
     }
 
+    /// Creates an identifier bound to `token`.
     pub fn new_with_token(name: &str, token: Option<TokenId>) -> Self {
         Self {
             name: name.into(),
@@ -262,16 +275,25 @@ pub enum StringSegment {
     Self_,
 }
 
+/// A pattern used by `match`, `let` and `var`.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Pattern {
+    /// A literal value.
     Literal(Literal),
+    /// Binds the matched value to a name.
     Ident(IdentWithToken),
+    /// `_`, matches anything.
     Wildcard,
+    /// `[p1, p2]`, matches an array element-wise.
     Array(Vec<Pattern>),
+    /// Array pattern with a rest binding: the patterns before `..` and the rest binding.
     ArrayRest(Vec<Pattern>, IdentWithToken), // patterns before .., rest binding
+    /// `{key: pattern}`, matches a dict by key.
     Dict(Vec<(IdentWithToken, Pattern)>),
-    Type(Ident),      // :string, :number, etc.
+    /// A type pattern such as `:string` or `:number`.
+    Type(Ident), // :string, :number, etc.
+    /// `p1 || p2`, matches if any alternative matches.
     Or(Vec<Pattern>), // p1 || p2 || p3
 }
 
@@ -283,14 +305,21 @@ pub struct MatchArm {
     pub body: Shared<Node>,
 }
 
+/// A literal value.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Literal {
+    /// A string literal.
     String(String),
+    /// A bytes literal.
     Bytes(Vec<u8>),
+    /// A number literal.
     Number(Number),
+    /// A `:name` symbol.
     Symbol(Ident),
+    /// A boolean literal.
     Bool(bool),
+    /// The `None` literal.
     None,
 }
 
@@ -395,11 +424,15 @@ impl Display for UnaryOp {
     }
 }
 
+/// An expression in the AST.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
+    /// `expr as name`, binding the value of the expression.
     As(IdentWithToken, Shared<Node>),
+    /// A `do ... end` block or pipeline group.
     Block(Program),
+    /// A call to a named function.
     Call(IdentWithToken, Args),
     /// `lhs op rhs`. Never desugared into `Call`, so it compiles to a direct VM opcode
     /// regardless of name resolution/shadowing.
@@ -413,46 +446,74 @@ pub enum Expr {
     /// A `{...}` dict literal. Each entry is a nested `Array` of `[key, value]`,
     /// except spread entries (`...expr`), which remain a nested `Call` on `SPREAD`.
     Dict(Args),
+    /// A call whose callee is an arbitrary expression.
     CallDynamic(Shared<Node>, Args),
+    /// A named function definition.
     Def(IdentWithToken, Params, Program),
+    /// An anonymous function.
     Fn(Params, Program),
+    /// An immutable binding.
     Let(Pattern, Shared<Node>),
+    /// An unbounded `loop`.
     Loop(Program),
+    /// A mutable binding.
     Var(Pattern, Shared<Node>),
+    /// Assignment to an existing variable.
     Assign(IdentWithToken, Shared<Node>),
     /// `ident[index] = value`: sets one element of the variable's array or dict. Never desugared
     /// into `Assign(ident, set(ident, ..))`, so the VM can update the variable in place.
     IndexAssign(IdentWithToken, Shared<Node>, Shared<Node>),
+    /// Short-circuiting `&&` over its operands.
     And(Vec<Shared<Node>>),
+    /// Short-circuiting `||` over its operands.
     Or(Vec<Shared<Node>>),
+    /// A literal value.
     Literal(Literal),
+    /// A variable or function reference.
     Ident(IdentWithToken),
+    /// A string with `${...}` segments.
     InterpolatedString(Vec<StringSegment>),
+    /// A Markdown selector such as `.h1`.
     Selector(Selector),
     /// A selector with runtime-evaluated arguments for filtered matching.
     ///
     /// Supports `.h(1..2)`, `.h(1, 2)`, `.code("rust")`, etc.
     SelectorCall(Selector, Box<Args>),
+    /// A `while` loop.
     While(Shared<Node>, Program),
+    /// An `until` loop.
     Until(Shared<Node>, Program),
+    /// A `foreach` loop over a collection.
     Foreach(IdentWithToken, Shared<Node>, Program),
+    /// Condition and body pairs; the final pair has no condition for `else`.
     If(Branches),
+    /// Like `If`, with the first condition negated.
     Unless(Branches),
+    /// A `match` on a value with its arms.
     Match(Shared<Node>, MatchArms),
+    /// An `include` of another file.
     Include(Literal),
     /// `import "path"` or `import "path" as alias`; the alias rebinds the module name.
     Import(Literal, Option<IdentWithToken>),
+    /// An inline module definition.
     Module(IdentWithToken, Program),
+    /// `module::name` access: the module path and the accessed target.
     QualifiedAccess(Vec<IdentWithToken>, AccessTarget),
+    /// The implicit `self` value.
     Self_,
+    /// The `nodes` keyword.
     Nodes,
+    /// A parenthesized expression.
     Paren(Shared<Node>),
     /// `try <expr> catch: <expr>` or `try <expr> catch(<binder>): <expr>`.
     /// When present, `binder` is bound to a dict describing the failure (currently `{"message": ...}`)
     /// while evaluating the catch expression.
     Try(Shared<Node>, Option<IdentWithToken>, Shared<Node>),
+    /// `break`, with an optional value.
     Break(Option<Shared<Node>>),
+    /// `continue`.
     Continue,
+    /// `yield`, with an optional value.
     Yield(Option<Shared<Node>>),
 }
 

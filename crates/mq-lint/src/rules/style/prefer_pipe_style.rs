@@ -2,6 +2,7 @@ use mq_hir::SymbolKind;
 
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 
+/// Reports calls whose only argument is another call, such as `f(g(x))`.
 pub struct PreferPipeStyle;
 
 impl LintRule for PreferPipeStyle {

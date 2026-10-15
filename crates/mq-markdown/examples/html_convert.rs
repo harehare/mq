@@ -1,3 +1,5 @@
+//! Converts an HTML file to Markdown.
+
 use mq_markdown::{ConversionOptions, convert_html_to_markdown};
 use std::env;
 use std::fs;

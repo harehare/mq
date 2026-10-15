@@ -41,6 +41,7 @@ struct RetainedToken {
     node_owned: bool,
 }
 
+/// Parses a token stream into an AST, allocating tokens in the arena.
 pub struct Parser<'a, 'alloc> {
     tokens: Peekable<core::slice::Iter<'a, Token>>,
     token_base_address: usize,
@@ -51,6 +52,7 @@ pub struct Parser<'a, 'alloc> {
 }
 
 impl<'a, 'alloc> Parser<'a, 'alloc> {
+    /// Creates a parser over `tokens` for the module `module_id`.
     pub fn new(
         tokens: core::slice::Iter<'a, Token>,
         token_arena: &'alloc mut Arena<Token>,
@@ -67,6 +69,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    /// Parses the whole input into a program.
     pub fn parse(&mut self) -> Result<Program, SyntaxError> {
         self.parse_program(ProgramKind::Root)
     }

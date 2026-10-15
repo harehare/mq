@@ -21,6 +21,7 @@ pub(crate) fn for_html<R>(render: impl FnOnce() -> R) -> R {
 }
 
 impl Node {
+    /// Writes the node as Markdown with the given options.
     pub fn to_string_with(&self, options: &RenderOptions) -> String {
         self.render_with_theme(options, &ColorTheme::PLAIN)
     }

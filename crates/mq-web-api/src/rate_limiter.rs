@@ -4,18 +4,30 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::debug;
 
+/// Error returned by [`RateLimiter`].
 #[derive(Debug, Error)]
 pub enum RateLimitError {
+    /// The request count in the window reached the limit.
     #[error("Rate limit exceeded: {requests} requests in window, limit is {limit}")]
-    LimitExceeded { requests: i64, limit: i64 },
+    LimitExceeded {
+        /// Requests made in the current window.
+        requests: i64,
+        /// Allowed requests per window.
+        limit: i64,
+    },
+    /// The limiter is misconfigured.
     #[error("Configuration error: {0}")]
     Configuration(String),
 }
 
+/// Settings for [`RateLimiter`].
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
+    /// Allowed requests per window.
     pub requests_per_window: i64,
+    /// Window length in seconds.
     pub window_size_seconds: i64,
+    /// Interval between expired entry purges, in seconds.
     pub cleanup_interval_seconds: i64,
 }
 
@@ -36,6 +48,7 @@ struct RateLimitEntry {
     expires_at: i64,
 }
 
+/// Fixed-window, in-memory request limiter keyed by client identifier.
 #[derive(Debug)]
 pub struct RateLimiter {
     store: Mutex<HashMap<String, RateLimitEntry>>,
@@ -43,6 +56,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// Creates an empty limiter.
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             store: Mutex::new(HashMap::new()),
@@ -50,10 +64,12 @@ impl RateLimiter {
         }
     }
 
+    /// Counts a request, failing when `identifier` exceeded the window limit.
     pub async fn check_and_increment(&self, identifier: &str) -> Result<(), RateLimitError> {
         self.check_and_increment_with_limit(identifier, None).await
     }
 
+    /// Like [`Self::check_and_increment`], with `limit_override` replacing the configured limit.
     pub async fn check_and_increment_with_limit(
         &self,
         identifier: &str,
@@ -92,6 +108,7 @@ impl RateLimiter {
         Ok(())
     }
 
+    /// Removes expired entries and returns how many were removed.
     pub async fn cleanup_expired(&self) -> Result<u64, RateLimitError> {
         let now = current_timestamp();
         let mut store = self.store.lock().await;
@@ -106,6 +123,7 @@ impl RateLimiter {
         Ok(deleted)
     }
 
+    /// Returns the request count of `identifier` in the current window, if any.
     pub async fn get_current_usage(&self, identifier: &str) -> Result<Option<i64>, RateLimitError> {
         let now = current_timestamp();
         let window_start = self.get_window_start(now);
@@ -119,6 +137,7 @@ impl RateLimiter {
         Ok(None)
     }
 
+    /// Clears the counter of `identifier`.
     pub async fn reset_limit(&self, identifier: &str) -> Result<(), RateLimitError> {
         let now = current_timestamp();
         let window_start = self.get_window_start(now);
@@ -138,14 +157,17 @@ impl RateLimiter {
         (timestamp / self.config.window_size_seconds) * self.config.window_size_seconds
     }
 
+    /// Returns the configured requests per window.
     pub fn requests_per_window(&self) -> i64 {
         self.config.requests_per_window
     }
 
+    /// Returns the configured window length in seconds.
     pub fn window_size_seconds(&self) -> i64 {
         self.config.window_size_seconds
     }
 
+    /// Inserts a raw entry, bypassing limit checks.
     #[cfg(test)]
     pub async fn insert_entry_for_test(
         &self,
@@ -166,6 +188,7 @@ impl RateLimiter {
     }
 }
 
+/// Returns the current Unix timestamp in seconds.
 pub fn current_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -1,6 +1,7 @@
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Reports `==` or `!=` comparisons against a boolean literal.
 pub struct BooleanComparison;
 
 impl LintRule for BooleanComparison {

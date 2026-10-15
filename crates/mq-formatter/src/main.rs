@@ -1,3 +1,5 @@
+//! Command-line formatter for mq source files.
+
 use clap::Parser;
 use glob::glob;
 use miette::IntoDiagnostic;

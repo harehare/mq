@@ -819,6 +819,7 @@ impl RuntimeValue {
         }
     }
 
+    /// Converts the value to a JSON value; unrepresentable values become null.
     pub fn to_json_value(self) -> serde_json::Value {
         use base64::Engine;
         match self {
@@ -858,6 +859,7 @@ impl RuntimeValue {
         }
     }
 
+    /// Converts the value to a CBOR value; unrepresentable values become null.
     pub fn to_cbor_value(self) -> ciborium::Value {
         match self {
             RuntimeValue::None => ciborium::Value::Null,

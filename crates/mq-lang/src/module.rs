@@ -27,6 +27,7 @@ thread_local! {
     static BUILTIN_CACHE: RefCell<Option<BuiltinCache>> = const { RefCell::new(None) };
 }
 
+/// Id of a module name in the module-name arena.
 pub type ModuleId = ArenaId<ModuleName>;
 
 type ModuleName = SmolStr;
@@ -64,6 +65,7 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
     }
 }
 
+/// Loads, caches and tracks the source of modules through a [`ModuleResolver`].
 #[derive(Debug, Clone)]
 pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     /// Ids of the modules this loader has loaded.
@@ -101,20 +103,29 @@ pub(crate) struct ResolvedModule<'a> {
     pub(crate) source: &'a str,
 }
 
+/// A loaded module and its top-level definitions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
+    /// The module name.
     pub name: String,
+    /// `def` nodes in the module.
     pub functions: Program,
+    /// Nested `module` nodes.
     pub modules: Program,
+    /// `let` and `var` nodes in the module.
     pub vars: Program,
 }
 
 impl Module {
+    /// Name of the builtin module.
     pub const BUILTIN_MODULE: &str = "builtin";
+    /// Name of the top-level (query) module.
     pub const TOP_LEVEL_MODULE: &str = "top-level";
+    /// Id of the top-level module.
     pub const TOP_LEVEL_MODULE_ID: ArenaId<ModuleName> = ArenaId::new(0);
 }
 
+/// Source of the modules bundled with mq, by name.
 pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     let mut map = FxHashMap::default();
 
@@ -153,9 +164,11 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     map
 });
 
+/// Source of the builtin module.
 pub const BUILTIN_FILE: &str = include_str!("../builtin.mq");
 
 impl<T: ModuleResolver> ModuleLoader<T> {
+    /// Creates a loader that resolves modules with `resolver`.
     pub fn new(resolver: T) -> Self {
         let mut loaded_modules = FxHashSet::default();
         loaded_modules.insert(Module::TOP_LEVEL_MODULE_ID);
@@ -258,6 +271,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
+    /// Resolves `module_name` to the path it would be loaded from.
     pub fn get_module_path(&self, module_name: &str) -> Result<String, ModuleError> {
         self.resolver.get_path(module_name)
     }
@@ -267,19 +281,23 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.resolver.get_path(&self.module_key(module_id))
     }
 
+    /// Sets the top-level source returned for debugging.
     #[cfg(feature = "debugger")]
     pub fn set_source_code(&mut self, source_code: String) {
         self.source_code = Some(source_code);
     }
 
+    /// The resolver search paths.
     pub fn search_paths(&self) -> Vec<PathBuf> {
         self.resolver.search_paths()
     }
 
+    /// Replaces the resolver search paths.
     pub fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
         self.resolver.set_search_paths(paths);
     }
 
+    /// Parses `code` and registers it as module `module_name`.
     pub fn load(&mut self, module_name: &str, code: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         self.load_keyed(module_name, module_name, code, token_arena)
     }
@@ -303,6 +321,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.register_loaded(module_id, module_name, &program)
     }
 
+    /// Registers an already parsed program as module `module_name`.
     pub fn load_from_ast(&mut self, module_name: &str, program: &mut Program) -> Result<Module, ModuleError> {
         if self.is_loaded(module_name) {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
@@ -377,10 +396,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.register_loaded(module_id, self.resolver.canonical_name(module_path), &program)
     }
 
+    /// The short name a module path is registered under.
     pub fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
         self.resolver.canonical_name(module_path)
     }
 
+    /// Resolves, parses and registers the module at `module_path`.
     pub fn load_from_file(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         // Check before resolving to avoid unnecessary I/O (disk read or network fetch)
         // when the same module is imported more than once. Modules are keyed by the full
@@ -439,6 +460,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
+    /// Returns the source code of `module_name` from the resolver.
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
         #[cfg(feature = "http-import")]
         if self.http_depth > 0
@@ -547,6 +569,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         Ok(module)
     }
 
+    /// Source code of the module, using the stored top-level source for the top-level module.
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
         #[cfg(feature = "mqc")]
@@ -566,6 +589,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
+    /// Source code of the module, using `source_code` for the top-level module.
     #[cold]
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
         #[cfg(feature = "mqc")]

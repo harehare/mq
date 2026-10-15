@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::{task::JoinHandle, time::interval};
 use tracing::{debug, error, info, warn};
 
+/// Background task that periodically purges expired rate limit entries.
 pub struct CleanupService {
     rate_limiter: Arc<RateLimiter>,
     cleanup_interval: Duration,
@@ -10,6 +11,7 @@ pub struct CleanupService {
 }
 
 impl CleanupService {
+    /// Creates a service that runs every `cleanup_interval_seconds`.
     pub fn new(rate_limiter: Arc<RateLimiter>, cleanup_interval_seconds: u64) -> Self {
         Self {
             rate_limiter,
@@ -18,6 +20,7 @@ impl CleanupService {
         }
     }
 
+    /// Starts the background task. Does nothing if already running.
     pub fn start(&mut self) {
         if self.handle.is_some() {
             warn!("Cleanup service is already running");
@@ -54,6 +57,7 @@ impl CleanupService {
         info!("Cleanup service started successfully");
     }
 
+    /// Stops the background task.
     pub fn stop(&mut self) {
         if let Some(handle) = self.handle.take() {
             handle.abort();
@@ -63,6 +67,7 @@ impl CleanupService {
         }
     }
 
+    /// Returns `true` while the background task is running.
     pub fn is_running(&self) -> bool {
         self.handle.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
     }

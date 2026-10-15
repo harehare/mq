@@ -16,22 +16,38 @@ type LineNo = usize;
 type BreakpointId = usize;
 
 #[derive(Debug, Clone, PartialEq, strum::EnumIter)]
+/// A command entered at the debugger prompt.
 pub enum Command {
+    /// Print the current backtrace.
     Backtrace,
+    /// Set a breakpoint at a line, or list breakpoints.
     Breakpoint(Option<LineNo>),
+    /// Continue execution.
     Continue,
+    /// Clear a breakpoint, or all breakpoints.
     Clear(Option<BreakpointId>),
+    /// Unparsable input, carrying the message.
     Error(String),
+    /// Evaluate an expression.
     Eval(String),
+    /// Run until the current function returns.
     Finish,
+    /// Show help.
     Help,
+    /// Show debugger information.
     Info,
+    /// List source around the current line.
     List,
+    /// List the whole source.
     LongList,
+    /// Step over.
     Next,
+    /// Quit the debugger.
     Quit,
+    /// Step into.
     Step,
     #[cfg(feature = "debug-trace")]
+    /// Print the VM stack.
     Stack,
 }
 
@@ -61,6 +77,7 @@ impl fmt::Display for Command {
 }
 
 impl Command {
+    /// The help line for this command.
     pub fn help(&self) -> String {
         let (cmd, desc) = match self {
             Command::Backtrace => ("backtrace or bt", "Print the current backtrace"),
@@ -124,6 +141,7 @@ impl From<String> for Command {
 }
 
 #[derive(Debug)]
+/// Interactive command-line debugger for mq programs.
 pub struct DebuggerHandler {
     engine: mq_lang::DefaultEngine,
     stop_on_error: bool,
@@ -160,6 +178,7 @@ impl mq_lang::DebuggerHandler for DebuggerHandler {
     }
 }
 
+/// Returns the mq configuration directory (`MQ_CONFIG_DIR`, else the platform config dir joined with `mq`).
 pub fn config_dir() -> Option<std::path::PathBuf> {
     std::env::var_os("MQ_CONFIG_DIR")
         .map(std::path::PathBuf::from)
@@ -167,6 +186,7 @@ pub fn config_dir() -> Option<std::path::PathBuf> {
 }
 
 impl DebuggerHandler {
+    /// Creates a handler; with `stop_on_error`, uncaught errors open the prompt.
     pub fn new(engine: mq_lang::DefaultEngine, stop_on_error: bool) -> Self {
         Self {
             engine,
@@ -179,15 +199,18 @@ impl DebuggerHandler {
     }
 
     #[cfg(feature = "debug-trace")]
+    /// Enables dumping the VM stack at each stop.
     pub fn set_dump_stack(&mut self, dump_stack: bool) {
         self.dump_stack = dump_stack;
     }
 
     #[cfg(feature = "debug-trace")]
+    /// Enables colored output.
     pub fn set_color_output(&mut self, color_output: bool) {
         self.color_output = color_output;
     }
 
+    /// Runs the prompt loop and returns the action to resume with.
     pub fn run_debug(&self, context: &mq_lang::DebugContext) -> miette::Result<mq_lang::DebuggerAction> {
         let config = Config::builder()
             .history_ignore_space(true)
@@ -558,6 +581,7 @@ fn highlight_syntax(line: &str) -> Cow<'_, str> {
     Cow::Owned(result)
 }
 
+/// Rustyline helper providing hints for the debugger prompt.
 pub struct DebuggerLineHelper;
 
 impl Hinter for DebuggerLineHelper {

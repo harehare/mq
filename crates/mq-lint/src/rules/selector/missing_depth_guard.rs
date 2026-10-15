@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Reports a recursive `..` selector when the source has no `.depth` or `.level` guard.
 pub struct MissingDepthGuard;
 
 impl LintRule for MissingDepthGuard {

@@ -241,6 +241,7 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, Ya
     if fm_map.is_empty() { None } else { Some(fm_map) }
 }
 
+/// Converts an HTML document to a Markdown string.
 pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) -> miette::Result<String> {
     if html_input.trim().is_empty() {
         return Ok("".to_string());

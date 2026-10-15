@@ -2,13 +2,20 @@ use crate::query_cache::QueryCacheConfig;
 use crate::rate_limiter::RateLimitConfig;
 use std::{env, time::Duration};
 
+/// Server configuration.
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// Bind address.
     pub host: String,
+    /// Listening port.
     pub port: u16,
+    /// Tracing filter directive.
     pub log_level: String,
+    /// Log output format.
     pub log_format: LogFormat,
+    /// Allowed CORS origins.
     pub cors_origins: Vec<String>,
+    /// Request rate limiting settings.
     pub rate_limit: RateLimitConfig,
     /// OTLP exporter endpoint (e.g. `http://localhost:4317`). Requires the `otel` feature.
     pub otel_endpoint: Option<String>,
@@ -18,6 +25,7 @@ pub struct Config {
     pub query_timeout: Duration,
     /// Short-lived cache for repeated `{query, input, input_format, args}` combinations.
     pub query_cache: QueryCacheConfig,
+    /// API key authentication settings.
     pub auth: AuthConfig,
     /// Maximum accepted size of an HTTP request body, in bytes. Requests whose
     /// `Content-Length` (or actual streamed size) exceeds this are rejected with
@@ -30,16 +38,23 @@ pub struct Config {
     pub request_timeout: Duration,
 }
 
+/// API key authentication settings.
 #[derive(Debug, Clone, Default)]
 pub struct AuthConfig {
+    /// Whether requests must present an API key.
     pub enabled: bool,
+    /// Raw API keys, each granted all scopes.
     pub keys: Vec<String>,
+    /// Path to a JSON file defining keys with scopes and limits. Takes precedence over `keys`.
     pub keys_file: Option<String>,
 }
 
+/// Log output format.
 #[derive(Debug, Clone)]
 pub enum LogFormat {
+    /// Human-readable lines.
     Text,
+    /// One JSON object per event.
     Json,
 }
 
@@ -64,6 +79,7 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Builds the configuration from environment variables, falling back to defaults.
     pub fn from_env() -> Self {
         let mut config = Self::default();
 
@@ -268,10 +284,12 @@ impl Config {
         config
     }
 
+    /// Returns `host:port`.
     pub fn bind_address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
 
+    /// Returns the base HTTP(S) URL of the server.
     pub fn server_url(&self) -> String {
         if self.port == 80 {
             format!("http://{}", self.host)

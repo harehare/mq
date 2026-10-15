@@ -18,6 +18,7 @@ fn capability_flag(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Reports calls to builtins that need a capability flag such as `--allow-net`.
 pub struct DangerousCapabilityCall;
 
 impl LintRule for DangerousCapabilityCall {

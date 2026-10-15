@@ -29,9 +29,12 @@ impl Core {
 /// resolved core text + `suffix`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fix {
+    /// Source range to replace.
     pub range: mq_lang::Range,
     core: Core,
+    /// Text inserted before the resolved core text.
     pub prefix: String,
+    /// Text inserted after the resolved core text.
     pub suffix: String,
 }
 
@@ -68,11 +71,13 @@ impl Fix {
         }
     }
 
+    /// Sets the text inserted before the replacement.
     pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = prefix.into();
         self
     }
 
+    /// Sets the text inserted after the replacement.
     pub fn with_suffix(mut self, suffix: impl Into<String>) -> Self {
         self.suffix = suffix.into();
         self

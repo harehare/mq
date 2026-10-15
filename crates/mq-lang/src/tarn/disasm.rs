@@ -20,6 +20,7 @@ pub struct BytecodeDump {
 /// The bytecode of one phase.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BytecodePhase {
+    /// Phase name.
     pub name: String,
     /// Chunk 0 is the entry point.
     pub chunks: Vec<BytecodeChunk>,
@@ -28,6 +29,7 @@ pub struct BytecodePhase {
 /// A function body or the entry point.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BytecodeChunk {
+    /// Position of the chunk in its phase.
     pub index: usize,
     /// Includes the implicit `self` slot.
     pub local_count: usize,
@@ -35,6 +37,7 @@ pub struct BytecodeChunk {
     pub locals: Vec<String>,
     /// Upvalue names by index.
     pub upvalues: Vec<String>,
+    /// Instructions in execution order.
     pub instructions: Vec<BytecodeInstruction>,
     /// Rendered as text and truncated when long.
     pub constants: Vec<String>,
@@ -43,18 +46,23 @@ pub struct BytecodeChunk {
 /// One VM instruction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BytecodeInstruction {
+    /// Instruction index within the chunk.
     pub pc: usize,
+    /// Opcode name.
     pub opcode: String,
     /// Empty when the opcode has none.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub operands: String,
+    /// Source position the instruction came from, if known.
     pub location: Option<BytecodeLocation>,
 }
 
 /// A one-based source position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct BytecodeLocation {
+    /// One-based line.
     pub line: usize,
+    /// One-based column.
     pub column: usize,
 }
 

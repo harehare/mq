@@ -55,6 +55,7 @@ impl Hir {
         }
     }
 
+    /// Returns the declaration that the reference symbol resolves to.
     #[inline(always)]
     pub fn resolve_reference_symbol(&self, ref_symbol_id: SymbolId) -> Option<SymbolId> {
         self.references.get(&ref_symbol_id).copied()

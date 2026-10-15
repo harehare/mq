@@ -25,6 +25,7 @@ use crate::{
     query_cache::{self, QueryCache},
 };
 
+/// State shared by all handlers.
 #[derive(Clone)]
 pub struct AppState {
     /// Maximum duration a single query evaluation may run before it's aborted.
@@ -63,24 +64,34 @@ async fn execute_query_with_cache(
     Ok(result)
 }
 
+/// Query parameters of `GET /api/v1/query`.
 #[derive(Deserialize)]
 pub struct QueryParams {
+    /// The mq query to run.
     pub query: String,
+    /// Input document.
     pub input: Option<String>,
+    /// Format of `input`.
     pub input_format: Option<String>,
 }
 
+/// Query parameters of the diagnostics endpoints.
 #[derive(Deserialize)]
 pub struct DiagnosticsParams {
+    /// The mq query to analyze.
     pub query: String,
 }
 
+/// Query parameters of the shorthand query endpoint.
 #[derive(Deserialize)]
 pub struct ShorthandQueryParams {
+    /// Format of the request body.
     pub input_format: Option<String>,
+    /// Format of the response.
     pub output_format: Option<String>,
 }
 
+/// `Query` extractor that rejects malformed parameters with a problem details response.
 pub struct ValidatedQuery<T>(pub T);
 
 impl<T, S> FromRequestParts<S> for ValidatedQuery<T>
@@ -102,8 +113,10 @@ where
     }
 }
 
+/// Response body of the health endpoint.
 #[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
+    /// Always `"ok"`.
     pub status: &'static str,
 }
 
@@ -155,6 +168,7 @@ pub async fn health_check() -> Json<HealthResponse> {
     ),
     modifiers(&SecurityAddon)
 )]
+/// OpenAPI document of the API.
 pub struct ApiDoc;
 
 struct SecurityAddon;
@@ -184,6 +198,7 @@ impl Modify for SecurityAddon {
     ),
     security(("api_key" = []))
 )]
+/// Runs a query given as query parameters.
 pub async fn get_query_api(
     ValidatedQuery(params): ValidatedQuery<QueryParams>,
     State(state): State<AppState>,
@@ -240,6 +255,7 @@ pub async fn get_query_api(
     request_body = ApiRequest,
     security(("api_key" = []))
 )]
+/// Runs a query given in the request body.
 pub async fn post_query_api(
     State(state): State<AppState>,
     Json(request): Json<ApiRequest>,
@@ -281,6 +297,7 @@ pub async fn post_query_api(
     request_body = BatchApiRequest,
     security(("api_key" = []))
 )]
+/// Runs one query against many input documents.
 pub async fn post_batch_api(
     State(state): State<AppState>,
     Json(request): Json<BatchApiRequest>,
@@ -360,6 +377,7 @@ fn sniff_input_format(body: &str) -> Option<InputFormat> {
     ),
     security(("api_key" = []))
 )]
+/// Runs the query given in the path against the request body.
 pub async fn post_shorthand_query_api(
     State(state): State<AppState>,
     Path(query): Path<String>,
@@ -417,6 +435,7 @@ pub async fn post_shorthand_query_api(
     ),
     request_body = CheckApiRequest
 )]
+/// Type-checks a query.
 pub async fn post_check_api(
     State(_state): State<AppState>,
     Json(request): Json<CheckApiRequest>,
@@ -448,6 +467,7 @@ pub async fn post_check_api(
     ),
     request_body = FormatApiRequest
 )]
+/// Formats a query.
 pub async fn post_format_api(
     State(_state): State<AppState>,
     Json(request): Json<FormatApiRequest>,
@@ -482,6 +502,7 @@ pub async fn post_format_api(
         (status = 200, description = "List of builtin mq functions", body = FunctionsApiResponse),
     )
 )]
+/// Lists builtin functions.
 pub async fn get_functions_api(State(_state): State<AppState>) -> Json<FunctionsApiResponse> {
     debug!("GET /functions called");
     Json(crate::api::list_functions())
@@ -494,6 +515,7 @@ pub async fn get_functions_api(State(_state): State<AppState>) -> Json<Functions
         (status = 200, description = "List of builtin mq selectors", body = SelectorsApiResponse),
     )
 )]
+/// Lists builtin selectors.
 pub async fn get_selectors_api(State(_state): State<AppState>) -> Json<SelectorsApiResponse> {
     debug!("GET /selectors called");
     Json(crate::api::list_selectors())
@@ -508,6 +530,7 @@ pub async fn get_selectors_api(State(_state): State<AppState>) -> Json<Selectors
         (status = 404, description = "No function with that name"),
     )
 )]
+/// Returns the documentation of one builtin function.
 pub async fn get_function_api(
     State(_state): State<AppState>,
     Path(name): Path<String>,
@@ -529,6 +552,7 @@ pub async fn get_function_api(
         (status = 404, description = "No selector with that name"),
     )
 )]
+/// Returns the documentation of one builtin selector.
 pub async fn get_selector_api(
     State(_state): State<AppState>,
     Path(name): Path<String>,
@@ -549,6 +573,7 @@ pub async fn get_selector_api(
     ),
     request_body = LintApiRequest
 )]
+/// Lints a query.
 pub async fn post_lint_api(
     State(_state): State<AppState>,
     Json(request): Json<LintApiRequest>,
@@ -580,6 +605,7 @@ static OPENAPI_SPEC: OnceLock<utoipa::openapi::OpenApi> = OnceLock::new();
         (status = 200, description = "OpenAPI specification", body = String),
     )
 )]
+/// Serves the OpenAPI specification.
 pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     debug!("GET /openapi.json called");
     Json(OPENAPI_SPEC.get_or_init(ApiDoc::openapi).clone())

@@ -1,3 +1,5 @@
+//! Formatter benchmarks.
+
 use mq_formatter::{Formatter, FormatterConfig};
 
 fn main() {

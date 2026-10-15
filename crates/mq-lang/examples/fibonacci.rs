@@ -1,3 +1,5 @@
+//! Computes Fibonacci numbers with a recursive mq function.
+
 fn main() {
     let mut engine = mq_lang::DefaultEngine::default();
     let code = "

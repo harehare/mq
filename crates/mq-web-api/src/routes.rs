@@ -30,6 +30,7 @@ use crate::{
     rate_limiter::RateLimiter,
 };
 
+/// Builds the router with all routes and middleware for `config`.
 pub fn create_router(
     config: &Config,
     rate_limiter: Arc<RateLimiter>,

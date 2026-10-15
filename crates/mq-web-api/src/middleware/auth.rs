@@ -13,14 +13,19 @@ use crate::{
     rate_limiter::{RateLimitError, RateLimiter},
 };
 
+/// State shared by [`auth_middleware`].
 #[derive(Clone)]
 pub struct AuthState {
+    /// Known API keys.
     pub store: Arc<ApiKeyStore>,
+    /// Limiter applied per API key.
     pub rate_limiter: Arc<RateLimiter>,
 }
 
+/// Identity of the authenticated caller, inserted into request extensions.
 #[derive(Clone)]
 pub struct AuthContext {
+    /// Name of the API key used.
     pub key_name: String,
 }
 
@@ -57,6 +62,7 @@ fn extract_bearer(request: &Request) -> Option<&str> {
         .filter(|v| !v.is_empty())
 }
 
+/// Rejects requests lacking a valid API key or the scope the route requires.
 pub async fn auth_middleware(State(auth): State<AuthState>, mut request: Request, next: Next) -> Response {
     let Some(required) = required_scope(request.uri().path()) else {
         return next.run(request).await;

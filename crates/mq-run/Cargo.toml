@@ -23,6 +23,9 @@ tiktoken = ["mq-lang/tiktoken"]
 use_mimalloc = ["mimalloc"]
 watch = ["dep:notify"]
 
+[lints]
+workspace = true
+
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
 clap_complete = {workspace = true}

@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Hash)]
 pub struct Position {
+    /// One-based line number.
     pub line: u32,
+    /// One-based column number.
     pub column: usize,
 }
 
@@ -26,7 +28,9 @@ impl Position {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Default, Hash)]
 pub struct Range {
+    /// Start of the range.
     pub start: Position,
+    /// End of the range.
     pub end: Position,
 }
 

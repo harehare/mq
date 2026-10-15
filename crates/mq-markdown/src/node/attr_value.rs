@@ -33,11 +33,17 @@ pub mod attr_keys {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json", derive(serde::Serialize, serde::Deserialize), serde(untagged))]
 pub enum AttrValue {
+    /// An array of nodes.
     Array(Vec<Node>),
+    /// A string.
     String(String),
+    /// A floating-point number.
     Number(f64),
+    /// An integer.
     Integer(i64),
+    /// A boolean.
     Boolean(bool),
+    /// The absence of a value.
     Null,
 }
 

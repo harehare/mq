@@ -1,6 +1,7 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
+/// Reports the generic `.h` selector where `.h1` to `.h6` can be used.
 pub struct PreferSpecificHeading;
 
 impl LintRule for PreferSpecificHeading {

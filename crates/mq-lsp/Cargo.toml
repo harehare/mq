@@ -11,6 +11,9 @@ readme = "README.md"
 repository.workspace = true
 version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 bimap = {workspace = true}
 clap = {workspace = true, features = ["derive"]}

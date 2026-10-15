@@ -14,9 +14,11 @@
 //!   suggestions, and human-readable rendering.
 
 #[cfg(feature = "catalog")]
+/// Documentation extracted from mq sources and native builtins.
 pub mod catalog;
 pub mod docs;
 #[cfg(feature = "catalog")]
+/// Native builtin and selector reference tables.
 pub mod reference;
 
 #[cfg(feature = "catalog")]

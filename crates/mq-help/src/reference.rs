@@ -5,7 +5,9 @@ use crate::docs::BUILTIN_DOC;
 /// A single verified example extracted from an `Example:` code fence in a doc comment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MqExample {
+    /// Example source.
     pub code: String,
+    /// Expected output of `code`.
     pub expected: String,
 }
 
@@ -13,10 +15,15 @@ pub struct MqExample {
 /// extracted from its CST and leading `#` doc-comment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MqFnDoc {
+    /// Function name.
     pub name: String,
+    /// Parameter names.
     pub params: Vec<String>,
+    /// Description text.
     pub description: String,
+    /// Return type name.
     pub returns: Option<String>,
+    /// Verified examples.
     pub examples: Vec<MqExample>,
 }
 
@@ -24,7 +31,9 @@ pub struct MqFnDoc {
 /// standard-module source file (see [`extract_module_doc`]).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ModuleDoc {
+    /// Module description.
     pub description: String,
+    /// Verified examples.
     pub examples: Vec<MqExample>,
 }
 
