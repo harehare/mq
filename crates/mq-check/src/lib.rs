@@ -250,6 +250,24 @@ pub(crate) fn walk_ancestors(
     })
 }
 
+/// Line offset added to the ranges of symbols that come from included modules, so their
+/// diagnostics can be told apart from the user's and dropped.
+const MODULE_LINE_OFFSET: u32 = 1 << 24;
+
+/// Range of `symbol`, shifted past `MODULE_LINE_OFFSET` when it belongs to a module source.
+pub(crate) fn symbol_range(hir: &Hir, symbol: &mq_hir::Symbol) -> Option<mq_lang::Range> {
+    let mut range = symbol.source.text_range?;
+    if symbol.source.source_id.is_some_and(|sid| hir.is_module_source(sid)) {
+        range.start.line += MODULE_LINE_OFFSET;
+        range.end.line += MODULE_LINE_OFFSET;
+    }
+    Some(range)
+}
+
+pub(crate) fn is_module_range(range: &mq_lang::Range) -> bool {
+    range.start.line >= MODULE_LINE_OFFSET
+}
+
 /// Options for configuring the type checker behavior
 #[derive(Debug, Clone, Default)]
 pub struct TypeCheckerOptions {
@@ -469,7 +487,10 @@ impl TypeChecker {
         laps.lap("exhaustiveness");
 
         // Collect errors before finalizing
-        let errors = ctx.take_errors();
+        let mut errors = ctx.take_errors();
+        // Module diagnostics are never reported. A stage threaded twice reports its error twice.
+        let mut seen = rustc_hash::FxHashSet::default();
+        errors.retain(|e| !e.location().is_some_and(|r| is_module_range(&r)) && seen.insert(format!("{e:?}")));
 
         // Store inferred types
         self.symbol_types = ctx.finalize();

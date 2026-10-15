@@ -468,7 +468,7 @@ impl Hir {
 
                 if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
                     let code = self.module_loader.resolve(&module_name);
-                    let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
+                    let module_source_id = self.add_module_code(url, &code.unwrap_or_default());
 
                     self.add_symbol(Symbol {
                         value: Some(module_name.clone()),
@@ -499,7 +499,7 @@ impl Hir {
 
                 if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
                     let code = self.module_loader.resolve(&module_name);
-                    let (module_source_id, _) = self.add_code(Some(url), &code.unwrap_or_default());
+                    let module_source_id = self.add_module_code(url, &code.unwrap_or_default());
 
                     self.add_symbol(Symbol {
                         value: Some(module_name.clone()),

@@ -16,6 +16,16 @@ impl Hir {
         symbol.source.source_id == Some(self.builtin.source_id)
     }
 
+    /// Returns `true` if the source was loaded by an `include` or `import`.
+    pub fn is_module_source(&self, source_id: SourceId) -> bool {
+        self.module_sources.contains(&source_id)
+    }
+
+    /// Returns `true` if any `include` or `import` loaded a source.
+    pub fn has_module_sources(&self) -> bool {
+        !self.module_sources.is_empty()
+    }
+
     /// Returns an iterator over symbols for a specific source using the index.
     /// This is much faster than iterating over all symbols and filtering.
     pub fn symbols_for_source(&self, source_id: SourceId) -> impl Iterator<Item = (SymbolId, &Symbol)> + '_ {

@@ -3,14 +3,12 @@
 use mq_hir::{Hir, Symbol, SymbolId, SymbolKind};
 use rustc_hash::FxHashSet;
 
-use super::helpers::is_module_symbol;
+use super::helpers::{ChildrenIndex, get_children};
 
 /// Pre-categorized symbols for efficient multi-pass constraint generation.
 ///
 /// Built in a single pass over all HIR symbols, replacing 5 separate iterations.
 pub(super) struct SymbolCategories {
-    /// Source IDs from include/import/module symbols (for skipping module symbols)
-    pub(super) module_source_ids: FxHashSet<mq_hir::SourceId>,
     /// Pass 1: literals, variables, parameters, function definitions
     pub(super) pass1_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 2: root-level pipe stages (parent=None, non-builtin, non-module, not a `def`/`let`/
@@ -25,14 +23,63 @@ pub(super) struct SymbolCategories {
     pub(super) pass4_functions: Vec<SymbolId>,
 }
 
+/// Module symbols reachable from the user's code: every symbol under a top-level module
+/// definition that is referenced, directly or through other module definitions.
+fn reachable_module_symbols(hir: &Hir, children_index: &ChildrenIndex) -> FxHashSet<SymbolId> {
+    let mut reachable = FxHashSet::default();
+    if !hir.has_module_sources() {
+        return reachable;
+    }
+
+    let mut pending: Vec<SymbolId> = hir
+        .symbols()
+        .filter(|(_, symbol)| {
+            matches!(symbol.kind, SymbolKind::Call | SymbolKind::Ref)
+                && !hir.is_builtin_symbol(symbol)
+                && !is_module(hir, symbol)
+        })
+        .filter_map(|(id, _)| referenced_module_def(hir, id))
+        .collect();
+
+    let mut stack: Vec<SymbolId> = Vec::new();
+    while let Some(def) = pending.pop() {
+        let owner = crate::walk_ancestors(hir, def).last().map_or(def, |(owner, _)| owner);
+        if reachable.contains(&owner) {
+            continue;
+        }
+        stack.push(owner);
+        while let Some(id) = stack.pop() {
+            reachable.insert(id);
+            stack.extend_from_slice(get_children(children_index, id));
+            if hir
+                .symbol(id)
+                .is_some_and(|s| matches!(s.kind, SymbolKind::Call | SymbolKind::Ref))
+            {
+                pending.extend(referenced_module_def(hir, id));
+            }
+        }
+    }
+    reachable
+}
+
+/// The module definition that the reference `id` resolves to, if any.
+fn referenced_module_def(hir: &Hir, id: SymbolId) -> Option<SymbolId> {
+    let def = hir.resolve_reference_symbol(id)?;
+    hir.symbol(def).filter(|s| is_module(hir, s)).map(|_| def)
+}
+
+/// Whether `symbol` comes from an included or imported module (builtin.mq excluded).
+fn is_module(hir: &Hir, symbol: &Symbol) -> bool {
+    !hir.is_builtin_symbol(symbol) && symbol.source.source_id.is_some_and(|sid| hir.is_module_source(sid))
+}
+
 fn is_definition_keyword(symbol: &Symbol) -> bool {
     symbol.kind == SymbolKind::Keyword && matches!(symbol.value.as_deref(), Some("def" | "let" | "var" | "fn"))
 }
 
 /// Categorizes all HIR symbols into processing buckets in a single pass.
-pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
+pub(super) fn categorize_symbols(hir: &Hir, children_index: &ChildrenIndex) -> SymbolCategories {
     let mut cats = SymbolCategories {
-        module_source_ids: FxHashSet::default(),
         pass1_symbols: Vec::new(),
         root_symbols: Vec::new(),
         assign_symbols: Vec::new(),
@@ -40,25 +87,21 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
         pass4_functions: Vec::new(),
     };
 
-    // First pass: collect module source IDs (needed to filter subsequent symbols)
-    for (_, symbol) in hir.symbols() {
-        match symbol.kind {
-            SymbolKind::Include(source_id) | SymbolKind::Import(source_id) | SymbolKind::Module(source_id) => {
-                cats.module_source_ids.insert(source_id);
-            }
-            _ => {}
-        }
-    }
+    let reachable = reachable_module_symbols(hir, children_index);
 
-    // Second pass: categorize non-builtin, non-module symbols
+    // Categorize non-builtin symbols and the module symbols user code reaches
     for (symbol_id, symbol) in hir.symbols() {
-        if hir.is_builtin_symbol(symbol) || is_module_symbol(hir, symbol, &cats.module_source_ids) {
+        if hir.is_builtin_symbol(symbol) {
+            continue;
+        }
+        let is_module = is_module(hir, symbol);
+        if is_module && !reachable.contains(&symbol_id) {
             continue;
         }
 
         // Root symbols (pass 2). The keyword that introduces a definition is not a pipe stage:
         // counting it would hand the document to the keyword instead of to the next stage.
-        if symbol.parent.is_none() && !is_definition_keyword(symbol) {
+        if symbol.parent.is_none() && !is_definition_keyword(symbol) && !is_module {
             cats.root_symbols.push(symbol_id);
         }
 
