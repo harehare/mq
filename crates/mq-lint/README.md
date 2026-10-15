@@ -23,7 +23,7 @@ let linter = Linter::with_default_rules();
 let diagnostics = linter.run(&ctx);
 
 for d in diagnostics {
-    eprintln!("[{}] {} — {}", d.severity, d.rule_id(), d.message());
+    eprintln!("[{}] {}: {}", d.severity, d.rule_id(), d.message());
     if let Some(help) = d.help() {
         eprintln!("  help: {}", help);
     }
@@ -45,7 +45,7 @@ let edits: Vec<_> = diagnostics
 let fixed = mq_lint::fix::apply_edits(code, &edits);
 ```
 
-A `Fix` only records source ranges (not text), so it stays independent of any one source string until `resolve` is called — the same diagnostics can be resolved against the CLI's file contents or the language server's in-editor buffer.
+A `Fix` only records source ranges (not text), so it stays independent of any one source string until `resolve` is called. The same diagnostics can be resolved against the CLI's file contents or the language server's in-editor buffer.
 
 ### As a CLI
 
@@ -78,14 +78,14 @@ reports any remaining diagnostics as usual.
 
 `--format` controls how diagnostics are rendered, independent of the rules and severities selected above:
 
-- `text` (default) — human-readable Credo-style report.
-- `json` — a single JSON array of diagnostics across every linted file, each with `file`, `severity`, `rule`,
+- `text` (default): human-readable Credo-style report.
+- `json`: a single JSON array of diagnostics across every linted file, each with `file`, `severity`, `rule`,
   `message`, `help`, and an optional `range`.
-- `markdown` — a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
-- `sarif` — a single SARIF 2.1.0 log covering every linted file, suitable for
+- `markdown`: a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
+- `sarif`: a single SARIF 2.1.0 log covering every linted file, suitable for
   [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/main/upload-sarif) or any other
   SARIF-consuming tool.
-- `github` — one `::error file=...,line=...,col=...,title=...::message` (or `::warning`/`::notice`, depending on
+- `github`: one `::error file=...,line=...,col=...,title=...::message` (or `::warning`/`::notice`, depending on
   severity) workflow-command line per diagnostic, which GitHub Actions renders as inline PR annotations.
 
 ```yaml
@@ -139,26 +139,26 @@ config.complexity.max_interpolation_exprs = 4;
 
 "Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
-**Example — `unused_variable`**
+**Example: `unused_variable`**
 
 ```mq
 let x = .h1;  # warn: x is never used
 .text
 ```
 
-**Example — `unused_parameter`**
+**Example: `unused_parameter`**
 
 ```mq
 def greet(name, unused): s"Hello ${name}";  # warn: unused is never used
 ```
 
-**Example — `missing_else_in_expr`**
+**Example: `missing_else_in_expr`**
 
 ```mq
-if (.h1): "heading"  # warn: no else branch — produces `none` when condition is false
+if (.h1): "heading"  # warn: no else branch, produces `none` when condition is false
 ```
 
-**Example — `always_true_condition`**
+**Example: `always_true_condition`**
 
 ```mq
 if (true): 1 else: 2;  # warn: condition is always `true`
@@ -168,11 +168,11 @@ if (true): 1 else: 2;  # warn: condition is always `true`
 
 | Rule ID                     | Severity | Fixable | Description                                                          |
 | --------------------------- | -------- | ------- | --------------------------------------------------------------------- |
-| `prefer_let_over_var`       | warn     | ✓       | `var` variable never reassigned — prefer `let`                       |
+| `prefer_let_over_var`       | warn     | ✓       | `var` variable never reassigned, prefer `let`                        |
 | `naming_convention`         | style    |         | Function or variable name is not `snake_case`                        |
 | `boolean_comparison`        | style    | ✓       | `x == true` → `x`, `x == false` → `not(x)`                           |
 | `redundant_boolean_literal` | style    | ✓       | `if (cond): true else: false` simplifies to `cond`                   |
-| `prefer_specific_heading`   | style    |         | `.h` without a level — prefer `.h1`–`.h6`                            |
+| `prefer_specific_heading`   | style    |         | `.h` without a level, prefer `.h1`–`.h6`                             |
 | `prefer_coalesce`           | style    | ✓       | `if (x == none): fallback else: x` simplifies to `x ?? fallback`     |
 | `prefer_pipe_style`         | style    |         | Nested unary call `f(g(x))` reads better as a pipe `x \| g() \| f()` |
 | `redundant_try`             | style    | ✓       | `try: ... catch: none` is exactly what the `?` operator does         |
@@ -181,7 +181,7 @@ if (true): 1 else: 2;  # warn: condition is always `true`
 
 "Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
-**Example — `prefer_let_over_var`**
+**Example: `prefer_let_over_var`**
 
 ```mq
 # Before (warn): x is never reassigned
@@ -193,43 +193,43 @@ let x = .h1
 | x | to_text
 ```
 
-**Example — `boolean_comparison`**
+**Example: `boolean_comparison`**
 
 ```mq
 if (.checked == true): "yes"   # style: simplify to `if (.checked): "yes"`
 ```
 
-**Example — `redundant_boolean_literal`**
+**Example: `redundant_boolean_literal`**
 
 ```mq
 if (.h1): true else: false;  # style: simplify to `.h1`
 ```
 
-**Example — `prefer_coalesce`**
+**Example: `prefer_coalesce`**
 
 ```mq
 if (.value == none): "default" else: .value  # style: simplify to `.value ?? "default"`
 ```
 
-**Example — `prefer_pipe_style`**
+**Example: `prefer_pipe_style`**
 
 ```mq
 to_text(to_upper(x))  # style: rewrite as `x | to_upper() | to_text()`
 ```
 
-**Example — `redundant_try`**
+**Example: `redundant_try`**
 
 ```mq
 try: get("x") catch: none  # style: rewrite as `get("x")?`
 ```
 
-**Example — `unnecessary_interpolation`**
+**Example: `unnecessary_interpolation`**
 
 ```mq
-s"${.h1}"  # style: rewrite as `.h1` — no interpolation needed for a single expr
+s"${.h1}"  # style: rewrite as `.h1`, no interpolation needed for a single expr
 ```
 
-**Example — `constant_string_concat`**
+**Example: `constant_string_concat`**
 
 ```mq
 "hello" + " world"  # style: rewrite as `"hello world"`
@@ -245,7 +245,7 @@ s"${.h1}"  # style: rewrite as `.h1` — no interpolation needed for a single ex
 | `too_many_match_arms`   | 15 arms           | `match` expression has too many arms                    |
 | `complex_interpolation` | 3 expressions     | Interpolated string has too many `${...}` parts         |
 
-**Example — `complex_interpolation`**
+**Example: `complex_interpolation`**
 
 ```mq
 # warn: 4 interpolated expressions exceeds the default limit of 3
@@ -256,12 +256,12 @@ s"${.h1} ${.h2} ${.h3} ${.h4}"
 
 | Rule ID                   | Severity | Description                                                                        |
 | ------------------------- | -------- | ---------------------------------------------------------------------------------- |
-| `inefficient_selector`    | perf     | `..` followed by a specific selector — use the specific selector directly          |
+| `inefficient_selector`    | perf     | `..` followed by a specific selector, use the specific selector directly           |
 | `missing_depth_guard`     | warn     | `..` (recursive selector) used without any `.depth`/`.level` guard                 |
-| `prefer_specific_heading` | style    | `.h` selector without a level — prefer `.h1`–`.h6`                                 |
+| `prefer_specific_heading` | style    | `.h` selector without a level, prefer `.h1`–`.h6`                                  |
 | `selector_always_empty`   | warn     | Adjacent selectors that can never both match (e.g. `.h1 \| .h2`, `.todo \| .done`) |
 
-**Example — `inefficient_selector`**
+**Example: `inefficient_selector`**
 
 ```mq
 # Before (perf): .. traverses the whole document then filters to h1
@@ -271,13 +271,13 @@ s"${.h1} ${.h2} ${.h3} ${.h4}"
 .h1
 ```
 
-**Example — `missing_depth_guard`**
+**Example: `missing_depth_guard`**
 
 ```mq
-..  # warn: no depth guard — may traverse the entire document
+..  # warn: no depth guard, may traverse the entire document
 ```
 
-**Example — `selector_always_empty`**
+**Example: `selector_always_empty`**
 
 ```mq
 .h1 | .h2  # warn: a heading already filtered to level 1 can never also be level 2
@@ -290,16 +290,16 @@ s"${.h1} ${.h2} ${.h3} ${.h4}"
 | `missing_module_doc`         | style    | `module` declaration has no documentation comment             |
 | `ambiguous_qualified_access` | warn     | Same function name is defined in more than one `module` block |
 
-**Example — `missing_module_doc`**
+**Example: `missing_module_doc`**
 
 ```mq
 module a: def foo(): 1; end  # style: module `a` has no documentation comment
 ```
 
-**Example — `ambiguous_qualified_access`**
+**Example: `ambiguous_qualified_access`**
 
 ```mq
-# warn: `foo` is defined in both `a` and `b` — qualify the call to avoid ambiguity
+# warn: `foo` is defined in both `a` and `b`, qualify the call to avoid ambiguity
 module a: def foo(): 1; end
 | module b: def foo(): 2; end
 ```
@@ -310,7 +310,7 @@ module a: def foo(): 1; end
 | ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
 | `dangerous_capability_call`  | warn     | Call to a capability-gated builtin (`http`, `read_file`, `read_file_bytes`, `open_file`, `write_file`) |
 
-**Example — `dangerous_capability_call`**
+**Example: `dangerous_capability_call`**
 
 ```mq
 # warn: call to capability-gated function `http` (requires `--allow-net` at runtime)

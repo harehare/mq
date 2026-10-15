@@ -28,8 +28,9 @@ pub(super) fn write_markdown_report(
             };
             let mut message = escape_cell(&diagnostic.message());
             if let Some(help) = diagnostic.help() {
-                message.push_str(" — help: ");
+                message.push_str(" (help: ");
                 message.push_str(&escape_cell(&help));
+                message.push(')');
             }
 
             writeln!(

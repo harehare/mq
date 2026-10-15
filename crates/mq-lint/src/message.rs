@@ -527,7 +527,7 @@ impl fmt::Display for LintMessage {
                 )
             }
             LintMessage::AlwaysTrueCondition { value } => {
-                write!(f, "condition is always `{value}` — this branch is never/always taken")
+                write!(f, "condition is always `{value}`, so this branch is never/always taken")
             }
             LintMessage::FunctionTooLong {
                 name,
@@ -593,7 +593,7 @@ impl fmt::Display for LintMessage {
             LintMessage::RedundantBooleanLiteral { .. } => {
                 write!(
                     f,
-                    "redundant boolean literal in `if`/`else` — condition already is the result"
+                    "redundant boolean literal in `if`/`else`, the condition already is the result"
                 )
             }
             LintMessage::UnnecessaryInterpolation => {
@@ -609,7 +609,7 @@ impl fmt::Display for LintMessage {
             LintMessage::NegatedCondition => {
                 write!(
                     f,
-                    "negated condition in `if`/`else` — consider swapping the branches and inverting the condition"
+                    "negated condition in `if`/`else`, consider swapping the branches and inverting the condition"
                 )
             }
             LintMessage::DangerousCapabilityCall { name, flag } => {

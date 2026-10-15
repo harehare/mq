@@ -32,7 +32,7 @@ use mq_hir::{Hir, SourceId};
 /// Severity level for a lint diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
-    /// Code style suggestion — does not affect correctness.
+    /// Code style suggestion that does not affect correctness.
     Style,
     /// Performance hint.
     Perf,
