@@ -133,6 +133,28 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    /// Whether a token of this kind can end a value expression.
+    pub(crate) fn ends_value(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::NumberLiteral(_)
+                | TokenKind::StringLiteral(_)
+                | TokenKind::InterpolatedString(_)
+                | TokenKind::BytesLiteral(_)
+                | TokenKind::BoolLiteral(_)
+                | TokenKind::Ident(_)
+                | TokenKind::Selector(_)
+                | TokenKind::Env(_)
+                | TokenKind::RParen
+                | TokenKind::RBracket
+                | TokenKind::RBrace
+                | TokenKind::End
+                | TokenKind::None
+                | TokenKind::Self_
+                | TokenKind::Nodes
+        )
+    }
+
     /// Binding precedence of a binary operator (higher binds tighter); `None` for other tokens.
     /// All binary operators are left-associative. Shared by the AST and CST parsers so both build
     /// the same tree shape.

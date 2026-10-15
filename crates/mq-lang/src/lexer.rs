@@ -37,7 +37,10 @@ impl Lexer {
         if self.options.include_spaces {
             loop {
                 match cursor.token_include_spaces() {
-                    Some(token) => tokens.push(token),
+                    Some(token) => {
+                        cursor.track(&token);
+                        tokens.push(token);
+                    }
                     None if self.options.ignore_errors && !cursor.rest().is_empty() => tokens.push(cursor.unknown()),
                     None => break,
                 }
@@ -46,7 +49,10 @@ impl Lexer {
             loop {
                 cursor.skip_whitespace_and_comments();
                 match cursor.token() {
-                    Some(token) => tokens.push(token),
+                    Some(token) => {
+                        cursor.track(&token);
+                        tokens.push(token);
+                    }
                     None => break,
                 }
             }
@@ -230,6 +236,8 @@ struct Cursor<'a> {
     module_id: ModuleId,
     /// Byte offset from which no `}` exists, so later `${` scans can stop early.
     no_closing_brace_from: usize,
+    /// Whether the last token ends a value, so a following `+`/`-` is an operator, not a sign.
+    after_value: bool,
 }
 
 /// Saved cursor state for backtracking.
@@ -250,6 +258,15 @@ impl<'a> Cursor<'a> {
             col: 1,
             module_id,
             no_closing_brace_from: usize::MAX,
+            after_value: false,
+        }
+    }
+
+    /// Records whether `token` ends a value; spaces and comments leave the state unchanged.
+    fn track(&mut self, token: &Token) {
+        match &token.kind {
+            TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::NewLine | TokenKind::Comment(_) => {}
+            kind => self.after_value = kind.ends_value(),
         }
     }
 
@@ -468,7 +485,7 @@ impl<'a> Cursor<'a> {
                 NumberScan::Match(len, value) => self.number(len, value),
                 NumberScan::NoMatch | NumberScan::Fatal => None,
             },
-            b'-' => match self.number_scan() {
+            b'-' => match self.sign_number_scan() {
                 NumberScan::Match(len, value) => self.number(len, value),
                 NumberScan::Fatal => None,
                 NumberScan::NoMatch => Some(match self.peek(1) {
@@ -539,7 +556,7 @@ impl<'a> Cursor<'a> {
                 Some(b'~') => self.simple(2, TokenKind::TildeEqual),
                 _ => self.simple(1, TokenKind::Equal),
             }),
-            b'+' => match self.number_scan() {
+            b'+' => match self.sign_number_scan() {
                 NumberScan::Match(len, value) => self.number(len, value),
                 NumberScan::Fatal => None,
                 NumberScan::NoMatch => Some(self.one_or_two(b'=', TokenKind::PlusEqual, TokenKind::Plus)),
@@ -585,6 +602,15 @@ impl<'a> Cursor<'a> {
         self.advance_ascii(1);
         let name = SmolStr::new(&self.src[self.pos..self.pos + name_len]);
         Some(self.simple(name_len, TokenKind::Env(name)))
+    }
+
+    /// `number_scan` for a leading `+`/`-`, which is an operator right after a value.
+    fn sign_number_scan(&self) -> NumberScan {
+        if self.after_value {
+            NumberScan::NoMatch
+        } else {
+            self.number_scan()
+        }
     }
 
     fn number_scan(&self) -> NumberScan {
@@ -685,14 +711,6 @@ impl<'a> Cursor<'a> {
 
         if at_word_boundary && let Some(kind) = keyword_kind(base) {
             return self.simple(base_len, kind);
-        }
-
-        if matches!(next, Some('-' | '*')) {
-            let full_len = bytes
-                .iter()
-                .take_while(|&&b| is_word_byte(b) || matches!(b, b'-' | b'*'))
-                .count();
-            return self.simple(full_len, ident_kind(&rest[..full_len]));
         }
 
         self.simple(base_len, ident_kind(base))
@@ -1912,13 +1930,30 @@ mod tests {
 
     #[rstest]
     #[case::numbers(
-        "1 2.5 .5 -3 +4 1e3 1E+3 2.5e-2",
-        vec![num(1.0), num(2.5), num(0.5), num(-3.0), num(4.0), num(1000.0), num(1000.0), num(0.025)]
+        "1 | 2.5 | .5 | -3 | +4 | 1e3 | 1E+3 | 2.5e-2",
+        vec![
+            num(1.0),
+            TokenKind::Pipe,
+            num(2.5),
+            TokenKind::Pipe,
+            num(0.5),
+            TokenKind::Pipe,
+            num(-3.0),
+            TokenKind::Pipe,
+            num(4.0),
+            TokenKind::Pipe,
+            num(1000.0),
+            TokenKind::Pipe,
+            num(1000.0),
+            TokenKind::Pipe,
+            num(0.025),
+        ]
     )]
     #[case::dot_without_digit_after_integer("1.e3", vec![num(1.0), TokenKind::Selector(".e3".into())])]
     #[case::double_sign_is_not_a_number("--5", vec![TokenKind::Minus, num(-5.0)])]
     #[case::sign_then_plus("-+5", vec![TokenKind::Minus, num(5.0)])]
-    #[case::minus_before_identifier("a-b -b", vec![ident("a-b"), TokenKind::Minus, ident("b")])]
+    #[case::minus_between_identifiers("a-b -b", vec![ident("a"), TokenKind::Minus, ident("b"), TokenKind::Minus, ident("b")])]
+    #[case::binary_operators_without_spaces("1+2 x-1 x*2 f(1)-1 [1,-1] a - -1", vec![num(1.0), TokenKind::Plus, num(2.0), ident("x"), TokenKind::Minus, num(1.0), ident("x"), TokenKind::Asterisk, num(2.0), ident("f"), TokenKind::LParen, num(1.0), TokenKind::RParen, TokenKind::Minus, num(1.0), TokenKind::LBracket, num(1.0), TokenKind::Comma, num(-1.0), TokenKind::RBracket, ident("a"), TokenKind::Minus, num(-1.0)])]
     #[case::string_escapes(r#""a\nb\t\"\\""#, vec![TokenKind::StringLiteral("a\nb\t\"\\".into())])]
     #[case::regex_escapes_keep_the_letter(r#""\s\d\/\.""#, vec![TokenKind::StringLiteral("sd/.".into())])]
     #[case::unicode_and_hex_escapes(r#""\u{41}B\x43""#, vec![TokenKind::StringLiteral("ABC".into())])]
@@ -2026,7 +2061,9 @@ mod tests {
             TokenKind::End,
             TokenKind::Minus,
             ident("x"),
-            ident("a*b"),
+            ident("a"),
+            TokenKind::Asterisk,
+            ident("b"),
             ident("_x"),
             ident("True"),
             TokenKind::BoolLiteral(true),
