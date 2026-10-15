@@ -12,6 +12,7 @@ def one(): 1;
 def outer(): one();
 def broken_but_used(): upcase(1);
 def broken_unused(): upcase(2);
+def broken_operator(x): x + true;
 "#;
 
 fn module_dir() -> PathBuf {
@@ -39,6 +40,7 @@ fn reached_module_function_has_its_inferred_return_type(#[case] code: &str) {
 #[rstest]
 #[case::reached_function(r#"include "mymod" | broken_but_used()"#)]
 #[case::unreached_function(r#"include "mymod" | one()"#)]
+#[case::parameter_dependent_operator(r#"include "mymod" | broken_operator(1)"#)]
 #[case::import_only(r#"import "mymod" | 1"#)]
 fn module_diagnostics_are_not_reported(#[case] code: &str) {
     let errors = check(code);
@@ -67,6 +69,7 @@ fn piped_input_type_is_checked_in_operands(#[case] code: &str) {
 #[case::array_of_numbers(r#"index([1, 2], 2)"#)]
 #[case::piped(r#"["a"] | index("a")"#)]
 #[case::rindex(r#"rindex(["a"], "a")"#)]
+#[case::rindex_mixed(r#"rindex([1, "a"], "a")"#)]
 fn index_accepts_arrays(#[case] code: &str) {
     let errors = check(code);
     assert!(errors.is_empty(), "{code}: {errors:?}");
@@ -84,4 +87,23 @@ fn root_stage_after_an_unresolved_input_is_checked(#[case] code: &str) {
 fn root_stage_after_a_converting_call_is_valid() {
     let code = r#"["a"] | len() | to_string() | upcase()"#;
     assert!(check(code).is_empty(), "{code}");
+}
+
+#[test]
+fn opened_module_file_is_checked_in_full() {
+    let mut loader = mq_lang::ModuleLoader::default();
+    loader.set_search_paths(vec![module_dir()]);
+    let path = loader.get_module_path("mymod").unwrap();
+    let url = url::Url::parse(&format!("file:///{path}")).unwrap();
+
+    let mut hir = Hir::new(loader);
+    hir.add_code(None, r#"include "mymod" | one()"#);
+    assert!(TypeChecker::new().check(&hir).is_empty());
+
+    hir.add_code(Some(url), "def unused(): upcase(1);");
+    assert_eq!(TypeChecker::new().check(&hir).len(), 1);
+
+    // Re-including the opened file reloads it, but must not turn it back into a module.
+    hir.add_code(None, r#"include "mymod" | one()"#);
+    assert!(!TypeChecker::new().check(&hir).is_empty());
 }

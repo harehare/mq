@@ -1864,10 +1864,12 @@ fn register_bytes(ctx: &mut InferenceContext) {
     register_binary(ctx, "index", Type::Bytes, Type::Bytes, Type::Number);
     register_binary(ctx, "rindex", Type::Bytes, Type::Bytes, Type::Number);
 
-    // index/rindex: ([a], a) -> number; rindex only matches strings in an array
+    // index: ([a], a) -> number
     let a = ctx.fresh_var();
     register_binary(ctx, "index", Type::array(Type::Var(a)), Type::Var(a), Type::Number);
-    register_binary(ctx, "rindex", Type::array(Type::String), Type::String, Type::Number);
+    // rindex: ([a], string) -> number; non-string elements never match
+    let b = ctx.fresh_var();
+    register_binary(ctx, "rindex", Type::array(Type::Var(b)), Type::String, Type::Number);
     register_binary(ctx, "indices", Type::Bytes, Type::Bytes, Type::array(Type::Number));
 
     // pack: (string, number) -> bytes

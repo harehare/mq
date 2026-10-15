@@ -1257,7 +1257,9 @@ fn check_deferred_overloads_iteratively(
                 made_progress = true;
             } else {
                 // No matching overload — report error
-                ctx.report_no_matching_overload(&d.op_name, &substituted_operands, error_range);
+                // An operator of a module body keeps its own range so the module filter drops it.
+                let range = d.range.filter(crate::is_module_range).or(error_range);
+                ctx.report_no_matching_overload(&d.op_name, &substituted_operands, range);
                 made_progress = true;
             }
         }

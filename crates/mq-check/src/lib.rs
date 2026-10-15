@@ -264,7 +264,7 @@ pub(crate) fn symbol_range(hir: &Hir, symbol: &mq_hir::Symbol) -> Option<mq_lang
     Some(range)
 }
 
-fn is_module_range(range: &mq_lang::Range) -> bool {
+pub(crate) fn is_module_range(range: &mq_lang::Range) -> bool {
     range.start.line >= MODULE_LINE_OFFSET
 }
 

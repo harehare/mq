@@ -25,8 +25,10 @@ pub struct Hir {
     /// Refs resolved via included sources rather than their own scope chain.
     pub(crate) fallback_references: FxHashSet<SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
-    /// Sources loaded by `include` and `import`.
+    /// Sources loaded by `include` and `import`, unless opened explicitly.
     pub(crate) module_sources: FxHashSet<SourceId>,
+    /// Sources added through `add_nodes`. They are never module sources, even when included.
+    pub(crate) opened_sources: FxHashSet<SourceId>,
     pub(crate) symbol_insertion_counter: u32,
     /// Declarations a reference can resolve to, by name.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
@@ -74,6 +76,7 @@ impl Hir {
             fallback_references: FxHashSet::default(),
             source_symbols: FxHashMap::default(),
             module_sources: FxHashSet::default(),
+            opened_sources: FxHashSet::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
             leaking_scopes: FxHashMap::default(),
@@ -178,6 +181,23 @@ impl Hir {
     }
 
     pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
+        let (source_id, scope_id) = self.load_nodes(url, nodes);
+        self.opened_sources.insert(source_id);
+        self.module_sources.remove(&source_id);
+        (source_id, scope_id)
+    }
+
+    /// Loads the source of an `include` or `import`.
+    pub(crate) fn add_module_code(&mut self, url: Url, code: &str) -> SourceId {
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (source_id, _) = self.load_nodes(url, &nodes);
+        if !self.opened_sources.contains(&source_id) {
+            self.module_sources.insert(source_id);
+        }
+        source_id
+    }
+
+    fn load_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
         self.add_builtin();
 
         let source_id = self
