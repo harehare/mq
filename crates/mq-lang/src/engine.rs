@@ -591,7 +591,7 @@ impl Engine<DefaultModuleResolver> {
 
     /// Clears all HTTP module cache including versioned modules and lock files.
     ///
-    /// Use this when `--clear-cache` is passed on the CLI to wipe everything.
+    /// Use this for `mq cache clear` to wipe everything.
     pub fn clear_http_cache_all(&mut self) -> Result<(), crate::module::error::ModuleError> {
         let result = self.vm.module_loader.clear_http_cache_all();
         #[cfg(not(feature = "debugger"))]

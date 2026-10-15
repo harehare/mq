@@ -384,7 +384,7 @@ mq conv document.docx | mq -A 'section::section("Summary")'
 mq conv slides.pdf | mq view
 ```
 
-Run `mq --list` to see all available subcommands (built-in and external).
+Run `mq list` to see all available subcommands (built-in and external).
 
 ## External Subcommands
 

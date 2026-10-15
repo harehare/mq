@@ -13,10 +13,10 @@ The first match found is used.
 
 ## Listing Available Subcommands
 
-Use the `--list` flag to see all available subcommands:
+Use the `list` subcommand to see all available subcommands:
 
 ```sh
-mq --list
+mq list
 ```
 
 This makes it easy to add your own tools and workflows to `mq` without modifying the core binary.

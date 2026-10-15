@@ -163,7 +163,7 @@ impl Cli {
     /// builtin would not shadow it as it does when running the query from source.
     fn reject_builtin_named_globals(&self) -> miette::Result<()> {
         let options = [
-            ("--args", &self.input.args),
+            ("--arg", &self.input.arg),
             ("--argjson", &self.input.argjson),
             ("--rawfile", &self.input.raw_file),
             ("--slurpfile", &self.input.slurp_file),
