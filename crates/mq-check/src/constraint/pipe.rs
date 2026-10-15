@@ -141,12 +141,32 @@ pub(super) fn thread_pipe_stage(
     }
 }
 
+/// Like [`thread_pipe_stage`] for a unary/binary operator stage: hands the input to the
+/// operands and then re-derives the operator's own type from them.
+pub(super) fn thread_operator_stage(
+    hir: &Hir,
+    prev: SymbolId,
+    stage: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, prev);
+    ctx.set_piped_input(stage, prev_ty.clone());
+    if let Some(source) = prev_source {
+        ctx.set_piped_source(stage, source);
+    }
+    propagate_into_operands(hir, stage, &prev_ty, ctx, children_index);
+    if let Some(symbol) = hir.symbol(stage) {
+        generate_symbol_constraints(hir, stage, symbol.kind.clone(), ctx, children_index);
+    }
+}
+
 /// Propagates piped input through UnaryOp and BinaryOp nodes to their inner Call/Ref operands.
 ///
 /// When a pipe chain contains `x | !f()` or `x | f() == y`, the piped value from `x` flows
 /// through the operator to `f()`. This function handles that propagation and re-processes
 /// the inner Call/Ref to pick up the piped input.
-pub(super) fn propagate_piped_input_through_unary_ops(
+fn propagate_piped_input_through_unary_ops(
     hir: &Hir,
     children: &[SymbolId],
     ctx: &mut InferenceContext,

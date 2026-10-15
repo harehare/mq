@@ -19,8 +19,8 @@ use helpers::{
     resolve_builtin_call_with_brackets, resolve_pattern_type, resolve_whole_type_pattern, spread_element_type,
 };
 use pipe::{
-    generate_block_constraints, generate_function_body_pipe_constraints, pipe_stage_output,
-    propagate_piped_input_through_unary_ops, resolve_branch_body_type, thread_pipe_stage,
+    generate_block_constraints, generate_function_body_pipe_constraints, pipe_stage_output, resolve_branch_body_type,
+    thread_operator_stage, thread_pipe_stage,
 };
 
 use crate::infer::{
@@ -171,14 +171,16 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // Pass 3.5: Thread the root pipe chain again now that the stages have types, so a stage
     // whose input was unknown in Pass 2 (e.g. an array literal) reaches the stages after it.
     for pair in cats.root_symbols.windows(2) {
-        if hir
-            .symbol(pair[1])
-            .is_some_and(|s| matches!(s.kind, SymbolKind::Call | SymbolKind::Ref))
-        {
-            thread_pipe_stage(hir, pair[0], pair[1], ctx, &children_index);
+        match hir.symbol(pair[1]).map(|s| &s.kind) {
+            Some(SymbolKind::Call | SymbolKind::Ref) => {
+                thread_pipe_stage(hir, pair[0], pair[1], ctx, &children_index);
+            }
+            Some(SymbolKind::UnaryOp | SymbolKind::BinaryOp) => {
+                thread_operator_stage(hir, pair[0], pair[1], ctx, &children_index);
+            }
+            _ => {}
         }
     }
-    propagate_piped_input_through_unary_ops(hir, &cats.root_symbols, ctx, &children_index);
 
     // Pass 4: Process Function body pipe chains
     // (Block symbols are now processed in pass 3, in reverse insertion order,

@@ -75,6 +75,13 @@ fn index_accepts_arrays(#[case] code: &str) {
 #[rstest]
 #[case::array(r#"["a"] | len() | upcase()"#)]
 #[case::dict(r#"{"a": 1} | len() | upcase()"#)]
+#[case::through_operator(r#"["a"] | len() + 1 | upcase()"#)]
 fn root_stage_after_an_unresolved_input_is_checked(#[case] code: &str) {
     assert_eq!(check(code).len(), 1, "{code}");
+}
+
+#[test]
+fn root_stage_after_a_converting_call_is_valid() {
+    let code = r#"["a"] | len() | to_string() | upcase()"#;
+    assert!(check(code).is_empty(), "{code}");
 }
