@@ -770,6 +770,15 @@ pub(super) fn generate_symbol_constraints(
 
                     // `x[k] = v` updates an element, so the variable keeps its type.
                     let is_index_assign = hir.symbol(lhs_id).is_some_and(|s| s.kind == SymbolKind::Call);
+                    if is_index_assign && ctx.strict_array() && symbol.value.as_deref() == Some("=") {
+                        let elem_ty = ctx.get_or_create_symbol_type(lhs_id);
+                        ctx.add_constraint(Constraint::Equal(
+                            elem_ty,
+                            rhs_ty.clone(),
+                            range,
+                            ConstraintOrigin::General,
+                        ));
+                    }
 
                     // Resolve the LHS Ref to find the original Variable
                     if let Some(var_id) = hir.resolve_reference_symbol(lhs_id).filter(|_| !is_index_assign) {
@@ -1846,6 +1855,14 @@ fn record_attr_call(
     });
 }
 
+/// Whether the call is the target of an assignment, as in `x[k] = v`.
+fn is_index_assign_target(symbol_id: SymbolId, hir: &Hir, children_index: &ChildrenIndex) -> bool {
+    hir.symbol(symbol_id)
+        .and_then(|s| s.parent)
+        .filter(|&parent| hir.symbol(parent).is_some_and(|p| p.kind == SymbolKind::Assign))
+        .is_some_and(|parent| get_children(children_index, parent).first() == Some(&symbol_id))
+}
+
 /// Constrain a call: a user function (with arity, defaults and piped input), or a builtin.
 fn generate_call_constraints(
     hir: &Hir,
@@ -1980,7 +1997,11 @@ fn generate_call_constraints(
                             }
                         });
 
-                        if let Some(name) = field_name {
+                        if field_name.is_some() && is_index_assign_target(symbol_id, hir, children_index) {
+                            // `r["new"] = v` may add a field, so it is not a read of `r`.
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                        } else if let Some(name) = field_name {
                             // Defer field access resolution to post-unification
                             ctx.add_deferred_record_access(infer::DeferredRecordAccess {
                                 call_symbol_id: symbol_id,

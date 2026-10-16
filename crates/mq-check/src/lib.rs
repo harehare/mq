@@ -591,11 +591,29 @@ mod tests {
     #[rstest]
     #[case::dict_value_of_other_type("var d = dict() | d[\"a\"] = true | get(d, \"a\")")]
     #[case::array_element_compound("var a = [1, 2] | a[0] += 1 | len(a)")]
+    #[case::new_record_field("var d = {\"a\": 1} | d[\"b\"] = 2 | d")]
     fn test_index_assign_keeps_the_variable_type(#[case] code: &str) {
         let mut hir = Hir::default();
         hir.add_code(None, code);
         let errors = TypeChecker::new().check(&hir);
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[rstest]
+    #[case::array_element("var a = [1, 2] | a[0] = \"x\" | a", true)]
+    #[case::array_element_ok("var a = [1, 2] | a[0] = 3 | a", false)]
+    fn test_index_assign_checks_the_element_type_in_strict_mode(#[case] code: &str, #[case] rejected: bool) {
+        let check = |strict_array| {
+            let mut hir = Hir::default();
+            hir.add_code(None, code);
+            TypeChecker::with_options(TypeCheckerOptions {
+                strict_array,
+                ..Default::default()
+            })
+            .check(&hir)
+        };
+        assert!(check(false).is_empty());
+        assert_eq!(!check(true).is_empty(), rejected);
     }
 
     #[rstest]
