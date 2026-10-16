@@ -1397,7 +1397,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    #[inline(always)]
+    #[inline]
     fn parse_node(&mut self, node_kind: NodeKind, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
@@ -1498,7 +1498,7 @@ impl<'a> Parser<'a> {
         self.parse_postfix_chain(array_node)
     }
 
-    #[inline(always)]
+    #[inline]
     fn parse_dict_key(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = Shared::clone(self.peek_token()?);
 
@@ -2326,7 +2326,7 @@ impl<'a> Parser<'a> {
         self.peek().ok_or(ParseError::UnexpectedEOFDetected)
     }
 
-    #[inline(always)]
+    #[inline]
     fn parse_leading_trivia(&mut self) -> TriviaList {
         let mut trivia = TriviaList::new();
 
@@ -2344,7 +2344,7 @@ impl<'a> Parser<'a> {
         trivia
     }
 
-    #[inline(always)]
+    #[inline]
     fn try_next_token(&mut self, match_token_kind: fn(&TokenKind) -> bool) -> bool {
         let saved_pos = self.pos;
         // Skip trivia
@@ -2408,7 +2408,7 @@ impl<'a> Parser<'a> {
         result
     }
 
-    #[inline(always)]
+    #[inline]
     fn parse_trailing_trivia(&mut self) -> TriviaList {
         let mut trivia = TriviaList::new();
 
@@ -2590,7 +2590,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn next_token(&mut self, match_token_kind: fn(&TokenKind) -> bool) -> Result<Shared<Token>, ParseError> {
         let token = self.peek().ok_or(ParseError::UnexpectedEOFDetected)?;
 
@@ -2603,7 +2603,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn next_node(
         &mut self,
         expected_token: fn(&TokenKind) -> bool,
@@ -2621,7 +2621,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    #[inline(always)]
+    #[inline]
     fn parse_colon_token_if_present(&mut self) -> Result<Option<Shared<Node>>, ParseError> {
         if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
             Ok(Some(
