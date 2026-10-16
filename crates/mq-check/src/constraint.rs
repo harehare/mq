@@ -768,8 +768,11 @@ pub(super) fn generate_symbol_constraints(
                     let rhs_ty = ctx.get_or_create_symbol_type(rhs_id);
                     let range = get_symbol_range(hir, symbol_id);
 
+                    // `x[k] = v` updates an element, so the variable keeps its type.
+                    let is_index_assign = hir.symbol(lhs_id).is_some_and(|s| s.kind == SymbolKind::Call);
+
                     // Resolve the LHS Ref to find the original Variable
-                    if let Some(var_id) = hir.resolve_reference_symbol(lhs_id) {
+                    if let Some(var_id) = hir.resolve_reference_symbol(lhs_id).filter(|_| !is_index_assign) {
                         let op_name = symbol.value.as_deref().unwrap_or("=");
 
                         if op_name == "=" {

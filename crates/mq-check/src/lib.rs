@@ -589,6 +589,16 @@ mod tests {
     }
 
     #[rstest]
+    #[case::dict_value_of_other_type("var d = dict() | d[\"a\"] = true | get(d, \"a\")")]
+    #[case::array_element_compound("var a = [1, 2] | a[0] += 1 | len(a)")]
+    fn test_index_assign_keeps_the_variable_type(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+        let errors = TypeChecker::new().check(&hir);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[rstest]
     #[case::fold_passes_two_arguments("fold([1, 2], 0, fn: self)")]
     #[case::elements_not_numbers("[\"a\"] | map(fn: abs())")]
     #[case::piped_call_in_body("[1] | map(fn: split(\" \"))")]
