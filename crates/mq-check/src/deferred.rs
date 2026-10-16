@@ -111,6 +111,10 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
 
     let mut resolved_any = false;
     for access in &accesses {
+        // An assignment may add the field or change its type.
+        if ctx.is_record_field_written(access.def_id, &access.field_name) {
+            continue;
+        }
         let var_ty = match ctx.get_symbol_type(access.def_id).cloned() {
             Some(ty) => ctx.resolve_type(&ty),
             None => continue,

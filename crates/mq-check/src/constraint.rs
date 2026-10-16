@@ -1855,11 +1855,15 @@ fn record_attr_call(
     });
 }
 
-/// Whether the call is the target of an assignment, as in `x[k] = v`.
+/// Whether the call is the target of a plain assignment, as in `x[k] = v`.
+/// A compound assignment also reads the target, so it is not one.
 fn is_index_assign_target(symbol_id: SymbolId, hir: &Hir, children_index: &ChildrenIndex) -> bool {
     hir.symbol(symbol_id)
         .and_then(|s| s.parent)
-        .filter(|&parent| hir.symbol(parent).is_some_and(|p| p.kind == SymbolKind::Assign))
+        .filter(|&parent| {
+            hir.symbol(parent)
+                .is_some_and(|p| p.kind == SymbolKind::Assign && p.value.as_deref().unwrap_or("=") == "=")
+        })
         .is_some_and(|parent| get_children(children_index, parent).first() == Some(&symbol_id))
 }
 
@@ -1997,8 +2001,13 @@ fn generate_call_constraints(
                             }
                         });
 
-                        if field_name.is_some() && is_index_assign_target(symbol_id, hir, children_index) {
-                            // `r["new"] = v` may add a field, so it is not a read of `r`.
+                        if let Some(name) = field_name
+                            .clone()
+                            .filter(|_| is_index_assign_target(symbol_id, hir, children_index))
+                        {
+                            // `r["new"] = v` may add a field or change its type, so it is not a
+                            // read of `r` and later reads of the field are not checked.
+                            ctx.add_written_record_field(def_id, name);
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         } else if let Some(name) = field_name {

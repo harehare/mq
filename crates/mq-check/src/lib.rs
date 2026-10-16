@@ -592,6 +592,8 @@ mod tests {
     #[case::dict_value_of_other_type("var d = dict() | d[\"a\"] = true | get(d, \"a\")")]
     #[case::array_element_compound("var a = [1, 2] | a[0] += 1 | len(a)")]
     #[case::new_record_field("var d = {\"a\": 1} | d[\"b\"] = 2 | d")]
+    #[case::read_added_record_field("var d = {\"a\": 1} | d[\"b\"] = 2 | d[\"b\"]")]
+    #[case::read_retyped_record_field("var d = {\"a\": 1} | d[\"a\"] = \"x\" | d[\"a\"] | upcase()")]
     fn test_index_assign_keeps_the_variable_type(#[case] code: &str) {
         let mut hir = Hir::default();
         hir.add_code(None, code);
@@ -618,6 +620,8 @@ mod tests {
 
     #[rstest]
     #[case::fold_passes_two_arguments("fold([1, 2], 0, fn: self)")]
+    #[case::compound_assign_reads_missing_field("var d = {\"a\": 1} | d[\"b\"] += 1 | d")]
+    #[case::unwritten_field_still_checked("var d = {\"a\": 1} | d[\"b\"] = 2 | d[\"c\"]")]
     #[case::elements_not_numbers("[\"a\"] | map(fn: abs())")]
     #[case::piped_call_in_body("[1] | map(fn: split(\" \"))")]
     fn test_fn_without_params_rejects_incompatible_calls(#[case] code: &str) {
