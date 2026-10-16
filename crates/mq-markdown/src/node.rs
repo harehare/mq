@@ -13,7 +13,6 @@ type ColorPair<'a> = (Cow<'a, str>, Cow<'a, str>);
 
 mod attr;
 pub mod attr_value;
-mod expand;
 mod render;
 pub(crate) use render::{
     for_html, indent_lines, list_own_prefix_width, reindent_all_lines, render_before, render_cell_values,
