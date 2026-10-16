@@ -280,8 +280,6 @@ impl DebugContext {
 pub struct Debugger {
     /// Set of active breakpoints
     breakpoints: HashSet<Breakpoint>,
-    /// Call stack of AST nodes representing the current execution path
-    call_stack: Vec<Shared<ast::Node>>,
     /// Next breakpoint ID to assign
     next_breakpoint_id: usize,
     /// Current debugger command
@@ -306,7 +304,6 @@ impl Debugger {
     pub fn new() -> Self {
         Self {
             breakpoints: HashSet::new(),
-            call_stack: Vec::new(),
             next_breakpoint_id: 1,
             current_command: DebuggerCommand::Continue,
             active: false,
@@ -361,21 +358,6 @@ impl Debugger {
         self.breakpoints.insert(breakpoint);
         self.next_breakpoint_id += 1;
         id
-    }
-
-    /// Pushes a call node onto the call stack.
-    pub fn push_call_stack(&mut self, node: Shared<ast::Node>) {
-        self.call_stack.push(node);
-    }
-
-    /// Pops the innermost call node.
-    pub fn pop_call_stack(&mut self) {
-        self.call_stack.pop();
-    }
-
-    /// A copy of the current call stack, outermost first.
-    pub fn current_call_stack(&self) -> Vec<Shared<ast::Node>> {
-        self.call_stack.clone()
     }
 
     /// Remove a breakpoint by ID
