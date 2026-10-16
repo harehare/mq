@@ -4600,39 +4600,73 @@ fn shift_right_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+fn diff_tag_name(tag: ChangeTag) -> &'static str {
+    match tag {
+        ChangeTag::Equal => "equal",
+        ChangeTag::Delete => "delete",
+        ChangeTag::Insert => "insert",
+    }
+}
+
+fn diff_entry(tag: ChangeTag, value: RuntimeValue, inline: Option<Vec<RuntimeValue>>) -> RuntimeValue {
+    let mut map = DictMap::default();
+    map.insert(
+        Ident::new("tag"),
+        RuntimeValue::String(Shared::new(diff_tag_name(tag).into())),
+    );
+    map.insert(Ident::new("value"), value);
+    if let Some(inline) = inline {
+        map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(inline)));
+    }
+    RuntimeValue::Dict(Shared::new(map))
+}
+
+/// Character-level diff of two strings, returned as (deleted side, inserted side) entries.
 fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<RuntimeValue>) {
-    let char_diff = TextDiff::from_chars(s1, s2);
-    let mut del_inline: Vec<RuntimeValue> = Vec::new();
-    let mut ins_inline: Vec<RuntimeValue> = Vec::new();
-    for c in char_diff.iter_all_changes() {
-        let val = RuntimeValue::String(Shared::new(c.value().to_string()));
+    let mut del_inline = Vec::new();
+    let mut ins_inline = Vec::new();
+    for c in TextDiff::from_chars(s1, s2).iter_all_changes() {
+        let value = || RuntimeValue::String(Shared::new(c.value().to_string()));
         match c.tag() {
-            ChangeTag::Delete => {
-                let mut m = DictMap::default();
-                m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
-                m.insert(Ident::new("value"), val);
-                del_inline.push(RuntimeValue::Dict(Shared::new(m)));
-            }
-            ChangeTag::Insert => {
-                let mut m = DictMap::default();
-                m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
-                m.insert(Ident::new("value"), val);
-                ins_inline.push(RuntimeValue::Dict(Shared::new(m)));
-            }
+            ChangeTag::Delete => del_inline.push(diff_entry(ChangeTag::Delete, value(), None)),
+            ChangeTag::Insert => ins_inline.push(diff_entry(ChangeTag::Insert, value(), None)),
             ChangeTag::Equal => {
-                for inline in [&mut del_inline, &mut ins_inline] {
-                    let mut m = DictMap::default();
-                    m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("equal".into())));
-                    m.insert(
-                        Ident::new("value"),
-                        RuntimeValue::String(Shared::new(c.value().to_string())),
-                    );
-                    inline.push(RuntimeValue::Dict(Shared::new(m)));
-                }
+                del_inline.push(diff_entry(ChangeTag::Equal, value(), None));
+                ins_inline.push(diff_entry(ChangeTag::Equal, value(), None));
             }
         }
     }
     (del_inline, ins_inline)
+}
+
+/// Builds diff entries, pairing each deletion that is directly followed by an insertion.
+/// `inline` supplies the character-level diff for such a pair, or `None` to omit it.
+fn diff_entries<'a>(
+    changes: &[similar::Change<&'a str>],
+    value: impl Fn(&similar::Change<&'a str>) -> RuntimeValue,
+    inline: impl Fn(&similar::Change<&'a str>, &similar::Change<&'a str>) -> Option<(Vec<RuntimeValue>, Vec<RuntimeValue>)>,
+) -> Vec<RuntimeValue> {
+    let mut result = Vec::with_capacity(changes.len());
+    let mut i = 0;
+    while i < changes.len() {
+        let change = &changes[i];
+        match changes.get(i + 1) {
+            Some(next) if change.tag() == ChangeTag::Delete && next.tag() == ChangeTag::Insert => {
+                let (del_inline, ins_inline) = match inline(change, next) {
+                    Some((del, ins)) => (Some(del), Some(ins)),
+                    None => (None, None),
+                };
+                result.push(diff_entry(ChangeTag::Delete, value(change), del_inline));
+                result.push(diff_entry(ChangeTag::Insert, value(next), ins_inline));
+                i += 2;
+            }
+            _ => {
+                result.push(diff_entry(change.tag(), value(change), None));
+                i += 1;
+            }
+        }
+    }
+    result
 }
 
 #[mq_macros::mq_fn(name = "_diff", params = Fixed(2))]
@@ -4641,61 +4675,24 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
         [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
             let a1_debug: Vec<String> = a1.iter().map(|v| format!("{:?}", v)).collect();
             let a2_debug: Vec<String> = a2.iter().map(|v| format!("{:?}", v)).collect();
-            let a1_slices: Vec<&str> = a1_debug.iter().map(|s| s.as_str()).collect();
-            let a2_slices: Vec<&str> = a2_debug.iter().map(|s| s.as_str()).collect();
-            let diff = TextDiff::from_slices(&a1_slices, &a2_slices);
+            let diff = TextDiff::from_slices(
+                a1_debug.iter().map(String::as_str).collect(),
+                a2_debug.iter().map(String::as_str).collect(),
+            );
             let changes: Vec<_> = diff.iter_all_changes().collect();
-            let mut result = Vec::new();
-            let mut i = 0;
-            while i < changes.len() {
-                if changes[i].tag() == ChangeTag::Delete
-                    && i + 1 < changes.len()
-                    && changes[i + 1].tag() == ChangeTag::Insert
-                {
-                    let old_idx = changes[i].old_index().unwrap();
-                    let new_idx = changes[i + 1].new_index().unwrap();
-                    let old_val = &a1[old_idx];
-                    let new_val = &a2[new_idx];
-                    if let (RuntimeValue::String(s1), RuntimeValue::String(s2)) = (old_val, new_val) {
-                        let (del_inline, ins_inline) = build_char_inline_diff(s1.as_str(), s2.as_str());
-                        let mut del_map = DictMap::default();
-                        del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
-                        del_map.insert(Ident::new("value"), old_val.clone());
-                        del_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(del_inline)));
-                        result.push(RuntimeValue::Dict(Shared::new(del_map)));
-                        let mut ins_map = DictMap::default();
-                        ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
-                        ins_map.insert(Ident::new("value"), new_val.clone());
-                        ins_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(ins_inline)));
-                        result.push(RuntimeValue::Dict(Shared::new(ins_map)));
-                    } else {
-                        let mut del_map = DictMap::default();
-                        del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
-                        del_map.insert(Ident::new("value"), old_val.clone());
-                        result.push(RuntimeValue::Dict(Shared::new(del_map)));
-                        let mut ins_map = DictMap::default();
-                        ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
-                        ins_map.insert(Ident::new("value"), new_val.clone());
-                        result.push(RuntimeValue::Dict(Shared::new(ins_map)));
+            let result = diff_entries(
+                &changes,
+                |c| match c.tag() {
+                    ChangeTag::Equal | ChangeTag::Delete => a1[c.old_index().unwrap()].clone(),
+                    ChangeTag::Insert => a2[c.new_index().unwrap()].clone(),
+                },
+                |del, ins| match (&a1[del.old_index()?], &a2[ins.new_index()?]) {
+                    (RuntimeValue::String(s1), RuntimeValue::String(s2)) => {
+                        Some(build_char_inline_diff(s1.as_str(), s2.as_str()))
                     }
-                    i += 2;
-                } else {
-                    let tag_str = match changes[i].tag() {
-                        ChangeTag::Equal => "equal",
-                        ChangeTag::Delete => "delete",
-                        ChangeTag::Insert => "insert",
-                    };
-                    let value = match changes[i].tag() {
-                        ChangeTag::Equal | ChangeTag::Delete => a1[changes[i].old_index().unwrap()].clone(),
-                        ChangeTag::Insert => a2[changes[i].new_index().unwrap()].clone(),
-                    };
-                    let mut map = DictMap::default();
-                    map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new(tag_str.into())));
-                    map.insert(Ident::new("value"), value);
-                    result.push(RuntimeValue::Dict(Shared::new(map)));
-                    i += 1;
-                }
-            }
+                    _ => None,
+                },
+            );
             Ok(RuntimeValue::Array(Shared::new(result)))
         }
         [a1, a2] => {
@@ -4703,47 +4700,16 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
             let s2 = a2.to_string();
             let line_diff = TextDiff::from_lines(&s1, &s2);
             let changes: Vec<_> = line_diff.iter_all_changes().collect();
-            let mut result = Vec::new();
-            let mut i = 0;
-            while i < changes.len() {
-                if changes[i].tag() == ChangeTag::Delete
-                    && i + 1 < changes.len()
-                    && changes[i + 1].tag() == ChangeTag::Insert
-                {
-                    let old_val = changes[i].value().trim_end_matches('\n');
-                    let new_val = changes[i + 1].value().trim_end_matches('\n');
-                    let (del_inline, ins_inline) = build_char_inline_diff(old_val, new_val);
-                    let mut del_map = DictMap::default();
-                    del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
-                    del_map.insert(
-                        Ident::new("value"),
-                        RuntimeValue::String(Shared::new(old_val.to_string())),
-                    );
-                    del_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(del_inline)));
-                    result.push(RuntimeValue::Dict(Shared::new(del_map)));
-                    let mut ins_map = DictMap::default();
-                    ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
-                    ins_map.insert(
-                        Ident::new("value"),
-                        RuntimeValue::String(Shared::new(new_val.to_string())),
-                    );
-                    ins_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(ins_inline)));
-                    result.push(RuntimeValue::Dict(Shared::new(ins_map)));
-                    i += 2;
-                } else {
-                    let tag_str = match changes[i].tag() {
-                        ChangeTag::Equal => "equal",
-                        ChangeTag::Delete => "delete",
-                        ChangeTag::Insert => "insert",
-                    };
-                    let val = changes[i].value().trim_end_matches('\n').to_string();
-                    let mut map = DictMap::default();
-                    map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new(tag_str.into())));
-                    map.insert(Ident::new("value"), RuntimeValue::String(val.into()));
-                    result.push(RuntimeValue::Dict(Shared::new(map)));
-                    i += 1;
-                }
-            }
+            let result = diff_entries(
+                &changes,
+                |c| RuntimeValue::String(Shared::new(c.value().trim_end_matches('\n').to_string())),
+                |del, ins| {
+                    Some(build_char_inline_diff(
+                        del.value().trim_end_matches('\n'),
+                        ins.value().trim_end_matches('\n'),
+                    ))
+                },
+            );
             Ok(RuntimeValue::Array(Shared::new(result)))
         }
         _ => unreachable!("_diff should receive exactly two arguments, both arrays or both non-arrays"),

@@ -5,6 +5,9 @@ use similar::{Change, DiffOp, DiffableStr, group_diff_ops};
 use std::hash::Hash;
 use std::ops::Index;
 
+/// Token count above which tokens are remapped to integers before diffing.
+const REMAP_THRESHOLD: usize = 100;
+
 /// A text difference using the same tokenization and compaction as `similar::TextDiff`.
 ///
 /// The algorithm is fixed to Myers so unused algorithm implementations need not
@@ -28,22 +31,18 @@ pub struct TextDiff<'a> {
 impl<'a> TextDiff<'a> {
     /// Compares lines, retaining LF, CRLF, and CR terminators.
     pub fn from_lines(old: &'a str, new: &'a str) -> Self {
-        Self::new(old.tokenize_lines(), new.tokenize_lines())
+        Self::from_slices(old.tokenize_lines(), new.tokenize_lines())
     }
 
     /// Compares Unicode scalar values without allocating individual strings.
     pub fn from_chars(old: &'a str, new: &'a str) -> Self {
-        Self::new(old.tokenize_chars(), new.tokenize_chars())
+        Self::from_slices(old.tokenize_chars(), new.tokenize_chars())
     }
 
-    /// Compares arbitrary string tokens.
-    pub fn from_slices(old: &[&'a str], new: &[&'a str]) -> Self {
-        Self::new(old.to_vec(), new.to_vec())
-    }
-
-    fn new(old: Vec<&'a str>, new: Vec<&'a str>) -> Self {
+    /// Compares pre-tokenized input.
+    pub fn from_slices(old: Vec<&'a str>, new: Vec<&'a str>) -> Self {
         let (ol, nl) = (old.len(), new.len());
-        let ops = if ol > 100 || nl > 100 {
+        let ops = if ol > REMAP_THRESHOLD || nl > REMAP_THRESHOLD {
             if old == new {
                 vec![DiffOp::Equal {
                     old_index: 0,
@@ -135,7 +134,7 @@ mod tests {
             let mut new = tokens.clone();
             new[len / 2] = "b";
             assert_eq!(
-                TextDiff::from_slices(&tokens, &new).ops,
+                TextDiff::from_slices(tokens.clone(), new.clone()).ops,
                 ReferenceTextDiff::from_slices(&tokens, &new).ops()
             );
         }
