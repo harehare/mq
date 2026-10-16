@@ -42,7 +42,7 @@ A module, inline or imported, sees only:
 - Built-in functions.
 - Modules it imports itself, and inline modules defined earlier (by qualified name).
 
-It does not see the query's own `let`, `var`, or `def` bindings, modules imported outside it, or runtime values such as `__FILE__` and `--args`. Referring to them is an error.
+It does not see the query's own `let`, `var`, or `def` bindings, modules imported outside it, or runtime values such as `__FILE__` and `--arg`. Referring to them is an error.
 
 ```mq
 module csv_tools:

@@ -100,7 +100,7 @@ fn test_count_matches_single_file_counts(#[case] query: &str, #[case] with_csv: 
     };
     let counts: Vec<usize> = files
         .iter()
-        .map(|file| stdout(dir.path(), &["-c", query], &[file]).trim().parse().unwrap())
+        .map(|file| stdout(dir.path(), &["--count", query], &[file]).trim().parse().unwrap())
         .collect();
     let mut expected: String = files
         .iter()
@@ -109,7 +109,7 @@ fn test_count_matches_single_file_counts(#[case] query: &str, #[case] with_csv: 
         .collect();
     expected.push_str(&format!("total: {}\n", counts.iter().sum::<usize>()));
 
-    assert_eq!(stdout(dir.path(), &["-c", query], &files), expected);
+    assert_eq!(stdout(dir.path(), &["--count", query], &files), expected);
 }
 
 #[rstest]
@@ -148,7 +148,7 @@ fn test_mqc_count_matches_single_file_counts() {
         .args(["compile", ".h", "-o", "query.mqc"])
         .assert()
         .success();
-    let output = stdout(dir.path(), &["-c", "query.mqc"], MARKDOWN);
+    let output = stdout(dir.path(), &["--count", "query.mqc"], MARKDOWN);
     let mut expected: String = MARKDOWN.iter().map(|file| format!("{file}: 2\n")).collect();
     expected.push_str(&format!("total: {}\n", MARKDOWN.len() * 2));
     assert_eq!(output, expected);
@@ -156,7 +156,7 @@ fn test_mqc_count_matches_single_file_counts() {
 
 #[rstest]
 fn test_invalid_query_fails_in_every_mode(
-    #[values(&["-P", "1000"], &["-P", "0"], &["-c"], &["-S", r#""---""#])] mode: &[&str],
+    #[values(&["-P", "1000"], &["-P", "0"], &["--count"], &["-S", r#""---""#])] mode: &[&str],
 ) {
     let dir = fixture();
     let assert = mq(dir.path())

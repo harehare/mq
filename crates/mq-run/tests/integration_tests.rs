@@ -204,7 +204,7 @@ fn test_compact_rejected_without_json_format() {
 "#)
 )]
 #[case::args(
-    vec!["--unbuffered", "--args", "val1", "test", "select(contains(val1))"],
+    vec!["--unbuffered", "--arg", "val1", "test", "select(contains(val1))"],
     "# **title**\n\n- test1\n- test2",
     Some("- test1\n- test2\n")
 )]
@@ -1601,10 +1601,10 @@ fn test_count_stdin(
 }
 
 #[test]
-fn test_count_short_flag() -> Result<(), Box<dyn std::error::Error>> {
+fn test_count_flag() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     cmd.arg("--unbuffered")
-        .arg("-c")
+        .arg("--count")
         .arg(".h2")
         .write_stdin("# h1\n\n## h2\n\n## h2b\n")
         .assert()

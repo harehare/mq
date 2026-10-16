@@ -145,7 +145,7 @@ pub enum MqcError {
     #[diagnostic(
         code(mq::mqc::module_let_runtime_value),
         help(
-            "Module-level `let` values are computed once, when the .mqc file is compiled, so they cannot read --args/--argjson values. A module can't see them, so read \"{name}\" outside the module instead."
+            "Module-level `let` values are computed once, when the .mqc file is compiled, so they cannot read --arg/--argjson values. A module can't see them, so read \"{name}\" outside the module instead."
         )
     )]
     ModuleLevelNotDefined {
@@ -209,7 +209,7 @@ impl Mqc {
         &self.dependencies
     }
 
-    /// Engine globals the program reads at run time (e.g. `--args` values).
+    /// Engine globals the program reads at run time (e.g. `--arg` values).
     pub fn external_globals(&self) -> &[String] {
         &self.meta.external_globals
     }

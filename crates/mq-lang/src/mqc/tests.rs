@@ -777,7 +777,7 @@ fn constant_expr() -> impl Strategy<Value = String> {
     ]
 }
 
-/// Names that only exist at run time, such as `--args` values.
+/// Names that only exist at run time, such as `--arg` values.
 fn runtime_name() -> impl Strategy<Value = String> {
     "rt_[a-z]{1,8}"
 }

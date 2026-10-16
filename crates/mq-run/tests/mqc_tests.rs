@@ -144,17 +144,17 @@ fn test_run_reads_args_at_run_time() {
     compile(dir.path(), r#"s"hello ${name}""#, &[]);
     let output = stdout(
         mq(dir.path())
-            .args(["query.mqc", "-I", "null", "--args", "name", "mq"])
+            .args(["query.mqc", "-I", "null", "--arg", "name", "mq"])
             .assert(),
     );
     assert_eq!(output.trim(), "hello mq");
 }
 
 #[rstest]
-#[case::args(&["--args", "len", "5"], "--args len")]
+#[case::args(&["--arg", "len", "5"], "--arg len")]
 #[case::argjson(&["--argjson", "upcase", "1"], "--argjson upcase")]
-#[case::coroutine_builtin(&["--args", "next", "x"], "--args next")]
-#[case::later_pair(&["--args", "name", "mq", "--args", "len", "5"], "--args len")]
+#[case::coroutine_builtin(&["--arg", "next", "x"], "--arg next")]
+#[case::later_pair(&["--arg", "name", "mq", "--arg", "len", "5"], "--arg len")]
 fn test_run_rejects_globals_named_after_builtins(#[case] flags: &[&str], #[case] expected: &str) {
     let dir = TempDir::new().unwrap();
     compile(dir.path(), "len", &[]);
@@ -512,7 +512,7 @@ fn test_run_reads_runtime_names_outside_module(#[case] query: &str) {
     for value in ["hello", "world"] {
         let output = stdout(
             mq(dir.path())
-                .args(["query.mqc", "-I", "null", "--args", "arg", value])
+                .args(["query.mqc", "-I", "null", "--arg", "arg", value])
                 .assert(),
         );
         assert_eq!(output.trim(), value);
