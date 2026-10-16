@@ -1,6 +1,7 @@
 use colored::*;
 use miette::IntoDiagnostic;
 use mq_lang::DebugContext;
+use regex::Regex;
 use rustyline::{
     At, Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
     completion::Completer,
@@ -9,7 +10,7 @@ use rustyline::{
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
-use std::{borrow::Cow, cmp::max, fmt, fs};
+use std::{borrow::Cow, cmp::max, fmt, fs, sync::LazyLock};
 use strum::IntoEnumIterator;
 
 type LineNo = usize;
@@ -484,24 +485,44 @@ impl DebuggerHandler {
     }
 }
 
-/// Collect non-overlapping regex matches into `spans` (higher-priority patterns added first).
-/// Each span is (byte_start, byte_end, ansi_colored_string) on the original `line`.
-fn collect_spans(
-    spans: &mut Vec<(usize, usize, String)>,
-    pattern: &str,
-    line: &str,
-    color_fn: impl Fn(&str) -> String,
-) {
-    if let Ok(re) = regex::Regex::new(pattern) {
-        for m in re.find_iter(line) {
-            let (start, end) = (m.start(), m.end());
-            let overlaps = spans.iter().any(|(s, e, _)| start < *e && end > *s);
-            if !overlaps {
-                spans.push((start, end, color_fn(m.as_str())));
-            }
-        }
-    }
-}
+type Paint = fn(&str) -> String;
+
+/// Highlight patterns in priority order (earlier wins on overlap), compiled once.
+static HIGHLIGHT_PATTERNS: LazyLock<Vec<(Regex, Paint)>> = LazyLock::new(|| {
+    const PATTERNS: [(&str, Paint); 8] = [
+        // Comments
+        (r"#.*", |s| s.truecolor(107, 122, 144).to_string()),
+        // String literals: s"...", b"...", plain "..."
+        (r#"[sb]?"([^"\\]|\\.)*""#, |s| s.truecolor(137, 221, 255).to_string()),
+        // Debugger commands (only at start of line)
+        (
+            r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env|stack)\b",
+            |s| s.truecolor(104, 211, 145).to_string(),
+        ),
+        // Keywords
+        (
+            r"\b(as|break|catch|continue|def|do|elif|else|end|fn|foreach|if|unless|import|include|let|loop|match|module|nodes|self|try|until|var|while)\b",
+            |s| s.truecolor(103, 184, 227).bold().to_string(),
+        ),
+        // Boolean / None constants
+        (r"\b(true|false|None)\b", |s| s.truecolor(133, 212, 255).to_string()),
+        // Selectors (.h1, .p, .**, .>, .^ etc.)
+        (r"\.[a-zA-Z_*>^][a-zA-Z0-9_]*", |s| {
+            s.truecolor(103, 232, 249).to_string()
+        }),
+        // Numbers (integers and floats)
+        (r"\b\d+(\.\d+)?\b", |s| s.truecolor(222, 147, 95).to_string()),
+        // Operators (compound before single-char)
+        (
+            r"(->|//=|\|\||\|\|=|&&=|&&|\?\?|=~|!~|<<|>>|\|=|%=|/=|\*=|-=|\+=|==|!=|<=|>=|\.\.|::|[=|:;?!+\-*/%<>@])",
+            |s| s.truecolor(148, 163, 184).to_string(),
+        ),
+    ];
+    PATTERNS
+        .into_iter()
+        .filter_map(|(pattern, paint)| Regex::new(pattern).ok().map(|re| (re, paint)))
+        .collect()
+});
 
 /// Highlight mq syntax using tarn theme colors.
 ///
@@ -515,54 +536,18 @@ fn collect_spans(
 /// - number   : number   #de935f
 /// - operator : operator #94a3b8
 fn highlight_syntax(line: &str) -> Cow<'_, str> {
+    // (byte_start, byte_end, ansi_colored_string) on the original `line`, non-overlapping.
     let mut spans: Vec<(usize, usize, String)> = Vec::new();
 
-    // Comments (#...) — highest priority
-    collect_spans(&mut spans, r"#.*", line, |s| s.truecolor(107, 122, 144).to_string());
-
-    // String literals: s"...", b"...", plain "..."
-    collect_spans(&mut spans, r#"[sb]?"([^"\\]|\\.)*""#, line, |s| {
-        s.truecolor(137, 221, 255).to_string()
-    });
-
-    // Debugger commands (only at start of line)
-    collect_spans(
-        &mut spans,
-        r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env|stack)\b",
-        line,
-        |s| s.truecolor(104, 211, 145).to_string(),
-    );
-
-    // Keywords
-    collect_spans(
-        &mut spans,
-        r"\b(as|break|catch|continue|def|do|elif|else|end|fn|foreach|if|unless|import|include|let|loop|match|module|nodes|self|try|until|var|while)\b",
-        line,
-        |s| s.truecolor(103, 184, 227).bold().to_string(),
-    );
-
-    // Boolean / None constants
-    collect_spans(&mut spans, r"\b(true|false|None)\b", line, |s| {
-        s.truecolor(133, 212, 255).to_string()
-    });
-
-    // Selectors (.h1, .p, .**, .>, .^ etc.)
-    collect_spans(&mut spans, r"\.[a-zA-Z_*>^][a-zA-Z0-9_]*", line, |s| {
-        s.truecolor(103, 232, 249).to_string()
-    });
-
-    // Numbers (integers and floats)
-    collect_spans(&mut spans, r"\b\d+(\.\d+)?\b", line, |s| {
-        s.truecolor(222, 147, 95).to_string()
-    });
-
-    // Operators (compound before single-char) — lowest priority
-    collect_spans(
-        &mut spans,
-        r"(->|//=|\|\||\|\|=|&&=|&&|\?\?|=~|!~|<<|>>|\|=|%=|/=|\*=|-=|\+=|==|!=|<=|>=|\.\.|::|[=|:;?!+\-*/%<>@])",
-        line,
-        |s| s.truecolor(148, 163, 184).to_string(),
-    );
+    for (re, paint) in HIGHLIGHT_PATTERNS.iter() {
+        for m in re.find_iter(line) {
+            let (start, end) = (m.start(), m.end());
+            let overlaps = spans.iter().any(|(s, e, _)| start < *e && end > *s);
+            if !overlaps {
+                spans.push((start, end, paint(m.as_str())));
+            }
+        }
+    }
 
     // Sort by byte position, then build the output in one pass.
     spans.sort_by_key(|(start, _, _)| *start);

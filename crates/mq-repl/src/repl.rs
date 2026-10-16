@@ -2,6 +2,7 @@ use crate::command_context::{Command, CommandContext, CommandOutput};
 use colored::*;
 use miette::IntoDiagnostic;
 use mq_lang::RuntimeValue;
+use regex::Regex;
 use rustyline::{
     At, Cmd, CompletionType, Config, Context, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
     completion::{Completer, FilenameCompleter, Pair},
@@ -10,7 +11,33 @@ use rustyline::{
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
-use std::{borrow::Cow, cell::RefCell, collections::VecDeque, fs, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, collections::VecDeque, fs, rc::Rc, sync::LazyLock};
+
+type Paint = fn(&str) -> ColoredString;
+
+/// Highlight patterns in priority order (lower index wins), compiled once.
+static HIGHLIGHT_PATTERNS: LazyLock<Vec<(Regex, Paint)>> = LazyLock::new(|| {
+    const PATTERNS: [(&str, Paint); 5] = [
+        (
+            r"^(/all|/clear|/copy|/edit|/env|/help|/history|/more|/quit|/load|/reset|/vars|/version)\b",
+            |s| s.bright_green(),
+        ),
+        (r#""([^"\\]|\\.)*""#, |s| s.bright_green()),
+        (
+            r"\b(def|let|if|unless|elif|else|end|while|until|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var)\b",
+            |s| s.bright_blue(),
+        ),
+        (r"\b\d+\b", |s| s.bright_magenta()),
+        (
+            r"(\/\/=|<<|>>|\|\||\?\?|<=|>=|==|!=|=~|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>|@)",
+            |s| s.bright_yellow(),
+        ),
+    ];
+    PATTERNS
+        .into_iter()
+        .filter_map(|(pattern, paint)| Regex::new(pattern).ok().map(|re| (re, paint)))
+        .collect()
+});
 
 /// Highlight mq syntax with keywords and commands.
 ///
@@ -20,39 +47,11 @@ use std::{borrow::Cow, cell::RefCell, collections::VecDeque, fs, rc::Rc};
 /// commands that start with `/`.
 fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     // (start, end, priority, colored_replacement) — lower priority number wins
-    let mut matches: Vec<(usize, usize, u8, String)> = Vec::new();
+    let mut matches: Vec<(usize, usize, usize, String)> = Vec::new();
 
-    let commands_pattern = r"^(/all|/clear|/copy|/edit|/env|/help|/history|/more|/quit|/load|/reset|/vars|/version)\b";
-    if let Ok(re) = regex::Regex::new(commands_pattern) {
+    for (priority, (re, paint)) in HIGHLIGHT_PATTERNS.iter().enumerate() {
         for m in re.find_iter(line) {
-            matches.push((m.start(), m.end(), 0, m.as_str().bright_green().to_string()));
-        }
-    }
-
-    if let Ok(re) = regex::Regex::new(r#""([^"\\]|\\.)*""#) {
-        for m in re.find_iter(line) {
-            matches.push((m.start(), m.end(), 1, m.as_str().bright_green().to_string()));
-        }
-    }
-
-    let keywords_pattern = r"\b(def|let|if|unless|elif|else|end|while|until|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var)\b";
-    if let Ok(re) = regex::Regex::new(keywords_pattern) {
-        for m in re.find_iter(line) {
-            matches.push((m.start(), m.end(), 2, m.as_str().bright_blue().to_string()));
-        }
-    }
-
-    if let Ok(re) = regex::Regex::new(r"\b\d+\b") {
-        for m in re.find_iter(line) {
-            matches.push((m.start(), m.end(), 3, m.as_str().bright_magenta().to_string()));
-        }
-    }
-
-    let operators_pattern =
-        r"(\/\/=|<<|>>|\|\||\?\?|<=|>=|==|!=|=~|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>|@)";
-    if let Ok(re) = regex::Regex::new(operators_pattern) {
-        for m in re.find_iter(line) {
-            matches.push((m.start(), m.end(), 4, m.as_str().bright_yellow().to_string()));
+            matches.push((m.start(), m.end(), priority, paint(m.as_str()).to_string()));
         }
     }
 
