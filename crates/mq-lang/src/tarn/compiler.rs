@@ -1007,6 +1007,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
 }
 
 /// Returns the compiled program plus `Compiler::unresolved_call_names`.
+#[inline(never)]
 fn compile_program_impl<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
@@ -2525,6 +2526,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
+    #[inline(never)]
     fn compile_expr(&mut self, node: &Shared<Node>) -> CompileResult<()> {
         self.begin_node(node);
         match &node.expr {

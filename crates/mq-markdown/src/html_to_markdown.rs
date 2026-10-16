@@ -156,9 +156,52 @@ fn schema_text(value: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn first_non_empty<const N: usize>(candidates: [Option<String>; N]) -> Option<String> {
-    candidates.into_iter().flatten().find(|s| !s.trim().is_empty())
+/// Where a front matter field can be read from.
+enum Source {
+    Meta(&'static str),
+    Schema(&'static str),
 }
+
+/// Front matter fields with their sources in priority order.
+/// `twitter:creator` is an @handle, not a display name, so it is the last resort for `author`.
+const FIELDS: [(&str, &[Source]); 5] = [
+    (
+        "description",
+        &[
+            Source::Meta("description"),
+            Source::Meta("og:description"),
+            Source::Meta("twitter:description"),
+            Source::Schema("description"),
+        ],
+    ),
+    (
+        "author",
+        &[
+            Source::Meta("author"),
+            Source::Meta("article:author"),
+            Source::Schema("author"),
+            Source::Meta("twitter:creator"),
+        ],
+    ),
+    (
+        "published",
+        &[
+            Source::Meta("article:published_time"),
+            Source::Meta("date"),
+            Source::Meta("pubdate"),
+            Source::Schema("datePublished"),
+        ],
+    ),
+    (
+        "image",
+        &[
+            Source::Meta("og:image"),
+            Source::Meta("twitter:image"),
+            Source::Schema("image"),
+        ],
+    ),
+    ("site", &[Source::Meta("og:site_name"), Source::Schema("publisher")]),
+];
 
 fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, Yaml>> {
     let head_element = find_element(html, "head")?;
@@ -189,51 +232,15 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, Ya
         }
     }
 
-    let fields: [(&str, [Option<String>; 4]); 5] = [
-        (
-            "description",
-            [
-                meta.get("description").cloned(),
-                meta.get("og:description").cloned(),
-                meta.get("twitter:description").cloned(),
-                schema_field("description"),
-            ],
-        ),
-        (
-            // twitter:creator is an @handle, not a display name, so it's the last resort.
-            "author",
-            [
-                meta.get("author").cloned(),
-                meta.get("article:author").cloned(),
-                schema_field("author"),
-                meta.get("twitter:creator").cloned(),
-            ],
-        ),
-        (
-            "published",
-            [
-                meta.get("article:published_time").cloned(),
-                meta.get("date").cloned(),
-                meta.get("pubdate").cloned(),
-                schema_field("datePublished"),
-            ],
-        ),
-        (
-            "image",
-            [
-                meta.get("og:image").cloned(),
-                meta.get("twitter:image").cloned(),
-                schema_field("image"),
-                None,
-            ],
-        ),
-        (
-            "site",
-            [meta.get("og:site_name").cloned(), schema_field("publisher"), None, None],
-        ),
-    ];
-    for (key, candidates) in fields {
-        if let Some(value) = first_non_empty(candidates) {
+    for (key, sources) in FIELDS {
+        let value = sources
+            .iter()
+            .filter_map(|source| match source {
+                Source::Meta(name) => meta.get(*name).cloned(),
+                Source::Schema(name) => schema_field(name),
+            })
+            .find(|value| !value.trim().is_empty());
+        if let Some(value) = value {
             fm_map.insert(key.to_string(), Yaml::String(value));
         }
     }

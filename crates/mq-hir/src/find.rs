@@ -140,21 +140,6 @@ impl Hir {
         self.source_scopes[source_id]
     }
 
-    /// Finds a module symbol by name in the given scope and its parent scopes
-    pub fn find_module_by_name(&self, scope_id: ScopeId, module_name: &str) -> Option<(SymbolId, Symbol)> {
-        let symbols = self.find_symbols_in_scope(scope_id);
-
-        symbols
-            .iter()
-            .find(|symbol| symbol.is_module() && symbol.value.as_ref().map(|v| v.as_str()) == Some(module_name))
-            .and_then(|_symbol| {
-                self.symbols
-                    .iter()
-                    .find(|(_, s)| s.is_module() && s.value.as_ref().map(|v| v.as_str()) == Some(module_name))
-                    .map(|(id, s)| (id, s.clone()))
-            })
-    }
-
     /// Finds symbols in a module by its source_id (only symbols directly in the module, not parent scopes)
     pub fn find_symbols_in_module(&self, module_source_id: SourceId) -> Vec<Arc<Symbol>> {
         // Find the scope for this module source

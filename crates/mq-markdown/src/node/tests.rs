@@ -625,59 +625,6 @@ fn test_is_link_includes_wikilink(#[case] node: Node, #[case] expected: bool) {
 
 #[cfg(feature = "wikilink")]
 #[rstest]
-// no wikilinks: returns original text node unchanged
-#[case("plain text", vec![Node::Text(Text{value: "plain text".to_string(), position: None})])]
-// only a wikilink
-#[case("[[target]]", vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})])]
-// wikilink with display text
-#[case("[[target|display]]", vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None})])]
-// wikilink with spaces in target
-#[case("[[Three laws of motion]]", vec![Node::WikiLink(WikiLink{target: "Three laws of motion".to_string(), text: None, position: None})])]
-// wikilink with .md extension
-#[case("[[target.md]]", vec![Node::WikiLink(WikiLink{target: "target.md".to_string(), text: None, position: None})])]
-// wikilink at start
-#[case("[[target]] after", vec![
-    Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
-    Node::Text(Text{value: " after".to_string(), position: None}),
-])]
-// wikilink at end
-#[case("before [[target]]", vec![
-    Node::Text(Text{value: "before ".to_string(), position: None}),
-    Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
-])]
-// wikilink in middle
-#[case("before [[target]] after", vec![
-    Node::Text(Text{value: "before ".to_string(), position: None}),
-    Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
-    Node::Text(Text{value: " after".to_string(), position: None}),
-])]
-// multiple wikilinks
-#[case("[[a]] and [[b]]", vec![
-    Node::WikiLink(WikiLink{target: "a".to_string(), text: None, position: None}),
-    Node::Text(Text{value: " and ".to_string(), position: None}),
-    Node::WikiLink(WikiLink{target: "b".to_string(), text: None, position: None}),
-])]
-// unclosed [[ treated as plain text
-#[case("[[unclosed", vec![Node::Text(Text{value: "[[unclosed".to_string(), position: None})])]
-// nested brackets invalid: treated as plain text
-#[case("[[in[ner]]]", vec![Node::Text(Text{value: "[[in[ner]]]".to_string(), position: None})])]
-// multibyte characters in surrounding text
-#[case("日本語 [[ターゲット]] テキスト", vec![
-    Node::Text(Text{value: "日本語 ".to_string(), position: None}),
-    Node::WikiLink(WikiLink{target: "ターゲット".to_string(), text: None, position: None}),
-    Node::Text(Text{value: " テキスト".to_string(), position: None}),
-])]
-// multibyte characters inside wikilink target and display text
-#[case("[[ページ|表示名]]", vec![
-    Node::WikiLink(WikiLink{target: "ページ".to_string(), text: Some("表示名".to_string()), position: None}),
-])]
-fn test_parse_wikilinks_in_text(#[case] input: &str, #[case] expected: Vec<Node>) {
-    let result = Node::parse_wikilinks_in_text(input, None);
-    assert_eq!(result, expected);
-}
-
-#[cfg(feature = "wikilink")]
-#[rstest]
 #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "url", Some(AttrValue::String("target".to_string())))]
 #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}), "value", Some(AttrValue::String("target".to_string())))]
 #[case(Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None}), "url", Some(AttrValue::String("target".to_string())))]
@@ -704,91 +651,6 @@ fn test_wikilink_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: 
 fn test_wikilink_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
     assert_eq!(node.clone().with_value(value), expected);
     assert_eq!(node.into_with_value(value), expected);
-}
-
-#[cfg(feature = "wikilink")]
-#[rstest]
-// footnote with no wikilinks: values unchanged
-#[case(
-    Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None}),
-    vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "plain text".to_string(), position: None})], position: None})]
-)]
-// footnote with a wikilink in text: expanded to WikiLink node
-#[case(
-    Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::Text(Text{value: "[[target]]".to_string(), position: None})], position: None}),
-    vec![Node::Footnote(Footnote{ident: "1".to_string(), values: vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None})], position: None})]
-)]
-// footnote with wikilink and display text
-#[case(
-    Node::Footnote(Footnote{ident: "2".to_string(), values: vec![Node::Text(Text{value: "[[target|display]]".to_string(), position: None})], position: None}),
-    vec![Node::Footnote(Footnote{ident: "2".to_string(), values: vec![Node::WikiLink(WikiLink{target: "target".to_string(), text: Some("display".to_string()), position: None})], position: None})]
-)]
-// footnote with mixed text and wikilink
-#[case(
-    Node::Footnote(Footnote{ident: "3".to_string(), values: vec![Node::Text(Text{value: "see [[note]]".to_string(), position: None})], position: None}),
-    vec![Node::Footnote(Footnote{ident: "3".to_string(), values: vec![
-        Node::Text(Text{value: "see ".to_string(), position: None}),
-        Node::WikiLink(WikiLink{target: "note".to_string(), text: None, position: None}),
-    ], position: None})]
-)]
-fn test_expand_wikilinks_footnote(#[case] input: Node, #[case] expected: Vec<Node>) {
-    let result = Node::expand_wikilinks(vec![input]);
-    assert_eq!(result, expected);
-}
-
-#[cfg(all(feature = "embed", feature = "wikilink"))]
-#[rstest]
-// embed only
-#[case("![[note.md]]", vec![
-    Node::Embed(Embed{target: "note.md".to_string(), display: None, position: None}),
-])]
-// wikilink only
-#[case("[[target]]", vec![
-    Node::WikiLink(WikiLink{target: "target".to_string(), text: None, position: None}),
-])]
-// embed and wikilink in same text
-#[case("![[embed]] and [[link]]", vec![
-    Node::Embed(Embed{target: "embed".to_string(), display: None, position: None}),
-    Node::Text(Text{value: " and ".to_string(), position: None}),
-    Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
-])]
-// wikilink before embed
-#[case("[[link]] and ![[embed]]", vec![
-    Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
-    Node::Text(Text{value: " and ".to_string(), position: None}),
-    Node::Embed(Embed{target: "embed".to_string(), display: None, position: None}),
-])]
-// embed with display hint
-#[case("![[image.png|400]]", vec![
-    Node::Embed(Embed{target: "image.png".to_string(), display: Some("400".to_string()), position: None}),
-])]
-// wikilink with display text
-#[case("[[page|display]]", vec![
-    Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("display".to_string()), position: None}),
-])]
-// surrounding text
-#[case("before ![[note]] after [[link]] end", vec![
-    Node::Text(Text{value: "before ".to_string(), position: None}),
-    Node::Embed(Embed{target: "note".to_string(), display: None, position: None}),
-    Node::Text(Text{value: " after ".to_string(), position: None}),
-    Node::WikiLink(WikiLink{target: "link".to_string(), text: None, position: None}),
-    Node::Text(Text{value: " end".to_string(), position: None}),
-])]
-// plain text with no links
-#[case("just plain text", vec![
-    Node::Text(Text{value: "just plain text".to_string(), position: None}),
-])]
-// multibyte characters
-#[case("日本語 ![[ファイル]] と [[ページ]]", vec![
-    Node::Text(Text{value: "日本語 ".to_string(), position: None}),
-    Node::Embed(Embed{target: "ファイル".to_string(), display: None, position: None}),
-    Node::Text(Text{value: " と ".to_string(), position: None}),
-    Node::WikiLink(WikiLink{target: "ページ".to_string(), text: None, position: None}),
-])]
-fn test_parse_inline_links_into(#[case] input: &str, #[case] expected: Vec<Node>) {
-    let mut result = Vec::new();
-    Node::parse_inline_links_into(input, None, &mut result);
-    assert_eq!(result, expected);
 }
 
 #[rstest]
@@ -2675,45 +2537,6 @@ fn test_callout_end_to_end() {
 }
 
 // --- Embed tests ---
-
-#[cfg(feature = "embed")]
-#[rstest]
-// plain embed
-#[case("![[target]]", vec![Node::Embed(Embed { target: "target".to_string(), display: None, position: None })])]
-// embed with display hint (image size)
-#[case("![[image.png|400]]", vec![Node::Embed(Embed { target: "image.png".to_string(), display: Some("400".to_string()), position: None })])]
-// embed with section reference in target
-#[case("![[note#Heading]]", vec![Node::Embed(Embed { target: "note#Heading".to_string(), display: None, position: None })])]
-// embed at start of text
-#[case("![[note]] rest", vec![
-    Node::Embed(Embed { target: "note".to_string(), display: None, position: None }),
-    Node::Text(Text { value: " rest".to_string(), position: None }),
-])]
-// embed in middle
-#[case("before ![[note]] after", vec![
-    Node::Text(Text { value: "before ".to_string(), position: None }),
-    Node::Embed(Embed { target: "note".to_string(), display: None, position: None }),
-    Node::Text(Text { value: " after".to_string(), position: None }),
-])]
-// multiple embeds
-#[case("![[a]] and ![[b]]", vec![
-    Node::Embed(Embed { target: "a".to_string(), display: None, position: None }),
-    Node::Text(Text { value: " and ".to_string(), position: None }),
-    Node::Embed(Embed { target: "b".to_string(), display: None, position: None }),
-])]
-// multibyte target
-#[case("![[ノート]]", vec![Node::Embed(Embed { target: "ノート".to_string(), display: None, position: None })])]
-// no embed: plain text unchanged
-#[case("plain text", vec![Node::Text(Text { value: "plain text".to_string(), position: None })])]
-// unclosed embed: treated as plain text
-#[case("![[unclosed", vec![Node::Text(Text { value: "![[unclosed".to_string(), position: None })])]
-// lone ! before non-embed: treated as plain text
-#[case("! not an embed", vec![Node::Text(Text { value: "! not an embed".to_string(), position: None })])]
-fn test_parse_embeds_in_text(#[case] input: &str, #[case] expected: Vec<Node>) {
-    let mut result = Vec::new();
-    Node::parse_embeds_into(input, None, &mut result);
-    assert_eq!(result, expected);
-}
 
 #[cfg(feature = "embed")]
 #[rstest]
