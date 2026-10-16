@@ -531,6 +531,11 @@ fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] exp
 #[case::captured_by_closure_then_set("var a = [1, 2] | def f(): a; | a[0] = 9 | f() == [9, 2]")]
 #[case::ignores_user_defined_set("def set(x, k, v): 0; | var a = [1] | a[0] = 2 | a == [2]")]
 #[case::explicit_set_call("var a = [1, 2] | a = set(a, 0, 9) | a == [9, 2]")]
+#[case::set_assign_dict(r#"var d = {"a": 1} | d = set(d, "b", 2) | d == {"a": 1, "b": 2}"#)]
+#[case::set_assign_alias_keeps_original("var a = [1, 2] | var b = a | a = set(a, 0, 9) | b == [1, 2] && a == [9, 2]")]
+#[case::set_assign_other_target("var a = [1] | var b = [5] | a = set(b, 0, 2) | a == [2] && b == [5]")]
+#[case::set_assign_value_reads_target("var a = [1, 2] | a = set(a, 0, a[1] + 1) | a == [3, 2]")]
+#[case::set_assign_user_defined_set("def set(x, k, v): 0; | var a = [1] | a = set(a, 0, 2) | a == 0")]
 fn index_assignment_updates_local_in_place_preserving_value_semantics(#[case] code: &str) {
     assert_eq!(run(code), RuntimeValue::from(true));
 }
@@ -634,6 +639,8 @@ fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
 #[case::index_set_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::add_array_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 #[case::add_array_captured("var a = [1] | def f(): a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::set_assign_captured("var a = [1] | def f(): a; | a = set(a, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::set_assign_other_target("var a = [1] | var b = [2] | a = set(b, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected: fn(&super::bytecode::OpCode) -> bool) {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
@@ -653,6 +660,8 @@ fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected:
 #[rstest]
 #[case::index_set("var a = [1] | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::add_array("var a = [1] | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::set_assign_dict("var d = {} | d = set(d, \"a\", 1)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::set_assign_array("var a = [1] | a = set(a, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::index_set_other_function_param("var a = [1] | def f(a): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::add_array_other_function_param("var a = [1] | def f(a): a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 #[case::index_set_other_function_local("var a = [1] | def f(): var a = [] | a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
