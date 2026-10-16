@@ -75,13 +75,6 @@ pub struct QueryParams {
     pub input_format: Option<String>,
 }
 
-/// Query parameters of the diagnostics endpoints.
-#[derive(Deserialize)]
-pub struct DiagnosticsParams {
-    /// The mq query to analyze.
-    pub query: String,
-}
-
 /// Query parameters of the shorthand query endpoint.
 #[derive(Deserialize)]
 pub struct ShorthandQueryParams {
