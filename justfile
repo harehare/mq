@@ -64,10 +64,10 @@ vm-profile query:
 build-bench:
     cargo codspeed build
 
-# Build WebAssembly package for web use
+# Build WebAssembly package for web use (size-optimized, wasm only)
 [working-directory: 'crates/mq-wasm']
 build-wasm:
-    wasm-pack build --release --target web --out-dir ../../packages/mq-web/mq-wasm
+    CARGO_PROFILE_RELEASE_OPT_LEVEL=z wasm-pack build --release --target web --out-dir ../../packages/mq-web/mq-wasm
     rm ../../packages/mq-web/mq-wasm/README.md
     rm ../../packages/mq-web/mq-wasm/package.json
 
@@ -84,7 +84,7 @@ build-chrome-extension:
 # Build @mqlang/node package
 [working-directory: 'crates/mq-wasm']
 build-node-wasm:
-    wasm-pack build --release --target nodejs --out-dir ../../packages/mq-nodejs/mq-wasm -- --no-default-features
+    CARGO_PROFILE_RELEASE_OPT_LEVEL=z wasm-pack build --release --target nodejs --out-dir ../../packages/mq-nodejs/mq-wasm -- --no-default-features
     rm ../../packages/mq-nodejs/mq-wasm/README.md
     rm ../../packages/mq-nodejs/mq-wasm/package.json
 
