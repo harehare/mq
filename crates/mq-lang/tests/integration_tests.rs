@@ -961,6 +961,15 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::interpolated_string_index("s\"x${1}y\"[1]",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::String(Shared::new("1".to_string()))].into()))]
+#[case::dict_literal_index_string("{\"a\": 1}[\"a\"]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::dict_literal_index_symbol("{\"a\": 1}[:a]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::dict_literal_index_nested("{\"a\": {\"b\": 2}}[\"a\"][\"b\"]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::dict_set_get_string("let m = dict() | let m = set(m, \"name\", \"Jules\") | get(m, \"name\")",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::String(Shared::new("Jules".to_string()))].into()))]

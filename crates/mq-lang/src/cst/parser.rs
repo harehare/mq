@@ -628,7 +628,7 @@ impl<'a> Parser<'a> {
                 )?);
 
                 // Check if there's another :: or if we're at a function call
-                if let Some(next_peek) = self.peek() {
+                if let Some(next_peek) = self.peek_non_trivia() {
                     if matches!(next_peek.kind, TokenKind::LParen) {
                         // This is a function call, parse args and break
                         let mut args = self.parse_args()?;
@@ -643,7 +643,7 @@ impl<'a> Parser<'a> {
 
             node.kind = NodeKind::QualifiedAccess { items: children.into() };
             // Check for bracket access after qualified access (e.g., module::func()[:1])
-            if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+            if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 return self.parse_bracket_access(node);
             }
             return Ok(Shared::new(node));
@@ -661,7 +661,7 @@ impl<'a> Parser<'a> {
             return Ok(attr_node);
         }
 
-        match self.peek() {
+        match self.peek_non_trivia() {
             Some(token) if matches!(token.kind, TokenKind::LParen) => {
                 let mut args = self.parse_args()?;
                 children.append(&mut args);
@@ -686,7 +686,7 @@ impl<'a> Parser<'a> {
                 }
 
                 // Check for bracket access after function call (e.g., foo()[0])
-                if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     let result = self.parse_bracket_access(node)?;
                     self.parse_postfix_chain(result)
                 } else if let Some(attr_node) = self.try_parse_attribute_access(&mut node) {
@@ -796,7 +796,7 @@ impl<'a> Parser<'a> {
         node.kind = NodeKind::Call { args: children.into() };
 
         // Check for additional bracket access (nested indexing)
-        let final_node = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+        let final_node = if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
             self.parse_bracket_access(node)?
         } else {
             Shared::new(node)
@@ -804,7 +804,7 @@ impl<'a> Parser<'a> {
 
         // Check for function call after bracket access (e.g., arr[0]())
         // and handle further postfix operations (e.g., arr[0]()[1])
-        if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
+        if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LParen)) {
             let args = self.parse_args()?;
             let dynamic_call_node = Node {
                 token: final_node.token.clone(),
@@ -825,7 +825,7 @@ impl<'a> Parser<'a> {
     /// Handles chains like `(expr)(args)[N]`, `expr[N](args)[M]`, etc.
     fn parse_postfix_chain(&mut self, mut current: Shared<Node>) -> Result<Shared<Node>, ParseError> {
         loop {
-            if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
+            if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LParen)) {
                 let token = current.token.clone();
                 let leading_trivia = current.leading_trivia.clone();
                 let args = self.parse_args()?;
@@ -838,7 +838,7 @@ impl<'a> Parser<'a> {
                     leading_trivia,
                     trailing_trivia: TriviaList::new(),
                 });
-            } else if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+            } else if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 // Wrap current as first child of a new Call node, then parse bracket access
                 let wrapper = Node {
                     kind: NodeKind::Call {
@@ -1545,14 +1545,16 @@ impl<'a> Parser<'a> {
             },
         );
 
-        Ok(Shared::new(Node {
+        let dict_node = Shared::new(Node {
             kind: NodeKind::Dict {
                 entries: children.into(),
             },
             token: None,
             leading_trivia,
             trailing_trivia: TriviaList::new(),
-        }))
+        });
+
+        self.parse_postfix_chain(dict_node)
     }
 
     fn parse_interpolated_string(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
@@ -1618,7 +1620,7 @@ impl<'a> Parser<'a> {
             return Ok(attr_node);
         }
 
-        match self.peek() {
+        match self.peek_non_trivia() {
             Some(token) if matches!(token.kind, TokenKind::LBracket) => self.parse_bracket_access(node),
             _ => Ok(Shared::new(node)),
         }
@@ -10647,6 +10649,35 @@ Shared::new(Node {
         let (nodes, errors) = crate::parse_recovery(code);
         assert!(!errors.has_errors(), "{code}: {errors:?}");
         assert!(matches!(nodes[0].kind, NodeKind::Call { .. }), "{code}");
+    }
+
+    #[rstest]
+    #[case::string_key("{\"a\": 1}[\"a\"]")]
+    #[case::symbol_key("{\"a\": 1}[:a]")]
+    #[case::chained("{\"a\": {\"b\": 2}}[\"a\"][\"b\"]")]
+    fn test_dict_literal_index(#[case] code: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        assert!(!errors.has_errors(), "{code}: {errors:?}");
+        assert!(matches!(nodes[0].kind, NodeKind::Call { .. }), "{code}");
+    }
+
+    #[rstest]
+    #[case::dict_newline("{\"a\": 1}\n[\"a\"]")]
+    #[case::dict_comment("{\"a\": 1} # c\n[\"a\"]")]
+    #[case::array_newline("[1, 2]\n[0]")]
+    #[case::string_newline("\"abc\"\n[0]")]
+    #[case::ident_newline("x\n[0]")]
+    #[case::call_newline("foo(1)\n[0]")]
+    #[case::dynamic_call_newline("x\n(1)")]
+    fn test_postfix_across_newline(#[case] code: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        assert!(!errors.has_errors(), "{code}: {errors:?}");
+        let exprs: Vec<_> = nodes.iter().filter(|n| !matches!(n.kind, NodeKind::Eof)).collect();
+        assert_eq!(exprs.len(), 1, "{code}");
+        assert!(
+            matches!(exprs[0].kind, NodeKind::Call { .. } | NodeKind::CallDynamic { .. }),
+            "{code}"
+        );
     }
 
     const TOKEN_SOUP: &[&str] = &[
