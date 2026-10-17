@@ -8,6 +8,8 @@ pub enum LspError {
     SyntaxError(mq_lang::Diagnostic),
     /// A type checking error.
     TypeError(mq_check::TypeError),
+    /// A type error the checker is not sure about, shown as a warning.
+    PossibleTypeError(mq_check::TypeError),
     /// A lint warning.
     LintWarning(mq_lint::Diagnostic),
 }
@@ -51,16 +53,19 @@ impl From<&LspError> for ls_types::Diagnostic {
                 };
                 ls_types::Diagnostic::new_simple(range, message)
             }
-            LspError::TypeError(type_error) => match type_error.location() {
-                Some(range) => ls_types::Diagnostic::new_simple(lsp_range(range), type_error.to_string()),
-                None => ls_types::Diagnostic::new_simple(
+            LspError::TypeError(type_error) | LspError::PossibleTypeError(type_error) => {
+                let range = type_error.location().map(lsp_range).unwrap_or_else(|| {
                     ls_types::Range::new(
                         ls_types::Position { line: 0, character: 0 },
                         ls_types::Position { line: 0, character: 1 },
-                    ),
-                    type_error.to_string(),
-                ),
-            },
+                    )
+                });
+                let mut diagnostic = ls_types::Diagnostic::new_simple(range, type_error.to_string());
+                if matches!(error, LspError::PossibleTypeError(_)) {
+                    diagnostic.severity = Some(ls_types::DiagnosticSeverity::WARNING);
+                }
+                diagnostic
+            }
             LspError::LintWarning(diagnostic) => {
                 let range = diagnostic.range.map(lsp_range).unwrap_or_else(|| {
                     ls_types::Range::new(

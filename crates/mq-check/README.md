@@ -162,6 +162,7 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
+| `--strict`       | Report possible errors (see below) as errors |
 | `--input-type`   | Type of the input document `.`, e.g. `h1 \| h2`, `code`, `markdown - code` (default: unknown) |
 | `--format`       | Diagnostic output format: `text` (default), `json`, `markdown`, or `sarif` |
 
@@ -173,6 +174,19 @@ Enforces that all elements in an array literal share the same type.
 echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
 ```
+
+### Definite and possible errors
+
+A type error is either *definite*: the operands have fully known types, so the program fails at runtime if it gets there; or *possible*: it relies on an approximation, so the program may run fine. Possible errors are reported as warnings and do not change the exit status; `--strict` reports them as errors.
+
+A diagnostic is possible when it:
+
+- reads a variable that is assigned more than once, or a parameter (whose type is only what the body has used it for)
+- is about an operand whose type is not settled
+- is inside a `try:` body, where the `catch` handles the failure
+- is advisory (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`)
+
+Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
 
 ### Test files
 
@@ -230,7 +244,7 @@ just test-all
 
 ### Differential fuzzing
 
-`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
+`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`, which should report none), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
 
 ### Building
 
