@@ -145,8 +145,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             && let Some(token) = self.tokens.next()
         {
             match &token.kind {
-                TokenKind::Pipe => continue, // Skip pipes.
-                TokenKind::Eof => break,     // End of file terminates the program.
+                // A pipe separates the next expression in the chain. EOF uses the same
+                // missing-right-hand diagnostic as `1 +`. A terminator would otherwise end
+                // the program and drop the pipe.
+                TokenKind::Pipe => match self.tokens.peek().map(|next| &next.kind) {
+                    Some(TokenKind::Eof) | None => return Err(SyntaxError::UnexpectedEOFAfterToken(token.clone())),
+                    Some(TokenKind::SemiColon | TokenKind::End) => {
+                        return Err(SyntaxError::UnexpectedToken(token.clone()));
+                    }
+                    Some(TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace) if !root => {
+                        return Err(SyntaxError::UnexpectedToken(token.clone()));
+                    }
+                    _ => continue,
+                },
+                TokenKind::Eof => break, // End of file terminates the program.
                 TokenKind::SemiColon | TokenKind::End => {
                     // Semicolons and 'end' keyword terminate sub-programs (e.g., in 'def', 'fn').
                     // In the root program, after a semicolon or 'end', the parser checks if the next token is EOF.
@@ -3604,19 +3616,7 @@ mod tests {
                 token(TokenKind::Ident(SmolStr::new("some_var"))),
                 token(TokenKind::Pipe),
             ],
-            Ok(vec![
-                Shared::new(Node {
-                    token_id: 0.into(),
-                    expr: Expr::Let(
-                        Pattern::Ident(IdentWithToken::new_with_token("z", Some(1.into()))),
-                        Shared::new(Node {
-                            token_id: 3.into(),
-                            expr:
-                                Expr::Ident(IdentWithToken::new_with_token("some_var", Some(3.into()))),
-                        }),
-                    ),
-                })
-            ]))]
+            Err(SyntaxError::UnexpectedEOFAfterToken(token(TokenKind::Pipe))))]
     #[case::let_6(
             vec![
                 token(TokenKind::Let),
