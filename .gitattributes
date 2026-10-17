@@ -1,2 +1,2 @@
 *.mq linguist-language=jq
-
+*.snap text eol=lf
