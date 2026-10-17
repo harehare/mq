@@ -622,7 +622,13 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
             node.clone(),
         )),
         // Looking for a value of another type than the elements finds nothing, which is not an error.
-        ("has", [container, needle]) if !container.has_pending_var() && !needle.has_pending_var() => {
+        ("has" | "contains" | "in", [container, needle])
+            if matches!(
+                container,
+                Type::None | Type::String | Type::Array(_) | Type::Dict(..) | Type::Record(..)
+            ) && !container.has_pending_var()
+                && !needle.has_pending_var() =>
+        {
             Some(Type::function(args.to_vec(), Type::Bool))
         }
         ("index" | "rindex", [Type::Array(elem), needle])
@@ -631,6 +637,9 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
             Some(Type::function(args.to_vec(), Type::Number))
         }
         ("index" | "rindex", [Type::None, _]) => Some(Type::function(args.to_vec(), Type::Number)),
+        ("bsearch", [Type::Array(_), target]) if !target.has_pending_var() => {
+            Some(Type::function(args.to_vec(), Type::Number))
+        }
         // The first value that is not none, so the result is either of the two.
         ("coalesce" | "??", [first, second])
             if first != second
@@ -658,6 +667,26 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
         {
             let widened = Type::array(Type::union(vec![(**left).clone(), right.clone()]));
             Some(Type::function(args.to_vec(), widened))
+        }
+        _ => None,
+    }
+}
+
+/// The signature of `name` for arguments that no registered overload takes, for builtins that the
+/// runtime handles anyway: a search finds nothing.
+pub(crate) fn fallback_signature(name: &str, args: &[Type]) -> Option<Type> {
+    if args.iter().any(Type::has_pending_var) {
+        return None;
+    }
+    match (name, args) {
+        ("contains" | "in", [container, needle])
+            if matches!(
+                container,
+                Type::None | Type::String | Type::Array(_) | Type::Dict(..) | Type::Record(..)
+            ) && !container.has_pending_var()
+                && !needle.has_pending_var() =>
+        {
+            Some(Type::function(args.to_vec(), Type::Bool))
         }
         _ => None,
     }
@@ -2777,7 +2806,7 @@ mod tests {
     #[case::in_return_plus_number("in([1, 2, 3], 1) + 1", false)] // in returns bool; bool + number is invalid
     #[case::contains_return_plus_number("contains(\"hello\", \"he\") + 1", false)] // contains returns bool; bool + number is invalid
     #[case::bsearch("bsearch([1, 2, 3, 4], 2)", true)]
-    #[case::bsearch_error("bsearch([1, 2, 3, 4], \"2\")", false)]
+    #[case::bsearch_other_type("bsearch([1, 2, 3, 4], \"2\")", true)] // the target is never found
     fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

@@ -865,6 +865,10 @@ fn test_parenthesized_call_of_a_variable_is_not_a_slice() {
 #[case::repeat_string(r#"2 * "ab""#)]
 #[case::is_nan_string(r#"is_nan("a")"#)]
 #[case::code_without_language("to_code(2, None)")]
+#[case::contains_none("contains(None, 2)")]
+#[case::contains_other_type(r#"contains([1, 2], "a")"#)]
+#[case::in_none("in(None, 2)")]
+#[case::bsearch_other_type(r#"bsearch([1, 2], "a")"#)]
 fn test_builtin_accepts_what_the_runtime_accepts(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "the runtime accepts it: {:?}", result);

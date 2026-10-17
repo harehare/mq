@@ -248,7 +248,7 @@ just test-all
 
 ### Builtin signature audit
 
-`just audit-builtins` calls every native builtin with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose. `AUDIT_FUNCTION` limits the run to one builtin.
+`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose. `AUDIT_FUNCTION` limits the run to one builtin.
 
 ### Building
 
