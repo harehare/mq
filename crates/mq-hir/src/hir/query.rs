@@ -88,6 +88,11 @@ impl Hir {
         self.bracket_key_counts.get(&call).copied().unwrap_or(0)
     }
 
+    /// How many `[...]` groups the call has: `a[0][1]` has two, the slice `a[0:1]` one.
+    pub fn bracket_group_count(&self, call: SymbolId) -> usize {
+        self.bracket_group_counts.get(&call).copied().unwrap_or(0)
+    }
+
     /// Returns the symbol with the given id.
     pub fn symbol(&self, symbol_id: SymbolId) -> Option<&Symbol> {
         self.symbols.get(symbol_id)

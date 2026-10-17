@@ -2541,7 +2541,9 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Var(pattern, value) => self.compile_let_or_var(pattern, value, true),
             Expr::IndexAssign(ident, index, value) => self.compile_index_assign(ident.name, index, value),
             Expr::Assign(ident, value) => {
-                if self.compile_add_assign_local(ident.name, value)? {
+                if self.compile_add_assign_local(ident.name, value)?
+                    || self.compile_set_assign_local(ident.name, value)?
+                {
                     return Ok(());
                 }
                 self.compile_expr(value)?;
@@ -3100,6 +3102,27 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(true)
     }
 
+    /// Compiles `x = set(x, key, value)` on a mutable local `x` as `x[key] = value`; reading `x`
+    /// first would leave a second reference alive and copy the collection on every update.
+    ///
+    /// Returns `false`, emitting nothing, for any other assignment.
+    fn compile_set_assign_local(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
+        let Some(args) = self.unshadowed_builtin_args(value, builtins::SET.into(), 3) else {
+            return Ok(false);
+        };
+        let Some(Resolved::Local(slot)) = self.resolve(name) else {
+            return Ok(false);
+        };
+        if self.scope_mut().is_immutable(slot)
+            || !matches!(&args[0].expr, Expr::Ident(target) if target.name == name)
+            || self.is_used_by_nested_function(name)
+        {
+            return Ok(false);
+        }
+        self.compile_index_assign(name, &args[1], &args[2])?;
+        Ok(true)
+    }
+
     fn compile_local_binary(&mut self, op: BinaryOp, lhs: &Shared<Node>, rhs: &Shared<Node>) -> bool {
         let Some(left_slot) = self.current_local_slot(lhs) else {
             return false;
@@ -3292,25 +3315,36 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    /// The operand of `!x`, or of an unshadowed builtin `not(x)` call.
-    fn negated_operand<'a>(&mut self, node: &'a Shared<Node>) -> Option<&'a Shared<Node>> {
-        let (ident, args) = match &node.expr {
-            Expr::UnaryOp(ast::UnaryOp::Not, operand) => return Some(operand),
-            Expr::Call(ident, args) => (ident, args),
-            _ => return None,
+    /// The arguments of `node` when it calls the unshadowed builtin `name` with `arity` arguments.
+    fn unshadowed_builtin_args<'a>(
+        &mut self,
+        node: &'a Shared<Node>,
+        name: Ident,
+        arity: usize,
+    ) -> Option<&'a ast::Args> {
+        let Expr::Call(ident, args) = &node.expr else {
+            return None;
         };
-        let name = ident.name;
         let is_self_call = self
             .function_names
             .last()
             .and_then(|entry| *entry)
             .is_some_and(|(function, _, _)| function == name);
-        (name == builtins::NOT.into()
-            && args.len() == 1
+        (ident.name == name
+            && args.len() == arity
             && !is_self_call
             && self.scope_mut().shadowed_builtin != Some(name)
             && self.resolve(name).is_none())
-        .then(|| &args[0])
+        .then_some(args)
+    }
+
+    /// The operand of `!x`, or of an unshadowed builtin `not(x)` call.
+    fn negated_operand<'a>(&mut self, node: &'a Shared<Node>) -> Option<&'a Shared<Node>> {
+        if let Expr::UnaryOp(ast::UnaryOp::Not, operand) = &node.expr {
+            return Some(operand);
+        }
+        self.unshadowed_builtin_args(node, builtins::NOT.into(), 1)
+            .map(|args| &args[0])
     }
 
     /// Compiles `node` as a branch on its truthiness, without building a value.

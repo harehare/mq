@@ -107,6 +107,9 @@ pub struct DeferredRecordAccess {
     pub guard: crate::field_guard::FieldGuard,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
+    /// Where the read starts, when it runs in source order with the writes to its variable
+    /// (`None` inside a function that the variable does not belong to)
+    pub read_start: Option<mq_lang::Position>,
 }
 
 /// A deferred selector field access for post-unification resolution.
@@ -166,6 +169,19 @@ pub struct DeferredTupleAccess {
     pub def_id: SymbolId,
     /// The literal index value (None if dynamic index)
     pub index: Option<usize>,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
+/// A deferred `a[i][j] = v`, whose target element type is known once `a` is resolved.
+#[derive(Debug, Clone)]
+pub struct DeferredIndexAssign {
+    /// The variable definition symbol ID
+    pub def_id: SymbolId,
+    /// The literal value of each index, `None` for a dynamic one
+    pub indices: Vec<Option<usize>>,
+    /// The type of the assigned value
+    pub value_ty: Type,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -263,10 +279,15 @@ pub struct InferenceContext {
     deferred_parameter_calls: Vec<DeferredParameterCall>,
     /// Deferred record field accesses for post-unification resolution
     deferred_record_accesses: Vec<DeferredRecordAccess>,
+    /// Record fields assigned through `x["k"] = v`, per variable definition, with the end of the
+    /// earliest assignment (`None` when its position is unknown)
+    written_record_fields: FxHashMap<(SymbolId, String), Option<mq_lang::Position>>,
     /// Deferred selector field accesses for post-unification resolution
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
     /// Deferred tuple index accesses for post-unification resolution
     deferred_tuple_accesses: Vec<DeferredTupleAccess>,
+    /// Deferred chained index assignments for post-unification resolution
+    deferred_index_assigns: Vec<DeferredIndexAssign>,
     /// Deferred bracket accesses on function call return values (e.g. `f(x)["key"]`)
     deferred_call_return_accesses: Vec<DeferredCallReturnAccess>,
     /// Deferred try/catch branch-type merges for post-unification resolution
@@ -305,8 +326,10 @@ impl InferenceContext {
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
+            written_record_fields: FxHashMap::default(),
             deferred_selector_accesses: Vec::new(),
             deferred_tuple_accesses: Vec::new(),
+            deferred_index_assigns: Vec::new(),
             deferred_call_return_accesses: Vec::new(),
             deferred_try_catches: Vec::new(),
             type_narrowings: Vec::new(),
@@ -469,6 +492,31 @@ impl InferenceContext {
         self.deferred_record_accesses.push(access);
     }
 
+    /// Records that `def_id["field"]` is assigned by a statement ending at `end`.
+    pub fn add_written_record_field(&mut self, def_id: SymbolId, field: String, end: Option<mq_lang::Position>) {
+        self.written_record_fields
+            .entry((def_id, field))
+            .and_modify(|first| *first = first.zip(end).map(|(a, b)| a.min(b)))
+            .or_insert(end);
+    }
+
+    /// Whether a read of `def_id["field"]` starting at `read_start` can follow an assignment to it.
+    /// Reads before every assignment still see the original record.
+    pub fn is_record_field_written(
+        &self,
+        def_id: SymbolId,
+        field: &str,
+        read_start: Option<mq_lang::Position>,
+    ) -> bool {
+        match self.written_record_fields.get(&(def_id, field.to_owned())) {
+            None => false,
+            Some(first_write_end) => match (first_write_end, read_start) {
+                (Some(end), Some(start)) => start >= *end,
+                _ => true,
+            },
+        }
+    }
+
     /// Takes all deferred record accesses (consumes them)
     pub fn take_deferred_record_accesses(&mut self) -> Vec<DeferredRecordAccess> {
         std::mem::take(&mut self.deferred_record_accesses)
@@ -492,6 +540,16 @@ impl InferenceContext {
     /// Takes all deferred tuple accesses (consumes them)
     pub fn take_deferred_tuple_accesses(&mut self) -> Vec<DeferredTupleAccess> {
         std::mem::take(&mut self.deferred_tuple_accesses)
+    }
+
+    /// Adds a deferred chained index assignment for post-unification resolution
+    pub fn add_deferred_index_assign(&mut self, assign: DeferredIndexAssign) {
+        self.deferred_index_assigns.push(assign);
+    }
+
+    /// Takes all deferred chained index assignments (consumes them)
+    pub fn take_deferred_index_assigns(&mut self) -> Vec<DeferredIndexAssign> {
+        std::mem::take(&mut self.deferred_index_assigns)
     }
 
     /// Adds a deferred bracket access on a function call's return value

@@ -39,6 +39,8 @@ pub struct Hir {
     pub(crate) leaking_scopes: FxHashMap<ScopeId, Vec<ScopeId>>,
     /// For each call `f(x)[k]`, how many of its trailing arguments are bracket-access keys.
     pub(crate) bracket_key_counts: FxHashMap<SymbolId, usize>,
+    /// For each call `a[0][1]`, how many bracket groups it has. A slice `a[0:1]` is one group.
+    pub(crate) bracket_group_counts: FxHashMap<SymbolId, usize>,
     pub(crate) scope_name_index: FxHashMap<ScopeId, FxHashMap<SmolStr, Vec<SymbolId>>>,
 }
 
@@ -83,6 +85,7 @@ impl Hir {
             name_index: FxHashMap::default(),
             leaking_scopes: FxHashMap::default(),
             bracket_key_counts: FxHashMap::default(),
+            bracket_group_counts: FxHashMap::default(),
             scope_name_index: FxHashMap::default(),
         }
     }
@@ -267,6 +270,7 @@ impl Hir {
 
         let symbols = &self.symbols;
         self.bracket_key_counts.retain(|call, _| symbols.contains_key(*call));
+        self.bracket_group_counts.retain(|call, _| symbols.contains_key(*call));
         self.references
             .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
         let references = &self.references;
@@ -396,6 +400,22 @@ mod tests {
             .find(|(_, symbol)| symbol.kind == SymbolKind::Call)
             .unwrap();
         assert_eq!(hir.bracket_key_count(call), expected);
+    }
+
+    #[rstest]
+    #[case::index("a[0]", 1)]
+    #[case::slice("a[0:1]", 1)]
+    #[case::chained("a[0][1]", 2)]
+    #[case::chained_slice("a[0:1][1]", 2)]
+    fn test_bracket_group_count_tells_chains_from_slices(#[case] code: &str, #[case] expected: usize) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, code);
+        let (call, _) = hir
+            .symbols()
+            .find(|(_, symbol)| symbol.kind == SymbolKind::Call)
+            .unwrap();
+        assert_eq!(hir.bracket_group_count(call), expected);
     }
 
     #[rstest]

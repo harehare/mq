@@ -1260,9 +1260,8 @@ def group_by(arr, f):
             | let key = to_string(f(v))
             | let existing = get(groups, key)
             | let new_group = if (is_none(existing)): [v] else: existing + [v]
-            | groups = set(groups, key, new_group)
-            | groups
-          end
+            | groups = set(groups, key, new_group);
+        | groups
       end
 end
 
@@ -1404,9 +1403,8 @@ def fold(arr, init, f):
       | var i = 0
       | while (i != len(arr)):
           acc = f(acc, get(arr, i))
-          | i += 1
-          | acc
-        end
+          | i += 1;
+      | acc
     end
 end
 
@@ -1450,11 +1448,13 @@ def unique_by(arr, f):
           let item = get(arr, i)
           | let key = _value_key(f(item))
           | let already_seen = get(seen, key)
-          | result = if (is_none(already_seen)): result + [item] else: result
-          | seen = if (is_none(already_seen)): set(seen, key, true) else: seen
-          | i += 1
-          | result
-        end
+          | if (is_none(already_seen)):
+              do
+                seen[key] = true
+                | result += [item]
+              end
+          | i += 1;
+      | result
     end
 end
 

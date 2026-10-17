@@ -98,6 +98,45 @@ fn without_none_if(non_none: bool, ty: types::Type) -> types::Type {
     }
 }
 
+/// Resolves deferred `a[i][j] = v` targets, constraining the element type they reach to the
+/// assigned value. A target through an unresolved or non-array type stays unconstrained.
+pub(crate) fn resolve_deferred_index_assigns(ctx: &mut InferenceContext) -> bool {
+    let assigns = ctx.take_deferred_index_assigns();
+    let mut resolved_any = false;
+    for assign in assigns {
+        let Some(mut elem_ty) = ctx.get_symbol_type(assign.def_id).cloned() else {
+            continue;
+        };
+        let mut reached = true;
+        for index in &assign.indices {
+            elem_ty = match ctx.resolve_type(&elem_ty) {
+                types::Type::Array(elem) => *elem,
+                types::Type::Tuple(elems) => match index.and_then(|i| elems.get(i)) {
+                    Some(elem) => elem.clone(),
+                    None => {
+                        reached = false;
+                        break;
+                    }
+                },
+                _ => {
+                    reached = false;
+                    break;
+                }
+            };
+        }
+        if reached {
+            ctx.add_constraint(Constraint::Equal(
+                elem_ty,
+                assign.value_ty,
+                assign.range,
+                ConstraintOrigin::General,
+            ));
+            resolved_any = true;
+        }
+    }
+    resolved_any
+}
+
 /// Resolves deferred record field accesses after the first round of unification.
 ///
 /// For each deferred bracket access `v[:key]`, resolves the variable's type
@@ -111,6 +150,10 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
 
     let mut resolved_any = false;
     for access in &accesses {
+        // An earlier assignment may add the field or change its type.
+        if ctx.is_record_field_written(access.def_id, &access.field_name, access.read_start) {
+            continue;
+        }
         let var_ty = match ctx.get_symbol_type(access.def_id).cloned() {
             Some(ty) => ctx.resolve_type(&ty),
             None => continue,
