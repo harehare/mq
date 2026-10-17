@@ -310,6 +310,9 @@ pub struct InferenceContext {
     type_narrowings: Vec<TypeNarrowing>,
     /// Complement narrowings waiting for their source type to be resolved
     pending_narrowings: Vec<PendingNarrowing>,
+    /// Types that references read instead of their variable's current type (the right-hand side
+    /// of `x = x + 1` reads `x` as it was before the assignment)
+    read_overrides: FxHashMap<SymbolId, Type>,
     /// Cross-arm narrowings collected from match expressions
     cross_arm_narrowings: Vec<CrossArmNarrowing>,
     /// When true, heterogeneous arrays produce a type error
@@ -350,6 +353,7 @@ impl InferenceContext {
             deferred_try_catches: Vec::new(),
             type_narrowings: Vec::new(),
             pending_narrowings: Vec::new(),
+            read_overrides: FxHashMap::default(),
             cross_arm_narrowings: Vec::new(),
             strict_array,
         }
@@ -592,6 +596,16 @@ impl InferenceContext {
     /// Adds a type narrowing collected from a type predicate condition
     pub fn add_type_narrowing(&mut self, narrowing: TypeNarrowing) {
         self.type_narrowings.push(narrowing);
+    }
+
+    /// Makes the reference read `ty` instead of its variable's current type
+    pub fn set_read_override(&mut self, reference: SymbolId, ty: Type) {
+        self.read_overrides.insert(reference, ty);
+    }
+
+    /// The type the reference reads instead of its variable's current type, if any
+    pub fn read_override(&self, reference: SymbolId) -> Option<&Type> {
+        self.read_overrides.get(&reference)
     }
 
     /// Adds a complement narrowing to retry once its source type is resolved
