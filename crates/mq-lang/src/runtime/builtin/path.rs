@@ -110,7 +110,8 @@ mod tests {
     #[case(".", "file.txt", "./file.txt")]
     #[case("/a", "b/c", "/a/b/c")]
     fn test_path_join(#[case] base: &str, #[case] component: &str, #[case] expected: &str) {
-        assert_eq!(path_join(base, component).unwrap(), expected);
+        let joined = path_join(base, component).unwrap();
+        assert_eq!(joined.replace(std::path::MAIN_SEPARATOR, "/"), expected);
     }
 
     #[rstest]

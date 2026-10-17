@@ -113,7 +113,7 @@ fn render(root: &Path) -> String {
     let (mut type_total, mut unresolved_total, mut dynamic_total) = (0, 0, 0);
     for path in corpus_files(root) {
         let report = check_file(&path);
-        let rel = path.strip_prefix(root).unwrap().display();
+        let rel = path.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
         let mut unresolved = report.unresolved.clone();
         unresolved.sort();
         unresolved.dedup();
