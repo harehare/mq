@@ -670,15 +670,41 @@ mod tests {
         }
     }
 
-    /// The numbers of the examples of `text` that are not rendered as in the spec.
-    fn differing_examples(text: &str, minimum: usize) -> Vec<usize> {
+    /// The numbers of the examples of `text` that are not rendered as in the spec, and how many
+    /// examples there are. The count is also appended to the file in `SPEC_REPORT` as a table row.
+    fn differing_examples(name: &str, text: &str, minimum: usize) -> Vec<usize> {
         let examples = spec_examples(text);
         assert!(examples.len() > minimum, "only {} examples were found", examples.len());
-        examples
+        let differing: Vec<usize> = examples
             .iter()
             .filter(|(_, markdown, html)| to_html(markdown) != *html)
             .map(|(number, ..)| *number)
-            .collect()
+            .collect();
+        write_report(name, examples.len(), differing.len());
+        differing
+    }
+
+    fn write_report(name: &str, total: usize, differing: usize) {
+        let passed = total - differing;
+        let features = if cfg!(feature = "obsidian") {
+            "obsidian"
+        } else {
+            "default"
+        };
+        let row = format!(
+            "| {name} | {features} | {passed} | {total} | {:.1}% |\n",
+            passed as f64 * 100.0 / total as f64
+        );
+        print!("{row}");
+        if let Ok(path) = std::env::var("SPEC_REPORT") {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .unwrap();
+            file.write_all(row.as_bytes()).unwrap();
+        }
     }
 
     /// Renders every example of the spec to HTML, from `SPEC_FILE` or fetched over the network.
@@ -686,7 +712,7 @@ mod tests {
     #[ignore = "fetches spec.txt over the network; set SPEC_FILE to use a local copy"]
     fn spec_examples_render_as_in_the_spec() {
         assert_eq!(
-            differing_examples(&spec_text("SPEC_FILE", SPEC_URL), 600),
+            differing_examples("GFM spec", &spec_text("SPEC_FILE", SPEC_URL), 600),
             expected_differences(KNOWN_DIFFERENCES, GFM_WIKILINK_DIFFERENCES, GFM_OBSIDIAN_DIFFERENCES),
             "examples that are not rendered as in the spec"
         );
@@ -698,7 +724,11 @@ mod tests {
     #[ignore = "fetches spec.txt over the network; set COMMONMARK_SPEC_FILE to use a local copy"]
     fn commonmark_spec_examples_render_as_in_the_spec() {
         assert_eq!(
-            differing_examples(&spec_text("COMMONMARK_SPEC_FILE", COMMONMARK_SPEC_URL), 600),
+            differing_examples(
+                "CommonMark 0.31.2",
+                &spec_text("COMMONMARK_SPEC_FILE", COMMONMARK_SPEC_URL),
+                600
+            ),
             expected_differences(
                 COMMONMARK_KNOWN_DIFFERENCES,
                 COMMONMARK_WIKILINK_DIFFERENCES,
@@ -714,7 +744,11 @@ mod tests {
     #[ignore = "fetches extensions.txt over the network; set EXTENSIONS_SPEC_FILE to use a local copy"]
     fn extensions_spec_examples_render_as_in_the_spec() {
         assert_eq!(
-            differing_examples(&spec_text("EXTENSIONS_SPEC_FILE", EXTENSIONS_SPEC_URL), 20),
+            differing_examples(
+                "GFM extensions",
+                &spec_text("EXTENSIONS_SPEC_FILE", EXTENSIONS_SPEC_URL),
+                20
+            ),
             EXTENSIONS_KNOWN_DIFFERENCES,
             "examples that are not rendered as in the spec"
         );
