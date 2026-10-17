@@ -793,12 +793,12 @@ fn test_comparison_op_type_errors(#[case] code: &str, #[case] should_succeed: bo
     );
 }
 
-// Equality Operator Type Errors
+// Equality Operator: values of different types compare unequal at runtime, which is not an error
 
 #[rstest]
-#[case::eq_number_string(r#"1 == "hello""#, false, "number == string")]
-#[case::ne_number_bool("1 != true", false, "number != bool")]
-#[case::eq_string_bool(r#""yes" == true"#, false, "string == bool")]
+#[case::eq_number_string(r#"1 == "hello""#, true, "number == string is false, not an error")]
+#[case::ne_number_bool("1 != true", true, "number != bool is true, not an error")]
+#[case::eq_string_bool(r#""yes" == true"#, true, "string == bool is false, not an error")]
 #[case::eq_same_numbers("1 == 1", true, "number == number is valid")]
 #[case::eq_same_strings(r#""a" == "a""#, true, "string == string is valid")]
 #[case::eq_same_bools("true == false", true, "bool == bool is valid")]

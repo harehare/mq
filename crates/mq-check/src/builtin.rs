@@ -192,20 +192,11 @@ fn register_comparison(ctx: &mut InferenceContext) {
         register_binary(ctx, name, Type::Bytes, Type::Bytes, Type::Bool);
     }
 
-    // Equality: forall a. (a, a) -> bool
+    // Equality: forall a b. (a, b) -> bool
+    // Values of different types are never equal, which is not an error.
     for name in ["==", "!=", "eq", "ne"] {
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
-    }
-
-    // Equality: (None, a) -> bool and (a, None) -> bool
-    // In mq, comparing None with any type is valid and returns bool
-    // (e.g. `len(possibly_none) == 0` where len returns None for None inputs).
-    for name in ["==", "!=", "eq", "ne"] {
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::None, Type::Var(a), Type::Bool);
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::Var(a), Type::None, Type::Bool);
+        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(ctx, name, Type::Var(a), Type::Var(b), Type::Bool);
     }
 }
 
@@ -610,6 +601,22 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
             std::iter::once(node.clone()).chain(rest.iter().cloned()).collect(),
             node.clone(),
         )),
+        // Concatenating or appending values of other element types widens the element type.
+        ("+" | "add", [Type::Array(left), Type::Array(right)])
+            if left != right && !left.has_pending_var() && !right.has_pending_var() =>
+        {
+            let widened = Type::array(Type::union(vec![(**left).clone(), (**right).clone()]));
+            Some(Type::function(args.to_vec(), widened))
+        }
+        ("+" | "add", [Type::Array(left), right])
+            if !matches!(right, Type::Array(_) | Type::Var(_))
+                && **left != *right
+                && !left.has_pending_var()
+                && !right.has_pending_var() =>
+        {
+            let widened = Type::array(Type::union(vec![(**left).clone(), right.clone()]));
+            Some(Type::function(args.to_vec(), widened))
+        }
         _ => None,
     }
 }

@@ -97,11 +97,11 @@ fn test_function_arity_mismatch_hint_names_function_and_counts() {
 
 #[test]
 fn test_function_type_arity_mismatch_hint_shows_param_counts() {
-    // Unifying two function *types* with different arities (e.g. comparing lambdas with
-    // different signatures) hits the WrongArity path in
+    // Unifying two function *types* with different arities (e.g. passing a lambda of the wrong
+    // arity as a callback) hits the WrongArity path in
     // unify.rs, which has no call-site function name available, unlike the
     // constraint.rs path exercised above.
-    let result = check_types("let f = fn(x): x; | let g = fn(x, y): x; | f == g");
+    let result = check_types_with_builtins("let g = fn(x, y): x; | sort_by([1], g)");
 
     let has_hint = result.iter().any(|err| {
         matches!(
@@ -811,4 +811,16 @@ fn test_piped_input_reaches_if_condition_and_branches(#[case] code: &str) {
 fn test_piped_input_type_reaches_if_branches() {
     let result = check_types_with_builtins(r#""abc" | if (true): abs() else: 1"#);
     assert!(!result.is_empty(), "abs of a string must still be reported");
+}
+
+#[rstest]
+#[case::eq_other_types(r#"let x = [1] | if (x == "List"): 1 else: 2"#)]
+#[case::eq_record_and_string(r#"{"a": 1} == "s""#)]
+#[case::concat_other_element_types(r#"[1] + ["a"]"#)]
+#[case::concat_records(r#"[{a: 1}] + [{a: "x"}]"#)]
+#[case::append_other_type(r#"[1] + "a""#)]
+#[case::accumulate(r#"var p = [] | p += [{t: "a", v: "x"}] | p += [{t: "b", v: ["y"]}] | p"#)]
+fn test_values_of_other_types_are_not_reported(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "valid program must not report: {:?}", result);
 }
