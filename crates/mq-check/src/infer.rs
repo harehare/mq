@@ -747,9 +747,31 @@ impl InferenceContext {
             }
         }
 
-        let (ty, _score) = best_match?;
+        let Some((ty, _score)) = best_match else {
+            return self.resolve_node_as_text(name, arg_types);
+        };
         let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
         Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
+    }
+
+    /// A builtin that takes a string also takes a markdown node, as its text, so a call that only
+    /// fails on node arguments is resolved with those read as strings.
+    fn resolve_node_as_text(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        let is_node = |ty: &Type| matches!(self.resolve_type(ty), Type::Node(_));
+        if !arg_types.iter().any(is_node) {
+            return None;
+        }
+        let as_text: Vec<Type> = arg_types
+            .iter()
+            .map(|ty| if is_node(ty) { Type::String } else { ty.clone() })
+            .collect();
+        let Some(Type::Function(_, ret)) = self.resolve_overload(name, &as_text) else {
+            return None;
+        };
+        if ret.has_pending_var() {
+            return None;
+        }
+        Some(Type::function(arg_types.to_vec(), *ret))
     }
 
     /// The signature of `partial(f, a1..ak)`. Its shape follows the arity of `f`, so it is derived

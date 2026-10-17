@@ -246,6 +246,10 @@ just test-all
 
 `just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`, which should report none), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
 
+### Builtin signature audit
+
+`just audit-builtins` calls every native builtin with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose. `AUDIT_FUNCTION` limits the run to one builtin.
+
 ### Building
 
 ```bash

@@ -741,7 +741,7 @@ fn test_user_function_type_checking(#[case] code: &str, #[case] should_succeed: 
 #[rstest]
 #[case::number_minus_string(r#"1 - "hello""#, false, "number - string")]
 #[case::number_div_string(r#"10 / "two""#, false, "number / string")]
-#[case::number_mul_string(r#"3 * "x""#, false, "number * string")]
+#[case::number_mul_string(r#"3 * "x""#, true, "number * string repeats the string")]
 #[case::string_minus_number(r#""abc" - 1"#, false, "string - number")]
 #[case::string_div_number(r#""abc" / 2"#, false, "string / number")]
 #[case::number_add_string(r#"1 + "world""#, true, "number + string")]
@@ -819,7 +819,7 @@ fn test_equality_op_type_errors(#[case] code: &str, #[case] should_succeed: bool
 
 #[rstest]
 #[case::let_num_minus_string(r#"let x = 1 | x - "str""#, false, "let number binding minus string")]
-#[case::let_num_mul_string(r#"let x = 1 | x * "str""#, false, "let number binding times string")]
+#[case::let_num_mul_string(r#"let x = 1 | x * "str""#, true, "let number binding times string repeats it")]
 #[case::let_num_div_string(r#"let x = 1 | x / "str""#, false, "let number binding div string")]
 #[case::let_num_plus_string(r#"let x = 1 | x + "str""#, true, "let number binding plus string")]
 #[case::let_string_minus_num(r#"let x = "hello" | x - 1"#, false, "let string binding minus number")]
@@ -855,8 +855,8 @@ fn test_let_binding_type_errors(#[case] code: &str, #[case] should_succeed: bool
 )]
 #[case::lambda_body_mul_error(
     r#"let f = fn(x): x * "bad"; | f(1)"#,
-    false,
-    "lambda body: string constant in multiply"
+    true,
+    "lambda body: number times a string repeats it"
 )]
 #[case::lambda_body_div_error(
     r#"let f = fn(x): x / "bad"; | f(1)"#,
@@ -2071,10 +2071,10 @@ fn test_match_none_arm_does_not_collapse_polymorphic_arm() {
     "string|none ?? string resolves correctly"
 )]
 #[case(r#"42 ?? 0"#, true, "number ?? number returns number")]
-#[case(r#""hello" ?? 42"#, false, "string ?? number: type mismatch")]
-#[case(r#"42 ?? "fallback""#, false, "number ?? string: type mismatch")]
-#[case(r#"true ?? 0"#, false, "bool ?? number: type mismatch")]
-#[case(r#"true ?? "str""#, false, "bool ?? string: type mismatch")]
+#[case(r#""hello" ?? 42"#, true, "string ?? number is the string")]
+#[case(r#"42 ?? "fallback""#, true, "number ?? string is the number")]
+#[case(r#"true ?? 0"#, true, "bool ?? number is the bool")]
+#[case(r#"true ?? "str""#, true, "bool ?? string is the bool")]
 fn test_coalesce_operator(#[case] code: &str, #[case] should_succeed: bool, #[case] desc: &str) {
     let result = check_types_with_builtins(code);
     assert_eq!(
