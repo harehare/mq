@@ -364,6 +364,9 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::IOError(_)) => Some(Cow::Borrowed(
                 "An I/O error occurred while loading a module. Check file permissions and paths.",
             )),
+            InnerError::Module(ModuleError::CircularDependency(_)) => Some(Cow::Borrowed(
+                "Remove one of the `include`/`import` directives in the cycle.",
+            )),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(_, env))) => {
                 Some(Cow::Owned(format!("Environment variable '{env}' not found in module.")))
             }

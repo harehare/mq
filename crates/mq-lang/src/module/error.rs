@@ -20,6 +20,9 @@ pub enum ModuleError {
     /// The module has a syntax error.
     #[error(transparent)]
     SyntaxError(#[from] SyntaxError),
+    /// The module imports itself, directly or through other modules.
+    #[error("Circular module dependency: {0}")]
+    CircularDependency(Cow<'static, str>),
     /// The module declaration is malformed.
     #[error("Invalid module, expected IDENT or BINDING")]
     InvalidModule,
@@ -41,6 +44,7 @@ impl ModuleError {
             ModuleError::IOError(_) => None,
             ModuleError::SyntaxError(err) => err.token(),
             ModuleError::InvalidModule => None,
+            ModuleError::CircularDependency(_) => None,
             #[cfg(feature = "http-import")]
             ModuleError::HttpImportNotAllowed(_) => None,
         }

@@ -28,6 +28,14 @@ pub enum HirError {
         /// The module name that failed to resolve.
         module_name: SmolStr,
     },
+    /// An `include` or `import` of a module that is already being loaded.
+    #[error("Circular module dependency: {module_name}")]
+    CircularModule {
+        /// The `include` or `import` symbol.
+        symbol: Symbol,
+        /// The module name that closes the cycle.
+        module_name: SmolStr,
+    },
     /// `yield` used outside a function.
     #[error("`yield` outside a function")]
     YieldOutsideFunction {
@@ -48,7 +56,7 @@ pub enum HirWarning {
 }
 
 impl Hir {
-    /// Returns unresolved symbols, missing included modules and misplaced `yield`s.
+    /// Returns unresolved symbols, missing or circular modules and misplaced `yield`s.
     pub fn errors(&self) -> Vec<HirError> {
         self.symbols
             .iter()
@@ -67,6 +75,12 @@ impl Hir {
                             similar_name: self.find_similar_names(&symbol.clone().value.unwrap_or_default()),
                         })
                     }
+                }
+                SymbolKind::Include(_) | SymbolKind::Import(_) if self.circular_modules.contains(&symbol_id) => {
+                    Some(HirError::CircularModule {
+                        symbol: symbol.clone(),
+                        module_name: symbol.value.clone().unwrap_or(SmolStr::new("unknown")),
+                    })
                 }
                 SymbolKind::Include(_) => {
                     let module_name = symbol.clone().value.unwrap_or(SmolStr::new("unknown")).clone();
@@ -145,6 +159,7 @@ impl Hir {
                     match e {
                         HirError::UnresolvedSymbol { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
                         HirError::ModuleNotFound { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
+                        HirError::CircularModule { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
                         HirError::YieldOutsideFunction { symbol } => symbol.source.text_range.unwrap_or_default(),
                     },
                 )

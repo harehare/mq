@@ -2906,3 +2906,56 @@ fn test_remote_module_error_shows_its_own_source() {
     assert_eq!(error.source_code.name(), "util.mq");
     assert_eq!(error.source_code.inner(), REMOTE_UTIL_B);
 }
+
+/// `a` and `b` include each other, `loop` includes itself, and `top` reaches `leaf` twice.
+#[derive(Clone, Default)]
+struct CyclicResolver;
+
+impl crate::ModuleResolver for CyclicResolver {
+    fn resolve(&self, name: &str) -> Result<String, crate::ModuleError> {
+        match name {
+            "a" => Ok("include \"b\"\ndef fa(): 1;".to_string()),
+            "b" => Ok("include \"a\"\ndef fb(): 2;".to_string()),
+            "loop" => Ok("include \"loop\"\ndef fl(): 1;".to_string()),
+            "left" => Ok("include \"leaf\"\ndef fleft(): fleaf();".to_string()),
+            "right" => Ok("include \"leaf\"\ndef fright(): fleaf();".to_string()),
+            "top" => Ok("include \"left\"\ninclude \"right\"\ndef ftop(): fleft() + fright();".to_string()),
+            "leaf" => Ok("def fleaf(): 1;".to_string()),
+            _ => Err(crate::ModuleError::NotFound(name.to_string().into())),
+        }
+    }
+    fn get_path(&self, name: &str) -> Result<String, crate::ModuleError> {
+        Ok(name.to_string())
+    }
+    fn search_paths(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    fn set_search_paths(&mut self, _paths: Vec<PathBuf>) {}
+}
+
+#[rstest]
+#[case::include(r#"include "a" | fa()"#, "a -> b -> a")]
+#[case::import(r#"import "a" | a::fa()"#, "a -> b -> a")]
+#[case::self_include(r#"include "loop" | fl()"#, "loop -> loop")]
+fn test_circular_module_is_an_error(#[case] query: &str, #[case] chain: &str) {
+    let mut engine = Engine::new(CyclicResolver);
+    engine.load_builtin_module();
+    let error = engine.eval(query, crate::null_input().into_iter()).unwrap_err();
+    assert_eq!(
+        error.cause,
+        error::InnerError::Module(crate::ModuleError::CircularDependency(chain.to_string().into()))
+    );
+}
+
+#[test]
+fn test_module_reached_twice_is_not_circular() {
+    let mut engine = Engine::new(CyclicResolver);
+    engine.load_builtin_module();
+    let result = engine
+        .eval(r#"include "top" | ftop()"#, crate::null_input().into_iter())
+        .unwrap();
+    assert_eq!(
+        result,
+        vec![RuntimeValue::from(crate::number::Number::from(2_i64))].into()
+    );
+}

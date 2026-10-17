@@ -101,6 +101,7 @@ fn hir_error_code(error: &HirError) -> &'static str {
     match error {
         HirError::UnresolvedSymbol { .. } => "hir::unresolved_symbol",
         HirError::ModuleNotFound { .. } => "hir::module_not_found",
+        HirError::CircularModule { .. } => "hir::circular_module",
         HirError::YieldOutsideFunction { .. } => "hir::yield_outside_function",
     }
 }
@@ -109,6 +110,7 @@ fn hir_error_symbol(error: &HirError) -> &Symbol {
     match error {
         HirError::UnresolvedSymbol { symbol, .. }
         | HirError::ModuleNotFound { symbol, .. }
+        | HirError::CircularModule { symbol, .. }
         | HirError::YieldOutsideFunction { symbol } => symbol,
     }
 }

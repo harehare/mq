@@ -134,6 +134,16 @@ include "math"
 | sub(10, 4) # Returns 6
 ```
 
+## Circular dependencies
+
+A module that `import`s or `include`s itself, directly or through other modules, is an error:
+
+```
+Circular module dependency: a -> b -> a
+```
+
+Loading the same module from several places is fine as long as it does not depend back on itself.
+
 ## Built-in modules
 
 mq ships several built-in modules for parsing common structured data formats.

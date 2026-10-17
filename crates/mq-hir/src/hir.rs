@@ -31,6 +31,10 @@ pub struct Hir {
     pub(crate) module_sources: FxHashSet<SourceId>,
     /// Sources added through `add_nodes`. They are never module sources, even when included.
     pub(crate) opened_sources: FxHashSet<SourceId>,
+    /// URLs of the sources being loaded, outermost first.
+    pub(crate) loading_sources: Vec<Url>,
+    /// `include` and `import` symbols whose module is already being loaded.
+    pub(crate) circular_modules: FxHashSet<SymbolId>,
     pub(crate) symbol_insertion_counter: u32,
     /// Declarations a reference can resolve to, by name.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
@@ -81,6 +85,8 @@ impl Hir {
             source_symbols: FxHashMap::default(),
             module_sources: FxHashSet::default(),
             opened_sources: FxHashSet::default(),
+            loading_sources: Vec::new(),
+            circular_modules: FxHashSet::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
             leaking_scopes: FxHashMap::default(),
@@ -213,7 +219,7 @@ impl Hir {
         let source_id = self
             .source_by_url(&url)
             .inspect(|source_id| self.remove_source_contents(*source_id))
-            .unwrap_or_else(|| self.add_source(Source::new(Some(url))));
+            .unwrap_or_else(|| self.add_source(Source::new(Some(url.clone()))));
 
         let scope_id = self.scope_by_source(&source_id).unwrap_or_else(|| {
             self.add_scope(Scope::new(
@@ -225,9 +231,11 @@ impl Hir {
 
         self.source_scopes.insert(source_id, scope_id);
 
+        self.loading_sources.push(url);
         nodes.iter().for_each(|node| {
             self.add_expr(node, source_id, scope_id, None);
         });
+        self.loading_sources.pop();
         self.resolve();
 
         (source_id, scope_id)
@@ -269,6 +277,8 @@ impl Hir {
         });
 
         let symbols = &self.symbols;
+        self.circular_modules
+            .retain(|symbol_id| symbols.contains_key(*symbol_id));
         self.bracket_key_counts.retain(|call, _| symbols.contains_key(*call));
         self.bracket_group_counts.retain(|call, _| symbols.contains_key(*call));
         self.references
@@ -381,6 +391,7 @@ impl Hir {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::HirError;
     use itertools::Itertools;
     use rstest::rstest;
 
@@ -677,6 +688,56 @@ end"#;
             }
             _ => panic!("csv_parse should be a function"),
         }
+
+        assert!(hir.errors().is_empty());
+    }
+
+    fn hir_with_modules(dir: &str, modules: &[(&str, &str)]) -> Hir {
+        let dir = std::env::temp_dir().join(format!("mq-hir-{dir}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, code) in modules {
+            std::fs::write(dir.join(format!("{name}.mq")), code).unwrap();
+        }
+        let mut loader = mq_lang::ModuleLoader::default();
+        loader.set_search_paths(vec![dir]);
+        let mut hir = Hir::new(loader);
+        hir.builtin.disabled = true;
+        hir
+    }
+
+    #[rstest]
+    #[case::include("include")]
+    #[case::import("import")]
+    fn test_circular_module_is_an_error(#[case] directive: &str) {
+        let a = format!("{directive} \"b\"\ndef fa(): 1;");
+        let b = format!("{directive} \"a\"\ndef fb(): 2;");
+        let mut hir = hir_with_modules(&format!("circular-{directive}"), &[("a", &a), ("b", &b)]);
+        hir.add_code(None, &format!("{directive} \"a\""));
+
+        let errors = hir.errors();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(&errors[0], HirError::CircularModule { module_name, .. } if module_name == "a"));
+    }
+
+    #[test]
+    fn test_self_including_module_is_an_error() {
+        let mut hir = hir_with_modules("self-include", &[("loop", "include \"loop\"\ndef fl(): 1;")]);
+        hir.add_code(None, "include \"loop\"");
+
+        assert!(matches!(hir.errors()[..], [HirError::CircularModule { .. }]));
+    }
+
+    #[test]
+    fn test_module_reached_twice_is_not_circular() {
+        let mut hir = hir_with_modules(
+            "diamond",
+            &[
+                ("left", "include \"leaf\"\ndef fleft(): fleaf();"),
+                ("right", "include \"leaf\"\ndef fright(): fleaf();"),
+                ("leaf", "def fleaf(): 1;"),
+            ],
+        );
+        hir.add_code(None, "include \"left\" | include \"right\" | fleft() + fright()");
 
         assert!(hir.errors().is_empty());
     }

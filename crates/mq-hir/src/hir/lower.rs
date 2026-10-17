@@ -453,6 +453,18 @@ impl Hir {
         }
     }
 
+    /// Loads the source of an `include` or `import`. A module already being loaded further up
+    /// the chain is not loaded again, and the flag reports that.
+    fn load_directive_source(&mut self, module_name: &str, url: Url) -> (SourceId, bool) {
+        if self.loading_sources.contains(&url)
+            && let Some(source_id) = self.source_by_url(&url)
+        {
+            return (source_id, true);
+        }
+        let code = self.module_loader.resolve(module_name);
+        (self.add_module_code(url, &code.unwrap_or_default()), false)
+    }
+
     fn add_include_expr(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -467,10 +479,9 @@ impl Hir {
                 let module_path = self.module_loader.get_module_path(&module_name);
 
                 if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
-                    let code = self.module_loader.resolve(&module_name);
-                    let module_source_id = self.add_module_code(url, &code.unwrap_or_default());
+                    let (module_source_id, circular) = self.load_directive_source(&module_name, url);
 
-                    self.add_symbol(Symbol {
+                    let symbol_id = self.add_symbol(Symbol {
                         value: Some(module_name.clone()),
                         kind: SymbolKind::Include(module_source_id),
                         source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -479,6 +490,9 @@ impl Hir {
                         parent,
                         insertion_order: 0,
                     });
+                    if circular {
+                        self.circular_modules.insert(symbol_id);
+                    }
                 }
             }
         }
@@ -498,10 +512,9 @@ impl Hir {
                 let module_path = self.module_loader.get_module_path(&module_name);
 
                 if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
-                    let code = self.module_loader.resolve(&module_name);
-                    let module_source_id = self.add_module_code(url, &code.unwrap_or_default());
+                    let (module_source_id, circular) = self.load_directive_source(&module_name, url);
 
-                    self.add_symbol(Symbol {
+                    let symbol_id = self.add_symbol(Symbol {
                         value: Some(module_name.clone()),
                         kind: SymbolKind::Import(module_source_id),
                         source: SourceInfo::new(Some(source_id), Some(node.range())),
@@ -510,6 +523,9 @@ impl Hir {
                         parent,
                         insertion_order: 0,
                     });
+                    if circular {
+                        self.circular_modules.insert(symbol_id);
+                    }
 
                     // `import "path" as alias` also binds a plain Ident symbol for the
                     // alias, mirroring how `module` registers its name (see add_module_expr).

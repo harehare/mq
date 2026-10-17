@@ -163,6 +163,8 @@ struct Compiler<R: ModuleResolver> {
     module_barriers: Vec<ModuleBarrier>,
     /// Each imported module's barrier, by path, for binding its vars later.
     import_members: FxHashMap<String, ModuleBarrier>,
+    /// Paths of the `include`/`import`s being expanded, outermost first.
+    loading_modules: Vec<String>,
     /// Top-level inline modules, which any module can access qualified.
     inline_module_roots: FxHashSet<Ident>,
     /// Top-level slots holding builtin.mq functions, which modules can see.
@@ -1047,6 +1049,7 @@ fn compile_program_impl<R: ModuleResolver>(
         patterns: PatternState::default(),
         module_barriers: Vec::new(),
         import_members: FxHashMap::default(),
+        loading_modules: Vec::new(),
         inline_module_roots: FxHashSet::default(),
         prelude_slots: 0..0,
         #[cfg(feature = "debugger")]
@@ -1843,14 +1846,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
-        // Balanced with the pop below regardless of outcome: nested include/import must not
-        // reach the network once we're inside a loaded module.
-        #[cfg(feature = "http-import")]
-        self.module_loader.push_http_boundary();
-        let directives_result = self.compile_module_directives(&module.modules, &[]);
-        #[cfg(feature = "http-import")]
-        self.module_loader.pop_http_boundary();
-        directives_result?;
+        self.compile_nested_module_directives(path, &module, &[])?;
         self.predeclare_module_var_slots(&module.vars);
         let functions = self.reachable_module_functions(&module);
         self.compile_functions_with_forward_refs(&functions)?;
@@ -2006,6 +2002,38 @@ impl<R: ModuleResolver> Compiler<R> {
         result
     }
 
+    /// Compiles the `include`/`import`s of the module at `path`, failing when `path` is already
+    /// being expanded further up the chain.
+    fn compile_nested_module_directives(
+        &mut self,
+        path: &str,
+        module: &Module,
+        parent_module_path: &[Ident],
+    ) -> CompileResult<()> {
+        if let Some(start) = self.loading_modules.iter().position(|loading| loading == path) {
+            let chain = self.loading_modules[start..]
+                .iter()
+                .map(String::as_str)
+                .chain([path])
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            return Err(CompileError::Module(ModuleError::CircularDependency(
+                std::borrow::Cow::Owned(chain),
+            )));
+        }
+
+        self.loading_modules.push(path.to_string());
+        // Balanced with the pop below regardless of outcome: nested include/import must not
+        // reach the network once we're inside a loaded module.
+        #[cfg(feature = "http-import")]
+        self.module_loader.push_http_boundary();
+        let result = self.compile_module_directives(&module.modules, parent_module_path);
+        #[cfg(feature = "http-import")]
+        self.module_loader.pop_http_boundary();
+        self.loading_modules.pop();
+        result
+    }
+
     fn compile_module_directives(&mut self, modules: &Program, parent_module_path: &[Ident]) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
         let result = self.compile_discarding_in_module_path(modules, parent_module_path);
@@ -2139,12 +2167,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let depth = self.scopes.len() - 1;
         self.push_module_barrier(depth, module_alias);
 
-        #[cfg(feature = "http-import")]
-        self.module_loader.push_http_boundary();
-        let directives_result = self.compile_module_directives(&module.modules, &[module_alias]);
-        #[cfg(feature = "http-import")]
-        self.module_loader.pop_http_boundary();
-        directives_result?;
+        self.compile_nested_module_directives(path, &module, &[module_alias])?;
         let var_slots = self.predeclare_module_var_slots(&module.vars);
         let functions = self.reachable_module_functions(&module);
 
