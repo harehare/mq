@@ -1658,6 +1658,8 @@ impl Formatter {
                 mq_lang::TokenKind::LBracket | mq_lang::TokenKind::LParen
                     if node.leading_trivia.iter().any(|trivia| trivia.is_comment()) =>
                 {
+                    // The caller indents a child that starts a line; undo it to keep the expression's indent.
+                    let indent_level = indent_level.saturating_sub(1);
                     self.append_leading_trivia(node, indent_level);
                     if self.output.ends_with('\n') {
                         self.append_indent(indent_level);
@@ -3469,10 +3471,11 @@ def func_a(): test;
     /// Comments before a terminating `;` are kept, and formatting them again changes nothing.
     /// Comments between an expression and its postfix `[`/`(` on the next line are kept.
     #[rstest::rstest]
-    #[case::index("x # note\n[0]", "x # note\n  [0]\n")]
-    #[case::call("x # note\n(1)", "x # note\n  (1)\n")]
-    #[case::index_after_call("f(x) # note\n[0]", "f(x) # note\n  [0]\n")]
-    #[case::qualified_call("mod::f # note\n(1)", "mod::f # note\n  (1)\n")]
+    #[case::index("x # note\n[0]", "x # note\n[0]\n")]
+    #[case::call("x # note\n(1)", "x # note\n(1)\n")]
+    #[case::index_after_call("f(x) # note\n[0]", "f(x) # note\n[0]\n")]
+    #[case::qualified_call("mod::f # note\n(1)", "mod::f # note\n(1)\n")]
+    #[case::in_def("def g():\n  x # note\n  [0]\n;", "def g():\n  x # note\n  [0];\n")]
     fn test_format_keeps_comment_before_postfix(#[case] code: &str, #[case] expected: &str) {
         let once = Formatter::new(None).format(code).unwrap();
         assert_eq!(once, expected);
