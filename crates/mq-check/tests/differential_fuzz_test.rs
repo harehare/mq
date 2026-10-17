@@ -222,7 +222,7 @@ impl Gen {
         match self.rng.below(20) {
             0 => format!("var n = {num}\n| n = n + 1\n| n"),
             1 => format!("var s = {text}\n| s = s + \"x\"\n| upcase(s)"),
-            2 => format!("var i = 0\n| while (i < 3): i = i + 1 end\n| i"),
+            2 => "var i = 0\n| while (i < 3): i = i + 1 end\n| i".to_string(),
             3 => format!("var acc = []\n| foreach (x, {arr}): acc = acc + [x + 1] end\n| acc"),
             4 => format!(
                 "def fact(n): if (n <= 1): 1 else: n * fact(n - 1);\n| fact({})",
@@ -236,7 +236,7 @@ impl Gen {
             10 => format!("let n = if ({cond}): None else: {num}\n| if (is_none(n)): 0 else: n + 1"),
             11 => format!("let n = if ({cond}): None else: {num}\n| if (n != None): n + 1 else: 0"),
             12 => format!("let t = if ({cond}): None else: {text}\n| if (t == None): \"\" else: upcase(t)"),
-            13 => format!("let m = {{\"a\": [1, 2], \"b\": [3]}}\n| len(m[\"a\"]) + len(m[\"b\"])"),
+            13 => "let m = {\"a\": [1, 2], \"b\": [3]}\n| len(m[\"a\"]) + len(m[\"b\"])".to_string(),
             14 => format!("split({text}, \",\") | map(fn(p): trim(p);)"),
             15 => format!("let p = {text}\n| if (starts_with(p, \"a\")): p + \"!\" else: replace(p, \"a\", \"b\")"),
             16 => format!("let v = {text}\n| if (v == \"a\"): 1 elif (v == \"b\"): 2 else: 3"),

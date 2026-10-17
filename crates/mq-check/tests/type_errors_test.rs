@@ -824,3 +824,14 @@ fn test_values_of_other_types_are_not_reported(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "valid program must not report: {:?}", result);
 }
+
+#[rstest]
+#[case::branch_not_pinned(r#"var cur = "" | if (true): [1] else: do cur = "b" | cur end | cur"#)]
+#[case::self_assignment_keeps_type(r#"def f(s): var cur = "" | cur = cur + s | cur end | f("a") | upcase(f("b"))"#)]
+#[case::accumulate_in_loop(
+    r#"def f(s): var cur = "" | var i = 0 | let _ = while (i < 3): do cur = cur + s[i] | i += 1 | cur end end | cur end | f("abc")"#
+)]
+fn test_unsettled_branch_and_reassignment_report_nothing(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "valid program must not report: {:?}", result);
+}

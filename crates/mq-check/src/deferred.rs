@@ -937,6 +937,10 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                 if any_var_best {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
+                        // Overloads that agree on the result settle it before the arguments are.
+                        if let Some(ret) = crate::constraint::call::common_result(ctx, &d.op_name, &resolved_operands) {
+                            ctx.set_symbol_type(d.symbol_id, ret);
+                        }
                         store_back_for_later.push(idx);
                         continue;
                     }

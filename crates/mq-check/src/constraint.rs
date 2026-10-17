@@ -1,6 +1,6 @@
 //! Constraint generation for type inference.
 
-mod call;
+pub(crate) mod call;
 mod categories;
 mod helpers;
 mod pipe;
@@ -660,7 +660,10 @@ pub(super) fn generate_symbol_constraints(
                     })
                     .collect();
 
-                let def_ty = ctx.get_or_create_symbol_type(def_id);
+                let def_ty = match ctx.read_override(symbol_id) {
+                    Some(before_assignment) => before_assignment.clone(),
+                    None => ctx.get_or_create_symbol_type(def_id),
+                };
                 // Instantiate fresh type variables for function references to enable
                 // polymorphic use at different call/reference sites
                 let def_ty = if matches!(def_ty, Type::Function(_, _)) {
@@ -812,6 +815,18 @@ pub(super) fn generate_symbol_constraints(
                             // variable binding (which would conflict with the initializer
                             // constraint, e.g., `var x = 10 | x = "hello"` would fail
                             // because tv1→Number and tv1→String would conflict).
+                            // The right-hand side still sees the variable as it was before.
+                            let before = ctx.get_or_create_symbol_type(var_id);
+                            let mut stack = vec![rhs_id];
+                            while let Some(id) = stack.pop() {
+                                if hir.symbol(id).is_some_and(|s| s.kind == SymbolKind::Ref)
+                                    && hir.resolve_reference_symbol(id) == Some(var_id)
+                                {
+                                    ctx.set_read_override(id, before.clone());
+                                }
+                                stack.extend(get_children(children_index, id).iter().copied());
+                            }
+
                             let new_var_ty = ctx.fresh_var();
                             ctx.set_symbol_type_no_bind(var_id, Type::Var(new_var_ty));
                             let var_name = hir.symbol(lhs_id).and_then(|s| s.value.clone()).unwrap_or_default();
@@ -1183,7 +1198,11 @@ pub(super) fn generate_symbol_constraints(
                             .any(|branch| is_unpinnable_branch(hir, branch))
                         && resolved.iter().any(|ty| ty != &resolved[0]);
 
+                    // A branch whose type is not known yet is not pinned to the type of the others.
+                    let has_unsettled_branch = !concrete.is_empty() && concrete.len() < resolved.len();
+
                     if would_cause_infinite_type
+                        || has_unsettled_branch
                         || (!all_same && concrete.len() >= 2)
                         || (has_none_branch && resolved.len() >= 2)
                         || has_parameter_branch
