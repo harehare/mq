@@ -134,6 +134,13 @@ get(d, "name")   # Same as di["name"]
 d | get("age")    # Same as d["age"]
 ```
 
+A dictionary literal can be indexed directly:
+
+```mq
+{"a": 1, "b": {"c": 2}}["a"]        # Returns 1
+{"a": 1, "b": {"c": 2}}["b"]["c"]   # Returns 2
+```
+
 ### String Index Access
 
 Strings can be indexed by Unicode scalar value. Negative indices count from the end and an out-of-range index returns `None`:
