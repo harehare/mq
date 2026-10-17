@@ -75,12 +75,8 @@ jobs:
         run: just fmt
 
   lint:
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,11 +86,6 @@ jobs:
         with:
           just-version: 1.58.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Configure RUSTFLAGS for Windows
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "RUSTFLAGS=${RUSTFLAGS} -C link-args=/STACK:8388608" >> $GITHUB_ENV
       - name: Run lint
         run: just lint
 
