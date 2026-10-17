@@ -3583,7 +3583,8 @@ mod tests {
             }
         }
 
-        let query = format!("read_file(\"{}\")", temp_file_path.to_string_lossy());
+        // Backslashes would be parsed as escapes inside an mq string literal on Windows.
+        let query = format!("read_file(\"{}\")", temp_file_path.to_string_lossy().replace('\\', "/"));
 
         let blocked_cli = Cli {
             input: InputArgs {
