@@ -287,7 +287,7 @@ enum Check {
     Panic(String),
     Clean,
     /// Errors that are definitely wrong programs
-    Errors(Vec<String>),
+    Errors(Vec<String>, bool),
 }
 
 fn is_soft(error: &TypeError) -> bool {
@@ -303,7 +303,7 @@ fn check(code: &str) -> Check {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let mut hir = Hir::default();
         hir.add_code(None, code);
-        TypeChecker::new().check(&hir)
+        TypeChecker::new().check_classified(&hir)
     }));
     match result {
         Err(payload) => Check::Panic(
@@ -314,11 +314,12 @@ fn check(code: &str) -> Check {
                 .unwrap_or_default(),
         ),
         Ok(errors) => {
-            let errors: Vec<String> = errors.iter().filter(|e| !is_soft(e)).map(|e| e.to_string()).collect();
+            let errors: Vec<_> = errors.iter().filter(|c| !is_soft(&c.error)).collect();
             if errors.is_empty() {
                 Check::Clean
             } else {
-                Check::Errors(errors)
+                let definite = errors.iter().any(|c| c.certainty == mq_check::Certainty::Definite);
+                Check::Errors(errors.iter().map(|c| c.error.to_string()).collect(), definite)
             }
         }
     }
@@ -335,6 +336,9 @@ struct Findings {
     runtime_ok: usize,
     agree_ok: usize,
     agree_error: usize,
+    /// Of `agree_error`, how many the checker called definite
+    agree_error_definite: usize,
+    definite_false_positives: Vec<(String, String)>,
     soft_only: usize,
     panics: Vec<(String, String)>,
     false_positives: Vec<(String, String)>,
@@ -360,8 +364,18 @@ fn run(seed: u64, count: usize, noise: u64) -> Findings {
 
         match (&verdict, &runtime) {
             (Check::Panic(message), _) => findings.panics.push((code, message.clone())),
-            (Check::Errors(errors), Ok(_)) => findings.false_positives.push((code, errors[0].clone())),
-            (Check::Errors(_), Err(_)) => findings.agree_error += 1,
+            (Check::Errors(errors, definite), Ok(_)) => {
+                if *definite {
+                    findings
+                        .definite_false_positives
+                        .push((code.clone(), errors[0].clone()));
+                }
+                findings.false_positives.push((code, errors[0].clone()))
+            }
+            (Check::Errors(_, definite), Err(_)) => {
+                findings.agree_error += 1;
+                findings.agree_error_definite += usize::from(*definite);
+            }
             (Check::Clean, Err(error)) if is_type_error(&error.to_string()) => findings
                 .false_negatives
                 .push((code, error.to_string().lines().next().unwrap_or("").to_string())),
@@ -381,12 +395,14 @@ fn report(findings: &Findings) -> String {
     let mut out = String::new();
     writeln!(
         out,
-        "programs={} agree_ok={} agree_error={} other_runtime_errors={} false_positives={} false_negatives={} panics={}",
+        "programs={} agree_ok={} agree_error={} (definite {}) other_runtime_errors={} false_positives={} (definite {}) false_negatives={} panics={}",
         findings.programs,
         findings.agree_ok,
         findings.agree_error,
+        findings.agree_error_definite,
         findings.soft_only,
         findings.false_positives.len(),
+        findings.definite_false_positives.len(),
         findings.false_negatives.len(),
         findings.panics.len()
     )
@@ -401,6 +417,7 @@ fn report(findings: &Findings) -> String {
     writeln!(out, "false negatives by function: {counts:?}").unwrap();
     for (title, items) in [
         ("PANIC", &findings.panics),
+        ("DEFINITE FALSE POSITIVE", &findings.definite_false_positives),
         ("FALSE POSITIVE", &findings.false_positives),
         ("FALSE NEGATIVE", &findings.false_negatives),
     ] {

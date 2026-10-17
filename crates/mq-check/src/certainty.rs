@@ -101,6 +101,11 @@ struct Prover {
     /// pass their input on, so they are skipped.
     previous: FxHashMap<SymbolId, SymbolId>,
     memo: FxHashMap<SymbolId, bool>,
+    /// Whether the parameters of the function being proven are taken to be exact, which holds when
+    /// it is called with exact arguments
+    params_exact: bool,
+    /// Whether the body of a function is exact when its parameters are
+    bodies: FxHashMap<SymbolId, bool>,
 }
 
 impl Prover {
@@ -169,6 +174,8 @@ impl Prover {
             assigned,
             previous,
             memo: FxHashMap::default(),
+            params_exact: false,
+            bodies: FxHashMap::default(),
         }
     }
 
@@ -209,7 +216,9 @@ impl Prover {
         };
         if is_operation(&symbol.kind) {
             // A call that takes the piped value as an argument has an operand that is not a child.
-            if symbol.kind == SymbolKind::Call && !(is_audited_builtin(hir, id, symbol) && self.input_is_exact(hir, id))
+            if symbol.kind == SymbolKind::Call
+                && !((is_audited_builtin(hir, id, symbol) || self.is_exact_user_call(hir, id))
+                    && self.input_is_exact(hir, id))
             {
                 return false;
             }
@@ -282,12 +291,74 @@ impl Prover {
     }
 
     fn call_is_exact(&mut self, hir: &Hir, id: SymbolId, symbol: &mq_hir::Symbol, children: &[SymbolId]) -> bool {
-        is_audited_builtin(hir, id, symbol)
+        (is_audited_builtin(hir, id, symbol) || self.is_exact_user_call(hir, id))
             && self.input_is_exact(hir, id)
             && children
                 .iter()
                 .filter(|&&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
                 .all(|&c| self.is_exact(hir, c))
+    }
+
+    /// Whether the call is of a function defined in the program, given every parameter and whose
+    /// body is exact when its parameters are, so that exact arguments give a result of known type.
+    fn is_exact_user_call(&mut self, hir: &Hir, id: SymbolId) -> bool {
+        let Some(def_id) = hir.resolve_reference_symbol(id) else {
+            return false;
+        };
+        let Some(def) = hir.symbol(def_id) else {
+            return false;
+        };
+        let SymbolKind::Function(params) = &def.kind else {
+            return false;
+        };
+        if hir.is_builtin_symbol(def) || params.iter().any(|p| p.is_variadic || p.has_default) {
+            return false;
+        }
+        let given = self.children.get(&id).map_or(0, |c| {
+            c.iter()
+                .filter(|&&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
+                .count()
+        });
+        given == params.len() && self.body_is_exact(hir, def_id)
+    }
+
+    /// Whether every expression in the body of the function is exact if its parameters are.
+    fn body_is_exact(&mut self, hir: &Hir, def_id: SymbolId) -> bool {
+        if let Some(&known) = self.bodies.get(&def_id) {
+            return known;
+        }
+        // A recursive function is not exact
+        self.bodies.insert(def_id, false);
+        let outer_memo = std::mem::take(&mut self.memo);
+        let outer_params = std::mem::replace(&mut self.params_exact, true);
+
+        let stages: Vec<SymbolId> = self
+            .children
+            .get(&def_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
+            .collect();
+        let exact = !stages.is_empty() && stages.iter().all(|&stage| self.stage_is_exact(hir, stage));
+
+        self.memo = outer_memo;
+        self.params_exact = outer_params;
+        self.bodies.insert(def_id, exact);
+        exact
+    }
+
+    /// A stage of a body: a definition is exact when its value is.
+    fn stage_is_exact(&mut self, hir: &Hir, stage: SymbolId) -> bool {
+        match hir.symbol(stage).map(|s| &s.kind) {
+            Some(SymbolKind::Variable | SymbolKind::DestructuringBinding) => self
+                .children
+                .get(&stage)
+                .and_then(|c| c.last())
+                .copied()
+                .is_some_and(|init| self.is_exact(hir, init)),
+            _ => self.is_exact(hir, stage),
+        }
     }
 
     /// Whether what the stage is piped is exact, or it has no stage before it.
@@ -305,10 +376,13 @@ impl Prover {
         let Some(def_symbol) = hir.symbol(def) else {
             return false;
         };
-        if def_symbol.kind != SymbolKind::Variable || self.assigned.contains(&def) {
+        if self.assigned.contains(&def) || self.is_narrowed_around(hir, id, def) {
             return false;
         }
-        if self.is_narrowed_around(hir, id, def) {
+        if def_symbol.kind == SymbolKind::Parameter {
+            return self.params_exact;
+        }
+        if def_symbol.kind != SymbolKind::Variable {
             return false;
         }
         let Some(&init) = self.children.get(&def).and_then(|c| c.last()) else {
