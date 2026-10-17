@@ -4,7 +4,7 @@ use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
 use crate::{TypeEnv, TypeError};
 use mq_hir::SymbolId;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 
 /// A deferred overload resolution for operators with unresolved type variable operands.
@@ -263,8 +263,9 @@ pub struct InferenceContext {
     deferred_parameter_calls: Vec<DeferredParameterCall>,
     /// Deferred record field accesses for post-unification resolution
     deferred_record_accesses: Vec<DeferredRecordAccess>,
-    /// Record fields assigned through `x["k"] = v`, per variable definition
-    written_record_fields: FxHashSet<(SymbolId, String)>,
+    /// Record fields assigned through `x["k"] = v`, per variable definition, with the end of the
+    /// earliest assignment (`None` when its position is unknown)
+    written_record_fields: FxHashMap<(SymbolId, String), Option<mq_lang::Position>>,
     /// Deferred selector field accesses for post-unification resolution
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
     /// Deferred tuple index accesses for post-unification resolution
@@ -307,7 +308,7 @@ impl InferenceContext {
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
-            written_record_fields: FxHashSet::default(),
+            written_record_fields: FxHashMap::default(),
             deferred_selector_accesses: Vec::new(),
             deferred_tuple_accesses: Vec::new(),
             deferred_call_return_accesses: Vec::new(),
@@ -472,14 +473,29 @@ impl InferenceContext {
         self.deferred_record_accesses.push(access);
     }
 
-    /// Records that `def_id["field"]` is assigned, so its reads are not checked against the record literal.
-    pub fn add_written_record_field(&mut self, def_id: SymbolId, field: String) {
-        self.written_record_fields.insert((def_id, field));
+    /// Records that `def_id["field"]` is assigned by a statement ending at `end`.
+    pub fn add_written_record_field(&mut self, def_id: SymbolId, field: String, end: Option<mq_lang::Position>) {
+        self.written_record_fields
+            .entry((def_id, field))
+            .and_modify(|first| *first = first.zip(end).map(|(a, b)| a.min(b)))
+            .or_insert(end);
     }
 
-    /// Whether `def_id["field"]` is assigned somewhere.
-    pub fn is_record_field_written(&self, def_id: SymbolId, field: &str) -> bool {
-        self.written_record_fields.contains(&(def_id, field.to_owned()))
+    /// Whether a read of `def_id["field"]` starting at `read_start` can follow an assignment to it.
+    /// Reads before every assignment still see the original record.
+    pub fn is_record_field_written(
+        &self,
+        def_id: SymbolId,
+        field: &str,
+        read_start: Option<mq_lang::Position>,
+    ) -> bool {
+        match self.written_record_fields.get(&(def_id, field.to_owned())) {
+            None => false,
+            Some(first_write_end) => match (first_write_end, read_start) {
+                (Some(end), Some(start)) => start >= *end,
+                _ => true,
+            },
+        }
     }
 
     /// Takes all deferred record accesses (consumes them)

@@ -604,6 +604,7 @@ mod tests {
     #[rstest]
     #[case::array_element("var a = [1, 2] | a[0] = \"x\" | a", true)]
     #[case::array_element_ok("var a = [1, 2] | a[0] = 3 | a", false)]
+    #[case::chained_element("var a = [[1, 2], [3, 4]] | a[0][1] = 5 | a", false)]
     fn test_index_assign_checks_the_element_type_in_strict_mode(#[case] code: &str, #[case] rejected: bool) {
         let check = |strict_array| {
             let mut hir = Hir::default();
@@ -621,6 +622,9 @@ mod tests {
     #[rstest]
     #[case::fold_passes_two_arguments("fold([1, 2], 0, fn: self)")]
     #[case::compound_assign_reads_missing_field("var d = {\"a\": 1} | d[\"b\"] += 1 | d")]
+    #[case::read_before_write("var d = {\"a\": 1} | d[\"b\"] | d[\"b\"] = 2")]
+    #[case::read_in_assigned_value("var d = {\"a\": 1} | d[\"b\"] = d[\"b\"] + 1")]
+    #[case::retype_after_read("var d = {\"a\": 1} | let y = d[\"a\"] | upcase(y) | d[\"a\"] = \"x\"")]
     #[case::unwritten_field_still_checked("var d = {\"a\": 1} | d[\"b\"] = 2 | d[\"c\"]")]
     #[case::elements_not_numbers("[\"a\"] | map(fn: abs())")]
     #[case::piped_call_in_body("[1] | map(fn: split(\" \"))")]

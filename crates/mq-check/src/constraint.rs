@@ -770,7 +770,9 @@ pub(super) fn generate_symbol_constraints(
 
                     // `x[k] = v` updates an element, so the variable keeps its type.
                     let is_index_assign = hir.symbol(lhs_id).is_some_and(|s| s.kind == SymbolKind::Call);
-                    if is_index_assign && ctx.strict_array() && symbol.value.as_deref() == Some("=") {
+                    // A chained target such as `a[0][1]` is not tracked through its keys.
+                    let is_chained = hir.bracket_key_count(lhs_id) > 1;
+                    if is_index_assign && !is_chained && ctx.strict_array() && symbol.value.as_deref() == Some("=") {
                         let elem_ty = ctx.get_or_create_symbol_type(lhs_id);
                         ctx.add_constraint(Constraint::Equal(
                             elem_ty,
@@ -2006,8 +2008,14 @@ fn generate_call_constraints(
                             .filter(|_| is_index_assign_target(symbol_id, hir, children_index))
                         {
                             // `r["new"] = v` may add a field or change its type, so it is not a
-                            // read of `r` and later reads of the field are not checked.
-                            ctx.add_written_record_field(def_id, name);
+                            // read of `r` and reads of the field after it are not checked.
+                            let assign_end = hir
+                                .symbol(symbol_id)
+                                .and_then(|s| s.parent)
+                                .and_then(|parent| get_children(children_index, parent).last().copied())
+                                .and_then(|rhs| get_symbol_range(hir, rhs))
+                                .map(|r| r.end);
+                            ctx.add_written_record_field(def_id, name, assign_end);
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         } else if let Some(name) = field_name {
