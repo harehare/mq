@@ -8,6 +8,9 @@
 //! The builtins written in mq (`builtin.mq`) are audited the same way: their signatures are
 //! inferred from the bodies, so a finding there is an inference that is narrower than the body.
 //!
+//! The builtins without a finding are the ones whose calls the checker may call definite errors;
+//! they are pinned in `src/exact_builtins.txt` and regenerated with `UPDATE_EXACT=1`.
+//!
 //! Slow, so it is ignored by default: `just audit-builtins`. `AUDIT_FUNCTION` limits it to one
 //! function and `AUDIT_TRIPLES` sets how many 3-argument combinations are tried (default 60).
 
@@ -52,6 +55,23 @@ const SKIPPED: &[&str] = &[
     "file_info",
     "file_size",
     "embed_images",
+];
+
+/// Calls that the runtime answers by coercing a value it has no use for, which the checker rejects
+/// on purpose: the function and the argument types, as they are listed in a finding.
+const TOLERATED: &[(&str, &str)] = &[
+    ("len", "(bool)"),
+    ("len", "(symbol)"),
+    ("len", "(function)"),
+    ("flatten", "(function)"),
+    ("max", "(none, function)"),
+    ("max", "(function, none)"),
+    ("contains", "(none, markdown)"),
+    ("contains", "(none, function)"),
+    ("contains", "([number], function)"),
+    ("contains", "([string], function)"),
+    ("index", "([number], function)"),
+    ("index", "([string], function)"),
 ];
 
 /// One value of each type: label and source.
@@ -158,6 +178,8 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
         .collect();
 
     let mut findings: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // Calls that run and are accepted, per builtin
+    let mut accepted: BTreeMap<String, usize> = BTreeMap::new();
     let mut tried = 0usize;
     // Name and the numbers of arguments to try
     let mut targets: Vec<(String, std::ops::RangeInclusive<usize>)> = mq_help::BUILTIN_DOC
@@ -202,6 +224,10 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
                 let Ok(values) = engine.eval(&code, mq_lang::null_input().into_iter()) else {
                     continue;
                 };
+                // A call that runs and is accepted shows the signature takes real uses.
+                if rejected(&code).is_none() {
+                    *accepted.entry(name.clone()).or_default() += 1;
+                }
                 let computed = values.into_iter().next().is_some_and(|result| {
                     !result.is_none()
                         && !combo
@@ -213,6 +239,10 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
                 }
                 if let Some(error) = rejected(&code) {
                     let labels: Vec<&str> = combo.iter().map(|&i| VALUES[i].0).collect();
+                    let signature = format!("({})", labels.join(", "));
+                    if TOLERATED.contains(&(name.as_str(), signature.as_str())) {
+                        continue;
+                    }
                     findings.entry(name.clone()).or_default().push(format!(
                         "({})  {}",
                         labels.join(", "),
@@ -235,6 +265,29 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
         }
     }
     println!("{report}");
+
+    // The builtins whose signature is not narrower than the function on any call tried, and that
+    // accept a call that runs (so the calls tried are not all wrong), have a type that is known
+    // for certain: see `exact_builtins.txt`.
+    if only.is_none() {
+        let exact: std::collections::BTreeSet<&str> = targets
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .filter(|name| !findings.contains_key(*name) && accepted.contains_key(*name))
+            .collect();
+        let listed: String = exact.iter().map(|name| format!("{name}\n")).collect();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/exact_builtins.txt");
+        if std::env::var_os("UPDATE_EXACT").is_some() {
+            std::fs::write(path, &listed).unwrap();
+        } else {
+            let current = std::fs::read_to_string(path).unwrap_or_default();
+            assert_eq!(
+                current, listed,
+                "src/exact_builtins.txt is out of date; regenerate it with UPDATE_EXACT=1"
+            );
+        }
+    }
+
     assert!(
         total == 0 || std::env::var_os("AUDIT_REPORT_ONLY").is_some(),
         "{report}"

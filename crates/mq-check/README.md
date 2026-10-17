@@ -183,7 +183,7 @@ An expression is exact when it is
 
 - a literal, or an array or dict literal of exact elements
 - an operator on exact operands
-- a call of a builtin whose signature has been audited (see below) with exact arguments, fed by an exact pipe stage
+- a call of a builtin listed in `src/exact_builtins.txt` (see below) with exact arguments, fed by an exact pipe stage
 - an `if` whose branches are exact
 - a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
 
@@ -251,7 +251,7 @@ just test-all
 
 ### Builtin signature audit
 
-`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose. `AUDIT_FUNCTION` limits the run to one builtin.
+`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose (`TOLERATED` in the test). The builtins without a finding that accept at least one call that runs are listed in `src/exact_builtins.txt`, which the audit checks and `UPDATE_EXACT=1` regenerates; only calls to them can make an error definite. `AUDIT_FUNCTION` limits the run to one builtin.
 
 ### Building
 
