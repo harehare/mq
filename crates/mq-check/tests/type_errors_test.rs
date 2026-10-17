@@ -846,3 +846,26 @@ fn test_parenthesized_call_of_a_variable_is_not_a_slice() {
         result
     );
 }
+
+#[rstest]
+#[case::node_upcase(r##"upcase(first(to_markdown("# h")))""##)]
+#[case::node_starts_with(r##"starts_with(first(to_markdown("# h")), "h")""##)]
+#[case::node_len(r##"len(first(to_markdown("# h")))""##)]
+#[case::node_regex(r##"regex_match(first(to_markdown("# h")), "h")""##)]
+#[case::none_starts_with(r#"starts_with(None, "a")"#)]
+#[case::none_index(r#"index(None, "a")"#)]
+#[case::token_count_none("token_count(None)")]
+#[case::to_text_any("to_text(2)")]
+#[case::to_markdown_string_array(r##"to_markdown_string(to_markdown("# h"))""##)]
+#[case::url_encode_number("url_encode(2)")]
+#[case::has_other_type(r#"has([1, 2], "a")"#)]
+#[case::has_other_key(r#"has({"a": 1}, 2)"#)]
+#[case::index_other_type(r#"index([1, 2], "a")"#)]
+#[case::coalesce_other_type(r#"42 ?? "fallback""#)]
+#[case::repeat_string(r#"2 * "ab""#)]
+#[case::is_nan_string(r#"is_nan("a")"#)]
+#[case::code_without_language("to_code(2, None)")]
+fn test_builtin_accepts_what_the_runtime_accepts(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "the runtime accepts it: {:?}", result);
+}

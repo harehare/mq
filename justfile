@@ -118,6 +118,10 @@ test-conformance:
 fuzz-check:
     cargo test --release -p mq-check --test differential_fuzz_test -- --ignored --nocapture
 
+# Call every native builtin with every argument type and list the calls that compute a value but are rejected by the checker (AUDIT_FUNCTION, AUDIT_TRIPLES).
+audit-builtins:
+    AUDIT_REPORT_ONLY=1 cargo test --release -p mq-check --test builtin_audit_test -- --ignored --nocapture
+
 # Print the median time of each mq-check phase per input.
 bench-check-phases:
     cargo run --release -p mq-check --example phase_profile
