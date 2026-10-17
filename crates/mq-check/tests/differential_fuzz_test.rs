@@ -224,7 +224,10 @@ impl Gen {
             1 => format!("var s = {text}\n| s = s + \"x\"\n| upcase(s)"),
             2 => format!("var i = 0\n| while (i < 3): i = i + 1 end\n| i"),
             3 => format!("var acc = []\n| foreach (x, {arr}): acc = acc + [x + 1] end\n| acc"),
-            4 => format!("def fact(n): if (n <= 1): 1 else: n * fact(n - 1);\n| fact({})", self.rng.below(6)),
+            4 => format!(
+                "def fact(n): if (n <= 1): 1 else: n * fact(n - 1);\n| fact({})",
+                self.rng.below(6)
+            ),
             5 => format!("let k = {num}\n| def add(x): x + k;\n| add({num})"),
             6 => format!("let k = {text}\n| map([{text}], fn(x): x + k;)"),
             7 => format!("let a = {arr}\n| a[0] + 1"),
@@ -238,7 +241,9 @@ impl Gen {
             15 => format!("let p = {text}\n| if (starts_with(p, \"a\")): p + \"!\" else: replace(p, \"a\", \"b\")"),
             16 => format!("let v = {text}\n| if (v == \"a\"): 1 elif (v == \"b\"): 2 else: 3"),
             17 => format!("let n = {num}\n| if (n > 1): if (n > 2): \"big\" else: \"mid\" else: \"small\""),
-            18 => format!("def f(x): if (is_array(x)): len(x) elif (is_string(x)): len(x) else: x;\n| [f({arr}), f({text}), f({num})]"),
+            18 => format!(
+                "def f(x): if (is_array(x)): len(x) elif (is_string(x)): len(x) else: x;\n| [f({arr}), f({text}), f({num})]"
+            ),
             _ => format!("let r = try: {num} catch: \"e\"\n| if (is_number(r)): r + 1 else: r"),
         }
     }
