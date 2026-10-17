@@ -17,7 +17,10 @@ fn certainties(code: &str) -> Vec<Certainty> {
 #[rstest]
 #[case::literal_operands(r#""a" - 1"#)]
 #[case::builtin_argument("abs(\"a\")")]
-#[case::user_function_call_site("def f(x): x + 1; | f(true)")]
+#[case::piped_from_literal(r#""a" | abs()"#)]
+#[case::constant_variable(r#"let s = "a" | abs(s)"#)]
+#[case::both_branches_exact(r#"if (true): "a" else: "b" | abs()"#)]
+#[case::operator_on_literals(r#"[1, 2] - 1"#)]
 fn test_error_on_known_types_is_definite(#[case] code: &str) {
     let found = certainties(code);
     assert!(!found.is_empty(), "expected a type error for {code}");
@@ -28,6 +31,10 @@ fn test_error_on_known_types_is_definite(#[case] code: &str) {
 #[case::reassigned_variable(r#"var x = 1 | x = "a" | x - 1"#)]
 #[case::parameter(r#"def f(x): x + 1 | x - "a" end"#)]
 #[case::try_body(r#"try: "a" - 1 catch: 0"#)]
+#[case::user_function_call_site("def f(x): x + 1; | f(true)")]
+#[case::result_of_user_function(r#"def f(x): "a"; | f(1) | abs()"#)]
+#[case::narrowed_variable(r#"let s = "a" | if (is_string(s)): s - 1 else: 0"#)]
+#[case::unaudited_builtin(r#"sort_by(1, 2)"#)]
 #[case::unreachable(r#"let x = 1 | if (is_none(x)): 1 else: 2"#)]
 fn test_error_that_relies_on_an_approximation_is_possible(#[case] code: &str) {
     let found = certainties(code);
