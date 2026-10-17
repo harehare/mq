@@ -177,14 +177,17 @@ echo '[1, "hello"]' | mq-check --strict-array
 
 ### Definite and possible errors
 
-A type error is either *definite*: the operands have fully known types, so the program fails at runtime if it gets there; or *possible*: it relies on an approximation, so the program may run fine. Possible errors are reported as warnings and do not change the exit status; `--strict` reports them as errors.
+A type error is *definite* only when every operand it is about is *exact*: its type is known for certain. Every other error is *possible*: it may be wrong for a program that runs fine. Possible errors are reported as warnings and do not change the exit status; `--strict` reports them as errors.
 
-A diagnostic is possible when it:
+An expression is exact when it is
 
-- reads a variable that is assigned more than once, or a parameter (whose type is only what the body has used it for)
-- is about an operand whose type is not settled
-- is inside a `try:` body, where the `catch` handles the failure
-- is advisory (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`)
+- a literal, or an array or dict literal of exact elements
+- an operator on exact operands
+- a call of a builtin whose signature has been audited (see below) with exact arguments, fed by an exact pipe stage
+- an `if` whose branches are exact
+- a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
+
+Parameters, calls of user functions, loops, `match` and anything else are not exact, so an error on them is possible. An error inside a `try:` body is possible as well, and so are the advisory diagnostics (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`). A case the rules do not cover can only make an error possible, never definite.
 
 Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
 
