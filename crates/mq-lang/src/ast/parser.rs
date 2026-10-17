@@ -850,10 +850,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
         }
 
-        Ok(Shared::new(Node {
+        let dict_node = Shared::new(Node {
             token_id,
             expr: Expr::Dict(pairs),
-        }))
+        });
+
+        self.parse_postfix_ops(dict_node, lbrace_token)
     }
 
     #[inline(never)]
