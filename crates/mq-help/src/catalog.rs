@@ -668,7 +668,10 @@ mod tests {
                 let input = vec![mq_lang::RuntimeValue::NONE].into_iter();
                 match engine.eval(&example.code, input) {
                     Ok(values) => {
-                        let rendered = values.into_iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
+                        let mut rendered = values.into_iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
+                        if cfg!(windows) && entry.name == "path_join" {
+                            rendered = rendered.replace('\\', "/");
+                        }
                         if normalize_dict_order(&rendered) != normalize_dict_order(&example.expected) {
                             failures.push(format!(
                                 "{} `{}`: expected `{}`, got `{}`",

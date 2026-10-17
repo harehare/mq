@@ -60,7 +60,8 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
         return Err("must be a finite number greater than 0".to_string());
     }
     let timeout = Duration::try_from_secs_f64(secs).map_err(|_| "timeout is too large".to_string())?;
-    if std::time::Instant::now().checked_add(timeout).is_none() {
+    // `Instant` ranges differ per OS (i64 secs on Unix, u64 on Windows), so cap at the smaller one.
+    if timeout.as_secs() > i64::MAX as u64 || std::time::Instant::now().checked_add(timeout).is_none() {
         return Err("timeout is too large".to_string());
     }
     Ok(timeout)
@@ -3583,7 +3584,8 @@ mod tests {
             }
         }
 
-        let query = format!("read_file(\"{}\")", temp_file_path.to_string_lossy());
+        // Backslashes would be parsed as escapes inside an mq string literal on Windows.
+        let query = format!("read_file(\"{}\")", temp_file_path.to_string_lossy().replace('\\', "/"));
 
         let blocked_cli = Cli {
             input: InputArgs {
@@ -3824,8 +3826,6 @@ mod tests {
     #[case(Some(SandboxProfile::ReadOnly), None, "out.md", false)]
     #[case(Some(SandboxProfile::Networked), None, "out.md", false)]
     #[case(Some(SandboxProfile::Strict), Some(vec![]), "out.md", true)]
-    #[case(Some(SandboxProfile::ReadOnly), Some(vec![PathBuf::from("/allowed")]), "/allowed/out.md", true)]
-    #[case(Some(SandboxProfile::ReadOnly), Some(vec![PathBuf::from("/allowed")]), "/other/out.md", false)]
     #[case(Some(SandboxProfile::Unsafe), None, "out.md", true)]
     #[case(None, None, "out.md", true)]
     fn test_output_file_gated_by_allow_write_under_sandbox(
@@ -3838,6 +3838,23 @@ mod tests {
         cli.input.program.sandbox = sandbox;
         cli.input.program.allow_write = allow_write;
         cli.output.output_file = Some(PathBuf::from(output));
+        assert_eq!(cli.check_output_permitted().is_ok(), expected_ok);
+    }
+
+    #[rstest]
+    #[case("allowed/out.md", true)]
+    #[case("other/out.md", false)]
+    fn test_output_file_restricted_to_allow_write_paths(#[case] output: &str, #[case] expected_ok: bool) {
+        // Real directories: roots that don't exist canonicalize differently from their children on Windows.
+        let base = std::env::temp_dir().join("mq_test_output_allow_write");
+        let allowed = base.join("allowed");
+        std::fs::create_dir_all(&allowed).unwrap();
+        std::fs::create_dir_all(base.join("other")).unwrap();
+
+        let mut cli = Cli::default();
+        cli.input.program.sandbox = Some(SandboxProfile::ReadOnly);
+        cli.input.program.allow_write = Some(vec![allowed]);
+        cli.output.output_file = Some(base.join(output));
         assert_eq!(cli.check_output_permitted().is_ok(), expected_ok);
     }
 
