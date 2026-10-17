@@ -190,7 +190,7 @@ impl Prover {
         }
 
         for &root in &at_range {
-            if inside_try_body(hir, root) || self.has_unsettled_operand(ctx, root) {
+            if inside_try_body(hir, root) || self.has_unsettled_operand(hir, ctx, root) {
                 return Certainty::Possible;
             }
             // The expression at the location and, when it is an operand, the operation around it
@@ -433,15 +433,17 @@ impl Prover {
     }
 
     /// An operand whose type the checker could not settle.
-    fn has_unsettled_operand(&self, ctx: &InferenceContext, root: SymbolId) -> bool {
+    fn has_unsettled_operand(&self, hir: &Hir, ctx: &InferenceContext, root: SymbolId) -> bool {
         let unsettled = |id: SymbolId| {
             ctx.get_symbol_type(id)
                 .map(|ty| ctx.resolve_type(ty))
                 .is_some_and(|ty| ty.has_pending_var() || ty.is_dynamic())
         };
-        self.children
-            .get(&root)
-            .is_some_and(|c| c.iter().any(|&id| unsettled(id)))
+        // A function passed as an argument has the type variables of its own parameters.
+        self.children.get(&root).is_some_and(|c| {
+            c.iter()
+                .any(|&id| hir.symbol(id).is_some_and(|s| is_expression(&s.kind)) && unsettled(id))
+        })
     }
 }
 

@@ -339,6 +339,8 @@ struct Findings {
     /// Of `agree_error`, how many the checker called definite
     agree_error_definite: usize,
     definite_false_positives: Vec<(String, String)>,
+    /// Errors that the program really fails with, which the checker called possible
+    missed: Vec<(String, String)>,
     soft_only: usize,
     panics: Vec<(String, String)>,
     false_positives: Vec<(String, String)>,
@@ -372,9 +374,12 @@ fn run(seed: u64, count: usize, noise: u64) -> Findings {
                 }
                 findings.false_positives.push((code, errors[0].clone()))
             }
-            (Check::Errors(_, definite), Err(_)) => {
+            (Check::Errors(errors, definite), Err(_)) => {
                 findings.agree_error += 1;
                 findings.agree_error_definite += usize::from(*definite);
+                if !*definite {
+                    findings.missed.push((code, errors[0].clone()));
+                }
             }
             (Check::Clean, Err(error)) if is_type_error(&error.to_string()) => findings
                 .false_negatives
@@ -418,10 +423,11 @@ fn report(findings: &Findings) -> String {
     for (title, items) in [
         ("PANIC", &findings.panics),
         ("DEFINITE FALSE POSITIVE", &findings.definite_false_positives),
+        ("MISSED (possible)", &findings.missed),
         ("FALSE POSITIVE", &findings.false_positives),
         ("FALSE NEGATIVE", &findings.false_negatives),
     ] {
-        for (code, detail) in items.iter().take(12) {
+        for (code, detail) in items.iter().take(if title.starts_with("MISSED") { 40 } else { 12 }) {
             writeln!(out, "--- {title}: {detail}\n{code}").unwrap();
         }
     }
