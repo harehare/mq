@@ -636,6 +636,7 @@ mod tests {
     #[case::quote_bullet_nested_under_ordered("> 1. a\n>    - b", 1, "> 1. a\n>    - b\n")]
     // inside a container a block after a quote or footnote needs a blank line, and empty math stays empty
     #[case::quote_after_nested_quote("> > a\n> >\n> b", 1, "> > a\n> \n> b\n")]
+    #[case::fence_after_quote_in_item("- a\n  > b\n  ```\n  c\n  ```\n- d", 2, "- a\n  > b\n  ```\n  c\n  ```\n- d\n")]
     #[case::paragraph_after_footnote_in_item("- [^1]: b\n\n  c", 1, "- [^1]: b\n\n  c\n")]
     #[case::empty_math("$$\n$$", 1, "$$\n$$\n")]
     // an indented code block right after a list must not read back as list continuation

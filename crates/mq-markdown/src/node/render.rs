@@ -779,8 +779,10 @@ pub(crate) fn separated_from(count: usize, previous: Option<&Node>, node: &Node,
     if count >= 2 {
         return count;
     }
-    // A single line ending after a block quote reads back as lazy continuation.
-    let lazy = previous.is_some_and(Node::is_blockquote_like);
+    // A single line ending after a block quote reads back as lazy continuation, unless the node
+    // opens with a fence, which ends the quote.
+    let fenced = matches!(node, Node::Code(Code { lang, fence, .. }) if lang.is_some() || *fence);
+    let lazy = previous.is_some_and(Node::is_blockquote_like) && !fenced;
     // A line of dashes right under paragraph text reads back as a setext heading.
     let setext = matches!(node, Node::HorizontalRule(_))
         && rendered.starts_with("---")
