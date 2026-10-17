@@ -1654,6 +1654,16 @@ impl Formatter {
                         self.append_display(token);
                     }
                 }
+                // A postfix `[`/`(` can follow a comment on the previous line.
+                mq_lang::TokenKind::LBracket | mq_lang::TokenKind::LParen
+                    if node.leading_trivia.iter().any(|trivia| trivia.is_comment()) =>
+                {
+                    self.append_leading_trivia(node, indent_level);
+                    if self.output.ends_with('\n') {
+                        self.append_indent(indent_level);
+                    }
+                    self.append_display(token);
+                }
                 _ => self.append_display(token),
             }
         }
@@ -3457,6 +3467,18 @@ def func_a(): test;
     }
 
     /// Comments before a terminating `;` are kept, and formatting them again changes nothing.
+    /// Comments between an expression and its postfix `[`/`(` on the next line are kept.
+    #[rstest::rstest]
+    #[case::index("x # note\n[0]", "x # note\n  [0]\n")]
+    #[case::call("x # note\n(1)", "x # note\n  (1)\n")]
+    #[case::index_after_call("f(x) # note\n[0]", "f(x) # note\n  [0]\n")]
+    #[case::qualified_call("mod::f # note\n(1)", "mod::f # note\n  (1)\n")]
+    fn test_format_keeps_comment_before_postfix(#[case] code: &str, #[case] expected: &str) {
+        let once = Formatter::new(None).format(code).unwrap();
+        assert_eq!(once, expected);
+        assert_eq!(Formatter::new(None).format(&once).unwrap(), once);
+    }
+
     #[rstest::rstest]
     #[case::own_line_in_def("def f():\n  1\n  # note\n;", "def f():\n  1\n  # note\n;\n")]
     #[case::trailing_in_def("def f():\n  1 # trail\n;", "def f():\n  1 # trail\n;\n")]
