@@ -290,15 +290,14 @@ fn check_syntax(w: &mut impl Write, diagnostics: &[format::CheckDiagnostic]) -> 
         .map(|d| ("error:".bright_red().bold(), d))
         .chain(warnings.iter().map(|d| ("warning:".bright_yellow().bold(), d)))
     {
-        let range = diagnostic.range.unwrap_or_default();
-        writeln!(
-            w,
-            "  {} {} {} {}",
-            format!("{}:{}", range.start.line, range.start.column).dimmed(),
-            "│".dimmed(),
-            label,
-            diagnostic.message.white(),
-        )?;
+        let location = diagnostic.range.map_or_else(String::new, |range| {
+            format!(
+                "{} {} ",
+                format!("{}:{}", range.start.line, range.start.column).dimmed(),
+                "│".dimmed()
+            )
+        });
+        writeln!(w, "  {}{} {}", location, label, diagnostic.message.white())?;
     }
 
     writeln!(w)?;
@@ -581,6 +580,30 @@ mod tests {
         assert!(diagnostics.iter().any(|d| d.code == "typechecker::undefined_attribute"));
         let diagnostics = collect_check_diagnostics(".depth", None, false, &TypeCheckerOptions::default());
         assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_circular_module_closed_in_a_nested_module_fails_the_checked_source() {
+        let dir = std::env::temp_dir().join(format!("mq-check-circular-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.mq"), "include \"b\"\ndef fa(): 1;").unwrap();
+        std::fs::write(dir.join("b.mq"), "include \"a\"\ndef fb(): 2;").unwrap();
+        let mut loader = mq_lang::ModuleLoader::default();
+        loader.set_search_paths(vec![dir]);
+        let mut hir = Hir::new(loader);
+        let (source_id, parse_errors) = load_source(&mut hir, None, "include \"a\" | fa()");
+
+        let diagnostics = format::syntax_diagnostics(&hir, source_id, &parse_errors);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "hir::circular_module");
+        assert_eq!(diagnostics[0].severity, format::Severity::Error);
+        assert!(diagnostics[0].message.contains("b.mq"), "{}", diagnostics[0].message);
+        assert!(diagnostics[0].range.is_none());
+
+        let mut out = Vec::new();
+        assert!(check_syntax(&mut out, &diagnostics).unwrap());
+        let out = String::from_utf8(out).unwrap();
+        assert!(!out.contains("1:1"), "{out}");
     }
 
     #[rstest]

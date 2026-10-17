@@ -82,7 +82,9 @@ fn check_file(path: &Path) -> FileReport {
                 let name = symbol.value.as_deref().unwrap_or_default();
                 report.unresolved.push(name.to_string());
             }
-            HirError::ModuleNotFound { symbol, .. } | HirError::YieldOutsideFunction { symbol }
+            HirError::ModuleNotFound { symbol, .. }
+            | HirError::CircularModule { symbol, .. }
+            | HirError::YieldOutsideFunction { symbol }
                 if symbol.source.source_id == Some(source_id) =>
             {
                 report.syntax += 1;

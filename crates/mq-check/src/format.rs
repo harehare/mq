@@ -54,6 +54,7 @@ pub(crate) enum OutputFormat {
 ///
 /// `hir` also holds the modules the source includes or imports. Their diagnostics are
 /// positions in other files, so reporting them against `source_id` would be misleading.
+/// Circular module dependencies are the exception, since they fail the source anyway.
 pub(crate) fn syntax_diagnostics(
     hir: &Hir,
     source_id: SourceId,
@@ -69,17 +70,33 @@ pub(crate) fn syntax_diagnostics(
         })
         .collect();
 
-    diagnostics.extend(
-        hir.errors()
-            .iter()
-            .filter(|error| hir_error_symbol(error).source.source_id == Some(source_id))
-            .map(|error| CheckDiagnostic {
+    diagnostics.extend(hir.errors().iter().filter_map(|error| {
+        let symbol = hir_error_symbol(error);
+        if symbol.source.source_id == Some(source_id) {
+            return Some(CheckDiagnostic {
                 severity: Severity::Error,
                 code: hir_error_code(error),
                 message: error.to_string(),
                 range: Some(hir_error_range(error)),
-            }),
-    );
+            });
+        }
+        // A cycle closed inside a module still fails the whole source, so it is reported here
+        // without a range, which would point into the other file.
+        if !matches!(error, HirError::CircularModule { .. }) {
+            return None;
+        }
+        let module = symbol
+            .source
+            .source_id
+            .and_then(|id| hir.url_by_source(&id))
+            .map_or("unknown", |url| url.path());
+        Some(CheckDiagnostic {
+            severity: Severity::Error,
+            code: hir_error_code(error),
+            message: format!("{error} (in module `{module}`)"),
+            range: None,
+        })
+    }));
 
     diagnostics.extend(
         hir.warnings()
@@ -101,6 +118,7 @@ fn hir_error_code(error: &HirError) -> &'static str {
     match error {
         HirError::UnresolvedSymbol { .. } => "hir::unresolved_symbol",
         HirError::ModuleNotFound { .. } => "hir::module_not_found",
+        HirError::CircularModule { .. } => "hir::circular_module",
         HirError::YieldOutsideFunction { .. } => "hir::yield_outside_function",
     }
 }
@@ -109,6 +127,7 @@ fn hir_error_symbol(error: &HirError) -> &Symbol {
     match error {
         HirError::UnresolvedSymbol { symbol, .. }
         | HirError::ModuleNotFound { symbol, .. }
+        | HirError::CircularModule { symbol, .. }
         | HirError::YieldOutsideFunction { symbol } => symbol,
     }
 }
