@@ -23,5 +23,19 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Render the spec examples
         run: just test-spec
+        env:
+          SPEC_REPORT: ${{ runner.temp }}/spec-report.md
+      - name: Report the conformance
+        if: always()
+        env:
+          SPEC_REPORT: ${{ runner.temp }}/spec-report.md
+        run: |
+          {
+            echo "## Spec conformance"
+            echo
+            echo "| Spec | Features | Passed | Examples | Rate |"
+            echo "| :--- | :--- | ---: | ---: | ---: |"
+            sort "$SPEC_REPORT"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Run GFM spec round-trip check
         run: just test-gfm-spec
