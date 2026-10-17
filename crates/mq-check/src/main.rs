@@ -290,15 +290,14 @@ fn check_syntax(w: &mut impl Write, diagnostics: &[format::CheckDiagnostic]) -> 
         .map(|d| ("error:".bright_red().bold(), d))
         .chain(warnings.iter().map(|d| ("warning:".bright_yellow().bold(), d)))
     {
-        let range = diagnostic.range.unwrap_or_default();
-        writeln!(
-            w,
-            "  {} {} {} {}",
-            format!("{}:{}", range.start.line, range.start.column).dimmed(),
-            "│".dimmed(),
-            label,
-            diagnostic.message.white(),
-        )?;
+        let location = diagnostic.range.map_or_else(String::new, |range| {
+            format!(
+                "{} {} ",
+                format!("{}:{}", range.start.line, range.start.column).dimmed(),
+                "│".dimmed()
+            )
+        });
+        writeln!(w, "  {}{} {}", location, label, diagnostic.message.white())?;
     }
 
     writeln!(w)?;
@@ -600,6 +599,11 @@ mod tests {
         assert_eq!(diagnostics[0].severity, format::Severity::Error);
         assert!(diagnostics[0].message.contains("b.mq"), "{}", diagnostics[0].message);
         assert!(diagnostics[0].range.is_none());
+
+        let mut out = Vec::new();
+        assert!(check_syntax(&mut out, &diagnostics).unwrap());
+        let out = String::from_utf8(out).unwrap();
+        assert!(!out.contains("1:1"), "{out}");
     }
 
     #[rstest]
