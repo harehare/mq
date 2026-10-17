@@ -835,3 +835,14 @@ fn test_unsettled_branch_and_reassignment_report_nothing(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "valid program must not report: {:?}", result);
 }
+
+#[test]
+fn test_parenthesized_call_of_a_variable_is_not_a_slice() {
+    let code = "def make(p): fn(input, pos): p; | let f = make(1) | f(\"a\", 2)";
+    let result = check_types_with_builtins(code);
+    assert!(
+        result.is_empty(),
+        "calling a variable must not be read as a slice: {:?}",
+        result
+    );
+}
