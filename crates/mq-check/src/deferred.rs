@@ -460,8 +460,8 @@ enum UnionCheckResult {
     },
     /// A union member type has no matching overload for the operator.
     MemberUnsupported(types::Type),
-    /// Different union members return different types (inconsistent).
-    InconsistentReturn,
+    /// Different union members return different types, each of them valid.
+    InconsistentReturn(Vec<types::Type>),
     /// At least one union member is still an unresolved type variable; defer.
     HasVarMember,
 }
@@ -481,6 +481,7 @@ fn check_union_members(
     resolved_operands: &[types::Type],
 ) -> UnionCheckResult {
     let mut unique_ret: Option<types::Type> = None;
+    let mut other_rets: Vec<types::Type> = Vec::new();
     let mut has_none_propagation = false;
 
     for (i, arg_ty) in resolved_operands.iter().enumerate() {
@@ -512,9 +513,15 @@ fn check_union_members(
             match &unique_ret {
                 None => unique_ret = Some(resolved_ret),
                 Some(prev) if prev == &resolved_ret => {}
-                _ => return UnionCheckResult::InconsistentReturn,
+                _ => other_rets.push(resolved_ret),
             }
         }
+    }
+
+    if let (Some(first), false) = (&unique_ret, other_rets.is_empty()) {
+        let mut rets = vec![first.clone()];
+        rets.extend(other_rets);
+        return UnionCheckResult::InconsistentReturn(rets);
     }
 
     match unique_ret {
@@ -855,24 +862,16 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         });
                         continue;
                     }
-                    UnionCheckResult::InconsistentReturn => {
+                    UnionCheckResult::InconsistentReturn(rets) => {
                         if merge_array_union_operand(ctx, d, &resolved_operands)
                             || distribute_over_container_members(ctx, d, &resolved_operands)
                         {
                             unify::solve_constraints(ctx);
                             continue;
                         }
-                        let args_str = resolved_operands
-                            .iter()
-                            .map(|t| t.display_renumbered())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        ctx.add_error(TypeError::UnificationError {
-                            left: format!("`{}` with arguments ({})", d.op_name, args_str),
-                            right: "union members return inconsistent types".to_string(),
-                            location: d.range,
-                            context: None,
-                        });
+                        // Every member is valid, so the result is whichever of the returns applies.
+                        ctx.set_symbol_type_no_bind(d.symbol_id, types::Type::union(rets));
+                        unify::solve_constraints(ctx);
                         continue;
                     }
                     UnionCheckResult::HasVarMember => {

@@ -1082,14 +1082,6 @@ fn test_try_catch_type_combinations(#[case] code: &str, #[case] should_succeed: 
 }
 
 #[rstest]
-#[case::union_with_add(
-    r#"let x = try: 42 catch: "string"; | x + 1"#,
-    "union type (number|string) should fail with +"
-)]
-#[case::union_with_multiply(
-    r#"let x = try: 100 catch: "error"; | x * 2"#,
-    "union type (number|string) should fail with *"
-)]
 #[case::union_with_subtract(
     r#"let x = try: 50 catch: "fail"; | x - 10"#,
     "union type (number|string) should fail with -"
@@ -1129,24 +1121,6 @@ fn test_try_catch_same_type_arithmetic_ok(#[case] code: &str, #[case] descriptio
 fn test_if_else_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {:?}", description, result);
-}
-
-#[rstest]
-#[case::union_with_add(
-    r#"let x = if (true): 42 else: "string"; | x + 1"#,
-    "union (number|string) should fail with +"
-)]
-#[case::union_with_multiply(
-    r#"let x = if (false): 100 else: "fail"; | x * 2"#,
-    "union (number|string) should fail with *"
-)]
-#[case::elif_union_arithmetic(
-    r#"let x = if (true): 1 elif (false): "text" else: 2; | x + 1"#,
-    "elif union should fail with +"
-)]
-fn test_if_else_union_arithmetic_errors(#[case] code: &str, #[case] description: &str) {
-    let result = check_types(code);
-    assert!(!result.is_empty(), "{}: should produce type error", description);
 }
 
 #[rstest]
@@ -1267,14 +1241,6 @@ fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool,
 }
 
 #[rstest]
-#[case::union_with_add(
-    r#"let x = loop: if (true): 1 else: "str";; | x + 1"#,
-    "loop union (number|string) should fail with +"
-)]
-#[case::break_union_with_add(
-    r#"let x = loop: if (true): break: 42 else: break: "str";; | x + 1"#,
-    "loop with break union (number|string) should fail with +"
-)]
 #[case::while_break_union_with_add(
     r#"let x = while (true): if (true): break: 42 else: break: "str"; | x + 1"#,
     "while with break union (number|string) should fail with +"
@@ -1380,8 +1346,8 @@ fn test_union_consistent_return_type_ok(#[case] code: &str, #[case] description:
 fn test_match_union_type_propagation() {
     let result = check_types(r#"let x = match (42): | 0: "zero" | 1: 100 | _: 200 end | x + 1"#);
     assert!(
-        !result.is_empty(),
-        "match with union type (string|number) should fail with +: {:?}",
+        result.is_empty(),
+        "match with union type (string|number) is valid with +: {:?}",
         result
     );
 }
@@ -2429,4 +2395,25 @@ fn test_an_unknown_branch_is_not_pinned_to_the_other_branch(#[case] code: &str) 
 fn test_field_guards(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(result.is_empty(), should_succeed, "{description}: errors={result:?}");
+}
+
+// A union operand is checked member by member: when every member is valid the result is the union
+// of what each member returns, and only a member without an overload is an error.
+#[rstest]
+#[case::try_add(r#"let x = try: 42 catch: "string"; | x + 1"#)]
+#[case::try_multiply(r#"let x = try: 100 catch: "error"; | x * 2"#)]
+#[case::if_add(r#"let x = if (true): 42 else: "string"; | x + 1"#)]
+#[case::if_multiply(r#"let x = if (false): 100 else: "fail"; | x * 2"#)]
+#[case::elif_add(r#"let x = if (true): 1 elif (false): "text" else: 2; | x + 1"#)]
+#[case::loop_add(r#"let x = loop: if (true): 1 else: "str";; | x + 1"#)]
+#[case::loop_break_add(r#"let x = loop: if (true): break: 42 else: break: "str";; | x + 1"#)]
+fn test_union_operand_with_valid_members_is_accepted(#[case] code: &str) {
+    let result = check_types(code);
+    assert!(result.is_empty(), "every member is valid: {:?}", result);
+}
+
+#[test]
+fn test_union_operand_with_unsupported_member_is_reported() {
+    let result = check_types(r#"let x = if (true): 42 else: "string"; | x - 1"#);
+    assert!(!result.is_empty(), "string - number has no overload");
 }
