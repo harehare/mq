@@ -21,8 +21,13 @@ pub enum ModuleError {
     #[error(transparent)]
     SyntaxError(#[from] SyntaxError),
     /// The module imports itself, directly or through other modules.
-    #[error("Circular module dependency: {0}")]
-    CircularDependency(Cow<'static, str>),
+    #[error("Circular module dependency: {chain}")]
+    CircularDependency {
+        /// The modules in the cycle, e.g. `a -> b -> a`.
+        chain: Cow<'static, str>,
+        /// The directive that closes the cycle.
+        token: Token,
+    },
     /// The module declaration is malformed.
     #[error("Invalid module, expected IDENT or BINDING")]
     InvalidModule,
@@ -35,7 +40,7 @@ pub enum ModuleError {
 }
 
 impl ModuleError {
-    /// Returns the token associated with a syntax error, if any.
+    /// Returns the token the error points at, if any.
     #[cold]
     pub fn token(&self) -> Option<&Token> {
         match self {
@@ -44,7 +49,7 @@ impl ModuleError {
             ModuleError::IOError(_) => None,
             ModuleError::SyntaxError(err) => err.token(),
             ModuleError::InvalidModule => None,
-            ModuleError::CircularDependency(_) => None,
+            ModuleError::CircularDependency { token, .. } => Some(token),
             #[cfg(feature = "http-import")]
             ModuleError::HttpImportNotAllowed(_) => None,
         }

@@ -2017,9 +2017,10 @@ impl<R: ModuleResolver> Compiler<R> {
                 .chain([path])
                 .collect::<Vec<_>>()
                 .join(" -> ");
-            return Err(CompileError::Module(ModuleError::CircularDependency(
-                std::borrow::Cow::Owned(chain),
-            )));
+            return Err(CompileError::Module(ModuleError::CircularDependency {
+                chain: std::borrow::Cow::Owned(chain),
+                token: crate::get_token(&self.token_arena, self.current_token_id),
+            }));
         }
 
         self.loading_modules.push(path.to_string());

@@ -2941,10 +2941,22 @@ fn test_circular_module_is_an_error(#[case] query: &str, #[case] chain: &str) {
     let mut engine = Engine::new(CyclicResolver);
     engine.load_builtin_module();
     let error = engine.eval(query, crate::null_input().into_iter()).unwrap_err();
-    assert_eq!(
-        error.cause,
-        error::InnerError::Module(crate::ModuleError::CircularDependency(chain.to_string().into()))
-    );
+    assert!(matches!(
+        &error.cause,
+        error::InnerError::Module(crate::ModuleError::CircularDependency { chain: c, .. }) if c == chain
+    ));
+}
+
+#[test]
+fn test_circular_module_error_points_at_closing_directive() {
+    let mut engine = Engine::new(CyclicResolver);
+    engine.load_builtin_module();
+    let error = engine
+        .eval(r#"include "a" | fa()"#, crate::null_input().into_iter())
+        .unwrap_err();
+    assert_eq!(error.source_code.inner(), "include \"a\"\ndef fb(): 2;");
+    assert_eq!(error.location.offset(), 0);
+    assert_eq!(error.location.len(), "include".len());
 }
 
 #[test]
