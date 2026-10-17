@@ -4,7 +4,15 @@ use assert_cmd::cargo;
 use rstest::rstest;
 use scopeguard::defer;
 use std::io::Write;
-use std::{fs::File, path::PathBuf};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
+
+/// Renders `path` for embedding in an mq string literal, where Windows backslashes would be escapes.
+fn mq_str_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
 
 /// Writes `content` to a temp file and returns the temp dir and file path.
 pub fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
@@ -819,22 +827,10 @@ fn test_read_file() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut cmd = cargo::cargo_bin_cmd!("mq");
-    #[cfg(unix)]
     let assert = cmd
         .arg("--unbuffered")
         .arg("--allow-read")
-        .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy()))
-        .arg(temp_file_path.to_string_lossy().to_string())
-        .assert();
-
-    #[cfg(windows)]
-    let assert = cmd
-        .arg("--unbuffered")
-        .arg("--allow-read")
-        .arg(format!(
-            r#"read_file("{}")"#,
-            temp_file_path.to_string_lossy().replace("\\", "/")
-        ))
+        .arg(format!(r#"read_file("{}")"#, mq_str_path(&temp_file_path)))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
@@ -856,7 +852,7 @@ fn test_read_file_without_allow_read_is_blocked() -> Result<(), Box<dyn std::err
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
-        .arg(format!(r#"read_file("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(format!(r#"read_file("{}")"#, mq_str_path(&temp_file_path)))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
@@ -875,10 +871,7 @@ fn test_repl_with_allow_read_permits_read_file() -> Result<(), Box<dyn std::erro
         }
     }
 
-    #[cfg(unix)]
-    let path = temp_file_path.to_string_lossy().to_string();
-    #[cfg(windows)]
-    let path = temp_file_path.to_string_lossy().replace("\\", "/");
+    let path = mq_str_path(&temp_file_path);
 
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
@@ -906,10 +899,7 @@ fn test_repl_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::E
         }
     }
 
-    #[cfg(unix)]
-    let path = temp_file_path.to_string_lossy().to_string();
-    #[cfg(windows)]
-    let path = temp_file_path.to_string_lossy().replace("\\", "/");
+    let path = mq_str_path(&temp_file_path);
 
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
@@ -1060,7 +1050,7 @@ fn test_collection() -> Result<(), Box<dyn std::error::Error>> {
         .arg("null")
         .arg(format!(
             r#"collection("{}") | map(self, fn(page): get(page, "title");)"#,
-            temp_dir.path().to_string_lossy()
+            mq_str_path(temp_dir.path())
         ))
         .write_stdin("")
         .assert();
@@ -1079,7 +1069,7 @@ fn test_collection_without_allow_read_is_blocked() -> Result<(), Box<dyn std::er
         .arg("--unbuffered")
         .arg("-I")
         .arg("null")
-        .arg(format!(r#"collection("{}")"#, temp_dir.path().to_string_lossy()))
+        .arg(format!(r#"collection("{}")"#, mq_str_path(temp_dir.path())))
         .write_stdin("")
         .assert();
 
@@ -1099,7 +1089,7 @@ fn test_walk_files() -> Result<(), Box<dyn std::error::Error>> {
         .arg("--allow-read")
         .arg("-I")
         .arg("null")
-        .arg(format!(r#"walk_files("{}")"#, temp_dir.path().to_string_lossy()))
+        .arg(format!(r#"walk_files("{}")"#, mq_str_path(temp_dir.path())))
         .write_stdin("")
         .assert();
 
@@ -1117,7 +1107,7 @@ fn test_walk_files_without_allow_read_is_blocked() -> Result<(), Box<dyn std::er
         .arg("--unbuffered")
         .arg("-I")
         .arg("null")
-        .arg(format!(r#"walk_files("{}")"#, temp_dir.path().to_string_lossy()))
+        .arg(format!(r#"walk_files("{}")"#, mq_str_path(temp_dir.path())))
         .write_stdin("")
         .assert();
 
@@ -1140,7 +1130,7 @@ fn test_file_exists() -> Result<(), Box<dyn std::error::Error>> {
     let assert = cmd
         .arg("--unbuffered")
         .arg("--allow-read")
-        .arg(format!(r#"file_exists("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(format!(r#"file_exists("{}")"#, mq_str_path(&temp_file_path)))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
@@ -1162,7 +1152,7 @@ fn test_file_exists_without_allow_read_is_blocked() -> Result<(), Box<dyn std::e
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
-        .arg(format!(r#"file_exists("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(format!(r#"file_exists("{}")"#, mq_str_path(&temp_file_path)))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
@@ -1185,10 +1175,7 @@ fn test_file_info() -> Result<(), Box<dyn std::error::Error>> {
     let assert = cmd
         .arg("--unbuffered")
         .arg("--allow-read")
-        .arg(format!(
-            r#"file_info("{}") | ."kind""#,
-            temp_file_path.to_string_lossy()
-        ))
+        .arg(format!(r#"file_info("{}") | ."kind""#, mq_str_path(&temp_file_path)))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
@@ -1210,7 +1197,7 @@ fn test_file_info_without_allow_read_is_blocked() -> Result<(), Box<dyn std::err
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let assert = cmd
         .arg("--unbuffered")
-        .arg(format!(r#"file_info("{}")"#, temp_file_path.to_string_lossy()))
+        .arg(format!(r#"file_info("{}")"#, mq_str_path(&temp_file_path)))
         .arg(temp_file_path.to_string_lossy().to_string())
         .assert();
 
