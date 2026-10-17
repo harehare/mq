@@ -872,15 +872,15 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(v),
     );
 
-    // set: ({k: v}, k, v) -> {k: v}
-    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    // set: ({k: v}, k, w) -> {k: v | w}  (a dict may hold values of different types)
+    let (k, v, w) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
     register_ternary(
         ctx,
         "set",
         Type::dict(Type::Var(k), Type::Var(v)),
         Type::Var(k),
-        Type::Var(v),
-        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::Var(w),
+        Type::dict(Type::Var(k), Type::union(vec![Type::Var(v), Type::Var(w)])),
     );
 
     // set: ([a], number, a) -> [a]  (array index assignment)

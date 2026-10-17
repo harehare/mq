@@ -249,6 +249,7 @@ fn infer_while_or_until(
                         then_narrowings: body_narrowings.clone(),
                         else_narrowings: Vec::new(),
                         then_branch_id: body_id,
+                        report_dead: true,
                         else_branch_ids: Vec::new(),
                     });
                 }
@@ -260,6 +261,7 @@ fn infer_while_or_until(
                             then_narrowings: Vec::new(),
                             else_narrowings: post_loop_narrowings,
                             then_branch_id: symbol_id, // unused (then_narrowings empty)
+                            report_dead: true,
                             else_branch_ids: post_loop_siblings,
                         });
                     }
@@ -1096,6 +1098,7 @@ pub(super) fn generate_symbol_constraints(
                         then_narrowings: cond_narrowings.then_narrowings,
                         else_narrowings: cond_narrowings.else_narrowings,
                         then_branch_id: children[1],
+                        report_dead: true,
                         else_branch_ids,
                     });
                 }
@@ -1227,6 +1230,7 @@ pub(super) fn generate_symbol_constraints(
                         then_narrowings: cond_narrowings.else_narrowings,
                         else_narrowings: cond_narrowings.then_narrowings,
                         then_branch_id: children[1],
+                        report_dead: true,
                         else_branch_ids: Vec::new(),
                     });
                 }
@@ -1447,6 +1451,7 @@ pub(super) fn generate_symbol_constraints(
                                 }],
                                 else_narrowings: Vec::new(),
                                 then_branch_id: bid,
+                                report_dead: true,
                                 else_branch_ids: Vec::new(),
                             });
                         }

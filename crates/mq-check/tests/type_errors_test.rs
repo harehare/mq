@@ -776,3 +776,23 @@ fn test_partial_arity(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{code}: {result:?}");
 }
+
+#[rstest]
+#[case::comparison(r#"let v = len([1, 2]) | if (is_string(v)): (v > 9) else: 1"#)]
+#[case::short_circuit(r#"let v = len([1, 2]) | if (is_string(v)): (is_string(1) && (v > 9)) else: 1"#)]
+fn test_unreachable_then_branch_reports_nothing(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "unreachable branch must not report: {:?}", result);
+}
+
+#[rstest]
+#[case::else_of_union_with_pending_member(
+    r#"let u = if (true): 3 else: get({"b": "x"}, "b") | if (is_string(u)): upcase(u) else: u + 1"#
+)]
+#[case::and_right_operand(r#"let u = if (true): 1 else: "a" | if (is_string(u) && len(u) > 0): upcase(u) else: 0"#)]
+#[case::or_right_operand(r#"let u = if (true): 1 else: "a" | if (is_string(u) || u > 0): 1 else: 0"#)]
+#[case::set_other_value_type(r#"let d = {"a": 1} | set(d, "c", "x") | keys(d)"#)]
+fn test_narrowing_and_set_report_nothing_for_valid_programs(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "valid program must not report: {:?}", result);
+}
