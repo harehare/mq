@@ -501,7 +501,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Try => self.parse_try(token),
             TokenKind::If => self.parse_if(token),
             TokenKind::Match => self.parse_match(token),
-            TokenKind::InterpolatedString(_) => self.parse_interpolated_string(token),
+            TokenKind::InterpolatedString(_) => {
+                let node = self.parse_interpolated_string(token)?;
+                self.parse_postfix_ops(node, token)
+            }
             TokenKind::Include => self.parse_include(token),
             TokenKind::Import => self.parse_import(token),
             TokenKind::Self_ => self.parse_self(token),
@@ -1125,6 +1128,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }?;
 
         let token = self.tokens.peek();
+
+        if matches!(literal_token.kind, TokenKind::StringLiteral(_))
+            && matches!(token.as_ref().map(|t| &t.kind), Some(TokenKind::LBracket))
+        {
+            return self.parse_postfix_ops(literal_node, literal_token);
+        }
 
         if Self::is_next_token_allowed(token.as_ref().map(|t| &t.kind)) {
             Ok(literal_node)

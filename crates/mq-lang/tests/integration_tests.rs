@@ -946,6 +946,21 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::dict_new_empty("dict()",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::new_dict()].into()))]
+#[case::string_literal_index("\"abc\"[1]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
+#[case::string_literal_index_negative("\"abc\"[-1]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::String(Shared::new("c".to_string()))].into()))]
+#[case::string_literal_index_out_of_range("\"abc\"[9]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::NONE].into()))]
+#[case::string_literal_slice("\"abc\"[1:3]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::String(Shared::new("bc".to_string()))].into()))]
+#[case::interpolated_string_index("s\"x${1}y\"[1]",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::String(Shared::new("1".to_string()))].into()))]
 #[case::dict_set_get_string("let m = dict() | let m = set(m, \"name\", \"Jules\") | get(m, \"name\")",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::String(Shared::new("Jules".to_string()))].into()))]
