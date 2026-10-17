@@ -2109,7 +2109,9 @@ fn generate_call_constraints(
                             // If the definition is a function parameter (higher-order call),
                             // record the inner call so that `check_user_call_body_operators`
                             // can propagate the concrete element type to the lambda's body.
-                            if def_symbol.map(|s| s.is_parameter()).unwrap_or(false) {
+                            let is_parameter = def_symbol.map(|s| s.is_parameter()).unwrap_or(false);
+                            // `f(a, b)` with parentheses calls the value, whatever it turns out to be.
+                            if is_parameter || hir.bracket_group_count(symbol_id) == 0 {
                                 let ret_ty = Type::Var(ctx.fresh_var());
                                 let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
                                 ctx.add_constraint(Constraint::Equal(
@@ -2119,7 +2121,7 @@ fn generate_call_constraints(
                                     ConstraintOrigin::General,
                                 ));
                                 ctx.set_symbol_type(symbol_id, ret_ty);
-                                if let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
+                                if is_parameter && let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
                                     ctx.add_deferred_parameter_call(DeferredParameterCall {
                                         outer_def_id,
                                         param_sym_id: def_id,
