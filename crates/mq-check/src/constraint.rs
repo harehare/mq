@@ -770,16 +770,25 @@ pub(super) fn generate_symbol_constraints(
 
                     // `x[k] = v` updates an element, so the variable keeps its type.
                     let is_index_assign = hir.symbol(lhs_id).is_some_and(|s| s.kind == SymbolKind::Call);
-                    // A chained target such as `a[0][1]` is not tracked through its keys.
                     let is_chained = hir.bracket_key_count(lhs_id) > 1;
-                    if is_index_assign && !is_chained && ctx.strict_array() && symbol.value.as_deref() == Some("=") {
-                        let elem_ty = ctx.get_or_create_symbol_type(lhs_id);
-                        ctx.add_constraint(Constraint::Equal(
-                            elem_ty,
-                            rhs_ty.clone(),
-                            range,
-                            ConstraintOrigin::General,
-                        ));
+                    if is_index_assign && ctx.strict_array() && symbol.value.as_deref() == Some("=") {
+                        if !is_chained {
+                            let elem_ty = ctx.get_or_create_symbol_type(lhs_id);
+                            ctx.add_constraint(Constraint::Equal(
+                                elem_ty,
+                                rhs_ty.clone(),
+                                range,
+                                ConstraintOrigin::General,
+                            ));
+                        } else if let Some((def_id, indices)) = chained_index_target(hir, lhs_id, children_index) {
+                            // The element type is known once the variable's type is resolved.
+                            ctx.add_deferred_index_assign(infer::DeferredIndexAssign {
+                                def_id,
+                                indices,
+                                value_ty: rhs_ty.clone(),
+                                range,
+                            });
+                        }
                     }
 
                     // Resolve the LHS Ref to find the original Variable
@@ -1857,6 +1866,30 @@ fn record_attr_call(
     });
 }
 
+/// The variable and the literal value of each index of a target `a[i][j]`, or `None` when it
+/// is not a chain of plain indices on a variable (a slice or a string key is not tracked).
+fn chained_index_target(
+    hir: &Hir,
+    target: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Option<(SymbolId, Vec<Option<usize>>)> {
+    let keys = get_non_keyword_children(hir, target, children_index);
+    if keys.len() != hir.bracket_group_count(target) {
+        return None;
+    }
+    let def_id = hir.resolve_reference_symbol(target)?;
+    let mut indices = Vec::with_capacity(keys.len());
+    for key in keys {
+        let key = hir.symbol(key)?;
+        match key.kind {
+            SymbolKind::String | SymbolKind::Symbol => return None,
+            SymbolKind::Number => indices.push(key.value.as_ref().and_then(|v| v.parse().ok())),
+            _ => indices.push(None),
+        }
+    }
+    Some((def_id, indices))
+}
+
 /// Whether the call is the target of a plain assignment, as in `x[k] = v`.
 /// A compound assignment also reads the target, so it is not one.
 fn is_index_assign_target(symbol_id: SymbolId, hir: &Hir, children_index: &ChildrenIndex) -> bool {
@@ -2019,13 +2052,19 @@ fn generate_call_constraints(
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                         } else if let Some(name) = field_name {
-                            // Defer field access resolution to post-unification
+                            // Defer field access resolution to post-unification. A function body
+                            // may run after statements below it, so only a read in the variable's
+                            // own function is ordered against the writes by its position.
+                            let range = get_symbol_range(hir, symbol_id);
+                            let in_source_order =
+                                find_enclosing_function(hir, symbol_id) == find_enclosing_function(hir, def_id);
                             ctx.add_deferred_record_access(infer::DeferredRecordAccess {
                                 call_symbol_id: symbol_id,
                                 def_id,
                                 guard: field_guard(hir, symbol_id, def_id, &name, children_index),
                                 field_name: name,
-                                range: get_symbol_range(hir, symbol_id),
+                                range,
+                                read_start: range.map(|r| r.start).filter(|_| in_source_order),
                             });
                             let ty_var = ctx.fresh_var();
                             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));

@@ -107,6 +107,9 @@ pub struct DeferredRecordAccess {
     pub guard: crate::field_guard::FieldGuard,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
+    /// Where the read starts, when it runs in source order with the writes to its variable
+    /// (`None` inside a function that the variable does not belong to)
+    pub read_start: Option<mq_lang::Position>,
 }
 
 /// A deferred selector field access for post-unification resolution.
@@ -166,6 +169,19 @@ pub struct DeferredTupleAccess {
     pub def_id: SymbolId,
     /// The literal index value (None if dynamic index)
     pub index: Option<usize>,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
+/// A deferred `a[i][j] = v`, whose target element type is known once `a` is resolved.
+#[derive(Debug, Clone)]
+pub struct DeferredIndexAssign {
+    /// The variable definition symbol ID
+    pub def_id: SymbolId,
+    /// The literal value of each index, `None` for a dynamic one
+    pub indices: Vec<Option<usize>>,
+    /// The type of the assigned value
+    pub value_ty: Type,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -270,6 +286,8 @@ pub struct InferenceContext {
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
     /// Deferred tuple index accesses for post-unification resolution
     deferred_tuple_accesses: Vec<DeferredTupleAccess>,
+    /// Deferred chained index assignments for post-unification resolution
+    deferred_index_assigns: Vec<DeferredIndexAssign>,
     /// Deferred bracket accesses on function call return values (e.g. `f(x)["key"]`)
     deferred_call_return_accesses: Vec<DeferredCallReturnAccess>,
     /// Deferred try/catch branch-type merges for post-unification resolution
@@ -311,6 +329,7 @@ impl InferenceContext {
             written_record_fields: FxHashMap::default(),
             deferred_selector_accesses: Vec::new(),
             deferred_tuple_accesses: Vec::new(),
+            deferred_index_assigns: Vec::new(),
             deferred_call_return_accesses: Vec::new(),
             deferred_try_catches: Vec::new(),
             type_narrowings: Vec::new(),
@@ -521,6 +540,16 @@ impl InferenceContext {
     /// Takes all deferred tuple accesses (consumes them)
     pub fn take_deferred_tuple_accesses(&mut self) -> Vec<DeferredTupleAccess> {
         std::mem::take(&mut self.deferred_tuple_accesses)
+    }
+
+    /// Adds a deferred chained index assignment for post-unification resolution
+    pub fn add_deferred_index_assign(&mut self, assign: DeferredIndexAssign) {
+        self.deferred_index_assigns.push(assign);
+    }
+
+    /// Takes all deferred chained index assignments (consumes them)
+    pub fn take_deferred_index_assigns(&mut self) -> Vec<DeferredIndexAssign> {
+        std::mem::take(&mut self.deferred_index_assigns)
     }
 
     /// Adds a deferred bracket access on a function call's return value

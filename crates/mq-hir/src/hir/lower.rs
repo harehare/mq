@@ -972,12 +972,15 @@ impl Hir {
             // Arguments after a `[` are the keys of `f(x)[key]`, not arguments of `f`.
             let mut after_bracket = false;
             let mut bracket_keys = 0;
+            let mut bracket_groups = 0;
             node.children().for_each(|child| {
                 if child.is_token() {
-                    after_bracket |= child
+                    let is_lbracket = child
                         .token
                         .as_ref()
                         .is_some_and(|token| matches!(token.kind, mq_lang::TokenKind::LBracket));
+                    after_bracket |= is_lbracket;
+                    bracket_groups += usize::from(is_lbracket);
                     return;
                 }
                 bracket_keys += usize::from(after_bracket);
@@ -988,6 +991,9 @@ impl Hir {
             });
             if bracket_keys > 0 {
                 self.bracket_key_counts.insert(symbol_id, bracket_keys);
+            }
+            if bracket_groups > 0 {
+                self.bracket_group_counts.insert(symbol_id, bracket_groups);
             }
         }
     }

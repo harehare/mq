@@ -467,6 +467,11 @@ impl TypeChecker {
             unify::solve_constraints(&mut ctx);
         }
 
+        // Check the value assigned through `a[i][j] = v` against the element it replaces.
+        if deferred::resolve_deferred_index_assigns(&mut ctx) {
+            unify::solve_constraints(&mut ctx);
+        }
+
         // Bind v[:key] bracket access return types to record field types.
         if deferred::resolve_record_field_accesses(&mut ctx) {
             unify::solve_constraints(&mut ctx);
@@ -594,6 +599,7 @@ mod tests {
     #[case::new_record_field("var d = {\"a\": 1} | d[\"b\"] = 2 | d")]
     #[case::read_added_record_field("var d = {\"a\": 1} | d[\"b\"] = 2 | d[\"b\"]")]
     #[case::read_retyped_record_field("var d = {\"a\": 1} | d[\"a\"] = \"x\" | d[\"a\"] | upcase()")]
+    #[case::read_in_function_called_after_write("var d = {\"a\": 1} | def f(): d[\"b\"]; | d[\"b\"] = 2 | f()")]
     fn test_index_assign_keeps_the_variable_type(#[case] code: &str) {
         let mut hir = Hir::default();
         hir.add_code(None, code);
@@ -605,6 +611,11 @@ mod tests {
     #[case::array_element("var a = [1, 2] | a[0] = \"x\" | a", true)]
     #[case::array_element_ok("var a = [1, 2] | a[0] = 3 | a", false)]
     #[case::chained_element("var a = [[1, 2], [3, 4]] | a[0][1] = 5 | a", false)]
+    #[case::chained_element_mismatch("var a = [[1, 2], [3, 4]] | a[0][1] = \"x\" | a", true)]
+    #[case::chained_dynamic_index_mismatch("var i = 0 | var a = [[1]] | a[i][i] = \"x\" | a", true)]
+    #[case::chained_three_levels_mismatch("var a = [[[1]]] | a[0][0][0] = \"x\" | a", true)]
+    #[case::chained_record_key("var a = [{\"k\": 1}] | a[0][\"k\"] = \"x\" | a", false)]
+    #[case::slice_target("var a = [1, 2, 3] | a[0:1] = [9] | a", false)]
     fn test_index_assign_checks_the_element_type_in_strict_mode(#[case] code: &str, #[case] rejected: bool) {
         let check = |strict_array| {
             let mut hir = Hir::default();
@@ -625,6 +636,8 @@ mod tests {
     #[case::read_before_write("var d = {\"a\": 1} | d[\"b\"] | d[\"b\"] = 2")]
     #[case::read_in_assigned_value("var d = {\"a\": 1} | d[\"b\"] = d[\"b\"] + 1")]
     #[case::retype_after_read("var d = {\"a\": 1} | let y = d[\"a\"] | upcase(y) | d[\"a\"] = \"x\"")]
+    #[case::read_in_own_function_before_write("def f(): var d = {\"a\": 1} | d[\"b\"] | d[\"b\"] = 2;")]
+    #[case::function_read_of_unwritten_field("var d = {\"a\": 1} | def f(): d[\"c\"]; | d[\"b\"] = 2 | f()")]
     #[case::unwritten_field_still_checked("var d = {\"a\": 1} | d[\"b\"] = 2 | d[\"c\"]")]
     #[case::elements_not_numbers("[\"a\"] | map(fn: abs())")]
     #[case::piped_call_in_body("[1] | map(fn: split(\" \"))")]
