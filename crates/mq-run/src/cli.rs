@@ -60,7 +60,8 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
         return Err("must be a finite number greater than 0".to_string());
     }
     let timeout = Duration::try_from_secs_f64(secs).map_err(|_| "timeout is too large".to_string())?;
-    if std::time::Instant::now().checked_add(timeout).is_none() {
+    // `Instant` ranges differ per OS (i64 secs on Unix, u64 on Windows), so cap at the smaller one.
+    if timeout.as_secs() > i64::MAX as u64 || std::time::Instant::now().checked_add(timeout).is_none() {
         return Err("timeout is too large".to_string());
     }
     Ok(timeout)
