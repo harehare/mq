@@ -4113,6 +4113,38 @@ fn test_eof_error_messages(
     );
 }
 
+#[rstest]
+fn trailing_pipe_without_rhs_is_a_syntax_error(mut engine: Engine) {
+    for program in [".h2 |", ".h2 | ", ".h2 |\n"] {
+        let err = engine.eval(program, std::iter::once(RuntimeValue::None)).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("Expected an expression after `|`"),
+            "{program}: expected a missing-expression diagnostic, got {msg:?}"
+        );
+    }
+
+    assert_eq!(
+        engine.eval(".h2 | .h3", std::iter::once(RuntimeValue::None)),
+        Ok(vec![RuntimeValue::None].into())
+    );
+    assert_eq!(
+        engine.eval("do 1 | 2 end", std::iter::once(RuntimeValue::None)),
+        Ok(vec![RuntimeValue::Number(2.into())].into())
+    );
+    assert_eq!(
+        engine.eval("def f(): 1 | 2; | f()", std::iter::once(RuntimeValue::None)),
+        Ok(vec![RuntimeValue::Number(2.into())].into())
+    );
+
+    for program in ["do 1 | end", "def f(): 1 |;", "[fn(x): x |]"] {
+        assert!(
+            engine.eval(program, std::iter::once(RuntimeValue::None)).is_err(),
+            "{program} should reject a pipe with no right-hand expression"
+        );
+    }
+}
+
 #[cfg(feature = "ast-json")]
 mod ast_json {
     use mq_lang::{ArenaId, AstExpr, AstLiteral, AstNode, Program, Shared};
