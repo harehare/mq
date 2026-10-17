@@ -496,7 +496,7 @@ impl Backend {
         if errors.is_empty() && self.config.enable_type_checking {
             let hir_guard = self.hir.read().unwrap();
             let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options.clone());
-            let type_errors = checker.check(&hir_guard);
+            let type_errors = checker.check_classified(&hir_guard);
 
             // Build a set of text ranges from the current source's symbols
             // so that type errors originating from other sources (e.g., pre-loaded modules)
@@ -511,12 +511,19 @@ impl Backend {
             errors.extend(
                 type_errors
                     .into_iter()
-                    .filter(|e| {
-                        e.location()
+                    .filter(|c| {
+                        c.error
+                            .location()
                             .map(|range| source_locations.contains(&range))
                             .unwrap_or(false)
                     })
-                    .map(LspError::TypeError),
+                    .map(|c| {
+                        if c.certainty == mq_check::Certainty::Possible && !self.config.type_checker_options.strict {
+                            LspError::PossibleTypeError(c.error)
+                        } else {
+                            LspError::TypeError(c.error)
+                        }
+                    }),
             );
         }
 
@@ -2666,7 +2673,9 @@ mod tests {
 
         // Ensure that a type error is surfaced through the diagnostics pipeline.
         assert!(
-            errors.iter().any(|e| matches!(e, LspError::TypeError(_))),
+            errors
+                .iter()
+                .any(|e| matches!(e, LspError::TypeError(_) | LspError::PossibleTypeError(_))),
             "expected at least one type error diagnostic for arity mismatch"
         );
 
