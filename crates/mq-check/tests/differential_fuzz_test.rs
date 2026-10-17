@@ -212,9 +212,43 @@ impl Gen {
         }
     }
 
+    /// More constructs: mutation, loops, recursion, closures, indexing and `none` handling.
+    fn construct_program_more(&mut self) -> String {
+        self.vars.clear();
+        let num = self.expr(Ty::Num, 1);
+        let text = self.expr(Ty::Str, 1);
+        let arr = self.expr(Ty::Arr, 1);
+        let cond = self.expr(Ty::Bool, 1);
+        match self.rng.below(20) {
+            0 => format!("var n = {num}\n| n = n + 1\n| n"),
+            1 => format!("var s = {text}\n| s = s + \"x\"\n| upcase(s)"),
+            2 => format!("var i = 0\n| while (i < 3): i = i + 1 end\n| i"),
+            3 => format!("var acc = []\n| foreach (x, {arr}): acc = acc + [x + 1] end\n| acc"),
+            4 => format!("def fact(n): if (n <= 1): 1 else: n * fact(n - 1);\n| fact({})", self.rng.below(6)),
+            5 => format!("let k = {num}\n| def add(x): x + k;\n| add({num})"),
+            6 => format!("let k = {text}\n| map([{text}], fn(x): x + k;)"),
+            7 => format!("let a = {arr}\n| a[0] + 1"),
+            8 => format!("let a = [{num}, {num}]\n| a[0] + a[1]"),
+            9 => format!("let a = [\"x\", {text}]\n| upcase(a[0])"),
+            10 => format!("let n = if ({cond}): None else: {num}\n| if (is_none(n)): 0 else: n + 1"),
+            11 => format!("let n = if ({cond}): None else: {num}\n| if (n != None): n + 1 else: 0"),
+            12 => format!("let t = if ({cond}): None else: {text}\n| if (t == None): \"\" else: upcase(t)"),
+            13 => format!("let m = {{\"a\": [1, 2], \"b\": [3]}}\n| len(m[\"a\"]) + len(m[\"b\"])"),
+            14 => format!("split({text}, \",\") | map(fn(p): trim(p);)"),
+            15 => format!("let p = {text}\n| if (starts_with(p, \"a\")): p + \"!\" else: replace(p, \"a\", \"b\")"),
+            16 => format!("let v = {text}\n| if (v == \"a\"): 1 elif (v == \"b\"): 2 else: 3"),
+            17 => format!("let n = {num}\n| if (n > 1): if (n > 2): \"big\" else: \"mid\" else: \"small\""),
+            18 => format!("def f(x): if (is_array(x)): len(x) elif (is_string(x)): len(x) else: x;\n| [f({arr}), f({text}), f({num})]"),
+            _ => format!("let r = try: {num} catch: \"e\"\n| if (is_number(r)): r + 1 else: r"),
+        }
+    }
+
     /// A whole program: a few `let`s and a final expression.
     fn program(&mut self) -> String {
-        if self.rng.chance(50) {
+        if self.rng.chance(25) {
+            return self.construct_program_more();
+        }
+        if self.rng.chance(40) {
             return self.construct_program();
         }
         self.vars.clear();
