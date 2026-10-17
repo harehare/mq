@@ -748,7 +748,9 @@ impl InferenceContext {
         }
 
         let Some((ty, _score)) = best_match else {
-            return self.resolve_node_as_text(name, arg_types);
+            let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+            return crate::builtin::fallback_signature(name, &resolved_args)
+                .or_else(|| self.resolve_node_as_text(name, arg_types));
         };
         let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
         Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))

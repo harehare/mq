@@ -5,6 +5,9 @@
 //! A call that gives back `None` or one of its arguments is how a builtin shrugs off a value it
 //! has no use for, so the checker may reject it.
 //!
+//! The builtins written in mq (`builtin.mq`) are audited the same way: their signatures are
+//! inferred from the bodies, so a finding there is an inference that is narrower than the body.
+//!
 //! Slow, so it is ignored by default: `just audit-builtins`. `AUDIT_FUNCTION` limits it to one
 //! function and `AUDIT_TRIPLES` sets how many 3-argument combinations are tried (default 60).
 
@@ -17,6 +20,11 @@ use mq_hir::Hir;
 
 /// Builtins that do I/O, never return or depend on the environment.
 const SKIPPED: &[&str] = &[
+    // Ordering values of different types is defined at runtime but is nearly always a mistake.
+    "gt",
+    "gte",
+    "lt",
+    "lte",
     "breakpoint",
     "close",
     "env",
@@ -60,6 +68,51 @@ const VALUES: &[(&str, &str)] = &[
     ("bytes", "to_bytes(\"a\")"),
     ("function", "fn(x): x;"),
 ];
+
+/// Words in a `builtin.mq` body that mean the function does I/O or ends the program.
+const EFFECTS: &[&str] = &[
+    "print(",
+    "stderr(",
+    "input(",
+    "read_",
+    "open_",
+    "http",
+    "write_file",
+    "halt",
+    "system(",
+    "walk_files",
+    "breakpoint",
+    "send(",
+    "file_",
+    "sleep",
+];
+
+/// The public functions of `builtin.mq` that are safe to call, with their number of parameters.
+fn mq_builtins() -> Vec<(String, usize)> {
+    let source = include_str!("../../mq-lang/builtin.mq");
+    let mut defs: Vec<(String, usize, String)> = Vec::new();
+    for line in source.lines() {
+        if let Some(rest) = line.strip_prefix("def ") {
+            let Some((name, params)) = rest.split_once('(') else {
+                continue;
+            };
+            let params = params.split(')').next().unwrap_or("");
+            let arity = params.split(',').filter(|p| !p.trim().is_empty()).count();
+            let variadic = params.contains('*');
+            if name.starts_with('_') || variadic || arity == 0 {
+                continue;
+            }
+            defs.push((name.to_string(), arity, String::new()));
+        } else if let Some(last) = defs.last_mut() {
+            last.2.push_str(line);
+            last.2.push('\n');
+        }
+    }
+    defs.into_iter()
+        .filter(|(name, _, body)| !SKIPPED.contains(&name.as_str()) && !EFFECTS.iter().any(|e| body.contains(e)))
+        .map(|(name, arity, _)| (name, arity))
+        .collect()
+}
 
 fn rejected(code: &str) -> Option<String> {
     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -106,14 +159,24 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
 
     let mut findings: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut tried = 0usize;
-    for doc in mq_help::BUILTIN_DOC
+    // Name and the numbers of arguments to try
+    let mut targets: Vec<(String, std::ops::RangeInclusive<usize>)> = mq_help::BUILTIN_DOC
         .iter()
         .filter(|doc| doc.kind == mq_help::DocKind::Function)
         .filter(|doc| !SKIPPED.contains(&doc.name))
-        .filter(|doc| only.as_deref().is_none_or(|name| name == doc.name))
-    {
-        let max_arity = doc.params.len().clamp(1, 3);
-        for arity in 1..=max_arity {
+        .map(|doc| (doc.name.to_string(), 1..=doc.params.len().clamp(1, 3)))
+        .collect();
+    // A call with fewer arguments than parameters is the piped form, which has no input here.
+    targets.extend(
+        mq_builtins()
+            .into_iter()
+            .filter(|(_, params)| *params <= 3)
+            .map(|(name, params)| (name, params..=params)),
+    );
+    targets.retain(|(name, _)| only.as_deref().is_none_or(|only| only == name));
+
+    for (name, arities) in &targets {
+        for arity in arities.clone() {
             let mut combos: Vec<Vec<usize>> = vec![Vec::new()];
             for _ in 0..arity {
                 combos = combos
@@ -134,7 +197,7 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
             }
             for combo in combos {
                 let args: Vec<&str> = combo.iter().map(|&i| VALUES[i].1).collect();
-                let code = format!("{}({})", doc.name, args.join(", "));
+                let code = format!("{}({})", name, args.join(", "));
                 tried += 1;
                 let Ok(values) = engine.eval(&code, mq_lang::null_input().into_iter()) else {
                     continue;
@@ -150,7 +213,7 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
                 }
                 if let Some(error) = rejected(&code) {
                     let labels: Vec<&str> = combo.iter().map(|&i| VALUES[i].0).collect();
-                    findings.entry(doc.name.to_string()).or_default().push(format!(
+                    findings.entry(name.clone()).or_default().push(format!(
                         "({})  {}",
                         labels.join(", "),
                         error.lines().next().unwrap_or("")
