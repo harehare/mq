@@ -348,7 +348,18 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
         Type::markdown(),
     );
-    register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
+    register_binary(ctx, "split", text(), Type::String, Type::array(Type::String));
+    register_binary(ctx, "split", Type::None, Type::String, Type::array(Type::String));
+    register_binary(ctx, "split", Type::Bytes, Type::Bytes, Type::array(Type::Bytes));
+    // An array is split at the elements equal to the separator.
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "split",
+        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::array(Type::Var(a))),
+    );
     // split_records and extract_urls also accept a markdown node (its text) and none (no records).
     let split_record = Type::array(closed_record(&[
         ("text", Type::String),
@@ -473,6 +484,13 @@ fn register_string(ctx: &mut InferenceContext) {
     // capture groups (string per match) or not (array of groups per match).
     let a = ctx.fresh_var();
     register_binary(ctx, "scan", text(), Type::String, Type::array(Type::Var(a)));
+
+    // An array starts or ends with an element.
+    for name in ["starts_with", "ends_with"] {
+        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(ctx, name, Type::array(Type::Var(a)), Type::Var(b), Type::Bool);
+    }
+    register_binary(ctx, "contains", Type::Bytes, Type::Bytes, Type::Bool);
 
     // A none input is searched like an empty string.
     register_binary(ctx, "starts_with", Type::None, Type::String, Type::Bool);
@@ -688,6 +706,7 @@ pub(crate) fn fallback_signature(name: &str, args: &[Type]) -> Option<Type> {
         {
             Some(Type::function(args.to_vec(), Type::Bool))
         }
+        ("index" | "rindex", [Type::None, _]) => Some(Type::function(args.to_vec(), Type::Number)),
         _ => None,
     }
 }
