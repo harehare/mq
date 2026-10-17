@@ -187,7 +187,7 @@ An expression is exact when it is
 - an `if` whose branches are exact
 - a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
 
-Parameters, calls of user functions, loops, `match` and anything else are not exact, so an error on them is possible. An error inside a `try:` body is possible as well, and so are the advisory diagnostics (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`). A case the rules do not cover can only make an error possible, never definite.
+A call of a function defined in the program is exact when it is given every parameter, the arguments are exact and the body is exact when its parameters are (a recursive function is not). Parameters outside such a call, loops, `match` and anything else are not exact, so an error on them is possible. An error inside a `try:` body is possible as well, and so are the advisory diagnostics (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`). A case the rules do not cover can only make an error possible, never definite.
 
 Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
 
