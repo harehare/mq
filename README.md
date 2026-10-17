@@ -65,13 +65,14 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 
 ### Package Managers
 
-| Method                 | Command                                      |
-| ---------------------- | -------------------------------------------- |
-| Homebrew (macOS/Linux) | `brew install mq`                            |
-| MacPorts (macOS)       | `sudo port install mq`                       |
-| Arch (yay)             | `yay -S mq-bin`                              |
-| Cargo (crates.io)      | `cargo install mq-run`                       |
-| Docker                 | `docker run --rm ghcr.io/harehare/mq:latest` |
+| Method                 | Command                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| Homebrew (macOS/Linux) | `brew install mq`                                                                 |
+| MacPorts (macOS)       | `sudo port install mq`                                                            |
+| Scoop (Windows)        | `scoop bucket add mq https://github.com/harehare/scoop-mq && scoop install mq/mq` |
+| Arch (yay)             | `yay -S mq-bin`                                                                   |
+| Cargo (crates.io)      | `cargo install mq-run`                                                            |
+| Docker                 | `docker run --rm ghcr.io/harehare/mq:latest`                                      |
 
 
 <details>

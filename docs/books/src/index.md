@@ -24,6 +24,13 @@ On macOS, MacPorts is also available:
 sudo port install mq
 ```
 
+On Windows, you can use Scoop:
+
+```powershell
+scoop bucket add mq https://github.com/harehare/scoop-mq
+scoop install mq/mq
+```
+
 For other installation methods including Cargo, pre-built binaries, Docker, and more, see the [Install](start/install.md) page.
 
 ## Your First Query

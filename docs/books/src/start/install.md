@@ -61,6 +61,14 @@ $ sudo port install mq
 
 The MacPorts port is maintained by the community.
 
+## Scoop
+
+```powershell
+# Using Scoop (Windows)
+scoop bucket add mq https://github.com/harehare/scoop-mq
+scoop install mq/mq
+```
+
 ## Docker
 
 ```sh
