@@ -97,11 +97,11 @@ fn test_function_arity_mismatch_hint_names_function_and_counts() {
 
 #[test]
 fn test_function_type_arity_mismatch_hint_shows_param_counts() {
-    // Unifying two function *types* with different arities (e.g. comparing lambdas with
-    // different signatures) hits the WrongArity path in
+    // Unifying two function *types* with different arities (e.g. passing a lambda of the wrong
+    // arity as a callback) hits the WrongArity path in
     // unify.rs, which has no call-site function name available, unlike the
     // constraint.rs path exercised above.
-    let result = check_types("let f = fn(x): x; | let g = fn(x, y): x; | f == g");
+    let result = check_types_with_builtins("let g = fn(x, y): x; | sort_by([1], g)");
 
     let has_hint = result.iter().any(|err| {
         matches!(
@@ -775,4 +775,101 @@ fn test_dynamic_piped_input(#[case] code: &str, #[case] should_succeed: bool, #[
 fn test_partial_arity(#[case] code: &str, #[case] should_succeed: bool) {
     let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{code}: {result:?}");
+}
+
+#[rstest]
+#[case::comparison(r#"let v = len([1, 2]) | if (is_string(v)): (v > 9) else: 1"#)]
+#[case::short_circuit(r#"let v = len([1, 2]) | if (is_string(v)): (is_string(1) && (v > 9)) else: 1"#)]
+fn test_unreachable_then_branch_reports_nothing(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "unreachable branch must not report: {:?}", result);
+}
+
+#[rstest]
+#[case::else_of_union_with_pending_member(
+    r#"let u = if (true): 3 else: get({"b": "x"}, "b") | if (is_string(u)): upcase(u) else: u + 1"#
+)]
+#[case::and_right_operand(r#"let u = if (true): 1 else: "a" | if (is_string(u) && len(u) > 0): upcase(u) else: 0"#)]
+#[case::or_right_operand(r#"let u = if (true): 1 else: "a" | if (is_string(u) || u > 0): 1 else: 0"#)]
+#[case::set_other_value_type(r#"let d = {"a": 1} | set(d, "c", "x") | keys(d)"#)]
+fn test_narrowing_and_set_report_nothing_for_valid_programs(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "valid program must not report: {:?}", result);
+}
+
+#[rstest]
+#[case::condition(r#""abc" | if (is_string()): 1 else: 2"#)]
+#[case::branch(r#""abc" | if (true): upcase() else: "x""#)]
+#[case::elif(r#""abc" | if (false): 1 elif (is_none()): 2 else: 3"#)]
+#[case::in_function(r#"def f(): if (is_none()): None else: upcase(); | "a" | f()"#)]
+fn test_piped_input_reaches_if_condition_and_branches(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "implicit input must not report: {:?}", result);
+}
+
+#[test]
+fn test_piped_input_type_reaches_if_branches() {
+    let result = check_types_with_builtins(r#""abc" | if (true): abs() else: 1"#);
+    assert!(!result.is_empty(), "abs of a string must still be reported");
+}
+
+#[rstest]
+#[case::eq_other_types(r#"let x = [1] | if (x == "List"): 1 else: 2"#)]
+#[case::eq_record_and_string(r#"{"a": 1} == "s""#)]
+#[case::concat_other_element_types(r#"[1] + ["a"]"#)]
+#[case::concat_records(r#"[{a: 1}] + [{a: "x"}]"#)]
+#[case::append_other_type(r#"[1] + "a""#)]
+#[case::accumulate(r#"var p = [] | p += [{t: "a", v: "x"}] | p += [{t: "b", v: ["y"]}] | p"#)]
+fn test_values_of_other_types_are_not_reported(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "valid program must not report: {:?}", result);
+}
+
+#[rstest]
+#[case::branch_not_pinned(r#"var cur = "" | if (true): [1] else: do cur = "b" | cur end | cur"#)]
+#[case::self_assignment_keeps_type(r#"def f(s): var cur = "" | cur = cur + s | cur end | f("a") | upcase(f("b"))"#)]
+#[case::accumulate_in_loop(
+    r#"def f(s): var cur = "" | var i = 0 | let _ = while (i < 3): do cur = cur + s[i] | i += 1 | cur end end | cur end | f("abc")"#
+)]
+fn test_unsettled_branch_and_reassignment_report_nothing(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "valid program must not report: {:?}", result);
+}
+
+#[test]
+fn test_parenthesized_call_of_a_variable_is_not_a_slice() {
+    let code = "def make(p): fn(input, pos): p; | let f = make(1) | f(\"a\", 2)";
+    let result = check_types_with_builtins(code);
+    assert!(
+        result.is_empty(),
+        "calling a variable must not be read as a slice: {:?}",
+        result
+    );
+}
+
+#[rstest]
+#[case::node_upcase(r##"upcase(first(to_markdown("# h")))""##)]
+#[case::node_starts_with(r##"starts_with(first(to_markdown("# h")), "h")""##)]
+#[case::node_len(r##"len(first(to_markdown("# h")))""##)]
+#[case::node_regex(r##"regex_match(first(to_markdown("# h")), "h")""##)]
+#[case::none_starts_with(r#"starts_with(None, "a")"#)]
+#[case::none_index(r#"index(None, "a")"#)]
+#[case::token_count_none("token_count(None)")]
+#[case::to_text_any("to_text(2)")]
+#[case::to_markdown_string_array(r##"to_markdown_string(to_markdown("# h"))""##)]
+#[case::url_encode_number("url_encode(2)")]
+#[case::has_other_type(r#"has([1, 2], "a")"#)]
+#[case::has_other_key(r#"has({"a": 1}, 2)"#)]
+#[case::index_other_type(r#"index([1, 2], "a")"#)]
+#[case::coalesce_other_type(r#"42 ?? "fallback""#)]
+#[case::repeat_string(r#"2 * "ab""#)]
+#[case::is_nan_string(r#"is_nan("a")"#)]
+#[case::code_without_language("to_code(2, None)")]
+#[case::contains_none("contains(None, 2)")]
+#[case::contains_other_type(r#"contains([1, 2], "a")"#)]
+#[case::in_none("in(None, 2)")]
+#[case::bsearch_other_type(r#"bsearch([1, 2], "a")"#)]
+fn test_builtin_accepts_what_the_runtime_accepts(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "the runtime accepts it: {:?}", result);
 }

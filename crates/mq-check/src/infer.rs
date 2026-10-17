@@ -217,6 +217,18 @@ pub struct NarrowingEntry {
     pub is_complement: bool,
 }
 
+/// A complement narrowing whose source type still has unresolved type variables.
+///
+/// Subtracting from a union that holds a pending variable cannot be done yet, so it is retried
+/// once the variable is resolved.
+#[derive(Debug, Clone)]
+pub struct PendingNarrowing {
+    /// The references in the branch that the narrowing applies to
+    pub ref_ids: Vec<SymbolId>,
+    /// The narrowing to retry
+    pub entry: NarrowingEntry,
+}
+
 /// Collected type narrowing information for an if/elif expression.
 ///
 /// When a type predicate like `is_string(x)` is used as a condition in an if
@@ -231,6 +243,8 @@ pub struct TypeNarrowing {
     pub else_narrowings: Vec<NarrowingEntry>,
     /// The then-branch symbol ID
     pub then_branch_id: SymbolId,
+    /// False for the right operand of `&&` / `||`, whose condition is already checked for dead code
+    pub report_dead: bool,
     /// The else/elif branch symbol IDs where complement narrowings apply
     pub else_branch_ids: Vec<SymbolId>,
 }
@@ -294,6 +308,11 @@ pub struct InferenceContext {
     deferred_try_catches: Vec<DeferredTryCatch>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
+    /// Complement narrowings waiting for their source type to be resolved
+    pending_narrowings: Vec<PendingNarrowing>,
+    /// Types that references read instead of their variable's current type (the right-hand side
+    /// of `x = x + 1` reads `x` as it was before the assignment)
+    read_overrides: FxHashMap<SymbolId, Type>,
     /// Cross-arm narrowings collected from match expressions
     cross_arm_narrowings: Vec<CrossArmNarrowing>,
     /// When true, heterogeneous arrays produce a type error
@@ -333,6 +352,8 @@ impl InferenceContext {
             deferred_call_return_accesses: Vec::new(),
             deferred_try_catches: Vec::new(),
             type_narrowings: Vec::new(),
+            pending_narrowings: Vec::new(),
+            read_overrides: FxHashMap::default(),
             cross_arm_narrowings: Vec::new(),
             strict_array,
         }
@@ -577,6 +598,31 @@ impl InferenceContext {
         self.type_narrowings.push(narrowing);
     }
 
+    /// Makes the reference read `ty` instead of its variable's current type
+    pub fn set_read_override(&mut self, reference: SymbolId, ty: Type) {
+        self.read_overrides.insert(reference, ty);
+    }
+
+    /// The type the reference reads instead of its variable's current type, if any
+    pub fn read_override(&self, reference: SymbolId) -> Option<&Type> {
+        self.read_overrides.get(&reference)
+    }
+
+    /// Adds a complement narrowing to retry once its source type is resolved
+    pub fn add_pending_narrowing(&mut self, narrowing: PendingNarrowing) {
+        self.pending_narrowings.push(narrowing);
+    }
+
+    /// Takes the narrowings that wait for their source type (consumes them)
+    pub fn take_pending_narrowings(&mut self) -> Vec<PendingNarrowing> {
+        std::mem::take(&mut self.pending_narrowings)
+    }
+
+    /// Whether any narrowing waits for its source type
+    pub fn has_pending_narrowings(&self) -> bool {
+        !self.pending_narrowings.is_empty()
+    }
+
     /// Takes all collected type narrowings (consumes them)
     pub fn take_type_narrowings(&mut self) -> Vec<TypeNarrowing> {
         std::mem::take(&mut self.type_narrowings)
@@ -701,9 +747,33 @@ impl InferenceContext {
             }
         }
 
-        let (ty, _score) = best_match?;
+        let Some((ty, _score)) = best_match else {
+            let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+            return crate::builtin::fallback_signature(name, &resolved_args)
+                .or_else(|| self.resolve_node_as_text(name, arg_types));
+        };
         let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
         Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
+    }
+
+    /// A builtin that takes a string also takes a markdown node, as its text, so a call that only
+    /// fails on node arguments is resolved with those read as strings.
+    fn resolve_node_as_text(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        let is_node = |ty: &Type| matches!(self.resolve_type(ty), Type::Node(_));
+        if !arg_types.iter().any(is_node) {
+            return None;
+        }
+        let as_text: Vec<Type> = arg_types
+            .iter()
+            .map(|ty| if is_node(ty) { Type::String } else { ty.clone() })
+            .collect();
+        let Some(Type::Function(_, ret)) = self.resolve_overload(name, &as_text) else {
+            return None;
+        };
+        if ret.has_pending_var() {
+            return None;
+        }
+        Some(Type::function(arg_types.to_vec(), *ret))
     }
 
     /// The signature of `partial(f, a1..ak)`. Its shape follows the arity of `f`, so it is derived

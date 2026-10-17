@@ -26,7 +26,7 @@
 //! - Structural selector: `if (.h): ...` → first function parameter narrowed to Markdown
 
 use crate::constraint::{ChildrenIndex, get_children, get_non_keyword_children};
-use crate::infer::{CrossArmNarrowing, InferenceContext, NarrowingEntry};
+use crate::infer::{CrossArmNarrowing, InferenceContext, NarrowingEntry, PendingNarrowing, TypeNarrowing};
 use crate::kind_set::KindSet;
 use crate::types::Type;
 use crate::walk_ancestors;
@@ -549,6 +549,22 @@ pub(crate) fn analyze_condition(
 
             let is_and = matches!(symbol.value.as_deref(), Some("&&") | Some("and"));
 
+            // The right operand only runs when the left one is true (`&&`) or false (`||`).
+            let guard = if is_and {
+                &left.then_narrowings
+            } else {
+                &left.else_narrowings
+            };
+            if !guard.is_empty() {
+                ctx.add_type_narrowing(TypeNarrowing {
+                    then_narrowings: guard.clone(),
+                    else_narrowings: Vec::new(),
+                    then_branch_id: children[1],
+                    report_dead: false,
+                    else_branch_ids: Vec::new(),
+                });
+            }
+
             if is_and {
                 // AND: both narrowings apply in the then-branch. The else-branch is not narrowed:
                 // either side may be the one that failed, so neither complement holds for sure.
@@ -700,16 +716,23 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> 
         for entry in &narrowing.then_narrowings {
             // Dead code detection: concrete (non-union, non-var) variable type that
             // doesn't match the predicate type → then-branch is always false.
-            if let Some(dead_reason) = detect_dead_then_branch(ctx, entry, narrowing.then_branch_id, hir) {
+            if narrowing.report_dead
+                && let Some(dead_reason) = detect_dead_then_branch(ctx, entry, narrowing.then_branch_id, hir)
+            {
                 dead_branches.push(dead_reason);
             }
 
             if let Some(effective_ty) = compute_narrowed_type(ctx, entry) {
-                apply_narrowing_to_branch(
+                let effective_ty = if is_disjoint_from_known_type(ctx, entry, hir) {
+                    Type::Never
+                } else {
+                    effective_ty
+                };
+                apply_entry(
                     ctx,
-                    entry.def_id,
+                    entry,
                     &effective_ty,
-                    narrowing.then_branch_id,
+                    &[narrowing.then_branch_id],
                     &def_to_refs,
                     &branch_descendants,
                 );
@@ -738,16 +761,14 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> 
                         ));
                     }
                 } else {
-                    for &else_branch_id in &narrowing.else_branch_ids {
-                        apply_narrowing_to_branch(
-                            ctx,
-                            entry.def_id,
-                            &effective_ty,
-                            else_branch_id,
-                            &def_to_refs,
-                            &branch_descendants,
-                        );
-                    }
+                    apply_entry(
+                        ctx,
+                        entry,
+                        &effective_ty,
+                        &narrowing.else_branch_ids,
+                        &def_to_refs,
+                        &branch_descendants,
+                    );
                 }
             }
         }
@@ -806,6 +827,29 @@ fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Opti
             Some(entry.narrowed_type.clone())
         }
     }
+}
+
+/// Returns `true` when a then-branch predicate can never hold for a variable whose type is known.
+///
+/// The branch is unreachable, so its references get `Type::Never` instead of the predicate type,
+/// which would report errors for code that never runs. Parameters are excluded: their type is
+/// only what the body has used so far, and the predicate is what tells it apart.
+fn is_disjoint_from_known_type(ctx: &InferenceContext, entry: &NarrowingEntry, hir: &Hir) -> bool {
+    if entry.is_complement
+        || hir
+            .symbol(entry.def_id)
+            .is_none_or(|s| matches!(s.kind, SymbolKind::Parameter))
+    {
+        return false;
+    }
+    let Some(var_ty) = ctx.get_symbol_type(entry.def_id).map(|ty| ctx.resolve_type(ty)) else {
+        return false;
+    };
+    !var_ty.is_var()
+        && !var_ty.is_dynamic()
+        && !var_ty.is_never()
+        && !var_ty.is_union()
+        && !var_ty.can_match(&entry.narrowed_type)
 }
 
 /// Detects when a then-branch condition is always false.
@@ -996,18 +1040,20 @@ fn apply_narrowing_to_branch(
     branch_id: SymbolId,
     def_to_refs: &FxHashMap<SymbolId, Vec<SymbolId>>,
     branch_descendants: &FxHashMap<SymbolId, FxHashSet<SymbolId>>,
-) {
+) -> Vec<SymbolId> {
+    let mut applied = Vec::new();
     let Some(refs) = def_to_refs.get(&def_id) else {
-        return;
+        return applied;
     };
     let Some(descendants) = branch_descendants.get(&branch_id) else {
-        return;
+        return applied;
     };
     for &ref_id in refs {
         // O(1) containment check via pre-built descendants set.
         if !descendants.contains(&ref_id) {
             continue;
         }
+        applied.push(ref_id);
         // Narrowings of one reference compose (`is_h(x) && is_h1(x)`, nested ifs, `||` in the
         // else branch), so a node type keeps only the kinds the reference still has.
         let narrowed = match (
@@ -1023,6 +1069,68 @@ fn apply_narrowing_to_branch(
         // chain for this Ref's type variable. This ensures deferred overload
         // resolution sees the narrowed type instead of the original union.
         ctx.set_symbol_type(ref_id, narrowed);
+    }
+    applied
+}
+
+/// Retries the complement narrowings whose source type had unresolved type variables when they
+/// were first applied, and returns whether any of them was settled.
+pub(crate) fn refresh_pending_narrowings(ctx: &mut InferenceContext) -> bool {
+    let mut settled = false;
+    for pending in ctx.take_pending_narrowings() {
+        let source = ctx.get_symbol_type(pending.entry.def_id).map(|ty| ctx.resolve_type(ty));
+        if source.is_none_or(|ty| ty.has_pending_var()) {
+            ctx.add_pending_narrowing(pending);
+            continue;
+        }
+        if let Some(narrowed) = compute_narrowed_type(ctx, &pending.entry) {
+            for ref_id in pending.ref_ids {
+                ctx.set_symbol_type(ref_id, narrowed.clone());
+            }
+        }
+        settled = true;
+    }
+    settled
+}
+
+/// Whether a complement narrowing has to wait: its source union still has unresolved variables.
+fn is_pending_complement(ctx: &InferenceContext, entry: &NarrowingEntry) -> bool {
+    entry.is_complement
+        && ctx
+            .get_symbol_type(entry.def_id)
+            .map(|ty| ctx.resolve_type(ty))
+            .is_some_and(|ty| ty.is_union() && ty.has_pending_var())
+}
+
+/// Applies a narrowing to a branch. A complement narrowing that has to wait leaves the references
+/// with a fresh variable, which `refresh_pending_narrowings` binds once the source is resolved.
+fn apply_entry(
+    ctx: &mut InferenceContext,
+    entry: &NarrowingEntry,
+    narrowed_type: &Type,
+    branch_ids: &[SymbolId],
+    def_to_refs: &FxHashMap<SymbolId, Vec<SymbolId>>,
+    branch_descendants: &FxHashMap<SymbolId, FxHashSet<SymbolId>>,
+) {
+    let wait = is_pending_complement(ctx, entry);
+    let placeholder = wait.then(|| Type::Var(ctx.fresh_var()));
+    let mut applied = Vec::new();
+    for &branch_id in branch_ids {
+        let ty = placeholder.as_ref().unwrap_or(narrowed_type);
+        applied.extend(apply_narrowing_to_branch(
+            ctx,
+            entry.def_id,
+            ty,
+            branch_id,
+            def_to_refs,
+            branch_descendants,
+        ));
+    }
+    if wait && !applied.is_empty() {
+        ctx.add_pending_narrowing(PendingNarrowing {
+            ref_ids: applied,
+            entry: entry.clone(),
+        });
     }
 }
 

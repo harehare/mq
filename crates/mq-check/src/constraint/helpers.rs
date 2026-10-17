@@ -176,9 +176,35 @@ pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
 /// Also handles the case where a Call/Ref is inside a UnaryOp that is itself
 /// inside a Block, e.g., `x | !f()` where `f()` eventually receives piped input.
 pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
-    let parent_id = match hir.symbol(symbol_id).and_then(|s| s.parent) {
+    // Control flow passes its own input to its condition and bodies (`x | if (is_none()): ...`).
+    let mut climbed = false;
+    let mut parent_id = hir.symbol(symbol_id).and_then(|s| s.parent);
+    while let Some(id) = parent_id {
+        let Some(parent) = hir.symbol(id) else { break };
+        if !matches!(
+            parent.kind,
+            SymbolKind::If
+                | SymbolKind::Elif
+                | SymbolKind::Else
+                | SymbolKind::Unless
+                | SymbolKind::While
+                | SymbolKind::Until
+                | SymbolKind::Foreach
+                | SymbolKind::Loop
+                | SymbolKind::Try
+                | SymbolKind::Catch
+                | SymbolKind::Match
+                | SymbolKind::MatchArm { .. }
+        ) {
+            break;
+        }
+        climbed = true;
+        parent_id = parent.parent;
+    }
+    let parent_id = match parent_id {
         Some(id) => id,
-        None => return false,
+        // The root is a pipe chain whose first stage receives the input document
+        None => return climbed,
     };
     let parent = match hir.symbol(parent_id) {
         Some(p) => p,

@@ -162,6 +162,7 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
+| `--strict`       | Report possible errors (see below) as errors |
 | `--input-type`   | Type of the input document `.`, e.g. `h1 \| h2`, `code`, `markdown - code` (default: unknown) |
 | `--format`       | Diagnostic output format: `text` (default), `json`, `markdown`, or `sarif` |
 
@@ -173,6 +174,22 @@ Enforces that all elements in an array literal share the same type.
 echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
 ```
+
+### Definite and possible errors
+
+A type error is *definite* only when every operand it is about is *exact*: its type is known for certain. Every other error is *possible*: it may be wrong for a program that runs fine. Possible errors are reported as warnings and do not change the exit status; `--strict` reports them as errors.
+
+An expression is exact when it is
+
+- a literal, or an array or dict literal of exact elements
+- an operator on exact operands
+- a call of a builtin listed in `EXACT_BUILTINS` (see below) with exact arguments, fed by an exact pipe stage
+- an `if` whose branches are exact
+- a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
+
+A call of a function defined in the program is exact when it is given every parameter, the arguments are exact and the body is exact when its parameters are (a recursive function is not). Parameters outside such a call, loops, `match` and anything else are not exact, so an error on them is possible. An error inside a `try:` body is possible as well, and so are the advisory diagnostics (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`). A case the rules do not cover can only make an error possible, never definite.
+
+Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
 
 ### Test files
 
@@ -230,7 +247,11 @@ just test-all
 
 ### Differential fuzzing
 
-`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
+`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`, which should report none), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
+
+### Builtin signature audit
+
+`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose (`TOLERATED` in the test). Only calls to the builtins listed in `EXACT_BUILTINS` (`src/certainty.rs`) can make an error definite. The audit fails when a listed builtin has a finding, and prints the clean builtins that are not listed yet. `AUDIT_FUNCTION` limits the run to one builtin.
 
 ### Building
 

@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use colored::Colorize;
 use format::OutputFormat;
-use mq_check::{TypeChecker, TypeCheckerOptions, TypeError, types::Type};
+use mq_check::{Certainty, Classified, TypeChecker, TypeCheckerOptions, TypeError, types::Type};
 use mq_hir::Hir;
 use url::Url;
 
@@ -36,6 +36,10 @@ struct Cli {
     #[arg(long)]
     no_exhaustive_patterns: bool,
 
+    /// Report possible errors (diagnostics the checker is not sure about) as errors
+    #[arg(long)]
+    strict: bool,
+
     /// Type of the input document `.`, e.g. `h1 | h2`, `code` or `markdown - code`
     /// (default: unknown)
     #[arg(long, value_name = "TYPE", value_parser = parse_input_type)]
@@ -53,6 +57,7 @@ impl Cli {
         TypeCheckerOptions {
             strict_array: self.strict_array,
             no_exhaustive_patterns: self.no_exhaustive_patterns,
+            strict: self.strict,
             input_type: self.input_type.clone(),
         }
     }
@@ -252,8 +257,8 @@ fn collect_check_diagnostics(
 
     if !has_syntax_errors {
         let mut checker = TypeChecker::with_options(type_checker_options.clone());
-        let errors = checker.check(&hir);
-        diagnostics.extend(format::type_diagnostics(&errors));
+        let errors = checker.check_classified(&hir);
+        diagnostics.extend(format::type_diagnostics(&errors, type_checker_options.strict));
     }
 
     diagnostics
@@ -336,20 +341,32 @@ fn check_type(
     options: &TypeCheckerOptions,
 ) -> io::Result<bool> {
     let mut checker = TypeChecker::with_options(options.clone());
-    let mut errors = checker.check(hir);
+    let mut classified = checker.check_classified(hir);
 
-    errors.sort_by_key(|a| a.location());
+    classified.sort_by_key(|c| c.error.location());
 
-    let total = errors.len();
-    for (i, error) in errors.iter().enumerate() {
-        write_error(w, error, code, i + 1, total)?;
+    let total = classified.len();
+    let is_possible = |c: &Classified| c.certainty == Certainty::Possible && !options.strict;
+    for (i, c) in classified.iter().enumerate() {
+        write_error(w, &c.error, is_possible(c), code, i + 1, total)?;
     }
 
     if show_types {
         write_inferred_types(w, &checker, hir)?;
     }
 
-    if errors.is_empty() {
+    let possible = classified.iter().filter(|c| is_possible(c)).count();
+    let errors = total - possible;
+    if possible > 0 {
+        writeln!(
+            w,
+            "{} {} possible type error{} (not certain; `--strict` reports them as errors).",
+            "⚠".bright_yellow().bold(),
+            possible.to_string().bright_yellow().bold(),
+            if possible == 1 { "" } else { "s" },
+        )?;
+    }
+    if total == 0 {
         if !show_types {
             writeln!(
                 w,
@@ -359,13 +376,15 @@ fn check_type(
             )?;
         }
         Ok(false)
+    } else if errors == 0 {
+        Ok(false)
     } else {
         writeln!(
             w,
             "{} {} type error{} found.",
             "✗".bright_red().bold(),
-            total.to_string().bright_red().bold(),
-            if total == 1 { "" } else { "s" },
+            errors.to_string().bright_red().bold(),
+            if errors == 1 { "" } else { "s" },
         )?;
         Ok(true)
     }
@@ -445,7 +464,14 @@ fn error_title(error: &TypeError) -> String {
 /// `index` is the 1-based error number; `total` is the total error count.
 /// - Single error  → compact inline format  (`loc │ message` + snippet)
 /// - Multiple errors → Rust-style block format (`error[E000N] title` / ` --> loc` / snippet)
-fn write_error(w: &mut impl Write, error: &TypeError, code: &str, index: usize, total: usize) -> io::Result<()> {
+fn write_error(
+    w: &mut impl Write,
+    error: &TypeError,
+    possible: bool,
+    code: &str,
+    index: usize,
+    total: usize,
+) -> io::Result<()> {
     let location = error.location();
     let loc_plain = location
         .map(|range| format!("{}:{}", range.start.line, range.start.column))
@@ -453,12 +479,12 @@ fn write_error(w: &mut impl Write, error: &TypeError, code: &str, index: usize, 
 
     if total > 1 {
         // ── Rust-style block ──────────────────────────────────────────────────
-        writeln!(
-            w,
-            "{} {}",
-            format!("error[E{index:04}]").bright_red().bold(),
-            error_title(error).white().bold(),
-        )?;
+        let header = if possible {
+            format!("warning[E{index:04}]").bright_yellow().bold()
+        } else {
+            format!("error[E{index:04}]").bright_red().bold()
+        };
+        writeln!(w, "{} {}", header, error_title(error).white().bold())?;
         if !loc_plain.is_empty() {
             writeln!(w, "  {} {}", "-->".dimmed(), loc_plain.dimmed())?;
         }
@@ -485,7 +511,12 @@ fn write_error(w: &mut impl Write, error: &TypeError, code: &str, index: usize, 
         };
         let sep = "│".dimmed();
 
-        writeln!(w, "  {} {} {}", loc_str, sep, error_title(error).white(),)?;
+        let title = if possible {
+            format!("possible: {}", error_title(error))
+        } else {
+            error_title(error)
+        };
+        writeln!(w, "  {} {} {}", loc_str, sep, title.white())?;
         if let Some(range) = &location {
             write_snippet(w, code, range, prefix_width)?;
         }

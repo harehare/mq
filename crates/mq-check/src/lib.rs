@@ -18,6 +18,7 @@
 #![allow(unused_assignments)]
 
 pub(crate) mod builtin;
+pub mod certainty;
 pub(crate) mod constraint;
 pub(crate) mod deferred;
 pub(crate) mod exhaustiveness;
@@ -35,6 +36,8 @@ use mq_hir::{Hir, SymbolId};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 use types::TypeScheme;
+
+pub use certainty::{Certainty, Classified};
 
 /// Names `mq-test` defines at runtime, which no source declares. Pass them to
 /// [`Hir::declare_global`] when checking test files.
@@ -325,6 +328,9 @@ pub struct TypeCheckerOptions {
     pub strict_array: bool,
     /// When true, exhaustiveness checking for pattern match expressions is disabled.
     pub no_exhaustive_patterns: bool,
+    /// When true, errors the checker is not sure about ([`Certainty::Possible`]) are reported with
+    /// the severity of errors. Consumers that show severity read it from here.
+    pub strict: bool,
     /// The type of the input document `.` (see [`type_expr::parse_type`]). When `None` the input
     /// is `dynamic`.
     pub input_type: Option<types::Type>,
@@ -405,17 +411,22 @@ impl TypeChecker {
     ///
     /// Returns a list of type errors found. An empty list means no errors.
     pub fn check(&mut self, hir: &Hir) -> Vec<TypeError> {
+        self.check_classified(hir).into_iter().map(|c| c.error).collect()
+    }
+
+    /// Like [`check`](Self::check), but says for each error how sure the checker is about it.
+    pub fn check_classified(&mut self, hir: &Hir) -> Vec<Classified> {
         self.run(hir, &mut Laps::default())
     }
 
     /// Like [`check`](Self::check), but also returns the wall-clock time of each phase.
     pub fn check_profiled(&mut self, hir: &Hir) -> (Vec<TypeError>, PhaseTimings) {
         let mut laps = Laps::started();
-        let errors = self.run(hir, &mut laps);
+        let errors = self.run(hir, &mut laps).into_iter().map(|c| c.error).collect();
         (errors, PhaseTimings(laps.timings))
     }
 
-    fn run(&mut self, hir: &Hir, laps: &mut Laps) -> Vec<TypeError> {
+    fn run(&mut self, hir: &Hir, laps: &mut Laps) -> Vec<Classified> {
         // Create inference context with options
         let mut ctx = infer::InferenceContext::with_options(self.options.strict_array);
         if let Some(input_type) = &self.options.input_type {
@@ -545,6 +556,9 @@ impl TypeChecker {
         // Module diagnostics are never reported. A stage threaded twice reports its error twice.
         let mut seen = rustc_hash::FxHashSet::default();
         errors.retain(|e| !e.location().is_some_and(|r| is_module_range(&r)) && seen.insert(format!("{e:?}")));
+
+        let errors = certainty::classify_all(hir, &ctx, errors);
+        laps.lap("classify");
 
         // Store inferred types
         self.symbol_types = ctx.finalize();
