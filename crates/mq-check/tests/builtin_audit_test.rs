@@ -9,7 +9,7 @@
 //! inferred from the bodies, so a finding there is an inference that is narrower than the body.
 //!
 //! The builtins without a finding are the ones whose calls the checker may call definite errors;
-//! they are pinned in `src/exact_builtins.txt` and regenerated with `UPDATE_EXACT=1`.
+//! they are listed by hand in `EXACT_BUILTINS` (`certainty.rs`), which this test keeps clean.
 //!
 //! Slow, so it is ignored by default: `just audit-builtins`. `AUDIT_FUNCTION` limits it to one
 //! function and `AUDIT_TRIPLES` sets how many 3-argument combinations are tried (default 60).
@@ -19,6 +19,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use mq_check::TypeChecker;
+use mq_check::certainty::EXACT_BUILTINS;
 use mq_hir::Hir;
 
 /// Builtins that do I/O, never return or depend on the environment.
@@ -266,26 +267,28 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
     }
     println!("{report}");
 
-    // The builtins whose signature is not narrower than the function on any call tried, and that
-    // accept a call that runs (so the calls tried are not all wrong), have a type that is known
-    // for certain: see `exact_builtins.txt`.
+    // The listed builtins must stay clean. The clean ones that are not listed yet, and that accept
+    // a call that runs, could be.
     if only.is_none() {
-        let exact: std::collections::BTreeSet<&str> = targets
+        let listed_with_findings: Vec<&str> = EXACT_BUILTINS
+            .iter()
+            .copied()
+            .filter(|name| findings.contains_key(*name))
+            .collect();
+        let unsorted = EXACT_BUILTINS.windows(2).any(|pair| pair[0] >= pair[1]);
+        let candidates: Vec<&str> = targets
             .iter()
             .map(|(name, _)| name.as_str())
             .filter(|name| !findings.contains_key(*name) && accepted.contains_key(*name))
+            .filter(|name| !EXACT_BUILTINS.contains(name))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
             .collect();
-        let listed: String = exact.iter().map(|name| format!("{name}\n")).collect();
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/exact_builtins.txt");
-        if std::env::var_os("UPDATE_EXACT").is_some() {
-            std::fs::write(path, &listed).unwrap();
-        } else {
-            let current = std::fs::read_to_string(path).unwrap_or_default();
-            assert_eq!(
-                current, listed,
-                "src/exact_builtins.txt is out of date; regenerate it with UPDATE_EXACT=1"
-            );
-        }
+        println!("not listed yet and clean: {}", candidates.join(" "));
+        assert!(
+            listed_with_findings.is_empty() && !unsorted,
+            "EXACT_BUILTINS must be sorted and hold no builtin with a finding: {listed_with_findings:?}"
+        );
     }
 
     assert!(
