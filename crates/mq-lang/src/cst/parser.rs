@@ -529,12 +529,17 @@ impl<'a> Parser<'a> {
             TokenKind::Self_ => self.parse_self(leading_trivia),
             TokenKind::Let | TokenKind::Var => self.parse_var_decl(leading_trivia, in_loop),
             TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(leading_trivia),
-            TokenKind::StringLiteral(_)
-            | TokenKind::BytesLiteral(_)
-            | TokenKind::NumberLiteral(_)
-            | TokenKind::BoolLiteral(_)
-            | TokenKind::None => self.parse_node(NodeKind::Literal, leading_trivia),
-            TokenKind::InterpolatedString(_) => self.parse_interpolated_string(leading_trivia),
+            TokenKind::StringLiteral(_) => {
+                let literal = self.parse_node(NodeKind::Literal, leading_trivia)?;
+                self.parse_postfix_chain(literal)
+            }
+            TokenKind::BytesLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
+                self.parse_node(NodeKind::Literal, leading_trivia)
+            }
+            TokenKind::InterpolatedString(_) => {
+                let node = self.parse_interpolated_string(leading_trivia)?;
+                self.parse_postfix_chain(node)
+            }
             TokenKind::LBracket => self.parse_array(leading_trivia),
             TokenKind::LBrace => self.parse_dict(leading_trivia),
             TokenKind::LParen => self.parse_group_expr(leading_trivia, root, in_loop),
@@ -10632,6 +10637,16 @@ Shared::new(Node {
         let (nodes, errors) = crate::parse_recovery(code);
         assert!(!errors.has_errors(), "{code}: {errors:?}");
         assert!(matches!(nodes[0].kind, NodeKind::Dict { .. }), "{code}");
+    }
+
+    #[rstest]
+    #[case::string("\"abc\"[1]")]
+    #[case::string_slice("\"abc\"[1:2]")]
+    #[case::interpolated("s\"a${1}\"[0]")]
+    fn test_string_literal_index(#[case] code: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        assert!(!errors.has_errors(), "{code}: {errors:?}");
+        assert!(matches!(nodes[0].kind, NodeKind::Call { .. }), "{code}");
     }
 
     const TOKEN_SOUP: &[&str] = &[

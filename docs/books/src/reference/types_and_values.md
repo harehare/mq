@@ -134,6 +134,19 @@ get(d, "name")   # Same as di["name"]
 d | get("age")    # Same as d["age"]
 ```
 
+### String Index Access
+
+Strings can be indexed by Unicode scalar value. Negative indices count from the end and an out-of-range index returns `None`:
+
+```mq
+"abc"[0]     # Returns "a"
+"abc"[-1]    # Returns "c"
+"abc"[3]     # Returns None
+"abc"[1:3]   # Returns "bc"
+```
+
+Combining characters and emoji sequences span several scalar values. Use `graphemes` to split by user-perceived character.
+
 ### Spread Operator
 
 The `...` spread operator expands an array or dict inline inside an array or
