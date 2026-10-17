@@ -796,3 +796,19 @@ fn test_narrowing_and_set_report_nothing_for_valid_programs(#[case] code: &str) 
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "valid program must not report: {:?}", result);
 }
+
+#[rstest]
+#[case::condition(r#""abc" | if (is_string()): 1 else: 2"#)]
+#[case::branch(r#""abc" | if (true): upcase() else: "x""#)]
+#[case::elif(r#""abc" | if (false): 1 elif (is_none()): 2 else: 3"#)]
+#[case::in_function(r#"def f(): if (is_none()): None else: upcase(); | "a" | f()"#)]
+fn test_piped_input_reaches_if_condition_and_branches(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "implicit input must not report: {:?}", result);
+}
+
+#[test]
+fn test_piped_input_type_reaches_if_branches() {
+    let result = check_types_with_builtins(r#""abc" | if (true): abs() else: 1"#);
+    assert!(!result.is_empty(), "abs of a string must still be reported");
+}

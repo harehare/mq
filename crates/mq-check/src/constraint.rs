@@ -182,6 +182,15 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
         }
     }
 
+    // The root stages that are an `if` pass their input on to the condition and the branches.
+    for &stage in &cats.root_symbols {
+        if hir.symbol(stage).is_some_and(|s| matches!(s.kind, SymbolKind::If))
+            && let Some(input) = ctx.get_piped_input(stage).cloned()
+        {
+            pipe::forward_into_if(hir, stage, &input, ctx, &children_index);
+        }
+    }
+
     // Pass 4: Process Function body pipe chains
     // (Block symbols are now processed in pass 3, in reverse insertion order,
     //  so they are typed before their parent If/Else nodes.)
@@ -1975,7 +1984,10 @@ fn generate_call_constraints(
 
                         let arity_ok = arg_tys.len() >= required && (variadic || arg_tys.len() <= param_tys.len());
                         if !arity_ok {
-                            if !might_receive_piped_input(hir, symbol_id) {
+                            // Too many arguments stay wrong whatever is piped in.
+                            let may_be_completed =
+                                arg_tys.len() < required && might_receive_piped_input(hir, symbol_id);
+                            if !may_be_completed {
                                 ctx.add_error(TypeError::WrongArity {
                                     expected: param_tys.len(),
                                     found: arg_tys.len(),
