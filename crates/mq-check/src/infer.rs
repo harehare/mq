@@ -217,6 +217,18 @@ pub struct NarrowingEntry {
     pub is_complement: bool,
 }
 
+/// A complement narrowing whose source type still has unresolved type variables.
+///
+/// Subtracting from a union that holds a pending variable cannot be done yet, so it is retried
+/// once the variable is resolved.
+#[derive(Debug, Clone)]
+pub struct PendingNarrowing {
+    /// The references in the branch that the narrowing applies to
+    pub ref_ids: Vec<SymbolId>,
+    /// The narrowing to retry
+    pub entry: NarrowingEntry,
+}
+
 /// Collected type narrowing information for an if/elif expression.
 ///
 /// When a type predicate like `is_string(x)` is used as a condition in an if
@@ -231,6 +243,8 @@ pub struct TypeNarrowing {
     pub else_narrowings: Vec<NarrowingEntry>,
     /// The then-branch symbol ID
     pub then_branch_id: SymbolId,
+    /// False for the right operand of `&&` / `||`, whose condition is already checked for dead code
+    pub report_dead: bool,
     /// The else/elif branch symbol IDs where complement narrowings apply
     pub else_branch_ids: Vec<SymbolId>,
 }
@@ -294,6 +308,8 @@ pub struct InferenceContext {
     deferred_try_catches: Vec<DeferredTryCatch>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
+    /// Complement narrowings waiting for their source type to be resolved
+    pending_narrowings: Vec<PendingNarrowing>,
     /// Cross-arm narrowings collected from match expressions
     cross_arm_narrowings: Vec<CrossArmNarrowing>,
     /// When true, heterogeneous arrays produce a type error
@@ -333,6 +349,7 @@ impl InferenceContext {
             deferred_call_return_accesses: Vec::new(),
             deferred_try_catches: Vec::new(),
             type_narrowings: Vec::new(),
+            pending_narrowings: Vec::new(),
             cross_arm_narrowings: Vec::new(),
             strict_array,
         }
@@ -575,6 +592,21 @@ impl InferenceContext {
     /// Adds a type narrowing collected from a type predicate condition
     pub fn add_type_narrowing(&mut self, narrowing: TypeNarrowing) {
         self.type_narrowings.push(narrowing);
+    }
+
+    /// Adds a complement narrowing to retry once its source type is resolved
+    pub fn add_pending_narrowing(&mut self, narrowing: PendingNarrowing) {
+        self.pending_narrowings.push(narrowing);
+    }
+
+    /// Takes the narrowings that wait for their source type (consumes them)
+    pub fn take_pending_narrowings(&mut self) -> Vec<PendingNarrowing> {
+        std::mem::take(&mut self.pending_narrowings)
+    }
+
+    /// Whether any narrowing waits for its source type
+    pub fn has_pending_narrowings(&self) -> bool {
+        !self.pending_narrowings.is_empty()
     }
 
     /// Takes all collected type narrowings (consumes them)

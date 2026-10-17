@@ -753,6 +753,9 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
         let mut next_remaining = Vec::new();
 
         for &idx in &remaining_indices {
+            if ctx.has_pending_narrowings() {
+                crate::narrowing::refresh_pending_narrowings(ctx);
+            }
             settle_partial_piped(ctx, &mut deferred[idx]);
             let d = &deferred[idx];
             let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();

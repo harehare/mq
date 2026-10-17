@@ -174,8 +174,49 @@ impl Gen {
         TYPES[self.rng.below(TYPES.len())]
     }
 
+    /// A program built around one construct that the plain expressions do not reach: narrowing of
+    /// a union, user functions, `match`, loops and dict access.
+    fn construct_program(&mut self) -> String {
+        self.vars.clear();
+        let num = self.expr(Ty::Num, 1);
+        let text = self.expr(Ty::Str, 1);
+        let arr = self.expr(Ty::Arr, 1);
+        let cond = self.expr(Ty::Bool, 1);
+        let (first, second) = if self.rng.chance(50) {
+            (&num, &text)
+        } else {
+            (&text, &num)
+        };
+        let union = format!("let u = if ({cond}): {first} else: {second}");
+        match self.rng.below(20) {
+            0 => format!("{union}\n| if (is_number(u)): u + 1 else: upcase(u)"),
+            1 => format!("{union}\n| if (is_string(u)): upcase(u) else: u + 1"),
+            2 => format!("{union}\n| if (!is_string(u)): u + 1 else: upcase(u)"),
+            3 => format!("{union}\n| if (type(u) == \"number\"): u + 1 else: trim(u)"),
+            4 => format!("{union}\n| if (is_number(u)): u + 1 elif (is_string(u)): len(u) else: 0"),
+            5 => format!("{union}\n| if (is_string(u) && len(u) > 0): upcase(u) else: 0"),
+            6 => format!("{union}\n| if (is_number(u) || is_string(u)): to_string(u) else: \"\""),
+            7 => format!("def f(x): x + 1;\n| f({num})"),
+            8 => format!("def f(a, b): a + b;\n| [f({num}, {num}), f({text}, {text})]"),
+            9 => format!("def id(x): x;\n| [id({num}), id({text}), id({arr})]"),
+            10 => format!("def twice(f, x): f(f(x));\n| twice(fn(y): y + 1;, {num})"),
+            11 => format!("def f(x): if (is_string(x)): upcase(x) else: x + 1;\n| [f({num}), f({text})]"),
+            12 => format!("match ({num}): | 0: \"zero\" | _: \"other\" end"),
+            13 => format!("match ({union}\n| u): | 0: 1 | \"a\": 2 | _: 3 end"),
+            14 => format!("foreach (x, {arr}): x + 1 end"),
+            15 => format!("fold({arr}, 0, fn(acc, x): acc + x;)"),
+            16 => format!("map([{text}, {text}], fn(s): upcase(s);)"),
+            17 => format!("let d = {{\"a\": {num}, \"b\": {text}}}\n| d[\"a\"] + len(d[\"b\"])"),
+            18 => format!("let d = {{\"a\": {num}}}\n| set(d, \"c\", {text})\n| keys(d)"),
+            _ => format!("let n = get({{\"a\": {num}}}, \"zz\")\n| if (is_none(n)): 0 else: n + 1"),
+        }
+    }
+
     /// A whole program: a few `let`s and a final expression.
     fn program(&mut self) -> String {
+        if self.rng.chance(50) {
+            return self.construct_program();
+        }
         self.vars.clear();
         let mut parts = Vec::new();
         for i in 0..self.rng.below(4) {
