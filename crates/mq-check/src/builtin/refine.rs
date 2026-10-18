@@ -27,9 +27,31 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
         ("flatten", [arg @ (Type::Array(_) | Type::Tuple(_))]) => {
             Some(Type::function(vec![arg.clone()], Type::array(flatten_leaf(arg))))
         }
-        // Setters change a node's contents but keep its kind.
+        // Setters and text transforms change a node's contents but keep its kind.
         (
-            "set_check" | "set_list_ordered" | "set_code_block_lang" | "set_ref" | "set_attr" | "set_children",
+            "set_check"
+            | "set_list_ordered"
+            | "set_code_block_lang"
+            | "set_ref"
+            | "set_attr"
+            | "set_children"
+            | "downcase"
+            | "upcase"
+            | "ascii_downcase"
+            | "ascii_upcase"
+            | "trim"
+            | "ltrim"
+            | "rtrim"
+            | "base64"
+            | "base64d"
+            | "base64url"
+            | "base64urld"
+            | "url_encode"
+            | "url_decode"
+            | "html_escape"
+            | "html_unescape"
+            | "strip_tags"
+            | "sanitize_html",
             [node @ Type::Node(_), rest @ ..],
         ) => Some(Type::function(
             std::iter::once(node.clone()).chain(rest.iter().cloned()).collect(),
@@ -47,11 +69,16 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
         ("index" | "rindex", [Type::None, _]) => answer(args, Type::Number),
         ("bsearch", [Type::Array(_), target]) if settled(&[target]) => answer(args, Type::Number),
         ("set", [container, key, value]) => widened_dict(container, key, value).and_then(|dict| answer(args, dict)),
-        // The first value that is not none, so the result is either of the two.
+        // The second value only counts when the first can be none.
         ("coalesce" | "??", [first, second])
             if first != second && !matches!(first, Type::None) && settled(&[first, second]) =>
         {
-            answer(args, Type::union(vec![first.clone(), second.clone()]))
+            let result = if first.is_nullable() {
+                Type::union(vec![first.subtract(&Type::None), second.clone()])
+            } else {
+                first.clone()
+            };
+            answer(args, result)
         }
         // Concatenating or appending values of other element types widens the element type.
         ("+" | "add", [Type::Array(left), Type::Array(right)]) if left != right && settled(&[left, right]) => answer(

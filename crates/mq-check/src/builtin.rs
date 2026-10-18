@@ -167,18 +167,26 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
         Type::Number,
     );
 
-    // A string or an array loses elements from one end.
+    // A string loses characters from one end, and an array gains a value at one end.
     for name in ["shift_left", "shift_right"] {
         register_binary(ctx, name, Type::String, Type::Number, Type::String);
-        let a = ctx.fresh_var();
-        register_binary(
-            ctx,
-            name,
-            Type::array(Type::Var(a)),
-            Type::Number,
-            Type::array(Type::Var(a)),
-        );
     }
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "shift_left",
+        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
+    );
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "shift_right",
+        Type::Var(b),
+        Type::array(Type::Var(a)),
+        Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
+    );
 
     // A value joins the front of an array, and a number repeats an array.
     for name in ["+", "add"] {
@@ -384,8 +392,22 @@ fn register_string(ctx: &mut InferenceContext) {
             "ltrim",
             "rtrim",
         ],
-        vec![text()],
+        vec![Type::String],
         Type::String,
+    );
+    register_many(
+        ctx,
+        &[
+            "downcase",
+            "upcase",
+            "ascii_downcase",
+            "ascii_upcase",
+            "trim",
+            "ltrim",
+            "rtrim",
+        ],
+        vec![Type::markdown()],
+        Type::markdown(),
     );
 
     // String search: (string, string) -> bool/number
@@ -537,8 +559,25 @@ fn register_string(ctx: &mut InferenceContext) {
             "strip_tags",
             "sanitize_html",
         ],
-        vec![text()],
+        vec![Type::String],
         Type::String,
+    );
+    register_many(
+        ctx,
+        &[
+            "base64",
+            "base64d",
+            "base64url",
+            "base64urld",
+            "url_encode",
+            "url_decode",
+            "html_escape",
+            "html_unescape",
+            "strip_tags",
+            "sanitize_html",
+        ],
+        vec![Type::markdown()],
+        Type::markdown(),
     );
     register_unary(ctx, "base64d_bytes", Type::String, Type::Bytes);
     register_unary(ctx, "base64urld_bytes", Type::String, Type::Bytes);
@@ -811,11 +850,13 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
     );
 
-    // An array starts or ends with an element, and tells where an element is.
+    // An array starts or ends with text when its first or last element does. Any other element
+    // does not.
     for name in ["starts_with", "ends_with"] {
-        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
-        register_binary(ctx, name, Type::array(Type::Var(a)), Type::Var(b), Type::Bool);
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::array(Type::Var(a)), Type::String, Type::Bool);
     }
+    // An array tells where an element is.
     let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
     register_binary(
         ctx,
@@ -1710,9 +1751,13 @@ fn register_markdown(ctx: &mut InferenceContext) {
     register_binary(ctx, "update", Type::markdown(), Type::Var(a), Type::markdown());
 
     // Any value is written out as text.
-    for name in ["to_markdown_string", "to_text", "to_html"] {
+    for name in ["to_markdown_string", "to_text"] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::Var(a), Type::String);
+    }
+    // Only text is rendered as HTML.
+    for input in [Type::String, Type::Symbol] {
+        register_unary(ctx, "to_html", input, Type::String);
     }
 
     // None propagation for markdown -> string functions

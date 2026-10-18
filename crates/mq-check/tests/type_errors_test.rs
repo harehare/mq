@@ -912,3 +912,55 @@ fn test_an_operation_waiting_for_a_call_is_checked_once_it_is_known(#[case] code
     let result = check_types_with_builtins(code);
     assert!(!result.is_empty(), "bool + number must be reported");
 }
+
+#[test]
+fn test_strict_array_heterogeneous_is_an_error() {
+    let mut hir = Hir::default();
+    hir.add_code(None, r#"[1, "hello"]"#);
+    let options = TypeCheckerOptions {
+        strict_array: true,
+        ..TypeCheckerOptions::default()
+    };
+    let found = TypeChecker::with_options(options.clone()).check_classified(&hir);
+    assert!(
+        found
+            .iter()
+            .any(|c| matches!(c.error, TypeError::HeterogeneousArray { .. })
+                && c.severity(&options) == Some(mq_check::Severity::Error)),
+        "{found:?}"
+    );
+}
+
+#[rstest]
+#[case::number_to_html("to_html(2)")]
+#[case::array_to_html("to_html([1])")]
+#[case::non_string_prefix(r#"starts_with(["a"], 1)"#)]
+#[case::non_string_suffix(r#"ends_with(["a"], 1)"#)]
+#[case::shift_right_array_number(r#"shift_right(["a"], 1)"#)]
+#[case::branch_of_a_variable_assigned_later(r#"var x = "a" | if (is_string(x)): x - 1 else: 0 | x = 2"#)]
+fn test_runtime_failure_is_a_type_error(#[case] code: &str) {
+    assert!(
+        !check_types_with_builtins(code).is_empty(),
+        "expected a type error for {code}"
+    );
+}
+
+#[rstest]
+#[case::string_to_html(r##"to_html("# h")"##)]
+#[case::node_to_html(r##"to_html(first(to_markdown("# h")))"##)]
+#[case::string_array_starts_with(r#"starts_with(["a"], "a")"#)]
+#[case::number_array_starts_with(r#"starts_with([1], "1")"#)]
+#[case::node_array_ends_with(r##"ends_with(to_markdown("# h"), "h")"##)]
+#[case::shift_left_appends(r#"shift_left(["a"], 1) | map(fn(x): to_text(x);)"#)]
+#[case::shift_right_prepends(r#"shift_right(1, ["a"]) | map(fn(x): to_text(x);)"#)]
+#[case::upcase_keeps_the_node(r##"upcase(first(to_markdown("# h"))) | set_check(true)"##)]
+#[case::trim_keeps_the_node(r##"trim(first(to_markdown("- h"))) | set_check(true)"##)]
+#[case::upcase_string(r#"upcase("a") | len()"#)]
+#[case::coalesce_keeps_the_left(r#"let n = 42 ?? "fallback" | n - 1"#)]
+fn test_valid_code_has_no_type_error(#[case] code: &str) {
+    let found = check_types_with_builtins(code);
+    assert!(
+        found.iter().all(TypeError::is_advisory),
+        "unexpected type error for {code}: {found:?}"
+    );
+}

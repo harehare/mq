@@ -832,12 +832,14 @@ fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Opti
 /// Whether a then-branch predicate can never hold for a variable of known type.
 ///
 /// The branch is unreachable, so its references get `Type::Never` rather than the predicate type.
-/// Parameters are excluded: their type is only what the body has used so far.
+/// Parameters are excluded: their type is only what the body has used so far, and so are
+/// reassigned variables: their type covers assignments that may come after the condition.
 fn is_disjoint_from_known_type(ctx: &InferenceContext, entry: &NarrowingEntry, hir: &Hir) -> bool {
     if entry.is_complement
         || hir
             .symbol(entry.def_id)
             .is_none_or(|s| matches!(s.kind, SymbolKind::Parameter))
+        || is_reassigned(hir, entry.def_id)
     {
         return false;
     }
@@ -849,6 +851,18 @@ fn is_disjoint_from_known_type(ctx: &InferenceContext, entry: &NarrowingEntry, h
         && !var_ty.is_never()
         && !var_ty.is_union()
         && !var_ty.can_match(&entry.narrowed_type)
+}
+
+/// Whether an assignment `x = ...` or `x += ...` targets the variable.
+fn is_reassigned(hir: &Hir, def_id: SymbolId) -> bool {
+    hir.symbols().any(|(id, sym)| {
+        sym.kind == SymbolKind::Ref
+            && sym
+                .parent
+                .and_then(|parent| hir.symbol(parent))
+                .is_some_and(|parent| parent.kind == SymbolKind::Assign)
+            && hir.resolve_reference_symbol(id) == Some(def_id)
+    })
 }
 
 /// Detects when a then-branch condition is always false.
@@ -891,7 +905,9 @@ fn detect_dead_then_branch(
     let sym = hir.symbol(entry.def_id)?;
     match sym.kind {
         SymbolKind::Parameter => return None,
-        SymbolKind::Variable if !variable_initialized_from_literal(hir, entry.def_id) => {
+        SymbolKind::Variable
+            if !variable_initialized_from_literal(hir, entry.def_id) || is_reassigned(hir, entry.def_id) =>
+        {
             return None;
         }
         _ => {}

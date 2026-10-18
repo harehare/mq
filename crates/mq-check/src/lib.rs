@@ -254,7 +254,6 @@ impl TypeError {
             TypeError::NullablePropagation { .. }
                 | TypeError::UnreachableCode { .. }
                 | TypeError::NonExhaustiveMatch { .. }
-                | TypeError::HeterogeneousArray { .. }
         )
     }
 
