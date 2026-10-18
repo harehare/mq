@@ -1,6 +1,7 @@
 //! Applies a compiled `Selector` to a runtime value: dispatches to `mq_markdown`'s selector
 //! evaluator for `Markdown` values and recurses through `Array`/`Dict` for the rest.
 use crate::DictMap;
+use crate::number::Number;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
@@ -54,8 +55,17 @@ fn eval_selector_expr_impl(value: &RuntimeValue, selector: &Selector, args: Opti
     if let (Selector::Property(property_name), None) = (selector, args) {
         return eval_property_selector_expr(value, property_name);
     }
+    if let (Selector::List(None, None), Some([index])) = (selector, args)
+        && let Some(result) = eval_index_expr(value, index)
+    {
+        return result;
+    }
     match value {
         RuntimeValue::Markdown(node, _) => eval_markdown_selector(node, selector, args),
+        RuntimeValue::String(s) => match selector {
+            Selector::List(Some(idx), None) => string_char_at(s, Number::from(*idx as i64)),
+            _ => RuntimeValue::None,
+        },
         RuntimeValue::Array(values) => {
             if let Selector::List(Some(idx), None) = selector {
                 return values.get(*idx).cloned().unwrap_or(RuntimeValue::None);
@@ -113,6 +123,33 @@ fn eval_selector_expr_impl(value: &RuntimeValue, selector: &Selector, args: Opti
         }
         _ => RuntimeValue::None,
     }
+}
+
+/// `.[expr]` on a non-Markdown value reads like `value[expr]`. Returns `None` when `index` is not
+/// a usable key for `value`, leaving the caller to apply the selector instead.
+fn eval_index_expr(value: &RuntimeValue, index: &RuntimeValue) -> Option<RuntimeValue> {
+    match (value, index) {
+        (RuntimeValue::Array(values), RuntimeValue::Number(n)) => Some(
+            builtin::resolve_index(*n, values.len())
+                .and_then(|i| values.get(i))
+                .cloned()
+                .unwrap_or(RuntimeValue::None),
+        ),
+        (RuntimeValue::String(s), RuntimeValue::Number(n)) => Some(string_char_at(s, *n)),
+        (RuntimeValue::Array(_) | RuntimeValue::Dict(_), RuntimeValue::String(key)) => {
+            Some(eval_property_selector_expr(value, &Ident::new(key.as_str())))
+        }
+        (RuntimeValue::Array(_) | RuntimeValue::Dict(_), RuntimeValue::Symbol(key)) => {
+            Some(eval_property_selector_expr(value, key))
+        }
+        _ => None,
+    }
+}
+
+fn string_char_at(s: &str, index: Number) -> RuntimeValue {
+    builtin::resolve_index(index, s.chars().count())
+        .and_then(|i| s.chars().nth(i))
+        .map_or(RuntimeValue::None, |c| c.to_string().into())
 }
 
 /// True for `none` and for arrays/dicts that contain nothing but blank values.

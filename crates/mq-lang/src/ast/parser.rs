@@ -2946,9 +2946,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None
         };
 
+        // Only non-negative integer literals fit a static `usize` index; others are resolved at runtime.
         let is_dynamic_node = |opt: &Option<Shared<Node>>| {
-            opt.as_ref()
-                .is_some_and(|n| !matches!(&n.expr, Expr::Literal(Literal::Number(_))))
+            opt.as_ref().is_some_and(
+                |n| !matches!(&n.expr, Expr::Literal(Literal::Number(num)) if num.is_int() && num.value() >= 0.0),
+            )
         };
         let has_dynamic = is_dynamic_node(&first) || second.as_ref().is_some_and(is_dynamic_node);
         let has_explicit_args = self.is_next_token(|kind| matches!(kind, TokenKind::LParen));

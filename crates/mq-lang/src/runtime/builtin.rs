@@ -6417,7 +6417,7 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
 
             if let mq_markdown::Node::List(mq_markdown::List { index: list_index, .. }) = node {
                 indices.iter().any(|i| match i {
-                    RuntimeValue::Number(n) => *list_index == n.value() as usize,
+                    RuntimeValue::Number(n) => n.is_int() && n.value() >= 0.0 && *list_index == n.value() as usize,
                     _ => false,
                 })
             } else {
@@ -6434,7 +6434,9 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
                     let matches_pos = |spec: Option<&RuntimeValue>, actual: usize| -> bool {
                         match spec {
                             None | Some(RuntimeValue::None) => true,
-                            Some(RuntimeValue::Number(n)) => actual == n.value() as usize,
+                            Some(RuntimeValue::Number(n)) => {
+                                n.is_int() && n.value() >= 0.0 && actual == n.value() as usize
+                            }
                             _ => false,
                         }
                     };
@@ -10122,6 +10124,24 @@ mod tests {
         Selector::List(None, None),
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())],
         true
+    )]
+    #[case::list_negative_index_no_match(
+        Node::List(mq_markdown::List { marker: None, index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number((-1).into())],
+        false
+    )]
+    #[case::list_fractional_index_no_match(
+        Node::List(mq_markdown::List { marker: None, index: 1, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number(1.5.into())],
+        false
+    )]
+    #[case::table_negative_row_no_match(
+        Node::TableCell(mq_markdown::TableCell { column: 0, row: 0, values: vec![], position: None }),
+        Selector::Table(None, None),
+        vec![RuntimeValue::Number((-1).into())],
+        false
     )]
     #[case::list_no_args_fallback(
         Node::List(mq_markdown::List { marker: None, index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),

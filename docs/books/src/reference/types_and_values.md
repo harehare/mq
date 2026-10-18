@@ -90,6 +90,19 @@ get(arr, 0)    # Same as arr[0]
 arr | get(2)    # Same as arr[2]
 ```
 
+### Index Access with `.[...]`
+
+On arrays, strings and dicts, `.[expr]` reads the same as `self[expr]`: negative indices count from the end, and an out-of-range or non-integer index returns `None`.
+
+```mq
+[10, 20, 30] | .[-1]        # Returns 30
+"abc" | .[1]                # Returns "b"
+{"a": 1} | .["a"]           # Returns 1
+[10, 20, 30] | .[1.5]       # Returns None
+```
+
+On Markdown values, `.[n]` selects the list item with index `n` instead (see [Selectors](selectors.md)).
+
 ### Array Slice Access
 
 Arrays support slice notation to extract subarrays using the `arr[start:end]` syntax:
