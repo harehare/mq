@@ -133,6 +133,27 @@ pub const UNAUDITED_BUILTINS: &[&str] = &[
     "write_file",
 ];
 
+/// Builtins that call a function on each element of their first argument, sorted by name.
+const ELEMENT_BUILTINS: &[&str] = &[
+    "all",
+    "any",
+    "count_by",
+    "each",
+    "filter",
+    "find",
+    "flat_map",
+    "group_by",
+    "index_by",
+    "map",
+    "max_by",
+    "min_by",
+    "partition",
+    "reject",
+    "select",
+    "sort_by",
+    "sum_by",
+];
+
 /// Errors whose reason is the types of their operands.
 fn depends_on_operand_types(error: &TypeError) -> bool {
     matches!(
@@ -172,7 +193,7 @@ pub(crate) fn classify_all(
                 _ => match error.location() {
                     Some(range) => prover
                         .get_or_insert_with(|| Prover::new(hir, declared_input))
-                        .classify_at(hir, ctx, range),
+                        .classify_at(hir, ctx, range, matches!(error, TypeError::Mismatch { .. })),
                     None => Certainty::Uncertain,
                 },
             };
@@ -283,7 +304,15 @@ impl Prover {
         }
     }
 
-    fn classify_at(&mut self, hir: &Hir, ctx: &InferenceContext, range: mq_lang::Range) -> Certainty {
+    /// `operand_mismatch` is true for an error that is reported at an operand and is about what the
+    /// operation around it expects, so the operation counts as well.
+    fn classify_at(
+        &mut self,
+        hir: &Hir,
+        ctx: &InferenceContext,
+        range: mq_lang::Range,
+        operand_mismatch: bool,
+    ) -> Certainty {
         let at_range: Vec<SymbolId> = hir
             .symbols()
             .filter(|(_, symbol)| symbol_range(hir, symbol) == Some(range))
@@ -297,9 +326,9 @@ impl Prover {
             if inside_try_body(hir, root) || self.has_unsettled_operand(hir, ctx, root) {
                 return Certainty::Uncertain;
             }
-            // The expression at the location and, when it is an operand, the operation around it
             let mut subjects = vec![root];
-            if let Some(parent) = hir.symbol(root).and_then(|s| s.parent)
+            if operand_mismatch
+                && let Some(parent) = hir.symbol(root).and_then(|s| s.parent)
                 && hir.symbol(parent).is_some_and(|s| is_operation(&s.kind))
             {
                 subjects.push(parent);
@@ -495,7 +524,7 @@ impl Prover {
             return false;
         }
         if def_symbol.kind == SymbolKind::Parameter {
-            return self.params_exact;
+            return self.params_exact || self.is_element_of_exact_collection(hir, def);
         }
         if def_symbol.kind != SymbolKind::Variable {
             return false;
@@ -504,6 +533,41 @@ impl Prover {
             return false;
         };
         self.is_exact(hir, init)
+    }
+
+    /// Whether the parameter is the only one of a function passed to a builtin that calls it on the
+    /// elements of its first argument (`map(xs, fn(x): ...)`), and that collection is exact.
+    fn is_element_of_exact_collection(&mut self, hir: &Hir, param: SymbolId) -> bool {
+        let Some(lambda_id) = hir.symbol(param).and_then(|s| s.parent) else {
+            return false;
+        };
+        let Some(lambda) = hir.symbol(lambda_id) else {
+            return false;
+        };
+        let SymbolKind::Function(params) = &lambda.kind else {
+            return false;
+        };
+        let Some(call_id) = lambda.parent else {
+            return false;
+        };
+        let Some(call) = hir.symbol(call_id) else {
+            return false;
+        };
+        if params.len() != 1
+            || call.kind != SymbolKind::Call
+            || !ELEMENT_BUILTINS
+                .binary_search(&call.value.as_deref().unwrap_or(""))
+                .is_ok()
+            || !is_audited_builtin(hir, call_id, call)
+        {
+            return false;
+        }
+        let collection = self.children.get(&call_id).and_then(|c| {
+            c.iter()
+                .copied()
+                .find(|&c| c != lambda_id && hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
+        });
+        collection.is_some_and(|collection| self.is_exact(hir, collection))
     }
 
     /// Whether a condition above the reference tests the same variable, which narrows its type.
