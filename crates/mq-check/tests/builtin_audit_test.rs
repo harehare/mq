@@ -61,6 +61,16 @@ const SKIPPED: &[&str] = &[
 /// Calls that the runtime answers by coercing a value it has no use for, which the checker rejects
 /// on purpose: the function and the argument types, as they are listed in a finding.
 const TOLERATED: &[(&str, &str)] = &[
+    ("in", "(none, markdown)"),
+    ("indices", "(none, markdown)"),
+    ("lines", "([number])"),
+    ("lines", "([string])"),
+    ("unlines", "([number])"),
+    ("implode", "([string])"),
+    ("sort_natural", "(string)"),
+    ("mul", "([number], [number])"),
+    ("bsearch", "([number], markdown)"),
+    ("bsearch", "([string], markdown)"),
     ("len", "(bool)"),
     ("len", "(symbol)"),
     ("len", "(function)"),
@@ -104,28 +114,20 @@ fn is_tolerated(name: &str, labels: &[&str]) -> bool {
     if SETTERS.contains(&name) {
         return true;
     }
-    // The rest reads a value it has no use for as an empty or a default one.
-    const COERCING: &[&str] = &[
-        "extract_images",
-        "intern",
-        "grapheme_len",
-        "graphemes",
-        "utf8bytelen",
-        "safe_filename",
-        "token_compress",
-        "lines",
-        "unlines",
-        "implode",
-        "sort_natural",
-        "bsearch",
-        "in",
-        "indices",
-        "mul",
-        "shift_left",
-        "shift_right",
-        "update",
-    ];
-    COERCING.contains(&name)
+    // A function that works on text reads anything else as an empty text.
+    const TEXT: &[&str] = &["grapheme_len", "graphemes", "utf8bytelen"];
+    if TEXT.contains(&name) {
+        return labels.iter().any(|l| !["string", "markdown", "none"].contains(l));
+    }
+    const STRING_ONLY: &[&str] = &["extract_images", "intern", "safe_filename"];
+    if STRING_ONLY.contains(&name) {
+        return labels.iter().any(|l| *l != "string");
+    }
+    // Shifting an array by an array, or by a string, is not meant.
+    if ["shift_left", "shift_right"].contains(&name) {
+        return labels.iter().any(|l| l.starts_with('[')) || labels.len() == 1;
+    }
+    name == "token_compress"
 }
 
 /// One value of each type: label and source.

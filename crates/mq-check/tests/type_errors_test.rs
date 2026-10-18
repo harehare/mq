@@ -869,6 +869,10 @@ fn test_parenthesized_call_of_a_variable_is_not_a_slice() {
 #[case::contains_other_type(r#"contains([1, 2], "a")"#)]
 #[case::in_none("in(None, 2)")]
 #[case::bsearch_other_type(r#"bsearch([1, 2], "a")"#)]
+#[case::indices_in_array("indices([1, 2], 1)")]
+#[case::indices_in_none(r#"indices(None, "a")"#)]
+#[case::shift_string(r#"shift_left("abc", 1)"#)]
+#[case::update_node_text(r##"update(first(to_markdown("# h")), "x")"##)]
 fn test_builtin_accepts_what_the_runtime_accepts(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "the runtime accepts it: {:?}", result);

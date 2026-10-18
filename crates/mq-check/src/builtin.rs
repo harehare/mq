@@ -542,6 +542,10 @@ fn register_string(ctx: &mut InferenceContext) {
             Type::array(Type::Var(a)),
         );
     }
+    // A node takes a new text
+    let a = ctx.fresh_var();
+    register_binary(ctx, "update", Type::markdown(), Type::Var(a), Type::markdown());
+
     // A none input matches nothing
     register_binary(ctx, "test", Type::None, Type::String, Type::Bool);
     register_binary(ctx, "is_not_regex_match", Type::None, Type::String, Type::Bool);
@@ -709,7 +713,7 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
         ("has" | "contains" | "in", [container, needle])
             if matches!(
                 container,
-                Type::None | Type::String | Type::Array(_) | Type::Dict(..) | Type::Record(..)
+                Type::None | Type::String | Type::Bytes | Type::Array(_) | Type::Dict(..) | Type::Record(..)
             ) && !container.has_pending_var()
                 && !needle.has_pending_var() =>
         {
@@ -766,13 +770,15 @@ pub(crate) fn fallback_signature(name: &str, args: &[Type]) -> Option<Type> {
         ("contains" | "in", [container, needle])
             if matches!(
                 container,
-                Type::None | Type::String | Type::Array(_) | Type::Dict(..) | Type::Record(..)
+                Type::None | Type::String | Type::Bytes | Type::Array(_) | Type::Dict(..) | Type::Record(..)
             ) && !container.has_pending_var()
                 && !needle.has_pending_var() =>
         {
             Some(Type::function(args.to_vec(), Type::Bool))
         }
         ("index" | "rindex", [Type::None, _]) => Some(Type::function(args.to_vec(), Type::Number)),
+        ("indices", [Type::None | Type::Array(_), _]) => Some(Type::function(args.to_vec(), Type::array(Type::Number))),
+        ("bsearch", [Type::Array(_), _]) => Some(Type::function(args.to_vec(), Type::Number)),
         _ => None,
     }
 }
