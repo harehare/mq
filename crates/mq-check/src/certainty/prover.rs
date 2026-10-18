@@ -400,9 +400,9 @@ impl<'a> Prover<'a> {
         self.is_exact(hir, init)
     }
 
-    /// Whether a variable that is assigned again keeps one type, which is exact: its first value and
-    /// every value assigned to it are exact, and of the same type. The values may read the variable
-    /// itself (`s = s + "x"`), which holds when the claim does.
+    /// Whether a variable that is assigned again keeps one exact type: its first value and every
+    /// value assigned to it are exact and of that type. A value may read the variable itself
+    /// (`s = s + "x"`), which holds when the claim does.
     fn reassigned_is_exact(&mut self, hir: &Hir, def: SymbolId) -> bool {
         if let Some(&known) = self.reassigned.get(&def) {
             return known;

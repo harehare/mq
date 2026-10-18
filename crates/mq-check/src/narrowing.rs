@@ -8,7 +8,7 @@
 //! Type narrowing works in two phases:
 //!
 //! 1. **Analysis** (during constraint generation): `analyze_condition` inspects
-//!    condition expressions and extracts `ConditionNarrowings` — lists of which
+//!    condition expressions and extracts `ConditionNarrowings`: lists of which
 //!    variables should be narrowed to which types in the then/else branches.
 //!
 //! 2. **Resolution** (post-unification): `resolve_type_narrowings` applies the
@@ -157,7 +157,7 @@ pub(crate) fn selector_kinds(selector: &mq_lang::Selector) -> Option<KindSet> {
 /// Finds the symbol ID of the first parameter of the innermost enclosing function.
 ///
 /// When a structural selector (e.g., `.h`) is used directly as an if condition, it
-/// operates on the function's implicit piped input — the first argument. This helper
+/// operates on the function's implicit piped input, the first argument. This helper
 /// walks up the ancestor chain to find that parameter, enabling selector-based narrowing.
 fn find_enclosing_function_first_param(
     hir: &Hir,
@@ -168,7 +168,7 @@ fn find_enclosing_function_first_param(
         if !matches!(func_sym.kind, SymbolKind::Function(_)) {
             continue;
         }
-        // Found the innermost enclosing function — return its first parameter.
+        // Found the innermost enclosing function, return its first parameter.
         for &child_id in get_children(children_index, func_id) {
             if hir
                 .symbol(child_id)
@@ -177,7 +177,7 @@ fn find_enclosing_function_first_param(
                 return Some(child_id);
             }
         }
-        // Function found but has no parameters — can't narrow via implicit input.
+        // Function found but has no parameters, can't narrow via implicit input.
         return None;
     }
     None
@@ -829,11 +829,10 @@ fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Opti
     }
 }
 
-/// Returns `true` when a then-branch predicate can never hold for a variable whose type is known.
+/// Whether a then-branch predicate can never hold for a variable of known type.
 ///
-/// The branch is unreachable, so its references get `Type::Never` instead of the predicate type,
-/// which would report errors for code that never runs. Parameters are excluded: their type is
-/// only what the body has used so far, and the predicate is what tells it apart.
+/// The branch is unreachable, so its references get `Type::Never` rather than the predicate type.
+/// Parameters are excluded: their type is only what the body has used so far.
 fn is_disjoint_from_known_type(ctx: &InferenceContext, entry: &NarrowingEntry, hir: &Hir) -> bool {
     if entry.is_complement
         || hir
@@ -856,7 +855,7 @@ fn is_disjoint_from_known_type(ctx: &InferenceContext, entry: &NarrowingEntry, h
 ///
 /// Returns `Some((reason, range))` when:
 /// - The variable has a concrete (non-union, non-var) type, AND
-/// - The predicate type doesn't match the variable's type —
+/// - The predicate type doesn't match the variable's type, so
 ///   the then-branch is never reachable.
 ///
 /// Skips function parameters: parameters are polymorphic (they can accept
@@ -987,7 +986,7 @@ pub(crate) fn resolve_cross_arm_narrowings(
         };
         let var_ty = ctx.resolve_type(var_ty);
 
-        // Only meaningful for union types — non-unions have no types to subtract.
+        // Only meaningful for union types, non-unions have no types to subtract.
         let members = match &var_ty {
             Type::Union(m) => m.clone(),
             _ => continue,

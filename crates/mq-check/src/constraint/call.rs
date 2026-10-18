@@ -109,8 +109,8 @@ fn constraint_origin(call: &BuiltinCall<'_>, arg_index: usize) -> ConstraintOrig
     }
 }
 
-/// The result type shared by every overload of `name` that the (partly unsettled) arguments can
-/// still select, so `"a" + x` is a string whatever `x` turns out to be.
+/// The result type shared by every overload of `name` that the arguments can still select, so
+/// `"a" + x` is a string whatever `x` turns out to be.
 pub(crate) fn common_result(ctx: &InferenceContext, name: &str, args: &[Type]) -> Option<Type> {
     let mut common: Option<&Type> = None;
     for overload in ctx.get_builtin_overloads(name)? {

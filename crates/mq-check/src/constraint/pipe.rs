@@ -278,8 +278,8 @@ pub(super) fn pipe_stage_output(hir: &Hir, ctx: &mut InferenceContext, stage: Sy
 
 /// Resolves the body type of an elif/else branch.
 ///
-/// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
-/// For Else: children are [body] — returns body type.
+/// For Elif: children are [condition, body]; constrains condition to Bool, returns body type.
+/// For Else: children are [body]; returns body type.
 /// For other kinds: returns the symbol's type directly.
 pub(super) fn resolve_branch_body_type(
     hir: &Hir,

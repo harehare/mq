@@ -539,7 +539,7 @@ impl Backend {
     }
 
     /// Computes the full diagnostic set for a document: cached parse/type errors from
-    /// `error_map`, HIR errors/warnings (e.g. unreachable code), and — when enabled — lint
+    /// `error_map`, HIR errors/warnings (e.g. unreachable code), and, when enabled, lint
     /// diagnostics. Shared by the push (`publish_diagnostics`) and pull
     /// (`textDocument/diagnostic`) flows so they can't drift apart.
     fn compute_diagnostics(&self, uri: &Url) -> Vec<ls_types::Diagnostic> {
@@ -2756,7 +2756,7 @@ mod tests {
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
 
-        // Homogeneous array — valid even with strict_array
+        // Homogeneous array, valid even with strict_array
         let code = "[1, 2, 3]";
         let (nodes, errors) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
@@ -2807,7 +2807,7 @@ mod tests {
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
 
-        // Heterogeneous array typed as tuple — valid with tuple mode
+        // Heterogeneous array typed as tuple, valid with tuple mode
         let code = r#"[1, "hello", true]"#;
         let (nodes, errors) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);

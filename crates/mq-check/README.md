@@ -54,7 +54,7 @@ if errors.is_empty() {
 
 ### Union Types
 
-When a control flow construct (such as `if`, `while`, `loop`, `foreach`, `match`, or `try/catch`) may produce values of different types depending on the branch taken, the type checker infers a **union type** — written as `T1 | T2 | ...`.
+When a control flow construct (such as `if`, `while`, `loop`, `foreach`, `match`, or `try/catch`) may produce values of different types depending on the branch taken, the type checker infers a **union type**, written as `T1 | T2 | ...`.
 
 Union types propagate through variable bindings and pipe chains. Using a union-typed value in a context that requires a single concrete type (e.g., arithmetic) is a type error.
 
@@ -210,12 +210,12 @@ echo '.depth' | mq-check --input-type code        # Error: undefined attribute `
 
 `--format` controls how diagnostics are rendered, independent of `--show-types` and the other checks above:
 
-- `text` (default) — colored, human-readable report.
-- `json` — a single JSON array of diagnostics (syntax errors/warnings and type errors) across every
+- `text` (default): colored, human-readable report.
+- `json`: a single JSON array of diagnostics (syntax errors/warnings and type errors) across every
   checked file, each with `file`, `severity` (`error`/`warning`), `code`, `message`, and an optional
   `range`.
-- `markdown` — a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
-- `sarif` — a single SARIF 2.1.0 log covering every checked file, suitable for
+- `markdown`: a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
+- `sarif`: a single SARIF 2.1.0 log covering every checked file, suitable for
   [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/main/upload-sarif) or any
   other SARIF-consuming tool.
 

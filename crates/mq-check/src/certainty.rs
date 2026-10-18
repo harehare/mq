@@ -63,11 +63,9 @@ impl Classified {
     }
 }
 
-/// Builtins that `just audit-builtins` does not cover, sorted by name: they do I/O or never return,
-/// take more than three arguments, or no call it tried both ran and was accepted. Every other
-/// builtin has a signature that the audit found no narrower than the function, so a call to it has
-/// a type that is known for certain when its arguments are. The audit fails when this list is out
-/// of date and prints the list to put here.
+/// Builtins that `just audit-builtins` does not cover, sorted by name: they do I/O or never
+/// return, take more than three arguments, or never ran with an accepted call. A call to any other
+/// builtin has a known type when its arguments do. The audit fails when this list is out of date.
 #[rustfmt::skip]
 pub const UNAUDITED_BUILTINS: &[&str] = &[
     "array",

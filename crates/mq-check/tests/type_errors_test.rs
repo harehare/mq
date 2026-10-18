@@ -36,7 +36,7 @@ fn test_binary_op_type_mismatch() {
 
 #[test]
 fn test_if_else_type_mismatch() {
-    // mq is dynamically typed — if/else branches with different types are allowed
+    // mq is dynamically typed, if/else branches with different types are allowed
     let result = check_types(r#"if (true): 42 else: "string";"#);
     assert!(
         result.is_empty(),
@@ -47,7 +47,7 @@ fn test_if_else_type_mismatch() {
 
 #[test]
 fn test_heterogeneous_array_allowed() {
-    // mq is dynamically typed — heterogeneous arrays (used as tuples) are valid
+    // mq is dynamically typed, heterogeneous arrays (used as tuples) are valid
     let result = check_types(r#"[1, "string", true]"#);
     println!("Heterogeneous array: {:?}", result);
     assert!(
@@ -128,7 +128,7 @@ fn test_match_pattern_type_mismatch() {
 
 #[test]
 fn test_match_arm_body_type_mismatch() {
-    // mq is dynamically typed — match arms with different body types are allowed.
+    // mq is dynamically typed, match arms with different body types are allowed.
     // Filter out exhaustiveness errors (tested separately) to focus on type compatibility.
     let result: Vec<_> = check_types(r#"match (1): | 1: "one" | 2: 222 end"#)
         .into_iter()
@@ -346,7 +346,7 @@ fn test_narrowing_or_then_branch_same_variable() {
 
 #[test]
 fn test_narrowing_or_then_branch_different_variables() {
-    // is_string(x) || is_bool(y) — different variables, no then-branch narrowing (conservative)
+    // is_string(x) || is_bool(y), different variables, no then-branch narrowing (conservative)
     let result = check_types(r#"def f(x, y): if (is_string(x) || is_bool(y)): x else: none;"#);
     assert!(
         result.is_empty(),
@@ -356,7 +356,7 @@ fn test_narrowing_or_then_branch_different_variables() {
 
 #[test]
 fn test_narrowing_or_else_branch_complement() {
-    // is_string(x) || is_number(x) — else-branch: x is neither String nor Number
+    // is_string(x) || is_number(x), else-branch: x is neither String nor Number
     let result = check_types(r#"def f(x): if (is_string(x) || is_number(x)): x else: x;"#);
     assert!(
         result.is_empty(),
@@ -729,7 +729,7 @@ fn test_cross_arm_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[
 #[case::chain_floor_to_string("floor(.) | to_string", true, "number -> string")]
 #[case::chain_three_ops("upcase(.) | trim(.) | len", true, "three-op chain")]
 #[case::chain_len_to_to_string("len() | to_string", true, "number -> string")]
-// errors: concrete type mismatch — dynamic() does not shield downstream errors
+// errors: concrete type mismatch, dynamic() does not shield downstream errors
 #[case::concrete_type_error("1 + true", false, "concrete: bool ≠ number")]
 #[case::number_piped_to_string("42 | upcase(.)", false, "number piped, upcase needs string")]
 #[case::string_piped_to_number("\"hello\" | abs(.)", false, "string piped, abs needs number")]

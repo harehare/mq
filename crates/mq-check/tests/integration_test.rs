@@ -217,36 +217,32 @@ fn test_gsub_accepts_markdown_narrowed_by_match() {
     true,
     "guarded arm + unguarded wildcard is exhaustive"
 )]
-#[case::bool_only_true(
-    r#"match (true): | true: 1 end"#,
-    false,
-    "bool with only true arm — false is missing"
-)]
+#[case::bool_only_true(r#"match (true): | true: 1 end"#, false, "bool with only true arm, false is missing")]
 #[case::bool_only_false(
     r#"match (true): | false: 0 end"#,
     false,
-    "bool with only false arm — true is missing"
+    "bool with only false arm, true is missing"
 )]
 #[case::bool_both_guarded(
     r#"match (true): | true if (true): 1 | false if (true): 0 end"#,
     false,
-    "both bool arms guarded — neither counts as unconditional"
+    "both bool arms guarded, neither counts as unconditional"
 )]
 #[case::bool_true_guarded_false_missing(
     r#"match (true): | x if (x): 1 | false: 0 end"#,
     false,
-    "guarded wildcard + false arm — true not unconditionally covered"
+    "guarded wildcard + false arm, true not unconditionally covered"
 )]
 #[case::bool_false_guarded_true_missing(
     r#"match (true): | true: 1 | x if (not(x)): 0 end"#,
     false,
-    "true arm + guarded wildcard — false not unconditionally covered"
+    "true arm + guarded wildcard, false not unconditionally covered"
 )]
-#[case::number_single_literal(r#"match (42): | 0: "zero" end"#, false, "single number literal — no wildcard")]
+#[case::number_single_literal(r#"match (42): | 0: "zero" end"#, false, "single number literal, no wildcard")]
 #[case::number_multiple_literals(
     r#"match (42): | 0: "zero" | 1: "one" | 2: "two" end"#,
     false,
-    "multiple number literals without wildcard — not exhaustive"
+    "multiple number literals without wildcard, not exhaustive"
 )]
 #[case::string_single_literal(r#"match ("a"): | "a": 1 end"#, false, "single string literal without wildcard")]
 #[case::string_multiple_literals(
@@ -374,7 +370,7 @@ fn test_match_type_label_multi_arm() {
 #[case::type_label_no_wildcard(
     r#"match (42): | :array: 1 | :string: 0 end"#,
     false,
-    "type-label arms without wildcard — not exhaustive"
+    "type-label arms without wildcard, not exhaustive"
 )]
 fn test_match_exhaustiveness_type_label(#[case] code: &str, #[case] is_exhaustive: bool, #[case] description: &str) {
     let result = check_types(code);
@@ -430,7 +426,7 @@ fn test_function_as_value() {
 
 #[test]
 fn test_heterogeneous_array_allowed() {
-    // mq is dynamically typed — heterogeneous arrays (used as tuples) are valid
+    // mq is dynamically typed, heterogeneous arrays (used as tuples) are valid
     let result = check_types(r#"[1, "string", true]"#);
     assert!(
         result.is_empty(),
@@ -978,7 +974,7 @@ fn test_until_condition_type_errors(#[case] code: &str, #[case] should_succeed: 
 #[case::wildcard_pattern("match (1): | _: \"any\" end", true, "wildcard pattern always valid")]
 #[case::variable_pattern("match (1): | x: x end", true, "variable pattern always valid")]
 fn test_match_pattern_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
-    // Filter out exhaustiveness errors — this test focuses on type compatibility only.
+    // Filter out exhaustiveness errors, this test focuses on type compatibility only.
     let result: Vec<_> = check_types(code)
         .into_iter()
         .filter(|e| !matches!(e, TypeError::NonExhaustiveMatch { .. }))
@@ -1748,7 +1744,7 @@ fn test_type_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[case]
 #[test]
 fn test_piped_builtin_call_in_argument_position() {
     // Builtin calls with no explicit args used as arguments to higher-order functions
-    // should not error — the parent function will pipe each element at runtime.
+    // should not error, the parent function will pipe each element at runtime.
     assert!(
         check_types("[[1,2],[3,4]] | map(first())").is_empty(),
         "map(first()) should not error"
@@ -1926,7 +1922,7 @@ fn test_dead_code_detection(#[case] code: &str, #[case] should_succeed: bool, #[
     true,
     "is_none check on parameter must not be flagged as dead when else-branch iterates over it"
 )]
-// is_string on a parameter; caller passes number — no false positive because parameter is polymorphic
+// is_string on a parameter; caller passes number, no false positive because parameter is polymorphic
 #[case::param_is_string_polymorphic(
     r#"def f(x):
         if (is_string(x)):

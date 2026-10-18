@@ -758,8 +758,8 @@ impl InferenceContext {
         Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
     }
 
-    /// A builtin that takes a string also takes a markdown node, as its text, so a call that only
-    /// fails on node arguments is resolved with those read as strings.
+    /// A builtin of strings also takes a markdown node as its text: retries a failed call with
+    /// the nodes read as strings.
     fn resolve_node_as_text(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
         let is_node = |ty: &Type| matches!(self.resolve_type(ty), Type::Node(_));
         if !arg_types.iter().any(is_node) {
@@ -900,7 +900,7 @@ impl InferenceContext {
                     return ty.clone();
                 };
                 if path.contains(var) {
-                    // Cycle detected — return the var unresolved to break infinite recursion
+                    // Cycle detected, return the var unresolved to break infinite recursion
                     return ty.clone();
                 }
                 path.push(*var);
