@@ -5,7 +5,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Certainty, UNAUDITED_BUILTINS};
 use crate::infer::InferenceContext;
-use crate::symbol_range;
 
 /// Builtins that call a function on each element of their first argument, sorted by name.
 const ELEMENT_BUILTINS: &[&str] = &[
@@ -152,18 +151,13 @@ impl<'a> Prover<'a> {
 
     /// `operand_mismatch` is true for an error that is reported at an operand and is about what the
     /// operation around it expects, so the operation counts as well.
-    pub(super) fn classify_at(&mut self, hir: &Hir, range: mq_lang::Range, operand_mismatch: bool) -> Certainty {
-        let at_range: Vec<SymbolId> = hir
-            .symbols()
-            .filter(|(_, symbol)| symbol_range(hir, symbol) == Some(range))
-            .map(|(id, _)| id)
-            .collect();
+    pub(super) fn classify_at(&mut self, hir: &Hir, at_range: &[SymbolId], operand_mismatch: bool) -> Certainty {
         if at_range.is_empty() {
             return Certainty::Uncertain;
         }
 
-        for &root in &at_range {
-            if inside_try_body(hir, root) || self.has_unsettled_operand(hir, root) {
+        for &root in at_range {
+            if self.has_unsettled_operand(hir, root) {
                 return Certainty::Uncertain;
             }
             let mut subjects = vec![root];
@@ -562,12 +556,7 @@ impl<'a> Prover<'a> {
 
     /// An operand whose type the checker could not settle.
     fn has_unsettled_operand(&self, hir: &Hir, root: SymbolId) -> bool {
-        let unsettled = |id: SymbolId| {
-            self.ctx
-                .get_symbol_type(id)
-                .map(|ty| self.ctx.resolve_type(ty))
-                .is_some_and(|ty| ty.has_pending_var() || ty.is_dynamic())
-        };
+        let unsettled = |id: SymbolId| self.ctx.get_symbol_type(id).is_some_and(|ty| !self.ctx.is_settled(ty));
         // A function passed as an argument has the type variables of its own parameters.
         self.children.get(&root).is_some_and(|c| {
             c.iter()
@@ -619,15 +608,8 @@ fn passes_input_on(kind: &SymbolKind) -> bool {
     )
 }
 
-/// Whether the expression at `range` is inside a `try:` body.
-pub(super) fn in_try_body_at(hir: &Hir, range: mq_lang::Range) -> bool {
-    hir.symbols()
-        .filter(|(_, symbol)| symbol_range(hir, symbol) == Some(range))
-        .any(|(id, _)| inside_try_body(hir, id))
-}
-
 /// The failure of a `try:` body is handled by its `catch`.
-fn inside_try_body(hir: &Hir, id: SymbolId) -> bool {
+pub(super) fn in_try_body(hir: &Hir, id: SymbolId) -> bool {
     let mut child = id;
     let mut current = hir.symbol(id).and_then(|s| s.parent);
     while let Some(parent_id) = current {

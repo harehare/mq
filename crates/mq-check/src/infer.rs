@@ -893,6 +893,51 @@ impl InferenceContext {
         self.resolve_type_inner(ty, &mut Vec::new())
     }
 
+    /// Whether the type is fully known and not `dynamic`, without building the resolved type.
+    pub fn is_settled(&self, ty: &Type) -> bool {
+        !self.resolves_to_dynamic(ty) && self.is_settled_inner(ty, &mut Vec::new())
+    }
+
+    fn resolves_to_dynamic(&self, ty: &Type) -> bool {
+        let mut current = ty;
+        // A cycle of variables has no end; give up after it would have repeated
+        for _ in 0..self.substitutions.len() + 1 {
+            match current {
+                Type::Var(var) => match self.substitutions.get(var) {
+                    Some(bound) => current = bound,
+                    None => return false,
+                },
+                other => return other.is_dynamic(),
+            }
+        }
+        false
+    }
+
+    fn is_settled_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> bool {
+        match ty {
+            Type::Var(var) => {
+                let Some(bound) = self.substitutions.get(var) else {
+                    return false;
+                };
+                if path.contains(var) {
+                    return false;
+                }
+                path.push(*var);
+                let settled = self.is_settled_inner(bound, path);
+                path.pop();
+                settled
+            }
+            Type::Array(elem) | Type::Generator(elem) => self.is_settled_inner(elem, path),
+            Type::Dict(key, value) => self.is_settled_inner(key, path) && self.is_settled_inner(value, path),
+            Type::Function(params, ret) => {
+                params.iter().all(|p| self.is_settled_inner(p, path)) && self.is_settled_inner(ret, path)
+            }
+            Type::Record(fields, _) => fields.values().all(|f| self.is_settled_inner(f, path)),
+            Type::Union(items) | Type::Tuple(items) => items.iter().all(|i| self.is_settled_inner(i, path)),
+            _ => true,
+        }
+    }
+
     fn resolve_type_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> Type {
         match ty {
             Type::Var(var) => {

@@ -6,14 +6,15 @@
 //! known for certain, from the rules in [`Prover`]. Everything else is [`Certainty::Uncertain`], so
 //! a case the rules do not cover can only make a diagnostic less certain, never more.
 
-use mq_hir::Hir;
+use mq_hir::{Hir, SymbolId};
+use rustc_hash::FxHashMap;
 
-use crate::TypeError;
 use crate::infer::InferenceContext;
+use crate::{TypeError, symbol_range};
 
 mod prover;
 
-use prover::{Prover, in_try_body_at};
+use prover::{Prover, in_try_body};
 
 /// How sure the checker is that a [`TypeError`] is a real mistake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -156,6 +157,7 @@ pub(crate) fn classify_all(
         hir,
         ctx,
         declared_input,
+        symbols_at: None,
         prover: None,
     };
     errors
@@ -171,6 +173,8 @@ struct Classifier<'a> {
     hir: &'a Hir,
     ctx: &'a InferenceContext,
     declared_input: bool,
+    /// The symbols at each range, built when the first error needs it
+    symbols_at: Option<FxHashMap<mq_lang::Range, Vec<SymbolId>>>,
     /// Built when the first error needs it
     prover: Option<Prover<'a>>,
 }
@@ -188,17 +192,30 @@ impl Classifier<'_> {
                 Certainty::Definite
             };
         };
+        let (hir, ctx, declared_input) = (self.hir, self.ctx, self.declared_input);
+        let at_range = self
+            .symbols_at
+            .get_or_insert_with(|| {
+                let mut index: FxHashMap<mq_lang::Range, Vec<SymbolId>> = FxHashMap::default();
+                for (id, symbol) in hir.symbols() {
+                    if let Some(range) = symbol_range(hir, symbol) {
+                        index.entry(range).or_default().push(id);
+                    }
+                }
+                index
+            })
+            .get(&range)
+            .map_or(&[][..], Vec::as_slice);
         // Whatever the reason, a `try:` body is allowed to fail.
-        if in_try_body_at(self.hir, range) {
+        if at_range.iter().any(|&id| in_try_body(hir, id)) {
             return Certainty::Uncertain;
         }
         if !about_operands {
             return Certainty::Definite;
         }
-        let (hir, ctx, declared_input) = (self.hir, self.ctx, self.declared_input);
         let operand_mismatch = matches!(error, TypeError::Mismatch { .. });
         self.prover
             .get_or_insert_with(|| Prover::new(hir, ctx, declared_input))
-            .classify_at(hir, range, operand_mismatch)
+            .classify_at(hir, at_range, operand_mismatch)
     }
 }
