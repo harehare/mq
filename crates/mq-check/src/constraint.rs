@@ -1359,9 +1359,27 @@ pub(super) fn generate_symbol_constraints(
                             ));
                             ctx.add_constraint(Constraint::Equal(item_ty, elem_ty, range, ConstraintOrigin::General));
                         }
+                        Type::Number
+                        | Type::Int
+                        | Type::Float
+                        | Type::Bool
+                        | Type::None
+                        | Type::Symbol
+                        | Type::Bytes
+                        | Type::Dict(..)
+                        | Type::Record(..)
+                        | Type::Node(_) => {
+                            // The runtime only iterates over an array or a string.
+                            ctx.add_error(TypeError::Mismatch {
+                                expected: "array or string".to_string(),
+                                found: resolved_iterable.display_renumbered(),
+                                location: get_symbol_range(hir, iterable_id),
+                                context: Some("`foreach` iterates over an array or a string".to_string()),
+                            });
+                        }
                         _ => {
-                            // Other types (number, bool, etc.): skip constraint to avoid
-                            // false positives for runtime-dynamic iteration.
+                            // Other types (a union, a coroutine, a function): skip constraint to
+                            // avoid false positives for runtime-dynamic iteration.
                         }
                     }
                 }

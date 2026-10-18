@@ -881,3 +881,20 @@ fn test_builtin_accepts_what_the_runtime_accepts(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "the runtime accepts it: {:?}", result);
 }
+
+#[rstest]
+#[case::number("foreach (x, 4): x end")]
+#[case::bool("foreach (x, true): x end")]
+#[case::dict(r#"foreach (x, {"a": 1}): x end"#)]
+fn test_foreach_over_something_that_is_not_a_sequence_is_reported(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(!result.is_empty(), "the runtime fails on {code}");
+}
+
+#[rstest]
+#[case::array("foreach (x, [1, 2]): x + 1 end")]
+#[case::string(r#"foreach (c, "ab"): upcase(c) end"#)]
+fn test_foreach_over_a_sequence_is_not_reported(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "{:?}", result);
+}
