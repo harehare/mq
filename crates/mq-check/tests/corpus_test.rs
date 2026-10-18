@@ -101,7 +101,7 @@ fn check_file(path: &Path) -> FileReport {
             let code = c.error.code().map(|code| code.to_string()).unwrap_or_default();
             match c.certainty {
                 Certainty::Definite => code,
-                Certainty::Possible => format!("{code} (possible)"),
+                Certainty::Uncertain => format!("{code} (uncertain)"),
             }
         })
         .collect();

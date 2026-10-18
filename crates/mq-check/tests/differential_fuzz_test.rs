@@ -339,7 +339,7 @@ struct Findings {
     /// Of `agree_error`, how many the checker called definite
     agree_error_definite: usize,
     definite_false_positives: Vec<(String, String)>,
-    /// Errors that the program really fails with, which the checker called possible
+    /// Errors that the program really fails with, which the checker called uncertain
     missed: Vec<(String, String)>,
     soft_only: usize,
     panics: Vec<(String, String)>,
@@ -423,7 +423,7 @@ fn report(findings: &Findings) -> String {
     for (title, items) in [
         ("PANIC", &findings.panics),
         ("DEFINITE FALSE POSITIVE", &findings.definite_false_positives),
-        ("MISSED (possible)", &findings.missed),
+        ("MISSED (uncertain)", &findings.missed),
         ("FALSE POSITIVE", &findings.false_positives),
         ("FALSE NEGATIVE", &findings.false_negatives),
     ] {

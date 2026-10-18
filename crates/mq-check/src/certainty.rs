@@ -3,7 +3,7 @@
 //! The checker infers types flow-insensitively, so a diagnostic that rests on one of those
 //! approximations may be wrong for a program that runs fine. A diagnostic is
 //! [`Certainty::Definite`] only when every operand it is about is *exact*: a value whose type is
-//! known for certain, from the rules in [`Prover`]. Everything else is [`Certainty::Possible`], so
+//! known for certain, from the rules in [`Prover`]. Everything else is [`Certainty::Uncertain`], so
 //! a case the rules do not cover can only make a diagnostic less certain, never more.
 
 use mq_hir::{Hir, SymbolId, SymbolKind};
@@ -19,7 +19,16 @@ pub enum Certainty {
     /// gets there.
     Definite,
     /// The diagnostic relies on an approximation, or the program may handle the failure.
-    Possible,
+    Uncertain,
+}
+
+/// How a diagnostic is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Severity {
+    /// Fails the check.
+    Error,
+    /// Shown, but does not fail the check.
+    Warning,
 }
 
 /// A [`TypeError`] together with how sure the checker is about it.
@@ -29,6 +38,26 @@ pub struct Classified {
     pub error: TypeError,
     /// How sure the checker is about it.
     pub certainty: Certainty,
+}
+
+impl Classified {
+    /// How the diagnostic is shown under `options`, or `None` when it is left out.
+    ///
+    /// A definite error is an error. An uncertain one is left out unless
+    /// [`show_uncertain`](crate::TypeCheckerOptions::show_uncertain) asks for it as a warning, or
+    /// [`strict`](crate::TypeCheckerOptions::strict) makes it an error. Advisory diagnostics
+    /// ([`TypeError::is_advisory`]) are warnings.
+    pub fn severity(&self, options: &crate::TypeCheckerOptions) -> Option<Severity> {
+        if self.error.is_advisory() {
+            return Some(Severity::Warning);
+        }
+        match self.certainty {
+            Certainty::Definite => Some(Severity::Error),
+            Certainty::Uncertain if options.strict => Some(Severity::Error),
+            Certainty::Uncertain if options.show_uncertain => Some(Severity::Warning),
+            Certainty::Uncertain => None,
+        }
+    }
 }
 
 /// Builtins whose signature the audit (`just audit-builtins`) found no narrower than the function,
@@ -356,7 +385,12 @@ fn depends_on_operand_types(error: &TypeError) -> bool {
 }
 
 /// Classifies every error against the program it was found in.
-pub(crate) fn classify_all(hir: &Hir, ctx: &InferenceContext, errors: Vec<TypeError>) -> Vec<Classified> {
+pub(crate) fn classify_all(
+    hir: &Hir,
+    ctx: &InferenceContext,
+    errors: Vec<TypeError>,
+    declared_input: bool,
+) -> Vec<Classified> {
     let mut prover: Option<Prover> = None;
     errors
         .into_iter()
@@ -366,20 +400,20 @@ pub(crate) fn classify_all(hir: &Hir, ctx: &InferenceContext, errors: Vec<TypeEr
                 | TypeError::UnreachableCode { .. }
                 | TypeError::NonExhaustiveMatch { .. }
                 | TypeError::HeterogeneousArray { .. }
-                | TypeError::OccursCheck { .. } => Certainty::Possible,
+                | TypeError::OccursCheck { .. } => Certainty::Uncertain,
                 _ if !depends_on_operand_types(&error) => {
                     // Whatever the reason, a `try:` body is allowed to fail.
                     if error.location().is_some_and(|range| in_try_body_at(hir, range)) {
-                        Certainty::Possible
+                        Certainty::Uncertain
                     } else {
                         Certainty::Definite
                     }
                 }
                 _ => match error.location() {
                     Some(range) => prover
-                        .get_or_insert_with(|| Prover::new(hir))
+                        .get_or_insert_with(|| Prover::new(hir, declared_input))
                         .classify_at(hir, ctx, range),
-                    None => Certainty::Possible,
+                    None => Certainty::Uncertain,
                 },
             };
             Classified { error, certainty }
@@ -413,10 +447,12 @@ struct Prover {
     params_exact: bool,
     /// Whether the body of a function is exact when its parameters are
     bodies: FxHashMap<SymbolId, bool>,
+    /// Whether the type of the input document was declared (`--input-type`)
+    declared_input: bool,
 }
 
 impl Prover {
-    fn new(hir: &Hir) -> Self {
+    fn new(hir: &Hir, declared_input: bool) -> Self {
         let mut children: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
         for (id, symbol) in hir.symbols() {
             if let Some(parent) = symbol.parent {
@@ -483,6 +519,7 @@ impl Prover {
             memo: FxHashMap::default(),
             params_exact: false,
             bodies: FxHashMap::default(),
+            declared_input,
         }
     }
 
@@ -493,12 +530,12 @@ impl Prover {
             .map(|(id, _)| id)
             .collect();
         if at_range.is_empty() {
-            return Certainty::Possible;
+            return Certainty::Uncertain;
         }
 
         for &root in &at_range {
             if inside_try_body(hir, root) || self.has_unsettled_operand(hir, ctx, root) {
-                return Certainty::Possible;
+                return Certainty::Uncertain;
             }
             // The expression at the location and, when it is an operand, the operation around it
             let mut subjects = vec![root];
@@ -509,7 +546,7 @@ impl Prover {
             }
             for subject in subjects {
                 if !self.operands_are_exact(hir, subject) {
-                    return Certainty::Possible;
+                    return Certainty::Uncertain;
                 }
             }
         }
@@ -593,6 +630,17 @@ impl Prover {
                 .copied()
                 .is_some_and(|last| self.is_exact(hir, last)),
             SymbolKind::Ref => self.ref_is_exact(hir, id),
+            // A selector reads the input document, which is known only when its type was declared.
+            SymbolKind::Selector(_) => {
+                self.declared_input
+                    && match symbol.parent.and_then(|p| hir.symbol(p)) {
+                        Some(parent) if matches!(parent.kind, SymbolKind::Selector(_)) => {
+                            symbol.parent.is_some_and(|p| self.is_exact(hir, p))
+                        }
+                        Some(parent) if !matches!(parent.kind, SymbolKind::Block | SymbolKind::Function(_)) => false,
+                        _ => !self.previous.contains_key(&id),
+                    }
+            }
             _ => false,
         }
     }

@@ -162,7 +162,8 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
-| `--strict`       | Report possible errors (see below) as errors |
+| `--show-uncertain` | Show errors the checker is not sure about (see below) as warnings |
+| `--strict`       | Report errors the checker is not sure about as errors |
 | `--input-type`   | Type of the input document `.`, e.g. `h1 \| h2`, `code`, `markdown - code` (default: unknown) |
 | `--format`       | Diagnostic output format: `text` (default), `json`, `markdown`, or `sarif` |
 
@@ -175,19 +176,20 @@ echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
 ```
 
-### Definite and possible errors
+### Definite and uncertain errors
 
-A type error is *definite* only when every operand it is about is *exact*: its type is known for certain. Every other error is *possible*: it may be wrong for a program that runs fine. Possible errors are reported as warnings and do not change the exit status; `--strict` reports them as errors.
+A type error is *definite* only when every operand it is about is *exact*: its type is known for certain. Definite errors are errors. Every other error is *uncertain*: it may be wrong for a program that runs fine, so it is left out. `--show-uncertain` shows the uncertain errors as warnings, and `--strict` reports them as errors. Advice about the code (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`) is always a warning.
 
 An expression is exact when it is
 
 - a literal, or an array or dict literal of exact elements
 - an operator on exact operands
+- a selector on the input document, when its type was declared with `--input-type`
 - a call of a builtin listed in `EXACT_BUILTINS` (see below) with exact arguments, fed by an exact pipe stage
 - an `if` whose branches are exact
 - a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
 
-A call of a function defined in the program is exact when it is given every parameter, the arguments are exact and the body is exact when its parameters are (a recursive function is not). Parameters outside such a call, loops, `match` and anything else are not exact, so an error on them is possible. An error inside a `try:` body is possible as well, and so are the advisory diagnostics (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`). A case the rules do not cover can only make an error possible, never definite.
+A call of a function defined in the program is exact when it is given every parameter, the arguments are exact and the body is exact when its parameters are (a recursive function is not). Parameters outside such a call, loops, `match` and anything else are not exact, so an error on them is uncertain. An error inside a `try:` body is uncertain as well. A case the rules do not cover can only make an error uncertain, never definite.
 
 Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
 

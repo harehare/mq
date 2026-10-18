@@ -1,4 +1,4 @@
-//! Tests for the split of diagnostics into definite and possible errors
+//! Tests for the split of diagnostics into definite and uncertain errors
 
 use mq_check::{Certainty, TypeChecker};
 use mq_hir::Hir;
@@ -37,10 +37,10 @@ fn test_error_on_known_types_is_definite(#[case] code: &str) {
 #[case::narrowed_parameter(r#"def f(x): if (is_string(x)): x - 1 else: 0; | f("a")"#)]
 #[case::unaudited_builtin(r#"sort_by(1, 2)"#)]
 #[case::unreachable(r#"let x = 1 | if (is_none(x)): 1 else: 2"#)]
-fn test_error_that_relies_on_an_approximation_is_possible(#[case] code: &str) {
+fn test_error_that_relies_on_an_approximation_is_uncertain(#[case] code: &str) {
     let found = certainties(code);
     assert!(!found.is_empty(), "expected a diagnostic for {code}");
-    assert!(found.iter().all(|c| *c == Certainty::Possible), "{code}: {found:?}");
+    assert!(found.iter().all(|c| *c == Certainty::Uncertain), "{code}: {found:?}");
 }
 
 #[test]

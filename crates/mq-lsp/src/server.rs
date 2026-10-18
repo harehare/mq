@@ -517,11 +517,11 @@ impl Backend {
                             .map(|range| source_locations.contains(&range))
                             .unwrap_or(false)
                     })
-                    .map(|c| {
-                        if c.certainty == mq_check::Certainty::Possible && !self.config.type_checker_options.strict {
-                            LspError::PossibleTypeError(c.error)
-                        } else {
-                            LspError::TypeError(c.error)
+                    .filter_map(|c| {
+                        let options = &self.config.type_checker_options;
+                        match c.severity(options)? {
+                            mq_check::Severity::Error => Some(LspError::TypeError(c.error)),
+                            mq_check::Severity::Warning => Some(LspError::UncertainTypeError(c.error)),
                         }
                     }),
             );
@@ -2675,7 +2675,7 @@ mod tests {
         assert!(
             errors
                 .iter()
-                .any(|e| matches!(e, LspError::TypeError(_) | LspError::PossibleTypeError(_))),
+                .any(|e| matches!(e, LspError::TypeError(_) | LspError::UncertainTypeError(_))),
             "expected at least one type error diagnostic for arity mismatch"
         );
 

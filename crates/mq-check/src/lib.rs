@@ -37,7 +37,7 @@ use rustc_hash::FxHashMap;
 use thiserror::Error;
 use types::TypeScheme;
 
-pub use certainty::{Certainty, Classified};
+pub use certainty::{Certainty, Classified, Severity};
 
 /// Names `mq-test` defines at runtime, which no source declares. Pass them to
 /// [`Hir::declare_global`] when checking test files.
@@ -246,6 +246,18 @@ pub enum TypeError {
 }
 
 impl TypeError {
+    /// Whether the diagnostic is advice about the code rather than a type error: it is always shown
+    /// as a warning.
+    pub fn is_advisory(&self) -> bool {
+        matches!(
+            self,
+            TypeError::NullablePropagation { .. }
+                | TypeError::UnreachableCode { .. }
+                | TypeError::NonExhaustiveMatch { .. }
+                | TypeError::HeterogeneousArray { .. }
+        )
+    }
+
     /// Returns the location (range) of the error, if available.
     pub fn location(&self) -> Option<mq_lang::Range> {
         match self {
@@ -328,9 +340,12 @@ pub struct TypeCheckerOptions {
     pub strict_array: bool,
     /// When true, exhaustiveness checking for pattern match expressions is disabled.
     pub no_exhaustive_patterns: bool,
-    /// When true, errors the checker is not sure about ([`Certainty::Possible`]) are reported with
-    /// the severity of errors. Consumers that show severity read it from here.
+    /// When true, errors the checker is not sure about ([`Certainty::Uncertain`]) are errors.
+    /// Consumers that show diagnostics read it through [`Classified::severity`].
     pub strict: bool,
+    /// When true, errors the checker is not sure about are shown as warnings. They are left out
+    /// otherwise.
+    pub show_uncertain: bool,
     /// The type of the input document `.` (see [`type_expr::parse_type`]). When `None` the input
     /// is `dynamic`.
     pub input_type: Option<types::Type>,
@@ -557,7 +572,7 @@ impl TypeChecker {
         let mut seen = rustc_hash::FxHashSet::default();
         errors.retain(|e| !e.location().is_some_and(|r| is_module_range(&r)) && seen.insert(format!("{e:?}")));
 
-        let errors = certainty::classify_all(hir, &ctx, errors);
+        let errors = certainty::classify_all(hir, &ctx, errors, self.options.input_type.is_some());
         laps.lap("classify");
 
         // Store inferred types
