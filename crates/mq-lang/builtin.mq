@@ -2068,6 +2068,7 @@ end
 
 # Increases the depth (numeric level) of a markdown heading node by one,
 # effectively demoting the heading (e.g. h1 -> h2), up to a maximum of 6.
+# Deprecated: use demote_heading() instead.
 #
 # Example:
 # ```
@@ -2082,6 +2083,7 @@ end
 
 # Decreases the depth (numeric level) of a markdown heading node by one,
 # effectively promoting the heading (e.g. h2 -> h1), down to a minimum of 1.
+# Deprecated: use promote_heading() instead.
 #
 # Example:
 # ```
@@ -2094,8 +2096,8 @@ def decrease_header_depth(node):
   shift_left(node, 1)
 end
 
-# Demotes a markdown heading by increasing its depth (numeric level) by one.
-# This is an alias for `increase_header_depth`.
+# Demotes a markdown heading by increasing its depth (numeric level) by one (e.g. h1 -> h2),
+# up to a maximum of 6.
 #
 # Example:
 # ```
@@ -2105,11 +2107,11 @@ end
 #
 # Returns: markdown
 def demote_heading(node):
-  increase_header_depth(node)
+  shift_right(node, 1)
 end
 
-# Promotes a markdown heading by decreasing its depth (numeric level) by one.
-# This is an alias for `decrease_header_depth`.
+# Promotes a markdown heading by decreasing its depth (numeric level) by one (e.g. h2 -> h1),
+# down to a minimum of 1.
 #
 # Example:
 # ```
@@ -2119,7 +2121,7 @@ end
 #
 # Returns: markdown
 def promote_heading(node):
-  decrease_header_depth(node)
+  shift_left(node, 1)
 end
 
 # Performs a binary search on a sorted array to find the index of the target value.
