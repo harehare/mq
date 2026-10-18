@@ -3865,10 +3865,11 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             }
         }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
-        [a, b] => Err(Error::InvalidTypes(
-            ident.to_string(),
-            vec![std::mem::take(a), std::mem::take(b)],
-        )),
+        [a, b] => Err(Error::Runtime(format!(
+            "cannot index {} with {} (arrays, strings and markdown take a number, dicts take a string or symbol)",
+            a.name(),
+            b.name()
+        ))),
         _ => Err(invalid_arity(ident, 2, args.len())),
     }
 }
@@ -8176,12 +8177,8 @@ mod tests {
         let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, args_err1.into(), &VmEnv::default());
         assert_eq!(
             result_err1,
-            Err(Error::InvalidTypes(
-                "get".to_string(),
-                vec![
-                    RuntimeValue::String(Shared::new("not_a_map".into())),
-                    RuntimeValue::String(Shared::new("key".into()))
-                ]
+            Err(Error::Runtime(
+                "cannot index string with string (arrays, strings and markdown take a number, dicts take a string or symbol)".to_string()
             ))
         );
 
@@ -8189,9 +8186,8 @@ mod tests {
         let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, args_err2.into(), &VmEnv::default());
         assert_eq!(
             result_err2,
-            Err(Error::InvalidTypes(
-                "get".to_string(),
-                vec![map_val.clone(), RuntimeValue::Number(123.into())]
+            Err(Error::Runtime(
+                "cannot index dict with number (arrays, strings and markdown take a number, dicts take a string or symbol)".to_string()
             ))
         );
     }

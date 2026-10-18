@@ -83,6 +83,8 @@ arr[6]     # Returns None
 arr[1.5]   # Returns None (index must be an integer)
 ```
 
+Indexing a value that cannot be indexed, such as `1[0]`, is a runtime error. `None[0]` returns `None`.
+
 You can also use the `get` function explicitly:
 
 ```mq

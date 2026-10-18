@@ -1143,9 +1143,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let token = self.tokens.peek();
 
-        if matches!(literal_token.kind, TokenKind::StringLiteral(_))
-            && matches!(token.as_ref().map(|t| &t.kind), Some(TokenKind::LBracket))
-        {
+        if matches!(token.as_ref().map(|t| &t.kind), Some(TokenKind::LBracket)) {
             return self.parse_postfix_ops(literal_node, literal_token);
         }
 
