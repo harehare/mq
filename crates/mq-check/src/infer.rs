@@ -620,6 +620,14 @@ impl InferenceContext {
         std::mem::take(&mut self.pending_narrowings)
     }
 
+    /// Whether the source type of a waiting narrowing is known by now
+    pub fn has_settled_pending_narrowing(&self) -> bool {
+        self.pending_narrowings.iter().any(|pending| {
+            self.get_symbol_type(pending.entry.def_id)
+                .is_some_and(|ty| self.is_settled(ty))
+        })
+    }
+
     /// Whether any narrowing waits for its source type
     pub fn has_pending_narrowings(&self) -> bool {
         !self.pending_narrowings.is_empty()

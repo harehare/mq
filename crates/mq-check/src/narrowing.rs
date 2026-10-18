@@ -1075,10 +1075,15 @@ fn apply_narrowing_to_branch(
 /// Retries the complement narrowings whose source type had unresolved type variables when they
 /// were first applied, and returns whether any of them was settled.
 pub(crate) fn refresh_pending_narrowings(ctx: &mut InferenceContext) -> bool {
+    if !ctx.has_settled_pending_narrowing() {
+        return false;
+    }
     let mut settled = false;
     for pending in ctx.take_pending_narrowings() {
-        let source = ctx.get_symbol_type(pending.entry.def_id).map(|ty| ctx.resolve_type(ty));
-        if source.is_none_or(|ty| ty.has_pending_var()) {
+        if !ctx
+            .get_symbol_type(pending.entry.def_id)
+            .is_some_and(|ty| ctx.is_settled(ty))
+        {
             ctx.add_pending_narrowing(pending);
             continue;
         }
