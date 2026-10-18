@@ -350,8 +350,7 @@ impl Prover {
         if is_operation(&symbol.kind) {
             // A call that takes the piped value as an argument has an operand that is not a child.
             if symbol.kind == SymbolKind::Call
-                && !((is_audited_builtin(hir, id, symbol) || self.is_exact_user_call(hir, id))
-                    && self.input_is_exact(hir, id))
+                && !(self.callee_is_exact(hir, id, symbol) && self.input_is_exact(hir, id))
             {
                 return false;
             }
@@ -435,12 +434,35 @@ impl Prover {
     }
 
     fn call_is_exact(&mut self, hir: &Hir, id: SymbolId, symbol: &mq_hir::Symbol, children: &[SymbolId]) -> bool {
-        (is_audited_builtin(hir, id, symbol) || self.is_exact_user_call(hir, id))
+        self.callee_is_exact(hir, id, symbol)
             && self.input_is_exact(hir, id)
-            && children
-                .iter()
-                .filter(|&&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
-                .all(|&c| self.is_exact(hir, c))
+            && children.iter().all(|&c| match hir.symbol(c).map(|s| &s.kind) {
+                Some(SymbolKind::Function(_)) => self.lambda_is_exact(hir, c),
+                Some(kind) if is_expression(kind) => self.is_exact(hir, c),
+                _ => true,
+            })
+    }
+
+    /// Whether what the call applies has a known type: an audited builtin, a function of the
+    /// program with an exact body, or an exact container that is indexed.
+    fn callee_is_exact(&mut self, hir: &Hir, id: SymbolId, symbol: &mq_hir::Symbol) -> bool {
+        if hir.bracket_group_count(id) > 0 {
+            return self.ref_is_exact(hir, id);
+        }
+        is_audited_builtin(hir, id, symbol) || self.is_exact_user_call(hir, id)
+    }
+
+    /// Whether every expression in the body of a function passed as an argument is exact.
+    fn lambda_is_exact(&mut self, hir: &Hir, lambda_id: SymbolId) -> bool {
+        let stages: Vec<SymbolId> = self
+            .children
+            .get(&lambda_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
+            .collect();
+        !stages.is_empty() && stages.iter().all(|&stage| self.stage_is_exact(hir, stage))
     }
 
     /// Whether the call is of a function defined in the program, given every parameter and whose
