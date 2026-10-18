@@ -192,7 +192,7 @@ pub(crate) fn classify_all(
                 }
                 _ => match error.location() {
                     Some(range) => prover
-                        .get_or_insert_with(|| Prover::new(hir, declared_input))
+                        .get_or_insert_with(|| Prover::new(hir, ctx, declared_input))
                         .classify_at(hir, ctx, range, matches!(error, TypeError::Mismatch { .. })),
                     None => Certainty::Uncertain,
                 },
@@ -215,10 +215,15 @@ pub(crate) fn classify_all(
 ///   that no condition narrows around the reference
 ///
 /// Parameters, calls of user functions, loops, `match`, `try` and anything else are not.
-struct Prover {
+struct Prover<'a> {
+    ctx: &'a InferenceContext,
     children: FxHashMap<SymbolId, Vec<SymbolId>>,
-    /// Variables that are the target of an assignment
-    assigned: FxHashSet<SymbolId>,
+    /// The assignments to each variable that is the target of one
+    assignments: FxHashMap<SymbolId, Vec<SymbolId>>,
+    /// Variables that an element is assigned to (`x[0] = 1`)
+    element_assigned: FxHashSet<SymbolId>,
+    /// Whether each variable that is assigned again keeps one exact type
+    reassigned: FxHashMap<SymbolId, bool>,
     /// The stage of a pipe that feeds each stage, when there is one. Definitions and assignments
     /// pass their input on, so they are skipped.
     previous: FxHashMap<SymbolId, SymbolId>,
@@ -232,8 +237,8 @@ struct Prover {
     declared_input: bool,
 }
 
-impl Prover {
-    fn new(hir: &Hir, declared_input: bool) -> Self {
+impl<'a> Prover<'a> {
+    fn new(hir: &Hir, ctx: &'a InferenceContext, declared_input: bool) -> Self {
         let mut children: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
         for (id, symbol) in hir.symbols() {
             if let Some(parent) = symbol.parent {
@@ -244,14 +249,21 @@ impl Prover {
             list.sort_by_key(|&id| hir.symbol_insertion_order(id));
         }
 
-        let mut assigned = FxHashSet::default();
+        let mut assignments: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
+        let mut element_assigned = FxHashSet::default();
         for (id, symbol) in hir.symbols() {
             if symbol.kind != SymbolKind::Assign {
                 continue;
             }
             let target = children.get(&id).and_then(|c| c.first()).copied();
             if let Some(def) = target.and_then(|t| hir.resolve_reference_symbol(t)) {
-                assigned.insert(def);
+                assignments.entry(def).or_default().push(id);
+                if target
+                    .and_then(|t| hir.symbol(t))
+                    .is_some_and(|t| t.kind != SymbolKind::Ref)
+                {
+                    element_assigned.insert(def);
+                }
             }
         }
 
@@ -295,7 +307,10 @@ impl Prover {
 
         Self {
             children,
-            assigned,
+            assignments,
+            element_assigned,
+            reassigned: FxHashMap::default(),
+            ctx,
             previous,
             memo: FxHashMap::default(),
             params_exact: false,
@@ -542,7 +557,10 @@ impl Prover {
         let Some(def_symbol) = hir.symbol(def) else {
             return false;
         };
-        if self.assigned.contains(&def) || self.is_narrowed_around(hir, id, def) {
+        if self.is_narrowed_around(hir, id, def) {
+            return false;
+        }
+        if self.assignments.contains_key(&def) && !self.reassigned_is_exact(hir, def) {
             return false;
         }
         if def_symbol.kind == SymbolKind::Parameter {
@@ -555,6 +573,46 @@ impl Prover {
             return false;
         };
         self.is_exact(hir, init)
+    }
+
+    /// Whether a variable that is assigned again keeps one type, which is exact: its first value and
+    /// every value assigned to it are exact, and of the same type. The values may read the variable
+    /// itself (`s = s + "x"`), which holds when the claim does.
+    fn reassigned_is_exact(&mut self, hir: &Hir, def: SymbolId) -> bool {
+        if let Some(&known) = self.reassigned.get(&def) {
+            return known;
+        }
+        if self.element_assigned.contains(&def) {
+            self.reassigned.insert(def, false);
+            return false;
+        }
+        let Some(&init) = self.children.get(&def).and_then(|c| c.last()) else {
+            return false;
+        };
+        let outer_memo = std::mem::take(&mut self.memo);
+        self.reassigned.insert(def, true);
+
+        let type_of = |prover: &Self, id: SymbolId| {
+            prover
+                .ctx
+                .get_symbol_type(id)
+                .map(|ty| prover.ctx.resolve_type(ty))
+                .filter(|ty| !ty.has_pending_var() && !ty.is_dynamic())
+        };
+        let own = type_of(self, init);
+        let assignments = self.assignments.get(&def).cloned().unwrap_or_default();
+        let mut exact = own.is_some() && self.is_exact(hir, init);
+        for assignment in assignments {
+            if !exact {
+                break;
+            }
+            let value = self.children.get(&assignment).and_then(|c| c.get(1)).copied();
+            exact = value.is_some_and(|value| self.is_exact(hir, value) && type_of(self, value) == own);
+        }
+
+        self.reassigned.insert(def, exact);
+        self.memo = outer_memo;
+        exact
     }
 
     /// Whether the parameter is the only one of a function passed to a builtin that calls it on the
