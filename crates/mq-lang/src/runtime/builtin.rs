@@ -3828,6 +3828,13 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     }
 }
 
+/// Resolves a possibly negative index against `len`. Returns `None` when it falls outside `0..len`.
+pub(crate) fn resolve_index(index: f64, len: usize) -> Option<usize> {
+    let idx = index as isize;
+    let resolved = if idx < 0 { len as isize + idx } else { idx };
+    usize::try_from(resolved).ok()
+}
+
 #[mq_macros::mq_fn(name = "get", params = Fixed(2))]
 fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -3836,38 +3843,19 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
         }
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
-            let len = array.len();
-            let idx = index.value() as isize;
-            let real_idx = if idx < 0 {
-                (len as isize + idx).max(0) as usize
-            } else {
-                idx as usize
-            };
-            Ok(array.get(real_idx).cloned().unwrap_or(RuntimeValue::NONE))
-        }
+        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(resolve_index(index.value(), array.len())
+            .and_then(|i| array.get(i))
+            .cloned()
+            .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            let len = s.chars().count();
-            let idx = n.value() as isize;
-            let real_idx = if idx < 0 {
-                (len as isize + idx).max(0) as usize
-            } else {
-                idx as usize
-            };
-            match s.chars().nth(real_idx) {
+            match resolve_index(n.value(), s.chars().count()).and_then(|i| s.chars().nth(i)) {
                 Some(o) => Ok(o.to_string().into()),
                 None => Ok(RuntimeValue::NONE),
             }
         }
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
-            let idx = i.value() as isize;
-            let real_idx = if idx < 0 {
-                let len = node.value().chars().count();
-                (len as isize + idx).max(0) as usize
-            } else {
-                idx as usize
-            };
-            match runtime_value::Selector::index(real_idx) {
+            let len = node.value().chars().count();
+            match resolve_index(i.value(), len).and_then(runtime_value::Selector::index) {
                 Some(sel) => Ok(RuntimeValue::Markdown(std::mem::take(node), Some(sel))),
                 None => Ok(RuntimeValue::NONE),
             }

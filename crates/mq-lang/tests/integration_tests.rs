@@ -3321,6 +3321,11 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::get_string_negative_index(r#"get("hello", -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("o".to_string()))].into()))]
 #[case::get_string_out_of_bounds(r#"get("hi", 99)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::get_array_negative(r#"get([1, 2, 3], -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::get_string_negative_out_of_bounds(r#"get("abc", -4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_array_negative_out_of_bounds(r#"get([10, 20, 30], -4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_array_negative_out_of_bounds("[10, 20, 30][-4]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_string_negative_out_of_bounds("\"abc\"[-4]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_local_array_negative_out_of_bounds("let a = [10, 20, 30] | let i = -4 | a[i]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::get_none_key(r#"get(None, "x")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // set: array out-of-bounds extends
 #[case::set_array_extend("set([1, 2], 4, 99) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
