@@ -1605,7 +1605,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let index = local_runtime_value(locals, *index_slot, chunks)?;
                 let result = match (array, index) {
                     (RuntimeValue::Array(array), RuntimeValue::Number(index)) => {
-                        resolve_index(index.value(), array.len())
+                        resolve_index(index, array.len())
                             .and_then(|i| array.get(i))
                             .cloned()
                             .unwrap_or(RuntimeValue::None)

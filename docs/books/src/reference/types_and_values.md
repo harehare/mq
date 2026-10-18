@@ -80,6 +80,7 @@ let arr = [1, 2, 3, 4, 5]
 arr[0]     # Returns 1 (first element)
 arr[2]     # Returns 3 (third element)
 arr[6]     # Returns None
+arr[1.5]   # Returns None (index must be an integer)
 ```
 
 You can also use the `get` function explicitly:
@@ -143,7 +144,7 @@ A dictionary literal can be indexed directly:
 
 ### String Index Access
 
-Strings can be indexed by Unicode scalar value. Negative indices count from the end and an out-of-range index returns `None`:
+Strings can be indexed by Unicode scalar value. Negative indices count from the end. An out-of-range or non-integer index returns `None`:
 
 ```mq
 "abc"[0]     # Returns "a"

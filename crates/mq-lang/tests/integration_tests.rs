@@ -3326,6 +3326,13 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::index_array_negative_out_of_bounds("[10, 20, 30][-4]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::index_string_negative_out_of_bounds("\"abc\"[-4]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::index_local_array_negative_out_of_bounds("let a = [10, 20, 30] | let i = -4 | a[i]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_array_fractional_index(r#"get([10, 20, 30], 1.5)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_string_fractional_index(r#"get("abc", 1.5)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_array_nan_index(r#"get([10, 20, 30], nan())"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_array_fractional("[10, 20, 30][1.5]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_string_fractional("\"abc\"[1.5]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_local_array_fractional("let a = [10, 20, 30] | let i = 1.5 | a[i]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::has_array_fractional_index(r#"has([10, 20, 30], 1.5)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::get_none_key(r#"get(None, "x")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // set: array out-of-bounds extends
 #[case::set_array_extend("set([1, 2], 4, 99) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]

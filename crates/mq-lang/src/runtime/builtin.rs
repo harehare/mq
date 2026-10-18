@@ -3828,9 +3828,13 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     }
 }
 
-/// Resolves a possibly negative index against `len`. Returns `None` when it falls outside `0..len`.
-pub(crate) fn resolve_index(index: f64, len: usize) -> Option<usize> {
-    let idx = index as isize;
+/// Resolves a possibly negative index against `len`. Returns `None` when it is not an integer
+/// or falls outside `0..len`.
+pub(crate) fn resolve_index(index: number::Number, len: usize) -> Option<usize> {
+    if !index.is_int() {
+        return None;
+    }
+    let idx = index.value() as isize;
     let resolved = if idx < 0 { len as isize + idx } else { idx };
     usize::try_from(resolved).ok()
 }
@@ -3843,19 +3847,19 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
         }
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(resolve_index(index.value(), array.len())
+        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(resolve_index(*index, array.len())
             .and_then(|i| array.get(i))
             .cloned()
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            match resolve_index(n.value(), s.chars().count()).and_then(|i| s.chars().nth(i)) {
+            match resolve_index(*n, s.chars().count()).and_then(|i| s.chars().nth(i)) {
                 Some(o) => Ok(o.to_string().into()),
                 None => Ok(RuntimeValue::NONE),
             }
         }
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
             let len = node.value().chars().count();
-            match resolve_index(i.value(), len).and_then(runtime_value::Selector::index) {
+            match resolve_index(*i, len).and_then(runtime_value::Selector::index) {
                 Some(sel) => Ok(RuntimeValue::Markdown(std::mem::take(node), Some(sel))),
                 None => Ok(RuntimeValue::NONE),
             }
@@ -3879,7 +3883,7 @@ fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.contains_key(key).into()),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let idx = index.value();
-            Ok((idx >= 0.0 && (idx as usize) < array.len()).into())
+            Ok((index.is_int() && idx >= 0.0 && (idx as usize) < array.len()).into())
         }
         _ => Ok(false.into()),
     }
