@@ -3828,6 +3828,17 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     }
 }
 
+/// Resolves a possibly negative index against `len`. Returns `None` when it is not an integer
+/// or falls outside `0..len`.
+pub(crate) fn resolve_index(index: number::Number, len: usize) -> Option<usize> {
+    if !index.is_int() {
+        return None;
+    }
+    let idx = index.value() as isize;
+    let resolved = if idx < 0 { len as isize + idx } else { idx };
+    usize::try_from(resolved).ok()
+}
+
 #[mq_macros::mq_fn(name = "get", params = Fixed(2))]
 fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -3836,47 +3847,29 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
         }
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
-            let len = array.len();
-            let idx = index.value() as isize;
-            let real_idx = if idx < 0 {
-                (len as isize + idx).max(0) as usize
-            } else {
-                idx as usize
-            };
-            Ok(array.get(real_idx).cloned().unwrap_or(RuntimeValue::NONE))
-        }
+        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(resolve_index(*index, array.len())
+            .and_then(|i| array.get(i))
+            .cloned()
+            .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            let len = s.chars().count();
-            let idx = n.value() as isize;
-            let real_idx = if idx < 0 {
-                (len as isize + idx).max(0) as usize
-            } else {
-                idx as usize
-            };
-            match s.chars().nth(real_idx) {
+            match resolve_index(*n, s.chars().count()).and_then(|i| s.chars().nth(i)) {
                 Some(o) => Ok(o.to_string().into()),
                 None => Ok(RuntimeValue::NONE),
             }
         }
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
-            let idx = i.value() as isize;
-            let real_idx = if idx < 0 {
-                let len = node.value().chars().count();
-                (len as isize + idx).max(0) as usize
-            } else {
-                idx as usize
-            };
-            match runtime_value::Selector::index(real_idx) {
+            let len = node.value().chars().count();
+            match resolve_index(*i, len).and_then(runtime_value::Selector::index) {
                 Some(sel) => Ok(RuntimeValue::Markdown(std::mem::take(node), Some(sel))),
                 None => Ok(RuntimeValue::NONE),
             }
         }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
-        [a, b] => Err(Error::InvalidTypes(
-            ident.to_string(),
-            vec![std::mem::take(a), std::mem::take(b)],
-        )),
+        [a, b] => Err(Error::Runtime(format!(
+            "cannot index {} with {} (arrays, strings and markdown take a number, dicts take a string or symbol)",
+            a.name(),
+            b.name()
+        ))),
         _ => Err(invalid_arity(ident, 2, args.len())),
     }
 }
@@ -3891,7 +3884,7 @@ fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
         [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.contains_key(key).into()),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let idx = index.value();
-            Ok((idx >= 0.0 && (idx as usize) < array.len()).into())
+            Ok((index.is_int() && idx >= 0.0 && (idx as usize) < array.len()).into())
         }
         _ => Ok(false.into()),
     }
@@ -6425,7 +6418,7 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
 
             if let mq_markdown::Node::List(mq_markdown::List { index: list_index, .. }) = node {
                 indices.iter().any(|i| match i {
-                    RuntimeValue::Number(n) => *list_index == n.value() as usize,
+                    RuntimeValue::Number(n) => n.is_int() && n.value() >= 0.0 && *list_index == n.value() as usize,
                     _ => false,
                 })
             } else {
@@ -6442,7 +6435,9 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
                     let matches_pos = |spec: Option<&RuntimeValue>, actual: usize| -> bool {
                         match spec {
                             None | Some(RuntimeValue::None) => true,
-                            Some(RuntimeValue::Number(n)) => actual == n.value() as usize,
+                            Some(RuntimeValue::Number(n)) => {
+                                n.is_int() && n.value() >= 0.0 && actual == n.value() as usize
+                            }
                             _ => false,
                         }
                     };
@@ -8182,12 +8177,8 @@ mod tests {
         let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, args_err1.into(), &VmEnv::default());
         assert_eq!(
             result_err1,
-            Err(Error::InvalidTypes(
-                "get".to_string(),
-                vec![
-                    RuntimeValue::String(Shared::new("not_a_map".into())),
-                    RuntimeValue::String(Shared::new("key".into()))
-                ]
+            Err(Error::Runtime(
+                "cannot index string with string (arrays, strings and markdown take a number, dicts take a string or symbol)".to_string()
             ))
         );
 
@@ -8195,9 +8186,8 @@ mod tests {
         let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, args_err2.into(), &VmEnv::default());
         assert_eq!(
             result_err2,
-            Err(Error::InvalidTypes(
-                "get".to_string(),
-                vec![map_val.clone(), RuntimeValue::Number(123.into())]
+            Err(Error::Runtime(
+                "cannot index dict with number (arrays, strings and markdown take a number, dicts take a string or symbol)".to_string()
             ))
         );
     }
@@ -10130,6 +10120,24 @@ mod tests {
         Selector::List(None, None),
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())],
         true
+    )]
+    #[case::list_negative_index_no_match(
+        Node::List(mq_markdown::List { marker: None, index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number((-1).into())],
+        false
+    )]
+    #[case::list_fractional_index_no_match(
+        Node::List(mq_markdown::List { marker: None, index: 1, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Selector::List(None, None),
+        vec![RuntimeValue::Number(1.5.into())],
+        false
+    )]
+    #[case::table_negative_row_no_match(
+        Node::TableCell(mq_markdown::TableCell { column: 0, row: 0, values: vec![], position: None }),
+        Selector::Table(None, None),
+        vec![RuntimeValue::Number((-1).into())],
+        false
     )]
     #[case::list_no_args_fallback(
         Node::List(mq_markdown::List { marker: None, index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),

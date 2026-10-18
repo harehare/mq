@@ -3321,6 +3321,29 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::get_string_negative_index(r#"get("hello", -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("o".to_string()))].into()))]
 #[case::get_string_out_of_bounds(r#"get("hi", 99)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::get_array_negative(r#"get([1, 2, 3], -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::get_string_negative_out_of_bounds(r#"get("abc", -4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_array_negative_out_of_bounds(r#"get([10, 20, 30], -4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_array_negative_out_of_bounds("[10, 20, 30][-4]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_string_negative_out_of_bounds("\"abc\"[-4]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_local_array_negative_out_of_bounds("let a = [10, 20, 30] | let i = -4 | a[i]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_array_fractional_index(r#"get([10, 20, 30], 1.5)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_string_fractional_index(r#"get("abc", 1.5)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::get_array_nan_index(r#"get([10, 20, 30], nan())"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_array_fractional("[10, 20, 30][1.5]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_string_fractional("\"abc\"[1.5]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::index_local_array_fractional("let a = [10, 20, 30] | let i = 1.5 | a[i]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::has_array_fractional_index(r#"has([10, 20, 30], 1.5)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::FALSE].into()))]
+#[case::selector_index_array_negative("[10, 20, 30] | .[-1]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(30.into())].into()))]
+#[case::selector_index_array_negative_out_of_bounds("[10, 20, 30] | .[-4]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::selector_index_array_fractional("[10, 20, 30] | .[1.5]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::selector_index_array_dynamic("let i = -1 | [10, 20, 30] | .[i]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(30.into())].into()))]
+#[case::selector_index_string("\"abc\" | .[1]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
+#[case::selector_index_string_negative("\"abc\" | .[-1]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("c".to_string()))].into()))]
+#[case::selector_index_string_out_of_bounds("\"abc\" | .[3]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::selector_index_dict_key("{\"a\": 1} | .[\"a\"]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::selector_index_dict_missing_key("{\"a\": 1} | .[\"b\"]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::selector_index_array_of_dicts_key("[{\"a\": 1}, {\"a\": 2}] | .[\"a\"]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
+#[case::index_none_literal("None[0]", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::get_none_key(r#"get(None, "x")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // set: array out-of-bounds extends
 #[case::set_array_extend("set([1, 2], 4, 99) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
@@ -4039,6 +4062,10 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::array_spread_non_array(r#"let a = 5 | [...a]"#, vec![RuntimeValue::None],)]
 // dict spread: spreading a non-dict value → type error
 #[case::dict_spread_non_dict(r#"let a = 5 | {...a}"#, vec![RuntimeValue::None],)]
+#[case::index_number_literal("1[0]", vec![RuntimeValue::None],)]
+#[case::index_bool_literal("true[0]", vec![RuntimeValue::None],)]
+#[case::index_number_expr("(1 + 2)[0]", vec![RuntimeValue::None],)]
+#[case::index_dict_with_number(r#"{"a": 1}[1]"#, vec![RuntimeValue::None],)]
 #[case::next_too_many_arguments("next(None, None)", vec![RuntimeValue::None],)]
 #[case::send_without_value("send()", vec![RuntimeValue::None],)]
 #[case::send_too_many_arguments("send(None, None, None)", vec![RuntimeValue::None],)]
@@ -4385,4 +4412,15 @@ fn interpolation_syntax_error_keeps_cause_and_position(
 fn interpolation_empty_expression_reports_end_of_input(mut engine: Engine, #[case] program: &str) {
     let err = engine.eval(program, std::iter::once(RuntimeValue::None)).unwrap_err();
     assert!(format!("{err}").contains("Unexpected end of input"), "got {err}");
+}
+
+#[rstest]
+#[case::number_literal("1[0]", "cannot index number with number")]
+#[case::expr("(1 + 2)[0]", "cannot index number with number")]
+#[case::get_call("get(true, 0)", "cannot index bool with number")]
+fn test_index_error_names_the_operation(mut engine: Engine, #[case] program: &str, #[case] expected: &str) {
+    let err = engine.eval(program, std::iter::once(RuntimeValue::None)).unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains(expected), "{message}");
+    assert!(!message.contains("Invalid types"), "{message}");
 }

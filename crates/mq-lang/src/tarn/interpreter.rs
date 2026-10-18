@@ -28,7 +28,7 @@ use super::value::{Closure, Locals, StackValue, read_cell, resolve_weak_coroutin
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::number::Number;
-use crate::runtime::builtin::{self, Args};
+use crate::runtime::builtin::{self, Args, resolve_index};
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, ResumeBuiltin, RuntimeValue};
 use crate::selector::Selector;
@@ -1604,16 +1604,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let array = local_runtime_value(locals, *array_slot, chunks)?;
                 let index = local_runtime_value(locals, *index_slot, chunks)?;
                 let result = match (array, index) {
-                    (RuntimeValue::Array(array), RuntimeValue::Number(index)) => {
-                        let len = array.len();
-                        let index = index.value() as isize;
-                        let index = if index < 0 {
-                            (len as isize + index).max(0) as usize
-                        } else {
-                            index as usize
-                        };
-                        array.get(index).cloned().unwrap_or(RuntimeValue::None)
-                    }
+                    (RuntimeValue::Array(array), RuntimeValue::Number(index)) => resolve_index(index, array.len())
+                        .and_then(|i| array.get(i))
+                        .cloned()
+                        .unwrap_or(RuntimeValue::None),
                     (array, index) => call_builtin(
                         &GET_IDENT,
                         &[array, index],

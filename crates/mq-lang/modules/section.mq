@@ -760,20 +760,6 @@ def has_body(section):
     false
 end
 
-# Checks if a section has any content beyond the header.
-# Deprecated: use has_body() instead.
-#
-# Example:
-# ```
-# import "section" | section::has_content(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
-# #=> true
-# ```
-#
-# Returns: bool
-def has_content(section):
-  has_body(section)
-end
-
 # Shifts the heading level of a section and all of its descendant headings
 # by `delta` (positive demotes, e.g. h1 -> h2; negative promotes), keeping
 # their relative depths intact. Depth is clamped to the valid 1-6 range.

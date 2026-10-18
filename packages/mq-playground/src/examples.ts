@@ -437,7 +437,7 @@ Advanced content.
       },
       {
         name: "Filter sections with content",
-        code: `include "section" | nodes | sections() | filter(fn(s): has_content(s);) | titles()`,
+        code: `include "section" | nodes | sections() | filter(fn(s): has_body(s);) | titles()`,
         markdown: `# Introduction
 
 Welcome to the project.
@@ -1059,8 +1059,8 @@ Use the tool like this.
         format: "markdown",
       },
       {
-        name: "Promote heading levels",
-        code: `.h | increase_header_depth()`,
+        name: "Demote heading levels",
+        code: `.h | demote_heading()`,
         markdown: `# Introduction
 
 Welcome to the project.

@@ -80,7 +80,10 @@ let arr = [1, 2, 3, 4, 5]
 arr[0]     # Returns 1 (first element)
 arr[2]     # Returns 3 (third element)
 arr[6]     # Returns None
+arr[1.5]   # Returns None (index must be an integer)
 ```
+
+Indexing a value that cannot be indexed, such as `1[0]`, is a runtime error. `None[0]` returns `None`.
 
 You can also use the `get` function explicitly:
 
@@ -88,6 +91,19 @@ You can also use the `get` function explicitly:
 get(arr, 0)    # Same as arr[0]
 arr | get(2)    # Same as arr[2]
 ```
+
+### Index Access with `.[...]`
+
+On arrays, strings and dicts, `.[expr]` reads the same as `self[expr]`: negative indices count from the end, and an out-of-range or non-integer index returns `None`.
+
+```mq
+[10, 20, 30] | .[-1]        # Returns 30
+"abc" | .[1]                # Returns "b"
+{"a": 1} | .["a"]           # Returns 1
+[10, 20, 30] | .[1.5]       # Returns None
+```
+
+On Markdown values, `.[n]` selects the list item with index `n` instead (see [Selectors](selectors.md)).
 
 ### Array Slice Access
 
@@ -143,7 +159,7 @@ A dictionary literal can be indexed directly:
 
 ### String Index Access
 
-Strings can be indexed by Unicode scalar value. Negative indices count from the end and an out-of-range index returns `None`:
+Strings can be indexed by Unicode scalar value. Negative indices count from the end. An out-of-range or non-integer index returns `None`:
 
 ```mq
 "abc"[0]     # Returns "a"
