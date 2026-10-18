@@ -200,6 +200,24 @@ fn register_comparison(ctx: &mut InferenceContext) {
         register_binary(ctx, name, Type::Symbol, Type::Symbol, Type::Bool);
         register_binary(ctx, name, Type::Bool, Type::Bool, Type::Bool);
         register_binary(ctx, name, Type::Bytes, Type::Bytes, Type::Bool);
+        register_binary(ctx, name, Type::None, Type::None, Type::Bool);
+        // Arrays and dicts are ordered by their contents.
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::array(Type::Var(a)),
+            Type::Bool,
+        );
+        let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(
+            ctx,
+            name,
+            Type::dict(Type::Var(k), Type::Var(v)),
+            Type::dict(Type::Var(k), Type::Var(v)),
+            Type::Bool,
+        );
     }
 
     // Equality: forall a b. (a, b) -> bool
@@ -501,6 +519,10 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::Var(b),
         Type::array(Type::Number),
     );
+    // A string takes text at a position, and anything else is written out as text first.
+    let a = ctx.fresh_var();
+    register_ternary(ctx, "insert", Type::String, Type::Number, Type::Var(a), Type::String);
+
     // A string or an array loses elements from one end.
     for name in ["shift_left", "shift_right"] {
         register_binary(ctx, name, Type::String, Type::Number, Type::String);
@@ -725,6 +747,9 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
             Some(Type::function(args.to_vec(), Type::Number))
         }
         ("index" | "rindex", [Type::None, _]) => Some(Type::function(args.to_vec(), Type::Number)),
+        ("set", [container, key, value]) => {
+            widened_dict(container, key, value).map(|dict| Type::function(args.to_vec(), dict))
+        }
         ("bsearch", [Type::Array(_), target]) if !target.has_pending_var() => {
             Some(Type::function(args.to_vec(), Type::Number))
         }
@@ -760,6 +785,23 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
     }
 }
 
+/// The dict that `set` or `insert` makes from a dict or a record, when the key or the value is of
+/// another type than the ones it holds.
+fn widened_dict(container: &Type, key: &Type, value: &Type) -> Option<Type> {
+    if [container, key, value].iter().any(|ty| ty.has_pending_var()) {
+        return None;
+    }
+    let (keys, values) = match container {
+        Type::Dict(k, v) => ((**k).clone(), (**v).clone()),
+        Type::Record(fields, _) => (Type::String, Type::union(fields.values().cloned().collect())),
+        _ => return None,
+    };
+    Some(Type::dict(
+        Type::union(vec![keys, key.clone()]),
+        Type::union(vec![values, value.clone()]),
+    ))
+}
+
 /// The signature of `name` for arguments that no registered overload takes, for builtins that the
 /// runtime handles anyway: a search finds nothing.
 pub(crate) fn fallback_signature(name: &str, args: &[Type]) -> Option<Type> {
@@ -779,6 +821,9 @@ pub(crate) fn fallback_signature(name: &str, args: &[Type]) -> Option<Type> {
         ("index" | "rindex", [Type::None, _]) => Some(Type::function(args.to_vec(), Type::Number)),
         ("indices", [Type::None | Type::Array(_), _]) => Some(Type::function(args.to_vec(), Type::array(Type::Number))),
         ("bsearch", [Type::Array(_), _]) => Some(Type::function(args.to_vec(), Type::Number)),
+        ("insert", [container, key, value]) => {
+            widened_dict(container, key, value).map(|dict| Type::function(args.to_vec(), dict))
+        }
         _ => None,
     }
 }

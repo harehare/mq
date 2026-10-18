@@ -35,7 +35,7 @@ fn test_error_on_known_types_is_definite(#[case] code: &str) {
 #[case::try_body(r#"try: "a" - 1 catch: 0"#)]
 #[case::narrowed_variable(r#"let s = "a" | if (is_string(s)): s - 1 else: 0"#)]
 #[case::narrowed_parameter(r#"def f(x): if (is_string(x)): x - 1 else: 0; | f("a")"#)]
-#[case::unaudited_builtin(r#"base64d(1)"#)]
+#[case::unaudited_builtin(r#"date_add("2024-01-02", 1, "days")"#)]
 #[case::unreachable(r#"let x = 1 | if (is_none(x)): 1 else: 2"#)]
 fn test_error_that_relies_on_an_approximation_is_uncertain(#[case] code: &str) {
     let found = certainties(code);

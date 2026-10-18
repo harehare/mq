@@ -12,7 +12,7 @@
 //! they are listed by hand in `EXACT_BUILTINS` (`certainty.rs`), which this test keeps clean.
 //!
 //! Slow, so it is ignored by default: `just audit-builtins`. `AUDIT_FUNCTION` limits it to one
-//! function and `AUDIT_TRIPLES` sets how many 3-argument combinations are tried (default 60).
+//! function and `AUDIT_TRIPLES` sets how many 3-argument combinations are tried (default 150).
 
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -24,11 +24,6 @@ use mq_hir::Hir;
 
 /// Builtins that do I/O, never return or depend on the environment.
 const SKIPPED: &[&str] = &[
-    // Ordering values of different types is defined at runtime but is nearly always a mistake.
-    "gt",
-    "gte",
-    "lt",
-    "lte",
     "breakpoint",
     "close",
     "env",
@@ -61,6 +56,8 @@ const SKIPPED: &[&str] = &[
 /// Calls that the runtime answers by coercing a value it has no use for, which the checker rejects
 /// on purpose: the function and the argument types, as they are listed in a finding.
 const TOLERATED: &[(&str, &str)] = &[
+    ("set", "([number], number, bool)"),
+    ("insert", "(dict, string, markdown)"),
     ("in", "(none, markdown)"),
     ("indices", "(none, markdown)"),
     ("lines", "([number])"),
@@ -88,6 +85,10 @@ const TOLERATED: &[(&str, &str)] = &[
 /// Calls that the runtime answers by coercing a value it has no use for, and that the checker
 /// rejects on purpose, described by the argument types as they are listed in a finding.
 fn is_tolerated(name: &str, labels: &[&str]) -> bool {
+    // Ordering values of different types is defined at runtime but is nearly always a mistake.
+    if ["gt", "gte", "lt", "lte"].contains(&name) && labels.len() == 2 && labels[0] != labels[1] {
+        return true;
+    }
     // A function is a callback, never data.
     if labels.contains(&"function") {
         return true;
@@ -130,6 +131,22 @@ fn is_tolerated(name: &str, labels: &[&str]) -> bool {
     name == "token_compress"
 }
 
+/// Valid calls of builtins that the values tried do not reach: a builtin that takes a particular
+/// shape, such as nested arrays or a format name.
+const EVIDENCE: &[(&str, &str)] = &[
+    ("transpose", "transpose([[1, 2], [3, 4]])"),
+    ("combinations", "combinations([[1], [2]])"),
+    ("percentile", "percentile([1, 2, 3], 0.5)"),
+    ("normalize_newlines", "normalize_newlines(\"a\\r\\nb\", \"lf\")"),
+    ("base64urld", "base64urld(\"YQ\")"),
+    ("base64urld_bytes", "base64urld_bytes(\"YQ\")"),
+    ("from_date", "from_date(\"2024-01-02T00:00:00Z\")"),
+    ("strptime", "strptime(\"2024-01-02\", \"%Y-%m-%d\")"),
+    ("convert", "convert(\"a\", :html)"),
+    ("inspect", "inspect(1)"),
+    ("next", "next(to_coroutine([1]))"),
+];
+
 /// One value of each type: label and source.
 const VALUES: &[(&str, &str)] = &[
     ("number", "2"),
@@ -143,6 +160,11 @@ const VALUES: &[(&str, &str)] = &[
     ("markdown", "first(to_markdown(\"# h\"))"),
     ("bytes", "to_bytes(\"a\")"),
     ("function", "fn(x): x;"),
+    // Values that only some builtins take
+    ("function", "fn(a, b): a;"),
+    ("string", "\"2024-01-02\""),
+    ("string", "\"%Y-%m-%d\""),
+    ("string", "\"YQ==\""),
 ];
 
 /// Words in a `builtin.mq` body that mean the function does I/O or ends the program.
@@ -189,7 +211,9 @@ fn mq_builtins() -> Vec<(String, usize)> {
                 continue;
             }
             defs.push((name.to_string(), arity, String::new()));
-        } else if let Some(last) = defs.last_mut() {
+        } else if let Some(last) = defs.last_mut()
+            && !line.trim_start().starts_with('#')
+        {
             last.2.push_str(line);
             last.2.push('\n');
         }
@@ -227,7 +251,7 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
     let triples: usize = std::env::var("AUDIT_TRIPLES")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(60);
+        .unwrap_or(150);
 
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
@@ -247,6 +271,11 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
     // Calls that run and are accepted, per builtin
     let mut accepted: BTreeMap<String, usize> = BTreeMap::new();
     let mut tried = 0usize;
+    for (name, code) in EVIDENCE {
+        if engine.eval(code, mq_lang::null_input().into_iter()).is_ok() && rejected(code).is_none() {
+            *accepted.entry((*name).to_string()).or_default() += 1;
+        }
+    }
     // Name and the numbers of arguments to try
     let mut targets: Vec<(String, std::ops::RangeInclusive<usize>)> = mq_help::BUILTIN_DOC
         .iter()
