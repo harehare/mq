@@ -25,6 +25,8 @@ pub struct DeferredOverload {
     pub unsettled_piped: Option<Type>,
     /// The source range for error reporting
     pub range: Option<mq_lang::Range>,
+    /// The type given as the result until the operation is resolved
+    pub result: Type,
 }
 
 /// A deferred inner call to a function parameter (higher-order function pattern).

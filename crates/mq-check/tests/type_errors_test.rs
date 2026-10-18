@@ -904,3 +904,11 @@ fn test_a_comparison_gives_a_bool_before_its_operands_are_known() {
     let result = check_types_with_builtins("let v0 = abs(4) | let v1 = v0 | sort((v0 > v1))");
     assert!(!result.is_empty(), "sort of a bool must be reported");
 }
+
+#[rstest]
+#[case::operand_of_a_deferred_call(r#"let d = {"a": true, "b": "x"} | d["a"] + len(d["b"])"#)]
+#[case::deferred_call_as_operand(r#"let d = {"a": true, "b": "x"} | upcase(d["b"]) + d["a"]"#)]
+fn test_an_operation_waiting_for_a_call_is_checked_once_it_is_known(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(!result.is_empty(), "bool + number must be reported");
+}

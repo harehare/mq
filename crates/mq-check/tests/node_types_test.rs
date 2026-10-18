@@ -88,7 +88,12 @@ fn test_structural_selector_condition_narrows_to_the_selected_kinds() {
 fn errors(code: &str) -> Vec<mq_check::TypeError> {
     let mut hir = Hir::default();
     hir.add_code(None, code);
-    TypeChecker::new().check(&hir)
+    // Advice about the code (a nullable argument, say) is not a type error.
+    TypeChecker::new()
+        .check(&hir)
+        .into_iter()
+        .filter(|error| !error.is_advisory())
+        .collect()
 }
 
 /// The type of the selector symbol with the given name, e.g. `.depth`.

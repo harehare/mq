@@ -163,6 +163,7 @@ pub(super) fn resolve_builtin(ctx: &mut InferenceContext, call: &BuiltinCall<'_>
             operand_tys: call.args.to_vec(),
             unsettled_piped: call.unsettled_piped.clone(),
             range: call.range,
+            result: result.clone(),
         });
         return Resolution::Deferred(result);
     }

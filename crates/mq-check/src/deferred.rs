@@ -588,7 +588,7 @@ fn merge_array_union_operand(
             ConstraintOrigin::General,
         ));
     }
-    ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+    settle_result(ctx, d, *ret_ty);
     true
 }
 
@@ -659,7 +659,7 @@ fn distribute_over_container_members(
             ));
         }
     }
-    ctx.set_symbol_type_no_bind(d.symbol_id, Type::union(rets));
+    settle_result(ctx, d, Type::union(rets));
     true
 }
 
@@ -735,6 +735,24 @@ fn partial_function_known(name: &str, operands: &[types::Type]) -> bool {
     name == PARTIAL && operands.first().is_some_and(|ty| !ty.is_pending_operand())
 }
 
+/// Gives the result of a deferred operation its type. The result was a fresh variable that the
+/// operations using it hold, so the variable is tied to the type as well.
+fn settle_result(ctx: &mut InferenceContext, d: &DeferredOverload, ty: types::Type) {
+    // A result that something else already tied to a type is left as it is.
+    if let types::Type::Var(var) = &d.result
+        && matches!(ctx.resolve_type(&d.result), types::Type::Var(v) if v == *var)
+        && !matches!(ty, types::Type::Var(v) if v == *var)
+    {
+        ctx.add_constraint(Constraint::Equal(
+            d.result.clone(),
+            ty.clone(),
+            d.range,
+            ConstraintOrigin::General,
+        ));
+    }
+    ctx.set_symbol_type_no_bind(d.symbol_id, ty);
+}
+
 /// Resolves deferred overloads after the first round of unification.
 ///
 /// Binary/unary operators whose operands were type variables during constraint
@@ -806,7 +824,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                                 ConstraintOrigin::General,
                             ));
                         }
-                        ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+                        settle_result(ctx, d, *ret_ty);
                         unify::solve_constraints(ctx);
                         continue;
                     }
@@ -821,7 +839,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         ret,
                         has_none_propagation,
                     } => {
-                        ctx.set_symbol_type_no_bind(d.symbol_id, ret);
+                        settle_result(ctx, d, ret);
                         // Phase 2: None safety — warn when None propagation silently makes
                         // the result `none` at runtime even though the static type is concrete.
                         if has_none_propagation {
@@ -870,7 +888,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                             continue;
                         }
                         // Every member is valid, so the result is whichever of the returns applies.
-                        ctx.set_symbol_type_no_bind(d.symbol_id, types::Type::union(rets));
+                        settle_result(ctx, d, types::Type::union(rets));
                         unify::solve_constraints(ctx);
                         continue;
                     }
@@ -909,7 +927,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                             ConstraintOrigin::General,
                         ));
                     }
-                    ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+                    settle_result(ctx, d, *ret_ty);
                     // Solve constraints incrementally
                     unify::solve_constraints(ctx);
                 }
@@ -957,7 +975,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                                 ConstraintOrigin::General,
                             ));
                         }
-                        ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+                        settle_result(ctx, d, *ret_ty);
                     }
                 } else {
                     let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
