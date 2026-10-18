@@ -19,7 +19,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use mq_check::TypeChecker;
-use mq_check::certainty::EXACT_BUILTINS;
+use mq_check::certainty::UNAUDITED_BUILTINS;
 use mq_hir::Hir;
 
 /// Builtins that do I/O, never return or depend on the environment.
@@ -75,6 +75,59 @@ const TOLERATED: &[(&str, &str)] = &[
     ("index", "([string], function)"),
 ];
 
+/// Calls that the runtime answers by coercing a value it has no use for, and that the checker
+/// rejects on purpose, described by the argument types as they are listed in a finding.
+fn is_tolerated(name: &str, labels: &[&str]) -> bool {
+    // A function is a callback, never data.
+    if labels.contains(&"function") {
+        return true;
+    }
+    // Arithmetic reads a bool, none, dict, symbol, bytes or node as a number or passes it through.
+    const ARITHMETIC: &[&str] = &["add", "sub", "mul", "div", "mod", "shift_left", "shift_right", "not"];
+    if ARITHMETIC.contains(&name)
+        && labels
+            .iter()
+            .any(|l| ["bool", "none", "dict", "symbol", "bytes", "markdown"].contains(l))
+    {
+        return true;
+    }
+    // The setters of a node do nothing to anything else.
+    const SETTERS: &[&str] = &[
+        "set_attr",
+        "set_check",
+        "set_children",
+        "set_code_block_lang",
+        "set_list_ordered",
+        "set_ref",
+        "attr",
+    ];
+    if SETTERS.contains(&name) {
+        return true;
+    }
+    // The rest reads a value it has no use for as an empty or a default one.
+    const COERCING: &[&str] = &[
+        "extract_images",
+        "intern",
+        "grapheme_len",
+        "graphemes",
+        "utf8bytelen",
+        "safe_filename",
+        "token_compress",
+        "lines",
+        "unlines",
+        "implode",
+        "sort_natural",
+        "bsearch",
+        "in",
+        "indices",
+        "mul",
+        "shift_left",
+        "shift_right",
+        "update",
+    ];
+    COERCING.contains(&name)
+}
+
 /// One value of each type: label and source.
 const VALUES: &[(&str, &str)] = &[
     ("number", "2"),
@@ -108,6 +161,16 @@ const EFFECTS: &[&str] = &[
     "sleep",
 ];
 
+/// Every public function of `builtin.mq`, whatever its parameters.
+fn all_mq_builtin_names() -> Vec<String> {
+    include_str!("../../mq-lang/builtin.mq")
+        .lines()
+        .filter_map(|line| line.strip_prefix("def "))
+        .filter_map(|rest| rest.split_once('(').map(|(name, _)| name.to_string()))
+        .filter(|name| !name.starts_with('_'))
+        .collect()
+}
+
 /// The public functions of `builtin.mq` that are safe to call, with their number of parameters.
 fn mq_builtins() -> Vec<(String, usize)> {
     let source = include_str!("../../mq-lang/builtin.mq");
@@ -120,7 +183,7 @@ fn mq_builtins() -> Vec<(String, usize)> {
             let params = params.split(')').next().unwrap_or("");
             let arity = params.split(',').filter(|p| !p.trim().is_empty()).count();
             let variadic = params.contains('*');
-            if name.starts_with('_') || variadic || arity == 0 {
+            if name.starts_with('_') || variadic {
                 continue;
             }
             defs.push((name.to_string(), arity, String::new()));
@@ -187,7 +250,14 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
         .iter()
         .filter(|doc| doc.kind == mq_help::DocKind::Function)
         .filter(|doc| !SKIPPED.contains(&doc.name))
-        .map(|doc| (doc.name.to_string(), 1..=doc.params.len().clamp(1, 3)))
+        .map(|doc| {
+            let arities = if doc.params.is_empty() {
+                0..=0
+            } else {
+                1..=doc.params.len().clamp(1, 3)
+            };
+            (doc.name.to_string(), arities)
+        })
         .collect();
     // A call with fewer arguments than parameters is the piped form, which has no input here.
     targets.extend(
@@ -241,7 +311,7 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
                 if let Some(error) = rejected(&code) {
                     let labels: Vec<&str> = combo.iter().map(|&i| VALUES[i].0).collect();
                     let signature = format!("({})", labels.join(", "));
-                    if TOLERATED.contains(&(name.as_str(), signature.as_str())) {
+                    if is_tolerated(name, &labels) || TOLERATED.contains(&(name.as_str(), signature.as_str())) {
                         continue;
                     }
                     findings.entry(name.clone()).or_default().push(format!(
@@ -261,33 +331,42 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
     );
     for (name, list) in &findings {
         report.push_str(&format!("{name}: {}\n", list.len()));
-        for line in list.iter().take(if only.is_some() { 200 } else { 6 }) {
+        for line in list
+            .iter()
+            .take(if only.is_some() || std::env::var_os("AUDIT_ALL").is_some() {
+                400
+            } else {
+                6
+            })
+        {
             report.push_str(&format!("    {line}\n"));
         }
     }
     println!("{report}");
 
-    // The listed builtins must stay clean. The clean ones that are not listed yet, and that accept
-    // a call that runs, could be.
+    // A builtin counts as audited when it was called and has no finding, and when a call that runs
+    // was accepted. The others are listed in `UNAUDITED_BUILTINS`, which must say exactly that.
     if only.is_none() {
-        let listed_with_findings: Vec<&str> = EXACT_BUILTINS
-            .iter()
-            .copied()
-            .filter(|name| findings.contains_key(*name))
-            .collect();
-        let unsorted = EXACT_BUILTINS.windows(2).any(|pair| pair[0] >= pair[1]);
-        let candidates: Vec<&str> = targets
+        let audited: std::collections::BTreeSet<&str> = targets
             .iter()
             .map(|(name, _)| name.as_str())
             .filter(|name| !findings.contains_key(*name) && accepted.contains_key(*name))
-            .filter(|name| !EXACT_BUILTINS.contains(name))
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
             .collect();
-        println!("not listed yet and clean: {}", candidates.join(" "));
-        assert!(
-            listed_with_findings.is_empty() && !unsorted,
-            "EXACT_BUILTINS must be sorted and hold no builtin with a finding: {listed_with_findings:?}"
+        let mut everything: std::collections::BTreeSet<String> = mq_help::BUILTIN_DOC
+            .iter()
+            .filter(|doc| doc.kind == mq_help::DocKind::Function)
+            .map(|doc| doc.name.to_string())
+            .collect();
+        everything.extend(all_mq_builtin_names());
+        let unaudited: Vec<&str> = everything
+            .iter()
+            .map(String::as_str)
+            .filter(|name| !audited.contains(name))
+            .collect();
+        println!("unaudited ({}): {}", unaudited.len(), unaudited.join(" "));
+        assert_eq!(
+            unaudited, UNAUDITED_BUILTINS,
+            "UNAUDITED_BUILTINS (certainty.rs) must list the builtins the audit does not cover"
         );
     }
 

@@ -185,7 +185,7 @@ An expression is exact when it is
 - a literal, or an array or dict literal of exact elements
 - an operator on exact operands
 - a selector on the input document, when its type was declared with `--input-type`
-- a call of a builtin listed in `EXACT_BUILTINS` (see below) with exact arguments, fed by an exact pipe stage
+- a call of an audited builtin (see below) with exact arguments, fed by an exact pipe stage
 - an `if` whose branches are exact
 - a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
 
@@ -253,7 +253,7 @@ just test-all
 
 ### Builtin signature audit
 
-`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose (`TOLERATED` in the test). Only calls to the builtins listed in `EXACT_BUILTINS` (`src/certainty.rs`) can make an error definite. The audit fails when a listed builtin has a finding, and prints the clean builtins that are not listed yet. `AUDIT_FUNCTION` limits the run to one builtin.
+`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose (`TOLERATED` in the test). Every builtin the audit covers has no finding, so a call to it can make an error definite. The builtins it does not cover (they do I/O, take more than three arguments, or never ran with the values tried) are listed in `UNAUDITED_BUILTINS` (`src/certainty.rs`); an error on a call to one is uncertain. The audit fails when that list is out of date and prints the list to put there. `AUDIT_FUNCTION` limits the run to one builtin.
 
 ### Building
 

@@ -492,6 +492,72 @@ fn register_string(ctx: &mut InferenceContext) {
     }
     register_binary(ctx, "contains", Type::Bytes, Type::Bytes, Type::Bool);
 
+    // The positions of an element in an array
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "indices",
+        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::Number),
+    );
+    // A string or an array loses elements from one end.
+    for name in ["shift_left", "shift_right"] {
+        register_binary(ctx, name, Type::String, Type::Number, Type::String);
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::Number,
+            Type::array(Type::Var(a)),
+        );
+    }
+    // A value joins the front of an array, or repeats it
+    for name in ["+", "add"] {
+        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(
+            ctx,
+            name,
+            Type::Var(a),
+            Type::array(Type::Var(b)),
+            Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
+        );
+    }
+    for name in ["*", "mul"] {
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::Number,
+            Type::array(Type::Var(a)),
+            Type::array(Type::Var(a)),
+        );
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::Number,
+            Type::array(Type::Var(a)),
+        );
+    }
+    // A none input matches nothing
+    register_binary(ctx, "test", Type::None, Type::String, Type::Bool);
+    register_binary(ctx, "is_not_regex_match", Type::None, Type::String, Type::Bool);
+    register_binary(ctx, "regex_match", Type::None, Type::String, Type::array(Type::String));
+    let a = ctx.fresh_var();
+    register_binary(ctx, "scan", Type::None, Type::String, Type::array(Type::Var(a)));
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "capture",
+        Type::None,
+        Type::String,
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
+    register_binary(ctx, "token_count", Type::None, Type::String, Type::Number);
+
     // A none input is searched like an empty string.
     register_binary(ctx, "starts_with", Type::None, Type::String, Type::Bool);
     register_binary(ctx, "ends_with", Type::None, Type::String, Type::Bool);
@@ -1713,7 +1779,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
     register_binary(ctx, "set_ref", Type::markdown(), Type::String, Type::markdown());
 
     // Any value is written out as text.
-    for name in ["to_markdown_string", "to_text"] {
+    for name in ["to_markdown_string", "to_text", "to_html"] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::Var(a), Type::String);
     }
