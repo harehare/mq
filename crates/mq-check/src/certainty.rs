@@ -609,13 +609,57 @@ impl Prover {
                     | SymbolKind::Match
             ) {
                 let tested = self.children.get(&ancestor_id).and_then(|c| c.first()).copied();
-                if tested.is_some_and(|t| self.reads(hir, t, def)) {
+                let is_branch = matches!(ancestor.kind, SymbolKind::If | SymbolKind::Elif | SymbolKind::Unless);
+                if tested.is_some_and(|t| self.reads(hir, t, def) && !(is_branch && self.is_type_test(hir, t, def))) {
                     return true;
                 }
             }
             current = ancestor.parent;
         }
         false
+    }
+
+    /// Whether the condition only tests the type of the variable, in a way that the checker narrows
+    /// it for: `is_string(x)`, `type(x) == "number"`, `x != None`, or those joined with `!`, `&&`
+    /// and `||`. A condition that reads the variable otherwise is not such a test.
+    fn is_type_test(&self, hir: &Hir, cond: SymbolId, def: SymbolId) -> bool {
+        const PREDICATES: &[&str] = &["is_string", "is_number", "is_bool", "is_array", "is_dict", "is_none"];
+        let Some(symbol) = hir.symbol(cond) else {
+            return false;
+        };
+        let children = self.children.get(&cond).cloned().unwrap_or_default();
+        let is_def = |id: SymbolId| {
+            hir.symbol(id).is_some_and(|s| s.kind == SymbolKind::Ref) && hir.resolve_reference_symbol(id) == Some(def)
+        };
+        let value = symbol.value.as_deref().unwrap_or("");
+        match &symbol.kind {
+            SymbolKind::Call => {
+                PREDICATES.contains(&value)
+                    && children.len() == 1
+                    && is_def(children[0])
+                    && hir
+                        .resolve_reference_symbol(cond)
+                        .and_then(|d| hir.symbol(d))
+                        .is_some_and(|d| hir.is_builtin_symbol(d))
+            }
+            SymbolKind::UnaryOp => {
+                matches!(value, "!" | "not") && children.len() == 1 && self.is_type_test(hir, children[0], def)
+            }
+            SymbolKind::BinaryOp if matches!(value, "&&" | "and" | "||" | "or") => children
+                .iter()
+                .all(|&c| !self.reads(hir, c, def) || self.is_type_test(hir, c, def)),
+            SymbolKind::BinaryOp if matches!(value, "==" | "!=") && children.len() == 2 => {
+                let kind_of = |id: SymbolId| hir.symbol(id).map(|s| s.kind.clone());
+                let is_type_call = |id: SymbolId| {
+                    hir.symbol(id)
+                        .is_some_and(|s| s.kind == SymbolKind::Call && s.value.as_deref() == Some("type"))
+                        && self.children.get(&id).is_some_and(|c| c.len() == 1 && is_def(c[0]))
+                };
+                (is_type_call(children[0]) && kind_of(children[1]) == Some(SymbolKind::String))
+                    || (is_def(children[0]) && kind_of(children[1]) == Some(SymbolKind::None))
+            }
+            _ => false,
+        }
     }
 
     fn reads(&self, hir: &Hir, root: SymbolId, def: SymbolId) -> bool {
