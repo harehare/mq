@@ -153,7 +153,10 @@ pub(super) fn resolve_builtin(ctx: &mut InferenceContext, call: &BuiltinCall<'_>
             }
         };
     if waits {
-        let result = Type::Var(ctx.fresh_var());
+        // Whatever the operands turn out to be, a comparison gives a bool.
+        let result = common_result(ctx, call.name, &resolved_args)
+            .filter(|ty| matches!(ty, Type::Bool))
+            .unwrap_or_else(|| Type::Var(ctx.fresh_var()));
         ctx.add_deferred_overload(DeferredOverload {
             symbol_id: call.symbol_id,
             op_name: SmolStr::new(call.name),

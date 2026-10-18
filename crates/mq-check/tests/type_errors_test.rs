@@ -898,3 +898,9 @@ fn test_foreach_over_a_sequence_is_not_reported(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "{:?}", result);
 }
+
+#[test]
+fn test_a_comparison_gives_a_bool_before_its_operands_are_known() {
+    let result = check_types_with_builtins("let v0 = abs(4) | let v1 = v0 | sort((v0 > v1))");
+    assert!(!result.is_empty(), "sort of a bool must be reported");
+}
