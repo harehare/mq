@@ -3228,6 +3228,9 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::rindex_none(r#"rindex(None, "a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-1).into())].into()))]
 // slice: array with positive indices
 #[case::slice_array("slice([1, 2, 3, 4, 5], 1, 4)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())]))].into()))]
+#[case::slice_array_fractional_start("slice([1, 2, 3], 1.5, 3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::slice_string_fractional_start(r##"slice("abc", 1.5, 3)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::slice_string_fractional_end(r##"slice("abc", 1, 1.5)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // slice: array with out-of-bounds → empty
 #[case::slice_array_empty("slice([1, 2, 3], 5, 10)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 // slice: string with negative indices

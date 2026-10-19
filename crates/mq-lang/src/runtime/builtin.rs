@@ -1835,8 +1835,34 @@ fn update_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+/// Resolves slice bounds against `len`: negative values count from the end and the result
+/// is clamped to `0..=len`. The returned range is empty when `end <= start`.
+fn slice_bounds(start: number::Number, end: number::Number, len: usize) -> std::ops::Range<usize> {
+    let clamp = |n: number::Number| {
+        let n = n.value() as isize;
+        if n < 0 {
+            (len as isize + n).max(0) as usize
+        } else {
+            (n as usize).min(len)
+        }
+    };
+    let (start, end) = (clamp(start), clamp(end));
+    if end <= start { start..start } else { start..end }
+}
+
 #[mq_macros::mq_fn(name = "slice", params = Fixed(3))]
 fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    // Like `get`, a non-integer bound yields none.
+    if let [
+        RuntimeValue::String(_) | RuntimeValue::Array(_) | RuntimeValue::Markdown(_, _) | RuntimeValue::Bytes(_),
+        RuntimeValue::Number(start),
+        RuntimeValue::Number(end),
+    ] = args.as_slice()
+        && !(start.is_int() && end.is_int())
+    {
+        return Ok(RuntimeValue::NONE);
+    }
+
     match args.as_mut_slice() {
         [
             RuntimeValue::String(s),
@@ -1844,54 +1870,16 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::Number(end),
         ] => {
             let chars: Vec<char> = s.chars().collect();
-            let len = chars.len();
-            let start = start.value() as isize;
-            let end = end.value() as isize;
-
-            let real_start = if start < 0 {
-                (len as isize + start).max(0) as usize
-            } else {
-                (start as usize).min(len)
-            };
-
-            let real_end = if end < 0 {
-                (len as isize + end).max(0) as usize
-            } else {
-                (end as usize).min(len)
-            };
-
-            if real_start >= len || real_end <= real_start {
-                return Ok("".into());
-            }
-
-            let sub: String = chars[real_start..real_end].iter().collect();
-            Ok(sub.into())
+            let range = slice_bounds(*start, *end, chars.len());
+            Ok(chars[range].iter().collect::<String>().into())
         }
         [
             RuntimeValue::Array(arrays),
             RuntimeValue::Number(start),
             RuntimeValue::Number(end),
         ] => {
-            let len = arrays.len();
-            let start = start.value() as isize;
-            let end = end.value() as isize;
-
-            let real_start = if start < 0 {
-                (len as isize + start).max(0) as usize
-            } else {
-                (start as usize).min(len)
-            };
-            let real_end = if end < 0 {
-                (len as isize + end).max(0) as usize
-            } else {
-                (end as usize).min(len)
-            };
-
-            if real_start >= len || real_end <= real_start {
-                return Ok(RuntimeValue::empty_array());
-            }
-
-            Ok(RuntimeValue::Array(Shared::new(arrays[real_start..real_end].to_vec())))
+            let range = slice_bounds(*start, *end, arrays.len());
+            Ok(RuntimeValue::Array(Shared::new(arrays[range].to_vec())))
         }
         [
             node @ RuntimeValue::Markdown(_, _),
@@ -1901,26 +1889,8 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .markdown_node()
             .map(|md| {
                 let chars: Vec<char> = md.value().chars().collect();
-                let len = chars.len();
-                let start = start.value() as isize;
-                let end = end.value() as isize;
-
-                let real_start = if start < 0 {
-                    (len as isize + start).max(0) as usize
-                } else {
-                    (start as usize).min(len)
-                };
-                let real_end = if end < 0 {
-                    (len as isize + end).max(0) as usize
-                } else {
-                    (end as usize).min(len)
-                };
-
-                if real_start >= len || real_end <= real_start {
-                    return Ok(node.update_markdown_value(""));
-                }
-
-                let sub: String = chars[real_start..real_end].iter().collect();
+                let range = slice_bounds(*start, *end, chars.len());
+                let sub: String = chars[range].iter().collect();
                 Ok(node.update_markdown_value(&sub))
             })
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
@@ -1929,23 +1899,8 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::Number(start),
             RuntimeValue::Number(end),
         ] => {
-            let len = b.len();
-            let start = start.value() as isize;
-            let end = end.value() as isize;
-            let real_start = if start < 0 {
-                (len as isize + start).max(0) as usize
-            } else {
-                (start as usize).min(len)
-            };
-            let real_end = if end < 0 {
-                (len as isize + end).max(0) as usize
-            } else {
-                (end as usize).min(len)
-            };
-            if real_start >= len || real_end <= real_start {
-                return Ok(RuntimeValue::Bytes(Shared::new(vec![])));
-            }
-            Ok(RuntimeValue::Bytes(Shared::new(b[real_start..real_end].to_vec())))
+            let range = slice_bounds(*start, *end, b.len());
+            Ok(RuntimeValue::Bytes(Shared::new(b[range].to_vec())))
         }
         [RuntimeValue::None, RuntimeValue::Number(_), RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
         [a, b, c] => Err(Error::InvalidTypes(
