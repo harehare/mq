@@ -259,7 +259,9 @@ impl Formatter {
     }
 
     fn format_node(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
-        let has_leading_new_line = node.has_new_line() || (node.is_pipe() && self.should_wrap_pipe());
+        let has_leading_new_line = node.has_new_line()
+            || Self::nameless_call_head_has_new_line(node)
+            || (node.is_pipe() && self.should_wrap_pipe());
         let indent_level_consider_new_line = if has_leading_new_line { indent_level } else { 0 };
 
         if !matches!(
@@ -832,8 +834,19 @@ impl Formatter {
         }
     }
 
+    /// A bracket access on a non-identifier head (`"abc"[1]`) is a `Call` without a token whose
+    /// first child is the head, so a newline before the expression sits on that child.
+    fn nameless_call_head_has_new_line(node: &mq_lang::CstNode) -> bool {
+        matches!(node.kind, mq_lang::CstNodeKind::Call { .. })
+            && node.token.is_none()
+            && node.children().next().is_some_and(|head| head.has_new_line())
+    }
+
     fn format_call(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
-        self.append_indent(indent_level);
+        let head_has_new_line = Self::nameless_call_head_has_new_line(node);
+        if !head_has_new_line {
+            self.append_indent(indent_level);
+        }
         self.append_display(node);
 
         let current_line_indent = if indent_level == 0 {
@@ -842,7 +855,11 @@ impl Formatter {
             indent_level
         };
 
-        node.children().for_each(|child| {
+        node.children().enumerate().for_each(|(i, child)| {
+            if i == 0 && head_has_new_line {
+                self.format_node(child, indent_level);
+                return;
+            }
             self.format_node(
                 child,
                 if child.has_new_line() {
@@ -2403,6 +2420,9 @@ process();"#,
     )]
     #[case::array_index_access("let arr = [1, 2, 3]\n|arr[1]", "let arr = [1, 2, 3]\n| arr[1]\n")]
     #[case::array_index_access_inline("arr[0]", "arr[0]")]
+    #[case::index_on_dict_literal_after_def("def f(x): x;\n{\"a\":1}[\"a\"]", "def f(x): x;\n{\"a\": 1}[\"a\"]\n")]
+    #[case::slice_on_string_literal_after_def("def f(x): x;\n\"abc\"[1:2]", "def f(x): x;\n\"abc\"[1:2]\n")]
+    #[case::index_on_array_literal_in_body("def f(x):\n  1\n  |[1][0]\nend", "def f(x):\n  1\n  | [1][0]\nend\n")]
     #[case::dict_index_access(
         "let d = {\"key\": \"value\"}\n|d[\"key\"]",
         "let d = {\"key\": \"value\"}\n| d[\"key\"]\n"
