@@ -15,7 +15,7 @@ use crate::field_guard::FieldGuard;
 use crate::{
     TypeError,
     builtin::PARTIAL,
-    constraint::{Constraint, ConstraintOrigin},
+    constraint::{ChildrenIndex, Constraint, ConstraintOrigin},
     infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
     node_attr::{SelectorOutput, node_attr_type, node_selector_output},
     types::{self, Substitution},
@@ -1153,7 +1153,10 @@ pub(crate) fn resolve_generator_yields(ctx: &mut InferenceContext) {
 ///
 /// This uses a read-only approach: the substitution is applied locally without
 /// modifying the global inference state, so multiple call sites don't interfere.
-pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceContext) {
+///
+/// The stages that always run are then run on the argument types as well, which covers the
+/// operations that were resolved while the body was inferred (see [`crate::inline`]).
+pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceContext, children_index: &ChildrenIndex) {
     let deferred_calls = ctx.take_deferred_user_calls();
     let unresolved_overloads = ctx.take_deferred_overloads();
     let deferred_param_calls = ctx.take_deferred_parameter_calls();
@@ -1263,6 +1266,8 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
             check_deferred_overloads_iteratively(&lambda_overloads, &mut lambda_subst, ctx, call.range);
         }
     }
+
+    crate::inline::check_inlined_calls(hir, ctx, children_index, &deferred_calls);
 }
 
 /// Checks deferred overloads iteratively, resolving chained operators.

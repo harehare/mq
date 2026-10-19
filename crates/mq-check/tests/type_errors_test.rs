@@ -957,6 +957,16 @@ fn test_runtime_failure_is_a_type_error(#[case] code: &str) {
 #[case::trim_keeps_the_node(r##"trim(first(to_markdown("- h"))) | set_check(true)"##)]
 #[case::upcase_string(r#"upcase("a") | len()"#)]
 #[case::coalesce_keeps_the_left(r#"let n = 42 ?? "fallback" | n - 1"#)]
+#[case::default_that_the_body_takes(r#"def f(x, y = 1): abs(x) + y; | f(1)"#)]
+#[case::parameter_that_a_type_fits(r#"def f(x): x + 1 | upcase(x); | f("a")"#)]
+#[case::lambda_that_takes_the_argument(r#"def apply(f, v): f(v); | apply(fn(x): abs(x);, 1)"#)]
+#[case::lambda_applied_in_a_branch(r#"def apply(f, v): if (true): f(v) else: 0; | apply(fn(x): abs(x);, "a")"#)]
+#[case::lambda_without_params(r#"def apply(f, n): f(n); | apply(fn: self + 1, 5)"#)]
+#[case::call_that_the_body_takes(r#"def f(x): abs(x); | f(1)"#)]
+#[case::body_that_tests_the_type(r#"def f(x): if (is_string(x)): upcase(x) else: abs(x); | [f("a"), f(1)]"#)]
+#[case::body_that_catches_the_failure(r#"def f(x): try: abs(x) catch: 0; | f("a")"#)]
+#[case::parameter_that_is_assigned(r#"def f(x): var y = x | y = 1 | abs(y); | f("a")"#)]
+#[case::pipe_into_a_call_that_takes_it(r#"def f(x): x | upcase(); | "a" | f()"#)]
 fn test_valid_code_has_no_type_error(#[case] code: &str) {
     let found = check_types_with_builtins(code);
     assert!(

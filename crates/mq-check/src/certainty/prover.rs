@@ -6,6 +6,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::{Certainty, UNAUDITED_BUILTINS};
 use crate::infer::InferenceContext;
 
+mod unknown;
+
 /// Builtins that call a function on each element of their first argument, sorted by name.
 const ELEMENT_BUILTINS: &[&str] = &[
     "all",
@@ -36,6 +38,7 @@ const ELEMENT_BUILTINS: &[&str] = &[
 /// - an operator on exact operands
 /// - a call of an audited builtin, or of a function of the program whose body is exact when its
 ///   parameters are, with exact arguments and an exact pipe stage before it
+/// - an operation that gives the same type whatever its operands are (`len(x)`, `x == 1`)
 /// - an `if` whose branches are exact, or a block whose last expression is exact
 /// - an exact container that is indexed
 /// - a selector on the input document, when its type was declared
@@ -65,6 +68,7 @@ pub(super) struct Prover<'a> {
     bodies: FxHashMap<SymbolId, bool>,
     /// Whether the type of the input document was declared (`--input-type`)
     declared_input: bool,
+    unknown: unknown::UnknownOperands,
 }
 
 impl<'a> Prover<'a> {
@@ -146,34 +150,81 @@ impl<'a> Prover<'a> {
             params_exact: false,
             bodies: FxHashMap::default(),
             declared_input,
+            unknown: unknown::UnknownOperands::default(),
         }
     }
 
     /// `operand_mismatch` is true for an error that is reported at an operand and is about what the
-    /// operation around it expects, so the operation counts as well.
-    pub(super) fn classify_at(&mut self, hir: &Hir, at_range: &[SymbolId], operand_mismatch: bool) -> Certainty {
+    /// operation around it expects, so the operation counts as well. `no_overload` names the
+    /// operation of an error that found no overload for its operands: it is definite as well when
+    /// the operation fails whatever its operands of unknown type are.
+    ///
+    /// An `inlined` error was found by running the body of the function on the arguments of a call,
+    /// so it is definite when the arguments are exact, whatever the rest of the body is.
+    pub(super) fn classify_at(
+        &mut self,
+        hir: &Hir,
+        at_range: &[SymbolId],
+        operand_mismatch: bool,
+        no_overload: Option<&str>,
+        inlined: bool,
+    ) -> Certainty {
         if at_range.is_empty() {
             return Certainty::Uncertain;
         }
 
         for &root in at_range {
-            if self.has_unsettled_operand(hir, root) {
-                return Certainty::Uncertain;
+            if self.operands_are_certain(hir, root, operand_mismatch) {
+                continue;
             }
-            let mut subjects = vec![root];
-            if operand_mismatch
-                && let Some(parent) = hir.symbol(root).and_then(|s| s.parent)
-                && hir.symbol(parent).is_some_and(|s| is_operation(&s.kind))
+            if inlined && self.arguments_are_exact(hir, root) {
+                continue;
+            }
+            if no_overload.is_some_and(|name| self.rejects_whatever(hir, root, name) || self.is_doomed(hir, root, name))
             {
-                subjects.push(parent);
+                continue;
             }
-            for subject in subjects {
-                if !self.operands_are_exact(hir, subject) {
-                    return Certainty::Uncertain;
-                }
-            }
+            return Certainty::Uncertain;
         }
         Certainty::Definite
+    }
+
+    /// Whether the call of a function of the program is given exact arguments.
+    fn arguments_are_exact(&mut self, hir: &Hir, root: SymbolId) -> bool {
+        let Some(symbol) = hir.symbol(root) else {
+            return false;
+        };
+        symbol.kind == SymbolKind::Call
+            && hir.bracket_group_count(root) == 0
+            && hir
+                .resolve_reference_symbol(root)
+                .and_then(|def| hir.symbol(def))
+                .is_some_and(|def| matches!(def.kind, SymbolKind::Function(_)) && !hir.is_builtin_symbol(def))
+            && self.input_is_exact(hir, root)
+            && self
+                .children
+                .get(&root)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
+                .all(|argument| self.is_exact(hir, argument))
+    }
+
+    fn operands_are_certain(&mut self, hir: &Hir, root: SymbolId, operand_mismatch: bool) -> bool {
+        if self.has_unsettled_operand(hir, root) {
+            return false;
+        }
+        let mut subjects = vec![root];
+        if operand_mismatch
+            && let Some(parent) = hir.symbol(root).and_then(|s| s.parent)
+            && hir.symbol(parent).is_some_and(|s| is_operation(&s.kind))
+        {
+            subjects.push(parent);
+        }
+        subjects
+            .into_iter()
+            .all(|subject| self.operands_are_exact(hir, subject))
     }
 
     /// Whether the expression is exact, and for an operation, so are its operands.
@@ -227,9 +278,10 @@ impl<'a> Prover<'a> {
                 .filter(|&&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
                 .all(|&c| self.is_exact(hir, c)),
             SymbolKind::UnaryOp | SymbolKind::BinaryOp => {
-                !children.is_empty() && children.iter().all(|&c| self.is_exact(hir, c))
+                (!children.is_empty() && children.iter().all(|&c| self.is_exact(hir, c)))
+                    || self.uniform_type(hir, id).is_some()
             }
-            SymbolKind::Call => self.call_is_exact(hir, id, symbol, &children),
+            SymbolKind::Call => self.call_is_exact(hir, id, symbol, &children) || self.uniform_type(hir, id).is_some(),
             SymbolKind::If => {
                 let branches: Vec<SymbolId> = children.iter().skip(1).copied().collect();
                 !branches.is_empty()
@@ -319,7 +371,9 @@ impl<'a> Prover<'a> {
                 .filter(|&&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
                 .count()
         });
-        given == params.len() && self.body_is_exact(hir, def_id)
+        // A call with fewer arguments takes the piped value as the first one
+        (given == params.len() || (given + 1 == params.len() && self.previous.contains_key(&id)))
+            && self.body_is_exact(hir, def_id)
     }
 
     /// Whether every expression in the body of the function is exact if its parameters are.
@@ -555,12 +609,19 @@ impl<'a> Prover<'a> {
     }
 
     /// An operand whose type the checker could not settle.
-    fn has_unsettled_operand(&self, hir: &Hir, root: SymbolId) -> bool {
-        let unsettled = |id: SymbolId| self.ctx.get_symbol_type(id).is_some_and(|ty| !self.ctx.is_settled(ty));
+    fn has_unsettled_operand(&mut self, hir: &Hir, root: SymbolId) -> bool {
         // A function passed as an argument has the type variables of its own parameters.
-        self.children.get(&root).is_some_and(|c| {
-            c.iter()
-                .any(|&id| hir.symbol(id).is_some_and(|s| is_expression(&s.kind)) && unsettled(id))
+        let operands: Vec<SymbolId> = self
+            .children
+            .get(&root)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|&id| hir.symbol(id).is_some_and(|s| is_expression(&s.kind)))
+            .collect();
+        operands.into_iter().any(|id| {
+            self.ctx.get_symbol_type(id).is_some_and(|ty| !self.ctx.is_settled(ty))
+                && self.exact_type(hir, id).is_none()
         })
     }
 }

@@ -248,8 +248,97 @@ impl Gen {
         }
     }
 
+    /// A function whose parameters the body uses at the types they are meant to have, and a call
+    /// that passes such values. The checker knows nothing about the parameters, so what it says
+    /// about the body rests on the operations alone.
+    fn function_program(&mut self) -> String {
+        let params: Vec<(String, Ty)> = (0..1 + self.rng.below(2))
+            .map(|i| (format!("p{i}"), self.any_type()))
+            .collect();
+        self.vars = params.clone();
+        let mut body = Vec::new();
+        for i in 0..self.rng.below(3) {
+            let ty = self.any_type();
+            let init = self.expr(ty, 2);
+            let name = format!("l{i}");
+            body.push(format!("let {name} = {init}"));
+            self.vars.push((name, ty));
+        }
+        let ret = self.any_type();
+        let last = match self.rng.below(4) {
+            0 => {
+                let other = self.any_type();
+                format!(
+                    "if ({}): {} else: {}",
+                    self.expr(Ty::Bool, 1),
+                    self.expr(ret, 2),
+                    self.expr(other, 2)
+                )
+            }
+            _ => self.expr(ret, 3),
+        };
+        body.push(last);
+        // The last parameter may have a default, and the call may leave it out
+        let default = if self.rng.chance(35) {
+            let ty = params[params.len() - 1].1;
+            self.vars.clear();
+            Some(self.expr(ty, 1))
+        } else {
+            None
+        };
+        let mut names: Vec<String> = params.iter().map(|(name, _)| name.clone()).collect();
+        if let Some(default) = &default {
+            let last = names.len() - 1;
+            names[last] = format!("{} = {default}", names[last]);
+        }
+        let definition = format!("def f({}): {};", names.join(", "), body.join(" | "));
+        self.vars.clear();
+        let mut args: Vec<String> = params.iter().map(|(_, ty)| self.expr(*ty, 1)).collect();
+        if default.is_some() && self.rng.chance(50) {
+            args.pop();
+        }
+        match self.rng.below(4) {
+            // Through another function, with the arguments piped in, or a result that is used
+            0 => {
+                let wrapper: Vec<String> = (0..args.len()).map(|i| format!("q{i}")).collect();
+                format!(
+                    "{definition}\n| def g({}): f({});\n| g({})",
+                    wrapper.join(", "),
+                    wrapper.join(", "),
+                    args.join(", ")
+                )
+            }
+            1 if args.len() == 1 => format!("{definition}\n| {} | f()", args[0]),
+            2 => format!("{definition}\n| let r = f({})\n| r", args.join(", ")),
+            _ => format!("{definition}\n| f({})", args.join(", ")),
+        }
+    }
+
+    /// A lambda that a function applies to its argument, the lambda using its parameter at the
+    /// type the call passes.
+    fn higher_order_program(&mut self) -> String {
+        let ty = self.any_type();
+        self.vars = vec![("y".to_string(), ty)];
+        let twice = self.rng.chance(40);
+        let ret = if twice { ty } else { self.any_type() };
+        let body = self.expr(ret, 3);
+        self.vars.clear();
+        let arg = self.expr(ty, 1);
+        if twice {
+            format!("def twice(f, v): f(f(v));\n| twice(fn(y): {body};, {arg})")
+        } else {
+            format!("def apply(f, v): f(v);\n| apply(fn(y): {body};, {arg})")
+        }
+    }
+
     /// A whole program: a few `let`s and a final expression.
     fn program(&mut self) -> String {
+        if self.rng.chance(10) {
+            return self.higher_order_program();
+        }
+        if self.rng.chance(30) {
+            return self.function_program();
+        }
         if self.rng.chance(25) {
             return self.construct_program_more();
         }

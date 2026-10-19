@@ -24,9 +24,11 @@ pub(crate) mod deferred;
 pub(crate) mod exhaustiveness;
 pub(crate) mod field_guard;
 pub(crate) mod infer;
+pub(crate) mod inline;
 pub mod kind_set;
 pub(crate) mod narrowing;
 pub(crate) mod node_attr;
+pub(crate) mod probe;
 pub mod type_expr;
 pub mod types;
 pub(crate) mod unify;
@@ -553,7 +555,7 @@ impl TypeChecker {
         // Check operators inside user-defined function bodies against call-site types.
         // Uses local substitution (original params → call-site args) without modifying
         // global state, so multiple call sites don't interfere.
-        deferred::check_user_call_body_operators(hir, &mut ctx);
+        deferred::check_user_call_body_operators(hir, &mut ctx, &children_index);
         laps.lap("check_user_call_body_operators");
 
         // Check pattern match exhaustiveness (reuses the children index from constraint generation)

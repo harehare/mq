@@ -188,10 +188,20 @@ An expression is exact when it is
 - a call of an audited builtin (see below) with exact arguments, fed by an exact pipe stage
 - an `if` whose branches are exact
 - a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
+- an operation that gives the same type whatever its operands are, such as `to_string(x)` (a string) or `x == 1` (a bool)
 
-A call of a function defined in the program is exact when it is given every parameter, the arguments are exact and the body is exact when its parameters are (a recursive function is not). Parameters outside such a call, loops, `match` and anything else are not exact, so an error on them is uncertain. An error inside a `try:` body is uncertain as well. A case the rules do not cover can only make an error uncertain, never definite.
+A call of a function defined in the program is exact when it is given every parameter (or all but the piped one), the arguments are exact and the body is exact when its parameters are (a recursive function is not). Parameters outside such a call, loops, `match` and anything else are not exact, so an error on them is uncertain. An error inside a `try:` body is uncertain as well. A case the rules do not cover can only make an error uncertain, never definite.
 
 Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
+
+### User-defined functions
+
+A function is checked in two ways, so that a mistake is found whether or not the function is called.
+
+- **In the body.** An operation fails whatever its operands of unknown type (a parameter, a loop variable) are when no overload takes any type for them, and that error is definite. `def f(x): x - [1];` and `def f(x): abs([x, 1]);` are errors before `f` is called. An array or dict literal counts as an array or dict even when its elements are unknown, and an operation that gives the same type whatever its operands are (`to_string(x)`, `x == 1`) has that type. A body that no type of its parameters lets run through (`def f(x): abs(x) | upcase(x);`) is an error too, for up to two parameters.
+- **At a call.** The stages of the body that always run (not those inside `if`, `match`, loops, `try:` or a lambda) are run on the types of the arguments. An operation that nothing takes is reported at the call, so `def f(x): abs(x); | f("a")` is an error, also through another function (`def g(y): f(y); | g("a")`) for a piped call (`"a" | f()`) and for a lambda that the function applies (`def apply(f, v): f(v); | apply(fn(x): abs(x);, "a")`). The error is definite when the arguments are exact, even if the rest of the body is not.
+
+A default is used when the call leaves it out. A function with a variadic parameter, and a parameter that is assigned, is not run this way.
 
 ### Test files
 

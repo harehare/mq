@@ -291,6 +291,9 @@ pub struct InferenceContext {
     deferred_overloads: FxHashMap<SymbolId, DeferredOverload>,
     /// Deferred user-defined function calls for post-unification type checking
     deferred_user_calls: Vec<DeferredUserCall>,
+    /// The overload errors found by running a function body on the arguments of a call, by range
+    /// and message
+    inlined_errors: rustc_hash::FxHashSet<(Option<mq_lang::Range>, String)>,
     /// Deferred inner calls to function parameters for higher-order function checking
     deferred_parameter_calls: Vec<DeferredParameterCall>,
     /// Deferred record field accesses for post-unification resolution
@@ -345,6 +348,7 @@ impl InferenceContext {
             piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
+            inlined_errors: rustc_hash::FxHashSet::default(),
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
             written_record_fields: FxHashMap::default(),
@@ -386,6 +390,15 @@ impl InferenceContext {
     #[cfg(test)]
     pub(crate) fn builtin_names(&self) -> impl Iterator<Item = &str> {
         self.builtins.keys().map(|name| name.as_str())
+    }
+
+    /// Whether a call of `name` has already been reported as matching no overload at `range`.
+    pub(crate) fn has_overload_error_at(&self, name: &str, range: Option<mq_lang::Range>) -> bool {
+        let prefix = format!("{name} with arguments");
+        self.errors.iter().any(|error| {
+            matches!(error, TypeError::UnificationError { left, location, .. }
+                if *location == range && left.starts_with(&prefix))
+        })
     }
 
     /// Adds a type error to the error collection
@@ -696,6 +709,22 @@ impl InferenceContext {
         Some(result)
     }
 
+    /// Reports a "no matching overload" error found by running a function body on the arguments
+    /// of the call at `range`.
+    pub(crate) fn report_inlined_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
+        self.inlined_errors.insert((
+            range,
+            format!("{} with arguments ({})", op_name, format_type_list(arg_tys)),
+        ));
+        self.report_no_matching_overload(op_name, arg_tys, range);
+    }
+
+    /// Whether the error was found by running a function body on the arguments of a call.
+    pub(crate) fn is_inlined_error(&self, error: &TypeError) -> bool {
+        matches!(error, TypeError::UnificationError { left, location, .. }
+            if self.inlined_errors.contains(&(*location, left.clone())))
+    }
+
     /// Reports a "no matching overload" error with formatted argument types.
     pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
         let args_str = format_type_list(arg_tys);
@@ -708,6 +737,31 @@ impl InferenceContext {
         });
     }
 
+    /// The overload of `name` that fits `arg_types` best.
+    fn best_overload(&self, name: &str, arg_types: &[Type]) -> Option<&Type> {
+        let mut best_match: Option<(&Type, u32)> = None;
+        for overload in self.get_builtin_overloads(name)? {
+            let Type::Function(params, _ret) = overload else {
+                continue;
+            };
+            if params.len() != arg_types.len() {
+                continue;
+            }
+            let scores: Option<Vec<u32>> = params
+                .iter()
+                .zip(arg_types.iter())
+                .map(|(param_ty, arg_ty)| param_ty.match_score(arg_ty))
+                .collect();
+            let Some(total_score) = scores.map(|scores| scores.iter().sum::<u32>()) else {
+                continue;
+            };
+            if best_match.is_none_or(|(_, best_score)| total_score > best_score) {
+                best_match = Some((overload, total_score));
+            }
+        }
+        best_match.map(|(overload, _)| overload)
+    }
+
     /// Resolves the best matching overload for a function call.
     ///
     /// Given a function name and argument types, finds the best matching overload
@@ -718,46 +772,9 @@ impl InferenceContext {
         if name == crate::builtin::PARTIAL {
             return self.partial_signature(arg_types);
         }
-        let overloads = self.get_builtin_overloads(name)?;
+        self.get_builtin_overloads(name)?;
 
-        let mut best_match: Option<(Type, u32)> = None;
-
-        for overload in overloads {
-            // For function types, check if argument types match
-            if let Type::Function(params, _ret) = overload {
-                // Check arity first
-                if params.len() != arg_types.len() {
-                    continue;
-                }
-
-                // Compute match score for each parameter
-                let mut total_score = 0u32;
-                let mut all_match = true;
-
-                for (param_ty, arg_ty) in params.iter().zip(arg_types.iter()) {
-                    if let Some(score) = param_ty.match_score(arg_ty) {
-                        total_score += score;
-                    } else {
-                        all_match = false;
-                        break;
-                    }
-                }
-
-                if all_match {
-                    match &best_match {
-                        None => {
-                            best_match = Some((overload.clone(), total_score));
-                        }
-                        Some((_, best_score)) if total_score > *best_score => {
-                            best_match = Some((overload.clone(), total_score));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-
-        let Some((ty, _score)) = best_match else {
+        let Some(ty) = self.best_overload(name, arg_types).cloned() else {
             let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
             return crate::builtin::fallback_signature(name, &resolved_args)
                 .or_else(|| self.resolve_node_as_text(name, arg_types));
@@ -766,17 +783,43 @@ impl InferenceContext {
         Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
     }
 
+    /// The signature [`resolve_overload`](Self::resolve_overload) would pick, without
+    /// instantiating its type variables, so that it can be asked of a shared context.
+    /// `None` for `partial`, whose signature depends on the call, and for a name that is not a
+    /// builtin.
+    pub(crate) fn peek_signature(&self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        if name == crate::builtin::PARTIAL {
+            return None;
+        }
+        self.get_builtin_overloads(name)?;
+        let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+        let Some(ty) = self.best_overload(name, arg_types) else {
+            return crate::builtin::fallback_signature(name, &resolved_args).or_else(|| {
+                let as_text = self.nodes_as_text(&resolved_args)?;
+                match self.peek_signature(name, &as_text)? {
+                    Type::Function(_, ret) if !ret.has_pending_var() => Some(Type::function(arg_types.to_vec(), *ret)),
+                    _ => None,
+                }
+            });
+        };
+        Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| ty.clone()))
+    }
+
+    /// The arguments with each markdown node read as a string, or `None` when there is no node.
+    fn nodes_as_text(&self, arg_types: &[Type]) -> Option<Vec<Type>> {
+        let is_node = |ty: &Type| matches!(self.resolve_type(ty), Type::Node(_));
+        arg_types.iter().any(is_node).then(|| {
+            arg_types
+                .iter()
+                .map(|ty| if is_node(ty) { Type::String } else { ty.clone() })
+                .collect()
+        })
+    }
+
     /// A builtin of strings also takes a markdown node as its text: retries a failed call with
     /// the nodes read as strings.
     fn resolve_node_as_text(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
-        let is_node = |ty: &Type| matches!(self.resolve_type(ty), Type::Node(_));
-        if !arg_types.iter().any(is_node) {
-            return None;
-        }
-        let as_text: Vec<Type> = arg_types
-            .iter()
-            .map(|ty| if is_node(ty) { Type::String } else { ty.clone() })
-            .collect();
+        let as_text = self.nodes_as_text(arg_types)?;
         let Some(Type::Function(_, ret)) = self.resolve_overload(name, &as_text) else {
             return None;
         };
@@ -1114,5 +1157,41 @@ mod tests {
         let arg_types = vec![Type::Number];
         let resolved = ctx.resolve_overload("op", &arg_types);
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn test_peek_signature_answers_like_resolve_overload() {
+        let mut ctx = InferenceContext::new();
+        crate::builtin::register_all(&mut ctx);
+        let types = [
+            Type::Number,
+            Type::String,
+            Type::Bool,
+            Type::None,
+            Type::Symbol,
+            Type::markdown(),
+            Type::array(Type::Number),
+            Type::array(Type::String),
+            Type::dict(Type::String, Type::Number),
+            Type::function(vec![Type::Dynamic], Type::Dynamic),
+            Type::Dynamic,
+        ];
+        let names: Vec<String> = ctx.builtin_names().map(str::to_string).collect();
+        for name in names.iter().filter(|name| *name != crate::builtin::PARTIAL) {
+            for first in &types {
+                let mut calls = vec![vec![first.clone()]];
+                calls.extend(types.iter().map(|second| vec![first.clone(), second.clone()]));
+                for args in calls {
+                    let peeked = ctx.peek_signature(name, &args);
+                    let resolved = ctx.resolve_overload(name, &args);
+                    assert_eq!(peeked.is_some(), resolved.is_some(), "{name}{args:?}");
+                    if let (Some(Type::Function(_, peeked)), Some(Type::Function(_, resolved))) = (&peeked, &resolved)
+                        && !peeked.has_pending_var()
+                    {
+                        assert_eq!(peeked, resolved, "{name}{args:?}");
+                    }
+                }
+            }
+        }
     }
 }

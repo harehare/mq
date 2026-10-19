@@ -214,8 +214,15 @@ impl Classifier<'_> {
             return Certainty::Definite;
         }
         let operand_mismatch = matches!(error, TypeError::Mismatch { .. });
+        let no_overload = match error {
+            TypeError::UnificationError { left, right, .. } if right == "no matching overload" => {
+                left.split(" with arguments").next()
+            }
+            _ => None,
+        };
+        let inlined = ctx.is_inlined_error(error);
         self.prover
             .get_or_insert_with(|| Prover::new(hir, ctx, declared_input))
-            .classify_at(hir, at_range, operand_mismatch)
+            .classify_at(hir, at_range, operand_mismatch, no_overload, inlined)
     }
 }
