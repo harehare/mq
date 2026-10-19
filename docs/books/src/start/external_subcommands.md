@@ -11,6 +11,14 @@ When you run `mq <subcommand>`, mq searches for an executable named `mq-<subcomm
 
 The first match found is used.
 
+Everything after the subcommand name is passed to it as is, so its options need no `--`:
+
+```sh
+mq fmt --check query.mq
+```
+
+Built-in subcommands such as `compile` and `help` take precedence over an external `mq-<subcommand>` of the same name.
+
 ## Listing Available Subcommands
 
 Use the `commands` subcommand to see all available subcommands (add `--json` for machine-readable output):

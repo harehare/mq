@@ -1055,45 +1055,55 @@ impl Cli {
         }
     }
 
-    /// Execute an external subcommand
-    fn execute_external_command(&self, command_path: PathBuf, args: &[String]) -> miette::Result<()> {
-        if args.is_empty() {
-            return Err(miette!("No subcommand specified"));
+    /// Runs `mq-NAME` when the first argument names an external subcommand, passing every
+    /// following argument through untouched so its options need no `--`.
+    ///
+    /// Returns `None` when the first argument is not an external subcommand. Built-in
+    /// subcommands take precedence.
+    pub fn run_external_subcommand(args: &[OsString]) -> Option<std::process::ExitCode> {
+        let name = args.get(1)?.to_str()?;
+        if name.is_empty()
+            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            || Self::command().find_subcommand(name).is_some()
+        {
+            return None;
         }
+        let command_path = Self::external_command_path(name)?;
+        match Self::execute_external_command(name, &command_path, &args[2..]) {
+            Ok(code) => Some(std::process::ExitCode::from(code)),
+            Err(err) => {
+                eprintln!("{:?}", err);
+                Some(std::process::ExitCode::FAILURE)
+            }
+        }
+    }
 
-        let subcommand = &args[0];
-
+    /// Executes `mq-NAME` and returns its exit code.
+    fn execute_external_command(name: &str, command_path: &Path, args: &[OsString]) -> miette::Result<u8> {
         // Check if the file is executable
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let metadata = fs::metadata(&command_path).into_diagnostic()?;
-            let permissions = metadata.permissions();
-            if permissions.mode() & 0o111 == 0 {
+            let metadata = fs::metadata(command_path).into_diagnostic()?;
+            if metadata.permissions().mode() & 0o111 == 0 {
                 return Err(miette!(
                     "External subcommand 'mq-{}' is not executable. Run: chmod +x {}",
-                    subcommand,
+                    name,
                     command_path.display()
                 ));
             }
         }
 
-        // Execute the external command with remaining arguments
-        let status = Command::new(&command_path).args(&args[1..]).status().map_err(|e| {
+        let status = Command::new(command_path).args(args).status().map_err(|e| {
             miette!(
                 "Failed to execute external subcommand 'mq-{}' at {}: {}",
-                subcommand,
+                name,
                 command_path.display(),
                 e
             )
         })?;
 
-        if !status.success() {
-            let code = status.code().unwrap_or(1);
-            std::process::exit(code);
-        }
-
-        Ok(())
+        Ok(u8::try_from(status.code().unwrap_or(1)).unwrap_or(1))
     }
 
     /// Print built-in subcommands (from the clap definition) and external `mq-*` commands.
@@ -1803,10 +1813,6 @@ impl Cli {
 
         self.load_bytecode()?;
 
-        if let Some(result) = self.run_external_command() {
-            return result;
-        }
-
         self.validate_csv_options()?;
         self.validate_frontmatter_option()?;
 
@@ -1849,28 +1855,6 @@ impl Cli {
             Commands::Dap => Some(mq_dap::start().map_err(|e| miette!(e.to_string()))),
             Commands::Repl { .. } => None,
         }
-    }
-
-    /// Runs `mq-NAME` when the query is the bare name of an external subcommand.
-    ///
-    /// clap parses `mq test arg1` as query="test", files=["arg1"], so this is detected here.
-    fn run_external_command(&self) -> Option<miette::Result<()>> {
-        if self.input.from_file || self.commands.is_some() || self.bytecode.get().is_some() {
-            return None;
-        }
-        let query_value = self.query.as_ref()?;
-        if !query_value
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        {
-            return None;
-        }
-        let command_path = Self::external_command_path(query_value)?;
-        let mut args = vec![query_value.clone()];
-        if let Some(files) = &self.files {
-            args.extend(files.iter().map(|p| p.to_string_lossy().to_string()));
-        }
-        Some(self.execute_external_command(command_path, &args))
     }
 
     /// Checks the output flags against the resolved output format.

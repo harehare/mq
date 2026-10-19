@@ -14,7 +14,12 @@ const _: () = {
 };
 
 fn main() -> std::process::ExitCode {
-    let cli = mq_run::Cli::parse();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if let Some(code) = mq_run::Cli::run_external_subcommand(&args) {
+        return code;
+    }
+
+    let cli = mq_run::Cli::parse_from(args);
     match cli.run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {

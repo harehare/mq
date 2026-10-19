@@ -1130,6 +1130,17 @@ fn test_strip_executable_extension_windows(#[case] input: &str, #[case] expected
 }
 
 #[test]
+fn test_run_external_subcommand_ignores_non_external() {
+    let args = |v: &[&str]| v.iter().map(OsString::from).collect::<Vec<_>>();
+    // Built-in subcommands, queries, options and a missing name are never external.
+    assert!(Cli::run_external_subcommand(&args(&["mq"])).is_none());
+    assert!(Cli::run_external_subcommand(&args(&["mq", "compile", "--help"])).is_none());
+    assert!(Cli::run_external_subcommand(&args(&["mq", ".h1 | upcase", "a.md"])).is_none());
+    assert!(Cli::run_external_subcommand(&args(&["mq", "--help"])).is_none());
+    assert!(Cli::run_external_subcommand(&args(&["mq", "no-such-external-cmd", "--flag"])).is_none());
+}
+
+#[test]
 fn test_external_command_execution() {
     // Create a temporary directory for testing
     let temp_dir = std::env::temp_dir().join("mq-run-test");
