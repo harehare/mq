@@ -319,6 +319,25 @@ impl Gen {
     fn higher_order_program(&mut self) -> String {
         let ty = self.any_type();
         self.vars = vec![("y".to_string(), ty)];
+        if self.rng.chance(35) {
+            // A builtin applies the lambda to each element of an argument
+            let ret = self.any_type();
+            self.vars = vec![("y".to_string(), Ty::Num)];
+            let body = self.expr(ret, 3);
+            self.vars.clear();
+            let arr = self.expr(Ty::Arr, 1);
+            let builtin = self.rng.pick(&["map", "filter", "any", "all"]);
+            let body = if builtin == "map" {
+                body
+            } else {
+                format!("({body}) == ({body})")
+            };
+            return if self.rng.chance(50) {
+                format!("def f(xs): {builtin}(xs, fn(y): {body};);\n| f({arr})")
+            } else {
+                format!("def f(xs): xs | {builtin}(fn(y): {body};);\n| f({arr})")
+            };
+        }
         let twice = self.rng.chance(40);
         let ret = if twice { ty } else { self.any_type() };
         let body = self.expr(ret, 3);

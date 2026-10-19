@@ -962,6 +962,8 @@ fn test_runtime_failure_is_a_type_error(#[case] code: &str) {
 #[case::lambda_that_takes_the_argument(r#"def apply(f, v): f(v); | apply(fn(x): abs(x);, 1)"#)]
 #[case::lambda_applied_in_a_branch(r#"def apply(f, v): if (true): f(v) else: 0; | apply(fn(x): abs(x);, "a")"#)]
 #[case::lambda_without_params(r#"def apply(f, n): f(n); | apply(fn: self + 1, 5)"#)]
+#[case::lambda_of_a_builtin_that_takes_the_elements(r#"def f(xs): map(xs, fn(s): abs(s);); | f([1])"#)]
+#[case::lambda_of_a_builtin_over_no_elements(r#"def f(xs): map(xs, fn(s): abs(s);); | f([])"#)]
 #[case::call_that_the_body_takes(r#"def f(x): abs(x); | f(1)"#)]
 #[case::body_that_tests_the_type(r#"def f(x): if (is_string(x)): upcase(x) else: abs(x); | [f("a"), f(1)]"#)]
 #[case::body_that_catches_the_failure(r#"def f(x): try: abs(x) catch: 0; | f("a")"#)]

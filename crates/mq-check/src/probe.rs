@@ -38,3 +38,24 @@ pub(crate) fn combinations<'a>(choices: &'a [&'a [Type]]) -> impl Iterator<Item 
             .collect()
     })
 }
+
+/// Builtins that call a function on each element of their first argument, sorted by name.
+pub(crate) const ELEMENT_BUILTINS: &[&str] = &[
+    "all",
+    "any",
+    "count_by",
+    "each",
+    "filter",
+    "find",
+    "flat_map",
+    "group_by",
+    "index_by",
+    "map",
+    "max_by",
+    "min_by",
+    "partition",
+    "reject",
+    "select",
+    "sort_by",
+    "sum_by",
+];

@@ -13,7 +13,7 @@ use crate::builtin::PARTIAL;
 use crate::certainty::UNAUDITED_BUILTINS;
 use crate::constraint::{ChildrenIndex, get_children};
 use crate::infer::{DeferredUserCall, InferenceContext};
-use crate::probe::{combinations, representatives};
+use crate::probe::{ELEMENT_BUILTINS, combinations, representatives};
 use crate::types::Type;
 use crate::{is_module_range, symbol_range};
 
@@ -343,6 +343,7 @@ impl Inliner<'_> {
             if UNAUDITED_BUILTINS.binary_search(&name).is_ok() {
                 return None;
             }
+            self.run_on_elements(id, name, &operands, piped);
             return self.apply(id, name, &operands, piped);
         }
         // A function of the program is followed when it gets all its arguments
@@ -370,6 +371,34 @@ impl Inliner<'_> {
             self.failures.truncate(before);
         }
         value
+    }
+
+    /// Runs the lambda that a builtin calls on each element of a collection of known type.
+    fn run_on_elements(&mut self, id: SymbolId, name: &str, operands: &[Option<Type>], piped: Option<&Type>) {
+        if ELEMENT_BUILTINS.binary_search(&name).is_err() {
+            return;
+        }
+        let hir = self.hir;
+        let written: Vec<SymbolId> = get_children(self.children, id)
+            .iter()
+            .copied()
+            .filter(|&c| hir.symbol(c).is_some_and(|s| !matches!(s.kind, SymbolKind::Keyword)))
+            .collect();
+        let mut lambdas = written
+            .iter()
+            .filter(|&&c| hir.symbol(c).is_some_and(|s| matches!(s.kind, SymbolKind::Function(_))));
+        let (Some(&lambda), None) = (lambdas.next(), lambdas.next()) else {
+            return;
+        };
+        let collection = written
+            .iter()
+            .position(|&c| c != lambda)
+            .map_or(piped.cloned(), |index| operands.get(index).cloned().flatten());
+        if let Some(Type::Array(element)) = collection
+            && !element.is_dynamic()
+        {
+            self.run(lambda, &[*element], &[]);
+        }
     }
 
     /// The result of the builtin `name` applied to `operands`, reporting it when nothing takes them.

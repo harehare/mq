@@ -5,29 +5,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Certainty, UNAUDITED_BUILTINS};
 use crate::infer::InferenceContext;
+use crate::probe::ELEMENT_BUILTINS;
 
 mod unknown;
-
-/// Builtins that call a function on each element of their first argument, sorted by name.
-const ELEMENT_BUILTINS: &[&str] = &[
-    "all",
-    "any",
-    "count_by",
-    "each",
-    "filter",
-    "find",
-    "flat_map",
-    "group_by",
-    "index_by",
-    "map",
-    "max_by",
-    "min_by",
-    "partition",
-    "reject",
-    "select",
-    "sort_by",
-    "sum_by",
-];
 
 /// Decides which expressions have a type that is known for certain.
 ///
