@@ -3,7 +3,7 @@
 
 def _toml_escape_control_char(code):
   if (code < 32 || code == 127):
-    "\\u00" + slice("0123456789abcdef", code / 16, code / 16 + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
+    "\\u00" + slice("0123456789abcdef", floor(code / 16), floor(code / 16) + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
   else:
     implode([code])
 end
