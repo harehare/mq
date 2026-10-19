@@ -739,27 +739,7 @@ impl InferenceContext {
 
     /// The overload of `name` that fits `arg_types` best.
     fn best_overload(&self, name: &str, arg_types: &[Type]) -> Option<&Type> {
-        let mut best_match: Option<(&Type, u32)> = None;
-        for overload in self.get_builtin_overloads(name)? {
-            let Type::Function(params, _ret) = overload else {
-                continue;
-            };
-            if params.len() != arg_types.len() {
-                continue;
-            }
-            let scores: Option<Vec<u32>> = params
-                .iter()
-                .zip(arg_types.iter())
-                .map(|(param_ty, arg_ty)| param_ty.match_score(arg_ty))
-                .collect();
-            let Some(total_score) = scores.map(|scores| scores.iter().sum::<u32>()) else {
-                continue;
-            };
-            if best_match.is_none_or(|(_, best_score)| total_score > best_score) {
-                best_match = Some((overload, total_score));
-            }
-        }
-        best_match.map(|(overload, _)| overload)
+        best_of(self.get_builtin_overloads(name)?, arg_types)
     }
 
     /// Resolves the best matching overload for a function call.
@@ -772,46 +752,62 @@ impl InferenceContext {
         if name == crate::builtin::PARTIAL {
             return self.partial_signature(arg_types);
         }
-        self.get_builtin_overloads(name)?;
+        let overloads = self.builtins.get(name)?;
 
-        let Some(ty) = self.best_overload(name, arg_types).cloned() else {
+        let Some(ty) = best_of(overloads, arg_types) else {
             let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
             return crate::builtin::fallback_signature(name, &resolved_args)
                 .or_else(|| self.resolve_node_as_text(name, arg_types));
         };
-        let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
-        Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
+        if crate::builtin::refines(name) {
+            let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+            if let Some(refined) = crate::builtin::refine_signature(name, &resolved_args) {
+                return Some(refined);
+            }
+        }
+        Some(instantiate_fresh_in(&mut self.var_ctx, ty))
     }
 
-    /// The signature [`resolve_overload`](Self::resolve_overload) would pick, without
-    /// instantiating its type variables, so that it can be asked of a shared context.
-    /// `None` for `partial`, whose signature depends on the call, and for a name that is not a
-    /// builtin.
+    /// The signature [`resolve_overload`](Self::resolve_overload) would pick for arguments whose
+    /// types are already resolved, without instantiating its type variables, so that it can be
+    /// asked of a shared context. `None` for `partial`, whose signature depends on the call, and
+    /// for a name that is not a builtin.
     pub(crate) fn peek_signature(&self, name: &str, arg_types: &[Type]) -> Option<Type> {
         if name == crate::builtin::PARTIAL {
             return None;
         }
-        self.get_builtin_overloads(name)?;
-        let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
         let Some(ty) = self.best_overload(name, arg_types) else {
-            return crate::builtin::fallback_signature(name, &resolved_args).or_else(|| {
-                let as_text = self.nodes_as_text(&resolved_args)?;
+            self.get_builtin_overloads(name)?;
+            return crate::builtin::fallback_signature(name, arg_types).or_else(|| {
+                let as_text = nodes_as_text_of(arg_types)?;
                 match self.peek_signature(name, &as_text)? {
                     Type::Function(_, ret) if !ret.has_pending_var() => Some(Type::function(arg_types.to_vec(), *ret)),
                     _ => None,
                 }
             });
         };
-        Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| ty.clone()))
+        if crate::builtin::refines(name)
+            && let Some(refined) = crate::builtin::refine_signature(name, arg_types)
+        {
+            return Some(refined);
+        }
+        Some(ty.clone())
     }
 
     /// The arguments with each markdown node read as a string, or `None` when there is no node.
     fn nodes_as_text(&self, arg_types: &[Type]) -> Option<Vec<Type>> {
-        let is_node = |ty: &Type| matches!(self.resolve_type(ty), Type::Node(_));
-        arg_types.iter().any(is_node).then(|| {
+        let resolved: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+        nodes_as_text_of(&resolved).map(|_| {
             arg_types
                 .iter()
-                .map(|ty| if is_node(ty) { Type::String } else { ty.clone() })
+                .zip(&resolved)
+                .map(|(ty, resolved)| {
+                    if matches!(resolved, Type::Node(_)) {
+                        Type::String
+                    } else {
+                        ty.clone()
+                    }
+                })
                 .collect()
         })
     }
@@ -854,20 +850,7 @@ impl InferenceContext {
     /// Instantiates fresh type variables in a type to avoid contamination
     /// when the same overload or user-defined function is used at multiple call sites.
     pub fn instantiate_fresh(&mut self, ty: &Type) -> Type {
-        let free_vars = ty.free_vars();
-        if free_vars.is_empty() {
-            return ty.clone();
-        }
-        // Deduplicate: same var appearing multiple times should map to the same fresh var
-        let mut seen = rustc_hash::FxHashSet::default();
-        let mut subst = Substitution::empty();
-        for var in free_vars {
-            if seen.insert(var) {
-                let fresh = self.fresh_var();
-                subst.insert(var, Type::Var(fresh));
-            }
-        }
-        ty.apply_subst(&subst)
+        instantiate_fresh_in(&mut self.var_ctx, ty)
     }
 
     /// Generates a fresh type variable
@@ -1044,6 +1027,67 @@ impl InferenceContext {
 
         result
     }
+}
+
+/// The overload among `overloads` that fits `arg_types` best.
+fn best_of<'a>(overloads: &'a [Type], arg_types: &[Type]) -> Option<&'a Type> {
+    let mut best_match: Option<(&Type, u32)> = None;
+    for overload in overloads {
+        let Type::Function(params, _ret) = overload else {
+            continue;
+        };
+        if params.len() != arg_types.len() {
+            continue;
+        }
+        let mut total_score = 0u32;
+        let mut fits = true;
+        for (param_ty, arg_ty) in params.iter().zip(arg_types.iter()) {
+            match param_ty.match_score(arg_ty) {
+                Some(score) => total_score += score,
+                None => {
+                    fits = false;
+                    break;
+                }
+            }
+        }
+        if fits && best_match.is_none_or(|(_, best_score)| total_score > best_score) {
+            best_match = Some((overload, total_score));
+        }
+    }
+    best_match.map(|(overload, _)| overload)
+}
+
+/// The resolved arguments with each markdown node read as a string, or `None` when there is no node.
+fn nodes_as_text_of(arg_types: &[Type]) -> Option<Vec<Type>> {
+    arg_types.iter().any(|ty| matches!(ty, Type::Node(_))).then(|| {
+        arg_types
+            .iter()
+            .map(|ty| {
+                if matches!(ty, Type::Node(_)) {
+                    Type::String
+                } else {
+                    ty.clone()
+                }
+            })
+            .collect()
+    })
+}
+
+/// `ty` with fresh type variables in place of its free ones.
+fn instantiate_fresh_in(var_ctx: &mut TypeVarContext, ty: &Type) -> Type {
+    let free_vars = ty.free_vars();
+    if free_vars.is_empty() {
+        return ty.clone();
+    }
+    // Deduplicate: same var appearing multiple times should map to the same fresh var
+    let mut seen = rustc_hash::FxHashSet::default();
+    let mut subst = Substitution::empty();
+    for var in free_vars {
+        if seen.insert(var) {
+            subst.insert(var, Type::Var(var_ctx.fresh()));
+        }
+    }
+    ty.apply_subst(&subst)
 }
 
 impl Default for InferenceContext {

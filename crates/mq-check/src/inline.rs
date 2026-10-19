@@ -77,6 +77,12 @@ pub(crate) fn check_inlined_calls(
             Some((call, args, lambdas))
         })
         .collect();
+    // A stage that is threaded twice makes the same call twice
+    let mut seen = FxHashSet::default();
+    let settled: Vec<SettledCall> = settled
+        .into_iter()
+        .filter(|(call, args, lambdas)| seen.insert((call.def_id, call.range, args.clone(), lambdas.clone())))
+        .collect();
     // A call with settled arguments is checked on its own, wherever it is
     let own_calls: FxHashSet<mq_lang::Range> = settled.iter().filter_map(|(call, _, _)| call.range).collect();
     let mut failures = Vec::new();

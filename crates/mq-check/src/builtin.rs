@@ -14,7 +14,7 @@ pub(crate) const PARTIAL: &str = "partial";
 
 mod refine;
 
-pub(crate) use refine::{fallback_signature, refine_signature};
+pub(crate) use refine::{fallback_signature, refine_signature, refines};
 
 /// Registers all builtin function and operator type signatures.
 pub fn register_all(ctx: &mut InferenceContext) {

@@ -116,7 +116,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // proper `Function(...)` type is established.  This severs the chain between the
     // call-site argument type and the lambda's parameter type variable, preventing
     // call-site type errors from being detected (e.g. `f("str")` not flagged as error).
-    let mut sorted_pass1 = cats.pass1_symbols.clone();
+    let mut sorted_pass1 = cats.pass1_symbols;
     sorted_pass1.sort_by_key(|(_, kind)| match kind {
         SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::Symbol | SymbolKind::None => 0u8,
         SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => 1,
@@ -124,8 +124,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
         SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
         _ => 4,
     });
-    for (symbol_id, kind) in &sorted_pass1 {
-        generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
+    for (symbol_id, kind) in sorted_pass1 {
+        generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
     }
 
     // Pass 2: Set up piped inputs for root-level symbols.
@@ -151,8 +151,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // Refs and Calls in Pass 3 resolve against the (potentially stale) type.
     // e.g., `var x = 10 | x = "hello" | upcase(x)`: the Assign updates
     // x's type to String before upcase(x) resolves its argument type.
-    for (symbol_id, kind) in &cats.assign_symbols {
-        generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
+    for (symbol_id, kind) in cats.assign_symbols {
+        generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
     }
 
     // Pass 3: Process operators, calls, etc.

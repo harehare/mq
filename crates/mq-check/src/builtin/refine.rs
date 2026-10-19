@@ -20,6 +20,53 @@ fn is_searchable(container: &Type) -> bool {
     )
 }
 
+/// Setters and text transforms, which change a node's contents but keep its kind.
+const NODE_KEEPING: &[&str] = &[
+    "set_check",
+    "set_list_ordered",
+    "set_code_block_lang",
+    "set_ref",
+    "set_attr",
+    "set_children",
+    "downcase",
+    "upcase",
+    "ascii_downcase",
+    "ascii_upcase",
+    "trim",
+    "ltrim",
+    "rtrim",
+    "base64",
+    "base64d",
+    "base64url",
+    "base64urld",
+    "url_encode",
+    "url_decode",
+    "html_escape",
+    "html_unescape",
+    "strip_tags",
+    "sanitize_html",
+];
+
+/// Whether [`refine_signature`] has a rule for `name`, so the arguments of any other builtin need
+/// not be resolved for it.
+pub(crate) fn refines(name: &str) -> bool {
+    matches!(
+        name,
+        "flatten"
+            | "has"
+            | "contains"
+            | "in"
+            | "index"
+            | "rindex"
+            | "bsearch"
+            | "set"
+            | "coalesce"
+            | "??"
+            | "+"
+            | "add"
+    ) || NODE_KEEPING.contains(&name)
+}
+
 /// The signature of `name` specialised to the already resolved `args`, for builtins whose result
 /// type depends on the structure of an argument rather than on a type variable.
 pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
@@ -27,33 +74,7 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
         ("flatten", [arg @ (Type::Array(_) | Type::Tuple(_))]) => {
             Some(Type::function(vec![arg.clone()], Type::array(flatten_leaf(arg))))
         }
-        // Setters and text transforms change a node's contents but keep its kind.
-        (
-            "set_check"
-            | "set_list_ordered"
-            | "set_code_block_lang"
-            | "set_ref"
-            | "set_attr"
-            | "set_children"
-            | "downcase"
-            | "upcase"
-            | "ascii_downcase"
-            | "ascii_upcase"
-            | "trim"
-            | "ltrim"
-            | "rtrim"
-            | "base64"
-            | "base64d"
-            | "base64url"
-            | "base64urld"
-            | "url_encode"
-            | "url_decode"
-            | "html_escape"
-            | "html_unescape"
-            | "strip_tags"
-            | "sanitize_html",
-            [node @ Type::Node(_), rest @ ..],
-        ) => Some(Type::function(
+        (name, [node @ Type::Node(_), rest @ ..]) if NODE_KEEPING.contains(&name) => Some(Type::function(
             std::iter::once(node.clone()).chain(rest.iter().cloned()).collect(),
             node.clone(),
         )),
@@ -133,5 +154,40 @@ fn flatten_leaf(ty: &Type) -> Type {
         Type::Tuple(elems) => Type::union(elems.iter().map(flatten_leaf).collect()),
         Type::Union(members) => Type::union(members.iter().map(flatten_leaf).collect()),
         other => other.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The names that the rules of `refine_signature` match on
+    fn rule_names() -> Vec<String> {
+        let source = include_str!("refine.rs");
+        let start = source.find("pub(crate) fn refine_signature").unwrap();
+        let end = source
+            .find("/// The signature of `name` for arguments that no overload takes")
+            .unwrap();
+        source[start..end]
+            .lines()
+            .filter(|line| line.trim_start().starts_with("(\""))
+            .flat_map(|line| {
+                line.split('"')
+                    .skip(1)
+                    .step_by(2)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|name| !name.contains(' '))
+            .collect()
+    }
+
+    #[test]
+    fn test_refines_lists_every_rule() {
+        let names = rule_names();
+        assert!(names.len() >= 10, "{names:?}");
+        for name in names {
+            assert!(refines(&name), "refines() lacks `{name}`");
+        }
     }
 }
