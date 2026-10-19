@@ -21,7 +21,7 @@ caseless = {workspace = true}
 ciborium = {workspace = true}
 csv = {workspace = true}
 encoding_rs = {workspace = true}
-html-escape = "0.2"
+html-escape = "0.3"
 md5 = {workspace = true}
 sha2 = {workspace = true}
 chrono = {workspace = true}
