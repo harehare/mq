@@ -1,5 +1,5 @@
 //! `mq compile` and running `.mqc` programs.
-use super::{Cli, InputArgs, InputFormat, ProgramArgs};
+use super::{Cli, InputArgs, InputFormat, ProgramArgs, ReadFailure};
 use clap::ValueEnum;
 use miette::{IntoDiagnostic, WrapErr, miette};
 use std::fs;
@@ -117,11 +117,11 @@ impl Cli {
         // file into memory before Mqc::try_from checks its size defeats that limit.
         let file = fs::File::open(path)
             .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
+            .wrap_err_with(|| ReadFailure(path.to_path_buf()))?;
         let size = file
             .metadata()
             .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read {}", path.display()))?
+            .wrap_err_with(|| ReadFailure(path.to_path_buf()))?
             .len();
         if size > mq_lang::mqc::MAX_FILE_SIZE {
             return Err(miette::Report::new(mq_lang::MqcError::TooLarge {
@@ -133,7 +133,7 @@ impl Cli {
         file.take(mq_lang::mqc::MAX_FILE_SIZE + 1)
             .read_to_end(&mut bytes)
             .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
+            .wrap_err_with(|| ReadFailure(path.to_path_buf()))?;
         let modules = &self.input.program;
         if modules.module_names.is_some()
             || modules.import_module_names.is_some()

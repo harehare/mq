@@ -2373,6 +2373,7 @@ impl Cli {
         }
 
         if let Some(input) = grep_input {
+            self.record_exit_status(runtime_values.values());
             let (before, after) = self.output.context_counts();
             let handle = OutputSink::open(
                 &self.output.output_file,
@@ -2799,6 +2800,7 @@ impl Cli {
             .map_err(|error| *error)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
+        self.record_exit_status(runtime_values.values());
         Ok(self.output.paginate(runtime_values.compact()).len())
     }
 
@@ -3309,6 +3311,18 @@ impl Cli {
         Ok(buf)
     }
 
+    /// Records the best rank in `values` for --exit-status.
+    fn record_exit_status(&self, values: &[mq_lang::RuntimeValue]) {
+        if self.output.exit_status {
+            let rank = values
+                .iter()
+                .map(Self::exit_status_rank)
+                .max()
+                .unwrap_or(RANK_NO_RESULT);
+            EXIT_STATUS_RANK.fetch_max(rank, Ordering::Relaxed);
+        }
+    }
+
     fn print(&self, runtime_values: mq_lang::RuntimeValues, mdx: bool) -> miette::Result<()> {
         let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
             runtime_values
@@ -3320,15 +3334,7 @@ impl Cli {
         });
         let runtime_values: &[mq_lang::RuntimeValue] = stripped_values.as_deref().unwrap_or(runtime_values.values());
 
-        // Track truthy output for --exit-status.
-        if self.output.exit_status {
-            let rank = runtime_values
-                .iter()
-                .map(Self::exit_status_rank)
-                .max()
-                .unwrap_or(RANK_NO_RESULT);
-            EXIT_STATUS_RANK.fetch_max(rank, Ordering::Relaxed);
-        }
+        self.record_exit_status(runtime_values);
 
         if self.quiet {
             return Ok(());
