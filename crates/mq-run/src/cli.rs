@@ -16,17 +16,37 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
 use which::which;
 
-// Tracks whether any non-falsy value has been printed during a run.
-// Used by --exit-status / -e to decide the process exit code. A plain
-// AtomicBool (rather than a thread_local) is required because batch
-// processing can fan out across rayon worker threads.
-static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
+// The best result seen during a run, used by --exit-status / -e to decide the process exit
+// code. A plain atomic (rather than a thread_local) is required because batch processing can
+// fan out across rayon worker threads.
+static EXIT_STATUS_RANK: AtomicU8 = AtomicU8::new(RANK_NO_RESULT);
+
+const RANK_NO_RESULT: u8 = 0;
+const RANK_FALSY: u8 = 1;
+const RANK_TRUTHY: u8 = 2;
+
+/// Context for an input or query file that could not be read.
+#[derive(Debug)]
+struct ReadFailure(PathBuf);
+
+impl std::fmt::Display for ReadFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "failed to read `{}`", self.0.display())
+    }
+}
+
+/// Exit codes under `--exit-status`, following jq.
+const EXIT_FALSY: i32 = 1;
+const EXIT_IO_ERROR: i32 = 2;
+const EXIT_SYNTAX_ERROR: i32 = 3;
+const EXIT_NO_RESULT: i32 = 4;
+const EXIT_RUNTIME_ERROR: i32 = 5;
 
 // Tracks whether --diff found any changed input, for the exit-code-1 CI check below.
 static HAD_DIFF: AtomicBool = AtomicBool::new(false);
@@ -787,8 +807,8 @@ struct OutputArgs {
     #[clap(long, value_name = "NUM", conflicts_with = "quiet")]
     context: Option<usize>,
 
-    /// Exit with code 1 if the last output value is false, null, or the output
-    /// is empty. Mirrors jq's --exit-status / -e flag.
+    /// Set the exit code from the result, like jq's -e: 0 truthy, 1 false/null,
+    /// 4 no result. Errors exit 2 (unreadable file), 3 (syntax) or 5 (runtime).
     #[arg(short = 'e', long = "exit-status", default_value_t = false)]
     exit_status: bool,
 
@@ -1693,6 +1713,29 @@ impl Cli {
         err.downcast_ref::<mq_lang::Error>().and_then(mq_lang::Error::exit_code)
     }
 
+    /// The process exit code for an uncaught error. `halt(code)` always wins. Otherwise it is 1,
+    /// or with `--exit-status` the jq codes: 2 for an I/O error, 3 for a syntax or module error
+    /// and 5 for a runtime error.
+    pub fn error_exit_code(&self, err: &miette::Report) -> i32 {
+        if let Some(code) = Self::halt_exit_code(err) {
+            return code;
+        }
+        if !self.output.exit_status {
+            return 1;
+        }
+        if err.downcast_ref::<ReadFailure>().is_some() {
+            return EXIT_IO_ERROR;
+        }
+        if err
+            .downcast_ref::<mq_lang::Error>()
+            .is_some_and(mq_lang::Error::is_compile_error)
+        {
+            EXIT_SYNTAX_ERROR
+        } else {
+            EXIT_RUNTIME_ERROR
+        }
+    }
+
     /// Prints an uncaught error to stderr per `--error-format`.
     pub fn report_error(&self, err: &miette::Report) {
         match self.error_format {
@@ -1923,10 +1966,14 @@ impl Cli {
         // produced. Mirrors jq's behaviour: false and null are falsy;
         // everything else (including empty string, 0, [], {}) is truthy.
         if self.output.exit_status {
-            let had_truthy = HAD_TRUTHY_OUTPUT.load(Ordering::Relaxed);
-            if !had_truthy {
+            let code = match EXIT_STATUS_RANK.load(Ordering::Relaxed) {
+                RANK_TRUTHY => None,
+                RANK_FALSY => Some(EXIT_FALSY),
+                _ => Some(EXIT_NO_RESULT),
+            };
+            if let Some(code) = code {
                 result?;
-                std::process::exit(1);
+                std::process::exit(code);
             }
         }
 
@@ -2106,7 +2153,7 @@ impl Cli {
                 let path = PathBuf::from_str(q).into_diagnostic()?;
                 fs::read_to_string(&path)
                     .into_diagnostic()
-                    .wrap_err_with(|| format!("failed to read `{}`", path.display()))?
+                    .wrap_err_with(|| ReadFailure(path.clone()))?
             }
             Some(q) => q.clone(),
             None => return Err(miette!("Query is required")),
@@ -2867,7 +2914,7 @@ impl Cli {
                 }
                 let file_handle = fs::File::open(file)
                     .into_diagnostic()
-                    .wrap_err_with(|| format!("failed to read `{}`", file.display()))?;
+                    .wrap_err_with(|| ReadFailure(file.clone()))?;
                 let reader = io::BufReader::new(file_handle);
                 for line_result in reader.lines() {
                     let line = line_result.into_diagnostic()?;
@@ -2973,8 +3020,7 @@ impl Cli {
                     } else {
                         fs::read_to_string(file).map(ContentData::from)
                     };
-                    read.into_diagnostic()
-                        .wrap_err_with(|| format!("failed to read `{}`", file.display()))?
+                    read.into_diagnostic().wrap_err_with(|| ReadFailure(file.clone()))?
                 };
                 Ok((Some(file.clone()), content))
             })
@@ -2984,7 +3030,7 @@ impl Cli {
     fn read_gzip_file(&self, file: &Path) -> miette::Result<ContentData> {
         let raw = fs::read(file)
             .into_diagnostic()
-            .wrap_err_with(|| format!("failed to read `{}`", file.display()))?;
+            .wrap_err_with(|| ReadFailure(file.to_path_buf()))?;
         let mut decompressed = Vec::new();
         flate2::read::GzDecoder::new(&raw[..])
             .read_to_end(&mut decompressed)
@@ -3106,6 +3152,16 @@ impl Cli {
     /// the common "no match" case.
     fn is_falsy(value: &mq_lang::RuntimeValue) -> bool {
         matches!(value, mq_lang::RuntimeValue::Boolean(false)) || value.is_empty()
+    }
+
+    /// Ranks a value for --exit-status. An empty Markdown value is what `select()` leaves for
+    /// a non-matching node, so it counts as no result rather than a falsy one.
+    fn exit_status_rank(value: &mq_lang::RuntimeValue) -> u8 {
+        match value {
+            mq_lang::RuntimeValue::Markdown(..) if value.is_empty() => RANK_NO_RESULT,
+            _ if Self::is_falsy(value) => RANK_FALSY,
+            _ => RANK_TRUTHY,
+        }
     }
 
     /// Converts a `RuntimeValue` into a list of Markdown nodes.
@@ -3265,8 +3321,13 @@ impl Cli {
         let runtime_values: &[mq_lang::RuntimeValue] = stripped_values.as_deref().unwrap_or(runtime_values.values());
 
         // Track truthy output for --exit-status.
-        if self.output.exit_status && runtime_values.iter().any(|v| !Self::is_falsy(v)) {
-            HAD_TRUTHY_OUTPUT.store(true, Ordering::Relaxed);
+        if self.output.exit_status {
+            let rank = runtime_values
+                .iter()
+                .map(Self::exit_status_rank)
+                .max()
+                .unwrap_or(RANK_NO_RESULT);
+            EXIT_STATUS_RANK.fetch_max(rank, Ordering::Relaxed);
         }
 
         if self.quiet {

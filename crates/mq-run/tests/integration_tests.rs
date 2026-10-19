@@ -1382,10 +1382,16 @@ fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
 // value instead of dropping them, so --exit-status must treat that empty
 // value as falsy, not just `None`/`false`.
 #[case::truthy_match(vec!["--unbuffered", "--exit-status", "select(.h1)"], "# title\n\nbody", 0)]
-#[case::no_match_is_falsy(vec!["--unbuffered", "-e", "select(.h2)"], "# title\n\nbody", 1)]
+#[case::no_match_is_no_result(vec!["--unbuffered", "-e", "select(.h2)"], "# title\n\nbody", 4)]
 #[case::bare_false(vec!["--unbuffered", "-I", "null", "-e", "false"], "", 1)]
 #[case::bare_null(vec!["--unbuffered", "-I", "null", "-e", "None"], "", 1)]
 #[case::bare_truthy_number(vec!["--unbuffered", "-I", "null", "-e", "1"], "", 0)]
+#[case::runtime_error(vec!["--unbuffered", "-I", "null", "-e", "error(\"x\")"], "", 5)]
+#[case::syntax_error(vec!["--unbuffered", "-I", "null", "-e", "bad("], "", 3)]
+#[case::unreadable_file(vec!["--unbuffered", "-e", ".h1", "/nonexistent/input.md"], "", 2)]
+#[case::halt_wins(vec!["--unbuffered", "-I", "null", "-e", "halt(7)"], "", 7)]
+#[case::runtime_error_without_exit_status(vec!["--unbuffered", "-I", "null", "error(\"x\")"], "", 1)]
+#[case::unreadable_file_without_exit_status(vec!["--unbuffered", ".h1", "/nonexistent/input.md"], "", 1)]
 fn test_exit_status(
     #[case] args: Vec<&str>,
     #[case] input: &str,
@@ -1408,7 +1414,7 @@ fn test_exit_status(
 // across rayon worker threads. --exit-status must aggregate truthiness
 // across all of them, not just the main thread.
 #[case::match_found(true, 0)]
-#[case::no_match(false, 1)]
+#[case::no_match(false, 4)]
 fn test_exit_status_parallel_batch(
     #[case] has_match: bool,
     #[case] expected_code: i32,

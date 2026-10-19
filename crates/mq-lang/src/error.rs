@@ -81,6 +81,11 @@ impl Error {
         }
     }
 
+    /// Whether the error came from parsing or loading the program, before it ran.
+    pub fn is_compile_error(&self) -> bool {
+        matches!(self.cause, InnerError::Syntax(_) | InnerError::Module(_))
+    }
+
     /// Builds an error, resolving module source code through `module_loader` for diagnostics.
     #[cold]
     pub fn from_error(

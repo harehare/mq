@@ -88,3 +88,24 @@ body
 ```
 
 `--no-frontmatter` applies to Markdown and MDX input.
+
+## Exit codes
+
+By default `mq` exits with 0 on success and 1 on any error. `halt(code)` exits with `code`.
+
+With `-e` / `--exit-status` the exit code follows jq:
+
+| Code | Meaning |
+| ---- | ------- |
+| 0 | A truthy value was produced |
+| 1 | The only values produced were falsy (`false`, `None`, empty strings and collections) |
+| 2 | An input or query file could not be read |
+| 3 | The query has a syntax or module error |
+| 4 | No result, such as `select()` matching nothing |
+| 5 | A runtime error |
+
+Invalid command-line arguments exit with 2 regardless of `-e`.
+
+```sh
+mq -e 'select(.h2)' doc.md || echo "exit: $?"
+```
