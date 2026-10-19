@@ -343,8 +343,9 @@ impl Inliner<'_> {
             if UNAUDITED_BUILTINS.binary_search(&name).is_ok() {
                 return None;
             }
-            self.run_on_elements(id, name, &operands, piped);
-            return self.apply(id, name, &operands, piped);
+            let result = self.run_on_elements(id, name, &operands, piped);
+            let applied = self.apply(id, name, &operands, piped);
+            return result.or(applied);
         }
         // A function of the program is followed when it gets all its arguments
         let lambdas: Vec<Option<SymbolId>> = get_children(self.children, id)
@@ -374,9 +375,15 @@ impl Inliner<'_> {
     }
 
     /// Runs the lambda that a builtin calls on each element of a collection of known type.
-    fn run_on_elements(&mut self, id: SymbolId, name: &str, operands: &[Option<Type>], piped: Option<&Type>) {
+    fn run_on_elements(
+        &mut self,
+        id: SymbolId,
+        name: &str,
+        operands: &[Option<Type>],
+        piped: Option<&Type>,
+    ) -> Option<Type> {
         if ELEMENT_BUILTINS.binary_search(&name).is_err() {
-            return;
+            return None;
         }
         let hir = self.hir;
         let written: Vec<SymbolId> = get_children(self.children, id)
@@ -388,16 +395,23 @@ impl Inliner<'_> {
             .iter()
             .filter(|&&c| hir.symbol(c).is_some_and(|s| matches!(s.kind, SymbolKind::Function(_))));
         let (Some(&lambda), None) = (lambdas.next(), lambdas.next()) else {
-            return;
+            return None;
         };
         let collection = written
             .iter()
             .position(|&c| c != lambda)
             .map_or(piped.cloned(), |index| operands.get(index).cloned().flatten());
-        if let Some(Type::Array(element)) = collection
-            && !element.is_dynamic()
-        {
-            self.run(lambda, &[*element], &[]);
+        let Some(Type::Array(element)) = collection.clone() else {
+            return None;
+        };
+        if element.is_dynamic() {
+            return None;
+        }
+        let value = self.run(lambda, &[*element], &[]);
+        match name {
+            "map" => value.map(Type::array),
+            "filter" | "reject" | "select" | "sort_by" => collection,
+            _ => None,
         }
     }
 

@@ -55,6 +55,8 @@ fn certainties(code: &str) -> Vec<Certainty> {
 #[case::lambda_with_an_operator(r#"def apply(f, v): f(v); | apply(fn(x): x - 1;, [1])"#)]
 #[case::lambda_of_a_builtin_over_an_argument(r#"def f(xs): map(xs, fn(s): abs(s);); | f(["a"])"#)]
 #[case::lambda_of_a_piped_builtin(r#"def f(xs): xs | map(fn(s): abs(s);); | f(["a"])"#)]
+#[case::lambda_over_the_result_of_a_map(r#"def f(xs): xs | map(fn(s): to_string(s);) | map(fn(t): abs(t);); | f([1])"#)]
+#[case::lambda_over_a_filtered_argument(r#"def f(xs): xs | filter(fn(s): s > 0;) | map(fn(t): upcase(t);); | f([1])"#)]
 #[case::argument_beside_a_default(r#"def f(x, y = 1): abs(x) + y; | f("a")"#)]
 #[case::argument_and_a_given_default(r#"def f(x, y = 1): abs(x) + y; | f("a", 2)"#)]
 #[case::result_of_a_builtin_in_the_body(r#"def f(x): let y = abs(x) | y | upcase(); | f(1)"#)]

@@ -326,6 +326,12 @@ impl Gen {
             let body = self.expr(ret, 3);
             self.vars.clear();
             let arr = self.expr(Ty::Arr, 1);
+            if self.rng.chance(30) {
+                self.vars = vec![("z".to_string(), Ty::Num)];
+                let next = self.expr(Ty::Num, 2);
+                self.vars.clear();
+                return format!("def f(xs): xs | map(fn(y): (y + 1);) | map(fn(z): {next};);\n| f({arr})");
+            }
             let builtin = self.rng.pick(&["map", "filter", "any", "all"]);
             let body = if builtin == "map" {
                 body
