@@ -260,6 +260,15 @@ pub struct CrossArmNarrowing {
     pub branch_id: SymbolId,
 }
 
+/// Where an error found by running a function body on the arguments of a call arose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InlinedError {
+    /// In the body itself
+    Body,
+    /// In a lambda run on the elements of a collection, which may have none
+    ElementCallback,
+}
+
 /// Inference context maintains state during type inference
 pub struct InferenceContext {
     /// Type variable context for generating fresh variables
@@ -293,7 +302,7 @@ pub struct InferenceContext {
     deferred_user_calls: Vec<DeferredUserCall>,
     /// The overload errors found by running a function body on the arguments of a call, by range
     /// and message
-    inlined_errors: rustc_hash::FxHashSet<(Option<mq_lang::Range>, String)>,
+    inlined_errors: FxHashMap<(Option<mq_lang::Range>, String), InlinedError>,
     /// Deferred inner calls to function parameters for higher-order function checking
     deferred_parameter_calls: Vec<DeferredParameterCall>,
     /// Deferred record field accesses for post-unification resolution
@@ -348,7 +357,7 @@ impl InferenceContext {
             piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
-            inlined_errors: rustc_hash::FxHashSet::default(),
+            inlined_errors: FxHashMap::default(),
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
             written_record_fields: FxHashMap::default(),
@@ -711,18 +720,38 @@ impl InferenceContext {
 
     /// Reports a "no matching overload" error found by running a function body on the arguments
     /// of the call at `range`.
-    pub(crate) fn report_inlined_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
-        self.inlined_errors.insert((
+    pub(crate) fn report_inlined_overload(
+        &mut self,
+        op_name: &str,
+        arg_tys: &[Type],
+        range: Option<mq_lang::Range>,
+        in_element_callback: bool,
+    ) {
+        let key = (
             range,
             format!("{} with arguments ({})", op_name, format_type_list(arg_tys)),
-        ));
+        );
+        let found = if in_element_callback {
+            InlinedError::ElementCallback
+        } else {
+            InlinedError::Body
+        };
+        // Another call may reach the same operation outside a callback
+        let entry = self.inlined_errors.entry(key).or_insert(found);
+        if found == InlinedError::Body {
+            *entry = found;
+        }
         self.report_no_matching_overload(op_name, arg_tys, range);
     }
 
-    /// Whether the error was found by running a function body on the arguments of a call.
-    pub(crate) fn is_inlined_error(&self, error: &TypeError) -> bool {
-        matches!(error, TypeError::UnificationError { left, location, .. }
-            if self.inlined_errors.contains(&(*location, left.clone())))
+    /// How the error was found by running a function body on the arguments of a call, if it was.
+    pub(crate) fn inlined_error(&self, error: &TypeError) -> Option<InlinedError> {
+        match error {
+            TypeError::UnificationError { left, location, .. } => {
+                self.inlined_errors.get(&(*location, left.clone())).copied()
+            }
+            _ => None,
+        }
     }
 
     /// Reports a "no matching overload" error with formatted argument types.

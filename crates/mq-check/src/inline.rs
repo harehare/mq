@@ -32,6 +32,8 @@ struct Failure {
     name: SmolStr,
     args: Vec<Type>,
     range: Option<mq_lang::Range>,
+    /// Raised in a lambda run on the elements of a collection, which may have none
+    in_element_callback: bool,
 }
 
 /// A call with the types of its arguments, and the lambda written for each argument that is one.
@@ -96,6 +98,7 @@ pub(crate) fn check_inlined_calls(
             stack: Vec::new(),
             lambdas: FxHashMap::default(),
             failures: Vec::new(),
+            element_depth: 0,
             ran: false,
         };
         inliner.run(call.def_id, args, lambdas);
@@ -107,7 +110,7 @@ pub(crate) fn check_inlined_calls(
             continue;
         }
         let range = failure.range.filter(is_module_range).or(call_range);
-        ctx.report_inlined_overload(&failure.name, &failure.args, range);
+        ctx.report_inlined_overload(&failure.name, &failure.args, range, failure.in_element_callback);
     }
 }
 
@@ -141,6 +144,7 @@ pub(crate) fn doomed_operations(
             stack: Vec::new(),
             lambdas: FxHashMap::default(),
             failures: Vec::new(),
+            element_depth: 0,
             ran: false,
         };
         inliner.run(def_id, &args, &[]);
@@ -172,6 +176,8 @@ struct Inliner<'a> {
     /// The function passed for each parameter that gets a lambda
     lambdas: FxHashMap<SymbolId, SymbolId>,
     failures: Vec<Failure>,
+    /// How many lambdas run on the elements of a collection enclose the operation being run
+    element_depth: usize,
     /// Whether the body of the function asked for was run
     ran: bool,
 }
@@ -413,10 +419,12 @@ impl Inliner<'_> {
         if element.is_dynamic() {
             return None;
         }
+        self.element_depth += 1;
         let value = self.run(lambda, &[*element], &[]);
+        self.element_depth -= 1;
         match name {
             "map" => value.map(Type::array),
-            "filter" | "reject" | "select" | "sort_by" => collection,
+            "filter" | "reject" | "sort_by" => collection,
             _ => None,
         }
     }
@@ -462,6 +470,7 @@ impl Inliner<'_> {
             name: SmolStr::new(name),
             args: reported,
             range: self.hir.symbol(id).and_then(|s| symbol_range(self.hir, s)),
+            in_element_callback: self.element_depth > 0,
         });
         None
     }

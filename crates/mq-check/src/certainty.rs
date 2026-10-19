@@ -220,7 +220,7 @@ impl Classifier<'_> {
             }
             _ => None,
         };
-        let inlined = ctx.is_inlined_error(error);
+        let inlined = ctx.inlined_error(error);
         self.prover
             .get_or_insert_with(|| Prover::new(hir, ctx, declared_input))
             .classify_at(hir, at_range, operand_mismatch, no_overload, inlined)

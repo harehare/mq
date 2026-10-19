@@ -72,6 +72,8 @@ fn test_error_on_known_types_is_definite(#[case] code: &str) {
 #[case::try_body(r#"try: "a" - 1 catch: 0"#)]
 #[case::narrowed_variable(r#"let s = "a" | if (len(s) > 0): s - 1 else: 0"#)]
 #[case::variable_that_changes_type(r#"var s = "a" | s = 1 | upcase(s)"#)]
+#[case::lambda_over_an_array_that_may_be_empty(r#"def f(xs): map(xs, fn(s): abs(s);); | f(slice(["a"], 0, 0))"#)]
+#[case::lambda_over_an_array_piped_from_a_call(r#"def f(xs): map(xs, fn(s): abs(s);); | slice(["a"], 0, 0) | f()"#)]
 #[case::map_with_unknown_body(r#"var k = 1 | k = "a" | abs(map([1, 2], fn(x): x + k;))"#)]
 #[case::narrowed_parameter(r#"def f(x): if (is_string(x)): x - 1 else: 0; | f("a")"#)]
 #[case::argument_that_changes_type(r#"def f(x): abs(x); | var s = 1 | s = "a" | f(s)"#)]

@@ -55,7 +55,6 @@ pub(crate) const ELEMENT_BUILTINS: &[&str] = &[
     "min_by",
     "partition",
     "reject",
-    "select",
     "sort_by",
     "sum_by",
 ];

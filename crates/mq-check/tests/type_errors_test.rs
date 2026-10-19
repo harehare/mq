@@ -964,6 +964,7 @@ fn test_runtime_failure_is_a_type_error(#[case] code: &str) {
 #[case::lambda_without_params(r#"def apply(f, n): f(n); | apply(fn: self + 1, 5)"#)]
 #[case::lambda_of_a_builtin_that_takes_the_elements(r#"def f(xs): map(xs, fn(s): abs(s);); | f([1])"#)]
 #[case::lambda_of_a_builtin_over_no_elements(r#"def f(xs): map(xs, fn(s): abs(s);); | f([])"#)]
+#[case::select_condition_is_not_called(r#"def f(xs): select(xs, fn(x): abs(x);); | f(["a"])"#)]
 #[case::lambda_over_the_result_of_a_map_that_takes_it(
     r#"def f(xs): xs | map(fn(s): to_string(s);) | map(fn(t): upcase(t);); | f([1])"#
 )]

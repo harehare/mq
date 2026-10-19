@@ -4,7 +4,8 @@ use mq_hir::{Hir, SymbolId, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{Certainty, UNAUDITED_BUILTINS};
-use crate::infer::InferenceContext;
+use crate::constraint::ChildrenIndex;
+use crate::infer::{InferenceContext, InlinedError};
 use crate::probe::ELEMENT_BUILTINS;
 
 mod unknown;
@@ -140,24 +141,27 @@ impl<'a> Prover<'a> {
     /// the operation fails whatever its operands of unknown type are.
     ///
     /// An `inlined` error was found by running the body of the function on the arguments of a call,
-    /// so it is definite when the arguments are exact, whatever the rest of the body is.
+    /// so it is definite when the arguments are exact, whatever the rest of the body is. One found
+    /// in a lambda run on elements also needs the arguments to have some.
     pub(super) fn classify_at(
         &mut self,
         hir: &Hir,
         at_range: &[SymbolId],
         operand_mismatch: bool,
         no_overload: Option<&str>,
-        inlined: bool,
+        inlined: Option<InlinedError>,
     ) -> Certainty {
         if at_range.is_empty() {
             return Certainty::Uncertain;
         }
 
         for &root in at_range {
-            if self.operands_are_certain(hir, root, operand_mismatch) {
+            // Exact operands do not tell whether a collection has elements
+            let through_elements = inlined == Some(InlinedError::ElementCallback);
+            if !through_elements && self.operands_are_certain(hir, root, operand_mismatch) {
                 continue;
             }
-            if inlined && self.arguments_are_exact(hir, root) {
+            if inlined.is_some() && self.arguments_are_exact(hir, root, through_elements) {
                 continue;
             }
             if no_overload.is_some_and(|name| self.rejects_whatever(hir, root, name) || self.is_doomed(hir, root, name))
@@ -169,8 +173,9 @@ impl<'a> Prover<'a> {
         Certainty::Definite
     }
 
-    /// Whether the call of a function of the program is given exact arguments.
-    fn arguments_are_exact(&mut self, hir: &Hir, root: SymbolId) -> bool {
+    /// Whether the call of a function of the program is given exact arguments. With `has_elements`,
+    /// an array among them must have an element.
+    fn arguments_are_exact(&mut self, hir: &Hir, root: SymbolId, has_elements: bool) -> bool {
         let Some(symbol) = hir.symbol(root) else {
             return false;
         };
@@ -181,6 +186,11 @@ impl<'a> Prover<'a> {
                 .and_then(|def| hir.symbol(def))
                 .is_some_and(|def| matches!(def.kind, SymbolKind::Function(_)) && !hir.is_builtin_symbol(def))
             && self.input_is_exact(hir, root)
+            && (!has_elements
+                || self
+                    .previous
+                    .get(&root)
+                    .is_none_or(|&before| Self::is_scalar_or_nonempty_array(hir, &self.children, before)))
             && self
                 .children
                 .get(&root)
@@ -188,7 +198,30 @@ impl<'a> Prover<'a> {
                 .unwrap_or_default()
                 .into_iter()
                 .filter(|&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
-                .all(|argument| self.is_exact(hir, argument))
+                .all(|argument| {
+                    self.is_exact(hir, argument)
+                        && (!has_elements || Self::is_scalar_or_nonempty_array(hir, &self.children, argument))
+                })
+    }
+
+    /// Whether the expression is a literal that is no array, or an array with an element.
+    fn is_scalar_or_nonempty_array(hir: &Hir, children: &ChildrenIndex, id: SymbolId) -> bool {
+        match hir.symbol(id).map(|s| &s.kind) {
+            Some(SymbolKind::Array) => children
+                .get(&id)
+                .is_some_and(|c| c.iter().any(|&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))),
+            Some(
+                SymbolKind::Number
+                | SymbolKind::String
+                | SymbolKind::Boolean
+                | SymbolKind::None
+                | SymbolKind::Symbol
+                | SymbolKind::Bytes
+                | SymbolKind::InterpolatedString
+                | SymbolKind::Function(_),
+            ) => true,
+            _ => false,
+        }
     }
 
     fn operands_are_certain(&mut self, hir: &Hir, root: SymbolId, operand_mismatch: bool) -> bool {
