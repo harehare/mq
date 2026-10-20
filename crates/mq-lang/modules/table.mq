@@ -630,11 +630,10 @@ end
 #
 # Example:
 # ```
-# import "table" | table::transform_tables(to_markdown("| a |\n| - |\n| 2 |\n| 1 |"), fn(t): table::sort_rows(t, "a");) | to_text(self)
-# #=> | a |
-# | - |
-# | 1 |
-# | 2 |
+# import "table" | table::transform_tables(to_markdown("| a |\n| - |\n| 2 |\n| 1 |"), fn(t): table::sort_rows(t, "a");) | table::tables(self) | first(self) | table::to_csv(self)
+# #=> a
+# 1
+# 2
 # ```
 #
 # Returns: array
