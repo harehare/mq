@@ -190,7 +190,7 @@ impl<'a> Prover<'a> {
                 || self
                     .previous
                     .get(&root)
-                    .is_none_or(|&before| Self::is_scalar_or_nonempty_array(hir, &self.children, before)))
+                    .is_none_or(|&before| Self::is_not_empty_array(hir, &self.children, before)))
             && self
                 .children
                 .get(&root)
@@ -200,12 +200,13 @@ impl<'a> Prover<'a> {
                 .filter(|&c| hir.symbol(c).is_some_and(|s| is_expression(&s.kind)))
                 .all(|argument| {
                     self.is_exact(hir, argument)
-                        && (!has_elements || Self::is_scalar_or_nonempty_array(hir, &self.children, argument))
+                        && (!has_elements || Self::is_not_empty_array(hir, &self.children, argument))
                 })
     }
 
-    /// Whether the expression is a literal that is no array, or an array with an element.
-    fn is_scalar_or_nonempty_array(hir: &Hir, children: &ChildrenIndex, id: SymbolId) -> bool {
+    /// Whether the expression is a literal that is no array, or an array with an element. A
+    /// dictionary is never the collection a callback runs on.
+    fn is_not_empty_array(hir: &Hir, children: &ChildrenIndex, id: SymbolId) -> bool {
         match hir.symbol(id).map(|s| &s.kind) {
             Some(SymbolKind::Array) => children
                 .get(&id)
@@ -218,6 +219,7 @@ impl<'a> Prover<'a> {
                 | SymbolKind::Symbol
                 | SymbolKind::Bytes
                 | SymbolKind::InterpolatedString
+                | SymbolKind::Dict
                 | SymbolKind::Function(_),
             ) => true,
             _ => false,
