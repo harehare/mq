@@ -1,6 +1,6 @@
 # Web API
 
-`mq-web-api` is an HTTP/REST server that exposes mq queries over the network. It provides a curl-friendly shortcut endpoint, a JSON API, an OpenAPI specification, and a Swagger UI.
+`mq-web-api` ([source](https://github.com/harehare/mq-web-api)) is an HTTP/REST server that exposes mq queries over the network. It provides a curl-friendly shortcut endpoint, a JSON API, an OpenAPI specification, and a Swagger UI.
 
 ## Overview
 
@@ -82,6 +82,8 @@ Disabled by default. When `AUTH_ENABLED=true`, every endpoint except `/health`, 
 
 ### Running locally
 
+Clone [harehare/mq-web-api](https://github.com/harehare/mq-web-api), then:
+
 ```bash
 # Default settings
 cargo run --bin mq-web-api
@@ -101,10 +103,10 @@ cargo run --features otel --bin mq-web-api
 
 ### Docker
 
-Build and run from the workspace root:
+Build and run from the repository root:
 
 ```bash
-docker build -f crates/mq-web-api/Dockerfile.vercel -t mq-web-api .
+docker build -f Dockerfile.vercel -t mq-web-api .
 docker run -p 8080:8080 mq-web-api
 ```
 
@@ -219,4 +221,4 @@ curl http://localhost:8080/api/v1/selectors
 | `use_mimalloc` | enabled | Use mimalloc as the global allocator |
 | `otel` | disabled | Enable OpenTelemetry tracing via OTLP |
 
-See the [mq-web-api crate](https://github.com/harehare/mq/tree/main/crates/mq-web-api) for the full README and source.
+See the [mq-web-api repository](https://github.com/harehare/mq-web-api) for the full README and source.

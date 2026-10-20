@@ -134,7 +134,6 @@ mq is a Rust + TypeScript monorepo.
 | [`mq-hir`](crates/mq-hir)             | High-level Internal Representation (HIR)              | [![Crates.io](https://img.shields.io/crates/v/mq-hir?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-hir)             |
 | [`mq-dap`](crates/mq-dap)             | Debug Adapter Protocol implementation                 | [![Crates.io](https://img.shields.io/crates/v/mq-dap?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-dap)             |
 | [`mq-crawler`](crates/mq-crawler)     | Directory crawler for batch Markdown processing       | [![Crates.io](https://img.shields.io/crates/v/mq-crawler?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-crawler)     |
-| [`mq-web-api`](crates/mq-web-api)     | HTTP/REST server exposing mq queries over the network | [![Crates.io](https://img.shields.io/crates/v/mq-web-api?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-web-api)     |
 | [`mq-macros`](crates/mq-macros)       | Procedural macros for builtin function registration   | [![Crates.io](https://img.shields.io/crates/v/mq-macros?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-macros)       |
 | [`mq-test`](crates/mq-test)           | Test runner for mq                                    | [![Crates.io](https://img.shields.io/crates/v/mq-test?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-test)           |
 | [`mq-ffi`](crates/mq-ffi)             | C API for integrating mq into C applications          | —                                                                                                                                                    |
@@ -145,7 +144,7 @@ mq is a Rust + TypeScript monorepo.
 
 </details>
 
-mq is also available as a hosted REST API (see [`mq-web-api`](crates/mq-web-api) above). See the [REST API docs](https://mqlang.org/book/start/web_api) or try it in the [Playground](https://mqlang.org/playground).
+mq is also available as a hosted REST API (see [`mq-web-api`](https://github.com/harehare/mq-web-api)). See the [REST API docs](https://mqlang.org/book/start/web_api) or try it in the [Playground](https://mqlang.org/playground).
 
 ```bash
 curl --data-binary @doc.md https://api.mqlang.org/.h1
