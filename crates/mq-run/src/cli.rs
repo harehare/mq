@@ -22,14 +22,49 @@ use std::time::Duration;
 use std::{fs, path::PathBuf};
 use which::which;
 
-// The best result seen during a run, used by --exit-status / -e to decide the process exit
-// code. A plain atomic (rather than a thread_local) is required because batch processing can
-// fan out across rayon worker threads.
-static EXIT_STATUS_RANK: AtomicU8 = AtomicU8::new(RANK_NO_RESULT);
+/// How good a result is for --exit-status. Declaration order is the ranking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+enum ResultRank {
+    NoResult,
+    Falsy,
+    Truthy,
+}
 
-const RANK_NO_RESULT: u8 = 0;
-const RANK_FALSY: u8 = 1;
-const RANK_TRUTHY: u8 = 2;
+impl ResultRank {
+    /// The exit reason for a run whose best result is `self`, or `None` on success.
+    fn exit_reason(self) -> Option<ExitReason> {
+        match self {
+            Self::Truthy => None,
+            Self::Falsy => Some(ExitReason::Failure),
+            Self::NoResult => Some(ExitReason::NoResult),
+        }
+    }
+}
+
+/// The best `ResultRank` seen during a run. A plain atomic (rather than a thread_local) is
+/// required because batch processing can fan out across rayon worker threads.
+struct BestRank(AtomicU8);
+
+impl BestRank {
+    const fn new() -> Self {
+        Self(AtomicU8::new(ResultRank::NoResult as u8))
+    }
+
+    fn record(&self, rank: ResultRank) {
+        self.0.fetch_max(rank as u8, Ordering::Relaxed);
+    }
+
+    fn get(&self) -> ResultRank {
+        match self.0.load(Ordering::Relaxed) {
+            r if r == ResultRank::Truthy as u8 => ResultRank::Truthy,
+            r if r == ResultRank::Falsy as u8 => ResultRank::Falsy,
+            _ => ResultRank::NoResult,
+        }
+    }
+}
+
+static BEST_RANK: BestRank = BestRank::new();
 
 /// Context for an input or query file that could not be read.
 #[derive(Debug)]
@@ -41,12 +76,23 @@ impl std::fmt::Display for ReadFailure {
     }
 }
 
-/// Exit codes under `--exit-status`, following jq.
-const EXIT_FALSY: i32 = 1;
-const EXIT_IO_ERROR: i32 = 2;
-const EXIT_SYNTAX_ERROR: i32 = 3;
-const EXIT_NO_RESULT: i32 = 4;
-const EXIT_RUNTIME_ERROR: i32 = 5;
+/// Process exit codes, following jq under `--exit-status`. `Failure` is also the plain error
+/// code and the `--diff` "changes found" code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+enum ExitReason {
+    Failure = 1,
+    IoError = 2,
+    SyntaxError = 3,
+    NoResult = 4,
+    RuntimeError = 5,
+}
+
+impl ExitReason {
+    const fn code(self) -> i32 {
+        self as i32
+    }
+}
 
 // Tracks whether --diff found any changed input, for the exit-code-1 CI check below.
 static HAD_DIFF: AtomicBool = AtomicBool::new(false);
@@ -1721,18 +1767,18 @@ impl Cli {
             return code;
         }
         if !self.output.exit_status {
-            return 1;
+            return ExitReason::Failure.code();
         }
         if err.downcast_ref::<ReadFailure>().is_some() {
-            return EXIT_IO_ERROR;
+            return ExitReason::IoError.code();
         }
         if err
             .downcast_ref::<mq_lang::Error>()
             .is_some_and(mq_lang::Error::is_compile_error)
         {
-            EXIT_SYNTAX_ERROR
+            ExitReason::SyntaxError.code()
         } else {
-            EXIT_RUNTIME_ERROR
+            ExitReason::RuntimeError.code()
         }
     }
 
@@ -1965,22 +2011,17 @@ impl Cli {
         // --diff: exit 1 if anything would change, for CI gating. Takes precedence over -e.
         if self.output.diff && HAD_DIFF.load(Ordering::Relaxed) {
             result?;
-            std::process::exit(1);
+            std::process::exit(ExitReason::Failure.code());
         }
 
         // --exit-status / -e: exit with code 1 if no truthy value was
         // produced. Mirrors jq's behaviour: false and null are falsy;
         // everything else (including empty string, 0, [], {}) is truthy.
-        if self.output.exit_status {
-            let code = match EXIT_STATUS_RANK.load(Ordering::Relaxed) {
-                RANK_TRUTHY => None,
-                RANK_FALSY => Some(EXIT_FALSY),
-                _ => Some(EXIT_NO_RESULT),
-            };
-            if let Some(code) = code {
-                result?;
-                std::process::exit(code);
-            }
+        if self.output.exit_status
+            && let Some(reason) = BEST_RANK.get().exit_reason()
+        {
+            result?;
+            std::process::exit(reason.code());
         }
 
         result
@@ -3159,11 +3200,11 @@ impl Cli {
 
     /// Ranks a value for --exit-status. An empty Markdown value is what `select()` leaves for
     /// a non-matching node, so it counts as no result rather than a falsy one.
-    fn exit_status_rank(value: &mq_lang::RuntimeValue) -> u8 {
+    fn exit_status_rank(value: &mq_lang::RuntimeValue) -> ResultRank {
         match value {
-            mq_lang::RuntimeValue::Markdown(..) if value.is_empty() => RANK_NO_RESULT,
-            _ if Self::is_falsy(value) => RANK_FALSY,
-            _ => RANK_TRUTHY,
+            mq_lang::RuntimeValue::Markdown(..) if value.is_empty() => ResultRank::NoResult,
+            _ if Self::is_falsy(value) => ResultRank::Falsy,
+            _ => ResultRank::Truthy,
         }
     }
 
@@ -3319,8 +3360,8 @@ impl Cli {
                 .iter()
                 .map(Self::exit_status_rank)
                 .max()
-                .unwrap_or(RANK_NO_RESULT);
-            EXIT_STATUS_RANK.fetch_max(rank, Ordering::Relaxed);
+                .unwrap_or(ResultRank::NoResult);
+            BEST_RANK.record(rank);
         }
     }
 
