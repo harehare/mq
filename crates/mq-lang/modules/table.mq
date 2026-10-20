@@ -131,6 +131,17 @@ def column_index(table, name):
   index(map(table[:header], to_string), name)
 end
 
+# Resolves a column given as a header name or a 0-based index to an index.
+def _resolve_column(table, col):
+  if (is_number(col)):
+    col
+  else:
+    do
+      let i = column_index(table, col)
+      | if (i < 0): error("Column not found: " + to_string(col)) else: i
+    end
+end
+
 # Returns the number of data rows in the table (excludes the header).
 #
 # Example:
@@ -153,8 +164,8 @@ def num_rows(table): len(table[:rows]);
 # Returns: number
 def num_cols(table): len(table[:header]);
 
-# Returns the string value of the data cell at `row_index`, `col_index`
-# (0-indexed, excluding the header row), or None if either index is out of
+# Returns the string value of the data cell at `row_index` and column `col`
+# (a header name or 0-based index; rows exclude the header), or None if either index is out of
 # range.
 #
 # Example:
@@ -164,15 +175,16 @@ def num_cols(table): len(table[:header]);
 # ```
 #
 # Returns: dynamic
-def get_cell(table, row_index, col_index):
-  if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
+def get_cell(table, row_index, col):
+  let col_index = if (is_number(col)): col else column_index(table, col)
+  | if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
     None
   else:
     to_string(table[:rows][row_index][col_index])
 end
 
-# Returns a new table with the data cell at `row_index`, `col_index`
-# (0-indexed, excluding the header row) replaced by `value`.
+# Returns a new table with the data cell at `row_index` and column `col`
+# (a header name or 0-based index; rows exclude the header) replaced by `value`.
 #
 # Example:
 # ```
@@ -183,8 +195,9 @@ end
 # ```
 #
 # Returns: dict
-def set_cell(table, row_index, col_index, value):
-  if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
+def set_cell(table, row_index, col, value):
+  let col_index = _resolve_column(table, col)
+  | if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
     error("Row or column index out of range.")
   else: do
       let old_cell = table[:rows][row_index][col_index]
@@ -194,7 +207,8 @@ def set_cell(table, row_index, col_index, value):
     end
 end
 
-# Returns the data values (as strings) of column `col_index`, one per row.
+# Returns the data values (as strings) of column `col` (a header name or
+# 0-based index), one per row.
 #
 # Example:
 # ```
@@ -203,8 +217,9 @@ end
 # ```
 #
 # Returns: array
-def column_values(table, col_index):
-  map(table[:rows], fn(row): to_string(row[col_index]);)
+def column_values(table, col):
+  let col_index = _resolve_column(table, col)
+  | map(table[:rows], fn(row): to_string(row[col_index]);)
 end
 
 # Set the alignment for a table.
@@ -400,7 +415,8 @@ def remove_row(table, row_index):
   set(table, :rows, del(table[:rows], row_index))
 end
 
-# Returns a new table containing only the given column indices, in the
+# Returns a new table containing only the given columns (header names or
+# 0-based indices), in the
 # order given, so this can also reorder columns. Column numbers on the
 # resulting header/row cells are renumbered to match their new positions.
 #
@@ -412,8 +428,9 @@ end
 # ```
 #
 # Returns: dict
-def select_columns(table, indices):
-  let align_tokens = split(attr(table[:align], "align"), ",")
+def select_columns(table, columns):
+  let indices = map(columns, fn(c): _resolve_column(table, c);)
+  | let align_tokens = split(attr(table[:align], "align"), ",")
   | var col = 0
   | let new_header = foreach (i, indices):
       let cell = to_md_table_cell(to_string(table[:header][i]), 0, col)
@@ -438,7 +455,8 @@ def select_columns(table, indices):
   | {type: :table, align: new_align, header: new_header, rows: new_rows}
 end
 
-# Returns a new table with the header text at `index` replaced by `name`.
+# Returns a new table with the header of column `col` (a header name or
+# 0-based index) replaced by `name`.
 #
 # Example:
 # ```
@@ -448,11 +466,12 @@ end
 # ```
 #
 # Returns: dict
-def rename_column(table, index, name):
-  set(table, :header, set(table[:header], index, to_md_table_cell(name, 0, index)))
+def rename_column(table, col, name):
+  let index = _resolve_column(table, col)
+  | set(table, :header, set(table[:header], index, to_md_table_cell(name, 0, index)))
 end
 
-# Remove a column from a table at the specified index.
+# Removes a column (header name or 0-based index) from a table.
 #
 # Example:
 # ```
@@ -461,8 +480,9 @@ end
 # ```
 #
 # Returns: dict
-def remove_column(table, col_index):
-  let indices = filter(range(0, len(table[:header]) - 1), fn(i): i != col_index;)
+def remove_column(table, col):
+  let col_index = _resolve_column(table, col)
+  | let indices = filter(range(0, len(table[:header]) - 1), fn(i): i != col_index;)
   | select_columns(table, indices)
 end
 
@@ -527,23 +547,72 @@ def filter_rows(table, f):
   set(table, :rows, filter(table[:rows], f))
 end
 
-# Sort rows in the table by a specified column index or default sorting.
+# Rewrites row and column numbers of `rows` so they are sequential from 1.
+def _renumber_rows(rows):
+  var row_num = 0
+  | foreach (row, rows):
+      row_num += 1
+      | var c = 0
+      | foreach (v, row):
+          let cell = to_md_table_cell(to_string(v), row_num, c)
+          | c += 1
+          | cell
+        end
+    end
+end
+
+# Builds the sort key of `cell`. With `kind: :number`, cells that are not numbers
+# sort after all numbers regardless of order.
+def _sort_key(cell, kind, desc):
+  if (kind == :number):
+    try: [0, to_number(to_string(cell))] catch: [if (desc): -1 else: 1, 0]
+  else:
+    to_string(cell)
+end
+
+# Stable sort of `rows` by one column. Ties keep their original order.
+def _sort_rows_by(rows, col, order, kind):
+  let desc = order == :desc
+  | let indexed = zip(rows, range(0, len(rows) - 1))
+  | let sorted = map(sort_by(indexed, fn(pair): [_sort_key(pair[0][col], kind, desc), if (desc): -pair[1] else: pair[1]];), first)
+  | if (desc): reverse(sorted) else: sorted
+end
+
+# Sorts the data rows by one or more columns and renumbers them. The sort is
+# stable.
+#
+# `keys` is a column (header name or 0-based index) or an array of columns
+# (the first is the primary key). `order` is `:asc` or `:desc`, `kind` is
+# `:string` or `:number`. To mix orders or types, pass an array of
+# `[column, order, kind]` entries (the last two may be omitted). With no `keys`,
+# rows are sorted by their content.
 #
 # Example:
 # ```
-# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::sort_rows(self) | table::to_csv(self)
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| x | 10 |\n| y | 2 |")) | first(self) | table::sort_rows(self, "b", :desc, :number) | table::to_csv(self)
 # #=> a,b
-# 1,2
-# 3,4
+# x,10
+# y,2
 # ```
 #
 # Returns: dict
-def sort_rows(table, column_index = None):
-  let new_rows = if (column_index == None):
+def sort_rows(table, keys = None, order = :asc, kind = :string):
+  let new_rows = if (keys == None):
     sort(table[:rows])
   else:
-    sort_by(table[:rows], fn(row): row[column_index];)
-  | set(table, :rows, new_rows)
+    do
+      let specs = if (is_array(keys)):
+            map(keys, fn(k): if (is_array(k)): k else: [k];)
+          else:
+            [[keys]]
+      | fold(reverse(specs), table[:rows], fn(rows, spec):
+          let col = _resolve_column(table, spec[0])
+          | let o = if (len(spec) > 1): spec[1] elif (is_array(keys)): :asc else: order
+          | let k = if (len(spec) > 2): spec[2] elif (is_array(keys)): :string else: kind
+          | _sort_rows_by(rows, col, o, k);
+        )
+    end
+  | set(table, :rows, _renumber_rows(new_rows))
 end
 
 # Removes data rows that are exact duplicates of an earlier row (compared by
@@ -560,19 +629,48 @@ end
 #
 # Returns: dict
 def dedupe_rows(table):
-  let unique_rows = unique_by(table[:rows], fn(row): map(row, to_string);)
-  | var row_num = 0
-  | let new_rows = foreach (row, unique_rows):
-      row_num += 1
-      | var c = 0
-      | let cells = foreach (v, row):
-          let cell = to_md_table_cell(to_string(v), row_num, c)
-          | c += 1
-          | cell
+  set(table, :rows, _renumber_rows(unique_by(table[:rows], fn(row): map(row, to_string);)))
+end
+
+# Applies `f` to every table in `md_nodes` and returns the whole node list with
+# those tables replaced by the results, so it can be written back with `-U`.
+# Nodes outside tables are left untouched. If `only` is given, tables for which
+# `only(header, rows)` is false are left as they are.
+#
+# Example:
+# ```
+# import "table" | table::transform_tables(to_markdown("| a |\n| - |\n| 2 |\n| 1 |"), fn(t): table::sort_rows(t, "a");) | table::tables(self) | first(self) | table::to_csv(self)
+# #=> a
+# 1
+# 2
+# ```
+#
+# Returns: array
+def transform_tables(md_nodes, f, only = None):
+  var out = []
+  | var run = []
+  | var seen_align = false
+  | let flush = fn():
+      if (!is_empty(run)):
+        do
+          let t = first(tables(run))
+          | out += if (only == None || only(t[:header], t[:rows])): to_markdown(f(t)) else: run
+          | run = []
+          | seen_align = false
         end
-      | cells
+    ;
+  | foreach (node, md_nodes):
+      if (is_table_cell(node) || is_table_align(node)):
+        do
+          if (is_table_cell(node) && node.row == 0 && node.column == 0 && seen_align): flush()
+          | if (is_table_align(node)): seen_align = true
+          | run += node
+        end
+      else:
+        do flush() | out += node end
     end
-  | set(table, :rows, new_rows)
+  | flush()
+  | out
 end
 
 # Convert a table structure back into a list of markdown nodes.
