@@ -733,7 +733,7 @@ struct OutputArgs {
     #[clap(short = 'S', long, value_name = "QUERY", conflicts_with = "quiet")]
     separator: Option<String>,
 
-    /// Output to the specified file
+    /// Output to the specified file. With several inputs, results are written one after another
     #[clap(short = 'o', long = "output", value_name = "FILE", conflicts_with = "quiet")]
     output_file: Option<PathBuf>,
 
@@ -2631,9 +2631,9 @@ impl Cli {
             return self.execute_eval_all(&query, &files);
         }
 
-        // Keep --append sequential: parallel files racing the same read-then-rename
-        // append could clobber each other.
-        if files.len() > self.parallel_threshold && !self.output.append {
+        // Keep writes to one output file sequential: parallel files racing the same
+        // read-then-rename append could clobber each other.
+        if files.len() > self.parallel_threshold && self.output.output_file.is_none() {
             // `CompiledProgram` uses `Rc`, so each worker keeps its own engine and programs.
             // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
             let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);

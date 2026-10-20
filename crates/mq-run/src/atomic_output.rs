@@ -102,6 +102,8 @@ impl OutputSink {
         claimed: &AtomicBool,
     ) -> miette::Result<Self> {
         let is_first_open = !claimed.swap(true, Ordering::SeqCst);
+        // Later inputs add to the output like a shell redirect, instead of replacing earlier ones.
+        let clobber = if is_first_open { clobber } else { ClobberMode::Append };
 
         if clobber == ClobberMode::NoClobber && is_first_open && Self::target_exists(path)? {
             return Err(Self::no_clobber_error(path));
@@ -453,36 +455,25 @@ mod tests {
         assert_eq!(fs::read_to_string(&target).unwrap(), "fresh");
     }
 
-    #[test]
-    fn test_no_clobber_allows_a_second_open_in_the_same_run() {
-        let dir = temp_dir("no-clobber-second-open");
+    #[rstest]
+    #[case::overwrite_auto(ClobberMode::Overwrite, AtomicOutput::Auto)]
+    #[case::overwrite_always(ClobberMode::Overwrite, AtomicOutput::Always)]
+    #[case::overwrite_never(ClobberMode::Overwrite, AtomicOutput::Never)]
+    #[case::no_clobber_auto(ClobberMode::NoClobber, AtomicOutput::Auto)]
+    #[case::no_clobber_never(ClobberMode::NoClobber, AtomicOutput::Never)]
+    fn test_second_open_in_the_same_run_adds_to_the_output(#[case] clobber: ClobberMode, #[case] mode: AtomicOutput) {
+        let dir = temp_dir("second-open");
         defer! { let _ = fs::remove_dir_all(&dir); }
         let target = dir.join("out.md");
         let claimed = AtomicBool::new(false);
 
-        let mut first = OutputSink::open(
-            &Some(target.clone()),
-            AtomicOutput::Auto,
-            false,
-            ClobberMode::NoClobber,
-            &claimed,
-        )
-        .unwrap();
-        first.write_all(b"first").unwrap();
-        first.finish().unwrap();
+        for chunk in [&b"first"[..], b"second"] {
+            let mut sink = OutputSink::open(&Some(target.clone()), mode, false, clobber, &claimed).unwrap();
+            sink.write_all(chunk).unwrap();
+            sink.finish().unwrap();
+        }
 
-        let mut second = OutputSink::open(
-            &Some(target.clone()),
-            AtomicOutput::Auto,
-            false,
-            ClobberMode::NoClobber,
-            &claimed,
-        )
-        .unwrap();
-        second.write_all(b"second").unwrap();
-        second.finish().unwrap();
-
-        assert_eq!(fs::read_to_string(&target).unwrap(), "second");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "firstsecond");
     }
 
     #[rstest]
