@@ -380,6 +380,23 @@ def test_table_transform_tables_adjacent():
   | assert_eq(len(table::tables(out)), 2)
 end
 
+def test_table_columns_by_name():
+  let t = first(table::tables(table_nodes))
+  | assert_eq(table::get_cell(t, 1, "City"), "Osaka")
+  | assert_eq(table::get_cell(t, 1, "Nope"), None)
+  | assert_eq(table::column_values(t, "Age"), ["30", "25"])
+  | assert_eq(table::to_csv(table::set_cell(t, 0, "Age", "31")), "Name,Age,City\nAlice,31,Tokyo\nBob,25,Osaka")
+  | assert_eq(table::to_csv(table::select_columns(t, ["City", "Name"])), "City,Name\nTokyo,Alice\nOsaka,Bob")
+  | assert_eq(table::to_csv(table::rename_column(t, "Age", "Years")), "Name,Years,City\nAlice,30,Tokyo\nBob,25,Osaka")
+  | assert_eq(table::to_csv(table::remove_column(t, "Age")), "Name,City\nAlice,Tokyo\nBob,Osaka")
+end
+
+def test_table_columns_unknown_name():
+  let t = first(table::tables(table_nodes))
+  | assert_eq(try: table::remove_column(t, "Nope") catch: "err", "err")
+  | assert_eq(try: table::column_values(t, "Nope") catch: "err", "err")
+end
+
 def test_table_pivot_longer():
   let t = first(table::tables(table_nodes))
   | let result = table::pivot_longer(t, [1, 2])

@@ -131,6 +131,17 @@ def column_index(table, name):
   index(map(table[:header], to_string), name)
 end
 
+# Resolves a column given as a header name or a 0-based index to an index.
+def _resolve_column(table, col):
+  if (is_number(col)):
+    col
+  else:
+    do
+      let i = column_index(table, col)
+      | if (i < 0): error("Column not found: " + to_string(col)) else: i
+    end
+end
+
 # Returns the number of data rows in the table (excludes the header).
 #
 # Example:
@@ -153,8 +164,8 @@ def num_rows(table): len(table[:rows]);
 # Returns: number
 def num_cols(table): len(table[:header]);
 
-# Returns the string value of the data cell at `row_index`, `col_index`
-# (0-indexed, excluding the header row), or None if either index is out of
+# Returns the string value of the data cell at `row_index` and column `col`
+# (a header name or 0-based index; rows exclude the header), or None if either index is out of
 # range.
 #
 # Example:
@@ -164,15 +175,16 @@ def num_cols(table): len(table[:header]);
 # ```
 #
 # Returns: dynamic
-def get_cell(table, row_index, col_index):
-  if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
+def get_cell(table, row_index, col):
+  let col_index = if (is_number(col)): col else column_index(table, col)
+  | if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
     None
   else:
     to_string(table[:rows][row_index][col_index])
 end
 
-# Returns a new table with the data cell at `row_index`, `col_index`
-# (0-indexed, excluding the header row) replaced by `value`.
+# Returns a new table with the data cell at `row_index` and column `col`
+# (a header name or 0-based index; rows exclude the header) replaced by `value`.
 #
 # Example:
 # ```
@@ -183,8 +195,9 @@ end
 # ```
 #
 # Returns: dict
-def set_cell(table, row_index, col_index, value):
-  if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
+def set_cell(table, row_index, col, value):
+  let col_index = _resolve_column(table, col)
+  | if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
     error("Row or column index out of range.")
   else: do
       let old_cell = table[:rows][row_index][col_index]
@@ -194,7 +207,8 @@ def set_cell(table, row_index, col_index, value):
     end
 end
 
-# Returns the data values (as strings) of column `col_index`, one per row.
+# Returns the data values (as strings) of column `col` (a header name or
+# 0-based index), one per row.
 #
 # Example:
 # ```
@@ -203,8 +217,9 @@ end
 # ```
 #
 # Returns: array
-def column_values(table, col_index):
-  map(table[:rows], fn(row): to_string(row[col_index]);)
+def column_values(table, col):
+  let col_index = _resolve_column(table, col)
+  | map(table[:rows], fn(row): to_string(row[col_index]);)
 end
 
 # Set the alignment for a table.
@@ -400,7 +415,8 @@ def remove_row(table, row_index):
   set(table, :rows, del(table[:rows], row_index))
 end
 
-# Returns a new table containing only the given column indices, in the
+# Returns a new table containing only the given columns (header names or
+# 0-based indices), in the
 # order given, so this can also reorder columns. Column numbers on the
 # resulting header/row cells are renumbered to match their new positions.
 #
@@ -412,8 +428,9 @@ end
 # ```
 #
 # Returns: dict
-def select_columns(table, indices):
-  let align_tokens = split(attr(table[:align], "align"), ",")
+def select_columns(table, columns):
+  let indices = map(columns, fn(c): _resolve_column(table, c);)
+  | let align_tokens = split(attr(table[:align], "align"), ",")
   | var col = 0
   | let new_header = foreach (i, indices):
       let cell = to_md_table_cell(to_string(table[:header][i]), 0, col)
@@ -438,7 +455,8 @@ def select_columns(table, indices):
   | {type: :table, align: new_align, header: new_header, rows: new_rows}
 end
 
-# Returns a new table with the header text at `index` replaced by `name`.
+# Returns a new table with the header of column `col` (a header name or
+# 0-based index) replaced by `name`.
 #
 # Example:
 # ```
@@ -448,11 +466,12 @@ end
 # ```
 #
 # Returns: dict
-def rename_column(table, index, name):
-  set(table, :header, set(table[:header], index, to_md_table_cell(name, 0, index)))
+def rename_column(table, col, name):
+  let index = _resolve_column(table, col)
+  | set(table, :header, set(table[:header], index, to_md_table_cell(name, 0, index)))
 end
 
-# Remove a column from a table at the specified index.
+# Removes a column (header name or 0-based index) from a table.
 #
 # Example:
 # ```
@@ -461,8 +480,9 @@ end
 # ```
 #
 # Returns: dict
-def remove_column(table, col_index):
-  let indices = filter(range(0, len(table[:header]) - 1), fn(i): i != col_index;)
+def remove_column(table, col):
+  let col_index = _resolve_column(table, col)
+  | let indices = filter(range(0, len(table[:header]) - 1), fn(i): i != col_index;)
   | select_columns(table, indices)
 end
 
@@ -538,17 +558,6 @@ def _renumber_rows(rows):
           | c += 1
           | cell
         end
-    end
-end
-
-# Resolves a column given as a header name or a 0-based index to an index.
-def _resolve_column(table, col):
-  if (is_number(col)):
-    col
-  else:
-    do
-      let i = column_index(table, col)
-      | if (i < 0): error("Column not found: " + to_string(col)) else: i
     end
 end
 
