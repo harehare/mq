@@ -620,14 +620,16 @@ fn bind_params(
 
     resume_bind_params(
         shape,
-        remaining_args,
-        callee_locals,
-        callee_upvalues,
-        callee_chunk_index,
+        BindingState {
+            remaining_args,
+            callee_locals,
+            callee_upvalues,
+            callee_chunk_index,
+            next_index: start_index,
+            arg_count,
+            param_count,
+        },
         context,
-        start_index,
-        arg_count,
-        param_count,
     )
 }
 
@@ -658,31 +660,47 @@ pub(super) fn apply_pending(
     };
     resume_bind_params(
         shape,
-        remaining_args,
-        callee_locals,
-        callee_upvalues,
-        callee_chunk_index,
+        BindingState {
+            remaining_args,
+            callee_locals,
+            callee_upvalues,
+            callee_chunk_index,
+            next_index,
+            arg_count,
+            param_count,
+        },
         &mut context,
-        next_index,
-        arg_count,
-        param_count,
     )
 }
 
-/// Resumes binding `shape.bindings[start_index..]`.
-#[allow(clippy::too_many_arguments)]
-fn resume_bind_params(
-    shape: &ParamShape,
-    mut remaining_args: VecDeque<StackValue>,
-    mut callee_locals: Locals,
+/// A callee part-way through binding its parameters.
+struct BindingState {
+    remaining_args: VecDeque<StackValue>,
+    callee_locals: Locals,
     callee_upvalues: Option<Shared<Vec<Cell>>>,
     callee_chunk_index: u16,
-    context: &mut ParameterContext<'_, '_>,
-    start_index: usize,
+    /// Index into `shape.bindings` of the next parameter to bind.
+    next_index: usize,
     arg_count: usize,
     param_count: usize,
+}
+
+/// Resumes binding `shape.bindings[state.next_index..]`.
+fn resume_bind_params(
+    shape: &ParamShape,
+    state: BindingState,
+    context: &mut ParameterContext<'_, '_>,
 ) -> VmResult<Frame> {
-    for index in start_index..shape.bindings.len() {
+    let BindingState {
+        mut remaining_args,
+        mut callee_locals,
+        callee_upvalues,
+        callee_chunk_index,
+        next_index,
+        arg_count,
+        param_count,
+    } = state;
+    for index in next_index..shape.bindings.len() {
         match &shape.bindings[index] {
             ParamBinding::Variadic(slot) => {
                 let collected: Vec<RuntimeValue> = remaining_args

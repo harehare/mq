@@ -5423,101 +5423,102 @@ fn load_gitignore(io: &dyn Io, dir: &std::path::Path) -> Option<ignore::gitignor
     builder.build().ok()
 }
 
-/// Shared recursive directory walker backing both `collection` and `walk_files`: handles
-/// symlink-cycle detection (via `ancestors`, keyed by canonical path), `.gitignore`/hidden-file
-/// filtering, and the choice of whether to descend into a *symlinked* directory
-/// (`follow_symlink_dirs`; `collection` always passes `true` to keep its prior behavior,
-/// `walk_files` passes its `follow_symlinks` option). Every non-directory entry that survives
-/// gitignore filtering and an existence check (guarding against broken symlinks) is reported to
-/// `visit_file` as `(path, rel_path)`, where `path` is the full path as read from `io.read_dir`
-/// (dir-joined, matching `collection`'s existing `path` field) and `rel_path` is relative to the
-/// original `dir` this walk started from (what `walk_files` returns). Callers apply their own
-/// inclusion predicate (extension check, glob pattern) from inside `visit_file`.
+/// Shared recursive directory walker backing both `collection` and `walk_files`. It detects symlink
+/// cycles (via `ancestors`, keyed by canonical path), skips hidden and gitignored entries when
+/// `respect_gitignore` is set, and descends into symlinked directories only if `follow_symlink_dirs`
+/// is set. Every non-directory entry that survives filtering and an existence check (guarding
+/// against broken symlinks) is reported to `visit_file` as `(path, rel_path)`: `path` is the full
+/// path as read from `io.read_dir`, and `rel_path` is relative to the directory the walk started
+/// from. Callers apply their own inclusion predicate from inside `visit_file`.
 #[cfg(feature = "file-io")]
-#[allow(clippy::too_many_arguments)]
-fn walk_dir(
-    io: &dyn Io,
-    dir: &std::path::Path,
-    rel_dir: &std::path::Path,
-    ancestors: &mut FxHashSet<std::path::PathBuf>,
-    gitignore_stack: &mut Vec<ignore::gitignore::Gitignore>,
+struct DirWalk<'a> {
+    io: &'a dyn Io,
     respect_gitignore: bool,
     follow_symlink_dirs: bool,
-    visit_file: &mut dyn FnMut(&std::path::Path, &std::path::Path),
-) -> Result<(), Error> {
-    // Also rejects a symlinked root, not just a symlinked subdirectory found during recursion.
-    if !follow_symlink_dirs && matches!(io.metadata(dir).map(|m| m.kind), Ok(FileKind::Symlink)) {
-        return Ok(());
+    ancestors: FxHashSet<std::path::PathBuf>,
+    gitignore_stack: Vec<ignore::gitignore::Gitignore>,
+}
+
+#[cfg(feature = "file-io")]
+impl<'a> DirWalk<'a> {
+    fn new(io: &'a dyn Io, respect_gitignore: bool, follow_symlink_dirs: bool) -> Self {
+        Self {
+            io,
+            respect_gitignore,
+            follow_symlink_dirs,
+            ancestors: FxHashSet::default(),
+            gitignore_stack: Vec::new(),
+        }
     }
 
-    let canonical = io.canonicalize(dir);
-    if !ancestors.insert(canonical.clone()) {
-        return Ok(());
-    }
+    fn walk(
+        &mut self,
+        dir: &std::path::Path,
+        rel_dir: &std::path::Path,
+        visit_file: &mut dyn FnMut(&std::path::Path, &std::path::Path),
+    ) -> Result<(), Error> {
+        // Also rejects a symlinked root, not just a symlinked subdirectory found during recursion.
+        if !self.follow_symlink_dirs && matches!(self.io.metadata(dir).map(|m| m.kind), Ok(FileKind::Symlink)) {
+            return Ok(());
+        }
 
-    let pushed_gitignore = respect_gitignore && load_gitignore(io, dir).map(|gi| gitignore_stack.push(gi)).is_some();
+        let canonical = self.io.canonicalize(dir);
+        if !self.ancestors.insert(canonical.clone()) {
+            return Ok(());
+        }
 
-    let entries = io
-        .read_dir(dir)
-        .map_err(|e| Error::Runtime(format!("Failed to read directory {}: {}", dir.display(), e)))?;
+        let pushed_gitignore = self.respect_gitignore
+            && load_gitignore(self.io, dir)
+                .map(|gi| self.gitignore_stack.push(gi))
+                .is_some();
 
-    for (path, is_dir) in entries {
-        // Keep as `OsStr`: a non-UTF-8 filename is valid on Unix and must still be walked.
-        let Some(file_name) = path.file_name() else {
-            continue;
-        };
+        let entries = self
+            .io
+            .read_dir(dir)
+            .map_err(|e| Error::Runtime(format!("Failed to read directory {}: {}", dir.display(), e)))?;
 
-        if respect_gitignore {
-            let is_hidden = file_name.to_string_lossy().starts_with('.');
-            if is_hidden || is_gitignored(gitignore_stack, &path, is_dir) {
+        for (path, is_dir) in entries {
+            // Keep as `OsStr`: a non-UTF-8 filename is valid on Unix and must still be walked.
+            let Some(file_name) = path.file_name() else {
                 continue;
+            };
+
+            if self.respect_gitignore {
+                let is_hidden = file_name.to_string_lossy().starts_with('.');
+                if is_hidden || is_gitignored(&self.gitignore_stack, &path, is_dir) {
+                    continue;
+                }
+            }
+
+            let rel_path = if rel_dir.as_os_str().is_empty() {
+                std::path::PathBuf::from(file_name)
+            } else {
+                rel_dir.join(file_name)
+            };
+
+            if is_dir {
+                self.walk(&path, &rel_path, visit_file)?;
+            } else if self.io.exists(&path).unwrap_or(false) {
+                visit_file(&path, &rel_path);
             }
         }
 
-        let rel_path = if rel_dir.as_os_str().is_empty() {
-            std::path::PathBuf::from(file_name)
-        } else {
-            rel_dir.join(file_name)
-        };
-
-        if is_dir {
-            walk_dir(
-                io,
-                &path,
-                &rel_path,
-                ancestors,
-                gitignore_stack,
-                respect_gitignore,
-                follow_symlink_dirs,
-                visit_file,
-            )?;
-        } else if io.exists(&path).unwrap_or(false) {
-            visit_file(&path, &rel_path);
+        if pushed_gitignore {
+            self.gitignore_stack.pop();
         }
+        self.ancestors.remove(&canonical);
+        Ok(())
     }
-
-    if pushed_gitignore {
-        gitignore_stack.pop();
-    }
-    ancestors.remove(&canonical);
-    Ok(())
 }
 
 #[cfg(feature = "file-io")]
 fn collection_impl_inner(dir: &str, respect_gitignore: bool) -> Result<RuntimeValue, Error> {
     let io = io_context::current();
-    let mut ancestors = FxHashSet::default();
-    let mut gitignore_stack = Vec::new();
     let mut paths = Vec::new();
 
-    walk_dir(
-        io.as_ref(),
+    DirWalk::new(io.as_ref(), respect_gitignore, true).walk(
         std::path::Path::new(dir),
         std::path::Path::new(""),
-        &mut ancestors,
-        &mut gitignore_stack,
-        respect_gitignore,
-        true, // `collection` has always followed symlinked directories.
         &mut |path, _rel| {
             if path
                 .extension()
@@ -5581,18 +5582,11 @@ fn walk_files_impl_inner(
     };
 
     let io = io_context::current();
-    let mut ancestors = FxHashSet::default();
-    let mut gitignore_stack = Vec::new();
     let mut out = Vec::new();
 
-    walk_dir(
-        io.as_ref(),
+    DirWalk::new(io.as_ref(), respect_gitignore, follow_symlinks).walk(
         std::path::Path::new(root),
         std::path::Path::new(""),
-        &mut ancestors,
-        &mut gitignore_stack,
-        respect_gitignore,
-        follow_symlinks,
         &mut |_path, rel| {
             let rel_str = rel.to_string_lossy().replace('\\', "/");
             if glob_pattern.matches_with(&rel_str, match_options) {
