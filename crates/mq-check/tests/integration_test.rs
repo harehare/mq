@@ -217,36 +217,32 @@ fn test_gsub_accepts_markdown_narrowed_by_match() {
     true,
     "guarded arm + unguarded wildcard is exhaustive"
 )]
-#[case::bool_only_true(
-    r#"match (true): | true: 1 end"#,
-    false,
-    "bool with only true arm — false is missing"
-)]
+#[case::bool_only_true(r#"match (true): | true: 1 end"#, false, "bool with only true arm, false is missing")]
 #[case::bool_only_false(
     r#"match (true): | false: 0 end"#,
     false,
-    "bool with only false arm — true is missing"
+    "bool with only false arm, true is missing"
 )]
 #[case::bool_both_guarded(
     r#"match (true): | true if (true): 1 | false if (true): 0 end"#,
     false,
-    "both bool arms guarded — neither counts as unconditional"
+    "both bool arms guarded, neither counts as unconditional"
 )]
 #[case::bool_true_guarded_false_missing(
     r#"match (true): | x if (x): 1 | false: 0 end"#,
     false,
-    "guarded wildcard + false arm — true not unconditionally covered"
+    "guarded wildcard + false arm, true not unconditionally covered"
 )]
 #[case::bool_false_guarded_true_missing(
     r#"match (true): | true: 1 | x if (not(x)): 0 end"#,
     false,
-    "true arm + guarded wildcard — false not unconditionally covered"
+    "true arm + guarded wildcard, false not unconditionally covered"
 )]
-#[case::number_single_literal(r#"match (42): | 0: "zero" end"#, false, "single number literal — no wildcard")]
+#[case::number_single_literal(r#"match (42): | 0: "zero" end"#, false, "single number literal, no wildcard")]
 #[case::number_multiple_literals(
     r#"match (42): | 0: "zero" | 1: "one" | 2: "two" end"#,
     false,
-    "multiple number literals without wildcard — not exhaustive"
+    "multiple number literals without wildcard, not exhaustive"
 )]
 #[case::string_single_literal(r#"match ("a"): | "a": 1 end"#, false, "single string literal without wildcard")]
 #[case::string_multiple_literals(
@@ -374,7 +370,7 @@ fn test_match_type_label_multi_arm() {
 #[case::type_label_no_wildcard(
     r#"match (42): | :array: 1 | :string: 0 end"#,
     false,
-    "type-label arms without wildcard — not exhaustive"
+    "type-label arms without wildcard, not exhaustive"
 )]
 fn test_match_exhaustiveness_type_label(#[case] code: &str, #[case] is_exhaustive: bool, #[case] description: &str) {
     let result = check_types(code);
@@ -430,7 +426,7 @@ fn test_function_as_value() {
 
 #[test]
 fn test_heterogeneous_array_allowed() {
-    // mq is dynamically typed — heterogeneous arrays (used as tuples) are valid
+    // mq is dynamically typed, heterogeneous arrays (used as tuples) are valid
     let result = check_types(r#"[1, "string", true]"#);
     assert!(
         result.is_empty(),
@@ -741,7 +737,7 @@ fn test_user_function_type_checking(#[case] code: &str, #[case] should_succeed: 
 #[rstest]
 #[case::number_minus_string(r#"1 - "hello""#, false, "number - string")]
 #[case::number_div_string(r#"10 / "two""#, false, "number / string")]
-#[case::number_mul_string(r#"3 * "x""#, false, "number * string")]
+#[case::number_mul_string(r#"3 * "x""#, true, "number * string repeats the string")]
 #[case::string_minus_number(r#""abc" - 1"#, false, "string - number")]
 #[case::string_div_number(r#""abc" / 2"#, false, "string / number")]
 #[case::number_add_string(r#"1 + "world""#, true, "number + string")]
@@ -793,12 +789,12 @@ fn test_comparison_op_type_errors(#[case] code: &str, #[case] should_succeed: bo
     );
 }
 
-// Equality Operator Type Errors
+// Equality Operator: values of different types compare unequal at runtime, which is not an error
 
 #[rstest]
-#[case::eq_number_string(r#"1 == "hello""#, false, "number == string")]
-#[case::ne_number_bool("1 != true", false, "number != bool")]
-#[case::eq_string_bool(r#""yes" == true"#, false, "string == bool")]
+#[case::eq_number_string(r#"1 == "hello""#, true, "number == string is false, not an error")]
+#[case::ne_number_bool("1 != true", true, "number != bool is true, not an error")]
+#[case::eq_string_bool(r#""yes" == true"#, true, "string == bool is false, not an error")]
 #[case::eq_same_numbers("1 == 1", true, "number == number is valid")]
 #[case::eq_same_strings(r#""a" == "a""#, true, "string == string is valid")]
 #[case::eq_same_bools("true == false", true, "bool == bool is valid")]
@@ -819,7 +815,7 @@ fn test_equality_op_type_errors(#[case] code: &str, #[case] should_succeed: bool
 
 #[rstest]
 #[case::let_num_minus_string(r#"let x = 1 | x - "str""#, false, "let number binding minus string")]
-#[case::let_num_mul_string(r#"let x = 1 | x * "str""#, false, "let number binding times string")]
+#[case::let_num_mul_string(r#"let x = 1 | x * "str""#, true, "let number binding times string repeats it")]
 #[case::let_num_div_string(r#"let x = 1 | x / "str""#, false, "let number binding div string")]
 #[case::let_num_plus_string(r#"let x = 1 | x + "str""#, true, "let number binding plus string")]
 #[case::let_string_minus_num(r#"let x = "hello" | x - 1"#, false, "let string binding minus number")]
@@ -855,8 +851,8 @@ fn test_let_binding_type_errors(#[case] code: &str, #[case] should_succeed: bool
 )]
 #[case::lambda_body_mul_error(
     r#"let f = fn(x): x * "bad"; | f(1)"#,
-    false,
-    "lambda body: string constant in multiply"
+    true,
+    "lambda body: number times a string repeats it"
 )]
 #[case::lambda_body_div_error(
     r#"let f = fn(x): x / "bad"; | f(1)"#,
@@ -978,7 +974,7 @@ fn test_until_condition_type_errors(#[case] code: &str, #[case] should_succeed: 
 #[case::wildcard_pattern("match (1): | _: \"any\" end", true, "wildcard pattern always valid")]
 #[case::variable_pattern("match (1): | x: x end", true, "variable pattern always valid")]
 fn test_match_pattern_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
-    // Filter out exhaustiveness errors — this test focuses on type compatibility only.
+    // Filter out exhaustiveness errors, this test focuses on type compatibility only.
     let result: Vec<_> = check_types(code)
         .into_iter()
         .filter(|e| !matches!(e, TypeError::NonExhaustiveMatch { .. }))
@@ -1082,14 +1078,6 @@ fn test_try_catch_type_combinations(#[case] code: &str, #[case] should_succeed: 
 }
 
 #[rstest]
-#[case::union_with_add(
-    r#"let x = try: 42 catch: "string"; | x + 1"#,
-    "union type (number|string) should fail with +"
-)]
-#[case::union_with_multiply(
-    r#"let x = try: 100 catch: "error"; | x * 2"#,
-    "union type (number|string) should fail with *"
-)]
 #[case::union_with_subtract(
     r#"let x = try: 50 catch: "fail"; | x - 10"#,
     "union type (number|string) should fail with -"
@@ -1129,24 +1117,6 @@ fn test_try_catch_same_type_arithmetic_ok(#[case] code: &str, #[case] descriptio
 fn test_if_else_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(result.is_empty(), should_succeed, "{}: {:?}", description, result);
-}
-
-#[rstest]
-#[case::union_with_add(
-    r#"let x = if (true): 42 else: "string"; | x + 1"#,
-    "union (number|string) should fail with +"
-)]
-#[case::union_with_multiply(
-    r#"let x = if (false): 100 else: "fail"; | x * 2"#,
-    "union (number|string) should fail with *"
-)]
-#[case::elif_union_arithmetic(
-    r#"let x = if (true): 1 elif (false): "text" else: 2; | x + 1"#,
-    "elif union should fail with +"
-)]
-fn test_if_else_union_arithmetic_errors(#[case] code: &str, #[case] description: &str) {
-    let result = check_types(code);
-    assert!(!result.is_empty(), "{}: should produce type error", description);
 }
 
 #[rstest]
@@ -1267,14 +1237,6 @@ fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool,
 }
 
 #[rstest]
-#[case::union_with_add(
-    r#"let x = loop: if (true): 1 else: "str";; | x + 1"#,
-    "loop union (number|string) should fail with +"
-)]
-#[case::break_union_with_add(
-    r#"let x = loop: if (true): break: 42 else: break: "str";; | x + 1"#,
-    "loop with break union (number|string) should fail with +"
-)]
 #[case::while_break_union_with_add(
     r#"let x = while (true): if (true): break: 42 else: break: "str"; | x + 1"#,
     "while with break union (number|string) should fail with +"
@@ -1380,8 +1342,8 @@ fn test_union_consistent_return_type_ok(#[case] code: &str, #[case] description:
 fn test_match_union_type_propagation() {
     let result = check_types(r#"let x = match (42): | 0: "zero" | 1: 100 | _: 200 end | x + 1"#);
     assert!(
-        !result.is_empty(),
-        "match with union type (string|number) should fail with +: {:?}",
+        result.is_empty(),
+        "match with union type (string|number) is valid with +: {:?}",
         result
     );
 }
@@ -1782,7 +1744,7 @@ fn test_type_narrowing(#[case] code: &str, #[case] should_succeed: bool, #[case]
 #[test]
 fn test_piped_builtin_call_in_argument_position() {
     // Builtin calls with no explicit args used as arguments to higher-order functions
-    // should not error — the parent function will pipe each element at runtime.
+    // should not error, the parent function will pipe each element at runtime.
     assert!(
         check_types("[[1,2],[3,4]] | map(first())").is_empty(),
         "map(first()) should not error"
@@ -1960,7 +1922,7 @@ fn test_dead_code_detection(#[case] code: &str, #[case] should_succeed: bool, #[
     true,
     "is_none check on parameter must not be flagged as dead when else-branch iterates over it"
 )]
-// is_string on a parameter; caller passes number — no false positive because parameter is polymorphic
+// is_string on a parameter; caller passes number, no false positive because parameter is polymorphic
 #[case::param_is_string_polymorphic(
     r#"def f(x):
         if (is_string(x)):
@@ -2105,10 +2067,10 @@ fn test_match_none_arm_does_not_collapse_polymorphic_arm() {
     "string|none ?? string resolves correctly"
 )]
 #[case(r#"42 ?? 0"#, true, "number ?? number returns number")]
-#[case(r#""hello" ?? 42"#, false, "string ?? number: type mismatch")]
-#[case(r#"42 ?? "fallback""#, false, "number ?? string: type mismatch")]
-#[case(r#"true ?? 0"#, false, "bool ?? number: type mismatch")]
-#[case(r#"true ?? "str""#, false, "bool ?? string: type mismatch")]
+#[case(r#""hello" ?? 42"#, true, "string ?? number is the string")]
+#[case(r#"42 ?? "fallback""#, true, "number ?? string is the number")]
+#[case(r#"true ?? 0"#, true, "bool ?? number is the bool")]
+#[case(r#"true ?? "str""#, true, "bool ?? string is the bool")]
 fn test_coalesce_operator(#[case] code: &str, #[case] should_succeed: bool, #[case] desc: &str) {
     let result = check_types_with_builtins(code);
     assert_eq!(
@@ -2429,4 +2391,25 @@ fn test_an_unknown_branch_is_not_pinned_to_the_other_branch(#[case] code: &str) 
 fn test_field_guards(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(result.is_empty(), should_succeed, "{description}: errors={result:?}");
+}
+
+// A union operand is checked member by member: when every member is valid the result is the union
+// of what each member returns, and only a member without an overload is an error.
+#[rstest]
+#[case::try_add(r#"let x = try: 42 catch: "string"; | x + 1"#)]
+#[case::try_multiply(r#"let x = try: 100 catch: "error"; | x * 2"#)]
+#[case::if_add(r#"let x = if (true): 42 else: "string"; | x + 1"#)]
+#[case::if_multiply(r#"let x = if (false): 100 else: "fail"; | x * 2"#)]
+#[case::elif_add(r#"let x = if (true): 1 elif (false): "text" else: 2; | x + 1"#)]
+#[case::loop_add(r#"let x = loop: if (true): 1 else: "str";; | x + 1"#)]
+#[case::loop_break_add(r#"let x = loop: if (true): break: 42 else: break: "str";; | x + 1"#)]
+fn test_union_operand_with_valid_members_is_accepted(#[case] code: &str) {
+    let result = check_types(code);
+    assert!(result.is_empty(), "every member is valid: {:?}", result);
+}
+
+#[test]
+fn test_union_operand_with_unsupported_member_is_reported() {
+    let result = check_types(r#"let x = if (true): 42 else: "string"; | x - 1"#);
+    assert!(!result.is_empty(), "string - number has no overload");
 }

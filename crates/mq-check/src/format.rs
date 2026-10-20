@@ -6,7 +6,7 @@ mod sarif;
 
 use std::io::{self, Write};
 
-use mq_check::TypeError;
+use mq_check::{Classified, TypeCheckerOptions, TypeError};
 use mq_hir::{Hir, HirError, HirWarning, SourceId, Symbol};
 
 /// Severity of a check diagnostic.
@@ -154,14 +154,23 @@ fn hir_warning_range(warning: &HirWarning) -> mq_lang::Range {
 }
 
 /// Converts type-check errors into [`CheckDiagnostic`]s.
-pub(crate) fn type_diagnostics(errors: &[TypeError]) -> Vec<CheckDiagnostic> {
+///
+/// An uncertain error is left out unless the options show it, as a warning or, when `strict`, as
+/// an error.
+pub(crate) fn type_diagnostics(errors: &[Classified], options: &TypeCheckerOptions) -> Vec<CheckDiagnostic> {
     errors
         .iter()
-        .map(|error| CheckDiagnostic {
-            severity: Severity::Error,
-            code: type_error_code(error),
-            message: error.to_string(),
-            range: error.location(),
+        .filter_map(|c| {
+            let severity = match c.severity(options)? {
+                mq_check::Severity::Error => Severity::Error,
+                mq_check::Severity::Warning => Severity::Warning,
+            };
+            Some(CheckDiagnostic {
+                severity,
+                code: type_error_code(&c.error),
+                message: c.error.to_string(),
+                range: c.error.location(),
+            })
         })
         .collect()
 }

@@ -136,6 +136,64 @@ pub(super) fn thread_pipe_stage(
             propagate_into_operands(hir, stage, &prev_ty, ctx, children_index);
             generate_symbol_constraints(hir, stage, symbol.kind.clone(), ctx, children_index);
         }
+        SymbolKind::If => forward_into_if(hir, stage, &prev_ty, ctx, children_index),
+        _ => {}
+    }
+}
+
+/// Hands the piped input of an `if` to its condition and to the bodies of its branches, since
+/// `x | if (is_none()): None else: to_text()` calls both with `x`.
+pub(super) fn forward_into_if(
+    hir: &Hir,
+    if_id: SymbolId,
+    piped_ty: &Type,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    for &child_id in get_children(children_index, if_id) {
+        let Some(child) = hir.symbol(child_id) else {
+            continue;
+        };
+        match child.kind {
+            SymbolKind::Elif | SymbolKind::Else => {
+                for &part_id in get_children(children_index, child_id) {
+                    forward_into_expression(hir, part_id, piped_ty, ctx, children_index);
+                }
+            }
+            _ => forward_into_expression(hir, child_id, piped_ty, ctx, children_index),
+        }
+    }
+}
+
+fn forward_into_expression(
+    hir: &Hir,
+    id: SymbolId,
+    piped_ty: &Type,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    let Some(symbol) = hir.symbol(id) else {
+        return;
+    };
+    match &symbol.kind {
+        SymbolKind::Call | SymbolKind::Ref | SymbolKind::Assign | SymbolKind::Selector(_) => {
+            ctx.set_piped_input(id, piped_ty.clone());
+            generate_symbol_constraints(hir, id, symbol.kind.clone(), ctx, children_index);
+        }
+        SymbolKind::UnaryOp | SymbolKind::BinaryOp => {
+            propagate_into_operands(hir, id, piped_ty, ctx, children_index);
+            generate_symbol_constraints(hir, id, symbol.kind.clone(), ctx, children_index);
+        }
+        SymbolKind::Variable | SymbolKind::DestructuringBinding => {
+            ctx.set_piped_input(id, piped_ty.clone());
+            propagate_piped_input_to_variable_initializer(hir, id, ctx, children_index);
+        }
+        SymbolKind::If => forward_into_if(hir, id, piped_ty, ctx, children_index),
+        SymbolKind::Block => {
+            if let Some(&first) = get_children(children_index, id).first() {
+                forward_into_expression(hir, first, piped_ty, ctx, children_index);
+            }
+        }
         _ => {}
     }
 }
@@ -220,8 +278,8 @@ pub(super) fn pipe_stage_output(hir: &Hir, ctx: &mut InferenceContext, stage: Sy
 
 /// Resolves the body type of an elif/else branch.
 ///
-/// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
-/// For Else: children are [body] — returns body type.
+/// For Elif: children are [condition, body]; constrains condition to Bool, returns body type.
+/// For Else: children are [body]; returns body type.
 /// For other kinds: returns the symbol's type directly.
 pub(super) fn resolve_branch_body_type(
     hir: &Hir,

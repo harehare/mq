@@ -174,8 +174,202 @@ impl Gen {
         TYPES[self.rng.below(TYPES.len())]
     }
 
+    /// A program built around one construct that the plain expressions do not reach: narrowing of
+    /// a union, user functions, `match`, loops and dict access.
+    fn construct_program(&mut self) -> String {
+        self.vars.clear();
+        let num = self.expr(Ty::Num, 1);
+        let text = self.expr(Ty::Str, 1);
+        let arr = self.expr(Ty::Arr, 1);
+        let cond = self.expr(Ty::Bool, 1);
+        let (first, second) = if self.rng.chance(50) {
+            (&num, &text)
+        } else {
+            (&text, &num)
+        };
+        let union = format!("let u = if ({cond}): {first} else: {second}");
+        match self.rng.below(20) {
+            0 => format!("{union}\n| if (is_number(u)): u + 1 else: upcase(u)"),
+            1 => format!("{union}\n| if (is_string(u)): upcase(u) else: u + 1"),
+            2 => format!("{union}\n| if (!is_string(u)): u + 1 else: upcase(u)"),
+            3 => format!("{union}\n| if (type(u) == \"number\"): u + 1 else: trim(u)"),
+            4 => format!("{union}\n| if (is_number(u)): u + 1 elif (is_string(u)): len(u) else: 0"),
+            5 => format!("{union}\n| if (is_string(u) && len(u) > 0): upcase(u) else: 0"),
+            6 => format!("{union}\n| if (is_number(u) || is_string(u)): to_string(u) else: \"\""),
+            7 => format!("def f(x): x + 1;\n| f({num})"),
+            8 => format!("def f(a, b): a + b;\n| [f({num}, {num}), f({text}, {text})]"),
+            9 => format!("def id(x): x;\n| [id({num}), id({text}), id({arr})]"),
+            10 => format!("def twice(f, x): f(f(x));\n| twice(fn(y): y + 1;, {num})"),
+            11 => format!("def f(x): if (is_string(x)): upcase(x) else: x + 1;\n| [f({num}), f({text})]"),
+            12 => format!("match ({num}): | 0: \"zero\" | _: \"other\" end"),
+            13 => format!("match ({union}\n| u): | 0: 1 | \"a\": 2 | _: 3 end"),
+            14 => format!("foreach (x, {arr}): x + 1 end"),
+            15 => format!("fold({arr}, 0, fn(acc, x): acc + x;)"),
+            16 => format!("map([{text}, {text}], fn(s): upcase(s);)"),
+            17 => format!("let d = {{\"a\": {num}, \"b\": {text}}}\n| d[\"a\"] + len(d[\"b\"])"),
+            18 => format!("let d = {{\"a\": {num}}}\n| set(d, \"c\", {text})\n| keys(d)"),
+            _ => format!("let n = get({{\"a\": {num}}}, \"zz\")\n| if (is_none(n)): 0 else: n + 1"),
+        }
+    }
+
+    /// More constructs: mutation, loops, recursion, closures, indexing and `none` handling.
+    fn construct_program_more(&mut self) -> String {
+        self.vars.clear();
+        let num = self.expr(Ty::Num, 1);
+        let text = self.expr(Ty::Str, 1);
+        let arr = self.expr(Ty::Arr, 1);
+        let cond = self.expr(Ty::Bool, 1);
+        match self.rng.below(20) {
+            0 => format!("var n = {num}\n| n = n + 1\n| n"),
+            1 => format!("var s = {text}\n| s = s + \"x\"\n| upcase(s)"),
+            2 => "var i = 0\n| while (i < 3): i = i + 1 end\n| i".to_string(),
+            3 => format!("var acc = []\n| foreach (x, {arr}): acc = acc + [x + 1] end\n| acc"),
+            4 => format!(
+                "def fact(n): if (n <= 1): 1 else: n * fact(n - 1);\n| fact({})",
+                self.rng.below(6)
+            ),
+            5 => format!("let k = {num}\n| def add(x): x + k;\n| add({num})"),
+            6 => format!("let k = {text}\n| map([{text}], fn(x): x + k;)"),
+            7 => format!("let a = {arr}\n| a[0] + 1"),
+            8 => format!("let a = [{num}, {num}]\n| a[0] + a[1]"),
+            9 => format!("let a = [\"x\", {text}]\n| upcase(a[0])"),
+            10 => format!("let n = if ({cond}): None else: {num}\n| if (is_none(n)): 0 else: n + 1"),
+            11 => format!("let n = if ({cond}): None else: {num}\n| if (n != None): n + 1 else: 0"),
+            12 => format!("let t = if ({cond}): None else: {text}\n| if (t == None): \"\" else: upcase(t)"),
+            13 => "let m = {\"a\": [1, 2], \"b\": [3]}\n| len(m[\"a\"]) + len(m[\"b\"])".to_string(),
+            14 => format!("split({text}, \",\") | map(fn(p): trim(p);)"),
+            15 => format!("let p = {text}\n| if (starts_with(p, \"a\")): p + \"!\" else: replace(p, \"a\", \"b\")"),
+            16 => format!("let v = {text}\n| if (v == \"a\"): 1 elif (v == \"b\"): 2 else: 3"),
+            17 => format!("let n = {num}\n| if (n > 1): if (n > 2): \"big\" else: \"mid\" else: \"small\""),
+            18 => format!(
+                "def f(x): if (is_array(x)): len(x) elif (is_string(x)): len(x) else: x;\n| [f({arr}), f({text}), f({num})]"
+            ),
+            _ => format!("let r = try: {num} catch: \"e\"\n| if (is_number(r)): r + 1 else: r"),
+        }
+    }
+
+    /// A function whose parameters the body uses at the types they are meant to have, and a call
+    /// that passes such values. The checker knows nothing about the parameters, so what it says
+    /// about the body rests on the operations alone.
+    fn function_program(&mut self) -> String {
+        let params: Vec<(String, Ty)> = (0..1 + self.rng.below(2))
+            .map(|i| (format!("p{i}"), self.any_type()))
+            .collect();
+        self.vars = params.clone();
+        let mut body = Vec::new();
+        for i in 0..self.rng.below(3) {
+            let ty = self.any_type();
+            let init = self.expr(ty, 2);
+            let name = format!("l{i}");
+            body.push(format!("let {name} = {init}"));
+            self.vars.push((name, ty));
+        }
+        let ret = self.any_type();
+        let last = match self.rng.below(4) {
+            0 => {
+                let other = self.any_type();
+                format!(
+                    "if ({}): {} else: {}",
+                    self.expr(Ty::Bool, 1),
+                    self.expr(ret, 2),
+                    self.expr(other, 2)
+                )
+            }
+            _ => self.expr(ret, 3),
+        };
+        body.push(last);
+        // The last parameter may have a default, and the call may leave it out
+        let default = if self.rng.chance(35) {
+            let ty = params[params.len() - 1].1;
+            self.vars.clear();
+            Some(self.expr(ty, 1))
+        } else {
+            None
+        };
+        let mut names: Vec<String> = params.iter().map(|(name, _)| name.clone()).collect();
+        if let Some(default) = &default {
+            let last = names.len() - 1;
+            names[last] = format!("{} = {default}", names[last]);
+        }
+        let definition = format!("def f({}): {};", names.join(", "), body.join(" | "));
+        self.vars.clear();
+        let mut args: Vec<String> = params.iter().map(|(_, ty)| self.expr(*ty, 1)).collect();
+        if default.is_some() && self.rng.chance(50) {
+            args.pop();
+        }
+        match self.rng.below(4) {
+            // Through another function, with the arguments piped in, or a result that is used
+            0 => {
+                let wrapper: Vec<String> = (0..args.len()).map(|i| format!("q{i}")).collect();
+                format!(
+                    "{definition}\n| def g({}): f({});\n| g({})",
+                    wrapper.join(", "),
+                    wrapper.join(", "),
+                    args.join(", ")
+                )
+            }
+            1 if args.len() == 1 => format!("{definition}\n| {} | f()", args[0]),
+            2 => format!("{definition}\n| let r = f({})\n| r", args.join(", ")),
+            _ => format!("{definition}\n| f({})", args.join(", ")),
+        }
+    }
+
+    /// A lambda that a function applies to its argument, the lambda using its parameter at the
+    /// type the call passes.
+    fn higher_order_program(&mut self) -> String {
+        let ty = self.any_type();
+        self.vars = vec![("y".to_string(), ty)];
+        if self.rng.chance(35) {
+            // A builtin applies the lambda to each element of an argument
+            let ret = self.any_type();
+            self.vars = vec![("y".to_string(), Ty::Num)];
+            let body = self.expr(ret, 3);
+            self.vars.clear();
+            let arr = self.expr(Ty::Arr, 1);
+            if self.rng.chance(30) {
+                self.vars = vec![("z".to_string(), Ty::Num)];
+                let next = self.expr(Ty::Num, 2);
+                self.vars.clear();
+                return format!("def f(xs): xs | map(fn(y): (y + 1);) | map(fn(z): {next};);\n| f({arr})");
+            }
+            let builtin = self.rng.pick(&["map", "filter", "any", "all"]);
+            let body = if builtin == "map" {
+                body
+            } else {
+                format!("({body}) == ({body})")
+            };
+            return if self.rng.chance(50) {
+                format!("def f(xs): {builtin}(xs, fn(y): {body};);\n| f({arr})")
+            } else {
+                format!("def f(xs): xs | {builtin}(fn(y): {body};);\n| f({arr})")
+            };
+        }
+        let twice = self.rng.chance(40);
+        let ret = if twice { ty } else { self.any_type() };
+        let body = self.expr(ret, 3);
+        self.vars.clear();
+        let arg = self.expr(ty, 1);
+        if twice {
+            format!("def twice(f, v): f(f(v));\n| twice(fn(y): {body};, {arg})")
+        } else {
+            format!("def apply(f, v): f(v);\n| apply(fn(y): {body};, {arg})")
+        }
+    }
+
     /// A whole program: a few `let`s and a final expression.
     fn program(&mut self) -> String {
+        if self.rng.chance(10) {
+            return self.higher_order_program();
+        }
+        if self.rng.chance(30) {
+            return self.function_program();
+        }
+        if self.rng.chance(25) {
+            return self.construct_program_more();
+        }
+        if self.rng.chance(40) {
+            return self.construct_program();
+        }
         self.vars.clear();
         let mut parts = Vec::new();
         for i in 0..self.rng.below(4) {
@@ -207,7 +401,7 @@ enum Check {
     Panic(String),
     Clean,
     /// Errors that are definitely wrong programs
-    Errors(Vec<String>),
+    Errors(Vec<String>, bool),
 }
 
 fn is_soft(error: &TypeError) -> bool {
@@ -223,7 +417,7 @@ fn check(code: &str) -> Check {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let mut hir = Hir::default();
         hir.add_code(None, code);
-        TypeChecker::new().check(&hir)
+        TypeChecker::new().check_classified(&hir)
     }));
     match result {
         Err(payload) => Check::Panic(
@@ -234,11 +428,12 @@ fn check(code: &str) -> Check {
                 .unwrap_or_default(),
         ),
         Ok(errors) => {
-            let errors: Vec<String> = errors.iter().filter(|e| !is_soft(e)).map(|e| e.to_string()).collect();
+            let errors: Vec<_> = errors.iter().filter(|c| !is_soft(&c.error)).collect();
             if errors.is_empty() {
                 Check::Clean
             } else {
-                Check::Errors(errors)
+                let definite = errors.iter().any(|c| c.certainty == mq_check::Certainty::Definite);
+                Check::Errors(errors.iter().map(|c| c.error.to_string()).collect(), definite)
             }
         }
     }
@@ -255,6 +450,11 @@ struct Findings {
     runtime_ok: usize,
     agree_ok: usize,
     agree_error: usize,
+    /// Of `agree_error`, how many the checker called definite
+    agree_error_definite: usize,
+    definite_false_positives: Vec<(String, String)>,
+    /// Errors that the program really fails with, which the checker called uncertain
+    missed: Vec<(String, String)>,
     soft_only: usize,
     panics: Vec<(String, String)>,
     false_positives: Vec<(String, String)>,
@@ -280,8 +480,21 @@ fn run(seed: u64, count: usize, noise: u64) -> Findings {
 
         match (&verdict, &runtime) {
             (Check::Panic(message), _) => findings.panics.push((code, message.clone())),
-            (Check::Errors(errors), Ok(_)) => findings.false_positives.push((code, errors[0].clone())),
-            (Check::Errors(_), Err(_)) => findings.agree_error += 1,
+            (Check::Errors(errors, definite), Ok(_)) => {
+                if *definite {
+                    findings
+                        .definite_false_positives
+                        .push((code.clone(), errors[0].clone()));
+                }
+                findings.false_positives.push((code, errors[0].clone()))
+            }
+            (Check::Errors(errors, definite), Err(_)) => {
+                findings.agree_error += 1;
+                findings.agree_error_definite += usize::from(*definite);
+                if !*definite {
+                    findings.missed.push((code, errors[0].clone()));
+                }
+            }
             (Check::Clean, Err(error)) if is_type_error(&error.to_string()) => findings
                 .false_negatives
                 .push((code, error.to_string().lines().next().unwrap_or("").to_string())),
@@ -301,12 +514,14 @@ fn report(findings: &Findings) -> String {
     let mut out = String::new();
     writeln!(
         out,
-        "programs={} agree_ok={} agree_error={} other_runtime_errors={} false_positives={} false_negatives={} panics={}",
+        "programs={} agree_ok={} agree_error={} (definite {}) other_runtime_errors={} false_positives={} (definite {}) false_negatives={} panics={}",
         findings.programs,
         findings.agree_ok,
         findings.agree_error,
+        findings.agree_error_definite,
         findings.soft_only,
         findings.false_positives.len(),
+        findings.definite_false_positives.len(),
         findings.false_negatives.len(),
         findings.panics.len()
     )
@@ -321,10 +536,12 @@ fn report(findings: &Findings) -> String {
     writeln!(out, "false negatives by function: {counts:?}").unwrap();
     for (title, items) in [
         ("PANIC", &findings.panics),
+        ("DEFINITE FALSE POSITIVE", &findings.definite_false_positives),
+        ("MISSED (uncertain)", &findings.missed),
         ("FALSE POSITIVE", &findings.false_positives),
         ("FALSE NEGATIVE", &findings.false_negatives),
     ] {
-        for (code, detail) in items.iter().take(12) {
+        for (code, detail) in items.iter().take(if title.starts_with("MISSED") { 40 } else { 12 }) {
             writeln!(out, "--- {title}: {detail}\n{code}").unwrap();
         }
     }

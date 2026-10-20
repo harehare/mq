@@ -82,7 +82,7 @@ pub(super) fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang
 ///
 /// For a plain element this is just its own type. For a `...expr` spread element
 /// (`SymbolKind::Spread`), the spread target must itself be an array, so its
-/// *element* type — not the array type itself — is what should be compared
+/// *element* type (not the array type itself) is what should be compared
 /// against sibling elements (e.g. `[0, ...a, 99]` with `a: [number]` should be
 /// seen as homogeneous `number` elements, not a 3-slot tuple).
 pub(super) fn spread_element_type(
@@ -176,9 +176,35 @@ pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
 /// Also handles the case where a Call/Ref is inside a UnaryOp that is itself
 /// inside a Block, e.g., `x | !f()` where `f()` eventually receives piped input.
 pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool {
-    let parent_id = match hir.symbol(symbol_id).and_then(|s| s.parent) {
+    // Control flow passes its own input to its condition and bodies (`x | if (is_none()): ...`).
+    let mut climbed = false;
+    let mut parent_id = hir.symbol(symbol_id).and_then(|s| s.parent);
+    while let Some(id) = parent_id {
+        let Some(parent) = hir.symbol(id) else { break };
+        if !matches!(
+            parent.kind,
+            SymbolKind::If
+                | SymbolKind::Elif
+                | SymbolKind::Else
+                | SymbolKind::Unless
+                | SymbolKind::While
+                | SymbolKind::Until
+                | SymbolKind::Foreach
+                | SymbolKind::Loop
+                | SymbolKind::Try
+                | SymbolKind::Catch
+                | SymbolKind::Match
+                | SymbolKind::MatchArm { .. }
+        ) {
+            break;
+        }
+        climbed = true;
+        parent_id = parent.parent;
+    }
+    let parent_id = match parent_id {
         Some(id) => id,
-        None => return false,
+        // The root is a pipe chain whose first stage receives the input document
+        None => return climbed,
     };
     let parent = match hir.symbol(parent_id) {
         Some(p) => p,
@@ -202,7 +228,7 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
         return matches!(ancestor.kind, SymbolKind::Block | SymbolKind::Function(_));
     }
     // Check grandparent: if parent is Variable (let binding) inside a pipe-capable construct,
-    // e.g. `items | let x = first()` — the Call inside the Variable will receive piped
+    // e.g. `items | let x = first()`, the Call inside the Variable will receive piped
     // input in Pass 4 via propagate_piped_input_to_variable_initializer, so defer errors.
     if matches!(parent.kind, SymbolKind::Variable | SymbolKind::DestructuringBinding)
         && let Some(grandparent_id) = parent.parent
@@ -226,7 +252,7 @@ pub(super) fn build_piped_call_args(
     func_name: &str,
 ) -> Vec<Type> {
     if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
-        // Try explicit args first — if they already match an overload,
+        // Try explicit args first, if they already match an overload,
         // the piped input should not be prepended (it flows through unchanged)
         let resolved_explicit: Vec<Type> = explicit_arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
         if ctx.resolve_overload(func_name, &resolved_explicit).is_some() {
@@ -493,10 +519,10 @@ fn collect_break_types_inner(
     if matches!(symbol.kind, SymbolKind::Keyword) && symbol.value.as_deref() == Some("break") {
         let children = get_children(children_index, symbol_id);
         if !children.is_empty() {
-            // `break: value` — carries the value's type.
+            // `break: value`, carries the value's type.
             result.push(ctx.get_or_create_symbol_type(symbol_id));
         } else if bare_break_yields_none {
-            // bare `break` (no value) — the loop exits returning `none`.
+            // bare `break` (no value), the loop exits returning `none`.
             result.push(Type::None);
         } else {
             return false;

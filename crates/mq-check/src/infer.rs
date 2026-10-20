@@ -25,6 +25,8 @@ pub struct DeferredOverload {
     pub unsettled_piped: Option<Type>,
     /// The source range for error reporting
     pub range: Option<mq_lang::Range>,
+    /// The type given as the result until the operation is resolved
+    pub result: Type,
 }
 
 /// A deferred inner call to a function parameter (higher-order function pattern).
@@ -217,6 +219,18 @@ pub struct NarrowingEntry {
     pub is_complement: bool,
 }
 
+/// A complement narrowing whose source type still has unresolved type variables.
+///
+/// Subtracting from a union that holds a pending variable cannot be done yet, so it is retried
+/// once the variable is resolved.
+#[derive(Debug, Clone)]
+pub struct PendingNarrowing {
+    /// The references in the branch that the narrowing applies to
+    pub ref_ids: Vec<SymbolId>,
+    /// The narrowing to retry
+    pub entry: NarrowingEntry,
+}
+
 /// Collected type narrowing information for an if/elif expression.
 ///
 /// When a type predicate like `is_string(x)` is used as a condition in an if
@@ -231,6 +245,8 @@ pub struct TypeNarrowing {
     pub else_narrowings: Vec<NarrowingEntry>,
     /// The then-branch symbol ID
     pub then_branch_id: SymbolId,
+    /// False for the right operand of `&&` / `||`, whose condition is already checked for dead code
+    pub report_dead: bool,
     /// The else/elif branch symbol IDs where complement narrowings apply
     pub else_branch_ids: Vec<SymbolId>,
 }
@@ -242,6 +258,15 @@ pub struct CrossArmNarrowing {
     /// Types from preceding arms to subtract (only whole-type patterns like `none`, `:string:`)
     pub exclude_types: Vec<Type>,
     pub branch_id: SymbolId,
+}
+
+/// Where an error found by running a function body on the arguments of a call arose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InlinedError {
+    /// In the body itself
+    Body,
+    /// In a lambda run on the elements of a collection, which may have none
+    ElementCallback,
 }
 
 /// Inference context maintains state during type inference
@@ -275,6 +300,9 @@ pub struct InferenceContext {
     deferred_overloads: FxHashMap<SymbolId, DeferredOverload>,
     /// Deferred user-defined function calls for post-unification type checking
     deferred_user_calls: Vec<DeferredUserCall>,
+    /// The overload errors found by running a function body on the arguments of a call, by range
+    /// and message
+    inlined_errors: FxHashMap<(Option<mq_lang::Range>, String), InlinedError>,
     /// Deferred inner calls to function parameters for higher-order function checking
     deferred_parameter_calls: Vec<DeferredParameterCall>,
     /// Deferred record field accesses for post-unification resolution
@@ -294,6 +322,11 @@ pub struct InferenceContext {
     deferred_try_catches: Vec<DeferredTryCatch>,
     /// Type narrowings collected from type predicate conditions in if/elif expressions
     type_narrowings: Vec<TypeNarrowing>,
+    /// Complement narrowings waiting for their source type to be resolved
+    pending_narrowings: Vec<PendingNarrowing>,
+    /// Types that references read instead of their variable's current type (the right-hand side
+    /// of `x = x + 1` reads `x` as it was before the assignment)
+    read_overrides: FxHashMap<SymbolId, Type>,
     /// Cross-arm narrowings collected from match expressions
     cross_arm_narrowings: Vec<CrossArmNarrowing>,
     /// When true, heterogeneous arrays produce a type error
@@ -324,6 +357,7 @@ impl InferenceContext {
             piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
+            inlined_errors: FxHashMap::default(),
             deferred_parameter_calls: Vec::new(),
             deferred_record_accesses: Vec::new(),
             written_record_fields: FxHashMap::default(),
@@ -333,6 +367,8 @@ impl InferenceContext {
             deferred_call_return_accesses: Vec::new(),
             deferred_try_catches: Vec::new(),
             type_narrowings: Vec::new(),
+            pending_narrowings: Vec::new(),
+            read_overrides: FxHashMap::default(),
             cross_arm_narrowings: Vec::new(),
             strict_array,
         }
@@ -363,6 +399,15 @@ impl InferenceContext {
     #[cfg(test)]
     pub(crate) fn builtin_names(&self) -> impl Iterator<Item = &str> {
         self.builtins.keys().map(|name| name.as_str())
+    }
+
+    /// Whether a call of `name` has already been reported as matching no overload at `range`.
+    pub(crate) fn has_overload_error_at(&self, name: &str, range: Option<mq_lang::Range>) -> bool {
+        let prefix = format!("{name} with arguments");
+        self.errors.iter().any(|error| {
+            matches!(error, TypeError::UnificationError { left, location, .. }
+                if *location == range && left.starts_with(&prefix))
+        })
     }
 
     /// Adds a type error to the error collection
@@ -577,6 +622,39 @@ impl InferenceContext {
         self.type_narrowings.push(narrowing);
     }
 
+    /// Makes the reference read `ty` instead of its variable's current type
+    pub fn set_read_override(&mut self, reference: SymbolId, ty: Type) {
+        self.read_overrides.insert(reference, ty);
+    }
+
+    /// The type the reference reads instead of its variable's current type, if any
+    pub fn read_override(&self, reference: SymbolId) -> Option<&Type> {
+        self.read_overrides.get(&reference)
+    }
+
+    /// Adds a complement narrowing to retry once its source type is resolved
+    pub fn add_pending_narrowing(&mut self, narrowing: PendingNarrowing) {
+        self.pending_narrowings.push(narrowing);
+    }
+
+    /// Takes the narrowings that wait for their source type (consumes them)
+    pub fn take_pending_narrowings(&mut self) -> Vec<PendingNarrowing> {
+        std::mem::take(&mut self.pending_narrowings)
+    }
+
+    /// Whether the source type of a waiting narrowing is known by now
+    pub fn has_settled_pending_narrowing(&self) -> bool {
+        self.pending_narrowings.iter().any(|pending| {
+            self.get_symbol_type(pending.entry.def_id)
+                .is_some_and(|ty| self.is_settled(ty))
+        })
+    }
+
+    /// Whether any narrowing waits for its source type
+    pub fn has_pending_narrowings(&self) -> bool {
+        !self.pending_narrowings.is_empty()
+    }
+
     /// Takes all collected type narrowings (consumes them)
     pub fn take_type_narrowings(&mut self) -> Vec<TypeNarrowing> {
         std::mem::take(&mut self.type_narrowings)
@@ -640,6 +718,42 @@ impl InferenceContext {
         Some(result)
     }
 
+    /// Reports a "no matching overload" error found by running a function body on the arguments
+    /// of the call at `range`.
+    pub(crate) fn report_inlined_overload(
+        &mut self,
+        op_name: &str,
+        arg_tys: &[Type],
+        range: Option<mq_lang::Range>,
+        in_element_callback: bool,
+    ) {
+        let key = (
+            range,
+            format!("{} with arguments ({})", op_name, format_type_list(arg_tys)),
+        );
+        let found = if in_element_callback {
+            InlinedError::ElementCallback
+        } else {
+            InlinedError::Body
+        };
+        // Another call may reach the same operation outside a callback
+        let entry = self.inlined_errors.entry(key).or_insert(found);
+        if found == InlinedError::Body {
+            *entry = found;
+        }
+        self.report_no_matching_overload(op_name, arg_tys, range);
+    }
+
+    /// How the error was found by running a function body on the arguments of a call, if it was.
+    pub(crate) fn inlined_error(&self, error: &TypeError) -> Option<InlinedError> {
+        match error {
+            TypeError::UnificationError { left, location, .. } => {
+                self.inlined_errors.get(&(*location, left.clone())).copied()
+            }
+            _ => None,
+        }
+    }
+
     /// Reports a "no matching overload" error with formatted argument types.
     pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
         let args_str = format_type_list(arg_tys);
@@ -652,6 +766,11 @@ impl InferenceContext {
         });
     }
 
+    /// The overload of `name` that fits `arg_types` best.
+    fn best_overload(&self, name: &str, arg_types: &[Type]) -> Option<&Type> {
+        best_of(self.get_builtin_overloads(name)?, arg_types)
+    }
+
     /// Resolves the best matching overload for a function call.
     ///
     /// Given a function name and argument types, finds the best matching overload
@@ -662,48 +781,77 @@ impl InferenceContext {
         if name == crate::builtin::PARTIAL {
             return self.partial_signature(arg_types);
         }
-        let overloads = self.get_builtin_overloads(name)?;
+        let overloads = self.builtins.get(name)?;
 
-        let mut best_match: Option<(Type, u32)> = None;
-
-        for overload in overloads {
-            // For function types, check if argument types match
-            if let Type::Function(params, _ret) = overload {
-                // Check arity first
-                if params.len() != arg_types.len() {
-                    continue;
-                }
-
-                // Compute match score for each parameter
-                let mut total_score = 0u32;
-                let mut all_match = true;
-
-                for (param_ty, arg_ty) in params.iter().zip(arg_types.iter()) {
-                    if let Some(score) = param_ty.match_score(arg_ty) {
-                        total_score += score;
-                    } else {
-                        all_match = false;
-                        break;
-                    }
-                }
-
-                if all_match {
-                    match &best_match {
-                        None => {
-                            best_match = Some((overload.clone(), total_score));
-                        }
-                        Some((_, best_score)) if total_score > *best_score => {
-                            best_match = Some((overload.clone(), total_score));
-                        }
-                        _ => {}
-                    }
-                }
+        let Some(ty) = best_of(overloads, arg_types) else {
+            let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+            return crate::builtin::fallback_signature(name, &resolved_args)
+                .or_else(|| self.resolve_node_as_text(name, arg_types));
+        };
+        if crate::builtin::refines(name) {
+            let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+            if let Some(refined) = crate::builtin::refine_signature(name, &resolved_args) {
+                return Some(refined);
             }
         }
+        Some(instantiate_fresh_in(&mut self.var_ctx, ty))
+    }
 
-        let (ty, _score) = best_match?;
-        let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
-        Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
+    /// The signature [`resolve_overload`](Self::resolve_overload) would pick for arguments whose
+    /// types are already resolved, without instantiating its type variables, so that it can be
+    /// asked of a shared context. `None` for `partial`, whose signature depends on the call, and
+    /// for a name that is not a builtin.
+    pub(crate) fn peek_signature(&self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        if name == crate::builtin::PARTIAL {
+            return None;
+        }
+        let Some(ty) = self.best_overload(name, arg_types) else {
+            self.get_builtin_overloads(name)?;
+            return crate::builtin::fallback_signature(name, arg_types).or_else(|| {
+                let as_text = nodes_as_text_of(arg_types)?;
+                match self.peek_signature(name, &as_text)? {
+                    Type::Function(_, ret) if !ret.has_pending_var() => Some(Type::function(arg_types.to_vec(), *ret)),
+                    _ => None,
+                }
+            });
+        };
+        if crate::builtin::refines(name)
+            && let Some(refined) = crate::builtin::refine_signature(name, arg_types)
+        {
+            return Some(refined);
+        }
+        Some(ty.clone())
+    }
+
+    /// The arguments with each markdown node read as a string, or `None` when there is no node.
+    fn nodes_as_text(&self, arg_types: &[Type]) -> Option<Vec<Type>> {
+        let resolved: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+        nodes_as_text_of(&resolved).map(|_| {
+            arg_types
+                .iter()
+                .zip(&resolved)
+                .map(|(ty, resolved)| {
+                    if matches!(resolved, Type::Node(_)) {
+                        Type::String
+                    } else {
+                        ty.clone()
+                    }
+                })
+                .collect()
+        })
+    }
+
+    /// A builtin of strings also takes a markdown node as its text: retries a failed call with
+    /// the nodes read as strings.
+    fn resolve_node_as_text(&mut self, name: &str, arg_types: &[Type]) -> Option<Type> {
+        let as_text = self.nodes_as_text(arg_types)?;
+        let Some(Type::Function(_, ret)) = self.resolve_overload(name, &as_text) else {
+            return None;
+        };
+        if ret.has_pending_var() {
+            return None;
+        }
+        Some(Type::function(arg_types.to_vec(), *ret))
     }
 
     /// The signature of `partial(f, a1..ak)`. Its shape follows the arity of `f`, so it is derived
@@ -731,20 +879,7 @@ impl InferenceContext {
     /// Instantiates fresh type variables in a type to avoid contamination
     /// when the same overload or user-defined function is used at multiple call sites.
     pub fn instantiate_fresh(&mut self, ty: &Type) -> Type {
-        let free_vars = ty.free_vars();
-        if free_vars.is_empty() {
-            return ty.clone();
-        }
-        // Deduplicate: same var appearing multiple times should map to the same fresh var
-        let mut seen = rustc_hash::FxHashSet::default();
-        let mut subst = Substitution::empty();
-        for var in free_vars {
-            if seen.insert(var) {
-                let fresh = self.fresh_var();
-                subst.insert(var, Type::Var(fresh));
-            }
-        }
-        ty.apply_subst(&subst)
+        instantiate_fresh_in(&mut self.var_ctx, ty)
     }
 
     /// Generates a fresh type variable
@@ -821,6 +956,51 @@ impl InferenceContext {
         self.resolve_type_inner(ty, &mut Vec::new())
     }
 
+    /// Whether the type is fully known and not `dynamic`, without building the resolved type.
+    pub fn is_settled(&self, ty: &Type) -> bool {
+        !self.resolves_to_dynamic(ty) && self.is_settled_inner(ty, &mut Vec::new())
+    }
+
+    fn resolves_to_dynamic(&self, ty: &Type) -> bool {
+        let mut current = ty;
+        // A cycle of variables has no end; give up after it would have repeated
+        for _ in 0..self.substitutions.len() + 1 {
+            match current {
+                Type::Var(var) => match self.substitutions.get(var) {
+                    Some(bound) => current = bound,
+                    None => return false,
+                },
+                other => return other.is_dynamic(),
+            }
+        }
+        false
+    }
+
+    fn is_settled_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> bool {
+        match ty {
+            Type::Var(var) => {
+                let Some(bound) = self.substitutions.get(var) else {
+                    return false;
+                };
+                if path.contains(var) {
+                    return false;
+                }
+                path.push(*var);
+                let settled = self.is_settled_inner(bound, path);
+                path.pop();
+                settled
+            }
+            Type::Array(elem) | Type::Generator(elem) => self.is_settled_inner(elem, path),
+            Type::Dict(key, value) => self.is_settled_inner(key, path) && self.is_settled_inner(value, path),
+            Type::Function(params, ret) => {
+                params.iter().all(|p| self.is_settled_inner(p, path)) && self.is_settled_inner(ret, path)
+            }
+            Type::Record(fields, _) => fields.values().all(|f| self.is_settled_inner(f, path)),
+            Type::Union(items) | Type::Tuple(items) => items.iter().all(|i| self.is_settled_inner(i, path)),
+            _ => true,
+        }
+    }
+
     fn resolve_type_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> Type {
         match ty {
             Type::Var(var) => {
@@ -828,7 +1008,7 @@ impl InferenceContext {
                     return ty.clone();
                 };
                 if path.contains(var) {
-                    // Cycle detected — return the var unresolved to break infinite recursion
+                    // Cycle detected, return the var unresolved to break infinite recursion
                     return ty.clone();
                 }
                 path.push(*var);
@@ -876,6 +1056,67 @@ impl InferenceContext {
 
         result
     }
+}
+
+/// The overload among `overloads` that fits `arg_types` best.
+fn best_of<'a>(overloads: &'a [Type], arg_types: &[Type]) -> Option<&'a Type> {
+    let mut best_match: Option<(&Type, u32)> = None;
+    for overload in overloads {
+        let Type::Function(params, _ret) = overload else {
+            continue;
+        };
+        if params.len() != arg_types.len() {
+            continue;
+        }
+        let mut total_score = 0u32;
+        let mut fits = true;
+        for (param_ty, arg_ty) in params.iter().zip(arg_types.iter()) {
+            match param_ty.match_score(arg_ty) {
+                Some(score) => total_score += score,
+                None => {
+                    fits = false;
+                    break;
+                }
+            }
+        }
+        if fits && best_match.is_none_or(|(_, best_score)| total_score > best_score) {
+            best_match = Some((overload, total_score));
+        }
+    }
+    best_match.map(|(overload, _)| overload)
+}
+
+/// The resolved arguments with each markdown node read as a string, or `None` when there is no node.
+fn nodes_as_text_of(arg_types: &[Type]) -> Option<Vec<Type>> {
+    arg_types.iter().any(|ty| matches!(ty, Type::Node(_))).then(|| {
+        arg_types
+            .iter()
+            .map(|ty| {
+                if matches!(ty, Type::Node(_)) {
+                    Type::String
+                } else {
+                    ty.clone()
+                }
+            })
+            .collect()
+    })
+}
+
+/// `ty` with fresh type variables in place of its free ones.
+fn instantiate_fresh_in(var_ctx: &mut TypeVarContext, ty: &Type) -> Type {
+    let free_vars = ty.free_vars();
+    if free_vars.is_empty() {
+        return ty.clone();
+    }
+    // Deduplicate: same var appearing multiple times should map to the same fresh var
+    let mut seen = rustc_hash::FxHashSet::default();
+    let mut subst = Substitution::empty();
+    for var in free_vars {
+        if seen.insert(var) {
+            subst.insert(var, Type::Var(var_ctx.fresh()));
+        }
+    }
+    ty.apply_subst(&subst)
 }
 
 impl Default for InferenceContext {
@@ -989,5 +1230,41 @@ mod tests {
         let arg_types = vec![Type::Number];
         let resolved = ctx.resolve_overload("op", &arg_types);
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn test_peek_signature_answers_like_resolve_overload() {
+        let mut ctx = InferenceContext::new();
+        crate::builtin::register_all(&mut ctx);
+        let types = [
+            Type::Number,
+            Type::String,
+            Type::Bool,
+            Type::None,
+            Type::Symbol,
+            Type::markdown(),
+            Type::array(Type::Number),
+            Type::array(Type::String),
+            Type::dict(Type::String, Type::Number),
+            Type::function(vec![Type::Dynamic], Type::Dynamic),
+            Type::Dynamic,
+        ];
+        let names: Vec<String> = ctx.builtin_names().map(str::to_string).collect();
+        for name in names.iter().filter(|name| *name != crate::builtin::PARTIAL) {
+            for first in &types {
+                let mut calls = vec![vec![first.clone()]];
+                calls.extend(types.iter().map(|second| vec![first.clone(), second.clone()]));
+                for args in calls {
+                    let peeked = ctx.peek_signature(name, &args);
+                    let resolved = ctx.resolve_overload(name, &args);
+                    assert_eq!(peeked.is_some(), resolved.is_some(), "{name}{args:?}");
+                    if let (Some(Type::Function(_, peeked)), Some(Type::Function(_, resolved))) = (&peeked, &resolved)
+                        && !peeked.has_pending_var()
+                    {
+                        assert_eq!(peeked, resolved, "{name}{args:?}");
+                    }
+                }
+            }
+        }
     }
 }

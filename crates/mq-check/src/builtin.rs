@@ -12,6 +12,10 @@ use mq_markdown::NodeKind;
 /// The name of `partial`, whose signature is derived per call instead of looked up.
 pub(crate) const PARTIAL: &str = "partial";
 
+mod refine;
+
+pub(crate) use refine::{fallback_signature, refine_signature, refines};
+
 /// Registers all builtin function and operator type signatures.
 pub fn register_all(ctx: &mut InferenceContext) {
     register_arithmetic(ctx);
@@ -102,6 +106,11 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
         );
     }
 
+    // Multiplication: number * string -> string (repetition, either order)
+    for name in ["*", "mul"] {
+        register_binary(ctx, name, Type::Number, Type::String, Type::String);
+    }
+
     // Addition: markdown + markdown -> markdown
     register_binary(ctx, "+", Type::markdown(), Type::markdown(), Type::markdown());
     register_binary(ctx, "add", Type::markdown(), Type::markdown(), Type::markdown());
@@ -158,6 +167,57 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
         Type::Number,
     );
 
+    // A string loses characters from one end, and an array gains a value at one end.
+    for name in ["shift_left", "shift_right"] {
+        register_binary(ctx, name, Type::String, Type::Number, Type::String);
+    }
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "shift_left",
+        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
+    );
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "shift_right",
+        Type::Var(b),
+        Type::array(Type::Var(a)),
+        Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
+    );
+
+    // A value joins the front of an array, and a number repeats an array.
+    for name in ["+", "add"] {
+        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(
+            ctx,
+            name,
+            Type::Var(a),
+            Type::array(Type::Var(b)),
+            Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
+        );
+    }
+    for name in ["*", "mul"] {
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::Number,
+            Type::array(Type::Var(a)),
+            Type::array(Type::Var(a)),
+        );
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::Number,
+            Type::array(Type::Var(a)),
+        );
+    }
+
     // None propagation: (none, none) -> none for all arithmetic operators
     register_none_propagation_binary(
         ctx,
@@ -181,6 +241,11 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     );
 }
 
+/// What a string function takes: a string, or a markdown node as its text.
+fn text() -> Type {
+    Type::union(vec![Type::String, Type::markdown()])
+}
+
 /// Comparison operators: <, >, <=, >=, ==, !=, lt, gt, lte, gte, eq, ne
 fn register_comparison(ctx: &mut InferenceContext) {
     // Ordering: supports number, string, symbol, bool, bytes
@@ -190,22 +255,31 @@ fn register_comparison(ctx: &mut InferenceContext) {
         register_binary(ctx, name, Type::Symbol, Type::Symbol, Type::Bool);
         register_binary(ctx, name, Type::Bool, Type::Bool, Type::Bool);
         register_binary(ctx, name, Type::Bytes, Type::Bytes, Type::Bool);
+        register_binary(ctx, name, Type::None, Type::None, Type::Bool);
+        // Arrays and dicts are ordered by their contents.
+        let a = ctx.fresh_var();
+        register_binary(
+            ctx,
+            name,
+            Type::array(Type::Var(a)),
+            Type::array(Type::Var(a)),
+            Type::Bool,
+        );
+        let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(
+            ctx,
+            name,
+            Type::dict(Type::Var(k), Type::Var(v)),
+            Type::dict(Type::Var(k), Type::Var(v)),
+            Type::Bool,
+        );
     }
 
-    // Equality: forall a. (a, a) -> bool
+    // Equality: forall a b. (a, b) -> bool
+    // Values of different types are never equal, which is not an error.
     for name in ["==", "!=", "eq", "ne"] {
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Bool);
-    }
-
-    // Equality: (None, a) -> bool and (a, None) -> bool
-    // In mq, comparing None with any type is valid and returns bool
-    // (e.g. `len(possibly_none) == 0` where len returns None for None inputs).
-    for name in ["==", "!=", "eq", "ne"] {
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::None, Type::Var(a), Type::Bool);
-        let a = ctx.fresh_var();
-        register_binary(ctx, name, Type::Var(a), Type::None, Type::Bool);
+        let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+        register_binary(ctx, name, Type::Var(a), Type::Var(b), Type::Bool);
     }
 }
 
@@ -289,7 +363,9 @@ fn register_math(ctx: &mut InferenceContext) {
     // Special number functions
     register_nullary(ctx, "nan", Type::Number);
     register_nullary(ctx, "infinite", Type::Number);
-    register_unary(ctx, "is_nan", Type::Number, Type::Bool);
+    // is_nan: any value -> bool (only a number can be nan)
+    let a = ctx.fresh_var();
+    register_unary(ctx, "is_nan", Type::Var(a), Type::Bool);
 
     // Human-readable byte size formatting: number -> string
     register_unary(ctx, "human_bytes", Type::Number, Type::String);
@@ -319,15 +395,36 @@ fn register_string(ctx: &mut InferenceContext) {
         vec![Type::String],
         Type::String,
     );
+    register_many(
+        ctx,
+        &[
+            "downcase",
+            "upcase",
+            "ascii_downcase",
+            "ascii_upcase",
+            "trim",
+            "ltrim",
+            "rtrim",
+        ],
+        vec![Type::markdown()],
+        Type::markdown(),
+    );
 
     // String search: (string, string) -> bool/number
-    register_binary(ctx, "starts_with", Type::String, Type::String, Type::Bool);
-    register_binary(ctx, "ends_with", Type::String, Type::String, Type::Bool);
-    register_binary(ctx, "index", Type::String, Type::String, Type::Number);
-    register_binary(ctx, "rindex", Type::String, Type::String, Type::Number);
-    register_binary(ctx, "indices", Type::String, Type::String, Type::array(Type::Number));
-    register_unary(ctx, "token_count", Type::String, Type::Number);
-    register_binary(ctx, "token_count", Type::String, Type::String, Type::Number);
+    register_binary(ctx, "starts_with", text(), Type::String, Type::Bool);
+    register_binary(ctx, "ends_with", text(), Type::String, Type::Bool);
+    register_binary(ctx, "index", text(), Type::String, Type::Number);
+    register_binary(ctx, "rindex", text(), Type::String, Type::Number);
+    register_binary(ctx, "indices", text(), Type::String, Type::array(Type::Number));
+    register_unary(ctx, "token_count", text(), Type::Number);
+    register_binary(ctx, "token_count", text(), Type::String, Type::Number);
+    // A none input is searched like an empty string.
+    register_binary(ctx, "starts_with", Type::None, Type::String, Type::Bool);
+    register_binary(ctx, "ends_with", Type::None, Type::String, Type::Bool);
+    register_binary(ctx, "index", Type::None, Type::String, Type::Number);
+    register_binary(ctx, "rindex", Type::None, Type::String, Type::Number);
+    register_unary(ctx, "token_count", Type::None, Type::Number);
+    register_binary(ctx, "token_count", Type::None, Type::String, Type::Number);
 
     // String manipulation
     register_ternary(ctx, "replace", Type::String, Type::String, Type::String, Type::String);
@@ -345,7 +442,18 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
         Type::markdown(),
     );
-    register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
+    register_binary(ctx, "split", text(), Type::String, Type::array(Type::String));
+    register_binary(ctx, "split", Type::None, Type::String, Type::array(Type::String));
+    register_binary(ctx, "split", Type::Bytes, Type::Bytes, Type::array(Type::Bytes));
+    // An array is split at the elements equal to the separator.
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "split",
+        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::array(Type::Var(a))),
+    );
     // split_records and extract_urls also accept a markdown node (its text) and none (no records).
     let split_record = Type::array(closed_record(&[
         ("text", Type::String),
@@ -413,25 +521,28 @@ fn register_string(ctx: &mut InferenceContext) {
     // A markdown node is searched through its text.
     register_binary(ctx, "contains", Type::markdown(), Type::String, Type::Bool);
 
+    // A string takes text at a position, and anything else is written out as text first.
+    let a = ctx.fresh_var();
+    register_ternary(ctx, "insert", Type::String, Type::Number, Type::Var(a), Type::String);
+
     // Character/codepoint conversion
-    register_unary(ctx, "explode", Type::String, Type::array(Type::Number));
+    register_unary(ctx, "explode", text(), Type::array(Type::Number));
     register_unary(ctx, "implode", Type::array(Type::Number), Type::String);
 
     // String properties
-    register_unary(ctx, "utf8bytelen", Type::String, Type::Number);
+    register_unary(ctx, "utf8bytelen", text(), Type::Number);
 
     // Regular expressions
-    register_binary(ctx, "test", Type::String, Type::String, Type::Bool);
-    register_binary(
-        ctx,
-        "regex_match",
-        Type::String,
-        Type::String,
-        Type::array(Type::String),
-    );
-    register_binary(ctx, "is_regex_match", Type::String, Type::String, Type::Bool);
-    register_binary(ctx, "is_not_regex_match", Type::String, Type::String, Type::Bool);
+    register_binary(ctx, "test", text(), Type::String, Type::Bool);
+    register_binary(ctx, "regex_match", text(), Type::String, Type::array(Type::String));
+    register_binary(ctx, "is_regex_match", text(), Type::String, Type::Bool);
+    register_binary(ctx, "is_not_regex_match", text(), Type::String, Type::Bool);
     register_unary(ctx, "regex_escape", Type::String, Type::String);
+    // A none input matches nothing.
+    register_binary(ctx, "test", Type::None, Type::String, Type::Bool);
+    register_binary(ctx, "is_regex_match", Type::None, Type::String, Type::Bool);
+    register_binary(ctx, "is_not_regex_match", Type::None, Type::String, Type::Bool);
+    register_binary(ctx, "regex_match", Type::None, Type::String, Type::array(Type::String));
 
     // Encoding functions
     register_many(
@@ -451,6 +562,23 @@ fn register_string(ctx: &mut InferenceContext) {
         vec![Type::String],
         Type::String,
     );
+    register_many(
+        ctx,
+        &[
+            "base64",
+            "base64d",
+            "base64url",
+            "base64urld",
+            "url_encode",
+            "url_decode",
+            "html_escape",
+            "html_unescape",
+            "strip_tags",
+            "sanitize_html",
+        ],
+        vec![Type::markdown()],
+        Type::markdown(),
+    );
     register_unary(ctx, "base64d_bytes", Type::String, Type::Bytes);
     register_unary(ctx, "base64urld_bytes", Type::String, Type::Bytes);
 
@@ -466,7 +594,15 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(
         ctx,
         "capture",
+        text(),
         Type::String,
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "capture",
+        Type::None,
         Type::String,
         Type::dict(Type::Var(k), Type::Var(v)),
     );
@@ -475,7 +611,15 @@ fn register_string(ctx: &mut InferenceContext) {
     // Element type is left polymorphic since it depends on whether the pattern has
     // capture groups (string per match) or not (array of groups per match).
     let a = ctx.fresh_var();
-    register_binary(ctx, "scan", Type::String, Type::String, Type::array(Type::Var(a)));
+    register_binary(ctx, "scan", text(), Type::String, Type::array(Type::Var(a)));
+    let a = ctx.fresh_var();
+    register_binary(ctx, "scan", Type::None, Type::String, Type::array(Type::Var(a)));
+
+    // Numbers, arrays and the like are written out as text.
+    for name in ["url_encode", "url_decode"] {
+        let a = ctx.fresh_var();
+        register_unary(ctx, name, Type::Var(a), Type::String);
+    }
 
     // None propagation for string functions
     register_none_propagation_unary(
@@ -595,35 +739,6 @@ fn node_of(kind: NodeKind) -> Type {
     Type::Node(KindSet::of(kind))
 }
 
-/// Returns the signature of `name` specialised to the already resolved `args`, for builtins whose
-/// result type depends on the structure of an argument rather than on a type variable.
-pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
-    match (name, args) {
-        ("flatten", [arg @ (Type::Array(_) | Type::Tuple(_))]) => {
-            Some(Type::function(vec![arg.clone()], Type::array(flatten_leaf(arg))))
-        }
-        // Setters change a node's contents but keep its kind.
-        (
-            "set_check" | "set_list_ordered" | "set_code_block_lang" | "set_ref" | "set_attr" | "set_children",
-            [node @ Type::Node(_), rest @ ..],
-        ) => Some(Type::function(
-            std::iter::once(node.clone()).chain(rest.iter().cloned()).collect(),
-            node.clone(),
-        )),
-        _ => None,
-    }
-}
-
-/// The element type left after `flatten` removes every level of array nesting.
-fn flatten_leaf(ty: &Type) -> Type {
-    match ty {
-        Type::Array(elem) => flatten_leaf(elem),
-        Type::Tuple(elems) => Type::union(elems.iter().map(flatten_leaf).collect()),
-        Type::Union(members) => Type::union(members.iter().map(flatten_leaf).collect()),
-        other => other.clone(),
-    }
-}
-
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
 fn register_array(ctx: &mut InferenceContext) {
     // Polymorphic array -> array functions
@@ -701,7 +816,7 @@ fn register_array(ctx: &mut InferenceContext) {
     // len: [a] -> number, string -> number
     let a = ctx.fresh_var();
     register_unary(ctx, "len", Type::array(Type::Var(a)), Type::Number);
-    register_unary(ctx, "len", Type::String, Type::Number);
+    register_unary(ctx, "len", text(), Type::Number);
 
     // slice: ([a], number, number) -> [a]
     let a = ctx.fresh_var();
@@ -733,6 +848,22 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::Number,
         Type::Var(b),
         Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
+    );
+
+    // An array starts or ends with text when its first or last element does. Any other element
+    // does not.
+    for name in ["starts_with", "ends_with"] {
+        let a = ctx.fresh_var();
+        register_binary(ctx, name, Type::array(Type::Var(a)), Type::String, Type::Bool);
+    }
+    // An array tells where an element is.
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "indices",
+        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::Number),
     );
 
     // array: a -> [a]
@@ -783,10 +914,10 @@ fn register_array(ctx: &mut InferenceContext) {
     register_binary(ctx, "repeat", Type::Var(a), Type::Number, Type::array(Type::Var(a)));
 
     // slice: (string, number, number) -> string
-    register_ternary(ctx, "slice", Type::String, Type::Number, Type::Number, Type::String);
+    register_ternary(ctx, "slice", text(), Type::Number, Type::Number, Type::String);
 
     // slice: (string, number) -> string  (open-ended slice, e.g. s[1:])
-    register_binary(ctx, "slice", Type::String, Type::Number, Type::String);
+    register_binary(ctx, "slice", text(), Type::Number, Type::String);
 
     // contains: ([a], a) -> bool
     let a = ctx.fresh_var();
@@ -872,15 +1003,15 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(v),
     );
 
-    // set: ({k: v}, k, v) -> {k: v}
-    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    // set: ({k: v}, k, w) -> {k: v | w}  (a dict may hold values of different types)
+    let (k, v, w) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
     register_ternary(
         ctx,
         "set",
         Type::dict(Type::Var(k), Type::Var(v)),
         Type::Var(k),
-        Type::Var(v),
-        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::Var(w),
+        Type::dict(Type::Var(k), Type::union(vec![Type::Var(v), Type::Var(w)])),
     );
 
     // set: ([a], number, a) -> [a]  (array index assignment)
@@ -1495,6 +1626,9 @@ fn register_markdown(ctx: &mut InferenceContext) {
     // (markdown, string) -> markdown/string
     let a = ctx.fresh_var();
     register_binary(ctx, "to_code", Type::Var(a), Type::String, node_of(NodeKind::Code));
+    // The language is optional: none gives a fence without one.
+    let a = ctx.fresh_var();
+    register_binary(ctx, "to_code", Type::Var(a), Type::None, node_of(NodeKind::Code));
     // The result depends on the attribute name (`attr(h, "depth")` is a number), which is not part
     // of the type, so it stays open and is fixed by how it is used.
     let attr_ret = ctx.fresh_var();
@@ -1611,6 +1745,20 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::markdown(),
     );
     register_binary(ctx, "set_ref", Type::markdown(), Type::String, Type::markdown());
+
+    // A node takes a new text
+    let a = ctx.fresh_var();
+    register_binary(ctx, "update", Type::markdown(), Type::Var(a), Type::markdown());
+
+    // Any value is written out as text.
+    for name in ["to_markdown_string", "to_text"] {
+        let a = ctx.fresh_var();
+        register_unary(ctx, name, Type::Var(a), Type::String);
+    }
+    // Only text is rendered as HTML.
+    for input in [Type::String, Type::Symbol] {
+        register_unary(ctx, "to_html", input, Type::String);
+    }
 
     // None propagation for markdown -> string functions
     register_none_propagation_unary(ctx, &["to_text", "to_html", "to_markdown_string"]);
@@ -1859,6 +2007,7 @@ fn register_bytes(ctx: &mut InferenceContext) {
     // starts_with/ends_with: (bytes, bytes) -> bool
     register_binary(ctx, "starts_with", Type::Bytes, Type::Bytes, Type::Bool);
     register_binary(ctx, "ends_with", Type::Bytes, Type::Bytes, Type::Bool);
+    register_binary(ctx, "contains", Type::Bytes, Type::Bytes, Type::Bool);
 
     // index/rindex: (bytes, bytes) -> number
     register_binary(ctx, "index", Type::Bytes, Type::Bytes, Type::Number);
@@ -2719,7 +2868,7 @@ mod tests {
     #[case::in_return_plus_number("in([1, 2, 3], 1) + 1", false)] // in returns bool; bool + number is invalid
     #[case::contains_return_plus_number("contains(\"hello\", \"he\") + 1", false)] // contains returns bool; bool + number is invalid
     #[case::bsearch("bsearch([1, 2, 3, 4], 2)", true)]
-    #[case::bsearch_error("bsearch([1, 2, 3, 4], \"2\")", false)]
+    #[case::bsearch_other_type("bsearch([1, 2, 3, 4], \"2\")", true)] // the target is never found
     fn test_collection_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

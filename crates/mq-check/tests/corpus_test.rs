@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use miette::Diagnostic;
-use mq_check::{TypeChecker, types::Type};
+use mq_check::{Certainty, TypeChecker, types::Type};
 use mq_hir::{Hir, HirError};
 use url::Url;
 
@@ -95,9 +95,15 @@ fn check_file(path: &Path) -> FileReport {
 
     let mut checker = TypeChecker::new();
     report.type_errors = checker
-        .check(&hir)
+        .check_classified(&hir)
         .iter()
-        .map(|e| e.code().map(|c| c.to_string()).unwrap_or_default())
+        .map(|c| {
+            let code = c.error.code().map(|code| code.to_string()).unwrap_or_default();
+            match c.certainty {
+                Certainty::Definite => code,
+                Certainty::Uncertain => format!("{code} (uncertain)"),
+            }
+        })
         .collect();
     report.type_errors.sort();
 

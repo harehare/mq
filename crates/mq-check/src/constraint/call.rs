@@ -109,6 +109,26 @@ fn constraint_origin(call: &BuiltinCall<'_>, arg_index: usize) -> ConstraintOrig
     }
 }
 
+/// The result type shared by every overload of `name` that the arguments can still select, so
+/// `"a" + x` is a string whatever `x` turns out to be.
+pub(crate) fn common_result(ctx: &InferenceContext, name: &str, args: &[Type]) -> Option<Type> {
+    let mut common: Option<&Type> = None;
+    for overload in ctx.get_builtin_overloads(name)? {
+        let Type::Function(params, ret) = overload else {
+            continue;
+        };
+        if params.len() != args.len() || !params.iter().zip(args).all(|(param, arg)| param.can_match(arg)) {
+            continue;
+        }
+        match common {
+            None => common = Some(ret),
+            Some(seen) if seen == &**ret => {}
+            Some(_) => return None,
+        }
+    }
+    common.filter(|ty| !ty.has_pending_var() && !ty.is_dynamic()).cloned()
+}
+
 pub(super) fn resolve_builtin(ctx: &mut InferenceContext, call: &BuiltinCall<'_>) -> Resolution {
     let resolved_args: Vec<Type> = call.args.iter().map(|ty| ctx.resolve_type(ty)).collect();
     let is_builtin = ctx.get_builtin_overloads(call.name).is_some();
@@ -133,13 +153,17 @@ pub(super) fn resolve_builtin(ctx: &mut InferenceContext, call: &BuiltinCall<'_>
             }
         };
     if waits {
-        let result = Type::Var(ctx.fresh_var());
+        // Whatever the operands turn out to be, a comparison gives a bool.
+        let result = common_result(ctx, call.name, &resolved_args)
+            .filter(|ty| matches!(ty, Type::Bool))
+            .unwrap_or_else(|| Type::Var(ctx.fresh_var()));
         ctx.add_deferred_overload(DeferredOverload {
             symbol_id: call.symbol_id,
             op_name: SmolStr::new(call.name),
             operand_tys: call.args.to_vec(),
             unsettled_piped: call.unsettled_piped.clone(),
             range: call.range,
+            result: result.clone(),
         });
         return Resolution::Deferred(result);
     }

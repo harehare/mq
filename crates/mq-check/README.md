@@ -54,7 +54,7 @@ if errors.is_empty() {
 
 ### Union Types
 
-When a control flow construct (such as `if`, `while`, `loop`, `foreach`, `match`, or `try/catch`) may produce values of different types depending on the branch taken, the type checker infers a **union type** — written as `T1 | T2 | ...`.
+When a control flow construct (such as `if`, `while`, `loop`, `foreach`, `match`, or `try/catch`) may produce values of different types depending on the branch taken, the type checker infers a **union type**, written as `T1 | T2 | ...`.
 
 Union types propagate through variable bindings and pipe chains. Using a union-typed value in a context that requires a single concrete type (e.g., arithmetic) is a type error.
 
@@ -162,6 +162,8 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
+| `--show-uncertain` | Show errors the checker is not sure about (see below) as warnings |
+| `--strict`       | Report errors the checker is not sure about as errors |
 | `--input-type`   | Type of the input document `.`, e.g. `h1 \| h2`, `code`, `markdown - code` (default: unknown) |
 | `--format`       | Diagnostic output format: `text` (default), `json`, `markdown`, or `sarif` |
 
@@ -173,6 +175,33 @@ Enforces that all elements in an array literal share the same type.
 echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
 ```
+
+### Definite and uncertain errors
+
+A type error is *definite* only when every operand it is about is *exact*: its type is known for certain. Definite errors are errors. Every other error is *uncertain*: it may be wrong for a program that runs fine, so it is left out. `--show-uncertain` shows the uncertain errors as warnings, and `--strict` reports them as errors. Advice about the code (`nullable_propagation`, `unreachable_code`, `non_exhaustive_patterns`, `heterogeneous_array`) is always a warning.
+
+An expression is exact when it is
+
+- a literal, or an array or dict literal of exact elements
+- an operator on exact operands
+- a selector on the input document, when its type was declared with `--input-type`
+- a call of an audited builtin (see below) with exact arguments, fed by an exact pipe stage
+- an `if` whose branches are exact
+- a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
+- an operation that gives the same type whatever its operands are, such as `to_string(x)` (a string) or `x == 1` (a bool)
+
+A call of a function defined in the program is exact when it is given every parameter (or all but the piped one), the arguments are exact and the body is exact when its parameters are (a recursive function is not). Parameters outside such a call, loops, `match` and anything else are not exact, so an error on them is uncertain. An error inside a `try:` body is uncertain as well. A case the rules do not cover can only make an error uncertain, never definite.
+
+Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
+
+### User-defined functions
+
+A function is checked in two ways, so that a mistake is found whether or not the function is called.
+
+- **In the body.** An operation fails whatever its operands of unknown type (a parameter, a loop variable) are when no overload takes any type for them, and that error is definite. `def f(x): x - [1];` and `def f(x): abs([x, 1]);` are errors before `f` is called. An array or dict literal counts as an array or dict even when its elements are unknown, and an operation that gives the same type whatever its operands are (`to_string(x)`, `x == 1`) has that type. A body that no type of its parameters lets run through (`def f(x): abs(x) | upcase(x);`) is an error too, for up to two parameters.
+- **At a call.** The stages of the body that always run (not those inside `if`, `match`, loops, `try:` or a lambda) are run on the types of the arguments. An operation that nothing takes is reported at the call, so `def f(x): abs(x); | f("a")` is an error, also through another function (`def g(y): f(y); | g("a")`) for a piped call (`"a" | f()`) for a lambda that a builtin applies to the elements of an argument (`def f(xs): map(xs, fn(s): abs(s);); | f(["a"])`) and for a lambda that the function applies (`def apply(f, v): f(v); | apply(fn(x): abs(x);, "a")`). The error is definite when the arguments are exact, even if the rest of the body is not.
+
+A default is used when the call leaves it out. A function with a variadic parameter, and a parameter that is assigned, is not run this way.
 
 ### Test files
 
@@ -191,12 +220,12 @@ echo '.depth' | mq-check --input-type code        # Error: undefined attribute `
 
 `--format` controls how diagnostics are rendered, independent of `--show-types` and the other checks above:
 
-- `text` (default) — colored, human-readable report.
-- `json` — a single JSON array of diagnostics (syntax errors/warnings and type errors) across every
+- `text` (default): colored, human-readable report.
+- `json`: a single JSON array of diagnostics (syntax errors/warnings and type errors) across every
   checked file, each with `file`, `severity` (`error`/`warning`), `code`, `message`, and an optional
   `range`.
-- `markdown` — a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
-- `sarif` — a single SARIF 2.1.0 log covering every checked file, suitable for
+- `markdown`: a Markdown table of diagnostics, suitable for pasting into a PR description or comment.
+- `sarif`: a single SARIF 2.1.0 log covering every checked file, suitable for
   [`github/codeql-action/upload-sarif`](https://github.com/github/codeql-action/tree/main/upload-sarif) or any
   other SARIF-consuming tool.
 
@@ -230,7 +259,11 @@ just test-all
 
 ### Differential fuzzing
 
-`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
+`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`, which should report none), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
+
+### Builtin signature audit
+
+`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose (`TOLERATED` in the test). Every builtin the audit covers has no finding, so a call to it can make an error definite. The builtins it does not cover (they do I/O, take more than three arguments, or never ran with the values tried) are listed in `UNAUDITED_BUILTINS` (`src/certainty.rs`); an error on a call to one is uncertain. The audit fails when that list is out of date and prints the list to put there. `AUDIT_FUNCTION` limits the run to one builtin.
 
 ### Building
 

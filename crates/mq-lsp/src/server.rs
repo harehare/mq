@@ -496,7 +496,7 @@ impl Backend {
         if errors.is_empty() && self.config.enable_type_checking {
             let hir_guard = self.hir.read().unwrap();
             let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options.clone());
-            let type_errors = checker.check(&hir_guard);
+            let type_errors = checker.check_classified(&hir_guard);
 
             // Build a set of text ranges from the current source's symbols
             // so that type errors originating from other sources (e.g., pre-loaded modules)
@@ -511,12 +511,19 @@ impl Backend {
             errors.extend(
                 type_errors
                     .into_iter()
-                    .filter(|e| {
-                        e.location()
+                    .filter(|c| {
+                        c.error
+                            .location()
                             .map(|range| source_locations.contains(&range))
                             .unwrap_or(false)
                     })
-                    .map(LspError::TypeError),
+                    .filter_map(|c| {
+                        let options = &self.config.type_checker_options;
+                        match c.severity(options)? {
+                            mq_check::Severity::Error => Some(LspError::TypeError(c.error)),
+                            mq_check::Severity::Warning => Some(LspError::UncertainTypeError(c.error)),
+                        }
+                    }),
             );
         }
 
@@ -532,7 +539,7 @@ impl Backend {
     }
 
     /// Computes the full diagnostic set for a document: cached parse/type errors from
-    /// `error_map`, HIR errors/warnings (e.g. unreachable code), and — when enabled — lint
+    /// `error_map`, HIR errors/warnings (e.g. unreachable code), and, when enabled, lint
     /// diagnostics. Shared by the push (`publish_diagnostics`) and pull
     /// (`textDocument/diagnostic`) flows so they can't drift apart.
     fn compute_diagnostics(&self, uri: &Url) -> Vec<ls_types::Diagnostic> {
@@ -2666,7 +2673,9 @@ mod tests {
 
         // Ensure that a type error is surfaced through the diagnostics pipeline.
         assert!(
-            errors.iter().any(|e| matches!(e, LspError::TypeError(_))),
+            errors
+                .iter()
+                .any(|e| matches!(e, LspError::TypeError(_) | LspError::UncertainTypeError(_))),
             "expected at least one type error diagnostic for arity mismatch"
         );
 
@@ -2747,7 +2756,7 @@ mod tests {
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
 
-        // Homogeneous array — valid even with strict_array
+        // Homogeneous array, valid even with strict_array
         let code = "[1, 2, 3]";
         let (nodes, errors) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
@@ -2798,7 +2807,7 @@ mod tests {
         let backend = service.inner();
         let uri = Url::parse("file:///test.mq").unwrap();
 
-        // Heterogeneous array typed as tuple — valid with tuple mode
+        // Heterogeneous array typed as tuple, valid with tuple mode
         let code = r#"[1, "hello", true]"#;
         let (nodes, errors) = mq_lang::parse_recovery(code);
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);

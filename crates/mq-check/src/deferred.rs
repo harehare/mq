@@ -15,7 +15,7 @@ use crate::field_guard::FieldGuard;
 use crate::{
     TypeError,
     builtin::PARTIAL,
-    constraint::{Constraint, ConstraintOrigin},
+    constraint::{ChildrenIndex, Constraint, ConstraintOrigin},
     infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
     node_attr::{SelectorOutput, node_attr_type, node_selector_output},
     types::{self, Substitution},
@@ -41,7 +41,7 @@ fn find_record_field<'a>(ctx: &'a InferenceContext, ty: &'a types::Type, field: 
 }
 
 /// Returns `true` when the row chain ends with `RowEmpty` or a free type variable,
-/// meaning no further fields can appear — the record is effectively closed.
+/// meaning no further fields can appear, the record is effectively closed.
 fn record_row_is_closed(ctx: &InferenceContext, ty: &types::Type) -> bool {
     match ty {
         types::Type::Record(_, rest) => {
@@ -334,11 +334,11 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                     if idx < elems.len() {
                         elems[idx].clone()
                     } else {
-                        // Out of bounds — use fresh type variable
+                        // Out of bounds, use fresh type variable
                         types::Type::Var(ctx.fresh_var())
                     }
                 } else {
-                    // Dynamic index — return Union of all element types
+                    // Dynamic index, return Union of all element types
                     types::Type::union(elems.clone())
                 };
                 let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
@@ -346,7 +346,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                 resolved_any = true;
             }
             types::Type::Array(elem) => {
-                // Normal array — bind to element type
+                // Normal array, bind to element type
                 let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
                 ctx.add_constraint(Constraint::Equal(
                     call_ty,
@@ -357,7 +357,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                 resolved_any = true;
             }
             types::Type::Union(members) => {
-                // Union type (e.g., `Union(Array(String), None)`) — extract element types
+                // Union type (e.g., `Union(Array(String), None)`), extract element types
                 // from Array/Tuple members and use them as the index access result.
                 // If any union member is still an unresolved Var, re-queue this access
                 // for the next pass (after `resolve_deferred_overloads` has run).
@@ -418,7 +418,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                 resolved_any = true;
             }
             types::Type::Var(_) => {
-                // Type variable not yet resolved — re-queue for next pass.
+                // Type variable not yet resolved, re-queue for next pass.
                 // Do NOT add an Array constraint here: if the variable later resolves
                 // to a Tuple or other type, the premature Array constraint would
                 // conflict and produce spurious "infinite type" or mismatch errors.
@@ -430,7 +430,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                 // instead of forcing the record to unify with an array.
             }
             _ => {
-                // Known non-array/tuple/union type — add array constraint as fallback
+                // Known non-array/tuple/union type, add array constraint as fallback
                 let elem_var = ctx.fresh_var();
                 let elem_ty = types::Type::Var(elem_var);
                 ctx.add_constraint(Constraint::Equal(
@@ -460,8 +460,8 @@ enum UnionCheckResult {
     },
     /// A union member type has no matching overload for the operator.
     MemberUnsupported(types::Type),
-    /// Different union members return different types (inconsistent).
-    InconsistentReturn,
+    /// Different union members return different types, each of them valid.
+    InconsistentReturn(Vec<types::Type>),
     /// At least one union member is still an unresolved type variable; defer.
     HasVarMember,
 }
@@ -481,6 +481,7 @@ fn check_union_members(
     resolved_operands: &[types::Type],
 ) -> UnionCheckResult {
     let mut unique_ret: Option<types::Type> = None;
+    let mut other_rets: Vec<types::Type> = Vec::new();
     let mut has_none_propagation = false;
 
     for (i, arg_ty) in resolved_operands.iter().enumerate() {
@@ -512,9 +513,15 @@ fn check_union_members(
             match &unique_ret {
                 None => unique_ret = Some(resolved_ret),
                 Some(prev) if prev == &resolved_ret => {}
-                _ => return UnionCheckResult::InconsistentReturn,
+                _ => other_rets.push(resolved_ret),
             }
         }
+    }
+
+    if let (Some(first), false) = (&unique_ret, other_rets.is_empty()) {
+        let mut rets = vec![first.clone()];
+        rets.extend(other_rets);
+        return UnionCheckResult::InconsistentReturn(rets);
     }
 
     match unique_ret {
@@ -581,7 +588,7 @@ fn merge_array_union_operand(
             ConstraintOrigin::General,
         ));
     }
-    ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+    settle_result(ctx, d, *ret_ty);
     true
 }
 
@@ -652,7 +659,7 @@ fn distribute_over_container_members(
             ));
         }
     }
-    ctx.set_symbol_type_no_bind(d.symbol_id, Type::union(rets));
+    settle_result(ctx, d, Type::union(rets));
     true
 }
 
@@ -728,6 +735,24 @@ fn partial_function_known(name: &str, operands: &[types::Type]) -> bool {
     name == PARTIAL && operands.first().is_some_and(|ty| !ty.is_pending_operand())
 }
 
+/// Gives the result of a deferred operation its type. The result was a fresh variable that the
+/// operations using it hold, so the variable is tied to the type as well.
+fn settle_result(ctx: &mut InferenceContext, d: &DeferredOverload, ty: types::Type) {
+    // A result that something else already tied to a type is left as it is.
+    if let types::Type::Var(var) = &d.result
+        && matches!(ctx.resolve_type(&d.result), types::Type::Var(v) if v == *var)
+        && !matches!(ty, types::Type::Var(v) if v == *var)
+    {
+        ctx.add_constraint(Constraint::Equal(
+            d.result.clone(),
+            ty.clone(),
+            d.range,
+            ConstraintOrigin::General,
+        ));
+    }
+    ctx.set_symbol_type_no_bind(d.symbol_id, ty);
+}
+
 /// Resolves deferred overloads after the first round of unification.
 ///
 /// Binary/unary operators whose operands were type variables during constraint
@@ -753,6 +778,9 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
         let mut next_remaining = Vec::new();
 
         for &idx in &remaining_indices {
+            if ctx.has_pending_narrowings() {
+                crate::narrowing::refresh_pending_narrowings(ctx);
+            }
             settle_partial_piped(ctx, &mut deferred[idx]);
             let d = &deferred[idx];
             let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
@@ -796,7 +824,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                                 ConstraintOrigin::General,
                             ));
                         }
-                        ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+                        settle_result(ctx, d, *ret_ty);
                         unify::solve_constraints(ctx);
                         continue;
                     }
@@ -811,8 +839,8 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         ret,
                         has_none_propagation,
                     } => {
-                        ctx.set_symbol_type_no_bind(d.symbol_id, ret);
-                        // Phase 2: None safety — warn when None propagation silently makes
+                        settle_result(ctx, d, ret);
+                        // Phase 2: None safety, warn when None propagation silently makes
                         // the result `none` at runtime even though the static type is concrete.
                         if has_none_propagation {
                             let nullable_args: Vec<String> = resolved_operands
@@ -852,28 +880,20 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         });
                         continue;
                     }
-                    UnionCheckResult::InconsistentReturn => {
+                    UnionCheckResult::InconsistentReturn(rets) => {
                         if merge_array_union_operand(ctx, d, &resolved_operands)
                             || distribute_over_container_members(ctx, d, &resolved_operands)
                         {
                             unify::solve_constraints(ctx);
                             continue;
                         }
-                        let args_str = resolved_operands
-                            .iter()
-                            .map(|t| t.display_renumbered())
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        ctx.add_error(TypeError::UnificationError {
-                            left: format!("`{}` with arguments ({})", d.op_name, args_str),
-                            right: "union members return inconsistent types".to_string(),
-                            location: d.range,
-                            context: None,
-                        });
+                        // Every member is valid, so the result is whichever of the returns applies.
+                        settle_result(ctx, d, types::Type::union(rets));
+                        unify::solve_constraints(ctx);
                         continue;
                     }
                     UnionCheckResult::HasVarMember => {
-                        // Union contains unresolved type variable — defer
+                        // Union contains unresolved type variable, defer
                         next_remaining.push(idx);
                         continue;
                     }
@@ -881,7 +901,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
             }
 
             // Skip resolution when any operand is a bare type variable (unknown type)
-            // and there are multiple overloads — we can't determine the correct one.
+            // and there are multiple overloads, we can't determine the correct one.
             let any_var = resolved_operands.iter().any(|ty| ty.is_var());
             if any_var {
                 let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
@@ -907,20 +927,20 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                             ConstraintOrigin::General,
                         ));
                     }
-                    ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+                    settle_result(ctx, d, *ret_ty);
                     // Solve constraints incrementally
                     unify::solve_constraints(ctx);
                 }
             } else if all_concrete || partial_function_known(&d.op_name, &resolved_operands) {
                 ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
             } else {
-                // Some operands resolved but no match — defer to next pass
+                // Some operands resolved but no match, defer to next pass
                 next_remaining.push(idx);
             }
         }
 
         if next_remaining.len() == remaining_indices.len() {
-            // No progress — resolve remaining with best-effort.
+            // No progress, resolve remaining with best-effort.
             // Collect indices to store back; actual move happens after the loop
             // so that `deferred` is not moved while still borrowed.
             for &idx in &next_remaining {
@@ -929,11 +949,15 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                 let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
                 // Don't resolve when any operand still contains a free type variable
-                // and there are multiple overloads — store back for user call body checking
+                // and there are multiple overloads, store back for user call body checking
                 let any_var_best = resolved_operands.iter().any(|ty| ty.has_pending_var());
                 if any_var_best {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
+                        // Overloads that agree on the result settle it before the arguments are.
+                        if let Some(ret) = crate::constraint::call::common_result(ctx, &d.op_name, &resolved_operands) {
+                            ctx.set_symbol_type(d.symbol_id, ret);
+                        }
                         store_back_for_later.push(idx);
                         continue;
                     }
@@ -951,14 +975,14 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                                 ConstraintOrigin::General,
                             ));
                         }
-                        ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+                        settle_result(ctx, d, *ret_ty);
                     }
                 } else {
                     let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
                     if all_concrete || partial_function_known(&d.op_name, &resolved_operands) {
                         ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                     } else {
-                        // Still unresolved — store back for later processing
+                        // Still unresolved, store back for later processing
                         store_back_for_later.push(idx);
                     }
                 }
@@ -1129,7 +1153,10 @@ pub(crate) fn resolve_generator_yields(ctx: &mut InferenceContext) {
 ///
 /// This uses a read-only approach: the substitution is applied locally without
 /// modifying the global inference state, so multiple call sites don't interfere.
-pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceContext) {
+///
+/// The stages that always run are then run on the argument types as well, which covers the
+/// operations that were resolved while the body was inferred (see [`crate::inline`]).
+pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceContext, children_index: &ChildrenIndex) {
     let deferred_calls = ctx.take_deferred_user_calls();
     let unresolved_overloads = ctx.take_deferred_overloads();
     let deferred_param_calls = ctx.take_deferred_parameter_calls();
@@ -1239,6 +1266,8 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
             check_deferred_overloads_iteratively(&lambda_overloads, &mut lambda_subst, ctx, call.range);
         }
     }
+
+    crate::inline::check_inlined_calls(hir, ctx, children_index, &deferred_calls);
 }
 
 /// Checks deferred overloads iteratively, resolving chained operators.
@@ -1281,7 +1310,7 @@ fn check_deferred_overloads_iteratively(
 
             // Check if the operator has a matching overload with these types
             if let Some(resolved_ty) = ctx.resolve_overload(&d.op_name, &substituted_operands) {
-                // Resolved successfully — add the result type to the substitution
+                // Resolved successfully, add the result type to the substitution
                 // so that dependent outer operators can resolve in the next pass.
                 if let types::Type::Function(_, ret_ty) = resolved_ty {
                     if let Some(types::Type::Var(result_var)) = ctx.get_symbol_type(d.symbol_id).cloned() {
@@ -1299,7 +1328,7 @@ fn check_deferred_overloads_iteratively(
                 }
                 made_progress = true;
             } else {
-                // No matching overload — report error
+                // No matching overload, report error
                 // An operator of a module body keeps its own range so the module filter drops it.
                 let range = d.range.filter(crate::is_module_range).or(error_range);
                 ctx.report_no_matching_overload(&d.op_name, &substituted_operands, range);
@@ -1338,7 +1367,7 @@ fn extract_structural_subst(
             if !free.contains(var) {
                 subst.insert(*var, arg.clone());
             } else if matches!(arg, types::Type::Function(_, _)) {
-                // Self-referential function argument — use a generic placeholder.
+                // Self-referential function argument, use a generic placeholder.
                 let p = types::Type::Var(ctx.fresh_var());
                 let r = types::Type::Var(ctx.fresh_var());
                 subst.insert(*var, types::Type::function(vec![p], r));
@@ -1349,7 +1378,7 @@ fn extract_structural_subst(
                 extract_structural_subst(orig_elem, arg_elem, subst, ctx);
             }
         }
-        // Function types are handled by the lambda-body checking phase — skip here.
+        // Function types are handled by the lambda-body checking phase, skip here.
         _ => {}
     }
 }

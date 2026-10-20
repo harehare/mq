@@ -1,6 +1,6 @@
 //! Constraint generation for type inference.
 
-mod call;
+pub(crate) mod call;
 mod categories;
 mod helpers;
 mod pipe;
@@ -116,7 +116,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // proper `Function(...)` type is established.  This severs the chain between the
     // call-site argument type and the lambda's parameter type variable, preventing
     // call-site type errors from being detected (e.g. `f("str")` not flagged as error).
-    let mut sorted_pass1 = cats.pass1_symbols.clone();
+    let mut sorted_pass1 = cats.pass1_symbols;
     sorted_pass1.sort_by_key(|(_, kind)| match kind {
         SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::Symbol | SymbolKind::None => 0u8,
         SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => 1,
@@ -124,8 +124,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
         SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
         _ => 4,
     });
-    for (symbol_id, kind) in &sorted_pass1 {
-        generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
+    for (symbol_id, kind) in sorted_pass1 {
+        generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
     }
 
     // Pass 2: Set up piped inputs for root-level symbols.
@@ -151,8 +151,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // Refs and Calls in Pass 3 resolve against the (potentially stale) type.
     // e.g., `var x = 10 | x = "hello" | upcase(x)`: the Assign updates
     // x's type to String before upcase(x) resolves its argument type.
-    for (symbol_id, kind) in &cats.assign_symbols {
-        generate_symbol_constraints(hir, *symbol_id, kind.clone(), ctx, &children_index);
+    for (symbol_id, kind) in cats.assign_symbols {
+        generate_symbol_constraints(hir, symbol_id, kind, ctx, &children_index);
     }
 
     // Pass 3: Process operators, calls, etc.
@@ -179,6 +179,15 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
         });
         if is_stage {
             thread_pipe_stage(hir, pair[0], pair[1], ctx, &children_index);
+        }
+    }
+
+    // The root stages that are an `if` pass their input on to the condition and the branches.
+    for &stage in &cats.root_symbols {
+        if hir.symbol(stage).is_some_and(|s| matches!(s.kind, SymbolKind::If))
+            && let Some(input) = ctx.get_piped_input(stage).cloned()
+        {
+            pipe::forward_into_if(hir, stage, &input, ctx, &children_index);
         }
     }
 
@@ -249,6 +258,7 @@ fn infer_while_or_until(
                         then_narrowings: body_narrowings.clone(),
                         else_narrowings: Vec::new(),
                         then_branch_id: body_id,
+                        report_dead: true,
                         else_branch_ids: Vec::new(),
                     });
                 }
@@ -260,6 +270,7 @@ fn infer_while_or_until(
                             then_narrowings: Vec::new(),
                             else_narrowings: post_loop_narrowings,
                             then_branch_id: symbol_id, // unused (then_narrowings empty)
+                            report_dead: true,
                             else_branch_ids: post_loop_siblings,
                         });
                     }
@@ -649,7 +660,10 @@ pub(super) fn generate_symbol_constraints(
                     })
                     .collect();
 
-                let def_ty = ctx.get_or_create_symbol_type(def_id);
+                let def_ty = match ctx.read_override(symbol_id) {
+                    Some(before_assignment) => before_assignment.clone(),
+                    None => ctx.get_or_create_symbol_type(def_id),
+                };
                 // Instantiate fresh type variables for function references to enable
                 // polymorphic use at different call/reference sites
                 let def_ty = if matches!(def_ty, Type::Function(_, _)) {
@@ -801,6 +815,18 @@ pub(super) fn generate_symbol_constraints(
                             // variable binding (which would conflict with the initializer
                             // constraint, e.g., `var x = 10 | x = "hello"` would fail
                             // because tv1→Number and tv1→String would conflict).
+                            // The right-hand side still sees the variable as it was before.
+                            let before = ctx.get_or_create_symbol_type(var_id);
+                            let mut stack = vec![rhs_id];
+                            while let Some(id) = stack.pop() {
+                                if hir.symbol(id).is_some_and(|s| s.kind == SymbolKind::Ref)
+                                    && hir.resolve_reference_symbol(id) == Some(var_id)
+                                {
+                                    ctx.set_read_override(id, before.clone());
+                                }
+                                stack.extend(get_children(children_index, id).iter().copied());
+                            }
+
                             let new_var_ty = ctx.fresh_var();
                             ctx.set_symbol_type_no_bind(var_id, Type::Var(new_var_ty));
                             let var_name = hir.symbol(lhs_id).and_then(|s| s.value.clone()).unwrap_or_default();
@@ -1096,6 +1122,7 @@ pub(super) fn generate_symbol_constraints(
                         then_narrowings: cond_narrowings.then_narrowings,
                         else_narrowings: cond_narrowings.else_narrowings,
                         then_branch_id: children[1],
+                        report_dead: true,
                         else_branch_ids,
                     });
                 }
@@ -1171,7 +1198,11 @@ pub(super) fn generate_symbol_constraints(
                             .any(|branch| is_unpinnable_branch(hir, branch))
                         && resolved.iter().any(|ty| ty != &resolved[0]);
 
+                    // A branch whose type is not known yet is not pinned to the type of the others.
+                    let has_unsettled_branch = !concrete.is_empty() && concrete.len() < resolved.len();
+
                     if would_cause_infinite_type
+                        || has_unsettled_branch
                         || (!all_same && concrete.len() >= 2)
                         || (has_none_branch && resolved.len() >= 2)
                         || has_parameter_branch
@@ -1227,6 +1258,7 @@ pub(super) fn generate_symbol_constraints(
                         then_narrowings: cond_narrowings.else_narrowings,
                         else_narrowings: cond_narrowings.then_narrowings,
                         then_branch_id: children[1],
+                        report_dead: true,
                         else_branch_ids: Vec::new(),
                     });
                 }
@@ -1327,9 +1359,27 @@ pub(super) fn generate_symbol_constraints(
                             ));
                             ctx.add_constraint(Constraint::Equal(item_ty, elem_ty, range, ConstraintOrigin::General));
                         }
+                        Type::Number
+                        | Type::Int
+                        | Type::Float
+                        | Type::Bool
+                        | Type::None
+                        | Type::Symbol
+                        | Type::Bytes
+                        | Type::Dict(..)
+                        | Type::Record(..)
+                        | Type::Node(_) => {
+                            // The runtime only iterates over an array or a string.
+                            ctx.add_error(TypeError::Mismatch {
+                                expected: "array or string".to_string(),
+                                found: resolved_iterable.display_renumbered(),
+                                location: get_symbol_range(hir, iterable_id),
+                                context: Some("`foreach` iterates over an array or a string".to_string()),
+                            });
+                        }
                         _ => {
-                            // Other types (number, bool, etc.): skip constraint to avoid
-                            // false positives for runtime-dynamic iteration.
+                            // Other types (a union, a coroutine, a function): skip constraint to
+                            // avoid false positives for runtime-dynamic iteration.
                         }
                     }
                 }
@@ -1447,6 +1497,7 @@ pub(super) fn generate_symbol_constraints(
                                 }],
                                 else_narrowings: Vec::new(),
                                 then_branch_id: bid,
+                                report_dead: true,
                                 else_branch_ids: Vec::new(),
                             });
                         }
@@ -1970,7 +2021,10 @@ fn generate_call_constraints(
 
                         let arity_ok = arg_tys.len() >= required && (variadic || arg_tys.len() <= param_tys.len());
                         if !arity_ok {
-                            if !might_receive_piped_input(hir, symbol_id) {
+                            // Too many arguments stay wrong whatever is piped in.
+                            let may_be_completed =
+                                arg_tys.len() < required && might_receive_piped_input(hir, symbol_id);
+                            if !may_be_completed {
                                 ctx.add_error(TypeError::WrongArity {
                                     expected: param_tys.len(),
                                     found: arg_tys.len(),
@@ -2073,7 +2127,9 @@ fn generate_call_constraints(
                             // If the definition is a function parameter (higher-order call),
                             // record the inner call so that `check_user_call_body_operators`
                             // can propagate the concrete element type to the lambda's body.
-                            if def_symbol.map(|s| s.is_parameter()).unwrap_or(false) {
+                            let is_parameter = def_symbol.map(|s| s.is_parameter()).unwrap_or(false);
+                            // `f(a, b)` with parentheses calls the value, whatever it turns out to be.
+                            if is_parameter || hir.bracket_group_count(symbol_id) == 0 {
                                 let ret_ty = Type::Var(ctx.fresh_var());
                                 let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
                                 ctx.add_constraint(Constraint::Equal(
@@ -2083,7 +2139,7 @@ fn generate_call_constraints(
                                     ConstraintOrigin::General,
                                 ));
                                 ctx.set_symbol_type(symbol_id, ret_ty);
-                                if let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
+                                if is_parameter && let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
                                     ctx.add_deferred_parameter_call(DeferredParameterCall {
                                         outer_def_id,
                                         param_sym_id: def_id,

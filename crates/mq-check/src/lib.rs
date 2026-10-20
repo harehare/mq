@@ -18,14 +18,17 @@
 #![allow(unused_assignments)]
 
 pub(crate) mod builtin;
+pub mod certainty;
 pub(crate) mod constraint;
 pub(crate) mod deferred;
 pub(crate) mod exhaustiveness;
 pub(crate) mod field_guard;
 pub(crate) mod infer;
+pub(crate) mod inline;
 pub mod kind_set;
 pub(crate) mod narrowing;
 pub(crate) mod node_attr;
+pub(crate) mod probe;
 pub mod type_expr;
 pub mod types;
 pub(crate) mod unify;
@@ -35,6 +38,8 @@ use mq_hir::{Hir, SymbolId};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 use types::TypeScheme;
+
+pub use certainty::{Certainty, Classified, Severity};
 
 /// Names `mq-test` defines at runtime, which no source declares. Pass them to
 /// [`Hir::declare_global`] when checking test files.
@@ -243,6 +248,17 @@ pub enum TypeError {
 }
 
 impl TypeError {
+    /// Whether the diagnostic is advice about the code rather than a type error: it is always shown
+    /// as a warning.
+    pub fn is_advisory(&self) -> bool {
+        matches!(
+            self,
+            TypeError::NullablePropagation { .. }
+                | TypeError::UnreachableCode { .. }
+                | TypeError::NonExhaustiveMatch { .. }
+        )
+    }
+
     /// Returns the location (range) of the error, if available.
     pub fn location(&self) -> Option<mq_lang::Range> {
         match self {
@@ -325,6 +341,12 @@ pub struct TypeCheckerOptions {
     pub strict_array: bool,
     /// When true, exhaustiveness checking for pattern match expressions is disabled.
     pub no_exhaustive_patterns: bool,
+    /// When true, errors the checker is not sure about ([`Certainty::Uncertain`]) are errors.
+    /// Consumers that show diagnostics read it through [`Classified::severity`].
+    pub strict: bool,
+    /// When true, errors the checker is not sure about are shown as warnings. They are left out
+    /// otherwise.
+    pub show_uncertain: bool,
     /// The type of the input document `.` (see [`type_expr::parse_type`]). When `None` the input
     /// is `dynamic`.
     pub input_type: Option<types::Type>,
@@ -405,17 +427,22 @@ impl TypeChecker {
     ///
     /// Returns a list of type errors found. An empty list means no errors.
     pub fn check(&mut self, hir: &Hir) -> Vec<TypeError> {
+        self.check_classified(hir).into_iter().map(|c| c.error).collect()
+    }
+
+    /// Like [`check`](Self::check), but says for each error how sure the checker is about it.
+    pub fn check_classified(&mut self, hir: &Hir) -> Vec<Classified> {
         self.run(hir, &mut Laps::default())
     }
 
     /// Like [`check`](Self::check), but also returns the wall-clock time of each phase.
     pub fn check_profiled(&mut self, hir: &Hir) -> (Vec<TypeError>, PhaseTimings) {
         let mut laps = Laps::started();
-        let errors = self.run(hir, &mut laps);
+        let errors = self.run(hir, &mut laps).into_iter().map(|c| c.error).collect();
         (errors, PhaseTimings(laps.timings))
     }
 
-    fn run(&mut self, hir: &Hir, laps: &mut Laps) -> Vec<TypeError> {
+    fn run(&mut self, hir: &Hir, laps: &mut Laps) -> Vec<Classified> {
         // Create inference context with options
         let mut ctx = infer::InferenceContext::with_options(self.options.strict_array);
         if let Some(input_type) = &self.options.input_type {
@@ -528,7 +555,7 @@ impl TypeChecker {
         // Check operators inside user-defined function bodies against call-site types.
         // Uses local substitution (original params → call-site args) without modifying
         // global state, so multiple call sites don't interfere.
-        deferred::check_user_call_body_operators(hir, &mut ctx);
+        deferred::check_user_call_body_operators(hir, &mut ctx, &children_index);
         laps.lap("check_user_call_body_operators");
 
         // Check pattern match exhaustiveness (reuses the children index from constraint generation)
@@ -545,6 +572,9 @@ impl TypeChecker {
         // Module diagnostics are never reported. A stage threaded twice reports its error twice.
         let mut seen = rustc_hash::FxHashSet::default();
         errors.retain(|e| !e.location().is_some_and(|r| is_module_range(&r)) && seen.insert(format!("{e:?}")));
+
+        let errors = certainty::classify_all(hir, &ctx, errors, self.options.input_type.is_some());
+        laps.lap("classify");
 
         // Store inferred types
         self.symbol_types = ctx.finalize();
