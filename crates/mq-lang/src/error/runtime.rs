@@ -75,8 +75,6 @@ pub enum RuntimeError {
     EnvNotFound(Token, SmolStr),
     #[error("Cannot assign to immutable variable \"{1}\"")]
     AssignToImmutable(Token, String),
-    #[error("Undefined variable \"{1}\"")]
-    UndefinedVariable(Token, String),
     #[error("Invalid convert: {1}")]
     InvalidConvert(Token, String),
     #[error("Destructuring pattern did not match value")]
@@ -114,7 +112,6 @@ impl RuntimeError {
             RuntimeError::UnexpectedContinue(token) => Some(token),
             RuntimeError::EnvNotFound(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
-            RuntimeError::UndefinedVariable(token, _) => Some(token),
             RuntimeError::InvalidConvert(token, _) => Some(token),
             RuntimeError::DestructuringFailed(token) => Some(token),
             RuntimeError::HostFunctionError(token, _, _) => Some(token),
@@ -156,7 +153,6 @@ mod tests {
     #[case(RuntimeError::UnexpectedContinue(eof_token()), true)]
     #[case(RuntimeError::EnvNotFound(eof_token(), "VAR".into()), true)]
     #[case(RuntimeError::AssignToImmutable(eof_token(), "x".to_string()), true)]
-    #[case(RuntimeError::UndefinedVariable(eof_token(), "y".to_string()), true)]
     #[case(RuntimeError::InvalidConvert(eof_token(), "msg".to_string()), true)]
     #[case(RuntimeError::DestructuringFailed(eof_token()), true)]
     #[case(RuntimeError::HostFunctionError(eof_token(), "f".into(), "boom".into()), true)]

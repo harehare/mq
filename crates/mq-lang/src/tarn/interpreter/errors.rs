@@ -265,10 +265,6 @@ mod tests {
         builtin::Error::NotDefined("f".to_string(), vec!["g".to_string()]),
         "\"f\" is not defined"
     )]
-    #[case::undefined_reference(
-        builtin::Error::UndefinedReference("r".to_string(), vec![]),
-        "\"r\" is not defined"
-    )]
     #[case::invalid_date_time_format(
         builtin::Error::InvalidDateTimeFormat("%Q".to_string()),
         "Unable to format date time, %Q"
@@ -297,14 +293,6 @@ mod tests {
         "Runtime error: something went wrong"
     )]
     #[case::zero_division(builtin::Error::ZeroDivision, "Division by zero")]
-    #[case::assign_to_immutable(
-        builtin::Error::AssignToImmutable("x".to_string()),
-        "Cannot assign to immutable variable \"x\""
-    )]
-    #[case::undefined_variable(
-        builtin::Error::UndefinedVariable("x".to_string()),
-        "Undefined variable \"x\""
-    )]
     #[case::invalid_convert(
         builtin::Error::InvalidConvert("bogus".to_string()),
         "Invalid convert: bogus"
@@ -321,15 +309,12 @@ mod tests {
             builtin::Error::UserDefined(_)
             | builtin::Error::InvalidBase64String(_)
             | builtin::Error::NotDefined(_, _)
-            | builtin::Error::UndefinedReference(_, _)
             | builtin::Error::InvalidDateTimeFormat(_)
             | builtin::Error::InvalidTypes(_, _)
             | builtin::Error::InvalidNumberOfArguments(_, _, _)
             | builtin::Error::InvalidRegularExpression(_)
             | builtin::Error::Runtime(_)
             | builtin::Error::ZeroDivision
-            | builtin::Error::AssignToImmutable(_)
-            | builtin::Error::UndefinedVariable(_)
             | builtin::Error::InvalidConvert(_)
             | builtin::Error::Halt(_) => {}
         }

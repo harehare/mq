@@ -181,7 +181,7 @@ struct Classifier<'a> {
 
 impl Classifier<'_> {
     fn classify(&mut self, error: &TypeError) -> Certainty {
-        if error.is_advisory() || matches!(error, TypeError::OccursCheck { .. }) {
+        if error.is_advisory() {
             return Certainty::Uncertain;
         }
         let about_operands = depends_on_operand_types(error);

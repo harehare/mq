@@ -3507,9 +3507,7 @@ mod tests {
 
     #[test]
     fn test_cli_limit_does_not_hang_on_infinite_generator() {
-        // Regression test: previously `mq-run` collected a leftover coroutine before applying
-        // `--limit`, so an infinite generator hung forever even with `--limit` set. The query
-        // now returns immediately because the coroutine is never auto-collected.
+        // `--limit` must not wait on a leftover coroutine: it is never auto-collected.
         let (_, output_file) = create_file("test_cli_limit_does_not_hang_on_infinite_generator.md", "");
         let output_file_cleanup = output_file.clone();
         defer! {

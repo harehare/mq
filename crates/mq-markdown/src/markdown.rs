@@ -709,10 +709,8 @@ mod tests {
         assert_eq!(first, second, "embed round-trip must be idempotent for {input:?}");
     }
 
-    /// Round-tripping a link whose text equals its URL must be idempotent.
-    /// Previously, GFM autolink literal parsing caused the URL text to be
-    /// wrapped in a second Link node, producing `[[url](url)](url)` after
-    /// the first serialisation and deeper nesting on every subsequent pass.
+    /// Round-tripping a link whose text equals its URL must be idempotent,
+    /// not nest as `[[url](url)](url)`.
     #[test]
     fn test_link_url_as_text_is_idempotent() {
         let input = "[https://example.com](https://example.com)";

@@ -382,19 +382,6 @@ fn test_match_exhaustiveness_type_label(#[case] code: &str, #[case] is_exhaustiv
     );
 }
 
-// TODO: Enable when match is properly implemented in HIR
-// #[test]
-// fn test_match_union_with_arithmetic() {
-//     let result = check_types(
-//         r#"let x = match (42): | 0: "zero" | 1: 100 | _: 200 end | x + 1"#
-//     );
-//     assert!(
-//         !result.is_empty(),
-//         "match with union type should fail with arithmetic: {:?}",
-//         result
-//     );
-// }
-
 #[test]
 fn test_nested_functions() {
     assert!(

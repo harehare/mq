@@ -2,13 +2,6 @@ use std::fmt::Write;
 
 use mq_lang::{CstNode, CstNodeKind};
 
-#[allow(dead_code)]
-#[cfg(target_os = "windows")]
-const NEW_LINE: &str = "\r\n";
-#[allow(dead_code)]
-#[cfg(not(target_os = "windows"))]
-const NEW_LINE: &str = "\n";
-
 #[derive(Clone, Debug, Default)]
 /// Formats mq source code according to a [`FormatterConfig`].
 pub struct Formatter {

@@ -2066,36 +2066,6 @@ def debug(*args):
     stderr("DEBUG:\n" + do args | map(fn(arg): s" - ${arg}";) | join("\n");)
 end
 
-# Increases the depth (numeric level) of a markdown heading node by one,
-# effectively demoting the heading (e.g. h1 -> h2), up to a maximum of 6.
-# Deprecated: use demote_heading() instead.
-#
-# Example:
-# ```
-# increase_header_depth(to_h("t", 1))
-# #=> ## t
-# ```
-#
-# Returns: markdown
-def increase_header_depth(node):
-  shift_right(node, 1)
-end
-
-# Decreases the depth (numeric level) of a markdown heading node by one,
-# effectively promoting the heading (e.g. h2 -> h1), down to a minimum of 1.
-# Deprecated: use promote_heading() instead.
-#
-# Example:
-# ```
-# decrease_header_depth(to_h("t", 2))
-# #=> # t
-# ```
-#
-# Returns: markdown
-def decrease_header_depth(node):
-  shift_left(node, 1)
-end
-
 # Demotes a markdown heading by increasing its depth (numeric level) by one (e.g. h1 -> h2),
 # up to a maximum of 6.
 #
