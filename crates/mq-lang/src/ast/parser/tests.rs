@@ -1,4 +1,3 @@
-
 use crate::ast::node::StringSegment;
 use crate::{Module, ast::node::MatchArm, range::Range, selector};
 

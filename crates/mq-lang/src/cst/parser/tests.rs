@@ -1,4 +1,3 @@
-
 use std::vec;
 
 use crate::{lexer::token::StringSegment, range::Range};

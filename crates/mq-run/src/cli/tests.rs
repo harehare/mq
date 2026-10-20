@@ -1,4 +1,3 @@
-
 #[rstest]
 #[case("Runtime error: http: network access is disabled", Some("`--allow-net`"))]
 #[case(

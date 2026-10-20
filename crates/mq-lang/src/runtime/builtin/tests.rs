@@ -1,4 +1,3 @@
-
 use crate::DictMap;
 
 use mq_markdown::Node;
