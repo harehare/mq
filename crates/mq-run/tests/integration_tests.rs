@@ -1394,6 +1394,8 @@ fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
 #[case::grep_no_match(vec!["--unbuffered", "-e", "-F", "grep", ".h2"], "# title\n\nbody", 4)]
 #[case::count_match(vec!["--unbuffered", "-e", "--count", ".h1"], "# title\n\nbody", 0)]
 #[case::count_no_match(vec!["--unbuffered", "-e", "--count", ".h2"], "# title\n\nbody", 4)]
+#[case::count_limit_zero(vec!["--unbuffered", "-e", "--count", "--limit", "0", ".h1"], "# title\n\nbody", 4)]
+#[case::count_skip_all(vec!["--unbuffered", "-e", "--count", "--skip", "5", ".h1"], "# title\n\nbody", 4)]
 #[case::halt_wins(vec!["--unbuffered", "-I", "null", "-e", "halt(7)"], "", 7)]
 #[case::runtime_error_without_exit_status(vec!["--unbuffered", "-I", "null", "error(\"x\")"], "", 1)]
 #[case::unreadable_file_without_exit_status(vec!["--unbuffered", ".h1", "/nonexistent/input.md"], "", 1)]
@@ -1751,6 +1753,17 @@ fn test_diff_no_changes_prints_nothing_and_exits_zero() -> Result<(), Box<dyn st
         .code(0)
         .stdout("");
     Ok(())
+}
+
+#[rstest]
+#[case::changed(".h1 | upcase()", "# title\n", 1)]
+#[case::unchanged("self", "# title\n", 0)]
+fn test_diff_with_exit_status(#[case] query: &str, #[case] input: &str, #[case] expected_code: i32) {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["--unbuffered", "-e", "-U", "--diff", query])
+        .write_stdin(input)
+        .assert()
+        .code(expected_code);
 }
 
 #[test]

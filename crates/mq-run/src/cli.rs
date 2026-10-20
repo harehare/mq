@@ -1962,6 +1962,12 @@ impl Cli {
 
         let result = self.execute_once();
 
+        // --diff: exit 1 if anything would change, for CI gating. Takes precedence over -e.
+        if self.output.diff && HAD_DIFF.load(Ordering::Relaxed) {
+            result?;
+            std::process::exit(1);
+        }
+
         // --exit-status / -e: exit with code 1 if no truthy value was
         // produced. Mirrors jq's behaviour: false and null are falsy;
         // everything else (including empty string, 0, [], {}) is truthy.
@@ -1975,12 +1981,6 @@ impl Cli {
                 result?;
                 std::process::exit(code);
             }
-        }
-
-        // --diff: exit 1 if anything would change, for CI gating.
-        if self.output.diff && HAD_DIFF.load(Ordering::Relaxed) {
-            result?;
-            std::process::exit(1);
         }
 
         result
@@ -2800,8 +2800,9 @@ impl Cli {
             .map_err(|error| *error)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
-        self.record_exit_status(runtime_values.values());
-        Ok(self.output.paginate(runtime_values.compact()).len())
+        let matches = self.output.paginate(runtime_values.compact());
+        self.record_exit_status(&matches);
+        Ok(matches.len())
     }
 
     #[cfg(feature = "vm-profile")]
@@ -3363,6 +3364,7 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
+        self.record_exit_status(runtime_values.values());
         let original = content.as_str().unwrap_or("");
         let rendered = self.render(runtime_values.values(), false, self.is_mdx_input(file))?;
         let rendered = String::from_utf8_lossy(&rendered);
