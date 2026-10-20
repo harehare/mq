@@ -20,15 +20,16 @@
 //! # Usage
 //!
 //! ```rust,ignore
-//! use mq_crawler::crawler::Crawler;
+//! use mq_crawler::crawler::{Crawler, CrawlerOptions};
+//! use mq_crawler::http_client::HttpClient;
 //! use url::Url;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let start_url = Url::parse("https://your-target-site.com")?;
-//!     let crawler = Crawler::new(start_url, None, 10);
-//!     let result = crawler.crawl().await?;
-//!     println!("Crawled {} pages", result.pages_crawled);
+//!     let http_client = HttpClient::new_reqwest(30.0)?;
+//!     let mut crawler = Crawler::new(http_client, start_url, CrawlerOptions::default()).await?;
+//!     crawler.run().await?;
 //!     Ok(())
 //! }
 //! ```

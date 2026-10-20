@@ -2,7 +2,7 @@
 
 use clap::Parser;
 use fantoccini::wd::TimeoutConfiguration;
-use mq_crawler::crawler::Crawler;
+use mq_crawler::crawler::{Crawler, CrawlerOptions};
 use url::Url;
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -377,25 +377,27 @@ async fn main() {
     match Crawler::new(
         client,
         args.url.clone(),
-        args.crawl_delay,
-        args.robots_path.clone(),
-        args.mq_query.clone(),
-        args.output,
-        args.concurrency,
-        format,
-        mq_markdown::ConversionOptions {
-            extract_scripts_as_code_blocks: args.conversion.extract_scripts_as_code_blocks,
-            generate_front_matter: args.conversion.generate_front_matter,
-            use_title_as_h1: args.conversion.use_title_as_h1,
-            base_url: None,
+        CrawlerOptions {
+            crawl_delay_secs: args.crawl_delay,
+            custom_robots_path: args.robots_path.clone(),
+            mq_query: args.mq_query.clone(),
+            output_path: args.output,
+            concurrency: args.concurrency,
+            format,
+            conversion_options: mq_markdown::ConversionOptions {
+                extract_scripts_as_code_blocks: args.conversion.extract_scripts_as_code_blocks,
+                generate_front_matter: args.conversion.generate_front_matter,
+                use_title_as_h1: args.conversion.use_title_as_h1,
+                base_url: None,
+            },
+            depth_limit: args.depth,
+            allowed_domains: effective_allowed,
+            additional_seed_urls: sitemap_seed_urls,
+            max_pages: args.max_pages,
+            checkpoint_path: args.checkpoint_path,
+            checkpoint_interval_pages: args.checkpoint_interval_pages,
+            resume_checkpoint,
         },
-        args.depth,
-        effective_allowed,
-        sitemap_seed_urls,
-        args.max_pages,
-        args.checkpoint_path,
-        args.checkpoint_interval_pages,
-        resume_checkpoint,
     )
     .await
     {
