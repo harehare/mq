@@ -935,22 +935,6 @@ pub async fn defined_values(code: &str, module: Option<String>) -> Result<JsValu
     Ok(serde_wasm_bindgen::to_value(&symbols).unwrap())
 }
 
-/// Returns `true` if a doc line is a deprecation marker.
-fn is_deprecated_marker(text: &str) -> bool {
-    let lower = text.trim().to_lowercase();
-    lower == "deprecated" || lower.starts_with("deprecated:") || lower.starts_with("deprecated ")
-}
-
-/// Extracts the human-readable message from a deprecation marker line, if any.
-fn extract_deprecated_message(text: &str) -> Option<String> {
-    let after_colon = text.trim().split_once(':')?.1.trim();
-    if after_colon.is_empty() {
-        None
-    } else {
-        Some(after_colon.to_string())
-    }
-}
-
 fn format_examples(examples: &[mq_help::BuiltinExample]) -> Option<String> {
     if examples.is_empty() {
         return None;
@@ -978,8 +962,8 @@ fn format_hover_content(
     if deprecated {
         let dep_msg = docs
             .iter()
-            .find(|(_, text)| is_deprecated_marker(text))
-            .and_then(|(_, text)| extract_deprecated_message(text));
+            .find(|(_, text)| mq_hir::is_deprecation_marker(text))
+            .and_then(|(_, text)| mq_hir::deprecation_message(text));
 
         match dep_msg {
             Some(msg) => sections.push(format!("> ⚠️ **Deprecated**: {}", msg)),
@@ -989,7 +973,7 @@ fn format_hover_content(
 
     let doc_text = docs
         .iter()
-        .filter(|(_, text)| !is_deprecated_marker(text))
+        .filter(|(_, text)| !mq_hir::is_deprecation_marker(text))
         .map(|(_, text)| text.as_str())
         .collect::<Vec<_>>()
         .join("\n");

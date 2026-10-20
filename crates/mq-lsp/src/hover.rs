@@ -4,29 +4,6 @@ use itertools::Itertools;
 use tower_lsp_server::ls_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
 use url::Url;
 
-/// Returns `true` if a doc line is a deprecation marker.
-///
-/// A line is considered a deprecation marker if its trimmed content starts
-/// with `deprecated` (case-insensitive) followed by `:`, a space, or end of string.
-/// This avoids false-positives for lines that merely *mention* "deprecated".
-fn is_deprecated_marker(text: &str) -> bool {
-    let trimmed = text.trim();
-    let lower = trimmed.to_lowercase();
-    lower == "deprecated" || lower.starts_with("deprecated:") || lower.starts_with("deprecated ")
-}
-
-/// Extracts the human-readable message from a deprecation marker line, if any.
-///
-/// For example `"deprecated: use foo instead"` returns `Some("use foo instead")`.
-fn extract_deprecated_message(text: &str) -> Option<String> {
-    let after_colon = text.trim().split_once(':')?.1.trim();
-    if after_colon.is_empty() {
-        None
-    } else {
-        Some(after_colon.to_string())
-    }
-}
-
 fn format_examples(examples: &[mq_help::BuiltinExample]) -> Option<String> {
     if examples.is_empty() {
         return None;
@@ -58,8 +35,8 @@ fn format_hover_content(
     if deprecated {
         let dep_msg = docs
             .iter()
-            .find(|(_, text)| is_deprecated_marker(text))
-            .and_then(|(_, text)| extract_deprecated_message(text));
+            .find(|(_, text)| mq_hir::is_deprecation_marker(text))
+            .and_then(|(_, text)| mq_hir::deprecation_message(text));
 
         match dep_msg {
             Some(msg) => sections.push(format!("> ⚠️ **Deprecated**: {}", msg)),
@@ -69,7 +46,7 @@ fn format_hover_content(
 
     let doc_text = docs
         .iter()
-        .filter(|(_, text)| !is_deprecated_marker(text))
+        .filter(|(_, text)| !mq_hir::is_deprecation_marker(text))
         .map(|(_, text)| text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
@@ -192,33 +169,6 @@ mod tests {
     use tower_lsp_server::ls_types;
 
     use super::*;
-
-    #[test]
-    fn test_is_deprecated_marker_variants() {
-        assert!(is_deprecated_marker("deprecated"));
-        assert!(is_deprecated_marker("deprecated:"));
-        assert!(is_deprecated_marker("deprecated: use foo instead"));
-        assert!(is_deprecated_marker("Deprecated: use foo instead"));
-        assert!(is_deprecated_marker("DEPRECATED: old"));
-        assert!(is_deprecated_marker("  deprecated:  "));
-        // NOT markers – these merely mention "deprecated"
-        assert!(!is_deprecated_marker("use this instead of the deprecated foo API"));
-        assert!(!is_deprecated_marker("see the deprecated section below"));
-    }
-
-    #[test]
-    fn test_extract_deprecated_message() {
-        assert_eq!(
-            extract_deprecated_message("deprecated: use foo instead"),
-            Some("use foo instead".to_string())
-        );
-        assert_eq!(extract_deprecated_message("deprecated:"), None);
-        assert_eq!(extract_deprecated_message("deprecated"), None);
-        assert_eq!(
-            extract_deprecated_message("  Deprecated:  trimmed message  "),
-            Some("trimmed message".to_string())
-        );
-    }
 
     #[test]
     fn test_format_hover_content_no_docs() {
