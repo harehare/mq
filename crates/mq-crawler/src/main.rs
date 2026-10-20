@@ -401,7 +401,6 @@ async fn main() {
     {
         Ok(mut crawler) => {
             if let Err(e) = crawler.run().await {
-                // robots_path no longer passed here
                 tracing::error!("Crawler run failed: {}", e);
             } else {
                 tracing::info!("Crawling complete.");

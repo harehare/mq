@@ -14,9 +14,6 @@
 //! Use [`TypeError::location`] to read it, or [`TypeError::span`] for a byte span in the
 //! source to use as a miette label.
 
-// Suppress false-positive warnings for fields used in thiserror/miette macros
-#![allow(unused_assignments)]
-
 pub(crate) mod builtin;
 pub mod certainty;
 pub(crate) mod constraint;
@@ -94,11 +91,9 @@ impl<'a> IntoIterator for &'a TypeEnv {
 
 /// Type checking errors
 #[derive(Debug, Error, Clone, Diagnostic)]
-#[allow(unused_assignments)]
 pub enum TypeError {
     #[error("Type mismatch: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::type_mismatch))]
-    #[allow(dead_code)]
     /// Expected and found types differ.
     Mismatch {
         /// The expected type.
@@ -113,7 +108,6 @@ pub enum TypeError {
     },
     #[error("Cannot unify types: {left} and {right}")]
     #[diagnostic(code(typechecker::unification_error))]
-    #[allow(dead_code)]
     /// Two types cannot be unified.
     UnificationError {
         /// Left-hand type.
@@ -126,21 +120,8 @@ pub enum TypeError {
         /// Extra hint shown as help.
         context: Option<String>,
     },
-    #[error("Occurs check failed: type variable {var} occurs in {ty}")]
-    #[diagnostic(code(typechecker::occurs_check))]
-    #[allow(dead_code)]
-    /// A type variable occurs inside the type it is bound to.
-    OccursCheck {
-        /// The type variable.
-        var: String,
-        /// The type containing the variable.
-        ty: String,
-        /// Source range of the error, if known.
-        location: Option<mq_lang::Range>,
-    },
     #[error("Undefined symbol: {name}")]
     #[diagnostic(code(typechecker::undefined_symbol))]
-    #[allow(dead_code)]
     /// A symbol is used but never defined.
     UndefinedSymbol {
         /// Name of the undefined symbol.
@@ -150,7 +131,6 @@ pub enum TypeError {
     },
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::wrong_arity))]
-    #[allow(dead_code)]
     /// A call passes the wrong number of arguments.
     WrongArity {
         /// The expected number of arguments.
@@ -165,7 +145,6 @@ pub enum TypeError {
     },
     #[error("Undefined field `{field}` in record type {record_ty}")]
     #[diagnostic(code(typechecker::undefined_field))]
-    #[allow(dead_code)]
     /// A record type has no such field.
     UndefinedField {
         /// Name of the missing field.
@@ -177,7 +156,6 @@ pub enum TypeError {
     },
     #[error("Attribute `{attr}` does not exist on {node_ty}")]
     #[diagnostic(code(typechecker::undefined_attribute))]
-    #[allow(dead_code)]
     /// A node type has no such attribute.
     UndefinedAttribute {
         /// Name of the missing attribute.
@@ -189,7 +167,6 @@ pub enum TypeError {
     },
     #[error("Heterogeneous array: elements have mixed types [{types}]")]
     #[diagnostic(code(typechecker::heterogeneous_array))]
-    #[allow(dead_code)]
     /// Array elements have mixed types.
     HeterogeneousArray {
         /// Comma-separated element types.
@@ -197,19 +174,10 @@ pub enum TypeError {
         /// Source range of the error, if known.
         location: Option<mq_lang::Range>,
     },
-    #[error("Type variable not found: {0}")]
-    #[diagnostic(code(typechecker::type_var_not_found))]
-    /// A type variable id has no binding.
-    TypeVarNotFound(String),
-    #[error("Internal error: {0}")]
-    #[diagnostic(code(typechecker::internal_error))]
-    /// An unexpected internal failure.
-    Internal(String),
     /// Emitted when an operation receives a nullable argument and may silently
     /// propagate `none` instead of producing the expected concrete type.
     #[error("Operation `{op}` may propagate `none`: argument `{nullable_arg}` may be `none`")]
     #[diagnostic(code(typechecker::nullable_propagation))]
-    #[allow(dead_code)]
     NullablePropagation {
         /// The operation being checked.
         op: String,
@@ -225,7 +193,6 @@ pub enum TypeError {
     /// the known type of a variable and the type predicate in the condition.
     #[error("Unreachable code: this branch can never be executed")]
     #[diagnostic(code(typechecker::unreachable_code))]
-    #[allow(dead_code)]
     UnreachableCode {
         /// Why the branch is unreachable.
         reason: String,
@@ -235,7 +202,6 @@ pub enum TypeError {
     /// Emitted when a match expression does not cover all possible values of the matched type.
     #[error("Non-exhaustive patterns: missing case for {missing}")]
     #[diagnostic(code(typechecker::non_exhaustive_patterns))]
-    #[allow(dead_code)]
     NonExhaustiveMatch {
         /// Description of the uncovered case.
         missing: String,
@@ -264,7 +230,6 @@ impl TypeError {
         match self {
             TypeError::Mismatch { location, .. }
             | TypeError::UnificationError { location, .. }
-            | TypeError::OccursCheck { location, .. }
             | TypeError::UndefinedSymbol { location, .. }
             | TypeError::WrongArity { location, .. }
             | TypeError::UndefinedField { location, .. }
@@ -273,7 +238,6 @@ impl TypeError {
             | TypeError::NullablePropagation { location, .. }
             | TypeError::UnreachableCode { location, .. }
             | TypeError::NonExhaustiveMatch { location, .. } => *location,
-            _ => None,
         }
     }
 
@@ -750,7 +714,7 @@ mod tests {
     #[rstest]
     #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
     #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
-    #[case(TypeError::TypeVarNotFound("a".into()), None)]
+    #[case(TypeError::UndefinedSymbol { name: "a".into(), location: None }, None)]
     fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<mq_lang::Range>) {
         assert_eq!(err.location(), expected);
     }
@@ -787,7 +751,14 @@ mod tests {
 
     #[test]
     fn test_type_error_span_without_location() {
-        assert!(TypeError::TypeVarNotFound("a".into()).span("1").is_none());
+        assert!(
+            TypeError::UndefinedSymbol {
+                name: "a".into(),
+                location: None
+            }
+            .span("1")
+            .is_none()
+        );
     }
 
     #[test]

@@ -307,9 +307,6 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::AssignToImmutable(_, name)) => Some(Cow::Owned(format!(
                 "Cannot assign to immutable variable '{name}'. Consider declaring it as mutable."
             ))),
-            InnerError::Runtime(RuntimeError::UndefinedVariable(_, name)) => Some(Cow::Owned(format!(
-                "Variable '{name}' is undefined. Did you forget to declare it?"
-            ))),
             InnerError::Runtime(RuntimeError::InvalidTypes { .. }) => {
                 Some(Cow::Borrowed("Type mismatch. Check the types of your operands."))
             }

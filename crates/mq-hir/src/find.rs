@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_find_symbol_in_position_resolves_descendant_chain_step() {
-        // Regression: a synthetic `..` bridge node used to shadow `.code`'s range.
+        // A synthetic `..` bridge node must not shadow `.code`'s range.
         let mut hir = Hir::default();
         let (source_id, _) = hir.add_code(None, ".blockquote .code");
         let pos = mq_lang::Position::new(1, 14);

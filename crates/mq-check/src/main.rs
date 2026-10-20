@@ -453,7 +453,6 @@ fn error_title(error: &TypeError) -> String {
         TypeError::UnificationError { left, right, .. } => {
             format!("cannot unify: {left} and {right}")
         }
-        TypeError::OccursCheck { var, ty, .. } => format!("infinite type: {var} in {ty}"),
         TypeError::UndefinedSymbol { name, .. } => format!("undefined symbol: {name}"),
         TypeError::WrongArity { expected, found, .. } => {
             format!("wrong arity: expected {expected}, found {found}")
@@ -465,8 +464,6 @@ fn error_title(error: &TypeError) -> String {
             format!("undefined attribute `{attr}` on {node_ty}")
         }
         TypeError::HeterogeneousArray { types, .. } => format!("heterogeneous array: [{types}]"),
-        TypeError::TypeVarNotFound(name) => format!("type variable not found: {name}"),
-        TypeError::Internal(msg) => format!("internal error: {msg}"),
         TypeError::NullablePropagation { op, nullable_arg, .. } => {
             format!("nullable propagation: `{op}` with nullable arg `{nullable_arg}`")
         }

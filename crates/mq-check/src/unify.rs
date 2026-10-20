@@ -301,7 +301,6 @@ fn unify_records(
 /// Occurs check: ensures a type variable doesn't occur directly in a type.
 ///
 /// This prevents infinite types like T = [T].
-#[cfg_attr(not(test), allow(dead_code))]
 fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
     match ty {
         Type::Var(v) => var == *v,

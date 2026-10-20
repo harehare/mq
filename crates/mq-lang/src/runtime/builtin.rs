@@ -5965,9 +5965,6 @@ pub enum Error {
     #[error("")]
     NotDefined(FunctionName, Vec<String>),
     #[error("")]
-    #[allow(dead_code)]
-    UndefinedReference(String, Vec<String>),
-    #[error("")]
     InvalidDateTimeFormat(String),
     #[error("")]
     InvalidTypes(FunctionName, ErrorArgs),
@@ -5981,12 +5978,6 @@ pub enum Error {
     ZeroDivision,
     #[error("")]
     UserDefined(String),
-    #[error("")]
-    #[allow(dead_code)]
-    AssignToImmutable(String),
-    #[error("")]
-    #[allow(dead_code)]
-    UndefinedVariable(String),
     #[error("")]
     InvalidConvert(String),
     #[error("")]
@@ -6009,11 +6000,6 @@ impl Error {
                 name.clone(),
                 candidates.clone().into(),
             ),
-            Error::UndefinedReference(a, candidates) => RuntimeError::UndefinedReference(
-                get_token(&token_arena, token_id),
-                a.clone(),
-                candidates.clone().into(),
-            ),
             Error::InvalidDateTimeFormat(msg) => {
                 RuntimeError::DateTimeFormatError(get_token(&token_arena, token_id), msg.clone())
             }
@@ -6033,12 +6019,6 @@ impl Error {
             }
             Error::Runtime(msg) => RuntimeError::Runtime(get_token(&token_arena, token_id), msg.clone()),
             Error::ZeroDivision => RuntimeError::ZeroDivision(get_token(&token_arena, token_id)),
-            Error::AssignToImmutable(name) => {
-                RuntimeError::AssignToImmutable(get_token(&token_arena, token_id), name.clone())
-            }
-            Error::UndefinedVariable(name) => {
-                RuntimeError::UndefinedVariable(get_token(&token_arena, token_id), name.clone())
-            }
             Error::InvalidConvert(format) => {
                 RuntimeError::InvalidConvert(get_token(&token_arena, token_id), format.clone())
             }
