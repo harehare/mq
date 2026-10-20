@@ -2595,7 +2595,7 @@ def stats_by(arr, group_f, value_f, aggs = ["sum", "mean", "min", "max", "stddev
 end
 
 # Buckets a numeric array into `buckets` equal-width bins between its min and
-# max, returning an array of `{range, count, bar}` — `bar` is a block-character
+# max, returning an array of `{range, count, bar}`; `bar` is a block-character
 # bar scaled so the tallest bucket is 40 characters wide, handy for a quick
 # terminal or Markdown look at a distribution.
 #

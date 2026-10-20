@@ -536,7 +536,7 @@ end
 # `;;;` (the convention used by e.g. Hexo). Unlike YAML (`---`) and TOML
 # (`+++`) front matter, mq's Markdown parser does not recognize `;;;` blocks
 # as a distinct front matter node, so this output won't round-trip through
-# `frontmatter`/`is_yaml`/`is_toml`-style selectors — it's meant for
+# `frontmatter`/`is_yaml`/`is_toml`-style selectors: it's meant for
 # generating files for tools that do support this convention.
 #
 # Example:

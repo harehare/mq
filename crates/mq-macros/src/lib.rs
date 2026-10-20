@@ -15,7 +15,7 @@ use syn::{
 /// The static name is derived by uppercasing the `name` attribute value.
 ///
 /// # Parameters
-/// - `name`: The string name of the builtin (e.g., `"sort_desc"`) — also used as the static name
+/// - `name`: The string name of the builtin (e.g., `"sort_desc"`), also used as the static name
 ///   (`SORT_DESC`).
 /// - `params`: The `ParamNum` variant without the `ParamNum::` prefix (e.g., `None`, `Fixed(1)`,
 ///   `Range(0, 255)`).

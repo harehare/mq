@@ -55,7 +55,7 @@ pub enum DefineValueError {
 /// ```
 #[derive(Debug, Clone)]
 pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
-    /// VM state — see [`tarn::VmState`].
+    /// VM state: see [`tarn::VmState`].
     pub(crate) vm: tarn::VmState<T, IO>,
     pub(crate) token_arena: Shared<SharedCell<Arena<Token>>>,
     pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
@@ -94,7 +94,7 @@ impl<T: ModuleResolver> Default for Engine<T, SandboxedIo<NativeIo>> {
 }
 
 // `new` is pinned to the default `IO` (rather than generic over any `IO: Default`) because Rust
-// doesn't use a generic parameter's default as an inference fallback — callers like
+// doesn't use a generic parameter's default as an inference fallback; callers like
 // `Engine::new(resolver)` have no other way to pin `IO`. Mirrors the `HashMap::new`/
 // `HashMap::with_hasher` split. To use a different `IO`, annotate the binding's type, e.g.
 // `let engine: Engine<T, MyIo> = Engine::new(resolver);` (this only fixes the *value* passed at
@@ -138,7 +138,7 @@ impl<IO: Io> Engine<DefaultModuleResolver, IO> {
 
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Like the [`SandboxedIo<NativeIo>`]-pinned [`Engine::new`], but generic over `IO` and
-    /// takes the [`Io`] value up front — for hosts that need to select the `Io` *type* at
+    /// takes the [`Io`] value up front, for hosts that need to select the `Io` *type* at
     /// construction time, not just its value via [`set_io`](Self::set_io). Useful for e.g. a
     /// test runner that wants an in-memory mock `Io` installed from the start.
     ///
@@ -181,7 +181,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     }
 
     /// Sets the [`Io`] this engine uses for file, environment-variable, and network
-    /// access — both for builtins (`read_file`, `write_file`, `http`, ...) and for
+    /// access: both for builtins (`read_file`, `write_file`, `http`, ...) and for
     /// local module resolution (`include`/`import`). Defaults to an all-denied
     /// [`SandboxedIo`](crate::SandboxedIo) wrapping [`NativeIo`](crate::NativeIo),
     /// so a host must opt in explicitly.
@@ -251,10 +251,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// - A raw form taking the already-evaluated call arguments as a slice and returning a
     ///   single [`RuntimeValue`]: `|args: &[RuntimeValue]| -> HostFnResult { .. }`.
     /// - A typed form taking up to eight plain Rust arguments (any combination of `i64`, `f64`,
-    ///   `String`, `bool`, `RuntimeValue`, `Vec<T>`, or `Option<T>` for a [`ValueAdapter`] `T`),
+    ///   `String`, `bool`, `RuntimeValue`, `Vec<T>`, or `Option<T>` for a [`ValueAdapter`](crate::ValueAdapter) `T`),
     ///   returning `Result<R, HostFunctionError>` for an `R: ValueAdapter`. Argument and return
     ///   values are converted to/from `RuntimeValue` automatically; a wrong argument count or
-    ///   type is reported as a [`HostFunctionError`] rather than panicking.
+    ///   type is reported as a [`HostFunctionError`](crate::HostFunctionError) rather than panicking.
     ///
     /// Errors and panics raised by the function are caught at the call boundary and surfaced as
     /// a normal mq runtime error rather than aborting evaluation or unwinding through the
@@ -263,7 +263,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     ///
     /// A registered function only fills in a name that would otherwise be undefined: a `def` of
     /// the same name always takes precedence, and so does *any* built-in function name, whether
-    /// or not [`Self::load_builtin_module`] was called — name resolution itself falls back to
+    /// or not [`Self::load_builtin_module`] was called: name resolution itself falls back to
     /// the built-in table before host functions are ever consulted. Host functions therefore
     /// extend the set of callable names rather than override existing ones; pick a name that
     /// doesn't collide with a builtin.

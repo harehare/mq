@@ -1,6 +1,6 @@
 <h1 align="center">mq-test</h1>
 
-Standalone test runner for mq — auto-discovers and executes test functions in `.mq` files.
+Standalone test runner for mq: auto-discovers and executes test functions in `.mq` files.
 
 ## Overview
 
@@ -80,7 +80,7 @@ mq-test --format json
 ## Coverage
 
 Pass `--coverage` to report how much of the code your tests `include`/`import`
-was actually exercised while the tests ran — i.e. is the library code under
+was actually exercised while the tests ran, i.e. is the library code under
 test covered, not just the test file itself:
 
 ```
@@ -92,7 +92,7 @@ Coverage report:
 ```
 
 - Only `include`d/imported modules are measured. The test file's own lines
-  (test bodies, assertions, `include`/`import` statements) are not counted —
+  (test bodies, assertions, `include`/`import` statements) are not counted:
   they're the thing doing the exercising, not the thing being measured. A
   test file with no `include`/`import` produces no coverage output.
 - A module is reported once with combined coverage across every test file
@@ -106,7 +106,7 @@ Coverage report:
     light/dark theme.
   - `markdown` produces the same summary table plus a per-file source listing
     in a ` ```diff ` block, so GitHub (and other diff-aware Markdown
-    renderers) colors covered/uncovered lines green/red — handy for pasting
+    renderers) colors covered/uncovered lines green/red, handy for pasting
     into a PR description or CI job summary.
   - `json` produces a machine-readable report with per-file and total stats,
     plus a `lines` array per file giving each line's content and
@@ -172,10 +172,10 @@ def test_len(input, expected):
 end
 ```
 
-This produces three test cases — `len[0]`, `len[1]`, `len[2]` — each called
+This produces three test cases, `len[0]`, `len[1]`, `len[2]`, each called
 with the corresponding `[input, expected]` pair.
 
-The annotation's `(...)` can also span multiple comment lines — handy once the
+The annotation's `(...)` can also span multiple comment lines, handy once the
 array of cases gets long:
 
 ```mq
@@ -197,7 +197,7 @@ end
 Use `# @property(count, generators)` to run a function against `count` generated cases instead
 of a fixed list. `generators` is an array with one generator per test parameter, built from the
 `gen` standard module's combinators (`gen::int`, `gen::string`, `gen::array`, `gen::one_of`, and
-more — `import "gen"` to use them). `count` can be omitted, in which case it defaults to 100:
+more; `import "gen"` to use them). `count` can be omitted, in which case it defaults to 100:
 
 ```mq
 include "test"
@@ -219,7 +219,7 @@ end
 Like `@parametrize`, generated cases are reported as `name[0]`, `name[1]`, etc., and each index
 doubles as the seed that produced it: a failing `name[42]` can be reproduced deterministically by
 calling `gen::tuple(generators)(42)` with the exact same `generators` array from the annotation
-(not by calling an individual generator directly — `gen::tuple` derives each parameter's actual
+(not by calling an individual generator directly; `gen::tuple` derives each parameter's actual
 seed from the one passed in).
 
 Before reporting a failure, the runner automatically searches for a smaller, simpler failing
@@ -264,8 +264,8 @@ function via a separate comment line placed right above it.
   `<SUBSTRING>`, case-insensitively.
 - `--tag <TAG>` only runs tests carrying `<TAG>` (see above). Repeat the flag
   to match any of several tags.
-- `--parallel-threshold <N>` / `-P <N>` runs test files in parallel — each
-  file still gets its own hermetic engine and `Io` — once more than `N`
+- `--parallel-threshold <N>` / `-P <N>` runs test files in parallel (each
+  file still gets its own hermetic engine and `Io`) once more than `N`
   files are discovered. Defaults to never parallelizing. Coverage data is
   merged safely across parallel files, and each file's report prints
   atomically so concurrent files' output never interleaves.
@@ -289,7 +289,7 @@ Tests use the built-in `assert_eq` and related helpers from the `test` module:
 
 The runner automatically generates a `run_tests(flatten([...]))` call (or,
 under `--format json`, a `run_tests_data(flatten([...]))` call) from all
-discovered test functions — test files do not need to maintain a manual list.
+discovered test functions, so test files do not need to maintain a manual list.
 
 ### Snapshot Testing
 
@@ -308,22 +308,22 @@ The layout follows the `suite`/`ref`/`store` split from
 [typst's test runner](https://github.com/typst/typst/tree/main/tests): the test file
 itself plus whatever it feeds into `assert_snapshot` is the "suite" (input), and:
 
-- **ref** — `__snapshots__/<test file stem>/<name>.snap`, next to the test file. This is
+- **ref**: `__snapshots__/<test file stem>/<name>.snap`, next to the test file. This is
   the golden, checked-in expected value.
 
-A snapshot that doesn't exist yet fails the test (it does not get created implicitly) — this is the one exception in `mq-test` where "no such thing" is a real failure, not an error to silently paper over. Run with `--update-snapshots` to create or overwrite golden snapshots from the current output:
+A snapshot that doesn't exist yet fails the test (it does not get created implicitly); this is the one exception in `mq-test` where "no such thing" is a real failure, not an error to silently paper over. Run with `--update-snapshots` to create or overwrite golden snapshots from the current output:
 
 ```bash
 mq-test --update-snapshots
 ```
 
-`assert_snapshot` is real, unmocked disk I/O — the one deliberate exception to the
+`assert_snapshot` is real, unmocked disk I/O: the one deliberate exception to the
 hermetic `Io` described below, since golden files must survive across runs and be
 checked into version control.
 
 ### Mocking File and Network I/O
 
-Each test file runs against an in-memory, hermetic `Io` — no real disk or network access —
+Each test file runs against an in-memory, hermetic `Io` (no real disk or network access),
 so `read_file`/`write_file`/`http` are always allowed, regardless of the `--allow-read` / `--allow-write` / `--allow-net` flags the CLI itself requires.
 
 Files can be seeded from within a test simply by writing them first:
@@ -351,7 +351,7 @@ def test_reads_a_mocked_api_response():
 end
 ```
 
-State (files written, mocked responses) does not leak between test files — each gets a fresh in-memory `Io`.
+State (files written, mocked responses) does not leak between test files; each gets a fresh in-memory `Io`.
 
 ## Example
 
@@ -404,7 +404,7 @@ Discovers tests (honoring `--filter`/`--tag`) without running them:
 ```
 
 `kind` is one of `simple`, `parametrized`, or `property`. A `# @parametrize(...)`/
-`# @property(...)` test is listed once as its own function — the individual generated
+`# @property(...)` test is listed once as its own function; the individual generated
 cases (`name[0]`, `name[1]`, ...) only exist once the test actually runs.
 
 ### `--format json` (run)

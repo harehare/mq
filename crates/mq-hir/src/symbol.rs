@@ -45,6 +45,19 @@ type Params = Vec<ParamInfo>;
 /// Doc comment text with its source range.
 pub type Doc = (mq_lang::Range, String);
 
+/// Whether a doc line marks deprecation: `deprecated` in any case, alone or followed by `:` or a space.
+/// Lines that only mention the word do not count.
+pub fn is_deprecation_marker(text: &str) -> bool {
+    let lower = text.trim().to_lowercase();
+    lower == "deprecated" || lower.starts_with("deprecated:") || lower.starts_with("deprecated ")
+}
+
+/// The message after the colon of a deprecation marker line, if any.
+pub fn deprecation_message(text: &str) -> Option<String> {
+    let message = text.trim().split_once(':')?.1.trim();
+    (!message.is_empty()).then(|| message.to_string())
+}
+
 /// A named or structural element of the program, such as a function, variable or call.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Symbol {
@@ -234,12 +247,10 @@ impl Symbol {
         }
     }
 
-    /// Check if documentation contains deprecated marker
+    /// Whether a doc line marks the symbol as deprecated, see [`is_deprecation_marker`].
     #[inline(always)]
     pub fn is_deprecated(&self) -> bool {
-        self.doc
-            .iter()
-            .any(|(_, text)| text.contains("deprecated") || text.contains("Deprecated") || text.contains("DEPRECATED"))
+        self.doc.iter().any(|(_, text)| is_deprecation_marker(text))
     }
 }
 
@@ -268,6 +279,38 @@ mod tests {
             parent: None,
             insertion_order: 0,
         }
+    }
+
+    #[rstest]
+    #[case("deprecated", true)]
+    #[case("deprecated:", true)]
+    #[case("Deprecated: use foo instead", true)]
+    #[case("DEPRECATED: old", true)]
+    #[case("  deprecated:  ", true)]
+    #[case("use this instead of the deprecated foo API", false)]
+    #[case("see the deprecated section below", false)]
+    fn test_is_deprecation_marker(#[case] text: &str, #[case] expected: bool) {
+        assert_eq!(is_deprecation_marker(text), expected);
+    }
+
+    #[rstest]
+    #[case("deprecated: use foo instead", Some("use foo instead"))]
+    #[case("  Deprecated:  trimmed message  ", Some("trimmed message"))]
+    #[case("deprecated:", None)]
+    #[case("deprecated", None)]
+    fn test_deprecation_message(#[case] text: &str, #[case] expected: Option<&str>) {
+        assert_eq!(deprecation_message(text).as_deref(), expected);
+    }
+
+    #[test]
+    fn test_is_deprecated_ignores_lines_that_only_mention_the_word() {
+        let mut symbol = create_test_symbol(SymbolKind::Function(Vec::new()), Some("f"));
+        symbol.doc = vec![(mq_lang::Range::default(), "Replaces the deprecated g.".to_string())];
+        assert!(!symbol.is_deprecated());
+        symbol
+            .doc
+            .push((mq_lang::Range::default(), "Deprecated: use h.".to_string()));
+        assert!(symbol.is_deprecated());
     }
 
     #[rstest]

@@ -39,10 +39,10 @@ b""                 # empty byte sequence
 Only **ASCII** characters (code points 0–127) may appear unescaped inside a byte literal. Non-ASCII characters such as `é` or `😊` must be written using `\xNN` hex escapes:
 
 ```mq
-# Correct — use \xNN for non-ASCII bytes
+# Correct: use \xNN for non-ASCII bytes
 b"\xc3\xa9"    # UTF-8 encoding of 'é' (2 bytes: 0xc3, 0xa9)
 
-# Wrong — non-ASCII characters are not accepted in b"..."
+# Wrong: non-ASCII characters are not accepted in b"..."
 # b"é"          ← syntax error; use \xNN escapes instead
 ```
 
@@ -61,7 +61,7 @@ b"\xc3\xa9"    # UTF-8 encoding of 'é' (2 bytes: 0xc3, 0xa9)
 ### Common operations
 
 ```mq
-b"abc" | len          # 3  — byte length, not character count
+b"abc" | len          # 3, byte length, not character count
 b"abc" | type         # "bytes"
 b"abc" == b"abc"      # true
 b"abc" | is_empty     # false

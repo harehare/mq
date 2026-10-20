@@ -119,7 +119,7 @@ impl ModuleResolver for DefaultModuleResolver {
 
 impl DefaultModuleResolver {
     /// Creates a new resolver with the given filesystem search paths, backed by
-    /// [`NativeIo`](crate::io::NativeIo) for local module resolution — i.e. full,
+    /// [`NativeIo`](crate::io::NativeIo) for local module resolution, i.e. full,
     /// ungated disk access, matching this resolver's historical behavior.
     ///
     /// An empty `paths` slice falls back to the built-in default search directories.
@@ -137,7 +137,7 @@ impl DefaultModuleResolver {
     }
 
     /// Creates a new resolver whose local filesystem module resolution goes through `io`
-    /// instead of a bare [`NativeIo`](crate::io::NativeIo) — e.g. a
+    /// instead of a bare [`NativeIo`](crate::io::NativeIo), e.g. a
     /// [`SandboxedIo`](crate::io::SandboxedIo) so `include`/`import` respect the same
     /// read permission as the `read_file`/`write_file`/`http` builtins. HTTP module
     /// imports are unaffected (still `NativeIo`-only, if the `http-import-ureq` feature
@@ -211,7 +211,7 @@ impl DefaultModuleResolver {
     }
 
     /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
-    /// recorded as a new entry. See [`http_resolver::UreqFetcher::set_lockfile_frozen`].
+    /// recorded as a new entry. See `http_resolver::UreqFetcher::set_lockfile_frozen`.
     #[cfg(feature = "http-import-ureq")]
     pub fn set_lockfile_frozen(&mut self, frozen: bool) {
         self.http_resolver.set_lockfile_frozen(frozen);

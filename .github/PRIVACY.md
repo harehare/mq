@@ -1,4 +1,4 @@
-# Privacy Policy — mq for Markdown (Chrome Extension)
+# Privacy Policy: mq for Markdown (Chrome Extension)
 
 Last updated: 2026-08-10
 
@@ -14,7 +14,7 @@ Nothing is sent to a server.
 - Reads the HTML of the tab you're currently viewing (only when you click "Extract page") and converts it to Markdown, entirely on your device.
 - Runs the mq query you write against that content, also entirely on your device.
 - Optionally renders a preview overlay of the converted content on the page you're viewing.
-- Copies the result to your clipboard when you click "Copy" — this is a manual, user-initiated action; the extension does not read or write your clipboard otherwise.
+- Copies the result to your clipboard when you click "Copy", this is a manual, user-initiated action; the extension does not read or write your clipboard otherwise.
 
 ## Data collection
 

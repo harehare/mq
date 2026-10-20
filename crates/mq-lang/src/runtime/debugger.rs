@@ -334,7 +334,6 @@ impl Debugger {
 
     /// Add a breakpoint at the specified line with an optional condition, hit condition,
     /// and log message (see [`Breakpoint`] for their semantics).
-    #[allow(clippy::too_many_arguments)]
     pub fn add_breakpoint_with_options(
         &mut self,
         line: usize,

@@ -9,7 +9,7 @@ use std::{path::PathBuf, process::ExitCode};
 #[derive(Parser, Debug)]
 #[command(name = "mq-bench")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Benchmark runner for mq — times bench_ functions written in .mq files")]
+#[command(about = "Benchmark runner for mq: times bench_ functions written in .mq files")]
 #[command(after_help = "# Examples:\n\n\
     ## Run all benches in a specific file:\n\
     mq-bench benches.mq\n\n\

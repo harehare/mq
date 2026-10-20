@@ -67,26 +67,26 @@ pub enum RuntimeValue {
     Boolean(bool),
     /// A string value.
     ///
-    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`string_mut`].
+    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see `string_mut`.
     String(Shared<String>),
     /// A symbol (interned identifier).
     Symbol(Ident),
     /// An array of runtime values.
     ///
     /// Behind [`Shared`] for clone-on-write: cloning is an O(1) refcount bump; mutating
-    /// builtins must go through [`array_mut`] instead of mutating directly.
+    /// builtins must go through `array_mut` instead of mutating directly.
     Array(Shared<Vec<RuntimeValue>>),
     /// A markdown node with an optional selector for indexing.
     ///
-    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`markdown_mut`].
+    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see `markdown_mut`.
     Markdown(Shared<Node>, Option<Selector>),
     /// A built-in native function identified by name.
     NativeFunction(Ident),
     /// A first-class coroutine resumption helper (`next` or `send`).
     CoroutineBuiltin(ResumeBuiltin),
     /// A VM closure that has crossed into plain-value territory (stored in an array/dict,
-    /// passed to `partial`, ...) — see `tarn::value::ClosureValue`. `ClosureValue` is
-    /// deliberately `pub(crate)` — this variant is constructible only from within the crate.
+    /// passed to `partial`, ...): see `tarn::value::ClosureValue`. `ClosureValue` is
+    /// deliberately `pub(crate)`; this variant is constructible only from within the crate.
     ///
     /// `Shared`-wrapped, not inline: `ClosureValue` is 64 bytes (chunks/upvalues/bound_args),
     /// which would otherwise force every `RuntimeValue` variant to that size.
@@ -95,11 +95,11 @@ pub enum RuntimeValue {
     Closure(Shared<ClosureValue>),
     /// A dictionary mapping identifiers to runtime values.
     ///
-    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].
+    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see `dict_mut`.
     Dict(Shared<DictMap>),
     /// Raw binary data (e.g. CBOR byte strings).
     ///
-    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`bytes_mut`].
+    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see `bytes_mut`.
     Bytes(Shared<Vec<u8>>),
     /// A generator function's coroutine, see `tarn::interpreter::coroutine::CoroutineState`.
     /// `CoroutineState` is deliberately `pub(crate)`, so this variant is constructible only

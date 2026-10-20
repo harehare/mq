@@ -3,7 +3,7 @@ use std::time::Duration;
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::{Token, number::Number};
+use crate::Token;
 
 use super::module::error::ModuleError;
 
@@ -33,8 +33,6 @@ pub enum RuntimeError {
     UndefinedReference(ErrorToken, FunctionName, Box<[FunctionName]>),
     #[error("Unable to format date time, {1}")]
     DateTimeFormatError(ErrorToken, String),
-    #[error("Index out of bounds {1}")]
-    IndexOutOfBounds(ErrorToken, Number),
     #[error("Invalid definition for \"{1}\"")]
     InvalidDefinition(ErrorToken, String),
     #[error("Maximum recursion depth exceeded ({0})")]
@@ -59,18 +57,12 @@ pub enum RuntimeError {
     },
     #[error("Invalid regular expression \"{1}\"")]
     InvalidRegularExpression(ErrorToken, String),
-    #[error("Internal error")]
-    InternalError(ErrorToken),
     #[error("Failed to load module \"{0}\"")]
     ModuleLoadError(#[from] ModuleError),
     #[error("Runtime error: {1}")]
     Runtime(ErrorToken, String),
     #[error("Division by zero")]
     ZeroDivision(ErrorToken),
-    #[error("Unexpected break outside of loop")]
-    UnexpectedBreak(ErrorToken),
-    #[error("Unexpected continue outside of loop")]
-    UnexpectedContinue(ErrorToken),
     #[error("Environment variable `{1}` not found")]
     EnvNotFound(Token, SmolStr),
     #[error("Cannot assign to immutable variable \"{1}\"")]
@@ -96,7 +88,6 @@ impl RuntimeError {
             RuntimeError::NotDefined(token, _, _) => Some(token),
             RuntimeError::UndefinedReference(token, _, _) => Some(token),
             RuntimeError::DateTimeFormatError(token, _) => Some(token),
-            RuntimeError::IndexOutOfBounds(token, _) => Some(token),
             RuntimeError::InvalidDefinition(token, _) => Some(token),
             RuntimeError::RecursionError(_) => None,
             RuntimeError::Timeout(_) => None,
@@ -104,12 +95,9 @@ impl RuntimeError {
             RuntimeError::InvalidTypes { token, .. } => Some(token),
             RuntimeError::InvalidNumberOfArguments { token, .. } => Some(token),
             RuntimeError::InvalidRegularExpression(token, _) => Some(token),
-            RuntimeError::InternalError(token) => Some(token),
             RuntimeError::ModuleLoadError(err) => err.token(),
             RuntimeError::Runtime(token, _) => Some(token),
             RuntimeError::ZeroDivision(token) => Some(token),
-            RuntimeError::UnexpectedBreak(token) => Some(token),
-            RuntimeError::UnexpectedContinue(token) => Some(token),
             RuntimeError::EnvNotFound(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
             RuntimeError::InvalidConvert(token, _) => Some(token),
@@ -139,18 +127,14 @@ mod tests {
     #[case(RuntimeError::NotDefined(eof_token(), "f".to_string(), Box::new([])), true)]
     #[case(RuntimeError::UndefinedReference(eof_token(), "r".to_string(), Box::new([])), true)]
     #[case(RuntimeError::DateTimeFormatError(eof_token(), "err".to_string()), true)]
-    #[case(RuntimeError::IndexOutOfBounds(eof_token(), Number::from(1.0)), true)]
     #[case(RuntimeError::InvalidDefinition(eof_token(), "d".to_string()), true)]
     #[case(RuntimeError::RecursionError(10), false)]
     #[case(RuntimeError::Timeout(Duration::from_secs(1)), false)]
     #[case(RuntimeError::InvalidTypes { token: eof_token(), name: "f".to_string(), args: vec![] }, true)]
     #[case(RuntimeError::InvalidNumberOfArguments { token: eof_token(), name: "f".to_string(), expected: 1, actual: 0 }, true)]
     #[case(RuntimeError::InvalidRegularExpression(eof_token(), "pat".to_string()), true)]
-    #[case(RuntimeError::InternalError(eof_token()), true)]
     #[case(RuntimeError::Runtime(eof_token(), "err".to_string()), true)]
     #[case(RuntimeError::ZeroDivision(eof_token()), true)]
-    #[case(RuntimeError::UnexpectedBreak(eof_token()), true)]
-    #[case(RuntimeError::UnexpectedContinue(eof_token()), true)]
     #[case(RuntimeError::EnvNotFound(eof_token(), "VAR".into()), true)]
     #[case(RuntimeError::AssignToImmutable(eof_token(), "x".to_string()), true)]
     #[case(RuntimeError::InvalidConvert(eof_token(), "msg".to_string()), true)]

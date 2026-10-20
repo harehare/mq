@@ -11,8 +11,6 @@ pub enum ParseError {
     UnexpectedEOFDetected,
     #[error("Insufficient tokens `{0}`")]
     InsufficientTokens(Shared<Token>),
-    #[error("Expected a closing bracket `]` but got `{0}` delimiter")]
-    ExpectedClosingBracket(Shared<Token>),
     #[error(transparent)]
     UnknownSelector(selector::UnknownSelector),
     #[error("Unexpected `end` keyword — no open block to close")]
@@ -31,7 +29,6 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken(token)
             | ParseError::InsufficientTokens(token)
-            | ParseError::ExpectedClosingBracket(token)
             | ParseError::UnmatchedEnd(token)
             | ParseError::Missing { found: token, .. } => Some(token.range),
             ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token.range),
@@ -57,9 +54,6 @@ impl ParseError {
             ),
             ParseError::InsufficientTokens(_) => Some(
                 "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.".to_string(),
-            ),
-            ParseError::ExpectedClosingBracket(_) => Some(
-                "Expected a closing bracket ']'. Check your brackets for balance.".to_string(),
             ),
             ParseError::Missing { .. } => Some(
                 "A token is missing here. Check for unclosed brackets, parentheses, or blocks.".to_string(),
@@ -93,7 +87,6 @@ mod tests {
     #[case::unexpected_token_eof(ParseError::UnexpectedToken(make_token(TokenKind::Eof)), true)]
     #[case::unexpected_eof_detected(ParseError::UnexpectedEOFDetected, true)]
     #[case::insufficient_tokens(ParseError::InsufficientTokens(make_token(TokenKind::Comma)), true)]
-    #[case::expected_closing_bracket(ParseError::ExpectedClosingBracket(make_token(TokenKind::Comma)), true)]
     #[case::unmatched_end(ParseError::UnmatchedEnd(make_token(TokenKind::End)), true)]
     fn test_hint_present(#[case] err: ParseError, #[case] has_hint: bool) {
         assert_eq!(err.hint().is_some(), has_hint);

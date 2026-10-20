@@ -1,17 +1,17 @@
 ---
 name: web-scraping
-description: Fetches web pages and extracts structured data using mq's toolchain (mq-crawl for fetching/crawling/JS rendering, mq for HTML-to-Markdown selector-based extraction, http() for in-query requests). Use when the user wants to scrape a URL, pull structured data out of a webpage, crawl a site, or turn HTML into Markdown/JSON — an alternative to a one-off curl-plus-parser script.
+description: Fetches web pages and extracts structured data using mq's toolchain (mq-crawl for fetching/crawling/JS rendering, mq for HTML-to-Markdown selector-based extraction, http() for in-query requests). Use when the user wants to scrape a URL, pull structured data out of a webpage, crawl a site, or turn HTML into Markdown/JSON, an alternative to a one-off curl-plus-parser script.
 ---
 
 # Web Scraping with mq
 
-Three tools — pick the smallest one that fits:
+Three tools; pick the smallest one that fits:
 
-- **`mq-crawl`** — fetch/crawl a URL to Markdown, with JS rendering, multi-page crawling, robots.txt handling.
-- **`mq`** — filter/transform Markdown or HTML (`-I html`) with jq-like selectors. Full selector/function reference: `processing-markdown` skill.
-- **`mq`'s `http()` builtin** (`--allow-net`) — make the request *inside* a query, for cases `mq-crawl` can't (POST, custom headers/auth).
+- **`mq-crawl`**: fetch/crawl a URL to Markdown, with JS rendering, multi-page crawling, robots.txt handling.
+- **`mq`**: filter/transform Markdown or HTML (`-I html`) with jq-like selectors. Full selector/function reference: `processing-markdown` skill.
+- **`mq`'s `http()` builtin** (`--allow-net`): make the request *inside* a query, for cases `mq-crawl` can't (POST, custom headers/auth).
 
-`mq-crawl` sends logs/stats to stderr — redirect with `2>/dev/null` when scripting.
+`mq-crawl` sends logs/stats to stderr: redirect with `2>/dev/null` when scripting.
 
 ## Fetch & Extract
 
@@ -40,7 +40,7 @@ mq-crawl https://docs.example.com --depth 2 --allowed-domains docs.example.com \
 ```
 
 - `--headless` needs local Chrome (or `--webdriver-url` for a remote WebDriver).
-- `--allowed-domains` is an **exact-match** domain list, not a wildcard — list every subdomain you want crawled.
+- `--allowed-domains` is an **exact-match** domain list, not a wildcard; list every subdomain you want crawled.
 - `-o DIR` saves one Markdown file per page instead of stdout; aggregate them with `mq -I null --allow-read 'collection("./crawled") | map(self, fn(page): get(page, "title");)' /dev/null` (`collection` reads from disk, so it requires `--allow-read`).
 
 ## In-Query HTTP (`--allow-net`)
@@ -52,9 +52,9 @@ mq --allow-net -I null 'http("get", "https://example.com")' /dev/null
 mq --allow-net -I null 'http("post", "https://api.example.com/submit", "field=value")' /dev/null
 ```
 
-`http(method, url, body?, headers?)` — `headers` is a dict, e.g. `set(dict(), "Authorization", "Bearer …")`. HTTPS-only; loopback/private/link-local addresses are always blocked. Errors unless `--allow-net` is passed. (`--allow-write` is the equivalent gate for `write_file()`.)
+`http(method, url, body?, headers?)`: `headers` is a dict, e.g. `set(dict(), "Authorization", "Bearer …")`. HTTPS-only; loopback/private/link-local addresses are always blocked. Errors unless `--allow-net` is passed. (`--allow-write` is the equivalent gate for `write_file()`.)
 
-To extract from the response, pipe through `from_html()` — its result is a single `Array`, so selectors like `.link`/`.h` map element-wise and leave `null`s for non-matches instead of dropping them. Use `compact_map()` with an explicit-arg accessor (`get_url()`, `to_text()`, `attr()`) instead:
+To extract from the response, pipe through `from_html()`; its result is a single `Array`, so selectors like `.link`/`.h` map element-wise and leave `null`s for non-matches instead of dropping them. Use `compact_map()` with an explicit-arg accessor (`get_url()`, `to_text()`, `attr()`) instead:
 
 ```bash
 mq --allow-net -I null -F json 'http("get", "https://example.com") | from_html(self) | compact_map(self, fn(n): get_url(n);)' /dev/null
@@ -69,9 +69,9 @@ curl -s https://example.com | mq -I html '.h | to_text()'
 curl -s https://example.com | mq -I html 'select(.link) | .link.url'
 ```
 
-`-I html` converts to Markdown first — use Markdown selectors (`.link`, `.h`, `.text`), not HTML tags. Container elements (`div`/`span`/`section`) and their `class`/`id`/`data-*` attributes are discarded in that conversion.
+`-I html` converts to Markdown first; use Markdown selectors (`.link`, `.h`, `.text`), not HTML tags. Container elements (`div`/`span`/`section`) and their `class`/`id`/`data-*` attributes are discarded in that conversion.
 
-To query the raw HTML directly instead — e.g. `.price` divs, `a.download[href]`, attribute-driven card UIs — use the `css()`/`css_text()`/`css_attr()` builtins on the pre-conversion HTML string (needs the CLI built with the `css-selector` feature, on by default):
+To query the raw HTML directly instead, e.g. `.price` divs, `a.download[href]`, attribute-driven card UIs, use the `css()`/`css_text()`/`css_attr()` builtins on the pre-conversion HTML string (needs the CLI built with the `css-selector` feature, on by default):
 
 ```bash
 curl -s https://example.com | mq -I text 'css_text(self, ".price")'                 # text of every .price match
@@ -83,7 +83,7 @@ curl -s https://example.com | mq -I text 'css(self, ".card") | map(self, fn(card
 
 ## Limitations
 
-- No HTTP status/headers/timing from `mq`/`mq-crawl` — use `curl -sI` / `curl -w` for that.
+- No HTTP status/headers/timing from `mq`/`mq-crawl`; use `curl -sI` / `curl -w` for that.
 - For JSON/XML APIs, skip `mq-crawl`: `curl -s <url> | mq -I json '...'`.
 - Cap output size with `--limit N` / `--skip N`, or pipe through `head`.
 

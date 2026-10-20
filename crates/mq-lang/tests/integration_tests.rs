@@ -2841,7 +2841,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::partial_captured_arg("def f(a, b, c): a; | let p = partial(f, 42) | p(99, 1)", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // partial: pre-fill multiple args and verify they combine correctly in the final call
 #[case::partial_multiple_args("def f(a, b, c): a + b + c; | let p = partial(f, 10, 20) | p(30)", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(60.into())].into()))]
-// partial: 2-param function can be partially applied — the scenario that triggered the redesign
+// partial: 2-param function can be partially applied, the scenario that triggered the redesign
 #[case::partial_two_param("def plus(a, b): a + b; | let plus10 = partial(plus, 10) | plus10(5)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(15.into())].into()))]
 // partial: a piped function takes the argument as its pre-filled one, like partial(f, 10)
 #[case::partial_piped_one_arg("def f(a, b, c): c; | let p = do f | partial(10) end | p(5, 42)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(42.into())].into()))]
@@ -2888,7 +2888,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::paren_free_zero_arg_user_fn("def greet(): \"Hello!\"; | greet", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello!".to_string()))].into()))]
 // paren-free calls: 1-arg user-defined function called without parentheses uses current value
 #[case::paren_free_one_arg_user_fn("def double(x): x * 2; | double", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(10.into())].into()))]
-// paren-free calls: 1-arg function with 1 default param — pipeline value bound to required param
+// paren-free calls: 1-arg function with 1 default param, pipeline value bound to required param
 #[case::paren_free_one_required_one_default("def inc(x, step = 1): x + step; | inc", vec![RuntimeValue::Number(10.into())], Ok(vec![RuntimeValue::Number(11.into())].into()))]
 // paren-free calls: 1-arg builtin (len) called without parentheses uses the current pipeline value implicitly
 #[case::paren_free_zero_arg_builtin("compact([1, None, 2]) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
@@ -3644,7 +3644,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 // base64urld: with Markdown input (decode base64url-encoded heading text)
 #[case::base64urld_markdown(r#"to_h("dGVzdA", 1) | base64urld | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // base64d_bytes/base64urld_bytes: with Markdown input, returns raw bytes (not re-wrapped as a
-// markdown node — unlike base64d/base64urld, bytes can't be markdown text content)
+// markdown node; unlike base64d/base64urld, bytes can't be markdown text content)
 #[case::base64d_bytes_markdown(r#"to_h("dGVzdA==", 1) | base64d_bytes | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bytes".to_string()))].into()))]
 #[case::base64urld_bytes_markdown(r#"to_h("dGVzdA", 1) | base64urld_bytes | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bytes".to_string()))].into()))]
 // md5/sha256/sha512: with Bytes input (from_hex creates bytes)
@@ -4110,7 +4110,7 @@ fn soft_builtin_resolves_inside_array_or_dict_literal(#[case] program: &str, #[c
 
 #[rstest]
 // A module function referenced only inside an array/dict literal must not be pruned from the
-// compiled module — `reachable_module_functions` walks call graphs via `collect_referenced_names`.
+// compiled module: `reachable_module_functions` walks call graphs via `collect_referenced_names`.
 #[case::include(
     r#"include "json" | get([json_stringify({"a": 1})], 0)"#,
     RuntimeValue::String(Shared::new(r#"{"a": 1}"#.to_string()))

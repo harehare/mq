@@ -68,7 +68,7 @@ impl<T> ArenaId<T> {
 /// that can be used to retrieve elements later. This pattern provides fast allocation
 /// and cache-friendly access.
 ///
-/// A layered arena (see [`Arena::layered`]) sits on a parent arena: it allocates its own
+/// A layered arena (see `Arena::layered`) sits on a parent arena: it allocates its own
 /// elements and still resolves the parent's ids, so it can be dropped once its ids are unused.
 #[derive(Debug, Clone, Default)]
 pub struct Arena<T> {

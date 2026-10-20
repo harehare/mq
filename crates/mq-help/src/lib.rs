@@ -6,7 +6,7 @@
 //! the `catalog` feature (on by default); without it only the doc tables are built. The
 //! catalog combines two things:
 //!
-//! - [`reference`]: extracts `MqFnDoc`/`MqExample` from the CST of any mq source, by parsing
+//! - [`mod@reference`]: extracts `MqFnDoc`/`MqExample` from the CST of any mq source, by parsing
 //!   the Markdown-ish doc-comment convention above each `def` (used for `builtin.mq`
 //!   and every standard module).
 //! - [`catalog`]: unifies that CST-extracted documentation with the native builtin

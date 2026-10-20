@@ -11,7 +11,7 @@ use std::{borrow::Cow, path::PathBuf};
 /// Pluggable HTTP fetch-and-cache backend for [`HttpModuleResolver`].
 ///
 /// Implementations are responsible for both fetching remote content and managing
-/// any associated caching (disk, memory, etc.).  The URL passed to [`fetch`] has
+/// any associated caching (disk, memory, etc.).  The URL passed to `fetch` has
 /// already been normalized and domain-checked by [`HttpModuleResolver`].
 pub trait HttpFetcher: Clone + Default {
     /// Fetch the content at `url`, using any internal cache.
@@ -162,9 +162,9 @@ struct CachedModule {
 ///
 /// Fetched modules are stored under `{system_cache_dir}/mq/` in one of two subdirectories:
 ///
-/// - `versioned/` — URLs resolved to a specific tag (e.g. `@v0.1.0`); never cleared by
+/// - `versioned/`: URLs resolved to a specific tag (e.g. `@v0.1.0`); never cleared by
 ///   [`UreqFetcher::clear_cache`].
-/// - `mutable/` — URLs resolved to `HEAD`, `main`, `master`, or any non-GitHub HTTP URL;
+/// - `mutable/`: URLs resolved to `HEAD`, `main`, `master`, or any non-GitHub HTTP URL;
 ///   cleared by [`UreqFetcher::clear_cache`].
 ///
 /// Each cached module is accompanied by a `.mq.sha256` sidecar for tamper detection.
@@ -520,7 +520,7 @@ impl HttpModuleResolver<UreqFetcher> {
     }
 
     /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
-    /// recorded as a new entry. See [`UreqFetcher::set_lockfile_frozen`].
+    /// recorded as a new entry. See `UreqFetcher::set_lockfile_frozen`.
     pub fn set_lockfile_frozen(&mut self, frozen: bool) {
         self.fetcher.set_lockfile_frozen(frozen);
     }

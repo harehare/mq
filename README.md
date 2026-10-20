@@ -2,9 +2,9 @@
   <img src="assets/logo.svg" style="width: 128px; height: 128px;"/>
 
 <a href="https://mqlang.org">Visit the site 🌐</a>
-—
+·
 <a href="https://mqlang.org/book">Read the book 📖</a>
-—
+·
 <a href="https://mqlang.org/playground">Playground 🎮</a>
 
 <h1>mq</h1>
@@ -136,8 +136,8 @@ mq is a Rust + TypeScript monorepo.
 | [`mq-crawler`](crates/mq-crawler)     | Directory crawler for batch Markdown processing       | [![Crates.io](https://img.shields.io/crates/v/mq-crawler?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-crawler)     |
 | [`mq-macros`](crates/mq-macros)       | Procedural macros for builtin function registration   | [![Crates.io](https://img.shields.io/crates/v/mq-macros?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-macros)       |
 | [`mq-test`](crates/mq-test)           | Test runner for mq                                    | [![Crates.io](https://img.shields.io/crates/v/mq-test?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-test)           |
-| [`mq-ffi`](crates/mq-ffi)             | C API for integrating mq into C applications          | —                                                                                                                                                    |
-| [`mq-wasm`](crates/mq-wasm)           | WebAssembly bindings                                  | —                                                                                                                                                    |
+| [`mq-ffi`](crates/mq-ffi)             | C API for integrating mq into C applications          | -                                                                                                                                                    |
+| [`mq-wasm`](crates/mq-wasm)           | WebAssembly bindings                                  | -                                                                                                                                                    |
 | [`mq-web`](packages/mq-web)           | Official WebAssembly build for the browser            | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square&labelColor=162032&color=498eb6)](https://www.npmjs.com/package/mq-web)                 |
 | [`mq-nodejs`](packages/mq-nodejs)     | Node.js bindings                                      | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square&labelColor=162032&color=498eb6)](https://www.npmjs.com/package/mq-nodejs)           |
 

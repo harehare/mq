@@ -114,6 +114,58 @@ def test_is_callout_non_node():
   | assert_eq(result, false)
 end
 
+# @parametrize([[1], [2], [3], [4], [5], [6]])
+def test_is_h_level(level):
+  let h = to_h("t", level)
+  | let matches = [is_h1(h), is_h2(h), is_h3(h), is_h4(h), is_h5(h), is_h6(h)]
+  | assert_eq(matches, map(range(1, 6), fn(i): i == level;))
+  | assert_eq(is_h_level(h, level), true)
+  | assert_eq(is_h_level(h, level % 6 + 1), false)
+  | assert_eq(is_h(h), true)
+end
+
+def test_is_node_kind():
+  let first_node = fn(source): do source | to_markdown() | first();;
+  | let text = first_node("plain")
+  | let list = first_node("- item")
+  | let yaml = first_node("---\na: 1\n---\n")
+  | let toml = first_node("+++\nb = 1\n+++\n")
+  | let html = first_node("<div>x</div>\n")
+  | let code = first_node("```\nx\n```\n")
+  | assert_eq([is_text(text), is_text(list), is_text(code)], [true, false, false])
+  | assert_eq([is_list(list), is_list(text)], [true, false])
+  | assert_eq([is_yaml(yaml), is_yaml(toml)], [true, false])
+  | assert_eq([is_toml(toml), is_toml(yaml)], [true, false])
+  | assert_eq([is_html(html), is_html(text)], [true, false])
+  | assert_eq([is_code(code), is_code(html)], [true, false])
+end
+
+def test_is_table_cell_and_align():
+  let cells = to_markdown("| a | b |\n|:-:|--|\n| 1 | 2 |\n")
+  | assert_eq(is_table_cell(cells[0]), true)
+  | assert_eq(is_table_align(cells[0]), false)
+  | assert_eq(is_table_align(cells[2]), true)
+  | assert_eq(is_table_cell(cells[2]), false)
+end
+
+def test_is_em():
+  assert_eq(is_em(to_em("a")), true)
+  | assert_eq(is_em(to_h("a", 1)), false)
+end
+
+def test_is_markdown_and_markdowns():
+  let h = to_h("t", 1)
+  | assert_eq(is_markdown(h), true)
+  | assert_eq(is_markdown("t"), false)
+  | assert_eq(markdowns(h), h)
+  | assert_eq(markdowns("t"), None)
+end
+
+def test_is_bytes():
+  assert_eq(is_bytes(b"ab"), true)
+  | assert_eq(is_bytes("ab"), false)
+end
+
 # String manipulation tests
 # @parametrize([
 #   ["hello world", "world", true],
@@ -465,6 +517,17 @@ def test_sort_natural(value, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   [[3, 1, 2], fn(x): x;, [1, 2, 3]],
+#   [["bb", "a", "ccc"], len, ["a", "bb", "ccc"]],
+#   [[{"k": 2}, {"k": 1}], fn(x): x["k"];, [{"k": 1}, {"k": 2}]],
+#   [[], fn(x): x;, []],
+# ])
+def test_sort_by(value, f, expected):
+  let result = sort_by(value, f)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[[1, 2, 3, 4, 5], 2, [3, 4, 5]], [[1, 2, 3], 0, [1, 2, 3]], [[1, 2, 3], 5, []]])
 def test_skip(value, n, expected):
   let result = skip(value, n)
@@ -695,6 +758,16 @@ end
 def test_unique_by(value, f, expected):
   let result = unique_by(value, f)
   | assert_eq(result, expected)
+end
+
+# @parametrize([[[1, 1, 2, 1], [1, 2]], [["a", "b", "a"], ["a", "b"]], [[], []]])
+def test_uniq(value, expected):
+  let result = uniq(value)
+  | assert_eq(result, expected)
+end
+
+def test_uniq_non_array():
+  assert_eq(try: uniq(1) catch: "error", "error")
 end
 
 # @parametrize([
@@ -1711,15 +1784,15 @@ def test_walk(value, f, expected):
 end
 
 def test_walk_markdown():
-  # markdown: text leaf — identity preserves text content
+  # markdown text leaf: identity preserves text content
   let result1 = do "plain text" | to_markdown() | first() | walk(fn(n): n;) | to_text();
   | assert_eq(result1, "plain text")
 
-  # markdown: heading — identity preserves HTML output
+  # markdown heading: identity preserves HTML output
   | let result2 = do "# heading" | to_markdown() | first() | walk(fn(n): n;) | to_html();
   | assert_eq(result2, "<h1>heading</h1>")
 
-  # markdown: h2 — identity preserves depth
+  # markdown h2: identity preserves depth
   | let result3 = do "## section" | to_markdown() | first() | walk(fn(n): n;) | to_html();
   | assert_eq(result3, "<h2>section</h2>")
 
@@ -2157,4 +2230,21 @@ end
 def test_lambda_without_params_fills_missing_argument_from_pipeline():
   let one = fn: self;
   | assert_eq(42 | one(), 42)
+end
+
+def test_to_date_iso8601():
+  assert_eq(to_date_iso8601(0), "1970-01-01T00:00:00Z")
+end
+
+def test_stream_lines_chunks_and_bytes():
+  write_file("stream.txt", "ab\ncd\nef")
+  | assert_eq(stream_lines("stream.txt") | collect(), ["ab", "cd", "ef"])
+  | assert_eq(stream_chunks("stream.txt", 4) | collect() | map(len), [4, 4, 1])
+  | assert_eq(stream_bytes("stream.txt") | collect() | len(), 8)
+end
+
+def test_load_markdown():
+  write_file("doc.md", "# Title\n\ntext")
+  | let doc = load_markdown("doc.md")
+  | assert_eq(map(doc, to_md_name), ["h1", "text"])
 end

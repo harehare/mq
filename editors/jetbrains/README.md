@@ -8,7 +8,7 @@
 
 <h1 align="center">mq for JetBrains IDEs</h1>
 
-This plugin adds support for [mq](https://github.com/harehare/mq) — a jq-like tool for Markdown processing — to
+This plugin adds support for [mq](https://github.com/harehare/mq), a jq-like tool for Markdown processing, to
 IntelliJ IDEA, WebStorm, PyCharm, GoLand, RustRover and other JetBrains IDEs. It uses
 [LSP4IJ](https://github.com/redhat-developer/lsp4ij) to talk to the `mq-lsp` language server, the same one used by
 the VS Code and Neovim integrations.
@@ -26,7 +26,7 @@ the VS Code and Neovim integrations.
 
 - A recent IntelliJ Platform IDE (2024.2+)
 - The [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin (installed automatically as a dependency)
-- `mq-lsp` and `mq-dbg` — install them via the **mq > Install Servers** action, or manually:
+- `mq-lsp` and `mq-dbg`: install them via the **mq > Install Servers** action, or manually:
 
   ```bash
   cargo install --git https://github.com/harehare/mq.git mq-lsp
@@ -51,10 +51,10 @@ All actions live under the **Tools > mq** menu:
 
 Open **Settings/Preferences > Languages & Frameworks > mq**:
 
-- **mq-lsp path** / **mq-dbg path** — explicit executable paths (leave empty to auto-detect on `PATH`, or use the downloaded copy from **Install Servers**)
-- **Show examples in new file** — toggle example queries inserted by `New mq File`
-- **Enable type checking** / **Strict array mode** — passes `--enable-type-checking` / `--strict-array` to `mq-lsp`
-- **Enable mq-lint diagnostics** / **Disabled lint rules** — passes `--enable-lint` / `--disable-lint-rule <id>` to `mq-lsp`
+- **mq-lsp path** / **mq-dbg path**: explicit executable paths (leave empty to auto-detect on `PATH`, or use the downloaded copy from **Install Servers**)
+- **Show examples in new file**: toggle example queries inserted by `New mq File`
+- **Enable type checking** / **Strict array mode**, passes `--enable-type-checking` / `--strict-array` to `mq-lsp`
+- **Enable mq-lint diagnostics** / **Disabled lint rules**, passes `--enable-lint` / `--disable-lint-rule <id>` to `mq-lsp`
 
 ## Debugging
 
@@ -69,7 +69,7 @@ Build with `./gradlew buildPlugin`.
 
 ## Known differences from the VS Code extension
 
-- No CodeLens-equivalent inline "▶︎ Run Query" gutter icons yet — use the **Execute Query** / **Run Selected Text** actions instead.
+- No CodeLens-equivalent inline "▶︎ Run Query" gutter icons yet, use the **Execute Query** / **Run Selected Text** actions instead.
 - Workspace folders map to the project's base path rather than per-module content roots.
 
 ## License

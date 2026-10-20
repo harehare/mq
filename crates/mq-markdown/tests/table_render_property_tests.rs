@@ -3,7 +3,7 @@
 //! `Markdown::to_string()` pads every cell in a table to its column's
 //! computed width (see `TableLayout` in `src/markdown.rs`), so that tables
 //! render the way markdownlint/Prettier/GitHub do. That padding logic must
-//! hold for arbitrary column counts, row counts, and alignments — not just
+//! hold for arbitrary column counts, row counts, and alignments, not just
 //! the hand-picked shapes covered by the `#[rstest]` cases in
 //! `src/markdown.rs`. This file checks the invariants a correct padding
 //! implementation can never violate, regardless of table shape.
@@ -64,8 +64,8 @@ fn render_table_source(spec: &TableSpec) -> String {
 }
 
 proptest! {
-    /// Every line of a rendered table — header, separator, and every data
-    /// row — must have identical display width. A regression that drops
+    /// Every line of a rendered table (header, separator, and every data
+    /// row) must have identical display width. A regression that drops
     /// the column-min-width floor or miscomputes a single cell's padding
     /// would desync the columns.
     #[test]

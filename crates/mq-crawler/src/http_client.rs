@@ -194,7 +194,7 @@ impl HttpClient {
     }
 
     /// Create a headless Chrome client that launches Chrome/Chromium automatically.
-    /// No external WebDriver server is required — only Chrome/Chromium must be installed.
+    /// No external WebDriver server is required; only Chrome/Chromium must be installed.
     /// If `chrome_path` is `None`, the system Chrome is auto-detected.
     ///
     /// Pages are fetched after the browser's `load` event fires, which includes
@@ -224,7 +224,7 @@ impl HttpClient {
             .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
 
         // Run the browser event loop in a background task.
-        // Errors from individual events are logged but do not stop the loop —
+        // Errors from individual events are logged but do not stop the loop:
         // breaking early would drop the receiver and cause all subsequent
         // page operations to fail with "send failed because receiver is gone".
         tokio::spawn(async move {
@@ -393,7 +393,7 @@ impl HttpClient {
                         }
                     }
 
-                    // Strategy 3: fixed delay — applied on top of other strategies.
+                    // Strategy 3: fixed delay, applied on top of other strategies.
                     if !config.fixed_delay.is_zero() {
                         tokio::time::sleep(config.fixed_delay).await;
                     }

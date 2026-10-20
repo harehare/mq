@@ -29,9 +29,9 @@ Many selectors have shorter or alternative names that you can use interchangeabl
 Example:
 
 ```mq
-.p          # Same as .text — selects all paragraph nodes
-.li         # Same as .list — selects all list items
-.code_block # Same as .code — selects all fenced code blocks
+.p          # Same as .text: selects all paragraph nodes
+.li         # Same as .list: selects all list items
+.code_block # Same as .code: selects all fenced code blocks
 .hr         # Same as .horizontal_rule
 ```
 
@@ -126,7 +126,7 @@ Selector calls can be combined with pipes and functions just like plain selector
 
 ## Descendant Selectors
 
-Chaining two or more selectors with a space selects nodes of the second type that are nested anywhere underneath a node of the first type — similar to a descendant combinator in CSS:
+Chaining two or more selectors with a space selects nodes of the second type that are nested anywhere underneath a node of the first type, similar to a descendant combinator in CSS:
 
 ```mq
 # Code blocks nested inside a blockquote (not top-level code blocks)

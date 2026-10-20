@@ -75,7 +75,7 @@ pub fn unify(
                 // Binding would create an infinite type (e.g. Var(a) = Tuple(Var(a))).
                 // This arises from valid dynamic patterns like `if (is_array(x)): x else: [x]`
                 // where type-narrowing hasn't yet constrained the then-branch to Array.
-                // Skip the binding silently — the variable remains free/polymorphic, which is
+                // Skip the binding silently: the variable remains free/polymorphic, which is
                 // acceptable for mq's dynamic type system.
                 return;
             }
@@ -274,7 +274,7 @@ fn unify_records(
 
     match (only1.is_empty(), only2.is_empty()) {
         (true, true) => {
-            // No unique fields — just unify the row tails
+            // No unique fields: just unify the row tails
             unify(ctx, r1, r2, range, origin);
         }
         (false, true) => {
@@ -584,13 +584,13 @@ mod tests {
         unify(&mut ctx, &union, &Type::Bool, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
-        // Unify union with another union that has different members — should fail.
+        // Unify union with another union that has different members: should fail.
         // Union(Number, String) vs Union(String, Bool): Number has no match in [String, Bool].
         let union2 = Type::union(vec![Type::String, Type::Bool]);
         unify(&mut ctx, &union, &union2, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
 
-        // Unify identical unions — should succeed.
+        // Unify identical unions: should succeed.
         let union3 = Type::union(vec![Type::Number, Type::String]);
         unify(&mut ctx, &union, &union3, None, &ConstraintOrigin::General);
         assert!(ctx.take_errors().is_empty());

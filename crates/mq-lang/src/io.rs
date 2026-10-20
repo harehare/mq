@@ -1,6 +1,6 @@
-//! Abstracts every environment-dependent operation the mq engine needs — file
+//! Abstracts every environment-dependent operation the mq engine needs (file
 //! read/write, environment-variable access, network fetch, and external
-//! process execution — behind a single trait, so the core evaluator, parser,
+//! process execution) behind a single trait, so the core evaluator, parser,
 //! and module resolvers never call `std::fs`/`std::env`/a network
 //! client/`std::process::Command` directly. Concrete implementations are
 //! injected per [`Engine`](crate::Engine) instance.
@@ -13,7 +13,7 @@
 //!
 //! `LocalFsModuleResolver` (local module resolution) routes through this
 //! trait; `HttpModuleResolver`/`UreqFetcher` (HTTP module imports) do not yet
-//! — that unification, including relocating `UreqFetcher`'s on-disk
+//! that unification, including relocating `UreqFetcher`'s on-disk
 //! cache/lockfile logic into `NativeIo`, is left for a follow-up.
 
 mod error;
@@ -29,7 +29,7 @@ pub use sandboxed::{EnvAccess, NetAccess, PathAccess, SandboxedIo};
 
 /// `pub` here (rather than gated by the `mock-io` feature) would still not leak `MemIo`
 /// externally, since the `io` module itself is private to the crate (see `mod io;` in
-/// `lib.rs`) — but it's gated anyway so the "unused" build (neither `test` nor `mock-io`)
+/// `lib.rs`), but it's gated anyway so the "unused" build (neither `test` nor `mock-io`)
 /// doesn't warn. The crate-root re-export in `lib.rs` is what actually governs external
 /// visibility, since [`MemIo`] and the `mock_fetch` builtin are opt-in, testing-focused surface.
 #[cfg(any(test, feature = "mock-io"))]
@@ -67,7 +67,7 @@ pub struct HttpRequestSpec {
 }
 
 /// Kind of filesystem entry reported by [`Io::metadata`]. Reflects the entry itself
-/// (via a symlink-unaware stat), not what a symlink points to — a symlink is always
+/// (via a symlink-unaware stat), not what a symlink points to; a symlink is always
 /// reported as `Symlink`, never followed to its target's kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKind {
@@ -91,7 +91,7 @@ impl FileKind {
 }
 
 /// Metadata for the entry at a path, as returned by [`Io::metadata`], backing the
-/// `file_info` builtin. Never follows a symlink to inspect its target — see [`FileKind`].
+/// `file_info` builtin. Never follows a symlink to inspect its target, see [`FileKind`].
 #[derive(Debug, Clone, Copy)]
 pub struct FileMetadata {
     pub kind: FileKind,
@@ -147,7 +147,7 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     fn env_vars(&self) -> Result<Vec<(String, String)>, IoError>;
 
     /// Callers are responsible for URL/domain policy (HTTPS-only, allowlisting,
-    /// etc.) before calling this — `fetch` is a minimal transport primitive.
+    /// etc.) before calling this: `fetch` is a minimal transport primitive.
     fn fetch(&self, url: &str) -> Result<String, IoError>;
 
     /// General-purpose HTTP request (arbitrary method/body/headers), backing
@@ -194,8 +194,8 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     /// The current working directory, if known.
     fn current_dir(&self) -> Option<PathBuf>;
 
-    /// Runs `command` with `args` as a child process — never through a shell, so shell
-    /// metacharacters in `args` are never interpreted — and returns its captured stdout as a
+    /// Runs `command` with `args` as a child process, never through a shell, so shell
+    /// metacharacters in `args` are never interpreted, and returns its captured stdout as a
     /// string. A non-zero exit status is reported as an error that includes the process's
     /// stderr. Callers are responsible for policy (which commands are permitted) before calling
     /// this, same as [`fetch`](Self::fetch)'s URL/domain policy.

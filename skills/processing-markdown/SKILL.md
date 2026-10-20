@@ -91,7 +91,7 @@ mq -A 'pluck(.code.value)' *.md             # Collect code values, per file
 mq --eval-all -A '.h | to_text' *.md        # Combine all files into one query (e.g. cross-file TOC)
 mq -S 's"\n---\n"' 'identity' *.md       # Merge with separator
 
-# mq accepts multiple file args directly (shell glob expansion) —
+# mq accepts multiple file args directly (shell glob expansion):
 # no need to loop over files in bash:
 mq '.h | to_text' *.md work/*.md docs/*.md
 
@@ -103,14 +103,14 @@ mq -I html 'identity' page.html           # HTML → Markdown
 # Streaming large files
 mq --stream 'select(contains("ERROR"))' large.md
 
-# Section operations (needs -A or `nodes` — see EXAMPLES.md)
+# Section operations (needs -A or `nodes`: see EXAMPLES.md)
 mq -A 'section::section("Installation")' file.md                                                             # Extract section by heading
 mq -A 'section::filter_sections(fn(s): section::title(s) != "Deprecated";) | section::collect()' file.md    # Delete section by heading
 ```
 
 ## HTML Input: Always Use Markdown Selectors
 
-When using `-I html`, mq converts HTML to Markdown first — use Markdown selectors, not HTML tags.
+When using `-I html`, mq converts HTML to Markdown first; use Markdown selectors, not HTML tags.
 
 ```bash
 # WRONG
@@ -124,7 +124,7 @@ curl -s https://example.com | mq -I html '.h | to_text'
 
 ## Essential CLI Flags
 
-A small, stable cheat sheet — not exhaustive. See below for everything else.
+A small, stable cheat sheet, not exhaustive. See below for everything else.
 
 | Flag                   | Purpose                       |
 | ----------------------- | ------------------------------ |
@@ -169,9 +169,9 @@ These attributes are Markdown-selector-specific and are not covered by `mq help`
 
 ## Environment Variables
 
-- `__FILE__` — full path to the file being processed
-- `__FILE_NAME__` — filename without path
-- `__FILE_STEM__` — filename without extension
+- `__FILE__`: full path to the file being processed
+- `__FILE_NAME__`: filename without path
+- `__FILE_STEM__`: filename without extension
 
 For advanced examples, see [EXAMPLES.md](EXAMPLES.md).
 

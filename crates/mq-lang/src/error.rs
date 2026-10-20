@@ -298,9 +298,6 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::DateTimeFormatError(_, _)) => Some(Cow::Borrowed(
                 "Invalid date/time format. Please check your format string.",
             )),
-            InnerError::Runtime(RuntimeError::IndexOutOfBounds(_, _)) => Some(Cow::Borrowed(
-                "Index out of bounds. Check your array or string indices.",
-            )),
             InnerError::Runtime(RuntimeError::InvalidDefinition(_, name)) => Some(Cow::Owned(format!(
                 "'{name}' exists but is not a function, so it cannot be called."
             ))),
@@ -321,9 +318,6 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::InvalidRegularExpression(_, _)) => Some(Cow::Borrowed(
                 "Invalid regular expression. Please check your regex syntax.",
             )),
-            InnerError::Runtime(RuntimeError::InternalError(_)) => Some(Cow::Borrowed(
-                "An internal error occurred. Please report this if it persists.",
-            )),
             InnerError::Runtime(RuntimeError::Runtime(_, _)) => {
                 Some(Cow::Borrowed("A runtime error occurred during evaluation."))
             }
@@ -339,12 +333,6 @@ impl Diagnostic for Error {
             )),
             InnerError::Runtime(RuntimeError::ModuleLoadError(_)) => {
                 Some(Cow::Borrowed("Failed to load module. Check module paths and names."))
-            }
-            InnerError::Runtime(RuntimeError::UnexpectedBreak(_)) => {
-                Some(Cow::Borrowed("'break' can only be used inside a loop."))
-            }
-            InnerError::Runtime(RuntimeError::UnexpectedContinue(_)) => {
-                Some(Cow::Borrowed("'continue' can only be used inside a loop."))
             }
             InnerError::Runtime(RuntimeError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
                 "Environment variable '{env}' not found. Did you forget to set it?"
@@ -616,14 +604,6 @@ mod test {
         }, "".to_string(), Box::new([]))),
         "source code"
     )]
-    #[case::eval_index_out_of_bounds(
-        InnerError::Runtime(RuntimeError::IndexOutOfBounds(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }, 1.into())),
-        "source code"
-    )]
     #[case::eval_invalid_definition(
         InnerError::Runtime(RuntimeError::InvalidDefinition(Token {
             range: Range::default(),
@@ -656,15 +636,7 @@ mod test {
         }, "".to_string())),
         "source code"
     )]
-    #[case::eval_internal_error(
-        InnerError::Runtime(RuntimeError::InternalError(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        })),
-        "source code"
-    )]
-    #[case::eval_internal_error(
+    #[case::eval_runtime_error(
         InnerError::Runtime(RuntimeError::Runtime(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
@@ -840,13 +812,6 @@ mod test {
             module_id: ArenaId::new(0),
         }, "fmt".to_string()))
     )]
-    #[case::eval_index_out_of_bounds(
-        InnerError::Runtime(RuntimeError::IndexOutOfBounds(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }, 1.into()))
-    )]
     #[case::eval_invalid_definition(
         InnerError::Runtime(RuntimeError::InvalidDefinition(Token {
             range: Range::default(),
@@ -886,13 +851,6 @@ mod test {
             module_id: ArenaId::new(0),
         }, "bad".to_string()))
     )]
-    #[case::eval_internal_error(
-        InnerError::Runtime(RuntimeError::InternalError(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }))
-    )]
     #[case::eval_runtime_error(
         InnerError::Runtime(RuntimeError::Runtime(Token {
             range: Range::default(),
@@ -907,16 +865,6 @@ mod test {
             module_id: ArenaId::new(0),
         }))
     )]
-    #[case::eval_unexpected_break(InnerError::Runtime(RuntimeError::UnexpectedBreak(Token {
-        range: Range::default(),
-        kind: TokenKind::Eof,
-        module_id: ArenaId::new(0),
-    })))]
-    #[case::eval_unexpected_continue(InnerError::Runtime(RuntimeError::UnexpectedContinue(Token {
-        range: Range::default(),
-        kind: TokenKind::Eof,
-        module_id: ArenaId::new(0),
-    })))]
     #[case::eval_env_not_found(
         InnerError::Runtime(RuntimeError::EnvNotFound(Token {
             range: Range::default(),

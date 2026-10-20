@@ -127,7 +127,7 @@ pub struct CrawlCheckpoint {
 }
 
 impl CrawlCheckpoint {
-    /// Loads a checkpoint previously written by [`Crawler::save_checkpoint`].
+    /// Loads a checkpoint previously written by `Crawler::save_checkpoint`.
     pub fn load(path: &str) -> Result<Self, String> {
         let data = fs::read_to_string(path).map_err(|e| format!("Failed to read checkpoint file '{}': {}", path, e))?;
         serde_json::from_str(&data).map_err(|e| format!("Failed to parse checkpoint file '{}': {}", path, e))
@@ -210,27 +210,58 @@ pub struct Crawler {
     visited: Arc<DashSet<Url>>,
 }
 
+/// Settings for [`Crawler::new`].
+#[derive(Debug, Default)]
+pub struct CrawlerOptions {
+    /// Delay between requests to the same domain, in seconds.
+    pub crawl_delay_secs: f64,
+    /// Path of a robots.txt file to use instead of fetching one.
+    pub custom_robots_path: Option<String>,
+    /// mq query applied to each page. Defaults to `identity()`.
+    pub mq_query: Option<String>,
+    /// Directory to write converted pages to. Pages go to stdout when unset.
+    pub output_path: Option<String>,
+    /// Maximum number of concurrent requests. Values below 1 are treated as 1.
+    pub concurrency: usize,
+    /// Format of the crawl statistics written to stderr.
+    pub format: OutputFormat,
+    /// HTML to Markdown conversion options.
+    pub conversion_options: mq_markdown::ConversionOptions,
+    /// Maximum link depth from the start URL. Unlimited when unset.
+    pub depth_limit: Option<usize>,
+    /// Domains the crawl may visit: the start domain only when unset, any domain when empty.
+    pub allowed_domains: Option<Vec<String>>,
+    /// Extra URLs queued at depth 0 next to the start URL.
+    pub additional_seed_urls: Vec<Url>,
+    /// Maximum number of pages to crawl. Unlimited when unset.
+    pub max_pages: Option<usize>,
+    /// File the crawl progress is periodically saved to.
+    pub checkpoint_path: Option<String>,
+    /// Pages crawled between checkpoint saves. Values below 1 are treated as 1.
+    pub checkpoint_interval_pages: usize,
+    /// Checkpoint to continue from instead of starting at `start_url`.
+    pub resume_checkpoint: Option<CrawlCheckpoint>,
+}
+
 impl Crawler {
-    #[allow(clippy::too_many_arguments)]
     /// Creates a crawler for `start_url`.
-    pub async fn new(
-        http_client: HttpClient,
-        start_url: Url,
-        crawl_delay_secs: f64,
-        custom_robots_path: Option<String>,
-        mq_query: Option<String>,
-        output_path: Option<String>,
-        concurrency: usize,
-        format: OutputFormat,
-        conversion_options: mq_markdown::ConversionOptions,
-        depth_limit: Option<usize>,
-        allowed_domains: Option<Vec<String>>,
-        additional_seed_urls: Vec<Url>,
-        max_pages: Option<usize>,
-        checkpoint_path: Option<String>,
-        checkpoint_interval_pages: usize,
-        resume_checkpoint: Option<CrawlCheckpoint>,
-    ) -> Result<Self, String> {
+    pub async fn new(http_client: HttpClient, start_url: Url, options: CrawlerOptions) -> Result<Self, String> {
+        let CrawlerOptions {
+            crawl_delay_secs,
+            custom_robots_path,
+            mq_query,
+            output_path,
+            concurrency,
+            format,
+            conversion_options,
+            depth_limit,
+            allowed_domains,
+            additional_seed_urls,
+            max_pages,
+            checkpoint_path,
+            checkpoint_interval_pages,
+            resume_checkpoint,
+        } = options;
         let initial_domain = start_url
             .domain()
             .ok_or_else(|| "Start URL has no domain".to_string())?
@@ -868,20 +899,13 @@ mod tests {
         Crawler::new(
             http_client,
             start_url,
-            0.0,
-            None,
-            None,
-            None,
-            1,
-            OutputFormat::Text,
-            mq_markdown::ConversionOptions::default(),
-            depth_limit,
-            allowed_domains,
-            Vec::new(),
-            None,
-            None,
-            1,
-            None,
+            CrawlerOptions {
+                concurrency: 1,
+                depth_limit,
+                allowed_domains,
+                checkpoint_interval_pages: 1,
+                ..Default::default()
+            },
         )
         .await
         .unwrap()
@@ -936,20 +960,13 @@ mod tests {
         let crawler = Crawler::new(
             http_client,
             start_url,
-            1.0,
-            None,
-            None,
-            None,
-            1,
-            OutputFormat::Text,
-            mq_markdown::ConversionOptions::default(),
-            Some(2),
-            None,
-            Vec::new(),
-            None,
-            None,
-            1,
-            None,
+            CrawlerOptions {
+                crawl_delay_secs: 1.0,
+                concurrency: 1,
+                depth_limit: Some(2),
+                checkpoint_interval_pages: 1,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -964,20 +981,12 @@ mod tests {
         let crawler = Crawler::new(
             http_client,
             start_url,
-            1.0,
-            None,
-            None,
-            None,
-            1,
-            OutputFormat::Text,
-            mq_markdown::ConversionOptions::default(),
-            None,
-            None,
-            Vec::new(),
-            None,
-            None,
-            1,
-            None,
+            CrawlerOptions {
+                crawl_delay_secs: 1.0,
+                concurrency: 1,
+                checkpoint_interval_pages: 1,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -996,20 +1005,12 @@ mod tests {
         let crawler = Crawler::new(
             http_client,
             start_url.clone(),
-            0.0,
-            None,
-            None,
-            None,
-            1,
-            OutputFormat::Text,
-            mq_markdown::ConversionOptions::default(),
-            None,
-            None,
-            seed_urls.clone(),
-            None,
-            None,
-            1,
-            None,
+            CrawlerOptions {
+                concurrency: 1,
+                additional_seed_urls: seed_urls.clone(),
+                checkpoint_interval_pages: 1,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -1058,20 +1059,12 @@ mod tests {
         let mut crawler = Crawler::new(
             http_client,
             start_url,
-            0.0,
-            None,
-            None,
-            None,
-            1,
-            OutputFormat::Text,
-            mq_markdown::ConversionOptions::default(),
-            None,
-            None,
-            Vec::new(),
-            Some(2),
-            None,
-            1,
-            None,
+            CrawlerOptions {
+                concurrency: 1,
+                max_pages: Some(2),
+                checkpoint_interval_pages: 1,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -1094,20 +1087,12 @@ mod tests {
         let crawler = Crawler::new(
             http_client,
             start_url.clone(),
-            0.0,
-            None,
-            None,
-            None,
-            1,
-            OutputFormat::Text,
-            mq_markdown::ConversionOptions::default(),
-            None,
-            None,
-            Vec::new(),
-            None,
-            Some(checkpoint_path.clone()),
-            1,
-            None,
+            CrawlerOptions {
+                concurrency: 1,
+                checkpoint_path: Some(checkpoint_path.clone()),
+                checkpoint_interval_pages: 1,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -1154,20 +1139,12 @@ mod tests {
         let crawler = Crawler::new(
             http_client,
             start_url.clone(),
-            0.0,
-            None,
-            None,
-            None,
-            1,
-            OutputFormat::Text,
-            mq_markdown::ConversionOptions::default(),
-            None,
-            None,
-            Vec::new(),
-            None,
-            None,
-            1,
-            Some(checkpoint),
+            CrawlerOptions {
+                concurrency: 1,
+                checkpoint_interval_pages: 1,
+                resume_checkpoint: Some(checkpoint),
+                ..Default::default()
+            },
         )
         .await
         .unwrap();

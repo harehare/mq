@@ -602,85 +602,79 @@ fn collect_module_paths(program: &Program, paths: &mut Vec<String>) {
     }
 }
 
-/// Resolves an external module and its transitive dependencies in post-order.
-///
-/// The shared loader retains source text while discovering the graph, so the subsequent
-/// initializer probe reloads from that in-memory cache rather than resolving the module again.
-/// A parent module's compiler emits its module directives before its own vars, so resolving
-/// children first also prevents a parent probe from re-running them.
-#[allow(clippy::too_many_arguments)]
-fn resolve_external_module_prelude<R: ModuleResolver>(
-    path: &str,
-    token_arena: &TokenArena,
-    host_functions: &HostFunctions,
+/// State of one module prelude scan, accumulated while external modules are resolved.
+struct PreludeScan<'a, R: ModuleResolver> {
+    token_arena: &'a TokenArena,
+    host_functions: &'a HostFunctions,
     max_call_stack_depth: u32,
-    module_loader: &mut ModuleLoader<R>,
-    seen: &mut FxHashSet<String>,
-    result: &mut compiler::ResolvedModuleVars,
-    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
+    module_loader: &'a mut ModuleLoader<R>,
     deadline: Option<Instant>,
-) -> Result<(), Error> {
-    if !seen.insert(path.to_string()) {
-        return Ok(());
-    }
+    seen: FxHashSet<String>,
+    result: compiler::ResolvedModuleVars,
+    inline_modules: Vec<(ast::IdentWithToken, Program)>,
+}
 
-    let module = match module_loader.load_from_file(path, Shared::clone(token_arena)) {
-        Ok(module) => module,
-        Err(ModuleError::AlreadyLoaded(_)) => module_loader
-            .reload_cached(path, Shared::clone(token_arena))
-            .map_err(compiler::CompileError::Module)?,
-        Err(error) => return Err(compiler::CompileError::Module(error).into()),
-    };
-    let mut dependencies = Vec::new();
-    collect_module_prelude_targets(&module.modules, &mut dependencies, inline_modules);
-    for dependency in dependencies {
-        resolve_external_module_prelude(
-            &dependency,
-            token_arena,
-            host_functions,
-            max_call_stack_depth,
-            module_loader,
-            seen,
-            result,
-            inline_modules,
-            deadline,
+impl<R: ModuleResolver> PreludeScan<'_, R> {
+    /// Resolves an external module and its transitive dependencies in post-order.
+    ///
+    /// The shared loader retains source text while discovering the graph, so the subsequent
+    /// initializer probe reloads from that in-memory cache rather than resolving the module again.
+    /// A parent module's compiler emits its module directives before its own vars, so resolving
+    /// children first also prevents a parent probe from re-running them.
+    fn resolve(&mut self, path: &str) -> Result<(), Error> {
+        if !self.seen.insert(path.to_string()) {
+            return Ok(());
+        }
+
+        let module = match self.module_loader.load_from_file(path, Shared::clone(self.token_arena)) {
+            Ok(module) => module,
+            Err(ModuleError::AlreadyLoaded(_)) => self
+                .module_loader
+                .reload_cached(path, Shared::clone(self.token_arena))
+                .map_err(compiler::CompileError::Module)?,
+            Err(error) => return Err(compiler::CompileError::Module(error).into()),
+        };
+        let mut dependencies = Vec::new();
+        collect_module_prelude_targets(&module.modules, &mut dependencies, &mut self.inline_modules);
+        for dependency in dependencies {
+            self.resolve(&dependency)?;
+        }
+
+        let var_names = compiler::module_var_names(&module.vars);
+        if var_names.is_empty() {
+            return Ok(());
+        }
+
+        let directive_program: Program = vec![Shared::new(Node {
+            token_id: TokenId::new(0),
+            expr: Expr::Include(Literal::String(path.to_string())),
+        })];
+        let compiled = compiler::compile_program_for_engine(
+            &directive_program,
+            Shared::clone(self.token_arena),
+            self.module_loader.clone(),
+            &[],
+            &self.result,
         )?;
+        let (run_result, captured, _) = interpreter::run_with_globals_capturing_locals(
+            &compiled,
+            RuntimeValue::None,
+            &[],
+            interpreter::RunOptions {
+                host_functions: self.host_functions,
+                timeout: remaining_timeout(self.deadline),
+                max_call_stack_depth: self.max_call_stack_depth,
+                capture_stack_trace: false,
+                // A module can't see Engine globals.
+                global_bindings: &[],
+            },
+            &var_names,
+            interpreter::ExecutionPools::default(),
+        );
+        run_result?;
+        self.result.by_path.insert(path.to_string(), captured);
+        Ok(())
     }
-
-    let var_names = compiler::module_var_names(&module.vars);
-    if var_names.is_empty() {
-        return Ok(());
-    }
-
-    let directive_program: Program = vec![Shared::new(Node {
-        token_id: TokenId::new(0),
-        expr: Expr::Include(Literal::String(path.to_string())),
-    })];
-    let compiled = compiler::compile_program_for_engine(
-        &directive_program,
-        Shared::clone(token_arena),
-        module_loader.clone(),
-        &[],
-        result,
-    )?;
-    let (run_result, captured, _) = interpreter::run_with_globals_capturing_locals(
-        &compiled,
-        RuntimeValue::None,
-        &[],
-        interpreter::RunOptions {
-            host_functions,
-            timeout: remaining_timeout(deadline),
-            max_call_stack_depth,
-            capture_stack_trace: false,
-            // A module can't see Engine globals.
-            global_bindings: &[],
-        },
-        &var_names,
-        interpreter::ExecutionPools::default(),
-    );
-    run_result?;
-    result.by_path.insert(path.to_string(), captured);
-    Ok(())
 }
 
 /// Collects every simple `let` declared by an inline module tree, retaining the qualified path
@@ -722,21 +716,24 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
     let mut inline_modules: Vec<(ast::IdentWithToken, Program)> = Vec::new();
     collect_module_prelude_targets(program, &mut paths, &mut inline_modules);
 
-    let mut result = compiler::ResolvedModuleVars::default();
-    let mut seen_paths = FxHashSet::default();
+    let mut scan = PreludeScan {
+        token_arena: &context.token_arena,
+        host_functions: context.host_functions,
+        max_call_stack_depth: context.max_call_stack_depth,
+        module_loader: &mut context.module_loader,
+        deadline,
+        seen: FxHashSet::default(),
+        result: compiler::ResolvedModuleVars::default(),
+        inline_modules,
+    };
     for path in paths {
-        resolve_external_module_prelude(
-            &path,
-            &context.token_arena,
-            context.host_functions,
-            context.max_call_stack_depth,
-            &mut context.module_loader,
-            &mut seen_paths,
-            &mut result,
-            &mut inline_modules,
-            deadline,
-        )?;
+        scan.resolve(&path)?;
     }
+    let PreludeScan {
+        mut result,
+        inline_modules,
+        ..
+    } = scan;
 
     for (ident, body) in inline_modules {
         let mut module_vars = Vec::new();

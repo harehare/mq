@@ -6,8 +6,8 @@ use url::Url;
 
 /// Signature help needs exact call/paren/comma boundaries, which `mq_hir::Symbol` ranges
 /// don't preserve (a `Call` symbol's range is only its name token; punctuation isn't
-/// lowered into HIR at all). So this re-parses the document into a CST — cheap for the
-/// small scripts mq targets — and walks it directly instead of going through the HIR.
+/// lowered into HIR at all). So this re-parses the document into a CST, cheap for the
+/// small scripts mq targets, and walks it directly instead of going through the HIR.
 pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,

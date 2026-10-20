@@ -3,7 +3,7 @@
 # This module is under development. APIs and behavior may change without notice.
 #
 # `md::reference_index` and `md::resolve_references` need every document node at
-# once — pass `-A` on the CLI, or pipe through `nodes` in an inline query/script;
+# once; pass `-A` on the CLI, or pipe through `nodes` in an inline query/script;
 # a single node instead prints a stderr warning and is treated as a one-element array.
 
 # Wraps `value` in a heading node at the given `depth` (1-6).
@@ -415,7 +415,7 @@ end
 # footnote definitions (`[^ident]: ...`), and indexes them by identifier. Each
 # identifier maps to an array of every definition found for it, in document
 # order, so a duplicate definition (multiple `[ident]:` lines for the same
-# `ident`) shows up as an array with more than one entry — CommonMark resolves
+# `ident`) shows up as an array with more than one entry; CommonMark resolves
 # such a duplicate to the first one, which `md::resolve_references` picks.
 # Each entry carries its `location` (from `get_location`) for building
 # diagnostics like linkcheck output.
@@ -471,8 +471,8 @@ end
 # `index` defaults to `md::reference_index(md_nodes)`, resolving references
 # against their own document. Pass an explicit index (e.g. built from a
 # different set of nodes) to resolve references that got separated from their
-# definitions — for example when a document is split or a section is moved
-# into another file — which is exactly the case where a reference legitimately
+# definitions, for example when a document is split or a section is moved
+# into another file, which is exactly the case where a reference legitimately
 # comes back unresolved.
 #
 # Example:

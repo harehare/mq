@@ -34,7 +34,7 @@ The conditions must evaluate to boolean values.
 
 ## Unless Expression
 
-The unless expression executes code only when a condition is false — the inverse of a single-branch `if`:
+The unless expression executes code only when a condition is false; the inverse of a single-branch `if`:
 
 ```mq
 unless (x == 1):
@@ -75,7 +75,7 @@ end
 
 ## Until Expression
 
-The until loop repeatedly executes code while a condition is false — the inverse of `while`:
+The until loop repeatedly executes code while a condition is false; the inverse of `while`:
 
 ```mq
 var x = 0 |

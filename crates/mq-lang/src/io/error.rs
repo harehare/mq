@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use thiserror::Error;
 
-/// Error returned by [`Io`](super::Io) operations. Internal plumbing type —
+/// Error returned by [`Io`](super::Io) operations. Internal plumbing type:
 /// call sites are expected to convert it into whatever domain error type they
 /// already use (e.g. `ModuleError` for module resolution, the builtin
 /// evaluator's own error type) rather than surface it to `miette` directly.

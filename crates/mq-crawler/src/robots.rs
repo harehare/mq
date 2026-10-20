@@ -15,7 +15,7 @@ pub struct RobotsTxt {
 impl RobotsTxt {
     /// Fetches robots.txt for a given domain.
     /// If a custom_robots_path is provided and is a valid URL, it fetches from there.
-    /// Otherwise, it constructs the default robots.txt URL (e.g., http://example.com/robots.txt).
+    /// Otherwise, it constructs the default robots.txt URL (e.g., `http://example.com/robots.txt`).
     pub async fn fetch(
         http_client: &HttpClient,
         target_url: &Url,

@@ -60,17 +60,17 @@ pub enum Type {
     /// - `{a: number, b: string}` → `Record({"a": Number, "b": String}, RowEmpty)`
     /// - `{a: number | r}` → `Record({"a": Number}, Var(r))`
     Record(BTreeMap<String, Type>, Box<Type>),
-    /// Empty row — marks a closed record with no additional fields
+    /// Empty row: marks a closed record with no additional fields
     RowEmpty,
     /// Type variable for inference
     Var(TypeVarId),
-    /// Never type (bottom type) — represents unreachable code paths.
+    /// Never type (bottom type): represents unreachable code paths.
     ///
     /// Produced when type narrowing eliminates all possible types from a union.
     /// For example, `Union(Array(String), Array(Number))` minus `is_array` predicate
     /// leaves no viable types, producing `Never` for the else-branch.
     Never,
-    /// Dynamic type — intentionally unknown at compile time (gradual typing).
+    /// Dynamic type: intentionally unknown at compile time (gradual typing).
     ///
     /// Unlike `Var`, `Dynamic` never participates in unification and is always
     /// compatible with any type. Used for the implicit pipe input (`.`) and
@@ -503,10 +503,10 @@ impl Type {
             // Two type variables are compatible (unification will sort them out)
             (Type::Var(_), Type::Var(_)) => true,
 
-            // Var vs concrete — unknown; do NOT assume compatible
+            // Var vs concrete: unknown; do NOT assume compatible
             (Type::Var(_), _) | (_, Type::Var(_)) => false,
 
-            // Union types: strict — any member must strictly match
+            // Union types are strict: any member must strictly match
             (Type::Union(types), other) => types.iter().any(|t| t.can_branch_unify_with(other)),
             (other, Type::Union(types)) => types.iter().any(|t| other.can_branch_unify_with(t)),
 
@@ -876,7 +876,7 @@ impl fmt::Display for Type {
 /// Type scheme for polymorphic types (generalized types)
 ///
 /// A type scheme represents a polymorphic type by quantifying over type variables.
-/// For example: forall a b. (a -> b) -> [a] -> [b]
+/// For example: `forall a b. (a -> b) -> [a] -> [b]`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeScheme {
     /// Quantified type variables
@@ -926,10 +926,10 @@ impl TypeScheme {
 impl fmt::Display for TypeScheme {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.quantified.is_empty() {
-            // Monomorphic type — renumber for clean display
+            // Monomorphic type: renumber for clean display
             write!(f, "{}", self.ty.display_renumbered())
         } else {
-            // Polymorphic type — renumber quantified vars to 'a, 'b, ...
+            // Polymorphic type: renumber quantified vars to 'a, 'b, ...
             let mut var_map: FxHashMap<TypeVarId, usize> = FxHashMap::default();
             for (i, var) in self.quantified.iter().enumerate() {
                 var_map.insert(*var, i);

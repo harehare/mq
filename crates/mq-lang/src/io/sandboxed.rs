@@ -16,7 +16,7 @@ pub use run_access::RunAccess;
 /// read/write/net/run/env permission grants, enforced by every operation. All
 /// five default to fully denied (fail safe), and may additionally be
 /// restricted to an allowlist via [`PathAccess::AllowedPaths`]/[`NetAccess::AllowedDomains`]/
-/// [`RunAccess::AllowedCommands`]/[`EnvAccess::AllowedNames`].
+/// `RunAccess::AllowedCommands`/[`EnvAccess::AllowedNames`].
 ///
 /// Every operation enforces its own permission independently of any external
 /// pre-check, so a caller cannot accidentally bypass sandboxing by forgetting
@@ -74,8 +74,8 @@ impl<Inner: Io> SandboxedIo<Inner> {
         self
     }
 
-    /// Gates [`Io::execute`], the primitive backing the `system()` builtin — external process
-    /// execution. See [`Self::allow_read`] for the accepted forms; `Vec<String>`/
+    /// Gates [`Io::execute`], the primitive backing the `system()` builtin (external process
+    /// execution). See [`Self::allow_read`] for the accepted forms; `Vec<String>`/
     /// `Option<Vec<String>>` restrict by command name.
     pub fn allow_run(mut self, allow: impl Into<RunAccess>) -> Self {
         self.allow_run = allow.into();
@@ -564,7 +564,7 @@ mod tests {
     }
 
     /// `is_read_allowed`/`is_write_allowed`/`is_env_allowed` report whether *any* access was
-    /// granted, including a restricted allowlist — they don't distinguish full vs. restricted
+    /// granted, including a restricted allowlist: they don't distinguish full vs. restricted
     /// access.
     #[rstest]
     #[case::nothing_granted(false, false, false, false, false, (false, false, false, false, false))]

@@ -538,7 +538,7 @@ mod tests {
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("3".to_string())),
         );
-        // m2 is missing key "b" — format_cell_value should return ""
+        // m2 is missing key "b": format_cell_value should return ""
         let values = vec![RuntimeValue::Dict(Shared::new(m1)), RuntimeValue::Dict(Shared::new(m2))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
