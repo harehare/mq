@@ -215,7 +215,7 @@ The section module provides functions for splitting and filtering Markdown docum
 
 | Style | Syntax | Notes |
 | ----- | ------ | ----- |
-| `import` | `import "section"` then `section::fn()` | Namespaced — recommended |
+| `import` | `import "section"` then `section::fn()` | Namespaced, recommended |
 | `include` | `include "section"` then `fn()` | No namespace prefix |
 | `-A` flag | `mq -A 'section::fn()'` | Aggregate mode: processes all nodes at once |
 

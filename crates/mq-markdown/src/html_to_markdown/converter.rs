@@ -1294,9 +1294,9 @@ fn collapse_redundant_spaces(text: &str) -> String {
 /// Returns true if the element is a CSS-only UI widget (dropdown or tab switcher).
 ///
 /// Two patterns are detected:
-/// 1. A direct child `<input>` with `role="button"` or `aria-haspopup` — used for CSS dropdowns
+/// 1. A direct child `<input>` with `role="button"` or `aria-haspopup`, used for CSS dropdowns
 ///    (e.g., Wikipedia's language switcher).
-/// 2. All direct children are `<input>` or `<label>` elements — used for CSS-only tabs/toggles
+/// 2. All direct children are `<input>` or `<label>` elements, used for CSS-only tabs/toggles
 ///    (e.g., tab bars built with radio inputs and labels).
 fn is_css_dropdown_widget(element: &HtmlElement) -> bool {
     // Pattern 1: checkbox/radio used as dropdown toggle trigger
@@ -1475,7 +1475,7 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
                         }
                     }
                     "br" => {
-                        // Hard line break — must not be trimmed or it becomes empty.
+                        // Hard line break: must not be trimmed or it becomes empty.
                         markdown_blocks.push(("  \n".to_string(), true));
                     }
                     "strong" | "em" | "code" | "span" | "img" | "input" | "s" | "strike" | "del" | "kbd" | "sub"

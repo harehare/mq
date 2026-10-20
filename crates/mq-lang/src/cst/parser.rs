@@ -8493,7 +8493,7 @@ Shared::new(Node {
         )
     )]
     #[case::call_with_implicit_pipeline_second_arg(
-        // foo(x, a | b)  — pipeline is the second argument
+        // foo(x, a | b): pipeline is the second argument
         vec![
             Shared::new(token(TokenKind::Ident("foo".into()))),
             Shared::new(token(TokenKind::LParen)),
@@ -8567,7 +8567,7 @@ Shared::new(Node {
         )
     )]
     #[case::call_with_implicit_pipeline_multiline(
-        // foo(a\n| b)  — pipeline spanning two lines
+        // foo(a\n| b): pipeline spanning two lines
         vec![
             Shared::new(token(TokenKind::Ident("foo".into()))),
             Shared::new(token(TokenKind::LParen)),
@@ -8629,7 +8629,7 @@ Shared::new(Node {
         )
     )]
     #[case::call_with_implicit_pipeline_call_exprs(
-        // foo(bar() | baz())  — function calls inside pipeline
+        // foo(bar() | baz()): function calls inside pipeline
         vec![
             Shared::new(token(TokenKind::Ident("foo".into()))),
             Shared::new(token(TokenKind::LParen)),
@@ -10295,7 +10295,7 @@ Shared::new(Node {
         )
     )]
     #[case::unmatched_end_at_root(
-        // `. end end eof` — the first `end` closes a root statement, the second `end` has no
+        // `. end end eof`: the first `end` closes a root statement, the second `end` has no
         // matching open block and should produce `UnmatchedEnd` pointing at the first `end`.
         vec![
             Shared::new(token(TokenKind::Selector(".".into()))),
@@ -10329,7 +10329,7 @@ Shared::new(Node {
         )
     )]
     #[case::unmatched_end_at_root_pipe_follows(
-        // `. end end | ident eof` — mirrors the real-world `def foo: if (.): . end end | foo`
+        // `. end end | ident eof`: mirrors the real-world `def foo: if (.): . end end | foo`
         // scenario where the extra `end` should be flagged, not the pipe after it.
         vec![
             Shared::new(token(TokenKind::Selector(".".into()))),

@@ -27,7 +27,7 @@ pub struct HelpExample {
 }
 
 /// Full documentation for one function or selector, unifying native builtins, selectors,
-/// `builtin.mq` functions, and standard-module functions behind a single shape — the same
+/// `builtin.mq` functions, and standard-module functions behind a single shape, the same
 /// shape can be served by `mq help --json` and by `mq-web-api`'s `/functions/{name}` and
 /// `/selectors/{name}` endpoints, so CLI and Web API can't drift apart.
 #[derive(Debug, Clone, Serialize)]
@@ -53,7 +53,7 @@ pub struct HelpEntry {
     pub aliases: Vec<String>,
 }
 
-/// Looks up every entry matching `name` — usually one, but a name may be defined in more
+/// Looks up every entry matching `name`: usually one, but a name may be defined in more
 /// than one standard module, in which case every match is returned. `name` may be qualified
 /// as `module::function` to disambiguate a function whose name collides with its own module
 /// (e.g. `section::section`, distinct from the `section` module itself).
@@ -111,7 +111,7 @@ fn native_entry(kind: &'static str, doc: &BuiltinDoc) -> HelpEntry {
 }
 
 /// Native builtin functions, selectors, `builtin.mq` functions, and language keywords with
-/// their own help topic (currently just `nodes`) — everything in [`all_entries`] except
+/// their own help topic (currently just `nodes`); everything in [`all_entries`] except
 /// standard-module functions. Cheap: unlike `all_entries`/`all_modules`, it never parses a
 /// standard module's source.
 pub fn top_level_entries() -> Vec<HelpEntry> {
@@ -383,7 +383,7 @@ pub fn render_module_human(module: &HelpModule) -> String {
 }
 
 /// Renders a single entry as Markdown, headed at `level` (e.g. `2` for `##`) so it can be
-/// nested — [`render_module_markdown`] renders each of its functions one level deeper.
+/// nested: [`render_module_markdown`] renders each of its functions one level deeper.
 fn entry_markdown(entry: &HelpEntry, level: usize) -> String {
     let h = "#".repeat(level);
     let sub_h = "#".repeat(level + 1);
@@ -440,7 +440,7 @@ fn entry_markdown(entry: &HelpEntry, level: usize) -> String {
     out
 }
 
-/// Renders a single entry as Markdown — e.g. queryable with mq itself via
+/// Renders a single entry as Markdown, e.g. queryable with mq itself via
 /// `mq help <name> --markdown | mq 'select(.code.lang == "mq")'`.
 pub fn render_markdown(entry: &HelpEntry) -> String {
     entry_markdown(entry, 2)
@@ -654,7 +654,7 @@ mod tests {
         parts
     }
 
-    /// Every example shown by `mq help` is a real, runnable snippet — this evaluates each
+    /// Every example shown by `mq help` is a real, runnable snippet; this evaluates each
     /// one through the actual engine and checks it against its recorded `expected` output,
     /// so a stale/wrong example fails CI instead of silently misleading a reader.
     #[test]

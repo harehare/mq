@@ -1,4 +1,4 @@
-//! Query methods for the HIR — read-only accessors over symbols, scopes, and sources.
+//! Query methods for the HIR: read-only accessors over symbols, scopes, and sources.
 
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;

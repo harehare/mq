@@ -7,7 +7,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-/// In-memory [`Io`] — file writes, environment variables, and fetch/HTTP responses all
+/// In-memory [`Io`]: file writes, environment variables, and fetch/HTTP responses all
 /// live in-process instead of touching the real filesystem/network. Useful both for unit
 /// tests that only need to assert *what was asked for*, and for embeddings (e.g. `mq-test`)
 /// that want a hermetic `Io` a query can read from and, via [`Self::set_fetch_response`],

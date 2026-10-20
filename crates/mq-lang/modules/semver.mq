@@ -395,7 +395,7 @@ end
 # either the hyphen range or ">=2.0.0").
 #
 # Pre-release versions (e.g. "1.0.0-alpha") are ordered using the same precedence
-# rules as `semver_compare` and are matched like any other version — there is no
+# rules as `semver_compare` and are matched like any other version; there is no
 # npm-style restriction that hides pre-releases from ranges that don't mention one.
 #
 # Example: semver_satisfies("1.5.0", ">=1.0.0,<2.0.0") == true

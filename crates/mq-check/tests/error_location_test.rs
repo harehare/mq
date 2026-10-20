@@ -22,7 +22,7 @@ fn check_types(code: &str) -> Vec<TypeError> {
 
 #[test]
 fn test_heterogeneous_array_allowed() {
-    // mq is dynamically typed — heterogeneous arrays (used as tuples) are valid
+    // mq is dynamically typed: heterogeneous arrays (used as tuples) are valid
     let code = r#"[1, 2, "string"]"#;
     let errors = check_types(code);
     assert!(

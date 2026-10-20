@@ -298,7 +298,7 @@ import "md"
 `md::reference_index(md_nodes)` and `md::resolve_references(md_nodes, index = None)` index and
 resolve reference-style links (`[text][ident]`, including the shortcut form `[ident]`), reference
 images (`![alt][ident]`), and footnotes (`[^ident]`) against their `[ident]: url` / `[^ident]: ...`
-definitions. Both need every document node at once — pass `-A` on the CLI, or pipe through `nodes`
+definitions. Both need every document node at once: pass `-A` on the CLI, or pipe through `nodes`
 in an inline query/script.
 
 `reference_index` groups every link and footnote definition by identifier:
@@ -326,8 +326,8 @@ import "md"
 
 `index` defaults to `md::reference_index(md_nodes)`, resolving references against their own
 document. Pass an explicit index built from a different set of nodes to resolve references that
-got separated from their definitions — for example when a document is split or a section is moved
-into another file — which is exactly the case where a reference legitimately comes back unresolved.
+got separated from their definitions, for example when a document is split or a section is moved
+into another file, which is exactly the case where a reference legitimately comes back unresolved.
 
 ## Property-Based Test Generators (`gen`)
 
@@ -358,7 +358,7 @@ import "gen"
 | `gen::tuple(gens)`                 | One value per generator in `gens`, independently seeded                 |
 
 `gen::tuple` is what `# @property(...)` calls under the hood to turn an array of per-parameter
-generators into one argument list per iteration — a failing iteration's reported index doubles as
+generators into one argument list per iteration; a failing iteration's reported index doubles as
 the seed to reproduce it with, by calling `gen::tuple(generators)(seed)` again with the same
 `generators` array.
 
@@ -426,7 +426,7 @@ mq --allow-http-import 'import "github.com/harehare/kdl.mq" | kdl::kdl_parse("ti
 
 Fetched modules are cached in `{system_cache_dir}/mq/` as `{md5(url)}.mq` files.
 
-- **Versioned URLs** (e.g. `@v0.1.0`): cached indefinitely — the tag content is immutable.
+- **Versioned URLs** (e.g. `@v0.1.0`): cached indefinitely: the tag content is immutable.
 - **Mutable refs** (`HEAD`, `main`, `master`, or no version): cached on first fetch.
   Pass `--refresh-modules` on the command line to discard the cache and re-fetch.
 
@@ -489,8 +489,8 @@ mq --allow-http-import --frozen 'self' file.md
 must be explicitly enabled with `--allow-net` / `--allow-write`. Calling them without the
 corresponding flag raises a runtime error explaining how to opt in.
 
-`method` is a string or symbol (`"post"` or `:post`) and accepts any HTTP method — `get`, `post`,
-`put`, `delete`, `patch`, `head`, and so on. The optional `body` argument is sent as the request
+`method` is a string or symbol (`"post"` or `:post`) and accepts any HTTP method (`get`, `post`,
+`put`, `delete`, `patch`, `head`, and so on). The optional `body` argument is sent as the request
 body regardless of method. The optional `headers` argument is a dict of string to string
 (e.g. `{"Content-Type": "application/json"}`) applied to the request.
 
@@ -498,7 +498,7 @@ body regardless of method. The optional `headers` argument is a dict of string t
 `http_put(url, body, headers = {})`, `http_patch(url, body, headers = {})`,
 `http_delete(url, headers = {})`, and `http_head(url, headers = {})` are convenience wrappers
 around `http(:get, url, headers)`, `http(:post, url, body, headers)`, and so on, for the most
-common cases — `headers` defaults to `{}` and can be omitted.
+common cases: `headers` defaults to `{}` and can be omitted.
 
 `http_all([...requests])` issues a batch of HTTP requests and returns an array of response
 bodies in the same order. Each request is a dict with a required `url` and optional `method`
@@ -511,7 +511,7 @@ mq --allow-net 'http_all([{"url": "https://example.com/a"}, {"url": "https://exa
 Requests in the batch run concurrently when the runtime supports it, so fanning out to multiple endpoints is faster than calling `http()` in a loop. The same URL/domain policy applies as for `http()`: HTTPS only, and `--allow-net` (with or without a domain allowlist) is required.
 
 > **Security note:** `http` only accepts `https://` URLs and is routed through the same
-> SSRF-hardened client used for HTTP imports — no automatic redirects, and DNS results are
+> SSRF-hardened client used for HTTP imports (no automatic redirects), and DNS results are
 > filtered to publicly routable addresses, so a loopback/private/link-local address can't be
 > reached even with `--allow-net` set.
 

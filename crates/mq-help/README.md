@@ -1,6 +1,6 @@
 <h1 align="center">mq-help</h1>
 
-Documentation catalog for the mq language: builds the single, unified catalog of every native builtin, selector, `builtin.mq` function, and standard-module function — the shared source for the `mq help` CLI command and `mq-web-api`'s documentation endpoints.
+Documentation catalog for the mq language: builds the single, unified catalog of every native builtin, selector, `builtin.mq` function, and standard-module function, the shared source for the `mq help` CLI command and `mq-web-api`'s documentation endpoints.
 
 ## Features
 
@@ -29,7 +29,7 @@ let suggestion = suggest("mpa"); // Some("map")
 
 for entry in &matches {
     println!("{}", render_human(entry));
-    // Or `render_markdown`/`render_module_markdown` — Markdown output that mq can query
+    // Or `render_markdown`/`render_module_markdown`: Markdown output that mq can query
     // right back, e.g. `mq help section --markdown | mq 'select(.code.lang == "mq")'`.
 }
 ```

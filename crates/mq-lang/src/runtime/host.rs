@@ -28,7 +28,7 @@ impl<T> HostFunctionSyncBound for T {}
 
 /// Error returned by a host-registered function, or produced while marshalling arguments and
 /// return values (see the `ValueAdapter` trait). Carries only a message, so it stays
-/// `PartialEq`-comparable and cheap to embed in [`RuntimeError`](crate::error::runtime::RuntimeError).
+/// `PartialEq`-comparable and cheap to embed in `RuntimeError`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostFunctionError(String);
 

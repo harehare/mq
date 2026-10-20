@@ -1,7 +1,7 @@
 /// Detects the embed platform from an iframe `src` URL and returns
 /// `(description, canonical_url)` for known platforms.
 ///
-/// Detection is performed with lightweight string operations — no regex dependency.
+/// Detection is performed with lightweight string operations, no regex dependency.
 pub(super) fn detect_embed(src: &str) -> Option<(String, String)> {
     detect_youtube(src)
         .or_else(|| detect_vimeo(src))

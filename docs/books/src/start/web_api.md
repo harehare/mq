@@ -57,8 +57,8 @@ Disabled by default. When `AUTH_ENABLED=true`, every endpoint except `/health`, 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTH_ENABLED` | `false` | Require an API key on protected endpoints |
-| `API_KEYS` | — | Comma-separated keys; each gets both scopes and no rate limit override |
-| `API_KEYS_FILE` | — | Path to a JSON file for per-key name/scopes/rate limit (takes precedence over `API_KEYS`) |
+| `API_KEYS` | - | Comma-separated keys; each gets both scopes and no rate limit override |
+| `API_KEYS_FILE` | - | Path to a JSON file for per-key name/scopes/rate limit (takes precedence over `API_KEYS`) |
 
 `API_KEYS_FILE` format:
 
@@ -75,7 +75,7 @@ Disabled by default. When `AUTH_ENABLED=true`, every endpoint except `/health`, 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP exporter endpoint (e.g. `http://localhost:4317`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | - | OTLP exporter endpoint (e.g. `http://localhost:4317`) |
 | `OTEL_SERVICE_NAME` | `mq-web-api` | Service name reported to the collector |
 
 ## Usage
@@ -162,7 +162,7 @@ curl -X POST http://localhost:8080/api/v1/query \
 
 ### Batch query (multiple documents in one request)
 
-`POST /api/v1/batch` runs one query against multiple documents in a single request, avoiding an HTTP round trip per document. Each document is processed independently — one failing document doesn't fail the others, and `items` in the response is ordered like `inputs` (max 100 entries).
+`POST /api/v1/batch` runs one query against multiple documents in a single request, avoiding an HTTP round trip per document. Each document is processed independently, one failing document doesn't fail the others, and `items` in the response is ordered like `inputs` (max 100 entries).
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/batch \

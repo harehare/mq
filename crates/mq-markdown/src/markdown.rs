@@ -504,12 +504,12 @@ mod tests {
         5,
         "| 名前 | 年齢 |\n| ---- | ---- |\n| 太郎 | 5    |\n"
     )]
-    // Content width (1) is below the Left-align floor (2) — the floor, not
+    // Content width (1) is below the Left-align floor (2); the floor, not
     // the content, must decide the column width.
     #[case::table_min_width_left("| A |\n|:--|\n| 1 |\n", 3, "| A  |\n| :- |\n| 1  |\n")]
     // Same, for the Right-align floor (2).
     #[case::table_min_width_right("| A |\n|--:|\n| 1 |\n", 3, "|  A |\n| -: |\n|  1 |\n")]
-    // Same, for the Center-align floor (3) — must not collapse to the
+    // Same, for the Center-align floor (3): must not collapse to the
     // invalid `::` marker.
     #[case::table_min_width_center("| A |\n|:-:|\n| 1 |\n", 3, "|  A  |\n| :-: |\n|  1  |\n")]
     // An empty cell must still pad out to its column's width.
@@ -535,7 +535,7 @@ mod tests {
     )]
     #[case::excessive_blank_lines("# Title\n\n\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::three_blank_lines("Para 1\n\n\n\n\nPara 2", 2, "Para 1\n\nPara 2\n")]
-    // GFM autolink literal: link text is the same URL — must not nest on round-trip
+    // GFM autolink literal: link text is the same URL, must not nest on round-trip
     #[case::link_url_as_text(
         "[https://example.com](https://example.com)",
         1,
@@ -592,9 +592,9 @@ mod tests {
         feature = "callout",
         case::callout_multiline("> [!NOTE]\n> line 1\n> line 2", 1, "> [!NOTE]\n> line 1\n> line 2\n")
     )]
-    // plain blockquote stays Blockquote — not treated as callout
+    // plain blockquote stays Blockquote, not treated as callout
     #[cfg_attr(feature = "callout", case::plain_blockquote("> plain quote", 1, "> plain quote\n"))]
-    // plain blockquote with list items — second item must not be over-indented
+    // plain blockquote with list items: second item must not be over-indented
     #[case::blockquote_with_list("> - item 1\n> - item 2", 1, "> - item 1\n> - item 2\n")]
     // backtick fence switches to tilde when the info string itself has a backtick
     #[case::fence_switches_to_tilde_on_backtick_in_info("~~~ aa ``` ~~~\nfoo\n~~~", 1, "~~~aa ``` ~~~\nfoo\n~~~\n")]
@@ -929,7 +929,7 @@ mod color_tests {
     #[test]
     fn test_colored_table_padding_ignores_ansi_codes_in_width() {
         // The "**A**" cell is colored (ANSI-wrapped) but only 5 display columns wide,
-        // one short of the "Bolded" header — padding must be computed from the
+        // one short of the "Bolded" header: padding must be computed from the
         // plain-text width, not the byte length of the ANSI-wrapped string.
         let md = "| H | Bolded |\n|---|---|\n| x | **A** |\n"
             .parse::<Markdown>()

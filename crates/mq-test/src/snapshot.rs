@@ -42,7 +42,7 @@ fn sanitize_snapshot_name(name: &str) -> String {
         .collect()
 }
 
-/// Compares `actual` against the golden snapshot named `name`. Real, unmocked disk I/O —
+/// Compares `actual` against the golden snapshot named `name`. Real, unmocked disk I/O:
 /// unlike every other mq-test builtin, golden files must survive across runs.
 ///
 /// Returns the assert_eq-style convention `test.mq` expects: the passing value on
@@ -207,7 +207,7 @@ tr.delete td.marker { color: var(--delete-fg); }
 "#;
 
 /// Renders a self-contained HTML diff report, in the spirit of typst's `store/` HTML
-/// diff reports — meant for reviewing a large snapshot mismatch without scrolling a
+/// diff reports, meant for reviewing a large snapshot mismatch without scrolling a
 /// terminal, and as a CI artifact.
 fn format_diff_html(name: &str, lines: &[DiffLine]) -> String {
     let mut rows = String::new();

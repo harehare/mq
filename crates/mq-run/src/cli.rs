@@ -906,7 +906,7 @@ enum Commands {
         /// Print machine-readable JSON instead of formatted text
         #[arg(long, conflicts_with = "markdown")]
         json: bool,
-        /// Print Markdown instead of formatted text — e.g. queryable with mq itself:
+        /// Print Markdown instead of formatted text, e.g. queryable with mq itself:
         /// `mq help section --markdown | mq 'select(.code.lang == "mq")'`
         #[arg(long)]
         markdown: bool,
@@ -1205,7 +1205,7 @@ impl Cli {
 
     /// Shows documentation for a single function/selector/module, or lists everything known
     /// when `name` is `None`. Writes the whole output in one call, not one `println!` per
-    /// line — hundreds of lines otherwise means hundreds of flushed syscalls.
+    /// line: hundreds of lines otherwise means hundreds of flushed syscalls.
     fn run_help(name: Option<&str>, json: bool, markdown: bool) -> miette::Result<()> {
         let format = if json {
             HelpFormat::Json
@@ -1254,7 +1254,7 @@ impl Cli {
             // A selector can also share a module's bare name (e.g. `.table`/`table`,
             // `.toml`/`toml`, `.yaml`/`yaml`); append it after the module overview instead
             // of leaving it unreachable without the leading dot. JSON keeps the module
-            // alone for output stability — pass the leading dot (`.table`) for the
+            // alone for output stability; pass the leading dot (`.table`) for the
             // selector's own JSON.
             let selector_entries: Vec<_> = help::lookup(name)
                 .into_iter()
@@ -1374,7 +1374,7 @@ impl Cli {
         out
     }
 
-    /// Same content as [`Self::help_index_text`], as Markdown — queryable with mq itself.
+    /// Same content as [`Self::help_index_text`], as Markdown: queryable with mq itself.
     fn help_index_markdown() -> String {
         let (selectors, functions, keywords) = Self::help_index_names();
         let mut out = String::new();
@@ -1415,7 +1415,7 @@ impl Cli {
         out
     }
 
-    /// Text for the `mq help examples` topic — kept out of clap's own `after_help` so
+    /// Text for the `mq help examples` topic, kept out of clap's own `after_help` so
     /// `--help` stays short; this is the fuller reference it points to.
     fn examples_topic_text() -> String {
         let mut out = String::new();
@@ -1552,7 +1552,7 @@ impl Cli {
         out
     }
 
-    /// Same content as [`Self::examples_topic_text`], as Markdown — queryable with mq itself
+    /// Same content as [`Self::examples_topic_text`], as Markdown: queryable with mq itself
     /// via `mq help examples --markdown | mq '...'`.
     fn examples_topic_markdown() -> String {
         let mut out = String::new();
@@ -3164,7 +3164,7 @@ impl Cli {
     }
 
     /// Renders `runtime_values` to a byte buffer without writing anywhere.
-    /// `emit_diff` always passes `colorize: false` — it needs plain text to diff
+    /// `emit_diff` always passes `colorize: false`; it needs plain text to diff
     /// against the uncolored original, and colors the diff lines itself.
     fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool, mdx: bool) -> miette::Result<Vec<u8>> {
         let mut buf = Vec::new();
@@ -3334,7 +3334,7 @@ impl Cli {
             .header(&label, &label)
             .to_string();
 
-        // Raw ANSI, not `colored::Colorize` — it auto-disables on non-tty stdout, but -C should force color.
+        // Raw ANSI, not `colored::Colorize`; it auto-disables on non-tty stdout, but -C should force color.
         let colorize = self.output.color_output && !Self::is_no_color();
         let mut out = String::with_capacity(diff_text.len());
         for line in diff_text.lines() {

@@ -74,7 +74,7 @@ pub fn extract_module_doc(source: &str) -> Option<ModuleDoc> {
 }
 
 /// Extracts a module's header doc and function docs in a single CST parse. `extract_module_doc`
-/// and `extract_functions_from_cst` each call this and discard half the result — fine for one-
+/// and `extract_functions_from_cst` each call this and discard half the result, fine for one-
 /// off lookups, but callers needing both (e.g. `mq help`'s catalog build, over every standard
 /// module) should call this directly to parse each module's source only once.
 pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Vec<MqFnDoc>) {
@@ -130,7 +130,7 @@ fn collect_module_functions(module_node: &Shared<CstNode>, prefix: &str, out: &m
 }
 
 // If node 0 is a documented def, its first paragraph is only a module header when a second
-// paragraph is left over for its own doc — otherwise it's just that def's doc comment.
+// paragraph is left over for its own doc; otherwise it's just that def's doc comment.
 fn module_header_paragraph(source: &str, nodes: &[Shared<CstNode>]) -> Option<Vec<String>> {
     let mut paragraphs = leading_comment_paragraphs(source);
     if paragraphs.is_empty() {
@@ -218,9 +218,9 @@ fn def_name(node: &Shared<CstNode>) -> Option<String> {
 /// One line of a doc comment outside any fenced code block, classified by its role in the
 /// Markdown-ish convention documented on [`extract_functions_from_cst`]. Adding a new
 /// recognized line kind (e.g. a future `Capability:` line) means adding one variant here and
-/// one match arm in [`parse_doc_comment`] — the fence-toggling logic never has to change.
+/// one match arm in [`parse_doc_comment`]: the fence-toggling logic never has to change.
 enum DocLine<'a> {
-    /// A blank line, or the literal `Example:` label — pure formatting, carries no data.
+    /// A blank line, or the literal `Example:` label: pure formatting, carries no data.
     Skip,
     /// `Returns: TYPE`
     Returns(&'a str),
@@ -278,7 +278,7 @@ fn parse_doc_comment(lines: impl IntoIterator<Item = String>) -> (String, Option
 /// Parses the (already de-indented) lines inside one ` ``` ` fence into a single example.
 ///
 /// Everything before the first `#=>` line is the code; the arrow's own text plus every line
-/// after it (up to the fence close) is the expected value, joined with `\n` — so output that's
+/// after it (up to the fence close) is the expected value, joined with `\n`, so output that's
 /// naturally multi-line (a CSV/table/frontmatter render, ...) doesn't need to be contorted onto
 /// one line. A fence with no `#=>` line, or no code before it, yields no example. A function
 /// with multiple examples uses multiple fences (see `test_extract_functions_multiple_examples`),
@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn test_module_doc_absent_when_only_first_fn_doc() {
         // A single paragraph directly above the first (public) def is that def's own doc,
-        // not a module header — even though it happens to precede a blank-separated Example.
+        // not a module header, even though it happens to precede a blank-separated Example.
         let src = "# Checks if input is an array.\n#\n# Example:\n# ```\n# is_array([1, 2])\n# #=> true\n# ```\ndef is_array(a): a;";
         assert_eq!(extract_module_doc(src), None);
         let fns = extract_functions_from_cst(src, false);

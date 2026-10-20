@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 /// [`SandboxedIo`](super::SandboxedIo) to gate read/write/net permissions.
 ///
 /// `fetch` does not yet implement the on-disk caching/lockfile behavior that
-/// `UreqFetcher` (the module-import HTTP fetcher) has today — that migration
+/// `UreqFetcher` (the module-import HTTP fetcher) has today; that migration
 /// is follow-up work. This is a plain, uncached HTTPS GET through the same
 /// SSRF-hardened agent used elsewhere in this crate.
 #[derive(Debug, Clone)]
@@ -440,7 +440,7 @@ mod tests {
 
         let result = io.metadata(&path);
         // A root-run process (e.g. inside a container) ignores permission bits, so only
-        // assert when the OS actually enforced them here — otherwise the test would flake.
+        // assert when the OS actually enforced them here; otherwise the test would flake.
         let permissions_enforced = std::fs::metadata(&path).is_err();
 
         // Restore permissions so the tempdir can be cleaned up.

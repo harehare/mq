@@ -2,7 +2,7 @@ use mq_lang::{CstNode, CstNodeKind, CstTrivia, Shared};
 use tower_lsp_server::ls_types::{FoldingRange, FoldingRangeKind};
 
 /// Computes folding ranges by parsing the document into a CST and walking it directly,
-/// the same approach `signature_help.rs` uses — `mq_hir::Symbol` ranges are too coarse
+/// the same approach `signature_help.rs` uses: `mq_hir::Symbol` ranges are too coarse
 /// (block delimiters like `end`/`;` aren't lowered into HIR at all), but the CST's
 /// `node_range()` gives an exact span for every block construct.
 pub(crate) fn response(source_text: Option<&str>) -> Option<Vec<FoldingRange>> {

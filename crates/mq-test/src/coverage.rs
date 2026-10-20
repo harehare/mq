@@ -52,7 +52,7 @@ impl CoverageData {
     }
 }
 
-/// The `test` module (`assert_eq` and friends) — boilerplate every test file
+/// The `test` module (`assert_eq` and friends): boilerplate every test file
 /// includes for the assertion framework itself, never the code under test.
 const TEST_ASSERTION_MODULE: &str = "test";
 
@@ -219,7 +219,7 @@ fn collect_executable_lines(nodes: &[Shared<CstNode>], max_line: usize, lines: &
         }
 
         match node.kind {
-            // Only the function body counts toward coverage — the signature
+            // Only the function body counts toward coverage; the signature
             // (name + params) is declaration syntax, not a per-step execution.
             CstNodeKind::Def { .. } => {
                 let (_, program) = node.split_cond_and_program();
@@ -723,8 +723,8 @@ mod tests {
 
     #[test]
     fn test_executable_lines_bounded_by_content_line_count() {
-        // Callers must pass the original file content — not the query with the
-        // generated `run_tests(...)` harness appended — so that lines beyond
+        // Callers must pass the original file content, not the query with the
+        // generated `run_tests(...)` harness appended, so that lines beyond
         // the file's own line count are never reported.
         let content = "def foo():\n  1 + 1\nend\n";
         let lines = executable_lines(content);

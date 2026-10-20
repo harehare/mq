@@ -1106,7 +1106,7 @@ fn test_builtin_cache_sequential_engines_consistent(
 }
 
 /// Compiling and evaluating a builtin function call on a second engine (cache path) must
-/// produce the correct result — verifying that token_ids in the compiled program are valid
+/// produce the correct result: verifying that token_ids in the compiled program are valid
 /// when the builtin tokens were injected from cache rather than freshly parsed.
 #[rstest]
 #[case("add(1, 2)", vec!["".to_string().into()], vec![3.into()])]
@@ -1173,7 +1173,7 @@ fn test_builtin_cache_runtime_error_token_location_correct(#[case] query: &str, 
 }
 
 /// Two sequential engines (one possibly fresh-parse, one cache) must produce identical
-/// error locations — confirming that token_id indices are not shifted by cache replay.
+/// error locations: confirming that token_id indices are not shifted by cache replay.
 #[rstest]
 #[case("undefined_fn()")]
 #[case("1 | undefined_fn()")]
@@ -1362,7 +1362,7 @@ fn test_eval_debug_expression_vm_paused_frame_binding_shadows_soft_builtin() {
 fn test_eval_compiled_vm_error_is_a_real_miette_diagnostic() {
     use crate::RuntimeValue;
 
-    // `eval_compiled_vm` used to return a bare `Result<_, String>` — this checks it now
+    // `eval_compiled_vm` used to return a bare `Result<_, String>`; this checks it now
     // produces the same public `error::Error` shape `eval_compiled` does: a real cause
     // (not just a `Display` string) with a non-trivial source span pointing at the
     // failing expression.
@@ -1636,7 +1636,7 @@ fn test_eval_compiled_vm_recompiles_after_search_paths_change_on_same_engine() {
         &[RuntimeValue::String(Shared::new("first".to_string()))]
     );
 
-    // Same CompiledProgram, same engine — only search paths changed.
+    // Same CompiledProgram, same engine; only search paths changed.
     engine.set_search_paths(vec![second_dir.path().to_owned()]);
     assert_eq!(
         engine
@@ -1841,7 +1841,7 @@ fn test_module_var_initializer_runs_once_per_eval_for_import() {
     });
 
     // `import` always addresses its vars through the qualified (aliased) compile path,
-    // unlike `include`'s plain named locals — a separate code path this fix must also cover.
+    // unlike `include`'s plain named locals: a separate code path this fix must also cover.
     engine.import_module("side_effect_counter_import").unwrap();
     let baseline = call_count.load(Ordering::SeqCst);
 
@@ -2505,7 +2505,7 @@ fn test_cached_vm_does_not_reuse_an_environment_after_its_engine_drops() {
 fn test_eval_compiled_vm_resolves_a_local_file_import() {
     use crate::RuntimeValue;
 
-    // Mirrors `test_eval_import_as_alias`, but through `eval_compiled_vm` — this only works
+    // Mirrors `test_eval_import_as_alias`, but through `eval_compiled_vm`; this only works
     // because `eval_compiled_vm` threads `self.vm.module_loader.clone()` into the VM
     // compiler instead of it hardcoding an in-memory-only `StdModuleResolver`
     // (`STANDARD_MODULES` only, no filesystem access).
@@ -2567,7 +2567,7 @@ fn test_eval_compiled_vm_notifies_debugger_of_uncaught_error() {
             .lock()
             .unwrap()
             .iter()
-            // "Division by zero" — `RuntimeError::ZeroDivision`'s wording, the same the
+            // "Division by zero": `RuntimeError::ZeroDivision`'s wording, the same the
             // tree-walker uses; `notify_error` converts through it rather than using
             // `VmError`'s own (not user-facing) `Display`. See `notify_error`'s doc comment.
             .any(|message| message.contains("Division by zero"))

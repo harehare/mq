@@ -116,7 +116,7 @@ impl<T: ValueAdapter> ValueAdapter for Option<T> {
 
 /// Converts a Rust closure into a boxed [`HostFunction`], as the target of
 /// [`crate::Engine::register_fn`]. `Marker` distinguishes the raw `&[RuntimeValue]` form from
-/// each typed arity below so a single closure can only ever match one implementation — hosts
+/// each typed arity below so a single closure can only ever match one implementation; hosts
 /// never need to name `Marker` or this trait themselves.
 pub trait IntoHostFunction<Marker> {
     /// Boxes the closure as a host function.

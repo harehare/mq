@@ -2,9 +2,9 @@
 //! crate: HTTP module imports (`http_resolver.rs`) and the `http` builtin
 //! (`eval/builtin/http.rs`).
 //!
-//! [`is_global_ip`] has no I/O dependencies. [`SsrfSafeResolver`]/[`ssrf_safe_agent`] additionally
+//! [`is_global_ip`] has no I/O dependencies. `SsrfSafeResolver`/`ssrf_safe_agent` additionally
 //! require a concrete `ureq` transport, so they're gated behind `http-import-ureq` (HTTP module
-//! imports) or `http` (the `http` builtin) — either one pulls in `ureq`.
+//! imports) or `http` (the `http` builtin): either one pulls in `ureq`.
 
 /// Returns `true` if `url` uses the `https://` scheme.
 pub fn is_https(url: &str) -> bool {

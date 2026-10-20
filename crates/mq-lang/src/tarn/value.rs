@@ -87,7 +87,7 @@ fn collect_coroutine_handles(value: &RuntimeValue, handles: &mut Vec<CoroutineHa
 }
 
 /// Collects coroutine handles `value` strongly holds (a bare `WeakCoroutine`/`NestedWeakCoroutine`
-/// doesn't count — it isn't an owning edge).
+/// doesn't count; it isn't an owning edge).
 pub(crate) fn collect_coroutine_handles_in_stack_value(value: &StackValue, handles: &mut Vec<CoroutineHandle>) {
     if let StackValue::Value(value) = value {
         collect_coroutine_handles(value, handles);

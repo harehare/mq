@@ -58,7 +58,7 @@ struct Span {
 /// The CST reuses the identifier's own node/token for `Call`/
 /// `QualifiedAccess` (its `kind` changes but the token stays the identifier),
 /// while `def`/`import`/dict-key names are separate child `Ident` nodes of a
-/// keyword-bearing parent — so classification needs both the node's own kind
+/// keyword-bearing parent, so classification needs both the node's own kind
 /// and its parent context.
 fn classify_ident(node_kind: &CstNodeKind, parent: Option<&CstNodeKind>, index_in_parent: usize) -> TokenClass {
     match node_kind {

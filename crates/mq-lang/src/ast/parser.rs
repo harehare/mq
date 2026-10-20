@@ -8645,7 +8645,7 @@ Shared::new(Node {
         }
     }
 
-    // ."key"[] or ."key"[n] — single property selector followed by array iterator/index
+    // ."key"[] or ."key"[n]: single property selector followed by array iterator/index
     #[rstest]
     #[case::all_elements(".\"items\"", None, vec![Selector::Property("items".into()), Selector::List(None, None)])]
     #[case::index_0(".\"items\"", Some(0usize), vec![Selector::Property("items".into()), Selector::List(Some(0), None)])]
@@ -8703,7 +8703,7 @@ Shared::new(Node {
         }
     }
 
-    // ."a"."b"[] or ."a"."b"[n] — chained property selectors followed by array iterator/index
+    // ."a"."b"[] or ."a"."b"[n]: chained property selectors followed by array iterator/index
     #[rstest]
     #[case::all_elements(".\"a\"", ".\"b\"", None, vec![Selector::Property("a".into()), Selector::Property("b".into()), Selector::List(None, None)])]
     #[case::index_0(".\"a\"", ".\"b\"", Some(0usize), vec![Selector::Property("a".into()), Selector::Property("b".into()), Selector::List(Some(0), None)])]

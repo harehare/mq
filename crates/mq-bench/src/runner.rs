@@ -584,7 +584,7 @@ mod tests {
         let bench_file = dir.join("bench.mq");
         fs::write(&bench_file, "def bench_needs_arg(x):\n  x\nend\n").unwrap();
 
-        // Skipped, not failed — nothing errored, so the run still reports success.
+        // Skipped, not failed: nothing errored, so the run still reports success.
         let passed = BenchRunner::new(vec![bench_file]).run().unwrap();
         assert!(passed);
 

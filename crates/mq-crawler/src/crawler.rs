@@ -127,7 +127,7 @@ pub struct CrawlCheckpoint {
 }
 
 impl CrawlCheckpoint {
-    /// Loads a checkpoint previously written by [`Crawler::save_checkpoint`].
+    /// Loads a checkpoint previously written by `Crawler::save_checkpoint`.
     pub fn load(path: &str) -> Result<Self, String> {
         let data = fs::read_to_string(path).map_err(|e| format!("Failed to read checkpoint file '{}': {}", path, e))?;
         serde_json::from_str(&data).map_err(|e| format!("Failed to parse checkpoint file '{}': {}", path, e))

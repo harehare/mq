@@ -254,7 +254,7 @@ mod tests {
     }
 
     #[rstest]
-    // Single component after github.com/ — not enough to form owner/repo
+    // Single component after github.com/, not enough to form owner/repo
     #[case("github.com/owner")]
     fn test_github_to_raw_url_returns_none(#[case] input: &str) {
         assert!(github_to_raw_url(input).is_none());

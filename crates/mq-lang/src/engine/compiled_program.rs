@@ -4,7 +4,7 @@ use crate::SharedCell;
 #[cfg(any(not(feature = "debugger"), feature = "mqc"))]
 use crate::{Shared, tarn};
 
-/// A compiled mq program bundled with its original source, returned by [`Engine::compile`].
+/// A compiled mq program bundled with its original source, returned by `Engine::compile`.
 #[derive(Debug, Clone)]
 pub struct CompiledProgram {
     pub(crate) source: String,

@@ -1,6 +1,6 @@
 # Generator combinators for property-based testing.
 #
-# A generator is a plain function `fn(seed): value;` — a deterministic mapping from an integer
+# A generator is a plain function `fn(seed): value;`, a deterministic mapping from an integer
 # seed to a generated value. Combinators derive a distinct sub-seed per part so nested generators
 # don't correlate.
 #

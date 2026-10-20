@@ -505,9 +505,9 @@ impl WasmModuleResolver {
     ///
     /// Only imports written in the user's own code are resolved; HTTP imports inside fetched modules are intentionally ignored.
     ///
-    /// Returns immediately (without fetching) if HTTP import is disabled via [`Self::set_http_import_enabled`] — no network request is made just because a query happens to contain an HTTP import.
+    /// Returns immediately (without fetching) if HTTP import is disabled via [`Self::set_http_import_enabled`]; no network request is made just because a query happens to contain an HTTP import.
     ///
-    /// When the `opfs` feature is enabled, HTTP imports require OPFS to be available —
+    /// When the `opfs` feature is enabled, HTTP imports require OPFS to be available:
     /// this method returns immediately (without fetching) if OPFS is unavailable.
     /// Versioned URLs (`@v1.0`) are persisted in `http_cache/versioned/` and mutable URLs
     /// in `http_cache/mutable/`, each with a SHA-256 sidecar for tamper detection.
@@ -1282,7 +1282,7 @@ fn extract_http_import_urls(code: &str) -> Vec<String> {
 /// Fetches the text content of a HTTPS URL.
 ///
 /// Uses the global `fetch` function, which is available in browsers (`window.fetch`),
-/// Node.js 18+, and Deno — so the same implementation works across all WASM hosts.
+/// Node.js 18+, and Deno, so the same implementation works across all WASM hosts.
 async fn fetch_text(url: &str) -> Result<String, String> {
     if !url.starts_with("https://") {
         return Err(format!("only HTTPS URLs are supported: {}", url));
@@ -1946,7 +1946,7 @@ mod tests {
     async fn test_preload_modules_uses_already_cached_module() {
         let resolver = WasmModuleResolver::new();
         resolver.initialize().await;
-        // Pre-populate cache directly — should survive without touching OPFS
+        // Pre-populate cache directly: should survive without touching OPFS
         resolver.add_module("pre_cached", "def pre(): 1;".to_string());
         resolver.preload_modules(r#"import "pre_cached""#).await;
         let content = mq_lang::ModuleResolver::resolve(&resolver, "pre_cached").unwrap();
@@ -2441,7 +2441,7 @@ mod tests {
             .preload_http_modules(r#"import "https://example.com/mod.mq""#)
             .await;
         let result = mq_lang::ModuleResolver::resolve(&resolver, "https://example.com/mod.mq");
-        // still IOError (domain not allowed), not NotFound — URL was not cached
+        // still IOError (domain not allowed), not NotFound: URL was not cached
         assert!(matches!(result, Err(mq_lang::ModuleError::IOError(_))));
     }
 

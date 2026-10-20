@@ -1,6 +1,6 @@
 <h1 align="center">mq-bench</h1>
 
-Standalone benchmark runner for mq — times `bench_` functions written in `.mq` files.
+Standalone benchmark runner for mq: times `bench_` functions written in `.mq` files.
 
 ## Overview
 
@@ -11,7 +11,7 @@ Standalone benchmark runner for mq — times `bench_` functions written in `.mq`
 
 Bench discovery uses the CST, same as [`mq-test`](../mq-test). Each bench takes no
 parameters, is compiled once, warmed up, then run `--iterations` times sequentially with
-`std::time::Instant` — never in parallel, since that would add scheduling noise to the
+`std::time::Instant`: never in parallel, since that would add scheduling noise to the
 timings.
 
 This complements low-level, single-instruction Tarn VM benches (written in Rust with
@@ -65,4 +65,4 @@ def bench_markdown_table_render():
 end
 ```
 
-Bench functions must take no parameters — the runner calls each one as `name()`.
+Bench functions must take no parameters: the runner calls each one as `name()`.

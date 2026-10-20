@@ -3,7 +3,7 @@
 //! The checker infers types flow-insensitively, so a diagnostic that rests on one of those
 //! approximations may be wrong for a program that runs fine. A diagnostic is
 //! [`Certainty::Definite`] only when every operand it is about is *exact*: a value whose type is
-//! known for certain, from the rules in [`Prover`]. Everything else is [`Certainty::Uncertain`], so
+//! known for certain, from the rules in `Prover`. Everything else is [`Certainty::Uncertain`], so
 //! a case the rules do not cover can only make a diagnostic less certain, never more.
 
 use mq_hir::{Hir, SymbolId};

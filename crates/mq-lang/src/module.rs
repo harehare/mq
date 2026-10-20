@@ -1029,7 +1029,7 @@ mod tests {
         let mut loader1 = ModuleLoader::new(DefaultModuleResolver::default());
         loader1.load_builtin(pristine_token_arena).unwrap();
 
-        // Second pristine load — this is the cache-hit path.
+        // Second pristine load: this is the cache-hit path.
         let arena2 = Shared::new(SharedCell::new(crate::arena::Arena::new(2048)));
         token_alloc(
             &arena2,

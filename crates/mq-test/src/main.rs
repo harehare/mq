@@ -14,7 +14,7 @@ use std::{path::PathBuf, process::ExitCode};
 #[derive(Parser, Debug)]
 #[command(name = "mq-test")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Test runner for mq — auto-discovers test_ functions and runs them")]
+#[command(about = "Test runner for mq: auto-discovers test_ functions and runs them")]
 #[command(after_help = "# Examples:\n\n\
     ## Run all tests in a specific file:\n\
     mq-test tests.mq\n\n\

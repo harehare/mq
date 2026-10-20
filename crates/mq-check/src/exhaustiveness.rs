@@ -268,7 +268,7 @@ fn missing_cases(ty: &Type, arms: &[ArmInfo], ctx: &mut InferenceContext) -> Opt
 
 /// Checks all match expressions in the HIR for exhaustiveness and returns a list of errors.
 ///
-/// `children_index` is passed in to avoid rebuilding it — it is already constructed
+/// `children_index` is passed in to avoid rebuilding it; it is already constructed
 /// by `generate_constraints` and reused here to save an O(N) full-HIR scan.
 pub(crate) fn check_match_exhaustiveness(
     hir: &Hir,
@@ -284,7 +284,7 @@ pub(crate) fn check_match_exhaustiveness(
 
         let children = get_children(children_index, match_id);
         if children.len() < 2 {
-            // No arms — nothing to check.
+            // No arms: nothing to check.
             continue;
         }
 

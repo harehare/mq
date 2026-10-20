@@ -1711,15 +1711,15 @@ def test_walk(value, f, expected):
 end
 
 def test_walk_markdown():
-  # markdown: text leaf — identity preserves text content
+  # markdown text leaf: identity preserves text content
   let result1 = do "plain text" | to_markdown() | first() | walk(fn(n): n;) | to_text();
   | assert_eq(result1, "plain text")
 
-  # markdown: heading — identity preserves HTML output
+  # markdown heading: identity preserves HTML output
   | let result2 = do "# heading" | to_markdown() | first() | walk(fn(n): n;) | to_html();
   | assert_eq(result2, "<h1>heading</h1>")
 
-  # markdown: h2 — identity preserves depth
+  # markdown h2: identity preserves depth
   | let result3 = do "## section" | to_markdown() | first() | walk(fn(n): n;) | to_html();
   | assert_eq(result3, "<h2>section</h2>")
 

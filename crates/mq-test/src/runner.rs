@@ -269,7 +269,7 @@ impl TestRunner {
         // Files that ran but had at least one failing test.
         let failed_files: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
         // Per-file JSON test results, only populated (and only printed) when `format` is
-        // `Json` — kept separate from `file_errors` because it needs the full per-test
+        // `Json`, kept separate from `file_errors` because it needs the full per-test
         // detail (name/status/duration/error), not just the failing file's path.
         let json_results: Mutex<Vec<serde_json::Value>> = Mutex::new(Vec::new());
 
@@ -476,7 +476,7 @@ impl TestRunner {
 
         if self.format == OutputFormat::Json {
             // Printed once at the end, after every (possibly parallel) file has finished,
-            // rather than incrementally per file — a single JSON document is much easier
+            // rather than incrementally per file: a single JSON document is much easier
             // for a caller like the VS Code extension to parse than an interleaved stream.
             println!("{}", Self::format_run_json_report(json_results.into_inner().unwrap()));
         }
@@ -550,7 +550,7 @@ impl TestRunner {
         match format {
             OutputFormat::Text => {
                 // A plain, greppable listing: one file per line, followed by its tests
-                // indented with their kind and (if any) tags — meant for a human at a
+                // indented with their kind and (if any) tags, meant for a human at a
                 // terminal, not for parsing, so the exact spacing isn't a contract.
                 discovered
                     .iter()
@@ -708,7 +708,7 @@ impl TestRunner {
             return Some(TestAnnotation::Test);
         }
 
-        // Parse `name(args)` — split at the first '(' only so args may contain '('.
+        // Parse `name(args)`: split at the first '(' only so args may contain '('.
         let paren = s.find('(')?;
         let name = s[..paren].trim();
         let rest = s[paren + 1..].trim();
@@ -736,7 +736,7 @@ impl TestRunner {
         }
     }
 
-    /// Splits `s` at its first comma that isn't nested inside `()`/`[]`/`{}` — used to pull
+    /// Splits `s` at its first comma that isn't nested inside `()`/`[]`/`{}`, used to pull
     /// `@property(count, generators)`'s two arguments apart even though `generators` is
     /// itself an array literal full of commas. Returns `None` if there's no such comma (the
     /// single-argument `@property(generators)` form).
@@ -1861,7 +1861,7 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&report).unwrap();
         let files = parsed["files"].as_array().unwrap();
 
-        // Only "lib" is reported — the test file itself and the "test"/"builtin"
+        // Only "lib" is reported: the test file itself and the "test"/"builtin"
         // modules it also pulls in are not the code under test.
         assert_eq!(files.len(), 1, "expected only lib.mq in report: {files:?}");
         assert!(files[0]["file"].as_str().unwrap().ends_with("lib.mq"));
@@ -1876,7 +1876,7 @@ mod tests {
         let dir = temp_project_dir("mock_io");
         let test_file = dir.join("tests.mq");
         // "/definitely/not/a/real/writable/path.txt" would fail against a real, sandboxed
-        // filesystem `Io` (no such directory, no write permission) — succeeding here proves
+        // filesystem `Io` (no such directory, no write permission), succeeding here proves
         // `write_file`/`read_file` went through the engine's in-memory mock instead.
         fs::write(
             &test_file,
@@ -1905,7 +1905,7 @@ mod tests {
     fn test_mock_fetch_lets_a_test_seed_its_own_http_response() {
         let dir = temp_project_dir("mock_fetch");
         let test_file = dir.join("tests.mq");
-        // No real network call is made — `mock_fetch` seeds the in-memory mock's response
+        // No real network call is made: `mock_fetch` seeds the in-memory mock's response
         // for the URL, and `http()` reads it back, entirely from within the test function.
         fs::write(
             &test_file,

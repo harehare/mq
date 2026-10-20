@@ -70,30 +70,30 @@ mq-crawl [OPTIONS] <URL>
 | `-c, --concurrency <N>` | Number of concurrent workers | `1` |
 | `--depth <DEPTH>` | Maximum crawl depth (0 = start URL only) | unlimited |
 | `--max-pages <N>` | Maximum total number of pages to visit before stopping | unlimited |
-| `--checkpoint-path <PATH>` | File to periodically save crawl progress to (JSON), enabling `--resume-from` | — |
+| `--checkpoint-path <PATH>` | File to periodically save crawl progress to (JSON), enabling `--resume-from` | - |
 | `--checkpoint-interval-pages <N>` | Pages crawled between checkpoint saves (requires `--checkpoint-path`) | `20` |
-| `--resume-from <PATH>` | Resume a crawl from a checkpoint file written via `--checkpoint-path` | — |
-| `-q, --mq-query <QUERY>` | mq-lang query for processing content | — |
-| `--robots-path <PATH>` | Custom robots.txt file path | — |
+| `--resume-from <PATH>` | Resume a crawl from a checkpoint file written via `--checkpoint-path` | - |
+| `-q, --mq-query <QUERY>` | mq-lang query for processing content | - |
+| `--robots-path <PATH>` | Custom robots.txt file path | - |
 | `--allowed-domains <DOMAINS>` | Comma-separated list of extra domains to crawl; the start URL's domain is always included | start domain only |
-| `--sitemap <SITEMAP_URL>` | URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from | — |
+| `--sitemap <SITEMAP_URL>` | URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from | - |
 | `--max-retries <N>` | Maximum retry attempts for failed requests (network errors, 429, 5xx) | `3` |
 | `--retry-initial-backoff <SECONDS>` | Delay before the first retry | `0.5` |
 | `--retry-max-backoff <SECONDS>` | Maximum delay between retries | `10` |
 | `--retry-backoff-multiplier <FLOAT>` | Multiplier applied to the retry delay after each failed attempt | `2` |
-| `--header <KEY: VALUE>` | Custom HTTP header to send with every request (repeatable); non-browser crawling only | — |
-| `--cookie <NAME=VALUE>` | Cookie to send with every request (repeatable); non-browser crawling only | — |
-| `--basic-auth <USER:PASS>` | HTTP Basic authentication credentials; non-browser crawling only | — |
-| `--bearer-token <TOKEN>` | Bearer token for `Authorization` header; non-browser crawling only | — |
-| `--headless` | Use built-in headless Chrome (Chrome/Chromium must be installed) | — |
+| `--header <KEY: VALUE>` | Custom HTTP header to send with every request (repeatable); non-browser crawling only | - |
+| `--cookie <NAME=VALUE>` | Cookie to send with every request (repeatable); non-browser crawling only | - |
+| `--basic-auth <USER:PASS>` | HTTP Basic authentication credentials; non-browser crawling only | - |
+| `--bearer-token <TOKEN>` | Bearer token for `Authorization` header; non-browser crawling only | - |
+| `--headless` | Use built-in headless Chrome (Chrome/Chromium must be installed) | - |
 | `--chrome-path <PATH>` | Path to Chrome/Chromium executable (requires `--headless`) | auto-detect |
-| `-U, --webdriver-url <URL>` | External WebDriver URL for browser-based crawling | — |
+| `-U, --webdriver-url <URL>` | External WebDriver URL for browser-based crawling | - |
 | `--page-load-timeout <SECONDS>` | Timeout for loading a single page | `30` |
 | `--script-timeout <SECONDS>` | Timeout for executing scripts on the page | `10` |
 | `--implicit-timeout <SECONDS>` | Timeout for element finding | `5` |
-| `--extract-scripts-as-code-blocks` | Extract `<script>` tags as code blocks | — |
-| `--generate-front-matter` | Generate YAML front matter from page metadata | — |
-| `--use-title-as-h1` | Use the HTML `<title>` as the first H1 heading | — |
+| `--extract-scripts-as-code-blocks` | Extract `<script>` tags as code blocks | - |
+| `--generate-front-matter` | Generate YAML front matter from page metadata | - |
+| `--use-title-as-h1` | Use the HTML `<title>` as the first H1 heading | - |
 | `-f, --format <FORMAT>` | Output format: `text` or `json` | `text` |
 
 ### Examples
@@ -177,7 +177,7 @@ mq-crawl --max-retries 0 https://example.com
 
 ### Custom Headers, Cookies & Authentication
 
-Use `--header`, `--cookie`, `--basic-auth`, or `--bearer-token` to crawl sites that require authentication. These apply to standard (non-browser) crawling only — they are ignored with `--headless` or `-U/--webdriver-url`:
+Use `--header`, `--cookie`, `--basic-auth`, or `--bearer-token` to crawl sites that require authentication. These apply to standard (non-browser) crawling only; they are ignored with `--headless` or `-U/--webdriver-url`:
 
 ```bash
 # Custom header

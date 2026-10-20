@@ -46,6 +46,6 @@ Installation
 ## Notes
 
 - `section::containing(md_nodes, node)` is the reverse of picking a section apart: given all the document's nodes and one node you already have, it returns the `section::sections`-style dict that node belongs to (or `None` if it doesn't belong to any).
-- It matches the given node against each section's `header` and `children` by equality, so it works with any node you found some other way — a plain selector match (`.code`, `.h2`, ...), a `filter`/`is_*` predicate, or an item you pulled out of `section::body`.
+- It matches the given node against each section's `header` and `children` by equality, so it works with any node you found some other way, a plain selector match (`.code`, `.h2`, ...), a `filter`/`is_*` predicate, or an item you pulled out of `section::body`.
 - Matching is structural: a document with duplicate content (e.g. two identical code blocks) resolves to the first section that contains a matching node.
 - Pass `true` as the third argument to match against depth-extended sections (see `section::sections`'s `depth` parameter) instead of the immediate section.

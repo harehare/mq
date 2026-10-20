@@ -46,7 +46,7 @@ static HIGHLIGHT_PATTERNS: LazyLock<Vec<(Regex, Paint)>> = LazyLock::new(|| {
 /// cannot re-match characters inside already-highlighted tokens such as strings or
 /// commands that start with `/`.
 fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
-    // (start, end, priority, colored_replacement) — lower priority number wins
+    // (start, end, priority, colored_replacement): lower priority number wins
     let mut matches: Vec<(usize, usize, usize, String)> = Vec::new();
 
     for (priority, (re, paint)) in HIGHLIGHT_PATTERNS.iter().enumerate() {
