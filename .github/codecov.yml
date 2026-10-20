@@ -4,7 +4,6 @@ ignore:
   - "crates/mq-lsp/src/capabilities.rs"
   - "crates/mq-repl/src/repl.rs"
   - "crates/mq-wasm"
-  - "crates/mq-web-api"
   - "crates/mq-dap/src/server.rs"
   - "crates/mq-lang/src/eval/debugger.rs"
   - "crates/mq-run/src/debugger.rs"

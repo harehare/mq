@@ -155,7 +155,7 @@ test-all: fmt lint test-mq test-doc test-all-features test
 
 # Run tests with code coverage reporting
 test-cov:
-    cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|bench|wasm|web-api|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
+    cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|bench|wasm|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
 # Run fuzzing tests against the Tarn bytecode VM (targets: interpreter, mqc)
 test-fuzz target="interpreter":
