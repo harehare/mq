@@ -2789,10 +2789,11 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             runtime_value::string_mut(s1).push_str(s2);
             Ok(std::mem::take(s1).into())
         }
-        [RuntimeValue::String(s), RuntimeValue::Number(n)] | [RuntimeValue::Number(n), RuntimeValue::String(s)] => {
+        [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
             runtime_value::string_mut(s).push_str(n.to_string().as_str());
             Ok(std::mem::take(s).into())
         }
+        [RuntimeValue::Number(n), RuntimeValue::String(s)] => Ok(format!("{}{}", n, s).into()),
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(format!("{}{}", md.value(), s).as_str())))
