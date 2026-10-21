@@ -211,20 +211,25 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// closing `;` or `end`, and `import`/`include` may be followed by a statement without a `|`.
     /// Keep in sync with `closes_itself` in the CST parser.
     fn expect_statement_end(&mut self, ast: &Node) -> Result<(), SyntaxError> {
-        if matches!(
-            ast.expr,
-            Expr::Def(..)
-                | Expr::Fn(..)
-                | Expr::Block(..)
-                | Expr::Foreach(..)
-                | Expr::While(..)
-                | Expr::Until(..)
-                | Expr::Loop(..)
-                | Expr::Match(..)
-                | Expr::Module(..)
-                | Expr::Import(..)
-                | Expr::Include(..)
-        ) {
+        // Selector chains such as `.a .b` are also `Block`s, so only a `do` block counts.
+        let is_do_block =
+            matches!(ast.expr, Expr::Block(..)) && matches!(self.token_arena[ast.token_id].kind, TokenKind::Do);
+
+        if is_do_block
+            || matches!(
+                ast.expr,
+                Expr::Def(..)
+                    | Expr::Fn(..)
+                    | Expr::Foreach(..)
+                    | Expr::While(..)
+                    | Expr::Until(..)
+                    | Expr::Loop(..)
+                    | Expr::Match(..)
+                    | Expr::Module(..)
+                    | Expr::Import(..)
+                    | Expr::Include(..)
+            )
+        {
             return Ok(());
         }
 

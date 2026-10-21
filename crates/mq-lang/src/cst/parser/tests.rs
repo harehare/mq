@@ -8147,6 +8147,10 @@ fn test_junk_is_kept_in_error_node(#[case] code: &str, #[case] valid_literals: u
 #[case::after_import("import \"m\" def f(): 1;")]
 #[case::piped("1 | 7")]
 #[case::index_attr("x[0].row")]
+#[case::while_pipeline_condition("while (a | b): 1;")]
+#[case::until_pipeline_condition("until (a | (b)): 1;")]
+#[case::self_selector_chain(". .li")]
+#[case::self_selector_chain_across_lines(".  # comment\n.li\n.hr")]
 fn test_statements_need_no_separator(#[case] code: &str) {
     let (_, errors) = crate::parse_recovery(code);
 
@@ -8159,6 +8163,7 @@ fn test_statements_need_no_separator(#[case] code: &str) {
 #[case::array("[1] 7")]
 #[case::index("x[0] 7")]
 #[case::in_body("def f(): [1] 7;")]
+#[case::selector_chain(".blockquote .list code")]
 fn test_adjacent_statements_without_pipe_are_errors(#[case] code: &str) {
     let (nodes, errors) = crate::parse_recovery(code);
 

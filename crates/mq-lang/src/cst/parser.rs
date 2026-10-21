@@ -1738,11 +1738,11 @@ impl<'a> Parser<'a> {
         let token = Shared::clone(self.advance_or_eof()?);
         let trailing_trivia = self.parse_trailing_trivia();
 
-        let mut args: ArgList = ArgList::new();
-        args.push(self.next_node(|kind| matches!(kind, TokenKind::LParen), NodeKind::Token)?);
-        let expr_leading_trivia = self.parse_leading_trivia();
-        args.push(self.parse_expr(expr_leading_trivia, false, true)?);
-        args.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
+        let args = self.parse_args()?;
+        if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
+            return Err(ParseError::UnexpectedToken(token));
+        }
+        let args: ArgList = args.into();
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
         let program = self.parse_program(ProgramKind::Block, true);
@@ -2497,6 +2497,8 @@ impl<'a> Parser<'a> {
         };
 
         match &node.kind {
+            // A bare `.` starts a chain: `. .li`.
+            NodeKind::Self_ { attr } => attr.is_none(),
             NodeKind::Selector { items } => !items.last().is_some_and(is_attribute),
             NodeKind::SelectorCall { args } => !args.last().is_some_and(is_attribute),
             NodeKind::Block { program } if !node.token.as_ref().is_some_and(|t| matches!(t.kind, TokenKind::Do)) => {
