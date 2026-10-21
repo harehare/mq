@@ -2505,6 +2505,10 @@ impl Cli {
     /// Errors go to stderr instead of ending the loop, so one bad query doesn't stop watching.
     #[cfg(feature = "watch")]
     fn run_once_watch(&self) {
+        // Each rerun starts a fresh output instead of appending to the previous run's.
+        self.output
+            .output_claimed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         if let Err(err) = self.execute_once() {
             if let Some(code) = Self::halt_exit_code(&err) {
                 std::process::exit(code);

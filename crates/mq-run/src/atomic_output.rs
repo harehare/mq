@@ -79,8 +79,8 @@ impl Write for OutputSink {
 }
 
 impl OutputSink {
-    /// `claimed` marks whether this process already opened `output_file`, so
-    /// `--no-clobber` only checks existence once per run.
+    /// `claimed` marks whether this run already opened `output_file`, so
+    /// `--no-clobber` only checks existence once per run. Only a successful open claims it.
     pub(crate) fn open(
         output_file: &Option<PathBuf>,
         atomic: AtomicOutput,
@@ -101,7 +101,7 @@ impl OutputSink {
         clobber: ClobberMode,
         claimed: &AtomicBool,
     ) -> miette::Result<Self> {
-        let is_first_open = !claimed.swap(true, Ordering::SeqCst);
+        let is_first_open = !claimed.load(Ordering::SeqCst);
         // Later inputs add to the output like a shell redirect, instead of replacing earlier ones.
         let clobber = if is_first_open { clobber } else { ClobberMode::Append };
 
@@ -115,6 +115,13 @@ impl OutputSink {
             AtomicOutput::Auto => Self::target_supports_atomic(path)?,
         };
 
+        let sink = Self::open_target(path, use_atomic, clobber, is_first_open)?;
+        // Claim only after a successful open, so a refused `--no-clobber` stays enforced on retry.
+        claimed.store(true, Ordering::SeqCst);
+        Ok(sink)
+    }
+
+    fn open_target(path: &Path, use_atomic: bool, clobber: ClobberMode, is_first_open: bool) -> miette::Result<Self> {
         if !use_atomic {
             let file = if clobber == ClobberMode::Append {
                 fs::OpenOptions::new()
@@ -140,10 +147,20 @@ impl OutputSink {
 
         let (file, temp_path) = Self::create_temp_file(path)?;
         let mut writer = BufWriter::new(file);
-        if clobber == ClobberMode::Append
-            && let Ok(existing) = fs::read(path)
-        {
-            writer.write_all(&existing).into_diagnostic()?;
+        if clobber == ClobberMode::Append {
+            match fs::read(path) {
+                Ok(existing) => {
+                    if let Err(e) = writer.write_all(&existing) {
+                        let _ = fs::remove_file(&temp_path);
+                        return Err(miette!(e));
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    let _ = fs::remove_file(&temp_path);
+                    return Err(miette!("failed to read {} to append to it: {e}", path.display()));
+                }
+            }
         }
         Ok(OutputSink::Atomic {
             writer,
@@ -551,5 +568,57 @@ mod tests {
 
         let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
         assert_eq!(entries.len(), 1, "only the target file should remain");
+    }
+
+    #[test]
+    fn test_refused_no_clobber_does_not_claim_the_output() {
+        let dir = temp_dir("no-clobber-unclaimed");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.md");
+        fs::write(&target, "original").unwrap();
+
+        let claimed = AtomicBool::new(false);
+        for _ in 0..2 {
+            let result = OutputSink::open(
+                &Some(target.clone()),
+                AtomicOutput::Auto,
+                false,
+                ClobberMode::NoClobber,
+                &claimed,
+            );
+            assert!(result.is_err());
+        }
+
+        assert!(!claimed.load(Ordering::SeqCst));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_atomic_append_fails_when_existing_target_is_unreadable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = temp_dir("append-unreadable");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.md");
+        fs::write(&target, "first\n").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o200)).unwrap();
+        if fs::read(&target).is_ok() {
+            return; // running as root, permissions are not enforced
+        }
+
+        let claimed = AtomicBool::new(true);
+        let result = OutputSink::open(
+            &Some(target.clone()),
+            AtomicOutput::Always,
+            false,
+            ClobberMode::Overwrite,
+            &claimed,
+        );
+
+        assert!(result.is_err());
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "first\n");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1, "temp file should be removed");
     }
 }
