@@ -3330,8 +3330,13 @@ Shared::new(Node {
             Shared::new(token(TokenKind::Break)),
         ],
         (
-            vec![error_node(vec![TokenKind::Break])],
-            ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::Break)))], 100)
+            vec![Shared::new(Node {
+                kind: NodeKind::Break { colon: None, value: None },
+                token: Some(Shared::new(token(TokenKind::Break))),
+                leading_trivia: TriviaList::new(),
+                trailing_trivia: TriviaList::new(),
+            })],
+            ErrorReporter::default()
         )
     )]
 #[case::continue_outside_loop(
@@ -3339,8 +3344,13 @@ Shared::new(Node {
             Shared::new(token(TokenKind::Continue)),
         ],
         (
-            vec![error_node(vec![TokenKind::Continue])],
-            ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::Continue)))], 100)
+            vec![Shared::new(Node {
+                kind: NodeKind::Continue,
+                token: Some(Shared::new(token(TokenKind::Continue))),
+                leading_trivia: TriviaList::new(),
+                trailing_trivia: TriviaList::new(),
+            })],
+            ErrorReporter::default()
         )
     )]
 #[case::bracket_access_with_number(
@@ -4990,7 +5000,7 @@ Shared::new(Node {
                     trailing_trivia: TriviaList::new(),
                 }),
             ],
-            ErrorReporter::default()
+            ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::Eof)))], 100)
         )
     )]
 #[case::module_simple(
@@ -6442,41 +6452,6 @@ Shared::new(Node {
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("John".into())))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }) },
-                    token: Some(Shared::new(token(TokenKind::PipeEqual))),
-                    leading_trivia: TriviaList::new(),
-                    trailing_trivia: TriviaList::new(),
-                }),
-                Shared::new(Node {
-                    kind: NodeKind::Eof,
-                    token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: TriviaList::new(),
-                    trailing_trivia: TriviaList::new(),
-                }),
-            ],
-            ErrorReporter::default()
-        )
-    )]
-#[case::pipe_equal_with_self(
-        vec![
-            Shared::new(token(TokenKind::Selector(".".into()))),
-            Shared::new(token(TokenKind::PipeEqual)),
-            Shared::new(token(TokenKind::NumberLiteral(42.into()))),
-            Shared::new(token(TokenKind::Eof)),
-        ],
-        (
-            vec![
-                Shared::new(Node {
-                    kind: NodeKind::Assign { op: BinaryOp::PipeEqual, lhs: Shared::new(Node {
-                            kind: NodeKind::Self_ { attr: None },
-                            token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }), rhs: Shared::new(Node {
-                            kind: NodeKind::Literal,
-                            token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
                             leading_trivia: TriviaList::new(),
                             trailing_trivia: TriviaList::new(),
                         }) },
@@ -8147,10 +8122,12 @@ fn test_junk_is_kept_in_error_node(#[case] code: &str, #[case] valid_literals: u
 #[case::after_import("import \"m\" def f(): 1;")]
 #[case::piped("1 | 7")]
 #[case::call_with_trailing_do_block("f(x) do 1 | 2 end")]
+#[case::chained_attribute_assignment(".code(\"x\").lang |= .code(\"x\").lang |= \"ts\"")]
 #[case::call_in_branch_with_trailing_do_block("if (c): f(x) do 1 | 2 end")]
 #[case::call_in_let_with_trailing_do_block("let y = f(x) do 1 | 2 end")]
 #[case::recursive_name("..h")]
 #[case::recursive_name_attr("..h.level")]
+#[case::recursive_name_attr_in_binding("let level = ..h.level")]
 #[case::recursive_name_chain("..h .code")]
 #[case::recursive_name_piped("..h | ..code")]
 #[case::recursive_key("..\"key\"")]
@@ -8162,6 +8139,20 @@ fn test_junk_is_kept_in_error_node(#[case] code: &str, #[case] valid_literals: u
 #[case::while_pipeline_condition("while (a | b): 1;")]
 #[case::until_pipeline_condition("until (a | (b)): 1;")]
 #[case::self_selector_chain(". .li")]
+#[case::dot_attribute(". .level")]
+#[case::dot_attribute_in_args("select(. .level <= 2)")]
+#[case::recursive_name_in_args("f(.. \"key\", ..h)")]
+#[case::attribute_on_next_line("x\n  .level")]
+#[case::attribute_on_array("[0].row")]
+#[case::list_selector_expression(".[n + 1]")]
+#[case::list_selector_string(".[\"key\"]")]
+#[case::table_selector_across_lines(".[1]\n[1]")]
+#[case::break_outside_loop("break")]
+#[case::interpolation("s\"a ${x} b\"")]
+#[case::get_call_assignment("get(a, 0) = 1")]
+#[case::let_in_argument("f(let y = 1 | y)")]
+#[case::match_pattern_or_across_lines("match (x): | 1\n|| 2: 3 end")]
+#[case::foreach_trailing_comma("foreach (x, xs,): x;")]
 #[case::self_selector_chain_across_lines(".  # comment\n.li\n.hr")]
 fn test_statements_need_no_separator(#[case] code: &str) {
     let (_, errors) = crate::parse_recovery(code);
@@ -8177,7 +8168,43 @@ fn test_statements_need_no_separator(#[case] code: &str) {
 #[case::in_body("def f(): [1] 7;")]
 #[case::selector_chain(".blockquote .list code")]
 #[case::unknown_recursive_name("..foo")]
-fn test_adjacent_statements_without_pipe_are_errors(#[case] code: &str) {
+#[case::pipe_assign_to_self(". |= 42")]
+#[case::pipe_assign_to_variable("x |= 1")]
+#[case::pipe_assign_to_literal("1 |= 2")]
+#[case::slice_assignment("a[0:1] = 2")]
+#[case::attribute_assignment("a.url = 2")]
+#[case::call_assignment("f(x) = 2")]
+#[case::or_assignment("a || b = c")]
+#[case::unary_minus_twice("--x")]
+#[case::unary_not_minus("!-x")]
+#[case::unknown_attribute("history.txt")]
+#[case::non_attribute_selector("mq.h")]
+#[case::pipe_after_stray_terminator("1; | 2")]
+#[case::module_with_expression("module m: 1;")]
+#[case::as_with_call("x as f(1)")]
+#[case::as_with_access("x as y.url")]
+#[case::module_with_dict("module m: {} end")]
+#[case::catch_without_binder("try: f() catch(): 1")]
+#[case::catch_with_two_binders("try: f() catch(a, b): 1")]
+#[case::dict_symbol_key("{:key: 1}")]
+#[case::dict_expression_key("{a = b: 1}")]
+#[case::let_keyword_name("let as = 1")]
+#[case::let_number_name("let 3 = 1")]
+#[case::let_in_group("(let x = 1)")]
+#[case::let_bound_to_let("let x = let y = 1")]
+#[case::array_pattern_without_comma("let [a ..rest] = x")]
+#[case::dict_pattern_without_comma("let {a b} = x")]
+#[case::parameter_after_variadic("def f(*a, b): a;")]
+#[case::two_variadic_parameters("def f(*a, *b): a;")]
+#[case::variadic_default("def f(*a = 1): a;")]
+#[case::string_called("\"s\"(1)")]
+#[case::qualified_without_name("math::")]
+#[case::match_guard_with_two_conditions("match (x): | 1 if (a, b): 2 end")]
+#[case::nodes_as_operand("nodes || 2")]
+#[case::attribute_after_chain_end(".h .value .level")]
+#[case::three_attributes(".value .value .value")]
+#[case::list_selector_with_tail(".[0] .code")]
+fn test_invalid_programs_are_errors(#[case] code: &str) {
     let (nodes, errors) = crate::parse_recovery(code);
 
     assert!(errors.has_errors(), "{code}");
@@ -8540,4 +8567,27 @@ fn test_binary_op_shape_with_trivia(#[case] code: &str, #[case] expected: &str) 
 fn test_binary_op_errors(#[case] code: &str) {
     let (nodes, errors) = crate::parse_recovery(code);
     assert!(errors.has_errors(), "expected an error for {code:?}, got {nodes:?}");
+}
+
+#[rstest]
+#[case::index("a[0] = 1")]
+#[case::nested_index("a[0][1] += 1")]
+#[case::get_call("get(a, 0) = 1")]
+#[case::nested_get_call("get(get(a, 0), 1) = 1")]
+#[case::attribute_pipe_assign("a.url |= 1")]
+fn test_valid_assignment_targets(#[case] code: &str) {
+    let (_, errors) = crate::parse_recovery(code);
+
+    assert!(!errors.has_errors(), "{code}: {errors}");
+}
+
+#[rstest]
+#[case::closing_bracket("s\"${x]}\"")]
+#[case::comma("s\"${x, y}\"")]
+#[case::pipeline("s\"${x | y}\"")]
+#[case::two_expressions("s\"${x; y}\"")]
+fn test_interpolation_holds_a_single_expression(#[case] code: &str) {
+    let (_, errors) = crate::parse_recovery(code);
+
+    assert!(errors.has_errors(), "{code}");
 }

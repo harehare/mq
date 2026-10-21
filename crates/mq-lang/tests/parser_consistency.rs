@@ -119,25 +119,70 @@ fn invalid_inputs_are_rejected_by_both() {
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
 }
 
+/// Damages `code` in one of several ways, chosen by `mode`, at the relative position `at`.
+fn mutate(code: &str, mode: u8, at: f64, symbol: usize) -> String {
+    const SYMBOLS: &[char] = &[
+        '(', ')', '[', ']', '{', '}', '|', ':', ';', ',', '.', '=', '!', '-', '+', '*', '/', '<', '>', '"', '\'', '$',
+        '#', '&', '?', ' ', '\n',
+    ];
+    let chars: Vec<char> = code.chars().collect();
+    let pos = ((chars.len() as f64) * at) as usize;
+    let pos = pos.min(chars.len().saturating_sub(1));
+    // The word (run of non-whitespace) around `pos`.
+    let word_start = chars[..pos]
+        .iter()
+        .rposition(|c| c.is_whitespace())
+        .map_or(0, |i| i + 1);
+    let word_end = chars[pos..]
+        .iter()
+        .position(|c| c.is_whitespace())
+        .map_or(chars.len(), |i| pos + i);
+
+    let collect = |parts: &[&[char]]| parts.iter().flat_map(|part| part.iter()).collect::<String>();
+    match mode % 5 {
+        0 => chars[..pos].iter().collect(),
+        1 => collect(&[&chars[..pos], &chars[(pos + 1).min(chars.len())..]]),
+        2 => collect(&[&chars[..word_start], &chars[word_end..]]),
+        3 => collect(&[
+            &chars[..word_end],
+            &[' '],
+            &chars[word_start..word_end],
+            &chars[word_end..],
+        ]),
+        _ => {
+            let symbol = [SYMBOLS[symbol % SYMBOLS.len()]];
+            collect(&[&chars[..pos], &symbol, &chars[(pos + 1).min(chars.len())..]])
+        }
+    }
+}
+
 proptest! {
-    /// Cutting or damaging a valid program must never make the CST reject something the AST accepts.
+    /// Damaging a valid program must leave the AST and CST parsers in agreement.
     #[test]
-    fn mutated_corpus_cst_accepts_whenever_ast_does(idx in 0usize..10_000, cut in 0.0f64..1.0, drop_at in 0.0f64..1.0, truncate in any::<bool>()) {
+    fn mutated_corpus_acceptance_agrees(
+        idx in 0usize..10_000,
+        first in (0.0f64..1.0, 0u8..5, 0usize..64),
+        second in proptest::option::of((0.0f64..1.0, 0u8..5, 0usize..64)),
+    ) {
         let corpus = small_corpus();
-        let code = &corpus[idx % corpus.len()];
-        let chars: Vec<char> = code.chars().collect();
-        let at = ((chars.len() as f64) * cut) as usize;
-        let mutated: String = if truncate {
-            chars[..at].iter().collect()
-        } else {
-            let hole = ((chars.len() as f64) * drop_at) as usize;
-            chars.iter().enumerate().filter(|(i, _)| *i != hole).map(|(_, c)| c).collect()
-        };
+        let mut mutated = mutate(&corpus[idx % corpus.len()], first.1, first.0, first.2);
+        if let Some((at, mode, symbol)) = second {
+            mutated = mutate(&mutated, mode, at, symbol);
+        }
 
         if ast_accepts(&mutated) {
             prop_assert!(cst_accepts(&mutated), "CST rejects AST-valid input:\n{mutated}");
+        } else if !references_env(&mutated) {
+            prop_assert!(!cst_accepts(&mutated), "CST accepts AST-invalid input:\n{mutated}");
         }
     }
+}
+
+/// Environment variables (`$NAME`) are resolved while the AST parser runs, which the CST parser does not do.
+fn references_env(code: &str) -> bool {
+    code.as_bytes()
+        .windows(2)
+        .any(|w| w[0] == b'$' && (w[1].is_ascii_alphanumeric() || w[1] == b'_'))
 }
 
 /// Per-definition snippets: whole files are too slow to re-parse thousands of times.

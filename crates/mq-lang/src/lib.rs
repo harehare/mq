@@ -619,7 +619,6 @@ Some text.
     #[case::div_assign("/=")]
     #[case::mod_assign("%=")]
     #[case::floor_div_assign("//=")]
-    #[case::pipe_assign("|=")]
     #[cfg(feature = "cst")]
     fn test_cst_assignment_has_lowest_precedence(#[case] op: &str) {
         let code = format!("x {op} a || b && c");
@@ -630,6 +629,19 @@ Some text.
             panic!("expected an assignment for {code:?}");
         };
         assert_eq!(cst_shape(lhs), "x");
+        assert_eq!(cst_shape(rhs), "(a || (b && c))");
+    }
+
+    #[test]
+    #[cfg(feature = "cst")]
+    fn test_cst_pipe_assignment_has_lowest_precedence() {
+        let code = "x.url |= a || b && c";
+        let (nodes, errors) = parse_recovery(code);
+        assert!(!errors.has_errors(), "CST errors for {code:?}");
+
+        let CstNodeKind::Assign { rhs, .. } = &nodes[0].kind else {
+            panic!("expected an assignment for {code:?}");
+        };
         assert_eq!(cst_shape(rhs), "(a || (b && c))");
     }
 }

@@ -7514,3 +7514,15 @@ fn test_consecutive_pipes_are_rejected(#[case] code: &str) {
         "expected an unexpected pipe error for {code:?}"
     );
 }
+
+#[rstest]
+#[case::closing_bracket("s\"${x]}\"")]
+#[case::comma("s\"${x, y}\"")]
+#[case::pipeline("s\"${x | y}\"")]
+#[case::two_expressions("s\"${x; y}\"")]
+fn test_interpolation_holds_a_single_expression(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}

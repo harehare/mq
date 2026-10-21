@@ -710,7 +710,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     /// Tokens that can start the operand of a prefix `!` or `-`.
-    fn is_prefix_operand_start(kind: &TokenKind) -> bool {
+    pub(crate) fn is_prefix_operand_start(kind: &TokenKind) -> bool {
         matches!(
             kind,
             TokenKind::BoolLiteral(_)
@@ -2430,6 +2430,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let mut parser = Parser::new(tokens.iter(), self.token_arena, token.module_id);
                             parser.depth = self.depth;
                             let expr_node = parser.parse_expr_from_tokens()?;
+                            // `${...}` holds a single expression, so nothing may follow it.
+                            if let Some(rest) = parser.tokens.peek()
+                                && rest.kind != TokenKind::Eof
+                            {
+                                return Err(SyntaxError::UnexpectedToken((**rest).clone()));
+                            }
 
                             parsed_segments.push(super::node::StringSegment::Expr(expr_node));
                         }

@@ -718,6 +718,15 @@ impl Formatter {
             n.token.as_ref().and_then(|t| mq_lang::Selector::try_from(&**t).ok())
         };
 
+        // `..h` and `.."key"` are written without a space.
+        if prev
+            .token
+            .as_ref()
+            .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::DoubleDot))
+        {
+            return false;
+        }
+
         match selector_of(current) {
             Some(selector) if selector.is_attribute_selector() => false,
             Some(mq_lang::Selector::Property(_)) => !matches!(selector_of(prev), Some(mq_lang::Selector::Property(_))),
@@ -1580,6 +1589,15 @@ impl Formatter {
                 _ => {
                     self.append_indent(indent_level);
                     self.append_display(token);
+
+                    if let mq_lang::CstNodeKind::Self_ { attr: Some(attr) } = &node.kind {
+                        // `. .level` keeps its space, since `..level` would be a different token.
+                        if matches!(&token.kind, mq_lang::TokenKind::Selector(s) if s == ".") {
+                            self.append_space();
+                        }
+                        // Format the attribute selector directly to avoid a newline from its leading trivia.
+                        self.format_selector(attr, 0);
+                    }
                 }
             }
         }
