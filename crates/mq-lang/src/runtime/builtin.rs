@@ -2883,7 +2883,7 @@ fn sub_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
         [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 - n2).into()),
             _ => Err(Error::InvalidTypes(
-                "Both operands could not be converted to numbers: {:?}, {:?}".to_string(),
+                ident.to_string(),
                 vec![std::mem::take(a), std::mem::take(b)],
             )),
         },
@@ -2905,7 +2905,7 @@ fn div_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 / n2).into()),
             (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
             _ => Err(Error::InvalidTypes(
-                "Both operands could not be converted to numbers: {:?}, {:?}".to_string(),
+                ident.to_string(),
                 vec![std::mem::take(a), std::mem::take(b)],
             )),
         },
@@ -2971,7 +2971,7 @@ fn mod_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
         [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 % n2).into()),
             _ => Err(Error::InvalidTypes(
-                "".to_string(),
+                ident.to_string(),
                 vec![std::mem::take(a), std::mem::take(b)],
             )),
         },

@@ -276,39 +276,29 @@ pub(super) fn to_string(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     }
 }
 
+fn parse_number(s: &str) -> Result<RuntimeValue, Error> {
+    s.parse::<f64>()
+        .map(|n| RuntimeValue::Number(n.into()))
+        .map_err(|e| Error::Runtime(format!("to_number: cannot convert {:?} to a number ({})", s, e)))
+}
+
 /// convert to number
 pub(super) fn to_number(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         node @ RuntimeValue::Markdown(_, _) => node
             .markdown_node()
-            .map(|md| {
-                md.to_string()
-                    .parse::<f64>()
-                    .map(|n| RuntimeValue::Number(n.into()))
-                    .map_err(|e| Error::Runtime(format!("{}", e)))
-            })
+            .map(|md| parse_number(&md.to_string()))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-        RuntimeValue::String(s) => s
-            .parse::<f64>()
-            .map(|n| RuntimeValue::Number(n.into()))
-            .map_err(|e| Error::Runtime(format!("{}", e))),
+        RuntimeValue::String(s) => parse_number(s),
         RuntimeValue::Array(array) => {
             let result_value: Result<Vec<RuntimeValue>, Error> = crate::Shared::unwrap_or_clone(std::mem::take(array))
                 .into_iter()
                 .map(|o| match o {
                     node @ RuntimeValue::Markdown(_, _) => node
                         .markdown_node()
-                        .map(|md| {
-                            md.to_string()
-                                .parse::<f64>()
-                                .map(|n| RuntimeValue::Number(n.into()))
-                                .map_err(|e| Error::Runtime(format!("{}", e)))
-                        })
+                        .map(|md| parse_number(&md.to_string()))
                         .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
-                    RuntimeValue::String(s) => s
-                        .parse::<f64>()
-                        .map(|n| RuntimeValue::Number(n.into()))
-                        .map_err(|e| Error::Runtime(format!("{}", e))),
+                    RuntimeValue::String(s) => parse_number(&s),
                     RuntimeValue::Boolean(b) => Ok(RuntimeValue::Number(if b { 1 } else { 0 }.into())),
                     n @ RuntimeValue::Number(_) => Ok(n),
                     _ => Ok(RuntimeValue::Number(0.into())),
@@ -374,7 +364,10 @@ pub(super) fn to_text(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 pub(super) fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
     match chrono::DateTime::parse_from_rfc3339(date_str) {
         Ok(datetime) => Ok(RuntimeValue::Number(datetime.timestamp().into())),
-        Err(e) => Err(Error::Runtime(format!("{}", e))),
+        Err(e) => Err(Error::Runtime(format!(
+            "from_date: cannot parse {:?} as an RFC 3339 date ({})",
+            date_str, e
+        ))),
     }
 }
 
