@@ -8146,6 +8146,18 @@ fn test_junk_is_kept_in_error_node(#[case] code: &str, #[case] valid_literals: u
 #[case::after_do("do 1 end 7")]
 #[case::after_import("import \"m\" def f(): 1;")]
 #[case::piped("1 | 7")]
+#[case::call_with_trailing_do_block("f(x) do 1 | 2 end")]
+#[case::call_in_branch_with_trailing_do_block("if (c): f(x) do 1 | 2 end")]
+#[case::call_in_let_with_trailing_do_block("let y = f(x) do 1 | 2 end")]
+#[case::recursive_name("..h")]
+#[case::recursive_name_attr("..h.level")]
+#[case::recursive_name_chain("..h .code")]
+#[case::recursive_name_piped("..h | ..code")]
+#[case::recursive_key("..\"key\"")]
+#[case::qualified_index("x::y[0]")]
+#[case::number_index("1[0]")]
+#[case::bool_index("true[0]")]
+#[case::none_index("None[0]")]
 #[case::index_attr("x[0].row")]
 #[case::while_pipeline_condition("while (a | b): 1;")]
 #[case::until_pipeline_condition("until (a | (b)): 1;")]
@@ -8164,6 +8176,7 @@ fn test_statements_need_no_separator(#[case] code: &str) {
 #[case::index("x[0] 7")]
 #[case::in_body("def f(): [1] 7;")]
 #[case::selector_chain(".blockquote .list code")]
+#[case::unknown_recursive_name("..foo")]
 fn test_adjacent_statements_without_pipe_are_errors(#[case] code: &str) {
     let (nodes, errors) = crate::parse_recovery(code);
 

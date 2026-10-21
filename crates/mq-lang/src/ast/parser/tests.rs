@@ -7428,6 +7428,7 @@ fn parse_program_source(code: &str) -> Result<Program, SyntaxError> {
 #[case::qualified("a::b 7")]
 #[case::as_binding("x as y 7")]
 #[case::selector_chain(".blockquote .list code")]
+#[case::recursive_name("..h code")]
 #[case::in_body("def f(): [1] 7;")]
 fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
     assert!(
@@ -7443,6 +7444,13 @@ fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
 #[case::after_do("do 1 end 7", 2)]
 #[case::after_import("import \"m\" def f(): 1;", 2)]
 #[case::self_selector_chain(". .li", 1)]
+#[case::call_with_trailing_do_block("f(x) do 1 | 2 end", 1)]
+#[case::recursive_name("..h", 1)]
+#[case::recursive_name_attr("..h.level", 1)]
+#[case::recursive_name_chain("..h .code", 1)]
+#[case::recursive_key("..\"key\"", 1)]
+#[case::qualified_index("x::y[0]", 1)]
+#[case::literal_index("1[0]", 1)]
 #[case::index_attr("x[0].row", 1)]
 #[case::index_attr_chain("x[0].row[1].column", 1)]
 fn test_statement_boundaries_that_remain_valid(#[case] code: &str, #[case] len: usize) {

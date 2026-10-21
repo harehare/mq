@@ -1296,10 +1296,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             ));
 
                             let token_id = self.alloc_token(ident_token);
-                            return Ok(Shared::new(Node {
+                            let qualified_node = Shared::new(Node {
                                 token_id,
                                 expr: Expr::QualifiedAccess(module_path, access_target),
-                            }));
+                            });
+                            // Check for bracket access after a qualified identifier (e.g., module::value[0])
+                            if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                                return self.parse_bracket_access(qualified_node, ident_token);
+                            }
+                            return Ok(qualified_node);
                         }
                     }
                 }
@@ -2863,10 +2868,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                 token_id: self.alloc_token(next),
                                 expr: Expr::Selector(Selector::Property(Ident::new(key.as_str()))),
                             });
-                            return Ok(Shared::new(Node {
+                            let base_node = Shared::new(Node {
                                 token_id: self.alloc_token(token),
                                 expr: Expr::Block(vec![recursive_node, prop_node]),
-                            }));
+                            });
+                            return self.parse_selector_tail(token, base_node);
                         }
                         // ..text, ..h, ..code, etc. → recursive descent + Markdown node-type selector
                         // Attribute selectors (.value, .url, .level, etc.) are excluded here;
@@ -2882,10 +2888,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                     expr: Expr::Selector(selector),
                                 });
 
-                                return Ok(Shared::new(Node {
+                                let base_node = Shared::new(Node {
                                     token_id: self.alloc_token(token),
                                     expr: Expr::Block(vec![recursive_node, sel_node]),
-                                }));
+                                });
+                                return self.parse_selector_tail(token, base_node);
                             }
                         }
                         _ => {}

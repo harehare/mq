@@ -233,6 +233,9 @@ impl<'a> Parser<'a> {
         let mut after_terminator = false;
         // Whether the statement just parsed needs a `|` before the next one.
         let mut needs_separator = false;
+        // The previous statement is the name of a recursive selector (`h` in `..h`).
+        let mut after_recursive_name = false;
+        let mut recursive_name_pending = false;
 
         while self.peek().is_some() {
             if !(after_terminator
@@ -243,6 +246,7 @@ impl<'a> Parser<'a> {
                 let start = self.pos;
                 let saved_trivia = leading_trivia.clone();
                 needs_separator = false;
+                after_recursive_name = std::mem::take(&mut recursive_name_pending);
                 match self.parse_expr(leading_trivia, root, in_loop) {
                     Ok(node) => {
                         needs_separator = !Self::closes_itself(&node);
@@ -357,9 +361,16 @@ impl<'a> Parser<'a> {
                 // Only constructs that close themselves may be followed by a statement without a `|`.
                 _ if Self::starts_expression(&token.kind, root, in_loop) => {
                     // A selector after an open selector chain continues it, even across lines.
-                    let selector_chain =
-                        token.is_selector() && nodes.last().is_some_and(|n| Self::continues_selector_chain(n));
-                    if needs_separator && !selector_chain {
+                    let selector_chain = token.is_selector()
+                        && (after_recursive_name || nodes.last().is_some_and(|n| Self::continues_selector_chain(n)));
+                    // `..h` and `.."key"` are one expression in the AST parser.
+                    let recursive_name = nodes.last().is_some_and(|n| Self::is_recursive_dots(n))
+                        && Self::is_recursive_name(&token.kind);
+                    recursive_name_pending = recursive_name;
+                    // `f(args) do ... end` passes the block as the last argument.
+                    let trailing_do_block =
+                        matches!(token.kind, TokenKind::Do) && nodes.last().is_some_and(|n| Self::ends_with_call(n));
+                    if needs_separator && !selector_chain && !recursive_name && !trailing_do_block {
                         self.errors.report(ParseError::UnexpectedToken(Shared::clone(&token)));
                     }
                 }
@@ -542,12 +553,13 @@ impl<'a> Parser<'a> {
             TokenKind::Self_ => self.parse_self(leading_trivia),
             TokenKind::Let | TokenKind::Var => self.parse_var_decl(leading_trivia, in_loop),
             TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(leading_trivia),
-            TokenKind::StringLiteral(_) => {
+            TokenKind::StringLiteral(_)
+            | TokenKind::BytesLiteral(_)
+            | TokenKind::NumberLiteral(_)
+            | TokenKind::BoolLiteral(_)
+            | TokenKind::None => {
                 let literal = self.parse_node(NodeKind::Literal, leading_trivia)?;
                 self.parse_postfix_chain(literal)
-            }
-            TokenKind::BytesLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
-                self.parse_node(NodeKind::Literal, leading_trivia)
             }
             TokenKind::InterpolatedString(_) => {
                 let node = self.parse_interpolated_string(leading_trivia)?;
@@ -2484,6 +2496,50 @@ impl<'a> Parser<'a> {
                     | NodeKind::Import { .. }
                     | NodeKind::Include { .. }
             ),
+        }
+    }
+
+    /// Whether the last expression inside `node` is a call, which a following `do` block extends.
+    fn ends_with_call(node: &Node) -> bool {
+        match &node.kind {
+            NodeKind::Call { .. } => true,
+            NodeKind::If {
+                then_branch,
+                elifs,
+                else_branch,
+                ..
+            } => else_branch
+                .as_ref()
+                .or(elifs.last())
+                .map_or_else(|| Self::ends_with_call(then_branch), |last| Self::ends_with_call(last)),
+            NodeKind::Unless { then_branch, .. }
+            | NodeKind::Elif { then_branch, .. }
+            | NodeKind::Else { then_branch, .. } => Self::ends_with_call(then_branch),
+            NodeKind::Let { rhs, .. }
+            | NodeKind::Var { rhs, .. }
+            | NodeKind::Assign { rhs, .. }
+            | NodeKind::BinaryOp { rhs, .. } => Self::ends_with_call(rhs),
+            NodeKind::UnaryOp { operand, .. } => Self::ends_with_call(operand),
+            _ => false,
+        }
+    }
+
+    /// Whether `node` is a bare `..`.
+    fn is_recursive_dots(node: &Node) -> bool {
+        matches!(node.kind, NodeKind::Selector { .. })
+            && node
+                .token
+                .as_ref()
+                .is_some_and(|t| matches!(t.kind, TokenKind::DoubleDot))
+    }
+
+    /// Whether a token can name the node type or key that follows `..`.
+    fn is_recursive_name(kind: &TokenKind) -> bool {
+        match kind {
+            TokenKind::StringLiteral(_) => true,
+            TokenKind::Ident(name) => Selector::from_selector_str(&format!(".{name}"))
+                .is_some_and(|selector| !selector.is_attribute_selector()),
+            _ => false,
         }
     }
 
