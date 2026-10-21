@@ -446,7 +446,8 @@ pub enum LinkUrlStyle {
 /// Flags that shape the compiled program or its permissions, shared by queries and `mq compile`.
 #[derive(Clone, Debug, clap::Args, Default, PartialEq)]
 struct ProgramArgs {
-    /// Aggregate all input files/content into a single array
+    /// Collect each input's nodes into a single array before the query runs.
+    /// Combine with `--eval-all` to get one array across all files
     #[arg(short = 'A', long, default_value_t = false)]
     aggregate: bool,
 
@@ -638,8 +639,8 @@ struct InputArgs {
     #[arg(long, default_value_t = false)]
     watch: bool,
 
-    /// Evaluate the query once against all input files combined (like yq's `eval-all`),
-    /// instead of once per file. Enables cross-file aggregation in a single query.
+    /// Merge all input files into one input and run the query once (like yq's `eval-all`),
+    /// instead of once per file
     #[arg(
         long = "eval-all",
         default_value_t = false,
