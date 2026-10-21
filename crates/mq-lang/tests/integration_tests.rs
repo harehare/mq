@@ -3312,7 +3312,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::glob_match_recursive(r#"glob_match("docs/**/*.md", "docs/sub/a.md")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 // add: various type combinations
 #[case::add_string_number(r#"add("hello", 42)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello42".to_string()))].into()))]
-#[case::add_number_string(r#"add(42, "!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("!42".to_string()))].into()))]
+#[case::add_number_string(r#"add(42, "!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("42!".to_string()))].into()))]
 #[case::add_array_value("add([1, 2], 3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())]))].into()))]
 #[case::add_value_array("add(0, [1, 2])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(0.into()), RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
 #[case::add_none_number("add(None, 5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
