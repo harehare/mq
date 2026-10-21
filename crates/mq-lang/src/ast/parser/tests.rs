@@ -7409,3 +7409,40 @@ fn test_pipe_assign_is_not_an_infix_operator(#[case] code: &str) {
         "expected `|=` to be rejected as an unexpected token for {code:?}"
     );
 }
+
+fn parse_program_source(code: &str) -> Result<Program, SyntaxError> {
+    let tokens = Lexer::new(lexer::Options::default())
+        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+        .expect("code should tokenize");
+    let mut arena = Arena::new(16);
+    Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse()
+}
+
+#[rstest]
+#[case::literal("1 7")]
+#[case::array("[1] 7")]
+#[case::dict("{\"a\": 1} 7")]
+#[case::paren("(1) 7")]
+#[case::index("x[0] 7")]
+#[case::self_("self 7")]
+#[case::qualified("a::b 7")]
+#[case::as_binding("x as y 7")]
+#[case::in_body("def f(): [1] 7;")]
+fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}
+
+#[rstest]
+#[case::piped("1 | 7", 2)]
+#[case::piped_array("[1] | 7", 2)]
+#[case::after_def("def f(): 1; f()", 2)]
+#[case::after_do("do 1 end 7", 2)]
+#[case::after_import("import \"m\" def f(): 1;", 2)]
+#[case::index_attr("x[0].row", 1)]
+#[case::index_attr_chain("x[0].row[1].column", 1)]
+fn test_statement_boundaries_that_remain_valid(#[case] code: &str, #[case] len: usize) {
+    assert_eq!(parse_program_source(code).map(|p| p.len()), Ok(len), "{code:?}");
+}

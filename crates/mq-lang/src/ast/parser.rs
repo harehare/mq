@@ -180,6 +180,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 TokenKind::Nodes if root => {
                     let ast = self.parse_all_nodes(token)?;
+                    self.expect_statement_end(&ast)?;
                     asts.push(ast);
                 }
                 TokenKind::Nodes => {
@@ -190,6 +191,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 _ => {
                     let ast = self.parse_expr(token)?;
+                    self.expect_statement_end(&ast)?;
                     asts.push(ast);
                 }
             }
@@ -200,6 +202,46 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         Ok(asts)
+    }
+
+    /// Rejects a statement directly followed by another one. Only definitions, blocks that consume their own
+    /// closing `;` or `end`, and `import`/`include` may be followed by a statement without a `|`.
+    fn expect_statement_end(&mut self, ast: &Node) -> Result<(), SyntaxError> {
+        if matches!(
+            ast.expr,
+            Expr::Def(..)
+                | Expr::Fn(..)
+                | Expr::Block(..)
+                | Expr::Foreach(..)
+                | Expr::While(..)
+                | Expr::Until(..)
+                | Expr::Loop(..)
+                | Expr::Match(..)
+                | Expr::Module(..)
+                | Expr::Import(..)
+                | Expr::Include(..)
+        ) {
+            return Ok(());
+        }
+
+        match self.tokens.peek() {
+            Some(token)
+                if !matches!(
+                    token.kind,
+                    TokenKind::Pipe
+                        | TokenKind::Eof
+                        | TokenKind::SemiColon
+                        | TokenKind::End
+                        | TokenKind::Comma
+                        | TokenKind::RParen
+                        | TokenKind::RBracket
+                        | TokenKind::RBrace
+                ) =>
+            {
+                Err(SyntaxError::UnexpectedToken((**token).clone()))
+            }
+            _ => Ok(()),
+        }
     }
 
     /// True at a `,` or closing bracket, which no statement can contain. The enclosing call, array
@@ -1572,6 +1614,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 });
             } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 current = self.parse_bracket_access(current, original_token)?;
+            } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Selector(s)) if s.len() > 1) {
+                current = self.parse_attribute_access(current)?;
             } else {
                 break;
             }

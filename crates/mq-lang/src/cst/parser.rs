@@ -231,6 +231,8 @@ impl<'a> Parser<'a> {
 
         // Set after a root-level `;`/`end` so a following one is handled as a terminator, not a statement.
         let mut after_terminator = false;
+        // Whether the statement just parsed needs a `|` before the next one.
+        let mut needs_separator = false;
 
         while self.peek().is_some() {
             if !(after_terminator
@@ -240,8 +242,12 @@ impl<'a> Parser<'a> {
             {
                 let start = self.pos;
                 let saved_trivia = leading_trivia.clone();
+                needs_separator = false;
                 match self.parse_expr(leading_trivia, root, in_loop) {
-                    Ok(node) => nodes.push(node),
+                    Ok(node) => {
+                        needs_separator = !Self::closes_itself(&node);
+                        nodes.push(node);
+                    }
                     Err(e) => {
                         self.errors.report(e);
                         nodes.extend(self.recover_error(start, saved_trivia, &|kind, has_children| {
@@ -348,8 +354,15 @@ impl<'a> Parser<'a> {
                     self.pos -= leading_trivia.len();
                     break;
                 }
-                // Statements need no separator (as in the AST parser): parse the next one.
-                _ if Self::starts_expression(&token.kind, root, in_loop) => {}
+                // Only constructs that close themselves may be followed by a statement without a `|`.
+                _ if Self::starts_expression(&token.kind, root, in_loop) => {
+                    // A selector after an open selector chain continues it, even across lines.
+                    let selector_chain =
+                        token.is_selector() && nodes.last().is_some_and(|n| Self::continues_selector_chain(n));
+                    if needs_separator && !selector_chain {
+                        self.errors.report(ParseError::UnexpectedToken(Shared::clone(&token)));
+                    }
+                }
                 _ if root => {
                     self.errors.report(ParseError::UnexpectedToken(Shared::clone(&token)));
                     let start = self.pos;
@@ -794,6 +807,11 @@ impl<'a> Parser<'a> {
         ));
 
         node.kind = NodeKind::Call { args: children.into() };
+
+        // Attribute access after indexing (`arr[0].attr`), possibly followed by more postfix operations.
+        if let Some(with_attr) = self.try_parse_attribute_access(&mut node) {
+            return self.parse_postfix_chain(with_attr);
+        }
 
         // Check for additional bracket access (nested indexing)
         let final_node = if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
@@ -2447,7 +2465,47 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Whether a token can begin an expression, mirroring `parse_primary_expr`.
+    /// Whether a construct ends with its own `;`/`end` (or is a directive), so a statement may
+    /// follow it without a `|`.
+    fn closes_itself(node: &Node) -> bool {
+        match &node.kind {
+            // Selector chains such as `.a.b` are also `Block`s, so only a `do` block counts.
+            NodeKind::Block { .. } => node.token.as_ref().is_some_and(|t| matches!(t.kind, TokenKind::Do)),
+            kind => matches!(
+                kind,
+                NodeKind::Def { .. }
+                    | NodeKind::Fn { .. }
+                    | NodeKind::Foreach { .. }
+                    | NodeKind::While { .. }
+                    | NodeKind::Until { .. }
+                    | NodeKind::Loop { .. }
+                    | NodeKind::Match { .. }
+                    | NodeKind::Module { .. }
+                    | NodeKind::Import { .. }
+                    | NodeKind::Include { .. }
+            ),
+        }
+    }
+
+    /// Whether `node` is a selector chain that a following selector extends. A trailing attribute
+    /// selector (`.h.level`) ends the chain.
+    fn continues_selector_chain(node: &Node) -> bool {
+        let is_attribute = |n: &Shared<Node>| {
+            n.token
+                .as_ref()
+                .is_some_and(|t| t.is_selector() && Selector::try_from(&**t).is_ok_and(|s| s.is_attribute_selector()))
+        };
+
+        match &node.kind {
+            NodeKind::Selector { items } => !items.last().is_some_and(is_attribute),
+            NodeKind::SelectorCall { args } => !args.last().is_some_and(is_attribute),
+            NodeKind::Block { program } if !node.token.as_ref().is_some_and(|t| matches!(t.kind, TokenKind::Do)) => {
+                program.last().is_some_and(|last| Self::continues_selector_chain(last))
+            }
+            _ => false,
+        }
+    }
+
     fn starts_expression(kind: &TokenKind, root: bool, in_loop: bool) -> bool {
         match kind {
             TokenKind::Nodes => root,

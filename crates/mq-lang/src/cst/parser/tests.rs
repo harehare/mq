@@ -5002,6 +5002,7 @@ Shared::new(Node {
             Shared::new(token(TokenKind::Ident("x".into()))),
             Shared::new(token(TokenKind::Equal)),
             Shared::new(token(TokenKind::NumberLiteral(1.into()))),
+            Shared::new(token(TokenKind::Pipe)),
             Shared::new(token(TokenKind::Def)),
             Shared::new(token(TokenKind::Ident("foo".into()))),
             Shared::new(token(TokenKind::LParen)),
@@ -5044,6 +5045,12 @@ Shared::new(Node {
                                     trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Let))),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
+                        }),
+Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::new(token(TokenKind::Pipe))),
                             leading_trivia: TriviaList::new(),
                             trailing_trivia: TriviaList::new(),
                         }),
@@ -5513,67 +5520,6 @@ Shared::new(Node {
                     leading_trivia: TriviaList::new(),
                     trailing_trivia: TriviaList::new(),
                 }),
-            ],
-            ErrorReporter::default()
-        )
-    )]
-#[case::let_followed_by_let_without_pipe(
-        vec![
-            Shared::new(token(TokenKind::Let)),
-            Shared::new(token(TokenKind::Ident("x".into()))),
-            Shared::new(token(TokenKind::Equal)),
-            Shared::new(token(TokenKind::NumberLiteral(1.into()))),
-            Shared::new(token(TokenKind::Let)),
-            Shared::new(token(TokenKind::Ident("y".into()))),
-            Shared::new(token(TokenKind::Equal)),
-            Shared::new(token(TokenKind::NumberLiteral(2.into()))),
-            Shared::new(token(TokenKind::Eof)),
-        ],
-        (
-            vec![
-                Shared::new(Node {
-                    kind: NodeKind::Let { lhs: Shared::new(Node {
-                            kind: NodeKind::Ident { attr: None },
-                            token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }), eq_token: Shared::new(Node {
-                            kind: NodeKind::Token,
-                            token: Some(Shared::new(token(TokenKind::Equal))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }), rhs: Shared::new(Node {
-                            kind: NodeKind::Literal,
-                            token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }) },
-                    token: Some(Shared::new(token(TokenKind::Let))),
-                    leading_trivia: TriviaList::new(),
-                    trailing_trivia: TriviaList::new(),
-                }),
-                Shared::new(Node {
-                    kind: NodeKind::Let { lhs: Shared::new(Node {
-                            kind: NodeKind::Ident { attr: None },
-                            token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }), eq_token: Shared::new(Node {
-                            kind: NodeKind::Token,
-                            token: Some(Shared::new(token(TokenKind::Equal))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }), rhs: Shared::new(Node {
-                            kind: NodeKind::Literal,
-                            token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                            leading_trivia: TriviaList::new(),
-                            trailing_trivia: TriviaList::new(),
-                        }) },
-                    token: Some(Shared::new(token(TokenKind::Let))),
-                    leading_trivia: TriviaList::new(),
-                    trailing_trivia: TriviaList::new(),
-                }),
-                eof_node(),
             ],
             ErrorReporter::default()
         )
@@ -8197,11 +8143,27 @@ fn test_junk_is_kept_in_error_node(#[case] code: &str, #[case] valid_literals: u
 
 #[rstest]
 #[case::after_def("def f(): 1; let y = f()")]
-#[case::let_after_let("let x = 1 let y = 2")]
+#[case::after_do("do 1 end 7")]
+#[case::after_import("import \"m\" def f(): 1;")]
+#[case::piped("1 | 7")]
+#[case::index_attr("x[0].row")]
 fn test_statements_need_no_separator(#[case] code: &str) {
     let (_, errors) = crate::parse_recovery(code);
 
     assert!(!errors.has_errors(), "{code}: {errors}");
+}
+
+#[rstest]
+#[case::literal("1 7")]
+#[case::let_after_let("let x = 1 let y = 2")]
+#[case::array("[1] 7")]
+#[case::index("x[0] 7")]
+#[case::in_body("def f(): [1] 7;")]
+fn test_adjacent_statements_without_pipe_are_errors(#[case] code: &str) {
+    let (nodes, errors) = crate::parse_recovery(code);
+
+    assert!(errors.has_errors(), "{code}");
+    assert!(!nodes.is_empty(), "{code}");
 }
 
 proptest::proptest! {

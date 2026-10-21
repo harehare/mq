@@ -1421,24 +1421,24 @@ def b(): test;"#,
     r#"def z(): test;
 | let x = 1
 | nodes
-def a(): test;"#,
+| def a(): test;"#,
     "let x = 1\n|\ndef a(): test;\ndef z(): test;\n| nodes\n"
 )]
 #[case::sort_with_piped_calls(
     r#"def z(): test;
 | let x = 1
 | add() | mul() | sub()
-def a(): test;
+| def a(): test;
 | let y = 2"#,
     "let x = 1\n| let y = 2\n|\ndef a(): test;\ndef z(): test;\n| add()\n| mul()\n| sub()\n"
 )]
 #[case::sort_all_types(
     r#"add() | sub()
-def func_b(): test;
+| def func_b(): test;
 | let var_z = 1
 | import "z.mq"
 | let var_a = 2
-def func_a(): test;
+| def func_a(): test;
 | mul() | div()
 | import "a.mq""#,
     "import \"a.mq\"\n| import \"z.mq\"\n| let var_a = 2\n| let var_z = 1\n|\ndef func_a(): test;\ndef func_b(): test;\n| add()\n| sub()\n| mul()\n| div()\n"
