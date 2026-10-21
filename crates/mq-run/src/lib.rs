@@ -16,14 +16,24 @@
 //!
 //! # Usage
 //!
-//! The CLI is typically used through the `mq` binary, but can be embedded in other applications:
+//! The CLI is typically used through the `mq` binary, but can be embedded in other applications.
+//! External subcommands (`mq-NAME`) are dispatched by [`Cli::run_external_subcommand`] on the raw
+//! arguments before parsing; skip that call if the embedding application does not need them.
 //!
 //! ```rust,no_run
 //! use mq_run::Cli;
 //! use clap::Parser;
 //!
-//! let cli = Cli::parse();
-//! cli.run().expect("CLI execution failed");
+//! fn main() -> std::process::ExitCode {
+//!     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+//!     if let Some(code) = Cli::run_external_subcommand(&args) {
+//!         return code;
+//!     }
+//!
+//!     let cli = Cli::parse_from(args);
+//!     cli.run().expect("CLI execution failed");
+//!     std::process::ExitCode::SUCCESS
+//! }
 //! ```
 //!
 //! # Command-line Examples
