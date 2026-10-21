@@ -9,11 +9,11 @@ fn main() -> std::process::ExitCode {
     match cli.run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
-            if let Some(code) = mq_run::Cli::halt_exit_code(&err) {
-                std::process::exit(code);
+            let code = cli.error_exit_code(&err);
+            if mq_run::Cli::halt_exit_code(&err).is_none() {
+                cli.report_error(&err);
             }
-            cli.report_error(&err);
-            std::process::ExitCode::FAILURE
+            std::process::exit(code)
         }
     }
 }

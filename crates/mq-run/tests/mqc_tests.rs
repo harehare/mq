@@ -274,7 +274,7 @@ fn test_run_rejects_oversized_program_before_reading_it() {
 fn test_run_reports_missing_program() {
     let dir = TempDir::new().unwrap();
     let error = stderr(mq(dir.path()).args(["missing.mqc"]).write_stdin("# a\n").assert());
-    assert!(error.contains("Failed to read missing.mqc"), "{error}");
+    assert!(error.contains("failed to read `missing.mqc`"), "{error}");
 }
 
 #[test]
