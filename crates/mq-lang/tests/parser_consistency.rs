@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use mq_lang::{Arena, Shared, SharedCell};
 use proptest::prelude::*;
+use proptest::test_runner::RngSeed;
 
 fn ast_accepts(code: &str) -> bool {
     mq_lang::parse(code, Shared::new(SharedCell::new(Arena::new(1024)))).is_ok()
@@ -120,6 +121,14 @@ fn invalid_inputs_are_rejected_by_both() {
 }
 
 proptest! {
+    // The seed is fixed so CI is deterministic. Change it to explore other mutations.
+    #![proptest_config(ProptestConfig {
+        cases: 256,
+        rng_seed: RngSeed::Fixed(0x6d71),
+        failure_persistence: None,
+        ..ProptestConfig::default()
+    })]
+
     /// Cutting or damaging a valid program must never make the CST reject something the AST accepts.
     #[test]
     fn mutated_corpus_cst_accepts_whenever_ast_does(idx in 0usize..10_000, cut in 0.0f64..1.0, drop_at in 0.0f64..1.0, truncate in any::<bool>()) {

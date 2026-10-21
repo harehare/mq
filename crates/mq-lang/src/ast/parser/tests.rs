@@ -7446,3 +7446,61 @@ fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
 fn test_statement_boundaries_that_remain_valid(#[case] code: &str, #[case] len: usize) {
     assert_eq!(parse_program_source(code).map(|p| p.len()), Ok(len), "{code:?}");
 }
+
+#[rstest]
+#[case::symbol("[1 :b]")]
+#[case::after_ident("[x :b]")]
+#[case::after_dict("[{\"a\": 1} :b]")]
+fn test_array_elements_need_a_comma(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::ExpectedClosingBracket(..))),
+        "expected a missing delimiter error for {code:?}"
+    );
+}
+
+#[rstest]
+#[case::leading("[, 1]")]
+#[case::doubled("[1,, 2]")]
+#[case::only_comma("[,]")]
+fn test_array_rejects_misplaced_commas(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}
+
+#[rstest]
+#[case::trailing("[1, 2,]", 1)]
+#[case::empty("[]", 1)]
+fn test_array_comma_forms_that_remain_valid(#[case] code: &str, #[case] len: usize) {
+    assert_eq!(parse_program_source(code).map(|p| p.len()), Ok(len), "{code:?}");
+}
+
+#[rstest]
+#[case::simple("match (x): | 2 \"two\" end")]
+#[case::with_guard("match (x): | 2 if (true) \"two\" end")]
+#[case::second_arm("match (x): | 1: \"one\" | 2 \"two\" end")]
+fn test_match_arm_requires_a_colon(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}
+
+#[test]
+fn test_match_arm_body_may_be_a_do_block() {
+    assert_eq!(
+        parse_program_source("match (x): | 1: do \"one\" end | _: 2 end").map(|p| p.len()),
+        Ok(1)
+    );
+}
+
+#[rstest]
+#[case::root("1 | | 2")]
+#[case::in_body("def f(): 1 | | 2;")]
+fn test_consecutive_pipes_are_rejected(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::Pipe),
+        "expected an unexpected pipe error for {code:?}"
+    );
+}

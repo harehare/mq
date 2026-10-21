@@ -2466,7 +2466,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Whether a construct ends with its own `;`/`end` (or is a directive), so a statement may
-    /// follow it without a `|`.
+    /// follow it without a `|`. Keep in sync with `expect_statement_end` in the AST parser.
     fn closes_itself(node: &Node) -> bool {
         match &node.kind {
             // Selector chains such as `.a.b` are also `Block`s, so only a `do` block counts.

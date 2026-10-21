@@ -153,6 +153,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     Some(TokenKind::SemiColon | TokenKind::End) => {
                         return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
+                    Some(TokenKind::Pipe) => {
+                        return Err(SyntaxError::UnexpectedToken((**self.tokens.peek().unwrap()).clone()));
+                    }
                     Some(TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace) if !root => {
                         return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
@@ -206,6 +209,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     /// Rejects a statement directly followed by another one. Only definitions, blocks that consume their own
     /// closing `;` or `end`, and `import`/`include` may be followed by a statement without a `|`.
+    /// Keep in sync with `closes_itself` in the CST parser.
     fn expect_statement_end(&mut self, ast: &Node) -> Result<(), SyntaxError> {
         if matches!(
             ast.expr,
@@ -1048,12 +1052,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    /// Requires `,` or `]` after an array element so `[1 :b]` is not read as two elements.
+    fn expect_array_element_end(&mut self, opening: &Token) -> Result<(), SyntaxError> {
+        match self.tokens.peek() {
+            Some(token) if !matches!(token.kind, TokenKind::Comma | TokenKind::RBracket | TokenKind::Eof) => Err(
+                SyntaxError::ExpectedClosingBracket((**token).clone(), Some(Box::new(opening.clone()))),
+            ),
+            _ => Ok(()),
+        }
+    }
+
     #[inline(never)]
     fn parse_array(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let opening = token.clone();
         let token_id = self.alloc_token(token);
         let mut elements: SmallVec<[Shared<Node>; 4]> = SmallVec::new();
         let mut closed = false;
+        let mut after_element = false;
 
         while let Some(elem_token) = self.tokens.next() {
             match &elem_token.kind {
@@ -1067,13 +1082,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         Some(Box::new(opening)),
                     ));
                 }
-                TokenKind::Comma => continue,
+                TokenKind::Comma if after_element => after_element = false,
+                TokenKind::Comma => return Err(SyntaxError::UnexpectedToken(elem_token.clone())),
                 TokenKind::DotDotDot => {
                     elements.push(self.parse_spread_element(elem_token)?);
+                    self.expect_array_element_end(&opening)?;
+                    after_element = true;
                 }
                 _ => {
                     let expr = self.parse_expr(elem_token)?;
                     elements.push(expr);
+                    self.expect_array_element_end(&opening)?;
+                    after_element = true;
                 }
             }
         }
@@ -1109,6 +1129,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.tokens.peek().as_ref().map(|t| &t.kind).is_some_and(expected)
     }
 
+    /// Tokens that may follow a primary expression anywhere, including call arguments and array
+    /// elements where `expect_statement_end` does not apply.
     fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
         matches!(
             token_kind,
@@ -1981,7 +2003,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 None
             };
 
-            self.consume_colon();
+            self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
 
             // Parse body expression
             let body = self.parse_next_expr(token_id)?;
