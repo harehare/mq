@@ -88,8 +88,8 @@
         "title": "mq: Install Servers"
       },
       {
-        "command": "mq.startLSPServer",
-        "title": "mq: Start LSP Server"
+        "command": "mq.restartLSPServer",
+        "title": "mq: Restart Language Server"
       },
       {
         "command": "mq.runSelectedText",

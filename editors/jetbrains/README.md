@@ -45,7 +45,7 @@ All actions live under the **Tools > mq** menu:
 | `Execute mq File`      | Run a chosen `.mq` file's content against the active editor    |
 | `Debug Current File`   | Debug the active `.mq` file with `mq-dbg`                      |
 | `Install Servers`      | Download `mq-lsp` / `mq-dbg` from GitHub Releases               |
-| `Start/Stop/Restart LSP Server` | Control the `mq-lsp` language server instance          |
+| `Stop/Restart LSP Server` | Control the `mq-lsp` language server instance          |
 
 ## Configuration
 

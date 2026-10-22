@@ -8,7 +8,6 @@ const EXTENSION_ID = "harehare.vscode-mq";
 // only triggered from the status bar item or another command).
 const INTERNAL_ONLY_COMMANDS = [
   "mq.stopLSPServer",
-  "mq.restartLSPServer",
   "mq.showLspStatus",
   "mq.showLSPOutput",
 ];

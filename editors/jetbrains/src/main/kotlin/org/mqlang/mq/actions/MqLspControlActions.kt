@@ -11,15 +11,6 @@ import org.mqlang.mq.install.MqBinaryLocator
 
 private const val MQ_SERVER_ID = "mq"
 
-/** `mq: Start LSP Server` */
-class MqStartLspServerAction : AnAction() {
-    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-    override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project ?: return
-        LanguageServerManager.getInstance(project).start(MQ_SERVER_ID)
-    }
-}
-
 /** `mq: Stop LSP Server` */
 class MqStopLspServerAction : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT

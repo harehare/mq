@@ -74,10 +74,6 @@
                     class="org.mqlang.mq.actions.MqInstallServersAction"
                     text="Install Servers"
                     description="Download mq-lsp and mq-dbg from GitHub Releases"/>
-            <action id="org.mqlang.mq.StartLspServer"
-                    class="org.mqlang.mq.actions.MqStartLspServerAction"
-                    text="Start LSP Server"
-                    description="Start the mq-lsp language server"/>
             <action id="org.mqlang.mq.StopLspServer"
                     class="org.mqlang.mq.actions.MqStopLspServerAction"
                     text="Stop LSP Server"
