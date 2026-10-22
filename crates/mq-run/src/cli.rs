@@ -1824,7 +1824,7 @@ impl Cli {
 
         match &self.commands {
             Some(Commands::Repl { files }) => return self.run_repl(files.as_deref()),
-            None if self.query.is_none() => return self.run_repl(None),
+            None if self.query.is_none() && io::stdin().is_terminal() => return self.run_repl(None),
             _ => {}
         }
 
@@ -2115,7 +2115,8 @@ impl Cli {
                     .wrap_err_with(|| ReadFailure(path.clone()))?
             }
             Some(q) => q.clone(),
-            None => return Err(miette!("Query is required")),
+            // Without a query, only a piped stdin reaches here (a terminal starts the REPL).
+            None => ".".to_string(),
         };
 
         let aggregate = self.input.program.aggregate.then_some("nodes");

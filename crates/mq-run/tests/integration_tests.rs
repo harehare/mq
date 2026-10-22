@@ -931,6 +931,13 @@ fn test_repl_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::E
 }
 
 #[test]
+fn test_piped_stdin_without_query_runs_identity_instead_of_repl() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.write_stdin("# Title\n").assert().success().stdout("# Title\n");
+    Ok(())
+}
+
+#[test]
 fn test_repl_with_file_arg_loads_content() -> Result<(), Box<dyn std::error::Error>> {
     let (_, temp_file_path) = create_file("test_repl_file_arg.md", "# Repl File Heading");
     let temp_file_path_clone = temp_file_path.clone();
