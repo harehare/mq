@@ -2613,8 +2613,8 @@ fn test_collect_mq_commands_ignores_non_mq_prefix() {
 #[case("yaml", InputFormat::Yaml)]
 #[case("yml", InputFormat::Yaml)]
 #[case("xml", InputFormat::Xml)]
-#[case("jsonl", InputFormat::Text)]
-#[case("ndjson", InputFormat::Text)]
+#[case("jsonl", InputFormat::Jsonl)]
+#[case("ndjson", InputFormat::Jsonl)]
 #[case("cbor", InputFormat::Cbor)]
 #[case("unknown", InputFormat::Markdown)] // default fallback
 fn test_from_extension(#[case] ext: &str, #[case] expected: InputFormat) {
@@ -2638,6 +2638,8 @@ fn test_input_format_from_path(#[case] filename: &str, #[case] expected: InputFo
 #[case("txt", OutputFormat::Raw)]
 #[case("log", OutputFormat::Raw)]
 #[case("json", OutputFormat::Json)]
+#[case("jsonl", OutputFormat::Jsonl)]
+#[case("ndjson", OutputFormat::Jsonl)]
 #[case("csv", OutputFormat::Csv)]
 #[case("toml", OutputFormat::Toml)]
 #[case("toon", OutputFormat::Toon)]
@@ -2675,6 +2677,8 @@ fn test_output_format_from_path(#[case] filename: &str, #[case] expected: Output
 #[case("file.cbor", Some(r#"import "cbor" | cbor::cbor_parse()"#))]
 #[case("file.csv.gz", Some(r#"import "csv" | csv::csv_parse(true)"#))]
 #[case("file.json.gz", Some(r#"import "json" | json::json_parse()"#))]
+#[case("file.jsonl", Some(r#"import "json" | json::json_parse()"#))]
+#[case("file.ndjson", Some(r#"import "json" | json::json_parse()"#))]
 #[case("file.md", None)]
 #[case("file.txt", None)]
 fn test_auto_query_prefix(#[case] filename: &str, #[case] expected: Option<&str>) {

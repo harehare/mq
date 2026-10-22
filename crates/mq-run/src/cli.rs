@@ -186,6 +186,7 @@ enum InputFormat {
     Csv,
     Gron,
     Json,
+    Jsonl,
     Psv,
     Toml,
     Toon,
@@ -201,7 +202,7 @@ impl InputFormat {
             "mdx" => Self::Mdx,
             "html" | "htm" => Self::Html,
             "txt" | "log" => Self::Raw,
-            "jsonl" | "ndjson" => Self::Text,
+            "jsonl" | "ndjson" => Self::Jsonl,
             "cbor" => Self::Cbor,
             "csv" => Self::Csv,
             "gron" => Self::Gron,
@@ -245,7 +246,7 @@ impl InputFormat {
             Self::Cbor => Some(r#"import "cbor" | cbor::cbor_parse()"#),
             Self::Csv => Some(r#"import "csv" | csv::csv_parse(true)"#),
             Self::Gron => Some(r#"import "gron" | gron::gron_parse()"#),
-            Self::Json => Some(r#"import "json" | json::json_parse()"#),
+            Self::Json | Self::Jsonl => Some(r#"import "json" | json::json_parse()"#),
             Self::Psv => Some(r#"import "csv" | csv::psv_parse(true)"#),
             Self::Toml => Some(r#"import "toml" | toml::toml_parse()"#),
             Self::Toon => Some(r#"import "toon" | toon::toon_parse()"#),
@@ -330,6 +331,7 @@ enum OutputFormat {
     Gron,
     Raw,
     Csv,
+    Jsonl,
     Toml,
     Toon,
     Xml,
@@ -344,6 +346,7 @@ impl OutputFormat {
             "html" | "htm" => Self::Html,
             "txt" | "log" => Self::Raw,
             "json" => Self::Json,
+            "jsonl" | "ndjson" => Self::Jsonl,
             "csv" => Self::Csv,
             "toml" => Self::Toml,
             "toon" => Self::Toon,
@@ -366,6 +369,7 @@ enum IoFormat {
     Html,
     Text,
     Json,
+    Jsonl,
     Gron,
     Raw,
     Csv,
@@ -382,6 +386,7 @@ impl From<IoFormat> for InputFormat {
             IoFormat::Html => Self::Html,
             IoFormat::Text => Self::Text,
             IoFormat::Json => Self::Json,
+            IoFormat::Jsonl => Self::Jsonl,
             IoFormat::Gron => Self::Gron,
             IoFormat::Raw => Self::Raw,
             IoFormat::Csv => Self::Csv,
@@ -400,6 +405,7 @@ impl From<IoFormat> for OutputFormat {
             IoFormat::Html => Self::Html,
             IoFormat::Text => Self::Text,
             IoFormat::Json => Self::Json,
+            IoFormat::Jsonl => Self::Jsonl,
             IoFormat::Gron => Self::Gron,
             IoFormat::Raw => Self::Raw,
             IoFormat::Csv => Self::Csv,
@@ -2159,6 +2165,18 @@ impl Cli {
             .or_else(|| self.format.clone().map(InputFormat::from))
     }
 
+    fn resolved_input_format(&self, file: &Option<PathBuf>, text_is_empty: bool) -> InputFormat {
+        self.explicit_input_format().unwrap_or_else(|| {
+            if let Some(file) = file {
+                InputFormat::from_path(file)
+            } else if text_is_empty && io::stdin().is_terminal() {
+                InputFormat::Null
+            } else {
+                InputFormat::Markdown
+            }
+        })
+    }
+
     fn resolved_output_format(&self) -> OutputFormat {
         self.output
             .output_format
@@ -2246,39 +2264,35 @@ impl Cli {
         content: &ContentData,
     ) -> miette::Result<Vec<mq_lang::RuntimeValue>> {
         let text = content.as_str().unwrap_or("");
-        Ok(
-            match self.explicit_input_format().unwrap_or_else(|| {
-                if let Some(file) = file {
-                    InputFormat::from_path(file)
-                } else if text.is_empty() && io::stdin().is_terminal() {
-                    InputFormat::Null
-                } else {
-                    InputFormat::Markdown
-                }
-            }) {
-                // Native formats
-                InputFormat::Markdown => mq_lang::parse_markdown_input_with(text, self.parse_options())?,
-                InputFormat::Mdx => mq_lang::parse_mdx_input_with(text, self.parse_options())?,
-                InputFormat::Html => mq_lang::parse_html_input(text)?,
-                InputFormat::Text => mq_lang::parse_text_input(text)?,
-                InputFormat::Null => mq_lang::null_input(),
-                InputFormat::Raw => mq_lang::raw_input(text),
-                // Bytes: pass raw binary content as RuntimeValue::Bytes with no further parsing.
-                InputFormat::Bytes => mq_lang::bytes_input(content.as_bytes()),
-                // Module-backed binary format: pass raw bytes; the cbor module handles parsing.
-                InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
-                // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
-                InputFormat::Csv
-                | InputFormat::Gron
-                | InputFormat::Json
-                | InputFormat::Psv
-                | InputFormat::Toml
-                | InputFormat::Toon
-                | InputFormat::Tsv
-                | InputFormat::Xml
-                | InputFormat::Yaml => mq_lang::raw_input(text),
-            },
-        )
+        Ok(match self.resolved_input_format(file, text.is_empty()) {
+            // Native formats
+            InputFormat::Markdown => mq_lang::parse_markdown_input_with(text, self.parse_options())?,
+            InputFormat::Mdx => mq_lang::parse_mdx_input_with(text, self.parse_options())?,
+            InputFormat::Html => mq_lang::parse_html_input(text)?,
+            InputFormat::Text => mq_lang::parse_text_input(text)?,
+            InputFormat::Null => mq_lang::null_input(),
+            // One record per non-empty line; the json module parses each.
+            InputFormat::Jsonl => text
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.to_string().into())
+                .collect(),
+            InputFormat::Raw => mq_lang::raw_input(text),
+            // Bytes: pass raw binary content as RuntimeValue::Bytes with no further parsing.
+            InputFormat::Bytes => mq_lang::bytes_input(content.as_bytes()),
+            // Module-backed binary format: pass raw bytes; the cbor module handles parsing.
+            InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
+            // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
+            InputFormat::Csv
+            | InputFormat::Gron
+            | InputFormat::Json
+            | InputFormat::Psv
+            | InputFormat::Toml
+            | InputFormat::Toon
+            | InputFormat::Tsv
+            | InputFormat::Xml
+            | InputFormat::Yaml => mq_lang::raw_input(text),
+        })
     }
 
     fn apply_update(
@@ -2849,6 +2863,9 @@ impl Cli {
             let current_file = active_file
                 .as_ref()
                 .ok_or_else(|| miette!("streaming input did not select an active file"))?;
+            if line.trim().is_empty() && self.resolved_input_format(current_file, false) == InputFormat::Jsonl {
+                return Ok(());
+            }
             self.run_program(
                 &mut engine,
                 &cache.programs[program_index].1,
@@ -3186,6 +3203,11 @@ impl Cli {
                 if !json_str.ends_with('\n') {
                     buf.push(b'\n');
                 }
+            }
+            OutputFormat::Jsonl => {
+                let theme = colorize.then(mq_markdown::ColorTheme::from_env);
+                let jsonl_str = crate::output::json::runtime_values_to_jsonl(runtime_values, theme.as_ref())?;
+                buf.extend_from_slice(jsonl_str.as_bytes());
             }
             OutputFormat::Html => {
                 let markdown = self.build_markdown(runtime_values, mdx);
