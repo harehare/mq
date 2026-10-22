@@ -8,6 +8,8 @@ A functional operator that allows chaining multiple filter operations together.
 
 The pipe operator (`|`) enables sequential processing of filters, where the output of one filter becomes the input of the next filter.
 
+Statements must be separated by `|`. Two expressions written next to each other, such as `let x = 1 let y = 2`, are a syntax error. See [Syntax](syntax.md#statements-and-pipes) for the few constructs that need no pipe after them.
+
 ### Examples
 
 ```mq

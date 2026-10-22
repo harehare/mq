@@ -64,6 +64,8 @@ cat file.mq | mq-fmt -
 cat file.mq | mq-fmt --check -
 ```
 
+A file that mq cannot parse is reported as an error and is not formatted. This includes programs the interpreter rejects, such as two statements without a `|` between them.
+
 ### Via mq
 
 ```sh
