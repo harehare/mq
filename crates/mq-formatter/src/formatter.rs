@@ -1000,7 +1000,16 @@ impl Formatter {
         self.append_display(node);
 
         if let mq_lang::CstNodeKind::Ident { attr: Some(attr) } = &node.kind {
-            // Format the attribute selector directly to avoid a newline from its leading trivia.
+            self.format_attribute(attr, indent_level);
+        }
+    }
+
+    /// Formats the attribute selector that follows a value (`x.level`). Plain whitespace and newlines
+    /// before it are dropped, but a comment is kept on its own line.
+    fn format_attribute(&mut self, attr: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
+        if attr.leading_trivia.iter().any(|trivia| trivia.is_comment()) {
+            self.format_node(attr, indent_level + 1);
+        } else {
             self.format_selector(attr, 0);
         }
     }
@@ -1595,8 +1604,7 @@ impl Formatter {
                         if matches!(&token.kind, mq_lang::TokenKind::Selector(s) if s == ".") {
                             self.append_space();
                         }
-                        // Format the attribute selector directly to avoid a newline from its leading trivia.
-                        self.format_selector(attr, 0);
+                        self.format_attribute(attr, indent_level);
                     }
                 }
             }
