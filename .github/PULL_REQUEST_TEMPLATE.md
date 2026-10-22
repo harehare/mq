@@ -19,7 +19,6 @@
 - [ ] I ran `just test-all` and all tests pass
 - [ ] I added or updated tests covering this change
 - [ ] I updated relevant documentation (`/docs`, crate `README.md`) if needed
-- [ ] I added a changelog entry if this is a user-facing change
 
 ## Additional Context
 
