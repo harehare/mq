@@ -7448,6 +7448,7 @@ fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
 #[case::recursive_name("..h", 1)]
 #[case::recursive_name_attr("..h.level", 1)]
 #[case::recursive_name_chain("..h .code", 1)]
+#[case::nested_chain_in_selector_args(".value .code(.value .h)", 1)]
 #[case::recursive_key("..\"key\"", 1)]
 #[case::qualified_index("x::y[0]", 1)]
 #[case::literal_index("1[0]", 1)]

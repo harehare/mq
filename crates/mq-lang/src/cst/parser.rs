@@ -937,12 +937,15 @@ impl<'a> Parser<'a> {
 
         nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
+        // Arguments start their own selector chains, independent of an enclosing selector tail.
+        let outer_in_selector_tail = std::mem::replace(&mut self.in_selector_tail, false);
         self.parse_separated_list(
             &mut nodes,
             |kind| matches!(kind, TokenKind::RParen),
             "`)`",
             |parser| parser.parse_arg(),
         );
+        self.in_selector_tail = outer_in_selector_tail;
 
         Ok(nodes)
     }

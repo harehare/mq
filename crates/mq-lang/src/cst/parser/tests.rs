@@ -8129,6 +8129,7 @@ fn test_junk_is_kept_in_error_node(#[case] code: &str, #[case] valid_literals: u
 #[case::recursive_name_attr("..h.level")]
 #[case::recursive_name_attr_in_binding("let level = ..h.level")]
 #[case::recursive_name_chain("..h .code")]
+#[case::nested_chain_in_selector_args(".value .code(.value .h)")]
 #[case::recursive_name_piped("..h | ..code")]
 #[case::recursive_key("..\"key\"")]
 #[case::qualified_index("x::y[0]")]
