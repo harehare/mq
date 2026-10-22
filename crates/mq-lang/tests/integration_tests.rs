@@ -612,6 +612,9 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::interpolated_string("s\"${self} World!\"",
         vec![RuntimeValue::String(Shared::new("Hello".into()))],
              Ok(vec!["Hello World!".to_string().into()].into()))]
+#[case::interpolated_pipeline("s\"v=${1 | add(2)} w=${\"ab\" | upcase()}\"",
+        vec![RuntimeValue::Number(0.into())],
+             Ok(vec!["v=3 w=AB".to_string().into()].into()))]
 #[case::nest(".link | update(\"test\")",
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
            mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),

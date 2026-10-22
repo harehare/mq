@@ -7451,6 +7451,7 @@ fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
 #[case::recursive_key("..\"key\"", 1)]
 #[case::qualified_index("x::y[0]", 1)]
 #[case::literal_index("1[0]", 1)]
+#[case::interpolated_pipeline("s\"${a | b}\"", 1)]
 #[case::index_attr("x[0].row", 1)]
 #[case::index_attr_chain("x[0].row[1].column", 1)]
 fn test_statement_boundaries_that_remain_valid(#[case] code: &str, #[case] len: usize) {
@@ -7518,7 +7519,6 @@ fn test_consecutive_pipes_are_rejected(#[case] code: &str) {
 #[rstest]
 #[case::closing_bracket("s\"${x]}\"")]
 #[case::comma("s\"${x, y}\"")]
-#[case::pipeline("s\"${x | y}\"")]
 #[case::two_expressions("s\"${x; y}\"")]
 fn test_interpolation_holds_a_single_expression(#[case] code: &str) {
     assert!(

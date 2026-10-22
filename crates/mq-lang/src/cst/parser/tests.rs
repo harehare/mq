@@ -8139,6 +8139,7 @@ fn test_junk_is_kept_in_error_node(#[case] code: &str, #[case] valid_literals: u
 #[case::while_pipeline_condition("while (a | b): 1;")]
 #[case::until_pipeline_condition("until (a | (b)): 1;")]
 #[case::self_selector_chain(". .li")]
+#[case::interpolated_pipeline("s\"${a | b | c}\"")]
 #[case::dot_attribute(". .level")]
 #[case::dot_attribute_in_args("select(. .level <= 2)")]
 #[case::recursive_name_in_args("f(.. \"key\", ..h)")]
@@ -8584,7 +8585,8 @@ fn test_valid_assignment_targets(#[case] code: &str) {
 #[rstest]
 #[case::closing_bracket("s\"${x]}\"")]
 #[case::comma("s\"${x, y}\"")]
-#[case::pipeline("s\"${x | y}\"")]
+#[case::trailing_pipe("s\"${x |}\"")]
+#[case::leading_pipe("s\"${| x}\"")]
 #[case::two_expressions("s\"${x; y}\"")]
 fn test_interpolation_holds_a_single_expression(#[case] code: &str) {
     let (_, errors) = crate::parse_recovery(code);

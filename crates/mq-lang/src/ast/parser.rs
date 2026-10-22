@@ -1089,14 +1089,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 TokenKind::Comma if after_element => after_element = false,
                 TokenKind::Comma => return Err(SyntaxError::UnexpectedToken(elem_token.clone())),
-                TokenKind::DotDotDot => {
-                    elements.push(self.parse_spread_element(elem_token)?);
-                    self.expect_array_element_end(&opening)?;
-                    after_element = true;
-                }
-                _ => {
-                    let expr = self.parse_expr(elem_token)?;
-                    elements.push(expr);
+                kind => {
+                    let element = if matches!(kind, TokenKind::DotDotDot) {
+                        self.parse_spread_element(elem_token)?
+                    } else {
+                        self.parse_expr(elem_token)?
+                    };
+                    elements.push(element);
                     self.expect_array_element_end(&opening)?;
                     after_element = true;
                 }
@@ -2430,7 +2429,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let mut parser = Parser::new(tokens.iter(), self.token_arena, token.module_id);
                             parser.depth = self.depth;
                             let expr_node = parser.parse_expr_from_tokens()?;
-                            // `${...}` holds a single expression, so nothing may follow it.
+                            // Nothing may follow the expression or pipeline.
                             if let Some(rest) = parser.tokens.peek()
                                 && rest.kind != TokenKind::Eof
                             {
@@ -2452,12 +2451,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    #[inline(always)]
+    /// Parses the expression of a `${...}` segment, or a pipeline of them (`${a | b}`).
     fn parse_expr_from_tokens(&mut self) -> Result<Shared<Node>, SyntaxError> {
-        if let Some(token) = self.tokens.next() {
-            self.parse_expr(token)
-        } else {
-            Err(SyntaxError::UnexpectedEOFDetected(self.module_id))
+        match self.tokens.next() {
+            Some(token) => self.parse_arg_expr(token),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }
     }
 
