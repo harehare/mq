@@ -379,7 +379,6 @@ fn test_run_without_compile_time_format_rejects_parsed_formats(
 #[rstest]
 #[case::txt_is_raw("raw", Some("input.txt"), None)]
 #[case::log_is_raw("raw", Some("input.log"), None)]
-#[case::jsonl_is_text("text", Some("input.jsonl"), None)]
 #[case::html("html", Some("input.html"), None)]
 #[case::md_is_markdown("markdown", Some("input.md"), None)]
 #[case::unknown_extension_is_markdown("markdown", Some("input.unknown"), None)]

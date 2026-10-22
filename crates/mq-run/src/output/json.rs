@@ -127,6 +127,31 @@ fn colorize_json_value_compact(value: &serde_json::Value, theme: &ColorTheme<'_>
 /// Converts a list of [`mq_lang::RuntimeValue`]s into a JSON string.
 /// `theme` enables ANSI color; `compact` renders a single line; `indent_unit`
 /// (e.g. `"  "` or `"\t"`) sets the per-level indent for pretty output.
+/// Serializes each value as one compact JSON line; empty Markdown nodes are skipped.
+pub(crate) fn runtime_values_to_jsonl(
+    runtime_values: &[mq_lang::RuntimeValue],
+    theme: Option<&ColorTheme<'_>>,
+) -> miette::Result<String> {
+    let mut out = String::new();
+    for value in runtime_values {
+        let json = match value {
+            mq_lang::RuntimeValue::Markdown(node, _) if node.is_empty() || node.is_empty_fragment() => continue,
+            mq_lang::RuntimeValue::Markdown(node, _) => {
+                serde_json::to_value(node.as_ref()).unwrap_or(serde_json::Value::Null)
+            }
+            _ => value.clone().to_json_value(),
+        };
+        match theme {
+            Some(theme) => out.push_str(&colorize_json_value_compact(&json, theme)),
+            None => {
+                out.push_str(&serde_json::to_string(&json).map_err(|e| miette!("Failed to serialize to JSON: {}", e))?)
+            }
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 pub(crate) fn runtime_values_to_json(
     runtime_values: &[mq_lang::RuntimeValue],
     theme: Option<&ColorTheme<'_>>,
@@ -148,6 +173,21 @@ mod tests {
     use super::*;
     use mq_lang::RuntimeValue;
     use rstest::rstest;
+
+    #[test]
+    fn test_jsonl_one_line_per_value() {
+        let values = vec![
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::Boolean(true),
+            RuntimeValue::None,
+        ];
+        assert_eq!(runtime_values_to_jsonl(&values, None).unwrap(), "\"a\"\ntrue\nnull\n");
+    }
+
+    #[test]
+    fn test_jsonl_empty() {
+        assert_eq!(runtime_values_to_jsonl(&[], None).unwrap(), "");
+    }
 
     fn plain_theme() -> ColorTheme<'static> {
         ColorTheme::PLAIN
