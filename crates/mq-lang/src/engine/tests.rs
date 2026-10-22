@@ -1238,6 +1238,34 @@ fn test_eval_compiled_runtime_error_preserves_source(#[case] query: &str, #[case
 }
 
 #[rstest]
+#[case::syntax_error("upcase() |", "upcase() |")]
+#[case::runtime_error(r#"error("boom")"#, r#"error("boom")"#)]
+fn test_compile_with_prelude_error_shows_only_the_query(#[case] query: &str, #[case] expected_source: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let error = match engine.compile_with_prelude(r#"upcase() | downcase()"#, query) {
+        Err(error) => *error,
+        Ok(compiled) => *engine
+            .eval_compiled(&compiled, crate::raw_input("a").into_iter())
+            .unwrap_err(),
+    };
+    assert_eq!(error.source_code.inner(), expected_source);
+    assert!(label_offset(&error) <= expected_source.len());
+}
+
+#[test]
+fn test_compile_with_prelude_runs_prelude_first() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let compiled = engine.compile_with_prelude("upcase()", r#". + "!""#).unwrap();
+    assert_eq!(compiled.source(), r#". + "!""#);
+    let result = engine
+        .eval_compiled(&compiled, crate::raw_input("a").into_iter())
+        .unwrap();
+    assert_eq!(result.values(), &["A!".to_string().into()]);
+}
+
+#[rstest]
 #[case("undefined_fn()")]
 #[case("unknown()")]
 fn test_eval_compiled_from_program_has_empty_source_in_error(#[case] query: &str) {

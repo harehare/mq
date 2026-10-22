@@ -62,17 +62,7 @@ impl Cli {
                 .wrap_err_with(|| format!("Failed to read {}", query_file.display()))?,
             None => query.to_string(),
         };
-        let query = if cli.input.program.aggregate {
-            format!("nodes | {query}")
-        } else {
-            query
-        };
         let prefix = cli.auto_query_prefix(&None).unwrap_or_default();
-        let effective_query = if prefix.is_empty() {
-            query
-        } else {
-            format!("{prefix} | {query}")
-        };
         let input_format = cli
             .explicit_input_format()
             .and_then(|format| format.to_possible_value())
@@ -81,8 +71,9 @@ impl Cli {
 
         let mut engine = cli.create_engine()?;
         let mqc = engine
-            .precompile(
-                &effective_query,
+            .precompile_with_prelude(
+                &cli.query_prelude(&None),
+                &query,
                 &[
                     (MQC_QUERY_PREFIX, &prefix),
                     (MQC_INPUT_FORMAT, &input_format),

@@ -24,7 +24,7 @@ use crate::{
     ModuleLoader, Token, TokenArena,
     arena::Arena,
     error::{self},
-    parse,
+    parse, parse_with_prelude,
     runtime::builtin::io_context,
 };
 
@@ -375,11 +375,19 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     ///
     /// Use this with `eval_compiled` to avoid re-parsing the same query for each input.
     pub fn compile(&mut self, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
-        if code.is_empty() {
+        self.compile_with_prelude("", code)
+    }
+
+    /// Like [`Self::compile`], running `prelude` before `code`.
+    ///
+    /// Diagnostics show only `code`, so a prelude the caller adds on the user's behalf
+    /// never appears in error output or shifts its positions.
+    pub fn compile_with_prelude(&mut self, prelude: &str, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
+        if prelude.is_empty() && code.is_empty() {
             return Ok(CompiledProgram::cached(String::new(), Vec::new()));
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
-        let program = parse(code, Shared::clone(&self.token_arena))?;
+        let program = parse_with_prelude(prelude, code, Shared::clone(&self.token_arena))?;
         Ok(CompiledProgram::cached(code.to_string(), program))
     }
 
