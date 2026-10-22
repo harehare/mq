@@ -2181,6 +2181,18 @@ impl Cli {
             .or_else(|| self.format.clone().map(InputFormat::from))
     }
 
+    fn resolved_input_format(&self, file: &Option<PathBuf>, text_is_empty: bool) -> InputFormat {
+        self.explicit_input_format().unwrap_or_else(|| {
+            if let Some(file) = file {
+                InputFormat::from_path(file)
+            } else if text_is_empty && io::stdin().is_terminal() {
+                InputFormat::Null
+            } else {
+                InputFormat::Markdown
+            }
+        })
+    }
+
     fn resolved_output_format(&self) -> OutputFormat {
         self.output
             .output_format
@@ -2268,45 +2280,35 @@ impl Cli {
         content: &ContentData,
     ) -> miette::Result<Vec<mq_lang::RuntimeValue>> {
         let text = content.as_str().unwrap_or("");
-        Ok(
-            match self.explicit_input_format().unwrap_or_else(|| {
-                if let Some(file) = file {
-                    InputFormat::from_path(file)
-                } else if text.is_empty() && io::stdin().is_terminal() {
-                    InputFormat::Null
-                } else {
-                    InputFormat::Markdown
-                }
-            }) {
-                // Native formats
-                InputFormat::Markdown => mq_lang::parse_markdown_input_with(text, self.parse_options())?,
-                InputFormat::Mdx => mq_lang::parse_mdx_input_with(text, self.parse_options())?,
-                InputFormat::Html => mq_lang::parse_html_input(text)?,
-                InputFormat::Text => mq_lang::parse_text_input(text)?,
-                InputFormat::Null => mq_lang::null_input(),
-                // One record per non-empty line; the json module parses each.
-                InputFormat::Jsonl => text
-                    .lines()
-                    .filter(|line| !line.trim().is_empty())
-                    .map(|line| line.to_string().into())
-                    .collect(),
-                InputFormat::Raw => mq_lang::raw_input(text),
-                // Bytes: pass raw binary content as RuntimeValue::Bytes with no further parsing.
-                InputFormat::Bytes => mq_lang::bytes_input(content.as_bytes()),
-                // Module-backed binary format: pass raw bytes; the cbor module handles parsing.
-                InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
-                // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
-                InputFormat::Csv
-                | InputFormat::Gron
-                | InputFormat::Json
-                | InputFormat::Psv
-                | InputFormat::Toml
-                | InputFormat::Toon
-                | InputFormat::Tsv
-                | InputFormat::Xml
-                | InputFormat::Yaml => mq_lang::raw_input(text),
-            },
-        )
+        Ok(match self.resolved_input_format(file, text.is_empty()) {
+            // Native formats
+            InputFormat::Markdown => mq_lang::parse_markdown_input_with(text, self.parse_options())?,
+            InputFormat::Mdx => mq_lang::parse_mdx_input_with(text, self.parse_options())?,
+            InputFormat::Html => mq_lang::parse_html_input(text)?,
+            InputFormat::Text => mq_lang::parse_text_input(text)?,
+            InputFormat::Null => mq_lang::null_input(),
+            // One record per non-empty line; the json module parses each.
+            InputFormat::Jsonl => text
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.to_string().into())
+                .collect(),
+            InputFormat::Raw => mq_lang::raw_input(text),
+            // Bytes: pass raw binary content as RuntimeValue::Bytes with no further parsing.
+            InputFormat::Bytes => mq_lang::bytes_input(content.as_bytes()),
+            // Module-backed binary format: pass raw bytes; the cbor module handles parsing.
+            InputFormat::Cbor => mq_lang::bytes_input(content.as_bytes()),
+            // Module-backed text formats (alphabetical): pass raw string; the module handles parsing.
+            InputFormat::Csv
+            | InputFormat::Gron
+            | InputFormat::Json
+            | InputFormat::Psv
+            | InputFormat::Toml
+            | InputFormat::Toon
+            | InputFormat::Tsv
+            | InputFormat::Xml
+            | InputFormat::Yaml => mq_lang::raw_input(text),
+        })
     }
 
     fn apply_update(
@@ -2873,6 +2875,9 @@ impl Cli {
             let current_file = active_file
                 .as_ref()
                 .ok_or_else(|| miette!("streaming input did not select an active file"))?;
+            if line.trim().is_empty() && self.resolved_input_format(current_file, false) == InputFormat::Jsonl {
+                return Ok(());
+            }
             self.run_program(
                 &mut engine,
                 &cache.programs[program_index].1,

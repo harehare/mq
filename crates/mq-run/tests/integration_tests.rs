@@ -289,6 +289,16 @@ export const year = 2023
     "# title\n",
     None
 )]
+#[case::jsonl_nodes_skips_blank_lines(
+    vec!["--unbuffered", "-I", "jsonl", "-F", "jsonl", "nodes | len()"],
+    "\n{\"a\":1}\n\n",
+    Some("1\n")
+)]
+#[case::jsonl_stream_skips_blank_lines(
+    vec!["--unbuffered", "--stream", "-I", "jsonl", "-F", "jsonl", "nodes | len()"],
+    "\n{\"a\":1}\n  \n",
+    Some("1\n")
+)]
 #[case::test_aggregate(
     vec!["--unbuffered", "-A", "section::split(2) | section::nth(0) | section::title()"],
     "# title\n\n## subtitle\n",
