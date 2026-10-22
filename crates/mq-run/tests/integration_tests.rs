@@ -1457,6 +1457,34 @@ fn test_exit_status_parallel_batch(
 }
 
 #[test]
+fn test_output_file_collects_every_input() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, first) = create_file("test_output_file_collects_every_input_1.md", "# A\n");
+    let (_, second) = create_file("test_output_file_collects_every_input_2.md", "# B\n");
+    let output = std::env::temp_dir().join("test_output_file_collects_every_input_out.md");
+    let (first_clone, second_clone, output_clone) = (first.clone(), second.clone(), output.clone());
+
+    defer! {
+        for file in [&first_clone, &second_clone, &output_clone] {
+            let _ = std::fs::remove_file(file);
+        }
+    }
+
+    for _ in 0..2 {
+        let mut cmd = cargo::cargo_bin_cmd!("mq");
+        cmd.arg("-o")
+            .arg(&output)
+            .arg(".h1")
+            .arg(&first)
+            .arg(&second)
+            .assert()
+            .success();
+        assert_eq!(std::fs::read_to_string(&output)?, "# A\n# B\n");
+    }
+
+    Ok(())
+}
+
+#[test]
 fn test_quiet_suppresses_query_output() {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
 

@@ -733,7 +733,7 @@ struct OutputArgs {
     #[clap(short = 'S', long, value_name = "QUERY", conflicts_with = "quiet")]
     separator: Option<String>,
 
-    /// Output to the specified file
+    /// Output to the specified file. With several inputs, results are written one after another
     #[clap(short = 'o', long = "output", value_name = "FILE", conflicts_with = "quiet")]
     output_file: Option<PathBuf>,
 
@@ -2505,6 +2505,10 @@ impl Cli {
     /// Errors go to stderr instead of ending the loop, so one bad query doesn't stop watching.
     #[cfg(feature = "watch")]
     fn run_once_watch(&self) {
+        // Each rerun starts a fresh output instead of appending to the previous run's.
+        self.output
+            .output_claimed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         if let Err(err) = self.execute_once() {
             if let Some(code) = Self::halt_exit_code(&err) {
                 std::process::exit(code);
@@ -2631,9 +2635,9 @@ impl Cli {
             return self.execute_eval_all(&query, &files);
         }
 
-        // Keep --append sequential: parallel files racing the same read-then-rename
-        // append could clobber each other.
-        if files.len() > self.parallel_threshold && !self.output.append {
+        // Keep writes to one output file sequential: parallel files racing the same
+        // read-then-rename append could clobber each other.
+        if files.len() > self.parallel_threshold && self.output.output_file.is_none() {
             // `CompiledProgram` uses `Rc`, so each worker keeps its own engine and programs.
             // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
             let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);
