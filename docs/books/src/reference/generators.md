@@ -26,7 +26,7 @@ def range(n):
 end
 | let stream = range(3)
 | next(stream)
-# Output: {"value": 0, "done": false}
+# => {"value": 0, "done": false}
 ```
 
 Calling a generator function does not execute it:
@@ -81,14 +81,14 @@ def g(): yield: 1;
 
 ```mq
 to_coroutine([1, 2, 3]) | collect()
-# Output: [1, 2, 3]
+# => [1, 2, 3]
 ```
 
 It composes with the coroutine-aware combinators below, so an eager array can be fed through them lazily without writing a generator function by hand:
 
 ```mq
 to_coroutine([1, 2, 3, 4, 5]) | take(2) | collect()
-# Output: [1, 2]
+# => [1, 2]
 ```
 
 ## Closing early
@@ -111,20 +111,20 @@ Closing an already-`completed`/`failed` coroutine is a no-op; closing a `failed`
 
 ```mq
 stream_range(0, 10, 5) | collect()
-# Output: [0, 5, 10]
+# => [0, 5, 10]
 
 stream_range(0, None) | take(3) | collect()
-# Output: [0, 1, 2]
+# => [0, 1, 2]
 ```
 
 String arguments follow `range` too. A single-character range is generated lazily and yields the same values as `range` (surrogate code points are skipped). A longer range such as `"aa"` to `"zz"` is generated eagerly and then wrapped in a coroutine, so `step` is not supported for it. A string range needs a `stop`; `None` is an error.
 
 ```mq
 stream_range("a", "e") | collect()
-# Output: ["a", "b", "c", "d", "e"]
+# => ["a", "b", "c", "d", "e"]
 
 stream_range("a", "z", 5) | collect()
-# Output: ["a", "f", "k", "p", "u", "z"]
+# => ["a", "f", "k", "p", "u", "z"]
 ```
 
 ## Reading files lazily

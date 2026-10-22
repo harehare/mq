@@ -17,11 +17,13 @@ The match expression evaluates the value and compares it against a series of pat
 Match against specific values:
 
 ```mq
+let x = 2 |
 match (x):
   | 1: "one"
   | 2: "two"
   | _: "other"
 end
+# => "two"
 ```
 
 Literal patterns support:
@@ -35,6 +37,7 @@ Literal patterns support:
 Match based on value type using the `:type_name` syntax:
 
 ```mq
+let value = [1, 2] |
 match (value):
   | :string: "is string"
   | :number: "is number"
@@ -44,6 +47,7 @@ match (value):
   | :none: "is none"
   | _: "other type"
 end
+# => "is array"
 ```
 
 Available type patterns:
@@ -61,7 +65,8 @@ Match a `:markdown` value against a specific node kind using the same names as
 [selectors](./selectors.md) (without the leading `.`):
 
 ```mq
-match (node):
+to_markdown("## Usage") | first
+| match (.):
   | :h1: "top-level heading"
   | :h2: "section heading"
   | :code: "code block"
@@ -69,6 +74,7 @@ match (node):
   | :text: "text"
   | _: "other node"
 end
+# => "section heading"
 ```
 
 Any node-kind name accepted by a selector (`h1`..`h6`, `h`, `code`, `list`,
@@ -76,12 +82,13 @@ Any node-kind name accepted by a selector (`h1`..`h6`, `h`, `code`, `list`,
 pattern matches only when the value is a markdown node of that kind; other
 values fall through to the next arm.
 
-Inside a matched arm, `.` refers to the matched node itself, so attribute
-selectors like `.depth`, `.lang`, or `.ordered` can be used directly in the
-guard or body without binding a variable:
+Inside an arm, `.` is the current pipeline value. When the piped-in node is the
+one being matched (`match (.)`), attribute selectors like `.depth`, `.lang`, or
+`.ordered` can be used directly in the guard or body without binding a variable:
 
 ```mq
-match (node):
+to_markdown("```rust\nfn main() {}\n```") | first
+| match (.):
   | :h if (.depth > 2): "deep heading"
   | :code if (.lang == "rust"): upcase(.value)
   | :code: .value
@@ -89,6 +96,7 @@ match (node):
   | :list: "unordered list"
   | _: "other node"
 end
+# => "FN MAIN() {}"
 ```
 
 ## Array Patterns
@@ -96,6 +104,7 @@ end
 Destructure arrays and bind elements to variables:
 
 ```mq
+let arr = [3, 4] |
 match (arr):
   | []: "empty array"
   | [x]: x
@@ -103,6 +112,7 @@ match (arr):
   | [first, second, third]: first
   | [first, ..rest]: first
 end
+# => 7
 ```
 
 Array patter features:
@@ -114,10 +124,11 @@ Array patter features:
 ### Rest Pattern Example
 
 ```mq
+let arr = [1, 2, 3, 4] |
 match (arr):
   | [head, ..tail]: tail
 end
-# array(1, 2, 3, 4) => array(2, 3, 4)
+# => [2, 3, 4]
 ```
 
 ## Dict Patterns
@@ -125,12 +136,14 @@ end
 Destructure dictionaries and extract values:
 
 ```mq
+let obj = {"x": 1, "y": 2} |
 match (obj):
   | {name, age}: name
   | {x, y}: add(x, y)
   | {}: "empty dict"
   | _: "no match"
 end
+# => 3
 ```
 
 Dict pattern features:
@@ -155,35 +168,43 @@ end
 Match multiple patterns in a single arm using `||`:
 
 ```mq
+let x = 5 |
 match (x):
   | 1 || 2 || 3: "small"
   | 4 || 5: "medium"
   | _: "other"
 end
+# => "medium"
 ```
 
 Or patterns can combine any pattern types:
 
 ```mq
 # Literal or patterns
+let status = "fail" |
 match (status):
   | "ok" || "success": "all good"
   | "error" || "fail" || "failure": "something went wrong"
   | _: "unknown"
 end
+# => "something went wrong"
 
 # Type or patterns
+let value = {"a": 1} |
 match (value):
   | :string || :number: "primitive"
   | :array || :dict: "collection"
   | _: "other"
 end
+# => "collection"
 
 # Mixed literal and type
+let x = 0 |
 match (x):
   | 0 || false || none: "falsy"
   | _: "truthy"
 end
+# => "falsy"
 ```
 
 The first alternative that matches is used. The overall arm matches if **any** of the alternatives match.
@@ -193,9 +214,11 @@ The first alternative that matches is used. The overall arm matches if **any** o
 Bind the matched value to a variable:
 
 ```mq
+let value = 41 |
 match (value):
   | x: x + 1
 end
+# => 42
 ```
 
 Variable binding captures the entire value and makes it available in the body expression.
@@ -205,11 +228,13 @@ Variable binding captures the entire value and makes it available in the body ex
 The underscore `_` matches any value:
 
 ```mq
+let x = 3 |
 match (x):
   | 1: "one"
   | 2: "two"
   | _: "something else"
 end
+# => "something else"
 ```
 
 Use the wildcard pattern as the last arm to handle all remaining cases.
@@ -219,11 +244,13 @@ Use the wildcard pattern as the last arm to handle all remaining cases.
 Add conditions to patterns using `if`:
 
 ```mq
+let n = -4 |
 match (n):
   | x if (x > 0): "positive"
   | x if (x < 0): "negative"
   | _: "zero"
 end
+# => "negative"
 ```
 
 Guards allow you to:
@@ -235,16 +262,20 @@ Guards allow you to:
 
 ```mq
 # Match even numbers
+let n = 6 |
 match (n):
   | x if (x % 2 == 0): "even"
   | _: "odd"
 end
+# => "even"
 
 # Match array with positive numbers
+let arr = [1, -2] |
 match (arr):
-  | [x, ..] if (x > 0): "starts with positive"
+  | [x, ..rest] if (x > 0): "starts with positive"
   | _: "other"
 end
+# => "starts with positive"
 ```
 
 ## Multiple Arms
@@ -271,14 +302,14 @@ Pattern matching provides several advantages over if expressions:
 ### Using If Expressions
 
 ```mq
-if (type_of(x) == "number"):
-  if (x == 0):
+if (type(x) == "number"):
+  if (x > 0):
     "positive number"
   elif (x < 0):
     "negative number"
   else:
     "zero"
-elif (type_of(x) == "array"):
+elif (type(x) == "array"):
   if (len(x) == 0):
     "empty array"
   else:
@@ -320,6 +351,12 @@ def describe(value):
     | _: "dictionary"
   end
 end
+
+describe([1, 2])
+# => "list with multiple items"
+
+describe(500)
+# => "big number"
 ```
 
 ### Extracting Data from Structures
@@ -330,6 +367,10 @@ def get_first_name(user):
     | {name}: name
     | _: "unknown"
   end
+end
+
+get_first_name({"name": "Alice"})
+# => "Alice"
 ```
 
 ### Handling API Responses
@@ -343,6 +384,9 @@ def handle_response(response):
     | _: "Unknown response"
   end
 end
+
+handle_response({"status": 404, "error": "missing"})
+# => "Not found: missing"
 ```
 
 ### Classifying HTTP Status Codes with Or Patterns
@@ -359,6 +403,9 @@ def classify_status(code):
     | _: "unknown"
   end
 end
+
+classify_status(302)
+# => "redirect"
 ```
 
 ### Dispatching on Markdown Node Kinds
@@ -377,5 +424,8 @@ def describe_node(node):
     | _: "other node"
   end
 end
+
+to_markdown("### Details") | first | describe_node()
+# => "deep heading"
 ```
 

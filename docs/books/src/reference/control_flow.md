@@ -37,14 +37,20 @@ The conditions must evaluate to boolean values.
 The unless expression executes code only when a condition is false; the inverse of a single-branch `if`:
 
 ```mq
+let x = 2 |
 unless (x == 1):
   "not one"
+# => "not one"
 ```
 
+When the condition is true, the body is not evaluated and the result is `None`:
+
 ```mq
+let x = 1 |
 unless (x == 1):
   "not one"
-# => None (when x == 1, the body is not evaluated)
+| is_none
+# => true
 ```
 
 ## While Expression
@@ -96,7 +102,7 @@ let items = array(1, 2, 3) |
 foreach (x, items):
    sub(x, 1)
 end
-# => array(0, 1, 2)
+# => [0, 1, 2]
 ```
 
 You can use `break: <expr>` to exit early and return a specific value instead of an array:

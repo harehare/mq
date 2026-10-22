@@ -29,9 +29,9 @@
 Byte string literals use the `b"..."` syntax and represent raw sequences of bytes (`u8` values).
 
 ```mq
-b"hello"            # 5-byte sequence [104, 101, 108, 108, 111]
-b"\xf0\x9f\x99\x82" # 4-byte emoji encoded as raw bytes
-b""                 # empty byte sequence
+b"hello"              # 5-byte sequence [104, 101, 108, 108, 111]
+b"\xf0\x9f\x99\x82"   # 4-byte emoji encoded as raw bytes
+b""                   # empty byte sequence
 ```
 
 ### Allowed characters
@@ -39,8 +39,9 @@ b""                 # empty byte sequence
 Only **ASCII** characters (code points 0–127) may appear unescaped inside a byte literal. Non-ASCII characters such as `é` or `😊` must be written using `\xNN` hex escapes:
 
 ```mq
-# Correct: use \xNN for non-ASCII bytes
-b"\xc3\xa9"    # UTF-8 encoding of 'é' (2 bytes: 0xc3, 0xa9)
+# Correct: use \xNN for non-ASCII bytes, here the UTF-8 encoding of 'é' (0xc3, 0xa9)
+b"\xc3\xa9" | len
+# => 2
 
 # Wrong: non-ASCII characters are not accepted in b"..."
 # b"é"          ← syntax error; use \xNN escapes instead
@@ -61,11 +62,17 @@ b"\xc3\xa9"    # UTF-8 encoding of 'é' (2 bytes: 0xc3, 0xa9)
 ### Common operations
 
 ```mq
-b"abc" | len          # 3, byte length, not character count
-b"abc" | type         # "bytes"
-b"abc" == b"abc"      # true
-b"abc" | is_empty     # false
-b""    | is_empty     # true
+# Byte length, not character count
+b"abc" | len
+# => 3
+b"abc" | type
+# => "bytes"
+b"abc" == b"abc"
+# => true
+b"abc" | is_empty
+# => false
+b"" | is_empty
+# => true
 ```
 
 ## Accessing Values
@@ -75,12 +82,24 @@ b""    | is_empty     # true
 Arrays can be accessed using square bracket notation with zero-based indexing:
 
 ```mq
-let arr = [1, 2, 3, 4, 5]
+let arr = [1, 2, 3, 4, 5] |
+arr[0]
+# => 1
 
-arr[0]     # Returns 1 (first element)
-arr[2]     # Returns 3 (third element)
-arr[6]     # Returns None
-arr[1.5]   # Returns None (index must be an integer)
+# Third element
+let arr = [1, 2, 3, 4, 5] |
+arr[2]
+# => 3
+
+# Out of range
+let arr = [1, 2, 3, 4, 5] |
+arr[6] | is_none
+# => true
+
+# The index must be an integer
+let arr = [1, 2, 3, 4, 5] |
+arr[1.5] | is_none
+# => true
 ```
 
 Indexing a value that cannot be indexed, such as `1[0]`, is a runtime error. `None[0]` returns `None`.
@@ -88,8 +107,13 @@ Indexing a value that cannot be indexed, such as `1[0]`, is a runtime error. `No
 You can also use the `get` function explicitly:
 
 ```mq
+let arr = [1, 2, 3, 4, 5] |
 get(arr, 0)    # Same as arr[0]
-arr | get(2)    # Same as arr[2]
+# => 1
+
+let arr = [1, 2, 3, 4, 5] |
+arr | get(2)   # Same as arr[2]
+# => 3
 ```
 
 ### Index Access with `.[...]`
@@ -97,10 +121,14 @@ arr | get(2)    # Same as arr[2]
 On arrays, strings and dicts, `.[expr]` reads the same as `self[expr]`: negative indices count from the end, and an out-of-range or non-integer index returns `None`.
 
 ```mq
-[10, 20, 30] | .[-1]        # Returns 30
-"abc" | .[1]                # Returns "b"
-{"a": 1} | .["a"]           # Returns 1
-[10, 20, 30] | .[1.5]       # Returns None
+[10, 20, 30] | .[-1]
+# => 30
+"abc" | .[1]
+# => "b"
+{"a": 1} | .["a"]
+# => 1
+[10, 20, 30] | .[1.5] | is_none
+# => true
 ```
 
 On Markdown values, `.[n]` selects the list item with index `n` instead (see [Selectors](selectors.md)).
@@ -110,11 +138,20 @@ On Markdown values, `.[n]` selects the list item with index `n` instead (see [Se
 Arrays support slice notation to extract subarrays using the `arr[start:end]` syntax:
 
 ```mq
-let arr = [1, 2, 3, 4, 5]
+# Elements from index 1 to 3
+let arr = [1, 2, 3, 4, 5] |
+arr[1:4]
+# => [2, 3, 4]
 
-arr[1:4]    # Returns [2, 3, 4] (elements from index 1 to 3)
-arr[0:3]    # Returns [1, 2, 3] (first three elements)
-arr[2:5]    # Returns [3, 4, 5] (elements from index 2 to end)
+# First three elements
+let arr = [1, 2, 3, 4, 5] |
+arr[0:3]
+# => [1, 2, 3]
+
+# Elements from index 2 to the end
+let arr = [1, 2, 3, 4, 5] |
+arr[2:5]
+# => [3, 4, 5]
 ```
 
 Slice indices work as follows:
@@ -124,11 +161,19 @@ Slice indices work as follows:
 - If `start` or `end` is out of bounds, it will be clamped to valid range
 
 ```mq
-let arr = [1, 2, 3, 4, 5]
+let arr = [1, 2, 3, 4, 5] |
+arr[0:2]
+# => [1, 2]
 
-arr[0:2]    # Returns [1, 2]
-arr[3:10]   # Returns [4, 5] (end index clamped to array length)
-arr[2:2]    # Returns [] (empty slice when start equals end)
+# The end index is clamped to the array length
+let arr = [1, 2, 3, 4, 5] |
+arr[3:10]
+# => [4, 5]
+
+# The slice is empty when start equals end
+let arr = [1, 2, 3, 4, 5] |
+arr[2:2] | is_empty
+# => true
 ```
 
 ### Dictionary Key Access
@@ -136,25 +181,34 @@ arr[2:2]    # Returns [] (empty slice when start equals end)
 Dictionaries can be accessed using square bracket notation with keys:
 
 ```mq
-let d = {"name": "Alice", "age": 30, "city": "Tokyo"}
+let d = {"name": "Alice", "age": 30, "city": "Tokyo"} |
+d["name"]
+# => "Alice"
 
-d["name"]   # Returns "Alice"
-d["age"]    # Returns 30
-d["city"]   # Returns "Tokyo"
+let d = {"name": "Alice", "age": 30, "city": "Tokyo"} |
+d["age"]
+# => 30
 ```
 
 You can also use the `get` function explicitly:
 
 ```mq
-get(d, "name")   # Same as di["name"]
-d | get("age")    # Same as d["age"]
+let d = {"name": "Alice", "age": 30, "city": "Tokyo"} |
+get(d, "name")   # Same as d["name"]
+# => "Alice"
+
+let d = {"name": "Alice", "age": 30, "city": "Tokyo"} |
+d | get("age")   # Same as d["age"]
+# => 30
 ```
 
 A dictionary literal can be indexed directly:
 
 ```mq
-{"a": 1, "b": {"c": 2}}["a"]        # Returns 1
-{"a": 1, "b": {"c": 2}}["b"]["c"]   # Returns 2
+{"a": 1, "b": {"c": 2}}["a"]
+# => 1
+{"a": 1, "b": {"c": 2}}["b"]["c"]
+# => 2
 ```
 
 ### String Index Access
@@ -162,10 +216,14 @@ A dictionary literal can be indexed directly:
 Strings can be indexed by Unicode scalar value. Negative indices count from the end. An out-of-range or non-integer index returns `None`:
 
 ```mq
-"abc"[0]     # Returns "a"
-"abc"[-1]    # Returns "c"
-"abc"[3]     # Returns None
-"abc"[1:3]   # Returns "bc"
+"abc"[0]
+# => "a"
+"abc"[-1]
+# => "c"
+"abc"[3] | is_none
+# => true
+"abc"[1:3]
+# => "bc"
 ```
 
 Combining characters and emoji sequences span several scalar values. Use `graphemes` to split by user-perceived character.
@@ -178,13 +236,18 @@ dict literal.
 ```mq
 let a = [1, 2, 3]
 | let b = [4, 5, 6]
-| let c = [...a, ...b]      # [1, 2, 3, 4, 5, 6]
-| let d = [0, ...a, 99]     # [0, 1, 2, 3, 99]
+| [...a, ...b]
+# => [1, 2, 3, 4, 5, 6]
+
+let a = [1, 2, 3]
+| [0, ...a, 99]
+# => [0, 1, 2, 3, 99]
 ```
 
 ```mq
 let base = {x: 1, y: 2}
-| let merged = {...base, y: 99, z: 3}   # {x: 1, y: 99, z: 3}
+| {...base, y: 99, z: 3}
+# => {"x": 1, "y": 99, "z": 3}
 ```
 
 When the same key appears more than once, later keys override earlier ones,
@@ -199,11 +262,13 @@ Both arrays and dictionaries support dynamic access using variables:
 ```mq
 let arr = [10, 20, 30]
 | let index = 1
-| arr[index]     # Returns 20
+| arr[index]
+# => 20
 
 let d = {"x": 100, "y": 200}
 | let key = "x"
-| d[key]      # Returns 100
+| d[key]
+# => 100
 ```
 
 ## Environment Variables

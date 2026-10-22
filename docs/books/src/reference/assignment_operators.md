@@ -45,13 +45,15 @@ Compound assignment operators combine an arithmetic or logical operation with as
 Adds a value to a variable and assigns the result back to the variable.
 
 ```mq
-var x = 10 |
-x += 5
-# => x is now 15
+var x = 10
+| x += 5
+| x
+# => 15
 
-var count = 0 |
-count += 1
-# => count is now 1
+var count = 0
+| count += 1
+| count
+# => 1
 ```
 
 ### Subtraction Assignment (`-=`)
@@ -59,13 +61,15 @@ count += 1
 Subtracts a value from a variable and assigns the result back to the variable.
 
 ```mq
-var x = 10 |
-x -= 3
-# => x is now 7
+var x = 10
+| x -= 3
+| x
+# => 7
 
-var balance = 100 |
-balance -= 25
-# => balance is now 75
+var balance = 100
+| balance -= 25
+| balance
+# => 75
 ```
 
 ### Multiplication Assignment (`*=`)
@@ -73,13 +77,15 @@ balance -= 25
 Multiplies a variable by a value and assigns the result back to the variable.
 
 ```mq
-var x = 5 |
-x *= 3
-# => x is now 15
+var x = 5
+| x *= 3
+| x
+# => 15
 
-var price = 100 |
-price *= 1.1
-# => price is now 110
+var price = 100
+| price *= 1.5
+| price
+# => 150
 ```
 
 ### Division Assignment (`/=`)
@@ -87,13 +93,15 @@ price *= 1.1
 Divides a variable by a value and assigns the result back to the variable.
 
 ```mq
-var x = 20 |
-x /= 4
-# => x is now 5
+var x = 20
+| x /= 4
+| x
+# => 5
 
-var total = 100 |
-total /= 2
-# => total is now 50
+var total = 100
+| total /= 2
+| total
+# => 50
 ```
 
 ### Modulo Assignment (`%=`)
@@ -101,13 +109,15 @@ total /= 2
 Computes the remainder of dividing a variable by a value and assigns the result back to the variable.
 
 ```mq
-var x = 17 |
-x %= 5
-# => x is now 2
+var x = 17
+| x %= 5
+| x
+# => 2
 
-var count = 23 |
-count %= 10
-# => count is now 3
+var count = 23
+| count %= 10
+| count
+# => 3
 ```
 
 ### Floor Division Assignment (`//=`)
@@ -115,11 +125,13 @@ count %= 10
 Divides a variable by a value, floors the result (rounds down to the nearest integer), and assigns it back to the variable.
 
 ```mq
-var x = 17 |
-x //= 5
-# => x is now 3
+var x = 17
+| x //= 5
+| x
+# => 3
 
-var count = 23 |
-count //= 10
-# => count is now 2
+var count = 23
+| count //= 10
+| count
+# => 2
 ```

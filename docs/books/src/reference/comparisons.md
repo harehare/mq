@@ -45,8 +45,9 @@ not(false)
 # => true
 
 # Complex conditions
+let x = 5 |
 and(x > 0, x < 10)
-# =>  true if 0 < x < 10
+# => true
 ```
 
 ### Regex Match Operator

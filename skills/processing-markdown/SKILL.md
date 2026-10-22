@@ -153,7 +153,7 @@ These attributes are Markdown-selector-specific and are not covered by `mq help`
 | `.link`                                     | `url`, `title`, `value`                                           |
 | `.image`                                    | `url`, `title`, `alt`                                             |
 | `.list`                                     | `index`, `level`, `ordered` (bool), `checked` (bool), `value`     |
-| `.[row][col]` (table cell)                  | `row`, `column`, `last_cell_in_row` (bool), `last_cell_of_in_table` (bool), `value` |
+| `.[row][col]` (table cell)                  | `row`, `column`, `value` |
 | `.link_ref`                                 | `ident`, `label`                                                   |
 | `.image_ref`                                | `ident`, `label`, `alt`                                            |
 | `.footnote_ref`                             | `ident`, `label`                                                   |

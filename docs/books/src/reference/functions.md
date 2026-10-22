@@ -59,18 +59,18 @@ end
 
 # Using default value
 greet("Alice")
-# Output: "Hello Alice"
+# => "Hello Alice"
 
 # Overriding default value
 greet("Bob", "Hi")
-# Output: "Hi Bob"
+# => "Hi Bob"
 
 # Default value can be an expression
 def add_with_offset(x, offset=10 + 5):
   x + offset;
 
 add_with_offset(20)
-# Output: 35
+# => 35
 ```
 
 ### Variadic Parameters
@@ -88,21 +88,21 @@ def all_args(*args):
   args;
 
 all_args(1, 2, 3)
-# Output: [1, 2, 3]
+# => [1, 2, 3]
 
 # Combine regular and variadic parameters
 def first_and_rest(a, *rest):
   rest;
 
 first_and_rest(1, 2, 3)
-# Output: [2, 3]
+# => [2, 3]
 
 # Variadic parameter is an empty array when no extra arguments are passed
 def first_and_rest(a, *rest):
   rest;
 
-first_and_rest(1)
-# Output: []
+first_and_rest(1) | is_empty
+# => true
 ```
 
 A variadic parameter:
@@ -159,11 +159,11 @@ The terminator rules are the same as for `fn(parameters):`. Use `fn(acc, x):` wh
 ```mq
 # Same as map(fn(s): s | split(" ") | len)
 ["a b", "c d e"] | map(fn: split(" ") | len)
-# Output: [2, 3]
+# => [2, 3]
 
 # `self` is the argument
 [1, 2, 3, 4] | filter(fn: self > 2)
-# Output: [3, 4]
+# => [3, 4]
 
 # Markdown nodes
 nodes | filter(fn: select(.h || .code) | !is_none())
@@ -184,6 +184,7 @@ nodes | map(fn(x): to_text(x) | upcase())
 
 # With several arguments
 [1, 2, 3] | fold(0, fn(acc, x): acc + x)
+# => 6
 
 # Explicit terminator is still accepted
 nodes | map(fn(x): add(x, "1");)
@@ -208,22 +209,24 @@ fn(param1, param2=default_value): program;
 ```
 
 ```mq
-# Anonymous function with default parameter
+# Using the default value
 let multiply = fn(x, factor=2): x * factor;
+| multiply(10)
+# => 20
+
+# Overriding the default value
+let multiply = fn(x, factor=2): x * factor;
+| multiply(10, 3)
+# => 30
 
 # Using end terminator
 let multiply = fn(x, factor=2): x * factor end
-
-# Using default value
-multiply(10)
-# Multiplies by 2 (default factor)
-
-# Overriding default value
-multiply(10, 3)
-# Multiplies by 3
+| multiply(10)
+# => 20
 
 # Using in callbacks
 [1, 2] | map(fn(x, prefix="Item: "): prefix + to_text(x))
+# => ["Item: 1", "Item: 2"]
 ```
 
 ### Variadic Parameters
@@ -232,9 +235,8 @@ Anonymous functions support variadic parameters the same way named functions do:
 
 ```mq
 let sum_all = fn(*args): sum(args);
-
-sum_all(1, 2, 3)
-# Output: 6
+| sum_all(1, 2, 3)
+# => 6
 ```
 
 ## Rules
@@ -250,7 +252,7 @@ Pipeline expressions can be passed directly as function arguments. The pipeline 
 
 ```mq
 array("a" | upcase(), "b" | upcase())
-# Output: ["A", "B"]
+# => ["A", "B"]
 ```
 
 ## Parenthesis-Free Calls
@@ -266,23 +268,23 @@ This only applies in **pipeline position** (as a pipeline step). When a function
 # 0-arg function: called without parentheses
 def greet(): "Hello!";
 | greet # equivalent to greet()
-# Output: "Hello!"
+# => "Hello!"
 
 # 1-arg function: current value is passed implicitly
 def double(x): x * 2;
-| 5 | double      # equivalent to 5 | double(5), i.e., double(5)
-# Output: 10
+| 5 | double      # equivalent to 5 | double(self)
+# => 10
 
 # Builtin functions also support paren-free calls
 "hello world" | upcase    # equivalent to upcase("hello world")
-# Output: "HELLO WORLD"
+# => "HELLO WORLD"
 
 [1, None, 2] | compact | len  # chained paren-free calls
-# Output: 2
+# => 2
 
 # Function references are preserved when passed as arguments
 map(["a", "b"], upcase)   # upcase is NOT auto-called here; it's passed as a callback
-# Output: ["A", "B"]
+# => ["A", "B"]
 ```
 
 ## See Also

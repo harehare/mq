@@ -30,8 +30,8 @@ module math:
 end
 
 # Use functions from the module
-| math::add(5, 3)  # Returns 8
-| math::mul(4, 2)  # Returns 8
+| math::add(5, 3)
+# => 8
 ```
 
 ### Scope
@@ -50,6 +50,7 @@ module csv_tools:
   def rows(text): csv::csv_parse(text, true);
 end
 | csv_tools::rows("a,b\n1,2")
+# => [{"a": "1", "b": "2"}]
 ```
 
 Module-level `let` values are computed once per run.
@@ -257,8 +258,9 @@ Since the current value (`self`) is automatically passed when a call is missing 
 builder calls also read naturally in pipeline position:
 
 ```mq
-"My Project" | md::h(1)
-# equivalent to md::h("My Project", 1)
+import "md"
+| "My Project" | md::h(1)    # equivalent to md::h("My Project", 1)
+# => "# My Project"
 ```
 
 Lists and tables are built the same way:
@@ -303,9 +305,11 @@ in an inline query/script.
 
 `reference_index` groups every link and footnote definition by identifier:
 
+<!-- doc-test: skip -->
 ```mq
 import "md"
-| md::reference_index(nodes)
+| nodes
+| md::reference_index()
 # => {"links": {"ident": [{ident, label, url, title, location}, ...]}, "footnotes": {"ident": [{ident, location}, ...]}}
 ```
 
@@ -317,9 +321,11 @@ per reference with its `type`, `ident`, `label`, `location`, whether it `resolve
 whether that definition is `duplicate`, the `definition` picked (CommonMark's first-match-wins, or
 `None` if unresolved), and every candidate `definitions`:
 
+<!-- doc-test: skip -->
 ```mq
 import "md"
-| md::resolve_references(nodes)
+| nodes
+| md::resolve_references()
 | filter(fn(r): !r[:resolved];)
 # => reference nodes with no matching definition (for building linkcheck-style diagnostics)
 ```
@@ -392,7 +398,7 @@ in addition to local file names.
 > `--allow-http-import`. Once enabled, only URLs under `github.com/harehare` (resolved to
 > `raw.githubusercontent.com/harehare`) are allowed; importing from any other domain also
 > requires `--allow-http-import=DOMAIN`. This is a separate permission from `--allow-net`, which only
-> gates the `http()`/`http_request()` builtins, not module resolution.
+> gates the `http()` builtin, not module resolution.
 
 ### Plain URL
 

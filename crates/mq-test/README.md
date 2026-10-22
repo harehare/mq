@@ -369,7 +369,7 @@ end
 
 # @test
 def verify_array_length():
-  assert_eq(length([1, 2, 3]), 3)
+  assert_eq(len([1, 2, 3]), 3)
 end
 
 #[test]
