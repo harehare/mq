@@ -1161,3 +1161,58 @@ fn cookbook_read_toml_values() {
     ]);
     assert_eq!(version.trim(), "0.3.1");
 }
+
+#[test]
+fn cookbook_find_skipped_heading_levels() {
+    let path = write_temp(
+        "cookbook_find_skipped_heading_levels.md",
+        "# Guide\n\n## Install\n\n#### Details\n\n## Usage\n\n### Basic\n\n##### Deep\n",
+    );
+    let out = run(&[
+        r#"def pairs(xs):
+  var i = 1
+  | while (i < len(xs)):
+      yield: [xs[i - 1], xs[i]]
+      | i += 1
+    end
+end
+| nodes
+| filter(is_h)
+| pairs()
+| filter(fn(p): attr(p[1], "depth") - attr(p[0], "depth") > 1;)
+| map(fn(p): s"${to_text(p[0])} (h${attr(p[0], "depth")}) -> ${to_text(p[1])} (h${attr(p[1], "depth")})";)
+| collect()"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(out.trim(), "Install (h2) -> Details (h4)\nBasic (h3) -> Deep (h5)");
+}
+
+#[test]
+fn cookbook_scan_large_files_lazily() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("app.log"),
+        "2026-09-01T10:00:01 INFO  server started\n\
+         2026-09-01T10:00:05 ERROR db connection refused\n\
+         2026-09-01T10:00:09 INFO  retrying\n\
+         2026-09-01T10:00:12 ERROR db connection refused\n\
+         2026-09-01T10:00:20 WARN  slow query\n\
+         2026-09-01T10:00:31 ERROR disk full\n",
+    )
+    .unwrap();
+    let in_dir = |query: &str| run_in(Some(dir.path()), &["-I", "null", "--allow-read", query]);
+
+    let first_errors =
+        in_dir(r#"stream_lines("app.log") | filter(fn(line): contains(line, " ERROR ");) | take(2) | collect()"#);
+    assert_eq!(
+        first_errors.trim(),
+        r#"["2026-09-01T10:00:05 ERROR db connection refused", "2026-09-01T10:00:12 ERROR db connection refused"]"#
+    );
+
+    let has_disk_full = in_dir(r#"stream_lines("app.log") | any(fn(line): contains(line, "disk full");)"#);
+    assert_eq!(has_disk_full.trim(), "true");
+
+    let error_count =
+        in_dir(r#"stream_lines("app.log") | fold(0, fn(n, line): if (contains(line, " ERROR ")): n + 1 else: n;)"#);
+    assert_eq!(error_count.trim(), "3");
+}
