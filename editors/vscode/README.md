@@ -34,7 +34,7 @@ This extension provides essential coding assistance for `.mq` files, helping you
 ## Available Commands
 
 - `mq: Install LSP Server`: Installs the mq Language Server Protocol server
-- `mq: Start LSP Server`: Starts the mq Language Server Protocol server
+- `mq: Restart Language Server`: Restarts the mq Language Server Protocol server
 - `mq: Run selected text`: Executes the currently selected text in the editor as an mq
 - `mq: Execute mq file`: Executes the selected mq file to the text in active editor
 - `mq: Execute query`: Executes the input mq query on the text in the active editor, picking from recent queries or typing a new one

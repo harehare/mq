@@ -258,13 +258,6 @@ function registerLspCommands(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("mq.startLSPServer", async () => {
-      await stopLspServer();
-      await startLspServer();
-    }),
-  );
-
-  context.subscriptions.push(
     vscode.commands.registerCommand("mq.stopLSPServer", async () => {
       await stopLspServer();
     }),

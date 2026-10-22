@@ -107,7 +107,9 @@ function M.stop()
 end
 
 function M.restart()
-  M.stop()
+  if M.is_running() then
+    M.stop()
+  end
   vim.defer_fn(function()
     M.start()
   end, 100)

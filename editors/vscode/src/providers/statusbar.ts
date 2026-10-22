@@ -83,8 +83,8 @@ export class LspStatusBarManager {
   async showStatusMenu(): Promise<void> {
     const items: vscode.QuickPickItem[] = [
       {
-        label: "$(debug-start) Start LSP Server",
-        description: "Start the mq Language Server",
+        label: "$(debug-restart) Restart LSP Server",
+        description: "Restart the mq Language Server",
       },
       {
         label: "$(info) Show Output",
@@ -101,8 +101,8 @@ export class LspStatusBarManager {
     }
 
     switch (selected.label) {
-      case "$(debug-start) Start LSP Server":
-        await vscode.commands.executeCommand("mq.startLSPServer");
+      case "$(debug-restart) Restart LSP Server":
+        await vscode.commands.executeCommand("mq.restartLSPServer");
         break;
       case "$(info) Show Output":
         await vscode.commands.executeCommand("mq.showLSPOutput");
