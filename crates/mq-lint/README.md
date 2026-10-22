@@ -214,7 +214,7 @@ if (.value == none): "default" else: .value  # style: simplify to `.value ?? "de
 **Example: `prefer_pipe_style`**
 
 ```mq
-to_text(to_upper(x))  # style: rewrite as `x | to_upper() | to_text()`
+to_text(upcase(x))  # style: rewrite as `x | upcase() | to_text()`
 ```
 
 **Example: `redundant_try`**

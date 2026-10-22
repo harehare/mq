@@ -102,6 +102,7 @@ just test-cov
 ### Documentation Requirements
 
 - Update `/docs` and crate-level `README.md` files for new features
+- A `# => expected` line after a query in a ```` ```mq ```` block under `docs/books/src` is run by `cargo test -p mq-run --test doc_examples_tests`. Put `<!-- doc-test: skip -->` before the fence for a block that needs external input
 
 ### Generated Documentation
 

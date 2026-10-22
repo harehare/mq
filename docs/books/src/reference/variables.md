@@ -9,7 +9,7 @@ The `let` binds an immutable value to an identifier for later use:
 let x = 42
 # Uses x in an expression
 | let y = x + 1
-# Binds `add` function to z
+# Binds the result of calling a local function to z
 | let z = do let z = fn(x): x + 1; | z(1);
 ```
 
@@ -23,8 +23,10 @@ The `var` declares a mutable variable that can be reassigned:
 # Declares a mutable variable
 var counter = 0
 # Reassigns the value
-counter = counter + 1
+| counter = counter + 1
 # counter is now 1
+| counter
+# => 1
 ```
 
 Variables declared with `var` can be modified using the assignment operator (`=`):
@@ -32,11 +34,13 @@ Variables declared with `var` can be modified using the assignment operator (`=`
 ```mq
 var total = 100
 | total = total - 25
-# total is now 75
+| total
+# => 75
 
 var message = "Hello"
 | message = message + " World"
-# message is now "Hello World"
+| message
+# => "Hello World"
 ```
 
 ## Destructuring Assignment

@@ -11,12 +11,15 @@ mq supports standard conditional operations through the following functions:
 ```mq
 # Basic comparisons
 and(true, true, true)
+# => true
 true && true && true
 # => true
 or(true, false, true)
+# => true
 true || false || true
 # => true
 not(false)
+# => true
 !false
 # => true
 ```

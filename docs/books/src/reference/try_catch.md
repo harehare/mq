@@ -24,19 +24,27 @@ try <expr> catch(<binder>) <expr>
 ```mq
 # When the expression succeeds
 try: "value" catch: "unknown"
+# => "value"
 
 # When the expression fails
 try: get("missing") catch: "default"
+# => "default"
 ```
 
 ### Chaining with Pipe
 
 ```mq
-# Try to parse as JSON, fallback to raw string
-try: from_json() catch: self
+# Try to parse as JSON, fallback to the raw string
+import "json"
+| "not json"
+| try: json::json_parse() catch: self
+# => "not json"
 
 # Complex fallback logic
-try: do get("data") | from_json(); catch: []
+import "json"
+| {"data": "[1, 2]"}
+| try: do get("data") | json::json_parse(); catch: []
+# => [1, 2]
 ```
 
 ### Nested Try-Catch
@@ -44,6 +52,7 @@ try: do get("data") | from_json(); catch: []
 ```mq
 # Multiple fallback levels
 try: get("primary") catch: try: get("secondary") catch: "default"
+# => "default"
 ```
 
 ### Error Binder
@@ -62,7 +71,8 @@ The error suppression operator `?` provides a concise way to handle errors by re
 
 ```mq
 # Equivalent to a regular try-catch with a default value
-get("missing")?
+get("missing")? | is_none
+# => true
 ```
 
 In this example, if `get("missing")` fails, the result will be `None` rather than an error.

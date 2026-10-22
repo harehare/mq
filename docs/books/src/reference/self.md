@@ -7,6 +7,9 @@ The current value being processed can be referenced as `self` or `.` (dot). Both
 ```mq
 # These expressions are equivalent
 "hello" | upcase()
+# => "HELLO"
 "hello" | upcase(self)
+# => "HELLO"
 "hello" | upcase(.)
+# => "HELLO"
 ```

@@ -63,14 +63,14 @@ Pass one or more numeric arguments to match headings at specific depths:
 
 ### Code Language Filtering
 
-Pass a string argument to match code blocks with a specific language:
+Pass one or more language names to match code blocks with any of those languages:
 
 ```mq
 # Select only Rust code blocks
 .code("rust")
 
 # Select Python or JavaScript code blocks
-.code("python") | to_array | concat(.code("javascript"))
+.code("python", "javascript")
 ```
 
 ### Link and Image URL Filtering
@@ -269,13 +269,11 @@ List nodes support the following attributes:
 
 Table cell nodes support the following attributes:
 
-| Attribute               | Type    | Description                                | Example                         |
-| ----------------------- | ------- | ------------------------------------------ | ------------------------------- |
-| `row`                   | Integer | The row number of the cell                 | `.[0][0].row`                   |
-| `column`                | Integer | The column number of the cell              | `.[0][0].column`                |
-| `last_cell_in_row`      | Boolean | Whether this is the last cell in the row   | `.[0][0].last_cell_in_row`      |
-| `last_cell_of_in_table` | Boolean | Whether this is the last cell in the table | `.[0][0].last_cell_of_in_table` |
-| `value`                 | String  | The text content of the cell               | `.[0][0].value`                 |
+| Attribute | Type    | Description                   | Example          |
+| --------- | ------- | ----------------------------- | ---------------- |
+| `row`     | Integer | The row number of the cell    | `.[0][0].row`    |
+| `column`  | Integer | The column number of the cell | `.[0][0].column` |
+| `value`   | String  | The text content of the cell  | `.[0][0].value`  |
 
 ### Reference Nodes Attributes
 
@@ -371,13 +369,13 @@ select(!.code)
 
 ### Using map()
 
-Transform each selected node:
+A selector emits its matches one at a time. Pass `-A` to collect them into a single array first, so that `map()` and `filter()` see all of them:
 
 ```mq
-# Get all heading levels
+# Get all heading levels (run with -A)
 .h | map(fn(h): h.level;)
 
-# Get all code block languages
+# Get all code block languages (run with -A)
 .code | map(fn(c): c.lang;)
 ```
 
@@ -386,18 +384,18 @@ Transform each selected node:
 Filter nodes based on attribute values:
 
 ```mq
-# Get only level 2 headings
+# Get only level 2 headings (run with -A)
 .h | filter(fn(h): h.level == 2;)
 
-# Get only rust code blocks
+# Get only rust code blocks (run with -A)
 .code | filter(fn(c): c.lang == "rust";)
 ```
 
 The selector call syntax provides a more concise alternative for common cases:
 
 ```mq
-.h(2)           # equivalent to: .h | filter(fn(h): h.level == 2;)
-.code("rust")   # equivalent to: .code | filter(fn(c): c.lang == "rust";)
+.h(2)           # equivalent to: .h | filter(fn(h): h.level == 2;) with -A
+.code("rust")   # equivalent to: .code | filter(fn(c): c.lang == "rust";) with -A
 ```
 
 ### Extract Code Languages
