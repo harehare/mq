@@ -9,7 +9,7 @@ use super::definition;
 use super::flavor::Flavor;
 use super::html_flow::{self, Kind as HtmlKind};
 use super::inline;
-use super::line::{Indent, Line, leading_ws, split_lines, tab_stops};
+use super::line::{BOM, Indent, Line, leading_ws, split_lines, tab_stops};
 use super::mdx_flow::{FlowOutcome, absorbed_until, blocks_lazy_continuation, probe_mdx_flow};
 use super::table;
 mod collect;
@@ -46,8 +46,8 @@ pub(super) fn parse(src: &str, flavor: Flavor, read_frontmatter: bool) -> Vec<Bl
     let stops = tab_stops(src);
     let mut lines = split_lines(src, flavor, &stops);
     // A byte order mark at the start of the document is not content.
-    if let Some(first) = lines.first_mut().filter(|line| line.text.starts_with('\u{feff}')) {
-        let mark = '\u{feff}'.len_utf8();
+    if let Some(first) = lines.first_mut().filter(|line| line.text.starts_with(BOM)) {
+        let mark = BOM.len_utf8();
         // Columns start after it.
         let text = &first.text[mark..];
         *first = Line {

@@ -4,6 +4,9 @@ use super::block::CODE_INDENT;
 use super::flavor::Flavor;
 use crate::node::Point;
 
+/// The byte order mark.
+pub(super) const BOM: char = '\u{feff}';
+
 /// Leading whitespace: how many columns it spans, where tabs go to the next multiple of four, and how
 /// many bytes it takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,11 +165,11 @@ pub(super) struct TabStop {
     after: usize,
 }
 
-/// Every tab in `src` in order.
+/// Every tab in `src` in order. A byte order mark at the start has no width.
 pub(super) fn tab_stops(src: &str) -> Vec<TabStop> {
     let mut stops = Vec::new();
     // The byte offset and the column right after the last tab or line start.
-    let (mut anchor, mut anchor_column) = (0, 0);
+    let (mut anchor, mut anchor_column) = (if src.starts_with(BOM) { BOM.len_utf8() } else { 0 }, 0);
     for (index, byte) in src.bytes().enumerate() {
         match byte {
             b'\n' | b'\r' => (anchor, anchor_column) = (index + 1, 0),
