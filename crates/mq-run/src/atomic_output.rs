@@ -145,6 +145,10 @@ impl OutputSink {
             return Ok(OutputSink::Direct(BufWriter::new(file)));
         }
 
+        // Replace the symlink's destination, not the link itself, like a shell redirect.
+        let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let path = resolved.as_path();
+
         let (file, temp_path) = Self::create_temp_file(path)?;
         let mut writer = BufWriter::new(file);
         if clobber == ClobberMode::Append {
@@ -392,6 +396,24 @@ mod tests {
 
         let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o640);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_atomic_write_follows_symlink() {
+        let dir = temp_dir("symlink");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let real = dir.join("real.md");
+        let link = dir.join("lnk.md");
+        fs::write(&real, "old").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let mut sink = open_overwrite(&Some(link.clone()), AtomicOutput::Auto, false).unwrap();
+        sink.write_all(b"new").unwrap();
+        sink.finish().unwrap();
+
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&real).unwrap(), "new");
     }
 
     /// A FIFO stands in for any special file. Unlike a Unix socket, its path is not
