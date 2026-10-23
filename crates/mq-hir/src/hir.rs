@@ -54,6 +54,12 @@ impl Default for Hir {
     }
 }
 
+/// Whether an mq-hir feature declares builtins that the runtime build may lack.
+fn declared_by_feature(capability: Option<&str>) -> bool {
+    (cfg!(feature = "http") && capability == Some("http"))
+        || (cfg!(feature = "css-selector") && capability == Some("css-selector"))
+}
+
 impl Hir {
     /// Creates a new `Hir` instance.
     ///
@@ -164,9 +170,7 @@ impl Hir {
         let scope_id = self.builtin.scope_id;
 
         for doc in self.builtin.docs.iter().filter(|doc| {
-            doc.is_available(|name| {
-                mq_lang::is_builtin_function(name) || (cfg!(feature = "http") && doc.capability == Some("http"))
-            })
+            doc.is_available(|name| mq_lang::is_builtin_function(name) || declared_by_feature(doc.capability))
         }) {
             for name in doc.names() {
                 let kind = match doc.kind {

@@ -12,8 +12,9 @@ repository.workspace = true
 version.workspace = true
 
 [features]
-# Declares the `http` builtins without building the runtime HTTP client.
+# Declare feature-gated builtins without building their runtime dependencies.
 http = []
+css-selector = []
 
 [lints]
 workspace = true
