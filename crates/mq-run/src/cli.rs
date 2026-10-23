@@ -2935,6 +2935,11 @@ impl Cli {
         for file in files {
             let pattern = file.to_string_lossy();
 
+            if file.is_dir() {
+                expanded.extend(Self::collect_markdown_files(file)?);
+                continue;
+            }
+
             if file.exists() || !pattern.contains(['*', '?', '[']) {
                 expanded.push(file.clone());
                 continue;
@@ -2953,6 +2958,33 @@ impl Cli {
         }
 
         Ok(expanded)
+    }
+
+    /// Recursively collects Markdown files under `dir`, sorted by path. Hidden and gitignored
+    /// entries are skipped.
+    fn collect_markdown_files(dir: &Path) -> miette::Result<Vec<PathBuf>> {
+        let mut found = Vec::new();
+
+        for entry in ignore::WalkBuilder::new(dir).build() {
+            let entry = entry.into_diagnostic()?;
+            let path = entry.path();
+            let is_markdown = path.is_file()
+                && path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| matches!(e.to_lowercase().as_str(), "md" | "markdown" | "mdx"));
+
+            if is_markdown {
+                found.push(path.to_path_buf());
+            }
+        }
+
+        if found.is_empty() {
+            return Err(miette!("no Markdown files found in `{}`", dir.display()));
+        }
+
+        found.sort();
+        Ok(found)
     }
 
     fn resolved_files(&self) -> miette::Result<Option<Vec<PathBuf>>> {
