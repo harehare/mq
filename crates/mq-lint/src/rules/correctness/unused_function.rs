@@ -5,8 +5,8 @@ use mq_hir::SymbolKind;
 
 /// Reports functions that are never called.
 ///
-/// Functions of a module file (one with only definitions at top level) or of a `module` block
-/// are exported, so they are not reported.
+/// Public functions of a module file (one with only definitions at top level) or of a `module`
+/// block are exported, so they are not reported. `_`-prefixed functions are always checked.
 pub struct UnusedFunction;
 
 /// Whether every top-level symbol of the source is a definition.
@@ -47,14 +47,15 @@ impl LintRule for UnusedFunction {
         let is_module_file = is_definitions_only(ctx);
 
         ctx.all_symbols()
-            .filter(|(_, s)| s.is_function() && !ctx.hir.is_builtin_symbol(s) && !s.is_internal_function())
+            .filter(|(_, s)| s.is_function() && !ctx.hir.is_builtin_symbol(s))
             .filter_map(|(_, sym)| {
                 let name = sym.value.as_deref()?;
                 let in_module_block = sym
                     .parent
                     .and_then(|id| ctx.hir.symbol(id))
                     .is_some_and(|p| matches!(p.kind, SymbolKind::Module(_)));
-                if is_module_file || in_module_block || used_names.contains(name) {
+                let exported = (is_module_file || in_module_block) && !name.starts_with('_');
+                if exported || used_names.contains(name) {
                     return None;
                 }
                 let mut d = Diagnostic::new(LintMessage::UnusedFunction { name: name.to_string() }, self.severity());
@@ -86,6 +87,9 @@ mod tests {
     #[rstest]
     #[case("def foo(): .h1; | .h1", "unused function `foo`")]
     #[case("def bar(): .h2; | .h1", "unused function `bar`")]
+    #[case("def _helper(): 1;", "unused function `_helper`")]
+    #[case("def _helper(): 1;\ndef pub(): 2;", "unused function `_helper`")]
+    #[case("module m: def _a(): 1; end | .h1", "unused function `_a`")]
     fn detects_unused_function(#[case] code: &str, #[case] msg: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 1);
@@ -96,6 +100,7 @@ mod tests {
     #[case("def foo(): .h1; | foo")]
     #[case("def foo(): .h1; | foo()")]
     #[case("def foo(): .h1;")]
+    #[case("def _h(): 1;\ndef foo(): _h();")]
     #[case("let x = 1\ndef foo(): x;")]
     #[case("import \"json\"\ndef foo(): 1;")]
     #[case("module m: def a(): 1; end | .h1")]
