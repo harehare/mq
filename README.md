@@ -2,9 +2,9 @@
   <img src="assets/logo.svg" style="width: 128px; height: 128px;"/>
 
 <a href="https://mqlang.org">Visit the site 🌐</a>
-·
+—
 <a href="https://mqlang.org/book">Read the book 📖</a>
-·
+—
 <a href="https://mqlang.org/playground">Playground 🎮</a>
 
 <h1>mq</h1>
