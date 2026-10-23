@@ -761,14 +761,19 @@ impl Formatter {
         let is_prev_pipe = self.is_prev_pipe();
         let inline_let_indent = (indent_level == 0 && self.is_let_line()).then(|| self.current_line_content_indent());
 
+        // A tokenless block is an implicit pipe chain and has no opening token to space around.
+        let has_open_token = node.token.is_some();
+
         if node.has_new_line() {
             self.append_indent(indent_level);
-        } else if !self.output.is_empty() && !self.output.ends_with(' ') {
+        } else if has_open_token && !self.output.is_empty() && !self.output.ends_with(' ') {
             self.append_space();
         }
 
         self.append_display(node);
-        self.append_space();
+        if has_open_token {
+            self.append_space();
+        }
 
         let all_children = node.all_children();
         let expr_nodes = all_children.iter().peekable();
