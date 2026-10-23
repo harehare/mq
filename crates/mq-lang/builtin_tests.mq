@@ -2059,6 +2059,12 @@ def test_lcm(a, b, expected):
   assert_eq(lcm(a, b), expected)
 end
 
+# @parametrize([[0, nan()], [infinite(), 4], [12, 1.5], ["a", 2]])
+def test_gcd_lcm_invalid_args(a, b):
+  assert_eq(try: gcd(a, b) catch(e): "error", "error")
+  | assert_eq(try: lcm(a, b) catch(e): "error", "error")
+end
+
 # @parametrize([[{"a": 1, "b": 2}, {"a": 10, "b": 20}], [dict(), dict()]])
 def test_map_values(d, expected):
   assert_eq(map_values(d, fn(v): v * 10;), expected)
