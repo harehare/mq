@@ -24,10 +24,6 @@ struct Cli {
     #[arg(long)]
     show_types: bool,
 
-    /// Disable automatic builtin preloading (use when checking builtin.mq itself)
-    #[arg(long)]
-    no_builtins: bool,
-
     /// Enforce homogeneous arrays (reject mixed-type arrays like [1, "hello"])
     #[arg(long)]
     strict_array: bool,
@@ -77,7 +73,6 @@ fn parse_input_type(src: &str) -> Result<Type, String> {
 struct CheckOptions<'a> {
     show_types: bool,
     label: Option<&'a str>,
-    no_builtins: bool,
     type_checker_options: TypeCheckerOptions,
 }
 
@@ -110,7 +105,6 @@ fn run() -> io::Result<()> {
         let opts = CheckOptions {
             show_types: cli.show_types,
             label: None,
-            no_builtins: cli.no_builtins,
             type_checker_options: tc_options,
         };
         let had_errors = check_file(&mut w, &code, source_url, &opts)?;
@@ -145,7 +139,6 @@ fn run() -> io::Result<()> {
         let opts = CheckOptions {
             show_types: cli.show_types,
             label: label.as_deref(),
-            no_builtins: cli.no_builtins,
             type_checker_options: tc_options.clone(),
         };
         let had_errors = check_file(&mut w, &code, source_url, &opts)?;
@@ -178,7 +171,7 @@ fn run_machine_format(cli: &Cli) -> io::Result<()> {
         let source_url = Url::parse("file:///stdin").ok();
         results.push((
             "<stdin>".to_string(),
-            collect_check_diagnostics(&code, source_url, cli.no_builtins, &tc_options),
+            collect_check_diagnostics(&code, source_url, &tc_options),
         ));
     } else {
         for path in &cli.files {
@@ -187,7 +180,7 @@ fn run_machine_format(cli: &Cli) -> io::Result<()> {
             let source_url = Url::from_file_path(std::fs::canonicalize(path).unwrap_or(path.clone())).ok();
             results.push((
                 path.display().to_string(),
-                collect_check_diagnostics(&code, source_url, cli.no_builtins, &tc_options),
+                collect_check_diagnostics(&code, source_url, &tc_options),
             ));
         }
     }
@@ -208,9 +201,8 @@ fn run_machine_format(cli: &Cli) -> io::Result<()> {
 }
 
 /// Creates the HIR to check against, knowing the names the test runner injects.
-fn new_hir(no_builtins: bool) -> Hir {
+fn new_hir() -> Hir {
     let mut hir = Hir::default();
-    hir.builtin.disabled = no_builtins;
     for name in mq_check::TEST_RUNNER_GLOBALS {
         hir.declare_global(name);
     }
@@ -251,10 +243,9 @@ fn load_source(
 fn collect_check_diagnostics(
     code: &str,
     source_url: Option<Url>,
-    no_builtins: bool,
     type_checker_options: &TypeCheckerOptions,
 ) -> Vec<format::CheckDiagnostic> {
-    let mut hir = new_hir(no_builtins);
+    let mut hir = new_hir();
     let (source_id, parse_errors) = load_source(&mut hir, source_url, code);
 
     let mut diagnostics = format::syntax_diagnostics(&hir, source_id, &parse_errors);
@@ -271,7 +262,7 @@ fn collect_check_diagnostics(
 
 /// Runs syntax and type checks on a single source, returns `true` if any errors were found.
 fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &CheckOptions<'_>) -> io::Result<bool> {
-    let mut hir = new_hir(opts.no_builtins);
+    let mut hir = new_hir();
     let (source_id, parse_errors) = load_source(&mut hir, source_url, code);
 
     if let Some(lbl) = opts.label {
@@ -622,9 +613,9 @@ mod tests {
             input_type: Some(mq_check::type_expr::parse_type("code").unwrap()),
             ..Default::default()
         };
-        let diagnostics = collect_check_diagnostics(".depth", None, false, &options);
+        let diagnostics = collect_check_diagnostics(".depth", None, &options);
         assert!(diagnostics.iter().any(|d| d.code == "typechecker::undefined_attribute"));
-        let diagnostics = collect_check_diagnostics(".depth", None, false, &TypeCheckerOptions::default());
+        let diagnostics = collect_check_diagnostics(".depth", None, &TypeCheckerOptions::default());
         assert!(diagnostics.is_empty());
     }
 
@@ -656,7 +647,6 @@ mod tests {
     #[case(vec!["mq-check", "test.mq"], vec!["test.mq"], false, false)]
     #[case(vec!["mq-check", "test.mq", "--strict-array"], vec!["test.mq"], true, false)]
     #[case(vec!["mq-check", "--show-types"], vec![], false, true)]
-    #[case(vec!["mq-check", "--no-builtins"], vec![], false, false)]
     fn test_cli_parsing(
         #[case] args: Vec<&str>,
         #[case] expected_files: Vec<&str>,
@@ -670,12 +660,6 @@ mod tests {
         );
         assert_eq!(cli.strict_array, expected_strict);
         assert_eq!(cli.show_types, expected_show_types);
-    }
-
-    #[test]
-    fn test_cli_no_builtins() {
-        let cli = Cli::try_parse_from(["mq-check", "--no-builtins"]).unwrap();
-        assert!(cli.no_builtins);
     }
 
     #[rstest]
@@ -697,7 +681,7 @@ mod tests {
 
     #[test]
     fn test_collect_check_diagnostics_reports_undefined_symbol() {
-        let diagnostics = collect_check_diagnostics("undefined_fn()", None, false, &TypeCheckerOptions::default());
+        let diagnostics = collect_check_diagnostics("undefined_fn()", None, &TypeCheckerOptions::default());
         assert!(
             diagnostics
                 .iter()
@@ -713,7 +697,6 @@ mod tests {
         let diagnostics = collect_check_diagnostics(
             "include \"test\" | assert_eq(1, 1)",
             None,
-            false,
             &TypeCheckerOptions::default(),
         );
         assert!(
@@ -730,7 +713,7 @@ mod tests {
     fn test_collect_check_diagnostics_calls_included_functions_with_any_arguments(#[case] code: &str) {
         // Calling an included function must not be read as a bracket access (`slice`) on a
         // variable.
-        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        let diagnostics = collect_check_diagnostics(code, None, &TypeCheckerOptions::default());
         assert!(diagnostics.is_empty(), "{code}: {diagnostics:?}");
     }
 
@@ -739,7 +722,7 @@ mod tests {
     #[case::missing_value("let x = | x")]
     #[case::bad_parameter_list("def f(: 1;")]
     fn test_syntax_errors_are_reported_and_skip_type_checking(#[case] code: &str) {
-        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        let diagnostics = collect_check_diagnostics(code, None, &TypeCheckerOptions::default());
         assert!(!diagnostics.is_empty(), "{code}");
         assert!(
             diagnostics
@@ -752,7 +735,6 @@ mod tests {
         let opts = CheckOptions {
             show_types: false,
             label: None,
-            no_builtins: false,
             type_checker_options: TypeCheckerOptions::default(),
         };
         assert!(check_file(&mut out, code, None, &opts).unwrap());
@@ -765,14 +747,13 @@ mod tests {
     #[case::comment("# only a comment")]
     #[case::comments_and_blanks("# a\n\n  # b\n")]
     fn test_expression_free_source_has_no_errors(#[case] code: &str) {
-        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        let diagnostics = collect_check_diagnostics(code, None, &TypeCheckerOptions::default());
         assert!(diagnostics.is_empty(), "{code:?}: {diagnostics:?}");
 
         let mut out = Vec::new();
         let opts = CheckOptions {
             show_types: false,
             label: None,
-            no_builtins: false,
             type_checker_options: TypeCheckerOptions::default(),
         };
         assert!(!check_file(&mut out, code, None, &opts).unwrap());
@@ -782,7 +763,7 @@ mod tests {
     #[case::unclosed_string("\"abc")]
     #[case::comment_then_incomplete("# c\nif (")]
     fn test_syntax_errors_after_comments_are_still_reported(#[case] code: &str) {
-        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        let diagnostics = collect_check_diagnostics(code, None, &TypeCheckerOptions::default());
         assert!(
             !diagnostics.is_empty() && diagnostics.iter().all(|d| d.code == "mq::syntax"),
             "{code:?}: {diagnostics:?}"
@@ -791,7 +772,7 @@ mod tests {
 
     #[test]
     fn test_collect_check_diagnostics_no_errors_on_valid_code() {
-        let diagnostics = collect_check_diagnostics(".h1", None, true, &TypeCheckerOptions::default());
+        let diagnostics = collect_check_diagnostics(".h1", None, &TypeCheckerOptions::default());
         assert!(!diagnostics.iter().any(|d| d.severity == format::Severity::Error));
     }
 }
