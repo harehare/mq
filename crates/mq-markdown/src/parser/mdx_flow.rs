@@ -170,11 +170,7 @@ pub(super) fn blocks_lazy_continuation(lines: &[Line<'_>], index: usize) -> bool
 /// Whether `line` can start flow content: it is MDX and begins with a tag or an expression. The rule
 /// that parses flow content and the checks of what a paragraph can continue all start from this.
 pub(super) fn may_start_flow(line: &Line<'_>) -> bool {
-    line.flavor.has_jsx()
-        && matches!(
-            line.text.trim_start_matches([' ', '\t']).as_bytes().first(),
-            Some(b'<' | b'{')
-        )
+    line.flavor.has_jsx() && matches!(line.text.as_bytes().get(line.ws), Some(b'<' | b'{'))
 }
 
 pub(super) fn probe_mdx_flow(lines: &[Line<'_>], index: usize) -> Option<FlowOutcome> {

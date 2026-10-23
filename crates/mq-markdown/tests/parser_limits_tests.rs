@@ -89,6 +89,17 @@ fn repeated_constructs_parse(#[case] input: String) {
     exercise(Markdown::from_markdown_str(&input).unwrap());
 }
 
+/// Every line of a list nested deeper than the limit is read again by each of the containers around it,
+/// so the indentation of the line must not be scanned each time.
+#[rstest]
+#[case::bullets((0..500).map(|level| format!("{}- a\n", "  ".repeat(level))).collect::<String>())]
+#[case::numbered((0..500).map(|level| format!("{}1. a\n", "   ".repeat(level))).collect::<String>())]
+#[case::tabs((0..500).map(|level| format!("{}- a\n", "\t".repeat(level))).collect::<String>())]
+#[case::quotes_and_bullets((0..500).map(|level| format!("{}{}- a\n", "> ".repeat(level / 2), "  ".repeat(level / 2))).collect::<String>())]
+fn deeply_indented_nesting_parses(#[case] input: String) {
+    on_main_sized_stack(move || exercise(Markdown::from_markdown_str(&input).unwrap()));
+}
+
 #[test]
 fn repeated_unclosed_expressions_are_an_error() {
     let error = Markdown::from_mdx_str(&"a {".repeat(300_000)).unwrap_err().to_string();
