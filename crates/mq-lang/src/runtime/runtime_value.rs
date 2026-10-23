@@ -381,6 +381,7 @@ impl RuntimeValue {
         }
 
         match (self, other) {
+            (RuntimeValue::Number(a), RuntimeValue::Number(b)) => a.cmp(b),
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a
                 .iter()
                 .zip(b.iter())
