@@ -127,7 +127,7 @@ config.complexity.max_interpolation_exprs = 4;
 | Rule ID                 | Severity | Fixable | Description                                                                    |
 | ----------------------- | -------- | ------- | ------------------------------------------------------------------------------ |
 | `unused_variable`       | warn     | ✓       | `let`/`var` variable declared but never referenced                             |
-| `unused_function`       | warn     |         | `def` function defined but never called                                        |
+| `unused_function`       | warn     |         | `def` function defined but never called (public ones in modules exempt)        |
 | `unused_import`         | warn     |         | `import` module declared but never accessed                                    |
 | `unused_parameter`      | warn     | ✓       | Function parameter declared but never referenced                               |
 | `unreachable_code`      | error    |         | Code following `break`/`continue` that can never execute                       |
