@@ -4128,3 +4128,25 @@ fn test_watch_targets_includes_query_file_when_from_file() {
 fn test_is_content_change(#[case] kind: notify::EventKind, #[case] expected: bool) {
     assert_eq!(Cli::is_content_change(&kind), expected);
 }
+
+#[test]
+fn test_directory_expands_to_sorted_markdown_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let sub = dir.path().join("sub");
+    fs::create_dir(&sub).unwrap();
+    fs::write(dir.path().join("b.md"), "# B").unwrap();
+    fs::write(sub.join("a.mdx"), "# A").unwrap();
+    fs::write(dir.path().join("note.txt"), "skip").unwrap();
+
+    let files = Cli::expand_glob_patterns(&[dir.path().to_path_buf()]).unwrap();
+
+    assert_eq!(files, vec![dir.path().join("b.md"), sub.join("a.mdx")]);
+}
+
+#[test]
+fn test_directory_without_markdown_files_is_error() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("note.txt"), "skip").unwrap();
+
+    assert!(Cli::expand_glob_patterns(&[dir.path().to_path_buf()]).is_err());
+}

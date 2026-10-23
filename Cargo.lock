@@ -2844,6 +2844,7 @@ dependencies = [
  "dirs",
  "flate2",
  "glob",
+ "ignore",
  "miette",
  "mimalloc",
  "mq-dap",
