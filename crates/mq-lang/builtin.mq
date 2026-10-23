@@ -2177,7 +2177,7 @@ def median(arr): arr | percentile(0.5);
 # Returns: array
 def chunks(v, size):
   match (v):
-    | :array if (size <= 0): error("size must be a positive integer")
+    | :array if (!is_integer(size) || size <= 0): error("size must be a positive integer")
     | :array:
       do
         var result = []
@@ -2188,7 +2188,7 @@ def chunks(v, size):
           end
         | result
       end
-    | :string if (size <= 0): error("size must be a positive integer")
+    | :string if (!is_integer(size) || size <= 0): error("size must be a positive integer")
     | :string:
       do
         var result = []
