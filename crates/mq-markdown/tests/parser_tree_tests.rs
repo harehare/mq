@@ -3407,6 +3407,15 @@ list level=0 index=0 marker=- @1:8-1:9
   text "a" @1:8-1:9
 "#
 )]
+#[case::bom_tab_nested_list(
+    "\u{feff} \t- a\n      - b\n",
+    r#"
+list level=0 index=0 marker=- @1:5-1:6
+  text "a" @1:5-1:6
+list level=1 index=0 marker=- @2:9-2:10
+  text "b" @2:9-2:10
+"#
+)]
 #[case::fence("```rust\ncode\n```\n", r#"code "code" lang="rust" fence @1:1-3:4"#)]
 #[case::lone_cr_after_lt("<\r/-x", r#"text "<\r/-x" @1:1-2:4"#)]
 #[case::crlf_after_lt("<\r\n/-x", r#"text "<\r\n/-x" @1:1-2:4"#)]

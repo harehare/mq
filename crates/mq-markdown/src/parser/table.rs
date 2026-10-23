@@ -16,7 +16,7 @@ struct Cell<'a> {
 /// Splits a row into cells on unescaped pipes. Leading and trailing pipes do not make cells.
 fn split_row<'a>(line: &Line<'a>) -> Vec<Cell<'a>> {
     let text = line.text;
-    let indent = text.len() - text.trim_start_matches([' ', '\t']).len();
+    let indent = line.ws;
     let end = text.trim_end_matches([' ', '\t']).len().max(indent);
     let bytes = text.as_bytes();
 
@@ -91,7 +91,7 @@ fn align(content: &str) -> Option<TableAlignKind> {
 /// The cells of `line` as the header row of a table.
 fn header_cells<'a>(line: &Line<'a>) -> Option<Vec<Cell<'a>>> {
     // A lone pipe is both the leading and the trailing one of a row, which then has no cells.
-    (line.text.trim_matches([' ', '\t']) != "|").then(|| split_row(line))
+    (line.text[line.ws..].trim_end_matches([' ', '\t']) != "|").then(|| split_row(line))
 }
 
 /// The number of cells of `line` when a delimiter row with as many cells can make it a header.
@@ -121,7 +121,7 @@ fn header<'a>(
     {
         return None;
     }
-    let text = delimiter.text.trim_matches([' ', '\t']);
+    let text = delimiter.text[delimiter.ws..].trim_end_matches([' ', '\t']);
     // Without a pipe, a colon tells the delimiter row from the underline of a heading.
     if !text.contains(['|', ':'])
         || !text.contains('-')
@@ -208,7 +208,7 @@ pub(super) fn parse(
 
 /// The number of cells of `line` when it is a delimiter row such as `|:-|-:|`.
 pub(super) fn delimiter_cells(line: &Line<'_>) -> Option<usize> {
-    let text = line.text.trim_matches([' ', '\t']);
+    let text = line.text[line.ws..].trim_end_matches([' ', '\t']);
     // Without a pipe, a colon tells the delimiter row from the underline of a heading.
     if !text.contains(['|', ':'])
         || !text.contains('-')

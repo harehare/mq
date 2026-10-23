@@ -4,6 +4,9 @@ use super::block::CODE_INDENT;
 use super::flavor::Flavor;
 use crate::node::Point;
 
+/// The byte order mark.
+pub(super) const BOM: char = '\u{feff}';
+
 /// Leading whitespace: how many columns it spans, where tabs go to the next multiple of four, and how
 /// many bytes it takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +39,9 @@ pub(super) struct Line<'a> {
     /// Columns left over from a tab that a container consumed only in part. They count as leading
     /// whitespace of `text`.
     pub(super) pad: usize,
+    /// How many bytes of `text` are leading spaces and tabs, so that deeply indented lines in nested
+    /// containers are not scanned again by every container.
+    pub(super) ws: usize,
     /// The dialect of the document.
     pub(super) flavor: Flavor,
     /// For `*`, `-` and `_`: one past the offset in the line of the last byte that is neither that
@@ -71,30 +77,16 @@ impl<'a> Line<'a> {
 
     /// The leading whitespace.
     pub(super) fn indent(&self) -> Indent {
-        let mut columns = self.pad;
-        let mut absolute = self.start_column();
-        for (index, byte) in self.text.bytes().enumerate() {
-            match byte {
-                b' ' => {
-                    columns += 1;
-                    absolute += 1;
-                }
-                b'\t' => {
-                    let width = (absolute / 4 + 1) * 4 - absolute;
-                    columns += width;
-                    absolute += width;
-                }
-                _ => return Indent { columns, bytes: index },
-            }
-        }
+        let start = self.start_column();
+        let end = self.visual_column(self.column + self.ws);
         Indent {
-            columns,
-            bytes: self.text.len(),
+            columns: self.pad + end - start,
+            bytes: self.ws,
         }
     }
 
     pub(super) fn is_blank(&self) -> bool {
-        self.text.bytes().all(|b| matches!(b, b' ' | b'\t'))
+        self.ws == self.text.len()
     }
 
     /// The position of the byte at `byte` in `text`. Columns are in UTF-16 code units, and a tab is one.
@@ -108,10 +100,12 @@ impl<'a> Line<'a> {
 
     /// The same line with the first `bytes` bytes removed.
     pub(super) fn skip(self, bytes: usize) -> Line<'a> {
+        let text = &self.text[bytes..];
         Line {
             column: self.column + bytes,
-            text: &self.text[bytes..],
+            text,
             pad: 0,
+            ws: self.ws.checked_sub(bytes).unwrap_or_else(|| leading_ws(text)),
             ..self
         }
     }
@@ -154,6 +148,7 @@ impl<'a> Line<'a> {
             column: self.column + bytes,
             text: &self.text[bytes..],
             pad,
+            ws: self.ws - bytes,
             ..self
         }
     }
@@ -170,11 +165,11 @@ pub(super) struct TabStop {
     after: usize,
 }
 
-/// Every tab in `src` in order.
+/// Every tab in `src` in order. A byte order mark at the start has no width.
 pub(super) fn tab_stops(src: &str) -> Vec<TabStop> {
     let mut stops = Vec::new();
     // The byte offset and the column right after the last tab or line start.
-    let (mut anchor, mut anchor_column) = (0, 0);
+    let (mut anchor, mut anchor_column) = (if src.starts_with(BOM) { BOM.len_utf8() } else { 0 }, 0);
     for (index, byte) in src.bytes().enumerate() {
         match byte {
             b'\n' | b'\r' => (anchor, anchor_column) = (index + 1, 0),
@@ -199,6 +194,11 @@ pub(super) fn extra_bytes(bytes: &[u8]) -> usize {
         astral += usize::from(byte >= 0xF0);
     }
     continuation - astral
+}
+
+/// The number of leading spaces and tabs in `text`.
+pub(super) fn leading_ws(text: &str) -> usize {
+    text.bytes().take_while(|byte| matches!(byte, b' ' | b'\t')).count()
 }
 
 /// The `Line::others` of `text`.
@@ -253,6 +253,7 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
             whole: &src[start..end],
             base: start,
             pad: 0,
+            ws: leading_ws(&src[start..end]),
             flavor,
             others: last_others(&src[start..end]),
         });
@@ -272,6 +273,7 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
             whole: &src[start..],
             base: start,
             pad: 0,
+            ws: leading_ws(&src[start..]),
             flavor,
             others: last_others(&src[start..]),
         });
