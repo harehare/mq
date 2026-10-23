@@ -1790,7 +1790,7 @@ mod tests {
     #[case::as_binding("1 as n | n", "n", 1, SymbolKind::Variable)]
     #[case::destructuring_let("let [p, q] = [1, 2] | p + q", "q", 1, SymbolKind::PatternVariable { is_rest: false })]
     #[case::call_dynamic("let fs = [fn(x): x;] | fs[0](1)", "fs", 1, SymbolKind::Variable)]
-    #[case::module_body("module m: let a = 1 | a end", "a", 1, SymbolKind::Variable)]
+    #[case::module_body("module m: let a = 1 | let b = a end", "a", 1, SymbolKind::Variable)]
     #[case::let_rhs("let a = 1 | let b = a + 1 | b", "a", 1, SymbolKind::Variable)]
     fn test_refs_resolve_to_expected_kind(
         #[case] code: &str,

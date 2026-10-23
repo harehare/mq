@@ -7409,3 +7409,121 @@ fn test_pipe_assign_is_not_an_infix_operator(#[case] code: &str) {
         "expected `|=` to be rejected as an unexpected token for {code:?}"
     );
 }
+
+fn parse_program_source(code: &str) -> Result<Program, SyntaxError> {
+    let tokens = Lexer::new(lexer::Options::default())
+        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+        .expect("code should tokenize");
+    let mut arena = Arena::new(16);
+    Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse()
+}
+
+#[rstest]
+#[case::literal("1 7")]
+#[case::array("[1] 7")]
+#[case::dict("{\"a\": 1} 7")]
+#[case::paren("(1) 7")]
+#[case::index("x[0] 7")]
+#[case::self_("self 7")]
+#[case::qualified("a::b 7")]
+#[case::as_binding("x as y 7")]
+#[case::selector_chain(".blockquote .list code")]
+#[case::recursive_name("..h code")]
+#[case::in_body("def f(): [1] 7;")]
+fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}
+
+#[rstest]
+#[case::piped("1 | 7", 2)]
+#[case::piped_array("[1] | 7", 2)]
+#[case::after_def("def f(): 1; f()", 2)]
+#[case::after_do("do 1 end 7", 2)]
+#[case::after_import("import \"m\" def f(): 1;", 2)]
+#[case::self_selector_chain(". .li", 1)]
+#[case::call_with_trailing_do_block("f(x) do 1 | 2 end", 1)]
+#[case::recursive_name("..h", 1)]
+#[case::recursive_name_attr("..h.level", 1)]
+#[case::recursive_name_chain("..h .code", 1)]
+#[case::nested_chain_in_selector_args(".value .code(.value .h)", 1)]
+#[case::recursive_key("..\"key\"", 1)]
+#[case::qualified_index("x::y[0]", 1)]
+#[case::literal_index("1[0]", 1)]
+#[case::interpolated_pipeline("s\"${a | b}\"", 1)]
+#[case::index_attr("x[0].row", 1)]
+#[case::index_attr_chain("x[0].row[1].column", 1)]
+fn test_statement_boundaries_that_remain_valid(#[case] code: &str, #[case] len: usize) {
+    assert_eq!(parse_program_source(code).map(|p| p.len()), Ok(len), "{code:?}");
+}
+
+#[rstest]
+#[case::symbol("[1 :b]")]
+#[case::after_ident("[x :b]")]
+#[case::after_dict("[{\"a\": 1} :b]")]
+fn test_array_elements_need_a_comma(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::ExpectedClosingBracket(..))),
+        "expected a missing delimiter error for {code:?}"
+    );
+}
+
+#[rstest]
+#[case::leading("[, 1]")]
+#[case::doubled("[1,, 2]")]
+#[case::only_comma("[,]")]
+fn test_array_rejects_misplaced_commas(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}
+
+#[rstest]
+#[case::trailing("[1, 2,]", 1)]
+#[case::empty("[]", 1)]
+fn test_array_comma_forms_that_remain_valid(#[case] code: &str, #[case] len: usize) {
+    assert_eq!(parse_program_source(code).map(|p| p.len()), Ok(len), "{code:?}");
+}
+
+#[rstest]
+#[case::simple("match (x): | 2 \"two\" end")]
+#[case::with_guard("match (x): | 2 if (true) \"two\" end")]
+#[case::second_arm("match (x): | 1: \"one\" | 2 \"two\" end")]
+fn test_match_arm_requires_a_colon(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}
+
+#[test]
+fn test_match_arm_body_may_be_a_do_block() {
+    assert_eq!(
+        parse_program_source("match (x): | 1: do \"one\" end | _: 2 end").map(|p| p.len()),
+        Ok(1)
+    );
+}
+
+#[rstest]
+#[case::root("1 | | 2")]
+#[case::in_body("def f(): 1 | | 2;")]
+fn test_consecutive_pipes_are_rejected(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::Pipe),
+        "expected an unexpected pipe error for {code:?}"
+    );
+}
+
+#[rstest]
+#[case::closing_bracket("s\"${x]}\"")]
+#[case::comma("s\"${x, y}\"")]
+#[case::two_expressions("s\"${x; y}\"")]
+fn test_interpolation_holds_a_single_expression(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::UnexpectedToken(_))),
+        "expected an unexpected token error for {code:?}"
+    );
+}

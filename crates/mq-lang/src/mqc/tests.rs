@@ -68,7 +68,7 @@ fn replace_meta(bytes: &[u8], edit: impl FnOnce(&mut Meta)) -> Vec<u8> {
 #[case::dict_literal(r#"{"a": 1, "b": [1, 2, {"c": true}]}"#, "x\n")]
 #[case::string_interpolation(r#"let n = "mq" | s"hello ${n}""#, "x\n")]
 #[case::try_catch(r#"try: error("boom") catch(e): s"caught ${e}""#, "x\n")]
-#[case::generator("def gen(): yield 1 | yield 2; | let g = gen() | [next(g), next(g)]", "x\n")]
+#[case::generator("def gen(): yield: 1 | yield: 2; | let g = gen() | [next(g), next(g)]", "x\n")]
 #[case::optional_params(r#"def greet(name, greeting = "hi"): s"${greeting} ${name}"; | greet("mq")"#, "x\n")]
 #[case::nodes(r#"let title = to_text(.h1) | nodes | len()"#, "# a\n\ntext\n\n- list\n")]
 #[case::nodes_with_let(r#".h | let last = to_text() | nodes | last"#, "# a\n\n## b\n")]

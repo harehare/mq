@@ -153,6 +153,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     Some(TokenKind::SemiColon | TokenKind::End) => {
                         return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
+                    Some(TokenKind::Pipe) => {
+                        return Err(SyntaxError::UnexpectedToken((**self.tokens.peek().unwrap()).clone()));
+                    }
                     Some(TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace) if !root => {
                         return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
@@ -180,6 +183,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 TokenKind::Nodes if root => {
                     let ast = self.parse_all_nodes(token)?;
+                    self.expect_statement_end(&ast)?;
                     asts.push(ast);
                 }
                 TokenKind::Nodes => {
@@ -190,6 +194,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 _ => {
                     let ast = self.parse_expr(token)?;
+                    self.expect_statement_end(&ast)?;
                     asts.push(ast);
                 }
             }
@@ -200,6 +205,52 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         Ok(asts)
+    }
+
+    /// Rejects a statement directly followed by another one. Only definitions, blocks that consume their own
+    /// closing `;` or `end`, and `import`/`include` may be followed by a statement without a `|`.
+    /// Keep in sync with `closes_itself` in the CST parser.
+    fn expect_statement_end(&mut self, ast: &Node) -> Result<(), SyntaxError> {
+        // Selector chains such as `.a .b` are also `Block`s, so only a `do` block counts.
+        let is_do_block =
+            matches!(ast.expr, Expr::Block(..)) && matches!(self.token_arena[ast.token_id].kind, TokenKind::Do);
+
+        if is_do_block
+            || matches!(
+                ast.expr,
+                Expr::Def(..)
+                    | Expr::Fn(..)
+                    | Expr::Foreach(..)
+                    | Expr::While(..)
+                    | Expr::Until(..)
+                    | Expr::Loop(..)
+                    | Expr::Match(..)
+                    | Expr::Module(..)
+                    | Expr::Import(..)
+                    | Expr::Include(..)
+            )
+        {
+            return Ok(());
+        }
+
+        match self.tokens.peek() {
+            Some(token)
+                if !matches!(
+                    token.kind,
+                    TokenKind::Pipe
+                        | TokenKind::Eof
+                        | TokenKind::SemiColon
+                        | TokenKind::End
+                        | TokenKind::Comma
+                        | TokenKind::RParen
+                        | TokenKind::RBracket
+                        | TokenKind::RBrace
+                ) =>
+            {
+                Err(SyntaxError::UnexpectedToken((**token).clone()))
+            }
+            _ => Ok(()),
+        }
     }
 
     /// True at a `,` or closing bracket, which no statement can contain. The enclosing call, array
@@ -659,7 +710,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     /// Tokens that can start the operand of a prefix `!` or `-`.
-    fn is_prefix_operand_start(kind: &TokenKind) -> bool {
+    pub(crate) fn is_prefix_operand_start(kind: &TokenKind) -> bool {
         matches!(
             kind,
             TokenKind::BoolLiteral(_)
@@ -1006,12 +1057,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    /// Requires `,` or `]` after an array element so `[1 :b]` is not read as two elements.
+    fn expect_array_element_end(&mut self, opening: &Token) -> Result<(), SyntaxError> {
+        match self.tokens.peek() {
+            Some(token) if !matches!(token.kind, TokenKind::Comma | TokenKind::RBracket | TokenKind::Eof) => Err(
+                SyntaxError::ExpectedClosingBracket((**token).clone(), Some(Box::new(opening.clone()))),
+            ),
+            _ => Ok(()),
+        }
+    }
+
     #[inline(never)]
     fn parse_array(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let opening = token.clone();
         let token_id = self.alloc_token(token);
         let mut elements: SmallVec<[Shared<Node>; 4]> = SmallVec::new();
         let mut closed = false;
+        let mut after_element = false;
 
         while let Some(elem_token) = self.tokens.next() {
             match &elem_token.kind {
@@ -1025,13 +1087,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         Some(Box::new(opening)),
                     ));
                 }
-                TokenKind::Comma => continue,
-                TokenKind::DotDotDot => {
-                    elements.push(self.parse_spread_element(elem_token)?);
-                }
-                _ => {
-                    let expr = self.parse_expr(elem_token)?;
-                    elements.push(expr);
+                TokenKind::Comma if after_element => after_element = false,
+                TokenKind::Comma => return Err(SyntaxError::UnexpectedToken(elem_token.clone())),
+                kind => {
+                    let element = if matches!(kind, TokenKind::DotDotDot) {
+                        self.parse_spread_element(elem_token)?
+                    } else {
+                        self.parse_expr(elem_token)?
+                    };
+                    elements.push(element);
+                    self.expect_array_element_end(&opening)?;
+                    after_element = true;
                 }
             }
         }
@@ -1067,6 +1133,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.tokens.peek().as_ref().map(|t| &t.kind).is_some_and(expected)
     }
 
+    /// Tokens that may follow a primary expression anywhere, including call arguments and array
+    /// elements where `expect_statement_end` does not apply.
     fn is_next_token_allowed(token_kind: Option<&TokenKind>) -> bool {
         matches!(
             token_kind,
@@ -1227,10 +1295,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             ));
 
                             let token_id = self.alloc_token(ident_token);
-                            return Ok(Shared::new(Node {
+                            let qualified_node = Shared::new(Node {
                                 token_id,
                                 expr: Expr::QualifiedAccess(module_path, access_target),
-                            }));
+                            });
+                            // Check for bracket access after a qualified identifier (e.g., module::value[0])
+                            if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                                return self.parse_bracket_access(qualified_node, ident_token);
+                            }
+                            return Ok(qualified_node);
                         }
                     }
                 }
@@ -1572,6 +1645,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 });
             } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 current = self.parse_bracket_access(current, original_token)?;
+            } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Selector(s)) if s.len() > 1) {
+                current = self.parse_attribute_access(current)?;
             } else {
                 break;
             }
@@ -1937,7 +2012,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 None
             };
 
-            self.consume_colon();
+            self.next_token(|token_kind| matches!(token_kind, TokenKind::Colon))?;
 
             // Parse body expression
             let body = self.parse_next_expr(token_id)?;
@@ -2354,6 +2429,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let mut parser = Parser::new(tokens.iter(), self.token_arena, token.module_id);
                             parser.depth = self.depth;
                             let expr_node = parser.parse_expr_from_tokens()?;
+                            // Nothing may follow the expression or pipeline.
+                            if let Some(rest) = parser.tokens.peek()
+                                && rest.kind != TokenKind::Eof
+                            {
+                                return Err(SyntaxError::UnexpectedToken((**rest).clone()));
+                            }
 
                             parsed_segments.push(super::node::StringSegment::Expr(expr_node));
                         }
@@ -2370,12 +2451,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    #[inline(always)]
+    /// Parses the expression of a `${...}` segment, or a pipeline of them (`${a | b}`).
     fn parse_expr_from_tokens(&mut self) -> Result<Shared<Node>, SyntaxError> {
-        if let Some(token) = self.tokens.next() {
-            self.parse_expr(token)
-        } else {
-            Err(SyntaxError::UnexpectedEOFDetected(self.module_id))
+        match self.tokens.next() {
+            Some(token) => self.parse_arg_expr(token),
+            None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }
     }
 
@@ -2792,10 +2872,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                 token_id: self.alloc_token(next),
                                 expr: Expr::Selector(Selector::Property(Ident::new(key.as_str()))),
                             });
-                            return Ok(Shared::new(Node {
+                            let base_node = Shared::new(Node {
                                 token_id: self.alloc_token(token),
                                 expr: Expr::Block(vec![recursive_node, prop_node]),
-                            }));
+                            });
+                            return self.parse_selector_tail(token, base_node);
                         }
                         // ..text, ..h, ..code, etc. → recursive descent + Markdown node-type selector
                         // Attribute selectors (.value, .url, .level, etc.) are excluded here;
@@ -2811,10 +2892,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                     expr: Expr::Selector(selector),
                                 });
 
-                                return Ok(Shared::new(Node {
+                                let base_node = Shared::new(Node {
                                     token_id: self.alloc_token(token),
                                     expr: Expr::Block(vec![recursive_node, sel_node]),
-                                }));
+                                });
+                                return self.parse_selector_tail(token, base_node);
                             }
                         }
                         _ => {}

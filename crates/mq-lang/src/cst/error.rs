@@ -15,6 +15,14 @@ pub enum ParseError {
     UnknownSelector(selector::UnknownSelector),
     #[error("Unexpected `end` keyword — no open block to close")]
     UnmatchedEnd(Shared<Token>),
+    #[error("Invalid assignment target: expected an identifier but got `{0}`")]
+    InvalidAssignmentTarget(Shared<Token>),
+    #[error("Non-default parameter `{0}` cannot follow a parameter with a default value")]
+    ParameterWithoutDefaultAfterDefault(Shared<Token>),
+    #[error("Variadic parameter must be the last parameter")]
+    VariadicParameterMustBeLast(Shared<Token>),
+    #[error("Multiple variadic parameters are not allowed")]
+    MultipleVariadicParameters(Shared<Token>),
     /// A required token is absent; `found` is the token standing where it was expected.
     #[error("Expected {expected} but got `{found}`")]
     Missing {
@@ -30,6 +38,10 @@ impl ParseError {
             ParseError::UnexpectedToken(token)
             | ParseError::InsufficientTokens(token)
             | ParseError::UnmatchedEnd(token)
+            | ParseError::InvalidAssignmentTarget(token)
+            | ParseError::ParameterWithoutDefaultAfterDefault(token)
+            | ParseError::VariadicParameterMustBeLast(token)
+            | ParseError::MultipleVariadicParameters(token)
             | ParseError::Missing { found: token, .. } => Some(token.range),
             ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token.range),
             ParseError::UnexpectedEOFDetected => None,
@@ -55,6 +67,15 @@ impl ParseError {
             ParseError::InsufficientTokens(_) => Some(
                 "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.".to_string(),
             ),
+            ParseError::InvalidAssignmentTarget(_) => Some(
+                "Only a variable or an indexed variable such as `x[0]` can be assigned to.".to_string(),
+            ),
+            ParseError::ParameterWithoutDefaultAfterDefault(_) => {
+                Some("Give this parameter a default value, or move it before the parameters with defaults.".to_string())
+            }
+            ParseError::VariadicParameterMustBeLast(_) | ParseError::MultipleVariadicParameters(_) => {
+                Some("A function can have a single variadic parameter, and it must come last.".to_string())
+            }
             ParseError::Missing { .. } => Some(
                 "A token is missing here. Check for unclosed brackets, parentheses, or blocks.".to_string(),
             ),

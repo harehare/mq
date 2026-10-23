@@ -191,7 +191,7 @@ else: do
 #[case::unless_oneline("unless(test): test", "unless (test): test")]
 #[case::def(
     r##".h
-| let link = to_link(add("#", to_text(self)), to_text(self), "");
+| let link = to_link(add("#", to_text(self)), to_text(self), "")
 | if (eq(to_md_name(), "h1")):
 to_md_list(link, 1)
 elif (eq(to_md_name(),"h2")):
@@ -205,7 +205,7 @@ to_md_list(link, 5)
 else:
 None"##,
     r##".h
-| let link = to_link(add("#", to_text(self)), to_text(self), "");
+| let link = to_link(add("#", to_text(self)), to_text(self), "")
 | if (eq(to_md_name(), "h1")):
     to_md_list(link, 1)
   elif (eq(to_md_name(), "h2")):
@@ -602,7 +602,6 @@ process();"#,
 #[case::group_with_comment("(1 + 2) # group comment", "(1 + 2) # group comment")]
 #[case::group_with_call("(test(1, 2))", "(test(1, 2))")]
 #[case::group_with_if("(if(test): test else: test2)", "(if (test): test else: test2)")]
-#[case::group_with_let("(let x = 1)", "(let x = 1)")]
 #[case::fn_end("fn(): test end", "fn(): test end")]
 #[case::negate_operator("-v", "-v")]
 #[case::try_catch_multiline(
@@ -702,7 +701,7 @@ end
 #[case::symbol_with_string(r#":"bar""#, r#":"bar""#)]
 #[case::symbol_with_spaces(":  foo", ":foo")]
 #[case::symbol_in_array("[:foo, :bar]", "[:foo, :bar]")]
-#[case::symbol_in_dict(r#"{:key: "value"}"#, r#"{:key: "value"}"#)]
+#[case::symbol_in_dict(r#"{key: :value}"#, r#"{key: :value}"#)]
 #[case::symbol_comparison(":foo == :bar", ":foo == :bar")]
 #[case::match_simple(
     "match(x): | 1: \"one\" | _: \"other\" end",
@@ -1143,8 +1142,17 @@ end
   v + args;
 "
 )]
-#[case::assign_with_selector_attr("value.test|= value.attr", "value.test |= value.attr")]
+#[case::assign_with_selector_attr("value.url|= value.alt", "value.url |= value.alt")]
 #[case::index_assign("arr[0]=10", "arr[0] = 10")]
+#[case::self_attribute("self.level", "self.level")]
+#[case::dot_attribute(". .level", ". .level")]
+#[case::dot_attribute_comment(". # note\n .level", ". # note\n  .level\n")]
+#[case::self_attribute_comment("self # note\n .level", "self # note\n  .level\n")]
+#[case::ident_attribute_comment("x # note\n .level", "x # note\n  .level\n")]
+#[case::dot_descendant(". .li", ". .li")]
+#[case::recursive_name("..h", "..h")]
+#[case::recursive_key("..\"key\"", "..\"key\"")]
+#[case::recursive_name_in_args("f(..h, 1)", "f(..h, 1)")]
 #[case::index_assign_string_key("dict[\"key\"]=\"value\"", "dict[\"key\"] = \"value\"")]
 #[case::index_compound_assign("arr[0]+=1", "arr[0] += 1")]
 #[case::selector_call_heading_single_arg(".h(1)", ".h(1)")]
@@ -1422,24 +1430,24 @@ def b(): test;"#,
     r#"def z(): test;
 | let x = 1
 | nodes
-def a(): test;"#,
+| def a(): test;"#,
     "let x = 1\n|\ndef a(): test;\ndef z(): test;\n| nodes\n"
 )]
 #[case::sort_with_piped_calls(
     r#"def z(): test;
 | let x = 1
 | add() | mul() | sub()
-def a(): test;
+| def a(): test;
 | let y = 2"#,
     "let x = 1\n| let y = 2\n|\ndef a(): test;\ndef z(): test;\n| add()\n| mul()\n| sub()\n"
 )]
 #[case::sort_all_types(
     r#"add() | sub()
-def func_b(): test;
+| def func_b(): test;
 | let var_z = 1
 | import "z.mq"
 | let var_a = 2
-def func_a(): test;
+| def func_a(): test;
 | mul() | div()
 | import "a.mq""#,
     "import \"a.mq\"\n| import \"z.mq\"\n| let var_a = 2\n| let var_z = 1\n|\ndef func_a(): test;\ndef func_b(): test;\n| add()\n| sub()\n| mul()\n| div()\n"

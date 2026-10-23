@@ -223,6 +223,16 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    /// Whether a token of this kind is whitespace, a newline or a comment, which the CST keeps as trivia.
+    #[cfg(feature = "cst")]
+    #[inline(always)]
+    pub(crate) fn is_trivia(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
+        )
+    }
+
     /// Whether a token of this kind can end a value expression.
     pub(crate) fn ends_value(&self) -> bool {
         matches!(

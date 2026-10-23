@@ -137,6 +137,8 @@ pub struct Parser<'a> {
     tokens: &'a [Shared<Token>],
     pos: usize,
     errors: ErrorReporter,
+    /// Set while parsing the selector that follows an attribute selector, which ends the chain.
+    in_selector_tail: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -146,6 +148,7 @@ impl<'a> Parser<'a> {
             tokens,
             pos: 0,
             errors: ErrorReporter::new(100),
+            in_selector_tail: false,
         }
     }
 
@@ -179,7 +182,7 @@ impl<'a> Parser<'a> {
 
     /// Parses the tokens into top-level nodes and the errors found along the way.
     pub fn parse(&mut self) -> (Vec<Shared<Node>>, ErrorReporter) {
-        let nodes = self.parse_program(ProgramKind::Root, false);
+        let nodes = self.parse_program(ProgramKind::Root);
         (nodes, std::mem::take(&mut self.errors))
     }
 
@@ -218,7 +221,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_program(&mut self, kind: ProgramKind, in_loop: bool) -> Vec<Shared<Node>> {
+    fn parse_program(&mut self, kind: ProgramKind) -> Vec<Shared<Node>> {
         let root = kind == ProgramKind::Root;
         // Nested programs usually contain only a few nodes. Reserving for the
         // entire remaining token stream at every nesting level wastes memory.
@@ -231,6 +234,11 @@ impl<'a> Parser<'a> {
 
         // Set after a root-level `;`/`end` so a following one is handled as a terminator, not a statement.
         let mut after_terminator = false;
+        // Whether the statement just parsed needs a `|` before the next one.
+        let mut needs_separator = false;
+        // The previous statement continued a selector chain, so an attribute there ends the chain.
+        let mut in_chain_continuation = false;
+        let mut chain_continuation_pending = false;
 
         while self.peek().is_some() {
             if !(after_terminator
@@ -240,8 +248,13 @@ impl<'a> Parser<'a> {
             {
                 let start = self.pos;
                 let saved_trivia = leading_trivia.clone();
-                match self.parse_expr(leading_trivia, root, in_loop) {
-                    Ok(node) => nodes.push(node),
+                needs_separator = false;
+                in_chain_continuation = std::mem::take(&mut chain_continuation_pending);
+                match self.parse_expr(leading_trivia, root) {
+                    Ok(node) => {
+                        needs_separator = !Self::closes_itself(&node);
+                        nodes.push(node);
+                    }
                     Err(e) => {
                         self.errors.report(e);
                         nodes.extend(self.recover_error(start, saved_trivia, &|kind, has_children| {
@@ -317,6 +330,12 @@ impl<'a> Parser<'a> {
                                 }));
                                 break;
                             } else if matches!(next_token.kind, TokenKind::Pipe) {
+                                // A `;` or `end` that closes nothing cannot be followed by a pipe.
+                                self.errors.report(if is_end {
+                                    ParseError::UnmatchedEnd(end_or_semi_token)
+                                } else {
+                                    ParseError::UnexpectedToken(Shared::clone(&next_token))
+                                });
                                 self.pos += 1;
                                 nodes.push(Shared::new(Node {
                                     kind: NodeKind::Token,
@@ -348,10 +367,12 @@ impl<'a> Parser<'a> {
                     self.pos -= leading_trivia.len();
                     break;
                 }
-                // Statements need no separator (as in the AST parser): parse the next one.
-                _ if Self::starts_expression(&token.kind, root, in_loop) => {}
+                _ if Self::starts_expression(&token.kind, root) => {
+                    chain_continuation_pending =
+                        self.check_adjacent_statement(nodes.last(), &token, needs_separator, in_chain_continuation);
+                }
                 _ if root => {
-                    self.errors.report(ParseError::UnexpectedToken(Shared::clone(&token)));
+                    self.report_unexpected(&token);
                     let start = self.pos;
                     nodes.extend(self.recover_error(start, leading_trivia, &|kind, has_children| {
                         Self::is_statement_boundary(kind, has_children, true)
@@ -370,7 +391,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 _ => {
-                    self.errors.report(ParseError::UnexpectedToken(Shared::clone(&token)));
+                    self.report_unexpected(&token);
                     // Leave the trivia for the enclosing program, which owns this token.
                     self.pos -= leading_trivia.len();
                     break;
@@ -380,7 +401,7 @@ impl<'a> Parser<'a> {
 
         if nodes.is_empty() {
             match self.peek() {
-                Some(token) => self.errors.report(ParseError::UnexpectedToken(Shared::clone(token))),
+                Some(token) => self.report_unexpected(token),
                 None => self.errors.report(ParseError::UnexpectedEOFDetected),
             };
         }
@@ -388,13 +409,8 @@ impl<'a> Parser<'a> {
         nodes
     }
 
-    fn parse_expr(
-        &mut self,
-        leading_trivia: TriviaList,
-        root: bool,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
-        self.parse_equality_expr(leading_trivia, root, in_loop)
+    fn parse_expr(&mut self, leading_trivia: TriviaList, root: bool) -> Result<Shared<Node>, ParseError> {
+        self.parse_equality_expr(leading_trivia, root)
     }
 
     /// Precedence of the binary operator following the trivia at the cursor, if any.
@@ -402,12 +418,7 @@ impl<'a> Parser<'a> {
         self.tokens
             .get(self.pos..)?
             .iter()
-            .find(|t| {
-                !matches!(
-                    t.kind,
-                    TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
-                )
-            })
+            .find(|t| !t.kind.is_trivia())
             .and_then(|t| t.kind.binary_op_precedence())
     }
 
@@ -417,11 +428,17 @@ impl<'a> Parser<'a> {
         mut lhs: Shared<Node>,
         min_prec: u8,
         root: bool,
-        in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
         while let Some(prec) = self.peek_binary_op_precedence() {
             if prec < min_prec {
                 break;
+            }
+
+            // `nodes` is a statement of its own, not an operand.
+            if matches!(lhs.kind, NodeKind::Nodes)
+                && let Some(operator) = self.peek_non_trivia()
+            {
+                self.report_unexpected(operator);
             }
 
             let leading_trivia = self.parse_leading_trivia();
@@ -432,13 +449,31 @@ impl<'a> Parser<'a> {
             let op_trailing_trivia = self.parse_trailing_trivia();
 
             let rhs_leading_trivia = self.parse_leading_trivia();
-            let mut rhs = self.parse_primary_expr(rhs_leading_trivia, root, in_loop)?;
+            let mut rhs = self.parse_primary_expr(rhs_leading_trivia, root)?;
+            if matches!(rhs.kind, NodeKind::Nodes)
+                && let Some(token) = &rhs.token
+            {
+                self.report_unexpected(token);
+            }
 
             while let Some(next_prec) = self.peek_binary_op_precedence() {
                 if next_prec <= prec {
                     break;
                 }
-                rhs = self.parse_binary_expr(rhs, next_prec, root, in_loop)?;
+                rhs = self.parse_binary_expr(rhs, next_prec, root)?;
+            }
+
+            if is_assignment {
+                if binary_op == BinaryOp::PipeEqual {
+                    // `|=` sets an attribute, so it must follow one (`x.url |= v`).
+                    if !Self::ends_with_attribute(&lhs) {
+                        self.report_unexpected(operator_token);
+                    }
+                } else if !Self::is_assignable(&lhs) {
+                    let found = lhs.token.as_ref().unwrap_or(operator_token);
+                    self.errors
+                        .report(ParseError::InvalidAssignmentTarget(Shared::clone(found)));
+                }
             }
 
             let node_kind = if is_assignment {
@@ -466,14 +501,9 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_equality_expr(
-        &mut self,
-        leading_trivia: TriviaList,
-        root: bool,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
-        let lhs = self.parse_primary_expr(leading_trivia, root, in_loop)?;
-        let lhs = self.parse_binary_expr(lhs, 0, root, in_loop)?;
+    fn parse_equality_expr(&mut self, leading_trivia: TriviaList, root: bool) -> Result<Shared<Node>, ParseError> {
+        let lhs = self.parse_primary_expr(leading_trivia, root)?;
+        let lhs = self.parse_binary_expr(lhs, 0, root)?;
 
         if self.try_next_token(|kind| matches!(kind, TokenKind::As)) {
             let as_leading_trivia = self.parse_leading_trivia();
@@ -486,6 +516,12 @@ impl<'a> Parser<'a> {
                 Some(token) => return Err(ParseError::UnexpectedToken(Shared::clone(token))),
                 None => return Err(ParseError::UnexpectedEOFDetected),
             };
+            // The bound name is a plain identifier, not a call or an access.
+            if !matches!(name_node.kind, NodeKind::Ident { attr: None })
+                && let Some(token) = &name_node.token
+            {
+                self.report_unexpected(token);
+            }
 
             let as_node = Node {
                 kind: NodeKind::As {
@@ -502,19 +538,14 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_primary_expr(
-        &mut self,
-        leading_trivia: TriviaList,
-        root: bool,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_primary_expr(&mut self, leading_trivia: TriviaList, root: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.peek().ok_or(ParseError::UnexpectedEOFDetected)?;
 
         match &token.kind {
             TokenKind::Def => self.parse_def(leading_trivia),
-            TokenKind::Do => self.parse_block(leading_trivia, in_loop),
-            TokenKind::Fn | TokenKind::Arrow => self.parse_fn(leading_trivia, in_loop),
-            TokenKind::If => self.parse_if(leading_trivia, in_loop),
+            TokenKind::Do => self.parse_block(leading_trivia),
+            TokenKind::Fn | TokenKind::Arrow => self.parse_fn(leading_trivia),
+            TokenKind::If => self.parse_if(leading_trivia),
             TokenKind::Foreach => self.parse_foreach(leading_trivia),
             TokenKind::Include => self.parse_include(leading_trivia),
             TokenKind::Import => self.parse_import(leading_trivia),
@@ -522,19 +553,25 @@ impl<'a> Parser<'a> {
             TokenKind::While => self.parse_while(leading_trivia),
             TokenKind::Loop => self.parse_loop(leading_trivia),
             TokenKind::Until => self.parse_until(leading_trivia),
-            TokenKind::Unless => self.parse_unless(leading_trivia, in_loop),
+            TokenKind::Unless => self.parse_unless(leading_trivia),
             TokenKind::Try => self.parse_try(leading_trivia),
             TokenKind::Match => self.parse_match(leading_trivia),
             TokenKind::Ident(_) => self.parse_ident(leading_trivia),
             TokenKind::Self_ => self.parse_self(leading_trivia),
-            TokenKind::Let | TokenKind::Var => self.parse_var_decl(leading_trivia, in_loop),
+            TokenKind::Let | TokenKind::Var => self.parse_var_decl(leading_trivia),
             TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(leading_trivia),
-            TokenKind::StringLiteral(_) => {
+            TokenKind::StringLiteral(_)
+            | TokenKind::BytesLiteral(_)
+            | TokenKind::NumberLiteral(_)
+            | TokenKind::BoolLiteral(_)
+            | TokenKind::None => {
                 let literal = self.parse_node(NodeKind::Literal, leading_trivia)?;
-                self.parse_postfix_chain(literal)
-            }
-            TokenKind::BytesLiteral(_) | TokenKind::NumberLiteral(_) | TokenKind::BoolLiteral(_) | TokenKind::None => {
-                self.parse_node(NodeKind::Literal, leading_trivia)
+                // A literal can be indexed, but not called.
+                if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                    self.parse_postfix_chain(literal)
+                } else {
+                    Ok(literal)
+                }
             }
             TokenKind::InterpolatedString(_) => {
                 let node = self.parse_interpolated_string(leading_trivia)?;
@@ -542,14 +579,14 @@ impl<'a> Parser<'a> {
             }
             TokenKind::LBracket => self.parse_array(leading_trivia),
             TokenKind::LBrace => self.parse_dict(leading_trivia),
-            TokenKind::LParen => self.parse_group_expr(leading_trivia, root, in_loop),
+            TokenKind::LParen => self.parse_group_expr(leading_trivia, root),
             TokenKind::Nodes if root => self.parse_nodes(leading_trivia),
             TokenKind::Env(_) => self.parse_node(NodeKind::Env, leading_trivia),
             TokenKind::Not | TokenKind::Minus => self.parse_unary_op(leading_trivia, root),
-            TokenKind::Break if in_loop => self.parse_break(leading_trivia, in_loop),
-            TokenKind::Continue if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
+            TokenKind::Break => self.parse_break(leading_trivia),
+            TokenKind::Continue => self.parse_node(NodeKind::Continue, leading_trivia),
             // Placement is validated later (HIR/compiler), not here, so the diagnostic is reachable.
-            TokenKind::Yield => self.parse_yield(leading_trivia, in_loop),
+            TokenKind::Yield => self.parse_yield(leading_trivia),
             TokenKind::Colon => self.parse_symbol(leading_trivia),
             TokenKind::Eof => {
                 self.advance();
@@ -562,18 +599,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_group_expr(
-        &mut self,
-        leading_trivia: TriviaList,
-        root: bool,
-        in_loop: bool,
-    ) -> Result<Shared<Node>, ParseError> {
+    fn parse_group_expr(&mut self, leading_trivia: TriviaList, root: bool) -> Result<Shared<Node>, ParseError> {
         let lparen = self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?;
 
         self.peek_token()?;
 
         let expr_leading_trivia = self.parse_leading_trivia();
-        let expr = self.parse_expr(expr_leading_trivia, root, in_loop)?;
+        let expr = self.parse_expr(expr_leading_trivia, root)?;
         let rparen = self.expect_node(
             |token_kind| matches!(token_kind, TokenKind::RParen),
             NodeKind::Token,
@@ -597,7 +629,7 @@ impl<'a> Parser<'a> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
         // Check for qualified access (module::function, module::value, or module::module2::method)
-        if let Some(next_token) = self.peek()
+        if let Some(next_token) = self.peek_non_trivia()
             && matches!(next_token.kind, TokenKind::DoubleColon)
         {
             let mut node = Node {
@@ -608,15 +640,17 @@ impl<'a> Parser<'a> {
             };
 
             // Parse all :: separated identifiers
-            while let Some(peek_token) = self.peek()
+            while let Some(peek_token) = self.peek_non_trivia()
                 && matches!(peek_token.kind, TokenKind::DoubleColon)
             {
                 // Add double colon token
                 children.push(self.next_node(|kind| matches!(kind, TokenKind::DoubleColon), NodeKind::Token)?);
 
-                if let Some(next_token) = self.peek()
+                if let Some(next_token) = self.peek_non_trivia()
                     && !matches!(next_token.kind, TokenKind::Ident(_))
                 {
+                    // Kept as a node so completion works after `module::`, but it is still an error.
+                    self.report_unexpected(next_token);
                     node.kind = NodeKind::QualifiedAccess { items: children.into() };
                     return Ok(Shared::new(node));
                 }
@@ -657,7 +691,7 @@ impl<'a> Parser<'a> {
         };
 
         // Check for attribute access: ident.attr -> attr(ident, "attr")
-        if let Some(attr_node) = self.try_parse_attribute_access(&mut node) {
+        if let Some(attr_node) = self.try_parse_attribute_access(&mut node)? {
             return Ok(attr_node);
         }
 
@@ -666,17 +700,23 @@ impl<'a> Parser<'a> {
                 let mut args = self.parse_args()?;
                 children.append(&mut args);
 
-                if self.try_next_token(|kind| matches!(kind, TokenKind::Question)) {
+                let has_question = self.try_next_token(|kind| matches!(kind, TokenKind::Question));
+                if has_question {
                     children
                         .push(self.next_node(|token_kind| matches!(token_kind, TokenKind::Question), NodeKind::Token)?);
                 }
 
                 node.kind = NodeKind::Call { args: children.into() };
 
+                // `f(x)?` ends the expression: no block, index or attribute follows it.
+                if has_question {
+                    return Ok(Shared::new(node));
+                }
+
                 // Check for a call with a trailing do-block argument (e.g., foo(args) do ...)
                 if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Do)) {
                     let leading_trivia = self.parse_leading_trivia();
-                    let block = self.parse_block(leading_trivia, false)?;
+                    let block = self.parse_block(leading_trivia)?;
                     let NodeKind::Call { args } = &mut node.kind else {
                         unreachable!("node.kind was just set to Call above");
                     };
@@ -689,7 +729,7 @@ impl<'a> Parser<'a> {
                 if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     let result = self.parse_bracket_access(node)?;
                     self.parse_postfix_chain(result)
-                } else if let Some(attr_node) = self.try_parse_attribute_access(&mut node) {
+                } else if let Some(attr_node) = self.try_parse_attribute_access(&mut node)? {
                     Ok(attr_node)
                 } else {
                     Ok(Shared::new(node))
@@ -703,11 +743,26 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_parse_attribute_access(&mut self, node: &mut Node) -> Option<Shared<Node>> {
-        if let Some(peek_token) = self.peek()
+    fn try_parse_attribute_access(&mut self, node: &mut Node) -> Result<Option<Shared<Node>>, ParseError> {
+        if let Some(peek_token) = self.peek_non_trivia()
             && matches!(&peek_token.kind, TokenKind::Selector(s) if s.len() > 1)
         {
             let selector_token = Shared::clone(peek_token);
+
+            // Only attribute selectors (`.url`, `.level`) can follow a value.
+            match Selector::try_from(&*selector_token) {
+                Ok(selector) if selector.is_attribute_selector() => {}
+                Err(error) => return Err(ParseError::UnknownSelector(error)),
+                Ok(_) => return Err(ParseError::UnexpectedToken(selector_token)),
+            }
+
+            // The attribute may start on the next line; the trivia in between stays on its node.
+            let adjacent = matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Selector(_)));
+            let leading_trivia = if adjacent {
+                node.leading_trivia.clone()
+            } else {
+                self.parse_leading_trivia()
+            };
 
             // Consume the selector token
             self.advance();
@@ -716,7 +771,7 @@ impl<'a> Parser<'a> {
             let attr_node = Shared::new(Node {
                 kind: NodeKind::Selector { items: ArgList::new() },
                 token: Some(Shared::clone(&selector_token)),
-                leading_trivia: node.leading_trivia.clone(),
+                leading_trivia,
                 trailing_trivia: TriviaList::new(),
             });
 
@@ -727,9 +782,9 @@ impl<'a> Parser<'a> {
                 _ => unreachable!("attribute access only follows an ident, `self` or a call"),
             }
 
-            Some(Shared::new(std::mem::take(node)))
+            Ok(Some(Shared::new(std::mem::take(node))))
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -768,7 +823,8 @@ impl<'a> Parser<'a> {
 
         if !is_slice_from_start {
             // Parse the first expression
-            let first_expr = self.parse_expr(TriviaList::new(), false, false)?;
+            let first_leading_trivia = self.parse_leading_trivia();
+            let first_expr = self.parse_expr(first_leading_trivia, false)?;
             children.push(first_expr);
         }
 
@@ -782,7 +838,8 @@ impl<'a> Parser<'a> {
 
             if !self.try_next_token(|kind| *kind == TokenKind::RBracket) {
                 // Parse the second expression (end index)
-                let second_expr = self.parse_expr(TriviaList::new(), false, false)?;
+                let second_leading_trivia = self.parse_leading_trivia();
+                let second_expr = self.parse_expr(second_leading_trivia, false)?;
                 children.push(second_expr);
             }
         }
@@ -794,6 +851,11 @@ impl<'a> Parser<'a> {
         ));
 
         node.kind = NodeKind::Call { args: children.into() };
+
+        // Attribute access after indexing (`arr[0].attr`), possibly followed by more postfix operations.
+        if let Some(with_attr) = self.try_parse_attribute_access(&mut node)? {
+            return self.parse_postfix_chain(with_attr);
+        }
 
         // Check for additional bracket access (nested indexing)
         let final_node = if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
@@ -849,6 +911,20 @@ impl<'a> Parser<'a> {
                     trailing_trivia: TriviaList::new(),
                 };
                 current = self.parse_bracket_access(wrapper)?;
+            } else if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::Selector(s)) if s.len() > 1) {
+                // Attribute access on the expression: `[1].row`, `{"a": 1}.attr`.
+                let mut wrapper = Node {
+                    kind: NodeKind::Call {
+                        args: std::iter::once(current).collect(),
+                    },
+                    token: None,
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
+                };
+                let Some(with_attr) = self.try_parse_attribute_access(&mut wrapper)? else {
+                    unreachable!("a selector token was just seen");
+                };
+                current = with_attr;
             } else {
                 break;
             }
@@ -861,12 +937,15 @@ impl<'a> Parser<'a> {
 
         nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
+        // Arguments start their own selector chains, independent of an enclosing selector tail.
+        let outer_in_selector_tail = std::mem::replace(&mut self.in_selector_tail, false);
         self.parse_separated_list(
             &mut nodes,
             |kind| matches!(kind, TokenKind::RParen),
             "`)`",
             |parser| parser.parse_arg(),
         );
+        self.in_selector_tail = outer_in_selector_tail;
 
         Ok(nodes)
     }
@@ -875,37 +954,13 @@ impl<'a> Parser<'a> {
         let leading_trivia = self.parse_leading_trivia();
         let token = Shared::clone(self.peek_token()?);
 
-        match &token.kind {
-            TokenKind::Ident(_)
-            | TokenKind::StringLiteral(_)
-            | TokenKind::BytesLiteral(_)
-            | TokenKind::BoolLiteral(_)
-            | TokenKind::NumberLiteral(_)
-            | TokenKind::None
-            | TokenKind::Selector(_)
-            | TokenKind::InterpolatedString(_)
-            | TokenKind::Self_
-            | TokenKind::LBracket
-            | TokenKind::Not
-            | TokenKind::Minus
-            | TokenKind::Fn
-            | TokenKind::Arrow
-            | TokenKind::Foreach
-            | TokenKind::While
-            | TokenKind::Until
-            | TokenKind::Loop
-            | TokenKind::If
-            | TokenKind::Unless
-            | TokenKind::LParen
-            | TokenKind::Do
-            | TokenKind::Colon
-            | TokenKind::Try
-            | TokenKind::LBrace => {
-                let expr = self.parse_expr(leading_trivia, false, false)?;
-                self.parse_implicit_pipeline(expr)
-            }
-            _ => Err(ParseError::UnexpectedToken(Shared::clone(&token))),
+        // Any expression can be an argument, including `let` and `match`.
+        if !Self::starts_expression(&token.kind, false) {
+            return Err(ParseError::UnexpectedToken(token));
         }
+
+        let expr = self.parse_expr(leading_trivia, false)?;
+        self.parse_implicit_pipeline(expr)
     }
 
     /// If the next token is `|`, collects remaining pipeline steps and wraps them
@@ -931,7 +986,7 @@ impl<'a> Parser<'a> {
             }));
 
             let next_leading_trivia = self.parse_leading_trivia();
-            let next_expr = self.parse_expr(next_leading_trivia, false, false)?;
+            let next_expr = self.parse_expr(next_leading_trivia, false)?;
             children.push(next_expr);
         }
 
@@ -962,7 +1017,7 @@ impl<'a> Parser<'a> {
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
 
-        let program = self.parse_program(ProgramKind::Block, false);
+        let program = self.parse_program(ProgramKind::Block);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Def {
@@ -977,7 +1032,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_fn(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_fn(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
@@ -989,7 +1044,7 @@ impl<'a> Parser<'a> {
                 self.parse_params()?
             };
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(ProgramKind::Block, in_loop);
+        let program = self.parse_program(ProgramKind::Block);
 
         let node = Node {
             kind: NodeKind::Fn {
@@ -1006,10 +1061,10 @@ impl<'a> Parser<'a> {
         self.parse_postfix_chain(Shared::new(node))
     }
 
-    fn parse_block(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_block(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
-        let program = self.parse_program(ProgramKind::Block, in_loop);
+        let program = self.parse_program(ProgramKind::Block);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Block {
@@ -1028,11 +1083,44 @@ impl<'a> Parser<'a> {
         if matches!(&token.kind, TokenKind::Selector(s) if s == ".")
             && !self.try_next_token(|kind| matches!(kind, TokenKind::LBracket))
         {
-            return Ok(Shared::new(Node {
+            let mut node = Node {
                 kind: NodeKind::Self_ { attr: None },
                 token: Some(Shared::clone(token)),
                 leading_trivia,
                 trailing_trivia,
+            };
+
+            // `. .level` reads the attribute of the current node, like `.level`. Other selectors
+            // after `.` are left for the descendant chain.
+            let attribute_follows = self
+                .peek_non_trivia()
+                .is_some_and(|next| Self::is_attribute_token(next));
+            if attribute_follows && let Some(with_attr) = self.try_parse_attribute_access(&mut node)? {
+                return Ok(with_attr);
+            }
+
+            // `. .code` is a descendant chain starting at the current node.
+            let selector_follows = !self.in_selector_tail
+                && self.peek_non_trivia().is_some_and(|next| {
+                    next.is_selector() && !matches!(&next.kind, TokenKind::Selector(s) if s == ".")
+                });
+            if !selector_follows {
+                return Ok(Shared::new(node));
+            }
+
+            self.in_selector_tail = true;
+            let tail_leading_trivia = self.parse_leading_trivia();
+            let tail = self.parse_selector(tail_leading_trivia);
+            self.in_selector_tail = false;
+
+            // Shaped like the other selector chains: the block carries the first token and trivia.
+            return Ok(Shared::new(Node {
+                token: node.token.clone(),
+                leading_trivia: node.leading_trivia.clone(),
+                trailing_trivia: node.trailing_trivia.clone(),
+                kind: NodeKind::Block {
+                    program: vec![Shared::new(node), tail?].into(),
+                },
             }));
         }
 
@@ -1050,7 +1138,7 @@ impl<'a> Parser<'a> {
                 // []
                 self.parse_selector_bracket(&mut children)?;
 
-                let token = Shared::clone(self.peek_token()?);
+                let token = Shared::clone(self.peek_non_trivia().ok_or(ParseError::UnexpectedEOFDetected)?);
 
                 // [][]
                 if token.kind == TokenKind::LBracket {
@@ -1063,13 +1151,83 @@ impl<'a> Parser<'a> {
                 node.kind = NodeKind::Selector { items: children.into() };
                 Ok(Shared::new(node))
             }
-            TokenKind::DoubleDot => Ok(Shared::new(node)),
+            TokenKind::DoubleDot => {
+                // `..h` and `.."key"` are one expression, as in the AST parser.
+                if !self.peek().is_some_and(|next| Self::is_recursive_name(&next.kind)) {
+                    return Ok(Shared::new(node));
+                }
+
+                let name_kind = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::StringLiteral(_))) {
+                    NodeKind::Literal
+                } else {
+                    NodeKind::Selector { items: ArgList::new() }
+                };
+                let name = self.next_node(
+                    |kind| matches!(kind, TokenKind::Ident(_) | TokenKind::StringLiteral(_)),
+                    name_kind,
+                )?;
+
+                let mut program = vec![Shared::new(node), name];
+
+                // `..h.level` and `..h .code`: an attribute or a descendant step continues the expression.
+                let tail_follows = !self.in_selector_tail
+                    && self.peek_non_trivia().is_some_and(|next| {
+                        next.is_selector() && !matches!(&next.kind, TokenKind::Selector(s) if s == ".")
+                    });
+                if tail_follows {
+                    self.in_selector_tail = true;
+                    let tail_leading_trivia = self.parse_leading_trivia();
+                    let tail = self.parse_selector(tail_leading_trivia);
+                    self.in_selector_tail = false;
+                    program.push(tail?);
+                }
+
+                // The formatter prints a block whose token is a selector as a selector chain.
+                let marker = Shared::new(Token {
+                    kind: TokenKind::Selector(SmolStr::new("..")),
+                    range: token.range,
+                    module_id: token.module_id,
+                });
+                Ok(Shared::new(Node {
+                    kind: NodeKind::Block {
+                        program: program.into(),
+                    },
+                    token: Some(marker),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
+                }))
+            }
             _ => {
                 let selector = Selector::try_from(&**token).map_err(ParseError::UnknownSelector)?;
 
                 if selector.is_attribute_selector() {
                     node.kind = NodeKind::SelfAttr;
-                    return Ok(Shared::new(node));
+                    let attribute = Shared::new(node);
+
+                    // `.value .code` and `.value .value` are one expression: a selector after an
+                    // attribute continues it, and a second attribute ends it.
+                    let selector_follows = !self.in_selector_tail
+                        && self.peek_non_trivia().is_some_and(|next| {
+                            next.is_selector() && !matches!(&next.kind, TokenKind::Selector(s) if s == ".")
+                        });
+                    if !selector_follows {
+                        return Ok(attribute);
+                    }
+
+                    self.in_selector_tail = true;
+                    let tail_leading_trivia = self.parse_leading_trivia();
+                    let tail = self.parse_selector(tail_leading_trivia);
+                    self.in_selector_tail = false;
+
+                    // Shaped like the other selector chains: the block carries the first token and trivia.
+                    return Ok(Shared::new(Node {
+                        token: attribute.token.clone(),
+                        leading_trivia: attribute.leading_trivia.clone(),
+                        trailing_trivia: attribute.trailing_trivia.clone(),
+                        kind: NodeKind::Block {
+                            program: vec![attribute, tail?].into(),
+                        },
+                    }));
                 }
 
                 // Check for selector call args: `.h(...)`, `.code(...)`
@@ -1238,13 +1396,14 @@ impl<'a> Parser<'a> {
     fn parse_selector_bracket(&mut self, children: &mut Vec<Shared<Node>>) -> Result<(), ParseError> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?);
 
-        let token = self.peek_token()?;
-
-        if matches!(token.kind, TokenKind::NumberLiteral(_)) {
-            children.push(self.next_node(|kind| matches!(kind, TokenKind::NumberLiteral(_)), NodeKind::Literal)?);
+        // The index is any expression: `.[0]`, `.["key"]`, `.[n + 1]`.
+        let next = self.peek_non_trivia().ok_or(ParseError::UnexpectedEOFDetected)?;
+        if next.kind != TokenKind::RBracket {
+            let leading_trivia = self.parse_leading_trivia();
+            children.push(self.parse_expr(leading_trivia, false)?);
         }
 
-        let token = self.peek_token()?;
+        let token = self.peek_non_trivia().ok_or(ParseError::UnexpectedEOFDetected)?;
 
         if token.kind == TokenKind::RBracket {
             children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
@@ -1304,7 +1463,26 @@ impl<'a> Parser<'a> {
 
         // Parse program block (contains let, def, or module statements).
         // parse_program reports errors directly into self.errors, so no merging is needed here.
-        let program = self.parse_program(ProgramKind::Block, false);
+        let program = self.parse_program(ProgramKind::Block);
+
+        // Only `let`, `def`, `module` and `import` can appear in a module body.
+        for node in &program {
+            if !matches!(
+                node.kind,
+                NodeKind::Let { .. }
+                    | NodeKind::Def { .. }
+                    | NodeKind::Module { .. }
+                    | NodeKind::Import { .. }
+                    | NodeKind::Token
+                    | NodeKind::End
+                    | NodeKind::Eof
+                    | NodeKind::Error { .. }
+                    | NodeKind::Missing { .. }
+            ) && let Some(token) = Self::first_token(node)
+            {
+                self.report_unexpected(&token);
+            }
+        }
 
         Ok(Shared::new(Node {
             kind: NodeKind::Module {
@@ -1318,7 +1496,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_if(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_if(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
@@ -1330,17 +1508,17 @@ impl<'a> Parser<'a> {
         let colon = self.parse_colon_token_if_present()?;
 
         let then_leading_trivia = self.parse_leading_trivia();
-        let then_branch = self.parse_expr(then_leading_trivia, false, in_loop)?;
+        let then_branch = self.parse_expr(then_leading_trivia, false)?;
 
         let mut elifs: Elifs = Elifs::new();
         while self.try_next_token(|kind| matches!(kind, TokenKind::Elif)) {
             let elif_leading_trivia = self.parse_leading_trivia();
-            elifs.push(self.parse_elif(elif_leading_trivia, in_loop)?);
+            elifs.push(self.parse_elif(elif_leading_trivia)?);
         }
 
         let else_branch = if self.try_next_token(|kind| matches!(kind, TokenKind::Else)) {
             let else_leading_trivia = self.parse_leading_trivia();
-            Some(self.parse_else(else_leading_trivia, in_loop)?)
+            Some(self.parse_else(else_leading_trivia)?)
         } else {
             None
         };
@@ -1359,7 +1537,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_elif(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_elif(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
@@ -1371,7 +1549,7 @@ impl<'a> Parser<'a> {
         let colon = self.parse_colon_token_if_present()?;
 
         let then_leading_trivia = self.parse_leading_trivia();
-        let then_branch = self.parse_expr(then_leading_trivia, false, in_loop)?;
+        let then_branch = self.parse_expr(then_leading_trivia, false)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Elif {
@@ -1385,14 +1563,14 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_else(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_else(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let colon = self.parse_colon_token_if_present()?;
 
         let then_leading_trivia = self.parse_leading_trivia();
-        let then_branch = self.parse_expr(then_leading_trivia, false, in_loop)?;
+        let then_branch = self.parse_expr(then_leading_trivia, false)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Else { colon, then_branch },
@@ -1415,14 +1593,14 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_break(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_break(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         // Optionally parse colon and expression (break: expr)
         let (colon, value) = if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
             let colon = self.parse_colon_token_if_present()?;
             let value_leading_trivia = self.parse_leading_trivia();
-            (colon, Some(self.parse_expr(value_leading_trivia, false, in_loop)?))
+            (colon, Some(self.parse_expr(value_leading_trivia, false)?))
         } else {
             (None, None)
         };
@@ -1435,14 +1613,14 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_yield(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_yield(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         // Optionally parse colon and expression (yield: expr)
         let (colon, value) = if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
             let colon = self.parse_colon_token_if_present()?;
             let value_leading_trivia = self.parse_leading_trivia();
-            (colon, Some(self.parse_expr(value_leading_trivia, false, in_loop)?))
+            (colon, Some(self.parse_expr(value_leading_trivia, false)?))
         } else {
             (None, None)
         };
@@ -1463,7 +1641,7 @@ impl<'a> Parser<'a> {
         let trailing_trivia = self.parse_trailing_trivia();
 
         let operand_leading_trivia = self.parse_leading_trivia();
-        let operand = self.parse_expr(operand_leading_trivia, false, false)?;
+        let operand = self.parse_expr(operand_leading_trivia, false)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Spread { operand },
@@ -1487,7 +1665,7 @@ impl<'a> Parser<'a> {
                 if matches!(parser.peek_token()?.kind, TokenKind::DotDotDot) {
                     parser.parse_spread(leading_trivia)
                 } else {
-                    parser.parse_expr(leading_trivia, false, false)
+                    parser.parse_expr(leading_trivia, false)
                 }
             },
         );
@@ -1508,8 +1686,18 @@ impl<'a> Parser<'a> {
         let token = Shared::clone(self.peek_token()?);
 
         match &token.kind {
-            TokenKind::Ident(_) | TokenKind::Colon | TokenKind::StringLiteral(_) => {
-                self.parse_expr(leading_trivia, false, false)
+            TokenKind::Ident(_) | TokenKind::StringLiteral(_) => {
+                let key = self.parse_expr(leading_trivia, false)?;
+                // A key is a bare name or string, not an expression such as `a = b`.
+                let plain = matches!(
+                    (&key.kind, key.token.as_ref().map(|t| &t.kind)),
+                    (NodeKind::Ident { attr: None }, Some(TokenKind::Ident(_)))
+                        | (NodeKind::Literal, Some(TokenKind::StringLiteral(_)))
+                );
+                if !plain && let Some(token) = Self::first_token(&key) {
+                    self.report_unexpected(&token);
+                }
+                Ok(key)
             }
             _ => Err(ParseError::UnexpectedToken(Shared::clone(&token))),
         }
@@ -1534,7 +1722,7 @@ impl<'a> Parser<'a> {
                 let key = parser.parse_dict_key(TriviaList::new())?;
                 let colon = parser.next_node(|token_kind| matches!(token_kind, TokenKind::Colon), NodeKind::Token)?;
                 let value_leading_trivia = parser.parse_leading_trivia();
-                let value = parser.parse_expr(value_leading_trivia, false, false)?;
+                let value = parser.parse_expr(value_leading_trivia, false)?;
 
                 Ok(Shared::new(Node {
                     kind: NodeKind::DictEntry { key, colon, value },
@@ -1562,6 +1750,7 @@ impl<'a> Parser<'a> {
         let trailing_trivia = self.parse_trailing_trivia();
 
         if let TokenKind::InterpolatedString(_) = &token.kind {
+            self.validate_interpolations(token);
             Ok(Shared::new(Node {
                 kind: NodeKind::InterpolatedString,
                 token: Some(Shared::clone(token)),
@@ -1573,7 +1762,64 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_var_decl(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    /// Parses each `${...}` expression of an interpolated string and reports its errors, as the AST parser does.
+    fn validate_interpolations(&mut self, token: &Shared<Token>) {
+        let TokenKind::InterpolatedString(segments) = &token.kind else {
+            return;
+        };
+
+        for segment in segments {
+            let crate::lexer::token::StringSegment::Expr(source, range) = segment else {
+                continue;
+            };
+            let trimmed = source.trim();
+            if trimmed == constants::identifiers::SELF || trimmed.starts_with('$') {
+                continue;
+            }
+
+            let start = Position {
+                line: range.start.line,
+                column: range.start.column + 2,
+            };
+            let lexer = crate::Lexer::new(crate::lexer::Options {
+                ignore_errors: false,
+                include_spaces: true,
+            });
+            let tokens = match lexer.tokenize_from(source, token.module_id, start) {
+                Ok(tokens) => tokens,
+                Err(error) => {
+                    self.errors
+                        .report(error.token().map_or(ParseError::UnexpectedEOFDetected, |token| {
+                            ParseError::UnexpectedToken(Shared::new(token.clone()))
+                        }));
+                    continue;
+                }
+            };
+
+            if tokens.iter().all(|token| token.kind.is_trivia() || token.is_eof()) {
+                self.errors.report(ParseError::UnexpectedEOFDetected);
+                continue;
+            }
+
+            let tokens: Vec<Shared<Token>> = tokens.into_iter().map(Shared::new).collect();
+            let (nodes, errors) = Parser::new(&tokens).parse();
+            for error in errors.to_vec() {
+                self.errors.report(error);
+            }
+            // The segment is an expression or a pipeline: expressions alternate with pipes.
+            let is_pipe = |node: &Shared<Node>| {
+                matches!(node.kind, NodeKind::Token) && node.token.as_ref().is_some_and(|t| t.kind == TokenKind::Pipe)
+            };
+            let parts = nodes.iter().filter(|node| !matches!(node.kind, NodeKind::Eof));
+            if let Some((_, misplaced)) = parts.enumerate().find(|(i, node)| is_pipe(node) != (i % 2 == 1))
+                && let Some(token) = Self::first_token(misplaced)
+            {
+                self.report_unexpected(&token);
+            }
+        }
+    }
+
+    fn parse_var_decl(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let is_var = matches!(token.kind, TokenKind::Var);
         let trailing_trivia = self.parse_trailing_trivia();
@@ -1582,13 +1828,41 @@ impl<'a> Parser<'a> {
         let lhs = match self.peek().map(|t| &t.kind) {
             Some(TokenKind::LBracket) => self.parse_array_pattern(lhs_leading_trivia)?,
             Some(TokenKind::LBrace) => self.parse_dict_pattern(lhs_leading_trivia)?,
-            _ => self.parse_ident(lhs_leading_trivia)?,
+            _ => {
+                let lhs = self.parse_ident(lhs_leading_trivia)?;
+                // The bound name is a plain identifier.
+                let plain = matches!(lhs.kind, NodeKind::Ident { attr: None })
+                    && lhs
+                        .token
+                        .as_ref()
+                        .is_some_and(|t| matches!(t.kind, TokenKind::Ident(_)));
+                if !plain && let Some(token) = &lhs.token {
+                    self.report_unexpected(token);
+                }
+                lhs
+            }
         };
 
         let eq_token = self.next_node(|kind| matches!(kind, TokenKind::Equal), NodeKind::Token)?;
 
         let rhs_leading_trivia = self.parse_leading_trivia();
-        let rhs = self.parse_expr(rhs_leading_trivia, false, in_loop)?;
+        // A binding cannot be bound to another binding: `let x = let y = 1`.
+        if let Some(next) = self.peek()
+            && matches!(next.kind, TokenKind::Let | TokenKind::Var)
+        {
+            self.report_unexpected(next);
+        }
+        let rhs = self.parse_expr(rhs_leading_trivia, false)?;
+
+        // A binding is followed by a pipe or the end of its block.
+        if let Some(next) = self.peek_non_trivia()
+            && !matches!(
+                next.kind,
+                TokenKind::Pipe | TokenKind::Eof | TokenKind::SemiColon | TokenKind::End
+            )
+        {
+            self.report_unexpected(next);
+        }
 
         let kind = if is_var {
             NodeKind::Var { lhs, eq_token, rhs }
@@ -1616,7 +1890,7 @@ impl<'a> Parser<'a> {
         };
 
         // Check for attribute access: ..attr -> attr(., "attr")
-        if let Some(attr_node) = self.try_parse_attribute_access(&mut node) {
+        if let Some(attr_node) = self.try_parse_attribute_access(&mut node)? {
             return Ok(attr_node);
         }
 
@@ -1679,12 +1953,15 @@ impl<'a> Parser<'a> {
             NodeKind::Ident { attr: None },
         )?);
         args.push(self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?);
-        let expr_leading_trivia = self.parse_leading_trivia();
-        args.push(self.parse_expr(expr_leading_trivia, false, false)?);
+        args.push(self.parse_arg()?);
+        // A trailing comma is allowed, as in any argument list.
+        if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::Comma)) {
+            args.push(self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?);
+        }
         args.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(ProgramKind::Block, true);
+        let program = self.parse_program(ProgramKind::Block);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Foreach {
@@ -1720,14 +1997,14 @@ impl<'a> Parser<'a> {
         let token = Shared::clone(self.advance_or_eof()?);
         let trailing_trivia = self.parse_trailing_trivia();
 
-        let mut args: ArgList = ArgList::new();
-        args.push(self.next_node(|kind| matches!(kind, TokenKind::LParen), NodeKind::Token)?);
-        let expr_leading_trivia = self.parse_leading_trivia();
-        args.push(self.parse_expr(expr_leading_trivia, false, true)?);
-        args.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
+        let args = self.parse_args()?;
+        if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
+            return Err(ParseError::UnexpectedToken(token));
+        }
+        let args: ArgList = args.into();
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(ProgramKind::Block, true);
+        let program = self.parse_program(ProgramKind::Block);
 
         Ok((token, trailing_trivia, args, colon_or_do, program.into()))
     }
@@ -1737,7 +2014,7 @@ impl<'a> Parser<'a> {
         let trailing_trivia = self.parse_trailing_trivia();
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(ProgramKind::Block, true);
+        let program = self.parse_program(ProgramKind::Block);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Loop {
@@ -1764,7 +2041,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_unless(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+    fn parse_unless(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
@@ -1776,7 +2053,7 @@ impl<'a> Parser<'a> {
         let colon = self.parse_colon_token_if_present()?;
 
         let then_leading_trivia = self.parse_leading_trivia();
-        let then_branch = self.parse_expr(then_leading_trivia, false, in_loop)?;
+        let then_branch = self.parse_expr(then_leading_trivia, false)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Unless {
@@ -1797,7 +2074,7 @@ impl<'a> Parser<'a> {
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
 
         let body_leading_trivia = self.parse_leading_trivia();
-        let body = self.parse_expr(body_leading_trivia, false, false)?;
+        let body = self.parse_expr(body_leading_trivia, false)?;
 
         let catch = if self.try_next_token(|kind| matches!(kind, TokenKind::Catch)) {
             let catch_leading_trivia = self.parse_leading_trivia();
@@ -1824,7 +2101,27 @@ impl<'a> Parser<'a> {
 
         // Optional error binder: `catch(e):`
         let params = if self.peek().is_some_and(|t| matches!(t.kind, TokenKind::LParen)) {
-            Some(self.parse_params()?.into())
+            let params = self.parse_params()?;
+            // The binder is a single plain name.
+            let binders: Vec<&Shared<Node>> = params.iter().filter(|param| !param.is_token()).collect();
+            match binders.as_slice() {
+                [binder]
+                    if matches!(
+                        binder.kind,
+                        NodeKind::Param {
+                            asterisk: None,
+                            eq_token: None,
+                            ..
+                        }
+                    ) => {}
+                [binder] => {
+                    if let Some(token) = &binder.token {
+                        self.report_unexpected(token);
+                    }
+                }
+                _ => self.report_unexpected(token),
+            }
+            Some(params.into())
         } else {
             None
         };
@@ -1832,7 +2129,7 @@ impl<'a> Parser<'a> {
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
 
         let body_leading_trivia = self.parse_leading_trivia();
-        let body = self.parse_expr(body_leading_trivia, false, false)?;
+        let body = self.parse_expr(body_leading_trivia, false)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Catch {
@@ -1902,11 +2199,17 @@ impl<'a> Parser<'a> {
         let pattern = self.parse_pattern(pattern_leading_trivia)?;
 
         // Check for guard (if condition)
-        let (if_token, guard_args) = if let Some(token) = self.peek()
+        let (if_token, guard_args) = if let Some(token) = self.peek_non_trivia()
             && matches!(token.kind, TokenKind::If)
         {
             let if_token = self.next_node(|kind| matches!(kind, TokenKind::If), NodeKind::Token)?;
             let guard_args = self.parse_args()?;
+            // A guard is a single condition.
+            if guard_args.iter().filter(|arg| !arg.is_token()).count() != 1
+                && let Some(token) = &if_token.token
+            {
+                self.report_unexpected(token);
+            }
             (Some(if_token), Some(guard_args.into()))
         } else {
             (None, None)
@@ -1915,7 +2218,7 @@ impl<'a> Parser<'a> {
         let colon = self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?;
 
         let body_leading_trivia = self.parse_leading_trivia();
-        let body = self.parse_expr(body_leading_trivia, false, false)?;
+        let body = self.parse_expr(body_leading_trivia, false)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::MatchArm {
@@ -1936,12 +2239,12 @@ impl<'a> Parser<'a> {
         let first = self.parse_single_pattern(leading_trivia)?;
 
         // Check for or-pattern: p1 || p2 || ...
-        if !matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+        if !matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::Or)) {
             return Ok(first);
         }
 
         let mut children: Vec<Shared<Node>> = vec![first];
-        while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
+        while matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::Or)) {
             children.push(self.next_node(|kind| matches!(kind, TokenKind::Or), NodeKind::Token)?);
             let alt_leading_trivia = self.parse_leading_trivia();
             children.push(self.parse_single_pattern(alt_leading_trivia)?);
@@ -2035,7 +2338,7 @@ impl<'a> Parser<'a> {
             let leading_trivia = self.parse_leading_trivia();
 
             // Check for ]
-            if let Some(token) = self.peek() {
+            if let Some(token) = self.peek_non_trivia() {
                 if matches!(token.kind, TokenKind::RBracket) {
                     children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
                     break;
@@ -2047,6 +2350,11 @@ impl<'a> Parser<'a> {
 
                     // Parse rest identifier
                     let rest_leading_trivia = self.parse_leading_trivia();
+                    if let Some(rest) = self.peek_non_trivia()
+                        && !matches!(rest.kind, TokenKind::Ident(_))
+                    {
+                        return Err(ParseError::UnexpectedToken(Shared::clone(rest)));
+                    }
                     children.push(self.parse_pattern(rest_leading_trivia)?);
 
                     // Expect ]
@@ -2059,12 +2367,14 @@ impl<'a> Parser<'a> {
             children.push(self.parse_pattern(leading_trivia)?);
 
             // Check for comma or ]
-            if let Some(token) = self.peek() {
+            if let Some(token) = self.peek_non_trivia() {
                 if matches!(token.kind, TokenKind::Comma) {
                     children.push(self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?);
                 } else if matches!(token.kind, TokenKind::RBracket) {
                     // Will be consumed in next iteration
                     continue;
+                } else {
+                    return Err(ParseError::UnexpectedToken(Shared::clone(token)));
                 }
             }
         }
@@ -2088,7 +2398,7 @@ impl<'a> Parser<'a> {
             let _leading_trivia = self.parse_leading_trivia();
 
             // Check for }
-            if let Some(token) = self.peek()
+            if let Some(token) = self.peek_non_trivia()
                 && matches!(token.kind, TokenKind::RBrace)
             {
                 children.push(self.next_node(|kind| matches!(kind, TokenKind::RBrace), NodeKind::Token)?);
@@ -2102,7 +2412,7 @@ impl<'a> Parser<'a> {
             )?);
 
             // Check for colon (key: pattern) or just key
-            if let Some(token) = self.peek()
+            if let Some(token) = self.peek_non_trivia()
                 && matches!(token.kind, TokenKind::Colon)
             {
                 children.push(self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?);
@@ -2112,12 +2422,14 @@ impl<'a> Parser<'a> {
             }
 
             // Check for comma or }
-            if let Some(token) = self.peek() {
+            if let Some(token) = self.peek_non_trivia() {
                 if matches!(token.kind, TokenKind::Comma) {
                     children.push(self.next_node(|kind| matches!(kind, TokenKind::Comma), NodeKind::Token)?);
                 } else if matches!(token.kind, TokenKind::RBrace) {
                     // Will be consumed in next iteration
                     continue;
+                } else {
+                    return Err(ParseError::UnexpectedToken(Shared::clone(token)));
                 }
             }
         }
@@ -2142,7 +2454,13 @@ impl<'a> Parser<'a> {
 
         // Parse the operand expression
         let operand_leading_trivia = self.parse_leading_trivia();
-        let operand = self.parse_primary_expr(operand_leading_trivia, root, false)?;
+        if let Some(next) = self.peek()
+            && !matches!(next.kind, TokenKind::Eof)
+            && !crate::AstParser::is_prefix_operand_start(&next.kind)
+        {
+            return Err(ParseError::UnexpectedToken(Shared::clone(next)));
+        }
+        let operand = self.parse_primary_expr(operand_leading_trivia, root)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::UnaryOp { op, operand },
@@ -2163,6 +2481,39 @@ impl<'a> Parser<'a> {
             "`)`",
             |parser| parser.parse_param(),
         );
+
+        let (mut seen_variadic, mut seen_default) = (false, false);
+        for param in &nodes {
+            let NodeKind::Param { asterisk, eq_token, .. } = &param.kind else {
+                continue;
+            };
+            let Some(name) = &param.token else {
+                continue;
+            };
+
+            if let Some(asterisk) = asterisk {
+                // A variadic parameter takes no default value.
+                if let Some(eq_token) = eq_token
+                    && let Some(token) = &eq_token.token
+                {
+                    self.report_unexpected(token);
+                }
+                if seen_variadic {
+                    let token = asterisk.token.as_ref().unwrap_or(name);
+                    self.errors
+                        .report(ParseError::MultipleVariadicParameters(Shared::clone(token)));
+                }
+                seen_variadic = true;
+            } else if seen_variadic {
+                self.errors
+                    .report(ParseError::VariadicParameterMustBeLast(Shared::clone(name)));
+            } else if eq_token.is_some() {
+                seen_default = true;
+            } else if seen_default {
+                self.errors
+                    .report(ParseError::ParameterWithoutDefaultAfterDefault(Shared::clone(name)));
+            }
+        }
 
         Ok(nodes)
     }
@@ -2205,7 +2556,7 @@ impl<'a> Parser<'a> {
             });
 
             let default_leading_trivia = self.parse_leading_trivia();
-            let default_value = self.parse_expr(default_leading_trivia, false, false)?;
+            let default_value = self.parse_expr(default_leading_trivia, false)?;
             trailing_trivia = self.parse_trailing_trivia();
             (Some(eq_token), Some(default_value))
         } else {
@@ -2356,10 +2707,7 @@ impl<'a> Parser<'a> {
         let saved_pos = self.pos;
         // Skip trivia
         while let Some(token) = self.tokens.get(self.pos) {
-            if matches!(
-                token.kind,
-                TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
-            ) {
+            if token.kind.is_trivia() {
                 self.pos += 1;
             } else {
                 break;
@@ -2380,10 +2728,7 @@ impl<'a> Parser<'a> {
         let saved_pos = self.pos;
         // Skip leading trivia to reach ':'
         while let Some(token) = self.tokens.get(self.pos) {
-            if matches!(
-                token.kind,
-                TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
-            ) {
+            if token.kind.is_trivia() {
                 self.pos += 1;
             } else {
                 break;
@@ -2398,10 +2743,7 @@ impl<'a> Parser<'a> {
         }
         // Skip trivia after ':'
         while let Some(token) = self.tokens.get(self.pos) {
-            if matches!(
-                token.kind,
-                TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
-            ) {
+            if token.kind.is_trivia() {
                 self.pos += 1;
             } else {
                 break;
@@ -2447,11 +2789,192 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Whether a token can begin an expression, mirroring `parse_primary_expr`.
-    fn starts_expression(kind: &TokenKind, root: bool, in_loop: bool) -> bool {
+    /// Whether a construct ends with its own `;`/`end` (or is a directive), so a statement may
+    /// follow it without a `|`. Keep in sync with `expect_statement_end` in the AST parser.
+    fn closes_itself(node: &Node) -> bool {
+        match &node.kind {
+            // Selector chains such as `.a.b` are also `Block`s, so only a `do` block counts.
+            NodeKind::Block { .. } => node.token.as_ref().is_some_and(|t| matches!(t.kind, TokenKind::Do)),
+            kind => matches!(
+                kind,
+                NodeKind::Def { .. }
+                    | NodeKind::Fn { .. }
+                    | NodeKind::Foreach { .. }
+                    | NodeKind::While { .. }
+                    | NodeKind::Until { .. }
+                    | NodeKind::Loop { .. }
+                    | NodeKind::Match { .. }
+                    | NodeKind::Module { .. }
+                    | NodeKind::Import { .. }
+                    | NodeKind::Include { .. }
+            ),
+        }
+    }
+
+    /// Whether `token` is an attribute selector such as `.url` or `.level`.
+    fn is_attribute_token(token: &Token) -> bool {
+        token.is_selector() && Selector::try_from(token).is_ok_and(|selector| selector.is_attribute_selector())
+    }
+
+    /// The first token of `node`, looking into its children when it has none of its own.
+    fn first_token(node: &Node) -> Option<Shared<Token>> {
+        node.token
+            .clone()
+            .or_else(|| node.children().find_map(|child| Self::first_token(child)))
+    }
+
+    /// Whether `node` ends with an attribute access such as `x.url`, `x[0].row` or `.level`.
+    fn ends_with_attribute(node: &Node) -> bool {
+        let is_attribute = |n: &Shared<Node>| n.token.as_deref().is_some_and(Self::is_attribute_token);
+
+        match &node.kind {
+            NodeKind::Ident { attr } | NodeKind::Self_ { attr } => attr.is_some(),
+            NodeKind::SelfAttr => true,
+            NodeKind::Call { args } | NodeKind::SelectorCall { args } => args.last().is_some_and(is_attribute),
+            NodeKind::Selector { items } => items.last().is_some_and(is_attribute),
+            NodeKind::Block { program } => program.last().is_some_and(|last| Self::ends_with_attribute(last)),
+            // `|=` binds to the last operand: `.a + b.url |= v` sets `b.url`.
+            NodeKind::BinaryOp { rhs, .. } | NodeKind::Assign { rhs, .. } => Self::ends_with_attribute(rhs),
+            NodeKind::UnaryOp { operand, .. } => Self::ends_with_attribute(operand),
+            _ => false,
+        }
+    }
+
+    /// Whether `node` can be assigned to: a variable or an indexed variable such as `x[i][j]`.
+    fn is_assignable(node: &Node) -> bool {
+        let is_token = |n: &Shared<Node>, kind: TokenKind| n.token.as_ref().is_some_and(|t| t.kind == kind);
+
+        match &node.kind {
+            NodeKind::Ident { attr } => attr.is_none(),
+            NodeKind::Call { args } => {
+                let is_ident = node
+                    .token
+                    .as_ref()
+                    .is_some_and(|t| matches!(t.kind, TokenKind::Ident(_)));
+                let is_index = |chunk: &[Shared<Node>]| {
+                    is_token(&chunk[0], TokenKind::LBracket)
+                        && !chunk[1].is_token()
+                        && is_token(&chunk[2], TokenKind::RBracket)
+                };
+                // `x[i][j]`
+                let is_index_chain =
+                    is_ident && !args.is_empty() && args.len() % 3 == 0 && args.chunks(3).all(is_index);
+                // `get(x, i)`, optionally followed by more indexes, is the same as `x[i]`.
+                let is_get_call = node
+                    .token
+                    .as_ref()
+                    .is_some_and(|t| matches!(&t.kind, TokenKind::Ident(name) if name == "get"))
+                    && args.len() >= 5
+                    && (args.len() - 5) % 3 == 0
+                    && args[5..].chunks(3).all(is_index)
+                    && is_token(&args[0], TokenKind::LParen)
+                    && is_token(&args[2], TokenKind::Comma)
+                    && is_token(&args[4], TokenKind::RParen)
+                    && Self::is_assignable(&args[1]);
+                is_index_chain || is_get_call
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether the last expression inside `node` is a call, which a following `do` block extends.
+    fn ends_with_call(node: &Node) -> bool {
+        match &node.kind {
+            NodeKind::Call { .. } => true,
+            NodeKind::If {
+                then_branch,
+                elifs,
+                else_branch,
+                ..
+            } => else_branch
+                .as_ref()
+                .or(elifs.last())
+                .map_or_else(|| Self::ends_with_call(then_branch), |last| Self::ends_with_call(last)),
+            NodeKind::Unless { then_branch, .. }
+            | NodeKind::Elif { then_branch, .. }
+            | NodeKind::Else { then_branch, .. } => Self::ends_with_call(then_branch),
+            NodeKind::Let { rhs, .. }
+            | NodeKind::Var { rhs, .. }
+            | NodeKind::Assign { rhs, .. }
+            | NodeKind::BinaryOp { rhs, .. } => Self::ends_with_call(rhs),
+            NodeKind::UnaryOp { operand, .. } => Self::ends_with_call(operand),
+            _ => false,
+        }
+    }
+
+    /// Whether a token can name the node type or key that follows `..`.
+    fn is_recursive_name(kind: &TokenKind) -> bool {
+        match kind {
+            TokenKind::StringLiteral(_) => true,
+            TokenKind::Ident(name) => Selector::from_selector_str(&format!(".{name}"))
+                .is_some_and(|selector| !selector.is_attribute_selector()),
+            _ => false,
+        }
+    }
+
+    /// Handles a statement that starts right after `previous`. Only constructs that close themselves
+    /// may be followed by a statement without a `|`, unless the AST parser reads both as one expression:
+    /// a selector after an open selector chain, or the `do` block of a call. Reports an error otherwise.
+    /// Returns whether `next` continues a selector chain.
+    fn check_adjacent_statement(
+        &mut self,
+        previous: Option<&Shared<Node>>,
+        next: &Shared<Token>,
+        needs_separator: bool,
+        after_chain_continuation: bool,
+    ) -> bool {
+        let continues_chain = next.is_selector()
+            && !matches!(&next.kind, TokenKind::Selector(s) if s == ".")
+            && previous.is_some_and(|node| Self::continues_selector_chain(node, after_chain_continuation));
+        let trailing_do_block =
+            matches!(next.kind, TokenKind::Do) && previous.is_some_and(|node| Self::ends_with_call(node));
+
+        if needs_separator && !continues_chain && !trailing_do_block {
+            self.report_unexpected(next);
+        }
+        continues_chain
+    }
+
+    /// Whether `node` is a selector chain that a following selector extends. A trailing attribute
+    /// selector (`.h.level`) ends the chain.
+    fn continues_selector_chain(node: &Node, is_continuation: bool) -> bool {
+        let is_attribute = |n: &Shared<Node>| n.token.as_deref().is_some_and(Self::is_attribute_token);
+
+        match &node.kind {
+            // A bare `.` starts a chain: `. .li`.
+            NodeKind::Self_ { attr } => attr.is_none(),
+            // `.value` starts a chain, but as the tail of one it ends it.
+            NodeKind::SelfAttr => !is_continuation,
+            NodeKind::Selector { items } => {
+                // A list selector (`.[0]`) takes no tail, and an attribute (`.code.lang`) ends the chain.
+                let is_list = node
+                    .token
+                    .as_ref()
+                    .is_some_and(|t| matches!(&t.kind, TokenKind::Selector(s) if s == "."));
+                !is_list
+                    && !items.last().is_some_and(is_attribute)
+                    && !node.token.as_deref().is_some_and(Self::is_attribute_token)
+            }
+            NodeKind::SelectorCall { args } => !args.last().is_some_and(is_attribute),
+            NodeKind::Block { program } if !node.token.as_ref().is_some_and(|t| matches!(t.kind, TokenKind::Do)) => {
+                // Anything after the first element is the tail of the chain.
+                program
+                    .last()
+                    .is_some_and(|last| Self::continues_selector_chain(last, is_continuation || program.len() > 1))
+            }
+            // The chain belongs to the last operand: `.a - .b .c`.
+            NodeKind::BinaryOp { rhs, .. } | NodeKind::Assign { rhs, .. } => {
+                Self::continues_selector_chain(rhs, is_continuation)
+            }
+            NodeKind::UnaryOp { operand, .. } => Self::continues_selector_chain(operand, is_continuation),
+            _ => false,
+        }
+    }
+
+    fn starts_expression(kind: &TokenKind, root: bool) -> bool {
         match kind {
             TokenKind::Nodes => root,
-            TokenKind::Break | TokenKind::Continue => in_loop,
+            TokenKind::Break | TokenKind::Continue => true,
             TokenKind::Def
             | TokenKind::Do
             | TokenKind::Fn
@@ -2491,14 +3014,14 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Records an error for `token`, which is not allowed where it is.
+    fn report_unexpected(&mut self, token: &Shared<Token>) {
+        self.errors.report(ParseError::UnexpectedToken(Shared::clone(token)));
+    }
+
     /// The first non-trivia token at or after the current position.
     fn peek_non_trivia(&self) -> Option<&'a Shared<Token>> {
-        self.tokens[self.pos..].iter().find(|token| {
-            !matches!(
-                token.kind,
-                TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
-            )
-        })
+        self.tokens[self.pos..].iter().find(|token| !token.kind.is_trivia())
     }
 
     /// Rewinds to `start` and wraps tokens in an `Error` node until `stop_at` matches at

@@ -8,6 +8,17 @@ String Interpolation allow embedding expressions directly inside string literals
 s"text ${ident} more text"
 ```
 
+## Expressions and Pipelines
+
+Each `${}` holds one expression, or a pipeline of them. A pipeline evaluates to the result of its last step, as in a call argument.
+
+```mq
+s"Name: ${"alice" | upcase()}"
+# => "Name: ALICE"
+```
+
+Anything else after the expression, such as `${x y}` or `${x]}`, is a syntax error.
+
 ## Escaping
 
 You can escape the `$` character in a string interpolation by using `$$`.
