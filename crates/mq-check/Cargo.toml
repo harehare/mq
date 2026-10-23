@@ -12,7 +12,9 @@ repository.workspace = true
 version.workspace = true
 
 [features]
-cli = ["dep:clap", "dep:colored", "dep:serde_json", "dep:url"]
+cli = ["http", "css-selector", "dep:clap", "dep:colored", "dep:serde_json", "dep:url"]
+http = ["mq-hir/http"]
+css-selector = ["mq-hir/css-selector"]
 
 [[bin]]
 name = "mq-check"

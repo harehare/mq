@@ -160,7 +160,6 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | Option           | Description                                                        |
 | ---------------- | ------------------------------------------------------------------ |
 | `--show-types`   | Display inferred types for all user-defined symbols                |
-| `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
 | `--show-uncertain` | Show errors the checker is not sure about (see below) as warnings |
 | `--strict`       | Report errors the checker is not sure about as errors |

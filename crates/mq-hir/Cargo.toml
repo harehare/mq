@@ -11,6 +11,11 @@ readme = "../../README.md"
 repository.workspace = true
 version.workspace = true
 
+[features]
+# Declare feature-gated builtins without building their runtime dependencies.
+http = []
+css-selector = []
+
 [lints]
 workspace = true
 
