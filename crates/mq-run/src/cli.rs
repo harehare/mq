@@ -787,8 +787,7 @@ struct OutputArgs {
     #[clap(long, value_name = "NUM", conflicts_with = "quiet")]
     context: Option<usize>,
 
-    /// Set the exit code from the result, like jq's -e: 0 truthy, 1 false/null,
-    /// 4 no result. Errors exit 2 (unreadable file), 3 (syntax) or 5 (runtime).
+    /// Set the exit code from the result, like jq's -e: 0 truthy, 1 false/null, 4 no result.
     #[arg(short = 'e', long = "exit-status", default_value_t = false)]
     exit_status: bool,
 
@@ -1703,15 +1702,11 @@ impl Cli {
         err.downcast_ref::<mq_lang::Error>().and_then(mq_lang::Error::exit_code)
     }
 
-    /// The process exit code for an uncaught error. `halt(code)` always wins. Otherwise it is 1,
-    /// or with `--exit-status` the jq codes: 2 for an I/O error, 3 for a syntax or module error
-    /// and 5 for a runtime error.
-    pub fn error_exit_code(&self, err: &miette::Report) -> i32 {
+    /// The process exit code for an uncaught error. `halt(code)` always wins. Otherwise it follows
+    /// jq: 2 for an I/O error, 3 for a syntax or module error and 5 for a runtime error.
+    pub fn error_exit_code(err: &miette::Report) -> i32 {
         if let Some(code) = Self::halt_exit_code(err) {
             return code;
-        }
-        if !self.output.exit_status {
-            return ExitReason::Failure.code();
         }
         if err.downcast_ref::<ReadFailure>().is_some() {
             return ExitReason::IoError.code();

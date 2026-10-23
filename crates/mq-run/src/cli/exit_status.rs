@@ -83,8 +83,8 @@ impl std::fmt::Display for ReadFailure {
     }
 }
 
-/// Process exit codes, following jq under `--exit-status`. `Failure` is also the plain error
-/// code and the `--diff` "changes found" code.
+/// Process exit codes, following jq. `Failure` is also the `--diff` "changes found" code.
+/// `NoResult` and a falsy `Failure` are only produced under `--exit-status`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub(super) enum ExitReason {

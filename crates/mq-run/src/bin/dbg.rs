@@ -14,7 +14,7 @@ fn main() -> std::process::ExitCode {
     match cli.run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
-            let code = cli.error_exit_code(&err);
+            let code = mq_run::Cli::error_exit_code(&err);
             if mq_run::Cli::halt_exit_code(&err).is_none() {
                 cli.report_error(&err);
             }
