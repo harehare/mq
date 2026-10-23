@@ -2114,8 +2114,7 @@ impl Cli {
             None => ".".to_string(),
         };
 
-        let aggregate = self.input.program.aggregate.then_some("nodes");
-        Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
+        Ok(query)
     }
 
     fn validate_frontmatter_option(&self) -> miette::Result<()> {
@@ -2375,12 +2374,15 @@ impl Cli {
         )
     }
 
-    /// Returns the effective query string combining any auto-prefix with the base query.
-    fn effective_query(&self, query: &str, file: &Option<PathBuf>) -> String {
-        match self.auto_query_prefix(file) {
-            Some(prefix) => format!("{} | {}", prefix, query),
-            None => query.to_string(),
-        }
+    /// Code run before the user's query: the input-format parser, then `nodes` for `--aggregate`.
+    /// Compiled apart from the query so diagnostics never show it.
+    fn query_prelude(&self, file: &Option<PathBuf>) -> String {
+        let aggregate = self.input.program.aggregate.then(|| "nodes".to_string());
+        [self.auto_query_prefix(file), aggregate]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" | ")
     }
 
     /// Compiles the query for `file`, or loads the `.mqc` program.
@@ -2393,7 +2395,7 @@ impl Cli {
         match self.bytecode.get() {
             Some(mqc) => self.load_mqc_program(engine, mqc, file),
             None => engine
-                .compile(&self.effective_query(query, file))
+                .compile_with_prelude(&self.query_prelude(file), query)
                 .map_err(|error| miette::Report::new(*error)),
         }
     }
