@@ -500,12 +500,6 @@ corresponding flag raises a runtime error explaining how to opt in.
 body regardless of method. The optional `headers` argument is a dict of string to string
 (e.g. `{"Content-Type": "application/json"}`) applied to the request.
 
-`http_get(url, headers = {})`, `http_post(url, body, headers = {})`,
-`http_put(url, body, headers = {})`, `http_patch(url, body, headers = {})`,
-`http_delete(url, headers = {})`, and `http_head(url, headers = {})` are convenience wrappers
-around `http(:get, url, headers)`, `http(:post, url, body, headers)`, and so on, for the most
-common cases: `headers` defaults to `{}` and can be omitted.
-
 `http_all([...requests])` issues a batch of HTTP requests and returns an array of response
 bodies in the same order. Each request is a dict with a required `url` and optional `method`
 (defaults to `get`), `body`, and `headers` keys, e.g.:
@@ -523,13 +517,13 @@ Requests in the batch run concurrently when the runtime supports it, so fanning 
 
 ```sh
 # Blocked by default
-mq 'http_get("https://example.com")'
+mq 'http(:get, "https://example.com")'
 
 # Enabled explicitly
-mq --allow-net 'http_get("https://example.com")'
+mq --allow-net 'http(:get, "https://example.com")'
 mq --allow-net 'http(:delete, "https://example.com/resource/1")'
 mq --allow-net 'http(:post, "https://example.com", "{}", {"Content-Type": "application/json"})'
-mq --allow-net 'http_post("https://example.com", "{}", {"Content-Type": "application/json"})'
+mq --allow-net 'http(:post, "https://example.com", "{}", {"Content-Type": "application/json"})'
 mq --allow-write 'write_file("out.md", "# Hello")'
 ```
 
@@ -537,10 +531,10 @@ mq --allow-write 'write_file("out.md", "# Hello")'
 
 ```sh
 # Restrict to just example.com
-mq --allow-net=example.com 'http_get("https://example.com")'
+mq --allow-net=example.com 'http(:get, "https://example.com")'
 
 # Repeat the flag, or comma-separate, to allow more than one domain
-mq --allow-net=example.com,api.example.org 'http_get("https://api.example.org")'
+mq --allow-net=example.com,api.example.org 'http(:get, "https://api.example.org")'
 ```
 
 ## Comparison
