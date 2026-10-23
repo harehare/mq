@@ -11,6 +11,10 @@ readme = "../../README.md"
 repository.workspace = true
 version.workspace = true
 
+[features]
+# Declares the `http` builtins without building the runtime HTTP client.
+http = []
+
 [lints]
 workspace = true
 

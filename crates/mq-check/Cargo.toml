@@ -12,7 +12,8 @@ repository.workspace = true
 version.workspace = true
 
 [features]
-cli = ["dep:clap", "dep:colored", "dep:serde_json", "dep:url"]
+cli = ["http", "dep:clap", "dep:colored", "dep:serde_json", "dep:url"]
+http = ["mq-hir/http"]
 
 [[bin]]
 name = "mq-check"

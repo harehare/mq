@@ -163,12 +163,11 @@ impl Hir {
         let source_id = self.builtin.source_id;
         let scope_id = self.builtin.scope_id;
 
-        for doc in self
-            .builtin
-            .docs
-            .iter()
-            .filter(|doc| doc.is_available(mq_lang::is_builtin_function))
-        {
+        for doc in self.builtin.docs.iter().filter(|doc| {
+            doc.is_available(|name| {
+                mq_lang::is_builtin_function(name) || (cfg!(feature = "http") && doc.capability == Some("http"))
+            })
+        }) {
             for name in doc.names() {
                 let kind = match doc.kind {
                     mq_help::DocKind::Function | mq_help::DocKind::Internal => {
