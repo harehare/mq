@@ -1414,8 +1414,9 @@ fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
 #[case::count_limit_zero(vec!["--unbuffered", "-e", "--count", "--limit", "0", ".h1"], "# title\n\nbody", 4)]
 #[case::count_skip_all(vec!["--unbuffered", "-e", "--count", "--skip", "5", ".h1"], "# title\n\nbody", 4)]
 #[case::halt_wins(vec!["--unbuffered", "-I", "null", "-e", "halt(7)"], "", 7)]
-#[case::runtime_error_without_exit_status(vec!["--unbuffered", "-I", "null", "error(\"x\")"], "", 1)]
-#[case::unreadable_file_without_exit_status(vec!["--unbuffered", ".h1", "/nonexistent/input.md"], "", 1)]
+#[case::runtime_error_without_exit_status(vec!["--unbuffered", "-I", "null", "error(\"x\")"], "", 5)]
+#[case::syntax_error_without_exit_status(vec!["--unbuffered", "-I", "null", "bad("], "", 3)]
+#[case::unreadable_file_without_exit_status(vec!["--unbuffered", ".h1", "/nonexistent/input.md"], "", 2)]
 fn test_exit_status(
     #[case] args: Vec<&str>,
     #[case] input: &str,
