@@ -3,6 +3,7 @@ use rstest::rstest;
 
 #[rstest]
 #[case::empty("", "")]
+#[case::pipe_in_call_arg("f(1, 42 | one())", "f(1, 42 | one())")]
 #[case::if_(
     "if(test):
         test
