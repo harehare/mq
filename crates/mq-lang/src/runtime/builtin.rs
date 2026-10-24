@@ -2151,6 +2151,30 @@ fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     }
 }
 
+#[mq_macros::mq_fn(name = "contains", params = Fixed(2))]
+fn contains_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.contains(s2.as_str()).into()),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => {
+            Ok(node.markdown_node().is_some_and(|md| md.value().contains(&**s)).into())
+        }
+        [RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)] => {
+            Ok((!needle.is_empty() && haystack.windows(needle.len()).any(|w| w == needle.as_slice())).into())
+        }
+        [RuntimeValue::Array(array), v] => Ok(array.iter().any(|o| o == v).into()),
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+            Ok(map.get(key.as_str()).is_some_and(|v| !v.is_none()).into())
+        }
+        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).is_some_and(|v| !v.is_none()).into()),
+        [RuntimeValue::None, _] | [RuntimeValue::Dict(_), _] => Ok(RuntimeValue::FALSE),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => Err(invalid_arity(ident, 2, args.len())),
+    }
+}
+
 #[mq_macros::mq_fn(name = "indices", params = Fixed(2))]
 fn indices_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     fn string_indices(haystack: &str, needle: &str) -> Vec<RuntimeValue> {
@@ -5814,6 +5838,7 @@ mq_macros::builtin_dispatch! {
     HYPOT,
     INDEX,
     INDICES,
+    CONTAINS,
     LEN,
     UTF8BYTELEN,
     GRAPHEMES,

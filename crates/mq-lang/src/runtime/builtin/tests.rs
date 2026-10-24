@@ -5434,3 +5434,31 @@ fn test_string_indices_use_char_offsets(#[case] haystack: &str, #[case] needle: 
         Ok(expected)
     );
 }
+
+#[rstest]
+#[case::string(RuntimeValue::from("héllo"), RuntimeValue::from("ll"), true)]
+#[case::string_empty_needle(RuntimeValue::from("abc"), RuntimeValue::from(""), true)]
+#[case::string_missing(RuntimeValue::from("abc"), RuntimeValue::from("z"), false)]
+#[case::bytes(RuntimeValue::Bytes(vec![1, 2, 3].into()), RuntimeValue::Bytes(vec![2, 3].into()), true)]
+#[case::bytes_empty_needle(RuntimeValue::Bytes(vec![1, 2].into()), RuntimeValue::Bytes(Vec::new().into()), false)]
+#[case::array(RuntimeValue::Array(Shared::new(vec![1.into(), 2.into()])), RuntimeValue::Number(2.into()), true)]
+#[case::array_missing(RuntimeValue::Array(Shared::new(vec![1.into()])), RuntimeValue::Number(2.into()), false)]
+#[case::none(RuntimeValue::NONE, RuntimeValue::from("a"), false)]
+fn test_contains(#[case] haystack: RuntimeValue, #[case] needle: RuntimeValue, #[case] expected: bool) {
+    assert_eq!(call("contains", vec![haystack, needle]), Ok(expected.into()));
+}
+
+#[rstest]
+#[case::present(RuntimeValue::from("a"), true)]
+#[case::none_value(RuntimeValue::from("n"), false)]
+#[case::missing(RuntimeValue::from("z"), false)]
+#[case::non_key_type(RuntimeValue::Number(1.into()), false)]
+fn test_contains_dict(#[case] key: RuntimeValue, #[case] expected: bool) {
+    let mut map = DictMap::default();
+    map.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+    map.insert(Ident::new("n"), RuntimeValue::NONE);
+    assert_eq!(
+        call("contains", vec![RuntimeValue::Dict(Shared::new(map)), key]),
+        Ok(expected.into())
+    );
+}

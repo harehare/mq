@@ -1602,6 +1602,20 @@ key: 1
         kind: DocKind::Function,
     },
     BuiltinDoc {
+        name: "contains",
+        aliases: &[],
+        description: "Checks if a string, byte array, array, or dict contains a substring, byte subsequence, element, or key.",
+        params: &["haystack", "needle"],
+        param_types: &["dynamic", "dynamic"],
+        returns: "bool",
+        examples: &[BuiltinExample {
+            code: r#"contains("hello world", "world")"#,
+            expected: r#"true"#,
+        }],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "convert",
         aliases: &[],
         description: "Converts the input value to the specified format. Supported formats: base64, html, text, uri, heading (#, ##, etc.), blockquote (>), list item (-), or link (URL).",
