@@ -30,6 +30,8 @@ pub(crate) enum VmError {
     Debugger(String),
     Corrupt(&'static str),
     ArityMismatch {
+        /// Callee's source-level name, `None` for anonymous functions.
+        name: Option<Ident>,
         expected: usize,
         actual: usize,
     },
@@ -64,7 +66,7 @@ impl fmt::Display for VmError {
             #[cfg(feature = "debugger")]
             VmError::Debugger(message) => write!(f, "debugger expression failed: {message}"),
             VmError::Corrupt(what) => write!(f, "corrupt bytecode: {what}"),
-            VmError::ArityMismatch { expected, actual } => {
+            VmError::ArityMismatch { expected, actual, .. } => {
                 write!(f, "expected {expected} argument(s), got {actual}")
             }
             VmError::FlowBreak(_) => write!(f, "break outside a loop"),
@@ -114,9 +116,9 @@ impl VmError {
             VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
             #[cfg(feature = "debugger")]
             VmError::Debugger(message) => RuntimeError::Runtime(token, message.clone()),
-            VmError::ArityMismatch { expected, actual } => RuntimeError::InvalidNumberOfArguments {
+            VmError::ArityMismatch { name, expected, actual } => RuntimeError::InvalidNumberOfArguments {
                 token,
-                name: String::new(),
+                name: name.map_or_else(|| "<anonymous>".to_string(), |name| name.to_string()),
                 expected: *expected,
                 actual: *actual,
             },
@@ -168,6 +170,24 @@ fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena
         }
     }
     trace
+}
+
+impl VmError {
+    /// Fills in the callee name of an arity error raised without access to the callee chunk.
+    pub(super) fn with_arity_name(self, callee: Option<Ident>) -> Self {
+        match self {
+            VmError::ArityMismatch {
+                name: None,
+                expected,
+                actual,
+            } => VmError::ArityMismatch {
+                name: callee,
+                expected,
+                actual,
+            },
+            e => e,
+        }
+    }
 }
 
 pub(super) fn locate(chunk: &Chunk, ip: usize, e: VmError) -> VmError {
@@ -332,8 +352,8 @@ mod tests {
         case::debugger(VmError::Debugger("bad condition".to_string()), "Runtime error: bad condition")
     )]
     #[case::arity_mismatch(
-        VmError::ArityMismatch { expected: 2, actual: 1 },
-        "Invalid number of arguments in \"\", expected 2, got 1"
+        VmError::ArityMismatch { name: None, expected: 2, actual: 1 },
+        "Invalid number of arguments in \"<anonymous>\", expected 2, got 1"
     )]
     #[case::flow_break(VmError::FlowBreak(None), "Runtime error: break outside a loop")]
     #[case::flow_continue(VmError::FlowContinue, "Runtime error: continue outside a loop")]

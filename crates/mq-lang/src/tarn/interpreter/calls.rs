@@ -292,6 +292,7 @@ pub(super) fn call_fixed_closure_from_local(
             call_site.chunk,
             call_site.ip,
             VmError::ArityMismatch {
+                name: callee_chunk.function_name,
                 expected: arity,
                 actual: 1,
             },
@@ -391,6 +392,7 @@ fn call_fixed_chunk_from_stack(
             call_site.chunk,
             call_site.ip,
             VmError::ArityMismatch {
+                name: callee_chunk.function_name,
                 expected: arity,
                 actual: argc,
             },
@@ -596,7 +598,13 @@ fn bind_params(
     context: &mut ParameterContext<'_, '_>,
 ) -> VmResult<Frame> {
     if let Some(arity) = shape.fixed_required_arity() {
-        bind_fixed_required_params(arity, args, &mut callee_locals, context.chunks)?;
+        bind_fixed_required_params(
+            arity,
+            args,
+            &mut callee_locals,
+            context.chunks,
+            context.chunks[callee_chunk_index as usize].function_name,
+        )?;
         return Ok(build_callee_frame(
             callee_locals,
             callee_upvalues,
@@ -607,7 +615,8 @@ fn bind_params(
 
     let arg_count = args.len();
     let param_count = shape.bindings.len();
-    let use_self_param = parameter_uses_implicit_self(shape, arg_count)?;
+    let use_self_param = parameter_uses_implicit_self(shape, arg_count)
+        .map_err(|e| e.with_arity_name(context.chunks[callee_chunk_index as usize].function_name))?;
 
     // `VecDeque::from(Vec)` transfers the caller's pooled allocation without reallocating.
     let remaining_args = VecDeque::from(std::mem::take(args));
@@ -712,6 +721,7 @@ fn resume_bind_params(
             ParamBinding::Required(slot) => {
                 let Some(value) = remaining_args.pop_front() else {
                     return Err(VmError::ArityMismatch {
+                        name: context.chunks[callee_chunk_index as usize].function_name,
                         expected: param_count,
                         actual: arg_count,
                     });
@@ -792,6 +802,7 @@ fn bind_fixed_required_params(
     args: &mut Vec<StackValue>,
     callee_locals: &mut Locals,
     chunks: &Shared<Vec<Chunk>>,
+    name: Option<Ident>,
 ) -> VmResult<()> {
     let arg_count = args.len();
     let first_arg_slot = if arg_count == arity {
@@ -801,6 +812,7 @@ fn bind_fixed_required_params(
         SELF_SLOT as usize + 2
     } else {
         return Err(VmError::ArityMismatch {
+            name,
             expected: arity,
             actual: arg_count,
         });
@@ -826,6 +838,7 @@ fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResul
     }
 
     Err(VmError::ArityMismatch {
+        name: None,
         expected: if shape.has_variadic {
             shape.required
         } else {
