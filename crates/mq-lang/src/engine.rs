@@ -168,11 +168,12 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
     /// Set the maximum wall-clock duration allowed for a single `eval` call.
     ///
-    /// Disabled by default (no timeout). When exceeded, evaluation stops with
-    /// `RuntimeError::Timeout`; the deadline is checked periodically inside loops and
-    /// function calls, so it may be exceeded slightly before evaluation actually stops.
-    pub fn set_timeout(&mut self, timeout: std::time::Duration) {
-        self.vm.options.timeout = Some(timeout);
+    /// Disabled by default (no timeout); pass `None` to disable it again. When exceeded,
+    /// evaluation stops with `RuntimeError::Timeout`; the deadline is checked periodically
+    /// inside loops and function calls, so it may be exceeded slightly before evaluation
+    /// actually stops.
+    pub fn set_timeout(&mut self, timeout: impl Into<Option<std::time::Duration>>) {
+        self.vm.options.timeout = timeout.into();
     }
 
     /// Enables traces for uncaught VM errors.

@@ -64,12 +64,21 @@
 //! code. This only works if the library is built with an unwinding panic
 //! strategy; build it with `cargo build --profile release-ffi` rather than
 //! `--release` (see the crate's `README.md`), since the workspace's default
-//! `release` profile sets `panic = "abort"`.
+//! `release` profile sets `panic = "abort"`. `mq_is_panic_safe()` reports
+//! which strategy the library was built with.
 //!
-use libc::c_void;
+mod error;
+mod html;
+mod values;
+
+pub use error::{MqError, MqLocation, MqStatus};
+pub use html::MqHtmlOptions;
+pub use values::{MqPosition, MqType, MqValues};
+
+use error::{FfiError, run_status};
 use mq_lang::DefaultEngine;
 use mq_lang::{Engine, RuntimeValue};
-use mq_markdown::{ConversionOptions, convert_html_to_markdown};
+use mq_markdown::ConversionOptions;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -77,7 +86,7 @@ use std::path::PathBuf;
 use std::ptr;
 
 /// Opaque handle to an mq engine.
-pub type MqContext = c_void;
+pub struct MqContext;
 
 #[repr(C)]
 /// Result of a query: `values` on success, `error_msg` on failure.
@@ -123,9 +132,14 @@ impl From<MqConversionOptions> for ConversionOptions {
     }
 }
 
-// Helper function to convert Rust string to C string
+// Helper function to convert Rust string to an owned C string.
+// Interior NUL bytes cannot be represented, so they are replaced with U+FFFD.
+fn to_cstring(s: String) -> CString {
+    CString::new(s.replace('\0', "\u{FFFD}")).unwrap_or_default()
+}
+
 fn to_c_string(s: String) -> *mut c_char {
-    CString::new(s).map_or_else(|_| ptr::null_mut(), |cs| cs.into_raw())
+    to_cstring(s).into_raw()
 }
 
 // Extracts a human-readable message from a caught panic payload.
@@ -180,17 +194,38 @@ unsafe fn c_str_array_to_strings(items: *const *const c_char, items_len: usize) 
         .collect()
 }
 
+// Creates an engine with the builtin module loaded.
+fn new_engine() -> *mut MqContext {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    Box::into_raw(Box::new(engine)) as *mut MqContext
+}
+
 /// Creates a new mq_lang engine.
 /// The caller is responsible for destroying the engine using `mq_destroy`.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_create() -> *mut MqContext {
-    std::panic::catch_unwind(|| {
-        let mut engine = DefaultEngine::default();
-        engine.load_builtin_module();
-        let boxed_engine = Box::new(engine);
-        Box::into_raw(boxed_engine) as *mut MqContext
+    std::panic::catch_unwind(new_engine).unwrap_or(ptr::null_mut())
+}
+
+/// Creates a new mq_lang engine like `mq_create`, reporting why it failed.
+///
+/// On success returns `MQ_OK` and stores the engine in `*out`, to be freed with
+/// `mq_destroy`. On failure stores null in `*out` and, if `err` is non-null, an error in
+/// `*err`, to be freed with `mq_error_free`.
+///
+/// # Safety
+///
+/// `out` must be valid for writes and `err` must be null or valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_engine_new(out: *mut *mut MqContext, err: *mut *mut MqError) -> MqStatus {
+    run_status(err, || {
+        if out.is_null() {
+            return Err(FfiError::invalid_argument("Output pointer is null"));
+        }
+        unsafe { *out = new_engine() };
+        Ok(())
     })
-    .unwrap_or(ptr::null_mut())
 }
 
 /// Destroys an mq_lang engine.
@@ -239,122 +274,16 @@ unsafe fn mq_eval_inner(
     input_c: *const c_char,
     input_format_c: *const c_char,
 ) -> MqResult {
-    if engine_ptr.is_null() {
-        return MqResult {
-            values: ptr::null_mut(),
-            values_len: 0,
-            error_msg: to_c_string("Engine pointer is null".to_string()),
-        };
-    }
-    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-
-    let code = match unsafe { c_str_to_rust_str_slice(code_c) } {
-        Ok(s) => s,
-        Err(_) => {
-            return MqResult {
-                values: ptr::null_mut(),
-                values_len: 0,
-                error_msg: to_c_string("Invalid UTF-8 sequence in code".to_string()),
-            };
-        }
-    };
-
-    if input_c.is_null() {
-        return MqResult {
-            values: ptr::null_mut(),
-            values_len: 0,
-            error_msg: to_c_string("Input pointer is null".to_string()),
-        };
-    }
-
-    let input_str = match unsafe { c_str_to_rust_str_slice(input_c) } {
-        Ok(s) => s,
-        Err(_) => {
-            return MqResult {
-                values: ptr::null_mut(),
-                values_len: 0,
-                error_msg: to_c_string("Invalid UTF-8 sequence in input".to_string()),
-            };
-        }
-    };
-
-    if input_format_c.is_null() {
-        return MqResult {
-            values: ptr::null_mut(),
-            values_len: 0,
-            error_msg: to_c_string("Input format pointer is null".to_string()),
-        };
-    }
-
-    let input_format_str = match unsafe { c_str_to_rust_str_slice(input_format_c) } {
-        Ok(s) => s.to_lowercase(),
-        Err(_) => {
-            return MqResult {
-                values: ptr::null_mut(),
-                values_len: 0,
-                error_msg: to_c_string("Invalid UTF-8 sequence in input_format".to_string()),
-            };
-        }
-    };
-
-    let mq_input_values: Vec<RuntimeValue> = match input_format_str.as_str() {
-        "text" => mq_lang::parse_text_input(input_str).unwrap(),
-        "markdown" => match mq_lang::parse_markdown_input(input_str) {
-            Ok(v) => v,
-            Err(e) => {
-                return MqResult {
-                    values: ptr::null_mut(),
-                    values_len: 0,
-                    error_msg: to_c_string(format!("Markdown parsing error: {}", e)),
-                };
-            }
-        },
-        "mdx" => match mq_lang::parse_mdx_input(input_str) {
-            Ok(v) => v,
-            Err(e) => {
-                return MqResult {
-                    values: ptr::null_mut(),
-                    values_len: 0,
-                    error_msg: to_c_string(format!("Markdown parsing error: {}", e)),
-                };
-            }
-        },
-        "html" => match mq_lang::parse_html_input(input_str) {
-            Ok(v) => v,
-            Err(e) => {
-                return MqResult {
-                    values: ptr::null_mut(),
-                    values_len: 0,
-                    error_msg: to_c_string(format!("Html parsing error: {}", e)),
-                };
-            }
-        },
-        _ => {
-            return MqResult {
-                values: ptr::null_mut(),
-                values_len: 0,
-                error_msg: to_c_string(format!("Unsupported input format: {}", input_format_str)),
-            };
-        }
-    };
-
-    match engine.eval(code, mq_input_values.into_iter()) {
+    match unsafe { eval_core(engine_ptr, code_c, input_c, input_format_c) } {
         Ok(result_values) => {
-            let mut c_values: Vec<*mut c_char> = Vec::new();
-            let values_len = result_values.len();
+            let c_values: Box<[*mut c_char]> = result_values.into_iter().map(|v| to_c_string(v.to_string())).collect();
+            let values_len = c_values.len();
 
-            for value in result_values {
-                // For now, convert all values to their string representation.
-                // More sophisticated type handling could be added later.
-                c_values.push(to_c_string(value.to_string()));
-            }
-
+            // A boxed slice has capacity == len, which `mq_free_result` relies on to rebuild it.
             let ptr = if c_values.is_empty() {
                 ptr::null_mut()
             } else {
-                let p = c_values.as_mut_ptr();
-                std::mem::forget(c_values); // Prevent Rust from freeing the Vec's memory
-                p
+                Box::into_raw(c_values) as *mut *mut c_char
             };
 
             MqResult {
@@ -366,9 +295,69 @@ unsafe fn mq_eval_inner(
         Err(e) => MqResult {
             values: ptr::null_mut(),
             values_len: 0,
-            error_msg: to_c_string(format!("Error evaluating query: {}", e)),
+            error_msg: to_c_string(e.legacy_message()),
         },
     }
+}
+
+// Shared by `mq_eval` and `mq_eval_ex`: validates arguments, parses the input and runs the query.
+unsafe fn eval_core(
+    engine_ptr: *mut MqContext,
+    code_c: *const c_char,
+    input_c: *const c_char,
+    input_format_c: *const c_char,
+) -> Result<Vec<RuntimeValue>, FfiError> {
+    if engine_ptr.is_null() {
+        return Err(FfiError::invalid_argument("Engine pointer is null"));
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+
+    let code = unsafe { c_str_to_rust_str_slice(code_c) }
+        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in code"))?;
+
+    if input_c.is_null() {
+        return Err(FfiError::invalid_argument("Input pointer is null"));
+    }
+    let input_str = unsafe { c_str_to_rust_str_slice(input_c) }
+        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in input"))?;
+
+    if input_format_c.is_null() {
+        return Err(FfiError::invalid_argument("Input format pointer is null"));
+    }
+    let input_format_str = unsafe { c_str_to_rust_str_slice(input_format_c) }
+        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in input_format"))?
+        .to_lowercase();
+
+    let (prefix, parsed) = match input_format_str.as_str() {
+        "text" => (
+            "Text parsing error: ",
+            mq_lang::parse_text_input(input_str).map_err(|e| e.to_string()),
+        ),
+        "markdown" => (
+            "Markdown parsing error: ",
+            mq_lang::parse_markdown_input(input_str).map_err(|e| e.to_string()),
+        ),
+        "mdx" => (
+            "Markdown parsing error: ",
+            mq_lang::parse_mdx_input(input_str).map_err(|e| e.to_string()),
+        ),
+        "html" => (
+            "Html parsing error: ",
+            mq_lang::parse_html_input(input_str).map_err(|e| e.to_string()),
+        ),
+        _ => {
+            return Err(FfiError::invalid_argument(format!(
+                "Unsupported input format: {}",
+                input_format_str
+            )));
+        }
+    };
+    let mq_input_values = parsed.map_err(|message| FfiError::input_parse(prefix, message))?;
+
+    engine
+        .eval(code, mq_input_values.into_iter())
+        .map(|values| values.into_iter().collect())
+        .map_err(FfiError::from_eval)
 }
 
 /// Frees a C string allocated by Rust.
@@ -405,16 +394,11 @@ pub extern "C" fn mq_free_result(result: MqResult) {
 
         if !result.values.is_null() {
             unsafe {
-                // Reconstruct the Vec from the raw parts to properly deallocate it
-                // along with its elements.
-                let values_vec = Vec::from_raw_parts(result.values, result.values_len, result.values_len);
-                for value_ptr in values_vec {
-                    if !value_ptr.is_null() {
-                        // This was already a CString, so free it with mq_free_string
-                        mq_free_string(value_ptr);
-                    }
+                // Rebuild the boxed slice allocated in `mq_eval` and free its strings.
+                let values = Box::from_raw(ptr::slice_from_raw_parts_mut(result.values, result.values_len));
+                for &value_ptr in values.iter() {
+                    mq_free_string(value_ptr);
                 }
-                // The Vec itself is dropped here, freeing the memory it owned for the pointers.
             }
         }
     });
@@ -479,50 +463,25 @@ unsafe fn mq_html_to_markdown_inner(
     options: MqConversionOptions,
     error_msg: *mut *mut c_char,
 ) -> *mut c_char {
-    // Initialize error_msg to NULL
     if !error_msg.is_null() {
         unsafe {
             *error_msg = ptr::null_mut();
         }
     }
 
-    // Validate input pointer
-    if html_input_c.is_null() {
-        if !error_msg.is_null() {
-            unsafe {
-                *error_msg = to_c_string("HTML input pointer is null".to_string());
-            }
-        }
-        return ptr::null_mut();
-    }
-
-    // Convert C string to Rust string
-    let html_input_str = match unsafe { c_str_to_rust_str_slice(html_input_c) } {
-        Ok(s) => s,
-        Err(_) => {
-            if !error_msg.is_null() {
-                unsafe {
-                    *error_msg = to_c_string("Invalid UTF-8 sequence in HTML input".to_string());
-                }
-            }
-            return ptr::null_mut();
-        }
-    };
-
-    // Convert options and call the conversion function
-    let rust_options: ConversionOptions = options.into();
-    match convert_html_to_markdown(html_input_str, rust_options) {
+    match unsafe { html::convert(html_input_c, options.into()) } {
         Ok(markdown) => to_c_string(markdown),
         Err(e) => {
             if !error_msg.is_null() {
                 unsafe {
-                    *error_msg = to_c_string(format!("HTML to Markdown conversion error: {}", e));
+                    *error_msg = to_c_string(e.legacy_message());
                 }
             }
             ptr::null_mut()
         }
     }
 }
+
 /// Returns the mq-ffi library version as a static, null-terminated string.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_version() -> *const c_char {
@@ -540,6 +499,31 @@ pub extern "C" fn mq_set_max_call_stack_depth(engine_ptr: *mut MqContext, max_ca
         let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
         engine.set_max_call_stack_depth(max_call_stack_depth);
     });
+}
+
+/// Timeout value for `mq_set_timeout_ms` that disables the timeout (the default).
+pub const MQ_NO_TIMEOUT: u64 = 0;
+
+/// Sets the maximum wall-clock time, in milliseconds, a single `mq_eval` call may run,
+/// to guard against non-terminating untrusted mq code. When exceeded, `mq_eval` returns
+/// an error. The deadline is checked periodically, so it may be overshot slightly.
+/// Pass `MQ_NO_TIMEOUT` to disable it. Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_set_timeout_ms(engine_ptr: *mut MqContext, timeout_ms: u64) {
+    guard(move || {
+        if engine_ptr.is_null() {
+            return;
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        engine.set_timeout((timeout_ms != MQ_NO_TIMEOUT).then(|| std::time::Duration::from_millis(timeout_ms)));
+    });
+}
+
+/// Returns true if panics are caught at the API boundary, false if the library was
+/// built with `panic = "abort"` (e.g. `--release`), where any panic aborts the host process.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_is_panic_safe() -> bool {
+    cfg!(panic = "unwind")
 }
 
 /// Sets the search paths used to resolve modules loaded via `mq_import_module`
@@ -605,6 +589,48 @@ pub unsafe extern "C" fn mq_define_string_value(
     });
 }
 
+// Runs `f` on the engine and module name, after checking both arguments.
+unsafe fn module_core(
+    engine_ptr: *mut MqContext,
+    module_name_c: *const c_char,
+    f: impl FnOnce(&mut Engine, &str) -> Result<(), FfiError>,
+) -> Result<(), FfiError> {
+    if engine_ptr.is_null() {
+        return Err(FfiError::invalid_argument("Engine pointer is null"));
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+
+    let module_name = unsafe { c_str_to_rust_str_slice(module_name_c) }
+        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in module_name"))?;
+
+    f(engine, module_name)
+}
+
+// The legacy `char *` result of an API that only reports failure: null on success.
+fn legacy_error(result: Result<(), FfiError>) -> *mut c_char {
+    result.map_or_else(|e| to_c_string(e.legacy_message()), |()| ptr::null_mut())
+}
+
+unsafe fn import_module_core(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> Result<(), FfiError> {
+    unsafe {
+        module_core(engine_ptr, module_name_c, |engine, name| {
+            engine
+                .import_module(name)
+                .map_err(|e| FfiError::from_engine("Error importing module: ", e))
+        })
+    }
+}
+
+unsafe fn load_module_core(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> Result<(), FfiError> {
+    unsafe {
+        module_core(engine_ptr, module_name_c, |engine, name| {
+            engine
+                .load_module(name)
+                .map_err(|e| FfiError::from_engine("Error loading module: ", e))
+        })
+    }
+}
+
 /// Imports an external module by name, searched for in the paths configured via
 /// `mq_set_search_paths`, making its exported definitions available to subsequent
 /// `mq_eval` calls on the same engine.
@@ -617,22 +643,24 @@ pub unsafe extern "C" fn mq_define_string_value(
 /// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
-    guard_c_string(move || {
-        if engine_ptr.is_null() {
-            return to_c_string("Engine pointer is null".to_string());
-        }
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    guard_c_string(move || legacy_error(unsafe { import_module_core(engine_ptr, module_name_c) }))
+}
 
-        let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
-            Ok(s) => s,
-            Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
-        };
-
-        match engine.import_module(module_name) {
-            Ok(()) => ptr::null_mut(),
-            Err(e) => to_c_string(format!("Error importing module: {}", e)),
-        }
-    })
+/// Imports a module like `mq_import_module`, reporting failure as a status plus an
+/// `mq_error_t`. On failure, if `err` is non-null, an error is stored in `*err`, to be
+/// freed with `mq_error_free`.
+///
+/// # Safety
+///
+/// `err` must be null or valid for writes. The other arguments are as for
+/// `mq_import_module`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_import_module_ex(
+    engine_ptr: *mut MqContext,
+    module_name_c: *const c_char,
+    err: *mut *mut MqError,
+) -> MqStatus {
+    run_status(err, || unsafe { import_module_core(engine_ptr, module_name_c) })
 }
 
 /// Loads an external module by name, searched for in the paths configured via
@@ -647,22 +675,24 @@ pub unsafe extern "C" fn mq_import_module(engine_ptr: *mut MqContext, module_nam
 /// - The returned pointer, if non-null, must be freed with `mq_free_string`
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_load_module(engine_ptr: *mut MqContext, module_name_c: *const c_char) -> *mut c_char {
-    guard_c_string(move || {
-        if engine_ptr.is_null() {
-            return to_c_string("Engine pointer is null".to_string());
-        }
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+    guard_c_string(move || legacy_error(unsafe { load_module_core(engine_ptr, module_name_c) }))
+}
 
-        let module_name = match unsafe { c_str_to_rust_str_slice(module_name_c) } {
-            Ok(s) => s,
-            Err(_) => return to_c_string("Invalid UTF-8 sequence in module_name".to_string()),
-        };
-
-        match engine.load_module(module_name) {
-            Ok(()) => ptr::null_mut(),
-            Err(e) => to_c_string(format!("Error loading module: {}", e)),
-        }
-    })
+/// Loads a module like `mq_load_module`, reporting failure as a status plus an
+/// `mq_error_t`. On failure, if `err` is non-null, an error is stored in `*err`, to be
+/// freed with `mq_error_free`.
+///
+/// # Safety
+///
+/// `err` must be null or valid for writes. The other arguments are as for
+/// `mq_load_module`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_load_module_ex(
+    engine_ptr: *mut MqContext,
+    module_name_c: *const c_char,
+    err: *mut *mut MqError,
+) -> MqStatus {
+    run_status(err, || unsafe { load_module_core(engine_ptr, module_name_c) })
 }
 
 /// Replaces the HTTP resolver's domain allowlist used when importing modules
@@ -698,52 +728,75 @@ pub unsafe extern "C" fn mq_set_http_allowed_domains(
     });
 }
 
+// Clears the HTTP module cache; `all` also clears versioned modules and lock files.
+fn clear_http_cache_core(engine_ptr: *mut MqContext, all: bool) -> Result<(), FfiError> {
+    #[cfg(feature = "http-import")]
+    {
+        if engine_ptr.is_null() {
+            return Err(FfiError::invalid_argument("Engine pointer is null"));
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        let result = if all {
+            engine.clear_http_cache_all()
+        } else {
+            engine.clear_http_cache()
+        };
+        result.map_err(|e| FfiError::with_prefix(MqStatus::MQ_ERR_MODULE, "Error clearing HTTP cache: ", e.to_string()))
+    }
+    #[cfg(not(feature = "http-import"))]
+    {
+        let _ = (engine_ptr, all);
+        Err(FfiError::new(
+            MqStatus::MQ_ERR_UNSUPPORTED,
+            "This library was built without the http-import feature",
+        ))
+    }
+}
+
+// A null engine is a no-op for the legacy cache functions.
+fn legacy_clear_http_cache(engine_ptr: *mut MqContext, all: bool) -> *mut c_char {
+    #[cfg(feature = "http-import")]
+    if engine_ptr.is_null() {
+        return ptr::null_mut();
+    }
+    legacy_error(clear_http_cache_core(engine_ptr, all))
+}
+
 /// Clears locally-cached HTTP module files, forcing a re-fetch of all cached
 /// modules on the next import. Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_clear_http_cache(engine_ptr: *mut MqContext) -> *mut c_char {
-    guard_c_string(move || {
-        #[cfg(feature = "http-import")]
-        {
-            if engine_ptr.is_null() {
-                return ptr::null_mut();
-            }
-            let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-            match engine.clear_http_cache() {
-                Ok(()) => ptr::null_mut(),
-                Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
-            }
-        }
-        #[cfg(not(feature = "http-import"))]
-        {
-            let _ = engine_ptr;
-            to_c_string("This library was built without the http-import feature".to_string())
-        }
-    })
+    guard_c_string(move || legacy_clear_http_cache(engine_ptr, false))
 }
 
 /// Clears all HTTP module cache including versioned modules and lock files.
 /// Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_clear_http_cache_all(engine_ptr: *mut MqContext) -> *mut c_char {
-    guard_c_string(move || {
-        #[cfg(feature = "http-import")]
-        {
-            if engine_ptr.is_null() {
-                return ptr::null_mut();
-            }
-            let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-            match engine.clear_http_cache_all() {
-                Ok(()) => ptr::null_mut(),
-                Err(e) => to_c_string(format!("Error clearing HTTP cache: {}", e)),
-            }
-        }
-        #[cfg(not(feature = "http-import"))]
-        {
-            let _ = engine_ptr;
-            to_c_string("This library was built without the http-import feature".to_string())
-        }
-    })
+    guard_c_string(move || legacy_clear_http_cache(engine_ptr, true))
+}
+
+/// Clears the HTTP module cache like `mq_clear_http_cache`, reporting failure as a status
+/// plus an `mq_error_t`. Unlike the legacy function, a null engine is an error. Returns
+/// `MQ_ERR_UNSUPPORTED` if the library was built without the `http-import` feature.
+///
+/// # Safety
+///
+/// `err` must be null or valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_clear_http_cache_ex(engine_ptr: *mut MqContext, err: *mut *mut MqError) -> MqStatus {
+    run_status(err, || clear_http_cache_core(engine_ptr, false))
+}
+
+/// Clears all HTTP module cache like `mq_clear_http_cache_all`, reporting failure as a
+/// status plus an `mq_error_t`. See `mq_clear_http_cache_ex`.
+///
+/// # Safety
+///
+/// `err` must be null or valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_clear_http_cache_all_ex(engine_ptr: *mut MqContext, err: *mut *mut MqError) -> MqStatus {
+    run_status(err, || clear_http_cache_core(engine_ptr, true))
 }
 
 #[cfg(test)]

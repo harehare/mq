@@ -2626,9 +2626,10 @@ name = "mq-ffi"
 version = "0.9.3"
 dependencies = [
  "cbindgen",
- "libc",
+ "miette",
  "mq-lang",
  "mq-markdown",
+ "serde_json",
 ]
 
 [[package]]

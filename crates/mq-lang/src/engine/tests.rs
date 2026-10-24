@@ -437,6 +437,9 @@ fn test_set_timeout() {
     let timeout = std::time::Duration::from_secs(1);
     engine.set_timeout(timeout);
     assert_eq!(engine.vm.options.timeout, Some(timeout));
+
+    engine.set_timeout(None);
+    assert_eq!(engine.vm.options.timeout, None);
 }
 
 #[test]
@@ -489,6 +492,24 @@ fn test_timeout_aborts_runaway_query(#[case] query: &str) {
     // A zero timeout guarantees the deadline is already passed by the first
     // periodic check, regardless of how fast the machine running this test is.
     engine.set_timeout(std::time::Duration::ZERO);
+
+    let started = std::time::Instant::now();
+    let result = engine.eval(query, vec!["".to_string().into()].into_iter());
+
+    assert!(matches!(
+        result.unwrap_err().cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+    ));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
+#[rstest]
+#[case::catch_then_loop("try: (while(true): 1;) catch(e): (while(true): 1;);")]
+#[case::catch_in_loop("while(true): try: (while(true): 1;) catch(e): 1;;")]
+#[case::catch_in_function("def f(): try: (while(true): 1;) catch(e): f(); | f()")]
+fn test_timeout_cannot_be_caught_by_try(#[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.set_timeout(std::time::Duration::from_millis(50));
 
     let started = std::time::Instant::now();
     let result = engine.eval(query, vec!["".to_string().into()].into_iter());

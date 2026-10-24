@@ -16,9 +16,10 @@ version.workspace = true
 workspace = true
 
 [dependencies]
-libc = {workspace = true}
+miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true, features = ["html-to-markdown"], default-features = true}
+serde_json = {workspace = true}
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

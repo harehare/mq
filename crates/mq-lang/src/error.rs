@@ -68,15 +68,8 @@ pub struct Error {
 impl Error {
     /// The exit code passed to `halt`, if this error was raised by it.
     pub fn exit_code(&self) -> Option<i32> {
-        let mut cause = match &self.cause {
-            InnerError::Runtime(cause) => cause,
-            _ => return None,
-        };
-        while let RuntimeError::WithStackTrace { source, .. } = cause {
-            cause = source;
-        }
-        match cause {
-            RuntimeError::Halt(code) => Some(*code),
+        match self.root_runtime_error() {
+            Some(RuntimeError::Halt(code)) => Some(*code),
             _ => None,
         }
     }
@@ -84,6 +77,28 @@ impl Error {
     /// Whether the error came from parsing or loading the program, before it ran.
     pub fn is_compile_error(&self) -> bool {
         matches!(self.cause, InnerError::Syntax(_) | InnerError::Module(_))
+    }
+
+    /// Whether the error came from resolving or loading a module.
+    pub fn is_module_error(&self) -> bool {
+        matches!(self.cause, InnerError::Module(_))
+    }
+
+    /// Whether evaluation was stopped by the engine's timeout.
+    pub fn is_timeout(&self) -> bool {
+        matches!(self.root_runtime_error(), Some(RuntimeError::Timeout(_)))
+    }
+
+    // The runtime error underneath any stack-trace wrappers.
+    fn root_runtime_error(&self) -> Option<&RuntimeError> {
+        let mut cause = match &self.cause {
+            InnerError::Runtime(cause) => cause,
+            _ => return None,
+        };
+        while let RuntimeError::WithStackTrace { source, .. } = cause {
+            cause = source;
+        }
+        Some(cause)
     }
 
     /// Builds an error, resolving module source code through `module_loader` for diagnostics.
