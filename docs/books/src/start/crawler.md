@@ -97,7 +97,7 @@ mq-crawl [OPTIONS] <URL>
 | `--use-title-as-h1` | Use the HTML `<title>` as the first H1 heading | - |
 | `-f, --format <FORMAT>` | Output format: `text` or `json` | `text` |
 
-`mq-crawl` exits non-zero when it fails to start or the crawl fails. Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
+`mq-crawl` exits non-zero when it fails to start, the crawl fails, or any page failed to fetch. Pages skipped by robots.txt or for being non-HTML do not count. Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
 
 ### Examples
 

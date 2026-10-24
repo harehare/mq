@@ -201,7 +201,7 @@ Responses whose `Content-Type` is not HTML (PDFs, images, ...) are skipped and c
 
 ### Exit Codes and Short Flags
 
-`mq-crawl` exits non-zero when it fails to start (bad arguments, unreachable WebDriver, invalid checkpoint) or the crawl itself fails.
+`mq-crawl` exits non-zero when it fails to start (bad arguments, unreachable WebDriver, invalid checkpoint) the crawl itself fails, or any page failed to fetch (including oversized responses). Pages skipped by robots.txt or for being non-HTML do not affect the exit code. Errors are printed as `miette` diagnostics.
 
 Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
 

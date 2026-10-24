@@ -352,6 +352,11 @@ impl Crawler {
         Ok(arc_robots)
     }
 
+    /// Statistics for the crawl so far. Call after [`Crawler::run`] for the final counts.
+    pub async fn stats(&self) -> CrawlResultStats {
+        self.result.read().await.to_stats()
+    }
+
     /// Runs the crawl to completion.
     pub async fn run(&mut self) -> Result<(), String> {
         // Record start time
@@ -595,6 +600,7 @@ impl Crawler {
             Ok(rules) => rules,
             Err(e) => {
                 tracing::error!("Failed to fetch robots.txt for {}: {}", current_url, e);
+                self.result.write().await.pages_failed += 1;
                 return;
             }
         };
@@ -1222,9 +1228,9 @@ mod tests {
         .unwrap();
         crawler.run().await.unwrap();
 
-        let result = crawler.result.read().await;
-        assert_eq!(result.pages_crawled, 0);
-        assert_eq!(result.pages_failed, 1);
+        let stats = crawler.stats().await;
+        assert_eq!(stats.pages_crawled, 0);
+        assert_eq!(stats.pages_failed, 1);
     }
 
     #[tokio::test]

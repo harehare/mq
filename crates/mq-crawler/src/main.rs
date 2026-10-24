@@ -2,6 +2,7 @@
 
 use clap::Parser;
 use fantoccini::wd::TimeoutConfiguration;
+use miette::miette;
 use mq_crawler::crawler::{Crawler, CrawlerOptions};
 use std::process::ExitCode;
 use url::Url;
@@ -219,13 +220,13 @@ async fn main() -> ExitCode {
     match run(CliArgs::parse()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            tracing::error!("{}", e);
+            eprintln!("{:?}", e);
             ExitCode::FAILURE
         }
     }
 }
 
-async fn run(args: CliArgs) -> Result<(), String> {
+async fn run(args: CliArgs) -> miette::Result<()> {
     tracing::info!("Initializing crawler for URL: {}", args.url);
 
     // Build the effective allowed domains list.
@@ -248,7 +249,7 @@ async fn run(args: CliArgs) -> Result<(), String> {
         backoff_multiplier: args.retry_backoff_multiplier,
     };
 
-    let header_map = build_header_map(&args.headers, &args.cookie)?;
+    let header_map = build_header_map(&args.headers, &args.cookie).map_err(|e| miette!(e))?;
 
     let auth = if let Some(ref basic) = args.basic_auth {
         let (username, password) = basic.split_once(':').unwrap_or((basic.as_str(), ""));
@@ -276,10 +277,10 @@ async fn run(args: CliArgs) -> Result<(), String> {
         mq_crawler::http_client::HttpClient::Fantoccini(
             {
                 let fantoccini_client = fantoccini::ClientBuilder::rustls()
-                    .map_err(|e| format!("Failed to create rustls client builder: {}", e))?
+                    .map_err(|e| miette!("Failed to create rustls client builder: {}", e))?
                     .connect(url.as_ref())
                     .await
-                    .map_err(|e| format!("Failed to connect to WebDriver: {}", e))?;
+                    .map_err(|e| miette!("Failed to connect to WebDriver at {}: {}", url, e))?;
 
                 fantoccini_client
                     .update_timeouts(TimeoutConfiguration::new(
@@ -288,7 +289,7 @@ async fn run(args: CliArgs) -> Result<(), String> {
                         Some(std::time::Duration::from_secs_f64(args.implicit_timeout)),
                     ))
                     .await
-                    .map_err(|e| format!("Failed to set timeouts on Fantoccini client: {}", e))?;
+                    .map_err(|e| miette!("Failed to set timeouts on Fantoccini client: {}", e))?;
 
                 fantoccini_client
             },
@@ -328,7 +329,7 @@ async fn run(args: CliArgs) -> Result<(), String> {
         mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path, wait_config, retry_config.clone())
             .await
             .map_err(|e| {
-                format!(
+                miette!(
                     "Failed to launch headless Chrome. Ensure Chrome or Chromium is installed: {}",
                     e
                 )
@@ -340,7 +341,8 @@ async fn run(args: CliArgs) -> Result<(), String> {
             retry_config,
             header_map,
             auth,
-        )?
+        )
+        .map_err(|e| miette!(e))?
     } else {
         mq_crawler::http_client::HttpClient::new_reqwest_with_options(
             args.page_load_timeout,
@@ -348,7 +350,8 @@ async fn run(args: CliArgs) -> Result<(), String> {
             retry_config,
             header_map,
             auth,
-        )?
+        )
+        .map_err(|e| miette!(e))?
     };
 
     let format = match args.format {
@@ -363,7 +366,7 @@ async fn run(args: CliArgs) -> Result<(), String> {
                 tracing::info!("Discovered {} seed URL(s) from sitemap.", urls.len());
                 urls
             }
-            Err(e) => return Err(format!("Failed to fetch sitemap {}: {}", sitemap_url, e)),
+            Err(e) => return Err(miette!("Failed to fetch sitemap {}: {}", sitemap_url, e)),
         }
     } else {
         Vec::new()
@@ -373,7 +376,8 @@ async fn run(args: CliArgs) -> Result<(), String> {
         .resume_from
         .as_deref()
         .map(mq_crawler::crawler::CrawlCheckpoint::load)
-        .transpose()?;
+        .transpose()
+        .map_err(|e| miette!(e))?;
 
     let mut crawler = Crawler::new(
         client,
@@ -402,9 +406,16 @@ async fn run(args: CliArgs) -> Result<(), String> {
         },
     )
     .await
-    .map_err(|e| format!("Failed to initialize crawler: {}", e))?;
+    .map_err(|e| miette!("Failed to initialize crawler: {}", e))?;
 
-    crawler.run().await.map_err(|e| format!("Crawler run failed: {}", e))?;
+    crawler.run().await.map_err(|e| miette!("Crawler run failed: {}", e))?;
+
+    // Skipped pages (robots.txt, non-HTML) are deliberate; only failed fetches fail the crawl.
+    let pages_failed = crawler.stats().await.pages_failed;
+    if pages_failed > 0 {
+        return Err(miette!("Crawl finished with {} failed page(s).", pages_failed));
+    }
+
     tracing::info!("Crawling complete.");
     Ok(())
 }
