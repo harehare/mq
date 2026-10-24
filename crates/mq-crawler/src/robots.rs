@@ -1,41 +1,42 @@
-use crate::http_client::HttpClient;
+use crate::http_client::{FetchErrorKind, HttpClient};
 use robots_txt::{Robots, matcher::SimpleMatcher};
-use std::sync::OnceLock;
 use url::Url;
 
-/// Wrapper for robots.txt handling.
-/// Stores the text content and caches the parsed Robots structure.
+/// What a site's robots.txt permits.
+#[derive(Debug)]
+enum Policy {
+    Rules(String),
+    AllowAll,
+    DisallowAll,
+}
+
+/// Wrapper for robots.txt handling, scoped to one origin (scheme, host and port).
 #[derive(Debug)]
 pub struct RobotsTxt {
-    robots_text: Option<String>,
-    domain: String,
-    parsed_robots: OnceLock<bool>,
+    policy: Policy,
+    origin: String,
+}
+
+/// Cache key identifying the robots.txt that governs `url`.
+pub(crate) fn origin_key(url: &Url) -> Option<String> {
+    let origin = url.origin();
+    origin.is_tuple().then(|| origin.ascii_serialization())
 }
 
 impl RobotsTxt {
-    /// Fetches robots.txt for a given domain.
+    /// Fetches robots.txt for the origin of `target_url`.
     /// If a custom_robots_path is provided and is a valid URL, it fetches from there.
-    /// Otherwise, it constructs the default robots.txt URL (e.g., `http://example.com/robots.txt`).
+    /// Otherwise, it uses `/robots.txt` on the same scheme, host and port.
+    ///
+    /// Follows RFC 9309: a `4xx` response (other than `429`) means no rules apply,
+    /// while an unreachable file or a `5xx` response disallows everything.
     pub async fn fetch(
         http_client: &HttpClient,
         target_url: &Url,
         custom_robots_path: Option<&str>,
     ) -> Result<Self, String> {
-        let domain = target_url
-            .domain()
-            .map(|domain| domain.to_string())
-            .or_else(|| {
-                target_url.host_str().map(|host| {
-                    if let Some(port) = target_url.port() {
-                        format!("{}:{}", host, port)
-                    } else {
-                        host.to_string()
-                    }
-                })
-            })
-            .as_deref()
-            .ok_or_else(|| format!("Target URL {} does not have a valid domain or host.", target_url))?
-            .to_string();
+        let origin =
+            origin_key(target_url).ok_or_else(|| format!("Target URL {} does not have a valid host.", target_url))?;
 
         let robots_url_str = if let Some(path) = custom_robots_path {
             if let Ok(custom_url) = Url::parse(path) {
@@ -47,12 +48,7 @@ impl RobotsTxt {
                 ));
             }
         } else {
-            let base_url_str = format!("{}://{}", target_url.scheme(), domain);
-            let base_url = Url::parse(&base_url_str).map_err(|e| format!("Failed to parse base URL: {}", e))?;
-            base_url
-                .join("/robots.txt")
-                .map_err(|e| format!("Failed to join /robots.txt: {}", e))?
-                .to_string()
+            format!("{}/robots.txt", origin)
         };
 
         let robots_url =
@@ -60,68 +56,56 @@ impl RobotsTxt {
 
         tracing::info!("Fetching robots.txt from: {}", robots_url);
 
-        match http_client.fetch(robots_url).await {
+        let policy = match http_client.fetch_with(robots_url, Default::default()).await {
             Ok(response) => {
-                tracing::debug!("robots.txt content for {}:\n{}", domain, response);
-                Ok(RobotsTxt {
-                    robots_text: Some(response),
-                    domain,
-                    parsed_robots: OnceLock::new(),
-                })
+                tracing::debug!("robots.txt content for {}:\n{}", origin, response);
+                Policy::Rules(response)
             }
-            Err(e) => {
-                tracing::warn!("Error fetching robots.txt for {}: {}", domain, e);
-                Ok(RobotsTxt {
-                    robots_text: None,
-                    domain,
-                    parsed_robots: OnceLock::new(),
-                })
-            }
-        }
+            Err(e) => match e.kind {
+                FetchErrorKind::Status(code) if (400..500).contains(&code) && code != 429 => {
+                    tracing::info!("No robots.txt for {} (status {}), allowing all.", origin, code);
+                    Policy::AllowAll
+                }
+                _ => {
+                    tracing::warn!("robots.txt for {} is unreachable ({}), disallowing all.", origin, e);
+                    Policy::DisallowAll
+                }
+            },
+        };
+
+        Ok(RobotsTxt { policy, origin })
     }
 
     /// Checks if a URL is allowed to be crawled by a specific user-agent.
-    /// Uses cached parsed robots.txt content for performance.
+    /// A URL from another origin is never allowed.
     pub fn is_allowed(&self, url_to_check: &Url, user_agent: &str) -> bool {
-        // Ensure the URL is for the same domain this robots.txt is for.
-        if url_to_check.domain().is_none() {
+        if origin_key(url_to_check).as_deref() != Some(self.origin.as_str()) {
             tracing::warn!(
-                "Checking URL {} against robots.txt for a different domain {}",
+                "Checking URL {} against robots.txt for a different origin {}",
                 url_to_check,
-                self.domain
-            );
-            return true;
-        } else if url_to_check.domain().unwrap_or_default() != self.domain {
-            tracing::warn!(
-                "Checking URL {} against robots.txt for a different domain {}",
-                url_to_check,
-                self.domain
+                self.origin
             );
             return false;
         }
 
-        // Simple optimization - just avoid reparsing if we have no robots.txt
-        let has_robots = *self.parsed_robots.get_or_init(|| self.robots_text.is_some());
-
-        if !has_robots {
-            return true;
+        match &self.policy {
+            Policy::AllowAll => true,
+            Policy::DisallowAll => false,
+            Policy::Rules(text) => {
+                let robots = Robots::from_str_lossy(text);
+                let section = robots.choose_section(user_agent);
+                SimpleMatcher::new(&section.rules).check_path(url_to_check.path())
+            }
         }
-
-        let robots = match &self.robots_text {
-            Some(text) => Robots::from_str_lossy(text),
-            None => return true,
-        };
-
-        let section = robots.choose_section(user_agent);
-        let matcher = SimpleMatcher::new(&section.rules);
-        matcher.check_path(url_to_check.path())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::http_client::RetryConfig;
     use httpmock::{Method::GET, MockServer};
+    use reqwest::header::HeaderMap;
     use std::sync::Once;
     use tokio::runtime::Runtime;
 
@@ -130,6 +114,21 @@ mod tests {
         INIT.call_once(|| {
             let _ = tracing_subscriber::fmt::try_init();
         });
+    }
+
+    fn robots_with(policy: Policy) -> RobotsTxt {
+        RobotsTxt {
+            policy,
+            origin: "http://example.com".to_string(),
+        }
+    }
+
+    fn robots_with_rules(rules: &str) -> RobotsTxt {
+        robots_with(Policy::Rules(rules.to_string()))
+    }
+
+    fn no_retry_client() -> HttpClient {
+        HttpClient::new_reqwest_with_options(30.0, 3, RetryConfig::disabled(), HeaderMap::new(), None).unwrap()
     }
 
     #[test]
@@ -150,14 +149,37 @@ mod tests {
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
             let robots = RobotsTxt::fetch(&http_client, &url, None).await.unwrap();
 
-            assert_eq!(robots.domain, server.address().to_string());
-            assert_eq!(robots.robots_text.as_deref(), Some(robots_body));
+            assert_eq!(robots.origin, format!("http://{}", server.address()));
+            assert!(matches!(&robots.policy, Policy::Rules(text) if text == robots_body));
             mock.assert_async().await;
         });
     }
 
     #[test]
-    fn test_fetch_not_found() {
+    fn test_fetch_keeps_port_for_host_name() {
+        init_tracing();
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let server = MockServer::start_async().await;
+            let mock = server
+                .mock_async(|when, then| {
+                    when.method(GET).path("/robots.txt");
+                    then.status(200).body("User-agent: *\nDisallow: /private");
+                })
+                .await;
+
+            let http_client = HttpClient::new_reqwest(30.0).unwrap();
+            let url = Url::parse(&format!("http://localhost:{}/", server.address().port())).unwrap();
+            let robots = RobotsTxt::fetch(&http_client, &url, None).await.unwrap();
+
+            mock.assert_async().await;
+            let private = Url::parse(&format!("http://localhost:{}/private/x", server.address().port())).unwrap();
+            assert!(!robots.is_allowed(&private, "*"));
+        });
+    }
+
+    #[test]
+    fn test_fetch_not_found_allows_all() {
         init_tracing();
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -173,9 +195,68 @@ mod tests {
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
             let robots = RobotsTxt::fetch(&http_client, &url, None).await.unwrap();
 
-            assert_eq!(robots.domain, server.address().to_string());
-            assert!(robots.robots_text.is_none());
+            assert!(matches!(robots.policy, Policy::AllowAll));
             mock.assert_async().await;
+        });
+    }
+
+    #[test]
+    fn test_fetch_server_error_disallows_all() {
+        init_tracing();
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let server = MockServer::start_async().await;
+            let mock = server
+                .mock_async(|when, then| {
+                    when.method(GET).path("/robots.txt");
+                    then.status(503);
+                })
+                .await;
+
+            let url = Url::parse(&format!("http://{}", server.address())).unwrap();
+            let robots = RobotsTxt::fetch(&no_retry_client(), &url, None).await.unwrap();
+
+            assert!(matches!(robots.policy, Policy::DisallowAll));
+            assert!(!robots.is_allowed(&url, "*"));
+            mock.assert_async().await;
+        });
+    }
+
+    #[test]
+    fn test_fetch_too_many_requests_disallows_all() {
+        init_tracing();
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let server = MockServer::start_async().await;
+            server
+                .mock_async(|when, then| {
+                    when.method(GET).path("/robots.txt");
+                    then.status(429);
+                })
+                .await;
+
+            let url = Url::parse(&format!("http://{}", server.address())).unwrap();
+            let robots = RobotsTxt::fetch(&no_retry_client(), &url, None).await.unwrap();
+
+            assert!(matches!(robots.policy, Policy::DisallowAll));
+        });
+    }
+
+    #[test]
+    fn test_fetch_unreachable_disallows_all() {
+        init_tracing();
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            // Bind then drop to get a port nothing listens on.
+            let port = std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port();
+            let url = Url::parse(&format!("http://127.0.0.1:{}/", port)).unwrap();
+            let robots = RobotsTxt::fetch(&no_retry_client(), &url, None).await.unwrap();
+
+            assert!(matches!(robots.policy, Policy::DisallowAll));
         });
     }
 
@@ -198,8 +279,7 @@ mod tests {
             let url = Url::parse(&format!("http://{}", server.address())).unwrap();
             let robots = RobotsTxt::fetch(&http_client, &url, Some(&custom_url)).await.unwrap();
 
-            assert_eq!(robots.domain, server.address().to_string());
-            assert_eq!(robots.robots_text.as_deref(), Some(robots_body));
+            assert!(matches!(&robots.policy, Policy::Rules(text) if text == robots_body));
             mock.assert_async().await;
         });
     }
@@ -218,14 +298,18 @@ mod tests {
     }
 
     #[test]
+    fn test_origin_key_includes_scheme_and_port() {
+        let key = |s: &str| origin_key(&Url::parse(s).unwrap());
+        assert_eq!(key("http://localhost:8080/a").as_deref(), Some("http://localhost:8080"));
+        assert_eq!(key("https://example.com:443/a").as_deref(), Some("https://example.com"));
+        assert_eq!(key("http://[::1]:80/a").as_deref(), Some("http://[::1]"));
+        assert_ne!(key("http://localhost:1/"), key("http://localhost:2/"));
+        assert_eq!(key("data:text/plain,hello"), None);
+    }
+
+    #[test]
     fn test_robots_txt_parsing_basic_direct() {
-        // This test now verifies the full logic via is_allowed for a specific text
-        let rules_text = "User-agent: *\nDisallow: /private/\nAllow: /public/";
-        let rt = RobotsTxt {
-            robots_text: Some(rules_text.to_string()),
-            domain: "example.com".to_string(),
-            parsed_robots: OnceLock::new(),
-        };
+        let rt = robots_with_rules("User-agent: *\nDisallow: /private/\nAllow: /public/");
 
         let private_url = Url::parse("http://example.com/private/something").unwrap();
         let public_url = Url::parse("http://example.com/public/page").unwrap();
@@ -237,27 +321,15 @@ mod tests {
     }
 
     #[test]
-    fn test_is_allowed_with_no_robots_text() {
-        // Updated test name
-        let rt = RobotsTxt {
-            robots_text: None,
-            domain: "example.com".to_string(),
-            parsed_robots: OnceLock::new(),
-        };
+    fn test_is_allowed_with_allow_all_policy() {
+        let rt = robots_with(Policy::AllowAll);
         let url = Url::parse("http://example.com/some/path").unwrap();
         assert!(rt.is_allowed(&url, "test-agent"));
     }
 
     #[test]
     fn test_is_allowed_with_simple_disallow_text() {
-        // Updated test name
-        let rules = "User-agent: test-agent
-Disallow: /forbidden/";
-        let rt = RobotsTxt {
-            robots_text: Some(rules.to_string()),
-            domain: "example.com".to_string(),
-            parsed_robots: OnceLock::new(),
-        };
+        let rt = robots_with_rules("User-agent: test-agent\nDisallow: /forbidden/");
 
         let allowed_url = Url::parse("http://example.com/allowed/path").unwrap();
         let disallowed_url = Url::parse("http://example.com/forbidden/path").unwrap();
@@ -268,43 +340,23 @@ Disallow: /forbidden/";
     }
 
     #[test]
-    fn test_is_allowed_different_domain() {
-        // Should return false if the URL is for a different domain
-        let rules = "User-agent: *\nDisallow: /private/";
-        let rt = RobotsTxt {
-            robots_text: Some(rules.to_string()),
-            domain: "example.com".to_string(),
-            parsed_robots: OnceLock::new(),
-        };
+    fn test_is_allowed_different_origin() {
+        let rt = robots_with(Policy::AllowAll);
 
-        let other_domain_url = Url::parse("http://other.com/private/").unwrap();
-        assert!(!rt.is_allowed(&other_domain_url, "*"));
+        assert!(!rt.is_allowed(&Url::parse("http://other.com/private/").unwrap(), "*"));
+        assert!(!rt.is_allowed(&Url::parse("http://example.com:8080/").unwrap(), "*"));
+        assert!(!rt.is_allowed(&Url::parse("https://example.com/").unwrap(), "*"));
     }
 
     #[test]
-    fn test_is_allowed_url_without_domain() {
-        // Should return true if the URL has no domain (cannot check)
-        let rules = "User-agent: *\nDisallow: /private/";
-        let rt = RobotsTxt {
-            robots_text: Some(rules.to_string()),
-            domain: "example.com".to_string(),
-            parsed_robots: OnceLock::new(),
-        };
-
-        // This is a relative URL, which has no domain
-        let url = Url::parse("file:///private/").unwrap();
-        assert!(rt.is_allowed(&url, "*"));
+    fn test_is_allowed_url_without_host() {
+        let rt = robots_with(Policy::AllowAll);
+        assert!(!rt.is_allowed(&Url::parse("file:///private/").unwrap(), "*"));
     }
 
     #[test]
     fn test_is_allowed_specific_user_agent() {
-        // Only disallow for a specific user-agent
-        let rules = "User-agent: special-bot\nDisallow: /blocked/\nUser-agent: *\nAllow: /";
-        let rt = RobotsTxt {
-            robots_text: Some(rules.to_string()),
-            domain: "example.com".to_string(),
-            parsed_robots: OnceLock::new(),
-        };
+        let rt = robots_with_rules("User-agent: special-bot\nDisallow: /blocked/\nUser-agent: *\nAllow: /");
 
         let blocked_url = Url::parse("http://example.com/blocked/page").unwrap();
         let allowed_url = Url::parse("http://example.com/other/page").unwrap();
@@ -316,12 +368,7 @@ Disallow: /forbidden/";
 
     #[test]
     fn test_is_allowed_empty_robots_txt() {
-        // Empty robots.txt should allow everything
-        let rt = RobotsTxt {
-            robots_text: Some("".to_string()),
-            domain: "example.com".to_string(),
-            parsed_robots: OnceLock::new(),
-        };
+        let rt = robots_with_rules("");
         let url = Url::parse("http://example.com/any/path").unwrap();
         assert!(rt.is_allowed(&url, "*"));
     }

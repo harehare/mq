@@ -1,7 +1,7 @@
 [package]
 authors.workspace = true
 categories = ["command-line-utilities", "text-processing"]
-description = "Directory crawler for batch Markdown file processing"
+description = "Web crawler that converts pages to Markdown and processes them with mq"
 edition.workspace = true
 homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
@@ -20,6 +20,7 @@ chromiumoxide = {workspace = true}
 clap = {workspace = true, features = ["derive"]}
 crossbeam = {workspace = true}
 dashmap = {workspace = true}
+encoding_rs = {workspace = true}
 fantoccini = {workspace = true, features = ["rustls-tls"]}
 futures = {workspace = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
