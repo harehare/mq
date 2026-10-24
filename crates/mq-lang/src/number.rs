@@ -186,9 +186,10 @@ impl Rem for Number {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for Number {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -265,6 +266,19 @@ mod tests {
     #[case(-5.5, 2.0, -1.5)]
     fn test_rem_fractional_operands(#[case] a: f64, #[case] b: f64, #[case] expected: f64) {
         assert_eq!((Number::new(a) % Number::new(b)).value(), expected);
+    }
+
+    #[rstest]
+    #[case(f64::NAN, 0.0)]
+    #[case(0.0, f64::NAN)]
+    #[case(f64::NAN, f64::NAN)]
+    fn test_nan_partial_cmp_is_none(#[case] a: f64, #[case] b: f64) {
+        assert_eq!(Number::new(a).partial_cmp(&Number::new(b)), None);
+    }
+
+    #[test]
+    fn test_nan_sorts_last_in_total_order() {
+        assert_eq!(Number::new(f64::NAN).cmp(&Number::new(0.0)), Ordering::Greater);
     }
 
     #[test]
