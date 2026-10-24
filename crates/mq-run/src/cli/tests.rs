@@ -764,6 +764,14 @@ fn test_arg_and_args_flags() {
     assert_eq!(cli.args, Some(vec!["x".to_string(), "y".to_string()]));
 }
 
+#[rstest]
+#[case::consumed_by_args(&["mq", "-I", "null", "--args", "a", "b", "ARGS"], true)]
+#[case::args_last(&["mq", "-I", "null", "ARGS", "--args", "a", "b"], false)]
+fn test_args_before_query_is_rejected(#[case] argv: &[&str], #[case] rejected: bool) {
+    let cli = Cli::try_parse_from(argv).unwrap();
+    assert_eq!(cli.validate_args_position().is_err(), rejected);
+}
+
 #[test]
 fn test_argv_flag_is_removed() {
     assert!(Cli::try_parse_from(["mq", "self", "--argv", "x"]).is_err());

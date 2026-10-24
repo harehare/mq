@@ -1816,6 +1816,7 @@ impl Cli {
 
         self.validate_csv_options()?;
         self.validate_frontmatter_option()?;
+        self.validate_args_position()?;
 
         match &self.commands {
             Some(Commands::Repl { files }) => return self.run_repl(files.as_deref()),
@@ -2116,6 +2117,17 @@ impl Cli {
 
         let aggregate = self.input.program.aggregate.then_some("nodes");
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
+    }
+
+    /// `--args` takes every following value, so `mq --args a b 'ARGS'` leaves no query.
+    fn validate_args_position(&self) -> miette::Result<()> {
+        if self.commands.is_none() && self.args.is_some() && self.query.is_none() && self.bytecode.get().is_none() {
+            return Err(miette!(
+                help = "--args consumes all following values; place it after the query and files",
+                "missing query: every value was consumed by --args"
+            ));
+        }
+        Ok(())
     }
 
     fn validate_frontmatter_option(&self) -> miette::Result<()> {
