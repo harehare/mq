@@ -598,7 +598,9 @@ fn test_eval_result_with_nul_byte_has_no_null_value() {
 
     assert!(result.error_msg.is_null());
     assert_eq!(result.values_len, 1);
-    assert!(!unsafe { *result.values }.is_null());
+    assert!(!result.values.is_null());
+    let values = unsafe { std::slice::from_raw_parts(result.values, result.values_len) };
+    assert!(!values[0].is_null());
 
     mq_free_result(result);
     mq_destroy(engine);
