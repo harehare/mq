@@ -484,6 +484,100 @@ void test_timeout_and_nul_and_panic_safe() {
     printf("PASS\n");
 }
 
+void test_eval_ex() {
+    printf("Test 24: Structured errors with mq_eval_ex... ");
+
+    mq_context_t *ctx = mq_create();
+    assert_not_null(ctx, "Failed to create context");
+
+    mq_values_t *values = NULL;
+    mq_error_t *err = NULL;
+    mq_status_t status = mq_eval_ex(ctx, "add(\" world\")", "hello", "text", &values, &err);
+    assert_equals(status, MQ_OK, "Evaluation should succeed");
+    assert_null(err, "No error on success");
+    assert_equals(mq_values_len(values), 1, "Should have one value");
+    assert_str_equals(mq_value_string(values, 0), "hello world", "Value mismatch");
+    mq_values_free(values);
+
+    status = mq_eval_ex(ctx, "let a = 1\n| |", "hello", "text", &values, &err);
+    assert_equals(status, MQ_ERR_SYNTAX, "Should be a syntax error");
+    assert_null(values, "No values on failure");
+    assert_not_null(err, "Error details expected");
+    assert_equals(mq_error_status(err), MQ_ERR_SYNTAX, "Error status mismatch");
+
+    mq_location_t at;
+    assert_equals(mq_error_location(err, &at), 1, "Syntax error has a location");
+    assert_equals(at.line, 2, "Line mismatch");
+    assert_equals(at.column, 3, "Column mismatch");
+    assert_not_null(strstr(mq_error_rendered(err), mq_error_message(err)), "Rendered contains message");
+    mq_error_free(err);
+
+    // The error details are optional.
+    status = mq_eval_ex(ctx, ".h", "x", "yaml", &values, NULL);
+    assert_equals(status, MQ_ERR_INVALID_ARGUMENT, "Unsupported format");
+
+    mq_destroy(ctx);
+    printf("PASS\n");
+}
+
+void test_typed_values() {
+    printf("Test 25: Typed values and JSON... ");
+
+    mq_context_t *ctx = mq_create();
+    mq_values_t *values = NULL;
+
+    assert_equals(mq_eval_ex(ctx, ".h", "# Title\n\nbody", "markdown", &values, NULL), MQ_OK, "eval");
+    assert_equals(mq_value_type(values, 0), MQ_TYPE_MARKDOWN, "Should be markdown");
+    assert_str_equals(mq_value_node_kind(values, 0), "h1", "Node kind mismatch");
+    mq_position_t at;
+    assert_equals(mq_value_position(values, 0, &at), 1, "Node has a position");
+    assert_equals(at.start_line, 1, "Start line mismatch");
+    assert_equals(mq_value_type(values, 99), MQ_TYPE_INVALID, "Out of range");
+    mq_values_free(values);
+
+    assert_equals(mq_eval_ex(ctx, "1.5", "x", "text", &values, NULL), MQ_OK, "eval");
+    double n = 0;
+    assert_equals(mq_value_number(values, 0, &n), 1, "Number accessor");
+    assert_equals((size_t)(n * 10), 15, "Number mismatch");
+    char *json = mq_values_to_json(values);
+    assert_str_equals(json, "[1.5]", "JSON mismatch");
+    mq_free_string(json);
+    mq_values_free(values);
+
+    mq_destroy(ctx);
+    printf("PASS\n");
+}
+
+void test_engine_new_html_options_and_module_ex() {
+    printf("Test 26: mq_engine_new, HTML options, module _ex... ");
+
+    mq_context_t *ctx = NULL;
+    mq_error_t *err = NULL;
+    assert_equals(mq_engine_new(&ctx, &err), MQ_OK, "mq_engine_new");
+    assert_not_null(ctx, "Engine expected");
+    assert_equals(mq_engine_new(NULL, &err), MQ_ERR_INVALID_ARGUMENT, "Null out pointer");
+    mq_error_free(err);
+    err = NULL;
+
+    const char *html = "<html><head><title>Hello</title></head><body><a href=\"/x\">l</a></body></html>";
+    mq_html_options_t *options = mq_html_options_new();
+    mq_html_options_set_use_title_as_h1(options, true);
+    mq_html_options_set_base_url(options, "https://example.com");
+    char *markdown = NULL;
+    assert_equals(mq_html_to_markdown_ex(html, options, &markdown, &err), MQ_OK, "HTML conversion");
+    assert_not_null(strstr(markdown, "# Hello"), "Title as H1");
+    assert_not_null(strstr(markdown, "https://example.com/x"), "Base URL applied");
+    mq_free_string(markdown);
+    mq_html_options_free(options);
+
+    assert_equals(mq_import_module_ex(ctx, "no_such_module_xyz", &err) != MQ_OK, 1, "Missing module fails");
+    assert_not_null(err, "Error details expected");
+    mq_error_free(err);
+
+    mq_destroy(ctx);
+    printf("PASS\n");
+}
+
 int main() {
     printf("Running mq-ffi C tests...\n\n");
 
@@ -510,6 +604,9 @@ int main() {
     test_http_allowed_domains_does_not_crash();
     test_clear_http_cache_does_not_crash();
     test_timeout_and_nul_and_panic_safe();
+    test_eval_ex();
+    test_typed_values();
+    test_engine_new_html_options_and_module_ex();
 
     printf("\nAll tests passed!\n");
     return 0;

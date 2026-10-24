@@ -32,7 +32,7 @@ else ifeq ($(UNAME_S),Linux)
     LDFLAGS += -Wl,-rpath,$(BUILD_DIR)
 endif
 
-.PHONY: all build-rust build-c test clean
+.PHONY: all build-rust build-c build-cpp test clean
 
 all: test
 
@@ -46,13 +46,20 @@ build-c: build-rust
 	@echo "Building C test..."
 	$(CC) $(CFLAGS) test_mq.c -o test_mq $(LDFLAGS)
 
+# Build C++ test, which checks that the header is usable from C++
+build-cpp: build-rust
+	@echo "Building C++ test..."
+	$(CXX) -std=c++11 $(CFLAGS) test_mq_cpp.cpp -o test_mq_cpp $(LDFLAGS)
+
 # Run test
-test: build-c
+test: build-c build-cpp
 	@echo "Running C test..."
 	./test_mq
+	@echo "Running C++ test..."
+	./test_mq_cpp
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
-	rm -f test_mq
+	rm -f test_mq test_mq_cpp
 	cargo clean

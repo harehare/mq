@@ -1,4 +1,7 @@
 use super::*;
+use crate::error::*;
+use crate::html::*;
+use crate::values::*;
 
 // Helper function to create a C string for testing
 fn make_c_string(s: &str) -> *const c_char {
@@ -972,4 +975,495 @@ fn test_panic_to_c_string() {
     let msg = unsafe { c_string_to_rust_string(c_str) };
     assert_eq!(msg, "Internal error: boom");
     unsafe { mq_free_string(c_str) };
+}
+
+// `mq_eval_ex` helpers: owned results so tests do not manage frees by hand.
+struct ExOutcome {
+    status: MqStatus,
+    values: Vec<String>,
+    error: Option<ExError>,
+}
+
+struct ExError {
+    message: String,
+    rendered: String,
+    help: Option<String>,
+    source_name: String,
+    location: Option<MqLocation>,
+    exit_code: Option<i32>,
+}
+
+unsafe fn owned_str(p: *const c_char) -> String {
+    unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+}
+
+fn eval_ex_with(engine: *mut MqContext, code: &str, input: &str, format: &str) -> ExOutcome {
+    let (code, input, format) = (
+        CString::new(code).unwrap(),
+        CString::new(input).unwrap(),
+        CString::new(format).unwrap(),
+    );
+    let mut values: *mut MqValues = ptr::null_mut();
+    let mut err: *mut MqError = ptr::null_mut();
+    let status = unsafe {
+        mq_eval_ex(
+            engine,
+            code.as_ptr(),
+            input.as_ptr(),
+            format.as_ptr(),
+            &mut values,
+            &mut err,
+        )
+    };
+
+    let values_out = (0..unsafe { mq_values_len(values) })
+        .map(|i| unsafe { owned_str(mq_value_string(values, i)) })
+        .collect();
+    let error = unsafe {
+        err.as_ref().map(|_| {
+            let mut location = MqLocation {
+                line: 0,
+                column: 0,
+                offset: 0,
+                length: 0,
+            };
+            let mut exit_code = 0;
+            let help = mq_error_help(err);
+            ExError {
+                message: owned_str(mq_error_message(err)),
+                rendered: owned_str(mq_error_rendered(err)),
+                help: (!help.is_null()).then(|| owned_str(help)),
+                source_name: owned_str(mq_error_source_name(err)),
+                location: mq_error_location(err, &mut location).then_some(location),
+                exit_code: mq_error_exit_code(err, &mut exit_code).then_some(exit_code),
+            }
+        })
+    };
+    if let Some(error) = &error {
+        assert_eq!(unsafe { mq_error_status(err) }, status, "{}", error.message);
+    }
+    assert_eq!(values.is_null(), status != MqStatus::MQ_OK);
+
+    unsafe {
+        mq_values_free(values);
+        mq_error_free(err);
+    }
+    ExOutcome {
+        status,
+        values: values_out,
+        error,
+    }
+}
+
+fn eval_ex(code: &str) -> ExOutcome {
+    let engine = mq_create();
+    let outcome = eval_ex_with(engine, code, "hello", "text");
+    mq_destroy(engine);
+    outcome
+}
+
+#[test]
+fn test_eval_ex_success() {
+    let outcome = eval_ex(r#"add(" world")"#);
+    assert_eq!(outcome.status, MqStatus::MQ_OK);
+    assert_eq!(outcome.values, vec!["hello world"]);
+    assert!(outcome.error.is_none());
+}
+
+#[test]
+fn test_eval_ex_syntax_error_has_location_and_source_excerpt() {
+    let outcome = eval_ex("let a = 1\n| |");
+    let error = outcome.error.unwrap();
+
+    assert_eq!(outcome.status, MqStatus::MQ_ERR_SYNTAX);
+    assert!(!error.message.starts_with("Error evaluating query"));
+    assert!(error.rendered.contains(&error.message));
+    assert!(error.rendered.len() > error.message.len());
+    assert!(error.help.is_some());
+    assert_eq!(error.source_name, "");
+    assert_eq!(error.exit_code, None);
+    let location = error.location.unwrap();
+    assert_eq!((location.line, location.column), (2, 3));
+    assert_eq!(location.offset, "let a = 1\n| ".len());
+}
+
+#[test]
+fn test_eval_ex_location_column_counts_characters() {
+    let outcome = eval_ex("\"あい\" | |");
+    let location = outcome.error.unwrap().location.unwrap();
+
+    assert_eq!(outcome.status, MqStatus::MQ_ERR_SYNTAX);
+    assert_eq!(location.column, 8);
+    assert_eq!(location.offset, "\"あい\" | ".len());
+}
+
+#[test]
+fn test_eval_ex_runtime_error() {
+    let outcome = eval_ex("1 / 0");
+    let error = outcome.error.unwrap();
+
+    assert_eq!(outcome.status, MqStatus::MQ_ERR_RUNTIME);
+    assert_eq!(error.message, "Division by zero");
+    assert_eq!(error.location.map(|l| l.line), Some(1));
+}
+
+#[test]
+fn test_eval_ex_timeout() {
+    let engine = mq_create();
+    mq_set_timeout_ms(engine, 100);
+    let outcome = eval_ex_with(engine, "while(true): 1 end", "hello", "text");
+    mq_destroy(engine);
+
+    assert_eq!(outcome.status, MqStatus::MQ_ERR_TIMEOUT);
+}
+
+#[test]
+fn test_eval_ex_halt_reports_exit_code() {
+    let outcome = eval_ex("halt(3)");
+
+    assert_eq!(outcome.status, MqStatus::MQ_ERR_HALT);
+    assert_eq!(outcome.error.unwrap().exit_code, Some(3));
+}
+
+#[test]
+fn test_eval_ex_invalid_arguments() {
+    let engine = mq_create();
+    for (outcome, message) in [
+        (
+            eval_ex_with(ptr::null_mut(), ".h", "x", "text"),
+            "Engine pointer is null",
+        ),
+        (
+            eval_ex_with(engine, ".h", "x", "yaml"),
+            "Unsupported input format: yaml",
+        ),
+    ] {
+        assert_eq!(outcome.status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+        let error = outcome.error.unwrap();
+        assert_eq!(error.message, message);
+        assert_eq!(error.rendered, message);
+        assert_eq!(error.location, None);
+    }
+    mq_destroy(engine);
+}
+
+#[test]
+fn test_eval_ex_null_out_and_err_pointers() {
+    let engine = mq_create();
+    let (code, input, format) = (c".h", c"x", c"text");
+
+    // A null `out` is rejected, and a null `err` just drops the details.
+    let status = unsafe {
+        mq_eval_ex(
+            engine,
+            code.as_ptr(),
+            input.as_ptr(),
+            format.as_ptr(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+
+    // Reading through a null handle is safe.
+    unsafe {
+        assert_eq!(mq_error_status(ptr::null()), MqStatus::MQ_ERR_INVALID_ARGUMENT);
+        assert!(mq_error_message(ptr::null()).is_null());
+        assert_eq!(mq_values_len(ptr::null()), 0);
+        assert!(mq_value_string(ptr::null(), 0).is_null());
+        mq_error_free(ptr::null_mut());
+        mq_values_free(ptr::null_mut());
+    }
+    mq_destroy(engine);
+}
+
+#[test]
+fn test_eval_ex_value_string_out_of_range_is_null() {
+    let engine = mq_create();
+    let (code, input, format) = (c"1", c"x", c"text");
+    let mut values: *mut MqValues = ptr::null_mut();
+    let status = unsafe {
+        mq_eval_ex(
+            engine,
+            code.as_ptr(),
+            input.as_ptr(),
+            format.as_ptr(),
+            &mut values,
+            ptr::null_mut(),
+        )
+    };
+
+    assert_eq!(status, MqStatus::MQ_OK);
+    unsafe {
+        assert_eq!(mq_values_len(values), 1);
+        assert!(mq_value_string(values, 1).is_null());
+        mq_values_free(values);
+    }
+    mq_destroy(engine);
+}
+
+#[test]
+fn test_legacy_eval_error_message_is_unchanged() {
+    let engine = mq_create();
+    let (code, input, format) = (c"|", c"x", c"text");
+    let result = unsafe { mq_eval(engine, code.as_ptr(), input.as_ptr(), format.as_ptr()) };
+    let message = unsafe { c_string_to_rust_string(result.error_msg) };
+
+    assert!(message.starts_with("Error evaluating query: "), "{message}");
+    mq_free_result(result);
+    mq_destroy(engine);
+}
+
+#[test]
+fn test_eval_ex_missing_module_is_module_error() {
+    let outcome = eval_ex(r#"import "no_such_module_xyz" | 1"#);
+
+    assert_eq!(
+        outcome.status,
+        MqStatus::MQ_ERR_MODULE,
+        "{:?}",
+        outcome.error.map(|e| e.message)
+    );
+}
+
+// Runs `code` and hands the results to `f`.
+fn with_values(code: &str, input: &str, format: &str, f: impl FnOnce(*const MqValues)) {
+    let engine = mq_create();
+    let (code, input, format) = (
+        CString::new(code).unwrap(),
+        CString::new(input).unwrap(),
+        CString::new(format).unwrap(),
+    );
+    let mut values: *mut MqValues = ptr::null_mut();
+    let status = unsafe {
+        mq_eval_ex(
+            engine,
+            code.as_ptr(),
+            input.as_ptr(),
+            format.as_ptr(),
+            &mut values,
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, MqStatus::MQ_OK);
+    f(values);
+    unsafe { mq_values_free(values) };
+    mq_destroy(engine);
+}
+
+fn type_of(code: &str) -> MqType {
+    let mut ty = MqType::MQ_TYPE_INVALID;
+    with_values(code, "x", "text", |values| ty = unsafe { mq_value_type(values, 0) });
+    ty
+}
+
+#[test]
+fn test_value_type_distinguishes_values_that_share_a_json_form() {
+    assert_eq!(type_of("None"), MqType::MQ_TYPE_NONE);
+    assert_eq!(type_of("true"), MqType::MQ_TYPE_BOOL);
+    assert_eq!(type_of("1.5"), MqType::MQ_TYPE_NUMBER);
+    assert_eq!(type_of(r#""s""#), MqType::MQ_TYPE_STRING);
+    assert_eq!(type_of(":s"), MqType::MQ_TYPE_SYMBOL);
+    assert_eq!(type_of("[1, 2]"), MqType::MQ_TYPE_ARRAY);
+    assert_eq!(type_of(r#"{"a": 1}"#), MqType::MQ_TYPE_DICT);
+    assert_eq!(type_of("fn(): 1;"), MqType::MQ_TYPE_OTHER);
+}
+
+#[test]
+fn test_value_type_out_of_range_is_invalid() {
+    with_values("1", "x", "text", |values| unsafe {
+        assert_eq!(mq_value_type(values, 1), MqType::MQ_TYPE_INVALID);
+        assert_eq!(mq_value_type(ptr::null(), 0), MqType::MQ_TYPE_INVALID);
+    });
+}
+
+#[test]
+fn test_value_number_and_bool_only_match_their_type() {
+    with_values("1.5", "x", "text", |values| unsafe {
+        let (mut n, mut b) = (0.0, false);
+        assert!(mq_value_number(values, 0, &mut n));
+        assert_eq!(n, 1.5);
+        assert!(!mq_value_bool(values, 0, &mut b));
+        assert!(!mq_value_number(values, 0, ptr::null_mut()));
+    });
+    with_values("true", "x", "text", |values| unsafe {
+        let (mut n, mut b) = (0.0, false);
+        assert!(mq_value_bool(values, 0, &mut b));
+        assert!(b);
+        assert!(!mq_value_number(values, 0, &mut n));
+    });
+}
+
+#[test]
+fn test_markdown_value_exposes_kind_position_and_json() {
+    with_values(".h", "# Title\n\nbody", "markdown", |values| unsafe {
+        assert_eq!(mq_value_type(values, 0), MqType::MQ_TYPE_MARKDOWN);
+        assert_eq!(owned_str(mq_value_node_kind(values, 0)), "h1");
+
+        let mut position = MqPosition {
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 0,
+        };
+        assert!(mq_value_position(values, 0, &mut position));
+        assert_eq!((position.start_line, position.start_column), (1, 1));
+        assert_eq!((position.end_line, position.end_column), (1, 8));
+
+        let json = mq_value_to_json(values, 0);
+        let parsed: serde_json::Value = serde_json::from_str(&owned_str(json)).unwrap();
+        mq_free_string(json);
+        assert!(parsed.is_object());
+    });
+}
+
+#[test]
+fn test_non_markdown_value_has_no_kind_or_position() {
+    with_values(r#""s""#, "x", "text", |values| unsafe {
+        let mut position = MqPosition {
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 0,
+        };
+        assert!(mq_value_node_kind(values, 0).is_null());
+        assert!(!mq_value_position(values, 0, &mut position));
+    });
+}
+
+#[test]
+fn test_values_to_json_is_an_array_of_all_results() {
+    with_values(r#"[1, "a"]"#, "x\ny", "text", |values| unsafe {
+        let all = mq_values_to_json(values);
+        assert_eq!(owned_str(all), r#"[[1,"a"],[1,"a"]]"#);
+        mq_free_string(all);
+
+        assert!(mq_value_to_json(values, 2).is_null());
+        assert!(mq_values_to_json(ptr::null()).is_null());
+    });
+    with_values(r#"{"k": None}"#, "x", "text", |values| unsafe {
+        let one = mq_value_to_json(values, 0);
+        assert_eq!(owned_str(one), r#"{"k":null}"#);
+        mq_free_string(one);
+    });
+}
+
+#[test]
+fn test_engine_new_creates_a_usable_engine() {
+    let mut engine: *mut MqContext = ptr::null_mut();
+    let mut err: *mut MqError = ptr::null_mut();
+    let status = unsafe { mq_engine_new(&mut engine, &mut err) };
+
+    assert_eq!(status, MqStatus::MQ_OK);
+    assert!(!engine.is_null());
+    assert!(err.is_null());
+    assert_eq!(eval_ex_with(engine, "1", "x", "text").values, vec!["1"]);
+    mq_destroy(engine);
+
+    let status = unsafe { mq_engine_new(ptr::null_mut(), &mut err) };
+    assert_eq!(status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+    unsafe { mq_error_free(err) };
+}
+
+#[test]
+fn test_module_ex_reports_status() {
+    let engine = mq_create();
+    let missing = c"no_such_module_xyz";
+    let mut err: *mut MqError = ptr::null_mut();
+
+    for status in unsafe {
+        [
+            mq_import_module_ex(engine, missing.as_ptr(), &mut err),
+            mq_load_module_ex(engine, missing.as_ptr(), ptr::null_mut()),
+        ]
+    } {
+        assert_ne!(status, MqStatus::MQ_OK);
+        assert_ne!(status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+    }
+    assert!(!err.is_null());
+    unsafe { mq_error_free(err) };
+
+    let status = unsafe { mq_import_module_ex(ptr::null_mut(), missing.as_ptr(), ptr::null_mut()) };
+    assert_eq!(status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+    mq_destroy(engine);
+}
+
+#[test]
+fn test_clear_http_cache_ex_without_engine_or_feature() {
+    let engine = mq_create();
+    let mut err: *mut MqError = ptr::null_mut();
+
+    #[cfg(feature = "http-import")]
+    {
+        let status = unsafe { mq_clear_http_cache_ex(ptr::null_mut(), &mut err) };
+        assert_eq!(status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+        let status = unsafe { mq_clear_http_cache_all_ex(engine, &mut err) };
+        assert_eq!(status, MqStatus::MQ_OK);
+    }
+    #[cfg(not(feature = "http-import"))]
+    for status in unsafe {
+        [
+            mq_clear_http_cache_ex(engine, &mut err),
+            mq_clear_http_cache_all_ex(engine, ptr::null_mut()),
+        ]
+    } {
+        assert_eq!(status, MqStatus::MQ_ERR_UNSUPPORTED);
+    }
+
+    unsafe { mq_error_free(err) };
+    mq_destroy(engine);
+}
+
+const HTML: &CStr = c"<html><head><title>Hello</title></head><body><p>World</p><a href=\"/x\">link</a></body></html>";
+
+unsafe fn html_to_markdown_ex(options: *const MqHtmlOptions) -> String {
+    let mut out: *mut c_char = ptr::null_mut();
+    let status = unsafe { mq_html_to_markdown_ex(HTML.as_ptr(), options, &mut out, ptr::null_mut()) };
+    assert_eq!(status, MqStatus::MQ_OK);
+    let markdown = unsafe { owned_str(out) };
+    unsafe { mq_free_string(out) };
+    markdown
+}
+
+#[test]
+fn test_html_options_setters_change_the_conversion() {
+    unsafe {
+        let defaults = html_to_markdown_ex(ptr::null());
+        assert!(!defaults.contains("# Hello"));
+        assert!(defaults.contains("](/x)"));
+
+        let options = mq_html_options_new();
+        assert_eq!(html_to_markdown_ex(options), defaults);
+
+        mq_html_options_set_use_title_as_h1(options, true);
+        mq_html_options_set_base_url(options, c"https://example.com".as_ptr());
+        let configured = html_to_markdown_ex(options);
+        assert!(configured.contains("# Hello"));
+        assert!(configured.contains("](https://example.com/x)"));
+
+        // A null base URL clears it again.
+        mq_html_options_set_base_url(options, ptr::null());
+        assert!(html_to_markdown_ex(options).contains("](/x)"));
+        mq_html_options_free(options);
+    }
+}
+
+#[test]
+fn test_html_to_markdown_ex_invalid_arguments() {
+    let mut out: *mut c_char = ptr::null_mut();
+    let mut err: *mut MqError = ptr::null_mut();
+    unsafe {
+        let status = mq_html_to_markdown_ex(ptr::null(), ptr::null(), &mut out, &mut err);
+        assert_eq!(status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+        assert!(out.is_null());
+        assert_eq!(owned_str(mq_error_message(err)), "HTML input pointer is null");
+        mq_error_free(err);
+
+        let status = mq_html_to_markdown_ex(HTML.as_ptr(), ptr::null(), ptr::null_mut(), ptr::null_mut());
+        assert_eq!(status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
+
+        // Setters and free accept null.
+        mq_html_options_set_use_title_as_h1(ptr::null_mut(), true);
+        mq_html_options_free(ptr::null_mut());
+    }
 }
