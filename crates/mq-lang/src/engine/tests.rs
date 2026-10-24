@@ -503,6 +503,24 @@ fn test_timeout_aborts_runaway_query(#[case] query: &str) {
     assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }
 
+#[rstest]
+#[case::catch_then_loop("try: (while(true): 1;) catch(e): (while(true): 1;);")]
+#[case::catch_in_loop("while(true): try: (while(true): 1;) catch(e): 1;;")]
+#[case::catch_in_function("def f(): try: (while(true): 1;) catch(e): f(); | f()")]
+fn test_timeout_cannot_be_caught_by_try(#[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.set_timeout(std::time::Duration::from_millis(50));
+
+    let started = std::time::Instant::now();
+    let result = engine.eval(query, vec!["".to_string().into()].into_iter());
+
+    assert!(matches!(
+        result.unwrap_err().cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+    ));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
 /// Yields `2000.0` (loop body never runs, so this input always "succeeds" instantly),
 /// then blocks `delay` before yielding `0.0` (loop runs ~2000 steps).
 struct DelayedSecondInput {

@@ -249,12 +249,13 @@ pub(super) fn flow_break_value(e: &VmError) -> Option<Option<RuntimeValue>> {
     }
 }
 
-/// `halt` must reach the host, so `try` never catches it.
-pub(super) fn is_halt(e: &VmError) -> bool {
+/// `halt` and a timeout must reach the host, so `try` never catches them. Catching a timeout
+/// would let a query keep running past its deadline.
+pub(super) fn is_uncatchable(e: &VmError) -> bool {
     match e {
-        VmError::Builtin(builtin::Error::Halt(_)) => true,
-        VmError::Located(inner, _) | VmError::StackTrace(inner, _) => is_halt(inner),
-        VmError::CoroutineFailed(inner, _) => is_halt(inner),
+        VmError::Builtin(builtin::Error::Halt(_)) | VmError::Timeout(_) => true,
+        VmError::Located(inner, _) | VmError::StackTrace(inner, _) => is_uncatchable(inner),
+        VmError::CoroutineFailed(inner, _) => is_uncatchable(inner),
         _ => false,
     }
 }
