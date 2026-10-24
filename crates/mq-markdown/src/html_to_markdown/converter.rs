@@ -1020,14 +1020,14 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
             HtmlNode::Element(element) => {
                 let link_text = convert_children_to_string_impl(&element.children, escape_text)?;
                 match element.tag_name.as_str() {
-                    "strong" => {
+                    "strong" | "b" => {
                         let wrapped = wrap_with_delimiter(&link_text, "**");
                         if !wrapped.is_empty() {
                             push_emphasis(&mut parts, wrapped, "**", last_emphasis);
                             prev_emphasis = Some("**");
                         }
                     }
-                    "em" => {
+                    "em" | "i" => {
                         let wrapped = wrap_with_delimiter(&link_text, "*");
                         if !wrapped.is_empty() {
                             push_emphasis(&mut parts, wrapped, "*", last_emphasis);
@@ -1478,9 +1478,9 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
                         // Hard line break: must not be trimmed or it becomes empty.
                         markdown_blocks.push(("  \n".to_string(), true));
                     }
-                    "strong" | "em" | "code" | "span" | "img" | "input" | "s" | "strike" | "del" | "kbd" | "sub"
-                    | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby" | "dfn" | "time" | "small"
-                    | "bdi" => {
+                    "strong" | "b" | "em" | "i" | "code" | "span" | "img" | "input" | "s" | "strike" | "del"
+                    | "kbd" | "sub" | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby" | "dfn" | "time"
+                    | "small" | "bdi" => {
                         let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
                         if inline_md.trim().is_empty() {
                             if !inline_md.is_empty() && markdown_blocks.last().is_some_and(|b| b.1) {
@@ -1577,6 +1577,19 @@ mod tests {
             ],
         )],
         "**Bold** and *Italic*"
+    )]
+    #[case(
+        vec![element_node(
+            "p",
+            vec![
+                element_node("b", vec![text_node("Bold")]),
+                text_node(" and "),
+                element_node("i", vec![text_node("Italic")]),
+                text_node(" and "),
+                element_node("b", vec![element_node("i", vec![text_node("Both")])]),
+            ],
+        )],
+        "**Bold** and *Italic* and ***Both***"
     )]
     #[case(
         {
