@@ -339,10 +339,14 @@ fn test_to_c_string() {
         mq_free_string(c_ptr);
     }
 
-    // Test with string containing null bytes (should return null)
-    let invalid_string = "test\0with\0nulls".to_string();
-    let c_ptr = to_c_string(invalid_string);
-    assert!(c_ptr.is_null());
+    // Interior NUL bytes are replaced rather than yielding a null pointer
+    let c_ptr = to_c_string("test\0with\0nulls".to_string());
+    assert!(!c_ptr.is_null());
+    let result = unsafe { CStr::from_ptr(c_ptr).to_str().unwrap() };
+    assert_eq!(result, "test\u{FFFD}with\u{FFFD}nulls");
+    unsafe {
+        mq_free_string(c_ptr);
+    }
 }
 
 #[test]
@@ -536,6 +540,99 @@ fn test_set_max_call_stack_depth_enforced() {
         mq_free_string(input as *mut c_char);
         mq_free_string(format as *mut c_char);
     }
+}
+
+#[test]
+fn test_set_timeout_ms_stops_infinite_loop() {
+    let engine = mq_create();
+    mq_set_timeout_ms(engine, 100);
+
+    // Should not crash when the engine pointer is null.
+    mq_set_timeout_ms(ptr::null_mut(), 100);
+
+    let code = make_c_string("while(true): 1 end");
+    let input = make_c_string("test");
+    let format = make_c_string("text");
+    let result = unsafe { mq_eval(engine, code, input, format) };
+
+    assert!(!result.error_msg.is_null());
+
+    mq_free_result(result);
+    mq_destroy(engine);
+    unsafe {
+        mq_free_string(code as *mut c_char);
+        mq_free_string(input as *mut c_char);
+        mq_free_string(format as *mut c_char);
+    }
+}
+
+#[test]
+fn test_set_timeout_ms_no_timeout_disables() {
+    let engine = mq_create();
+    mq_set_timeout_ms(engine, 1);
+    mq_set_timeout_ms(engine, MQ_NO_TIMEOUT);
+
+    let code = make_c_string("1");
+    let input = make_c_string("test");
+    let format = make_c_string("text");
+    let result = unsafe { mq_eval(engine, code, input, format) };
+
+    assert!(result.error_msg.is_null());
+
+    mq_free_result(result);
+    mq_destroy(engine);
+    unsafe {
+        mq_free_string(code as *mut c_char);
+        mq_free_string(input as *mut c_char);
+        mq_free_string(format as *mut c_char);
+    }
+}
+
+#[test]
+fn test_eval_result_with_nul_byte_has_no_null_value() {
+    let engine = mq_create();
+    let code = make_c_string(r#""a\u0000b""#);
+    let input = make_c_string("test");
+    let format = make_c_string("text");
+    let result = unsafe { mq_eval(engine, code, input, format) };
+
+    assert!(result.error_msg.is_null());
+    assert_eq!(result.values_len, 1);
+    assert!(!unsafe { *result.values }.is_null());
+
+    mq_free_result(result);
+    mq_destroy(engine);
+    unsafe {
+        mq_free_string(code as *mut c_char);
+        mq_free_string(input as *mut c_char);
+        mq_free_string(format as *mut c_char);
+    }
+}
+
+#[test]
+fn test_eval_many_values_roundtrip_through_free() {
+    // 5 values: a Vec would have grown to capacity 8, so len != capacity.
+    let engine = mq_create();
+    let code = make_c_string("select(true)");
+    let input = make_c_string("a\nb\nc\nd\ne");
+    let format = make_c_string("text");
+    let result = unsafe { mq_eval(engine, code, input, format) };
+
+    assert!(result.error_msg.is_null());
+    assert_eq!(result.values_len, 5);
+
+    mq_free_result(result);
+    mq_destroy(engine);
+    unsafe {
+        mq_free_string(code as *mut c_char);
+        mq_free_string(input as *mut c_char);
+        mq_free_string(format as *mut c_char);
+    }
+}
+
+#[test]
+fn test_is_panic_safe_matches_build_config() {
+    assert_eq!(mq_is_panic_safe(), cfg!(panic = "unwind"));
 }
 
 #[test]

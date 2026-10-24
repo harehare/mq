@@ -17,7 +17,7 @@ The compiled library will be available at:
 - **Dynamic library**: `target/release-ffi/libmq_ffi.so` (Linux) or `.dylib` (macOS) or `.dll` (Windows)
 
 > [!IMPORTANT]
-> Always build mq-ffi with `--profile release-ffi`, not `--release`. The workspace's default `release` profile sets `panic = 'abort'` (for CLI binary size), which would make a panic anywhere inside the evaluator immediately abort the host process embedding this library, bypassing the panic-catching at each `extern "C"` boundary. `release-ffi` inherits all other `release` settings but keeps Rust's default unwinding panic strategy so panics are caught and reported through the normal error channel (`MqResult.error_msg`, etc.) instead.
+> Call `mq_is_panic_safe()` at startup to check which strategy your build uses; it returns `false` for a `--release` build. Always build mq-ffi with `--profile release-ffi`, not `--release`. The workspace's default `release` profile sets `panic = 'abort'` (for CLI binary size), which would make a panic anywhere inside the evaluator immediately abort the host process embedding this library, bypassing the panic-catching at each `extern "C"` boundary. `release-ffi` inherits all other `release` settings but keeps Rust's default unwinding panic strategy so panics are caught and reported through the normal error channel (`MqResult.error_msg`, etc.) instead.
 
 ## Usage
 
@@ -185,6 +185,19 @@ void mq_free_result(mq_result_t result);
 // Free a string returned by mq
 void mq_free_string(char* str);
 ```
+
+### Running Untrusted Queries
+
+```c
+// Bound recursion depth and wall-clock time of each mq_eval call.
+void mq_set_max_call_stack_depth(mq_context_t* ctx, uint32_t max_call_stack_depth);
+void mq_set_timeout_ms(mq_context_t* ctx, uint64_t timeout_ms);  // MQ_NO_TIMEOUT (0) disables
+
+// false if built with panic = "abort" (--release): a panic aborts the host process.
+bool mq_is_panic_safe(void);
+```
+
+Result strings are NUL-terminated, so any `\0` in a value is replaced with U+FFFD.
 
 ## Error Handling
 

@@ -64,7 +64,8 @@
 //! code. This only works if the library is built with an unwinding panic
 //! strategy; build it with `cargo build --profile release-ffi` rather than
 //! `--release` (see the crate's `README.md`), since the workspace's default
-//! `release` profile sets `panic = "abort"`.
+//! `release` profile sets `panic = "abort"`. `mq_is_panic_safe()` reports
+//! which strategy the library was built with.
 //!
 use libc::c_void;
 use mq_lang::DefaultEngine;
@@ -123,8 +124,14 @@ impl From<MqConversionOptions> for ConversionOptions {
     }
 }
 
-// Helper function to convert Rust string to C string
+// Helper function to convert Rust string to C string.
+// Interior NUL bytes cannot be represented, so they are replaced with U+FFFD.
 fn to_c_string(s: String) -> *mut c_char {
+    let s = if s.contains('\0') {
+        s.replace('\0', "\u{FFFD}")
+    } else {
+        s
+    };
     CString::new(s).map_or_else(|_| ptr::null_mut(), |cs| cs.into_raw())
 }
 
@@ -298,7 +305,16 @@ unsafe fn mq_eval_inner(
     };
 
     let mq_input_values: Vec<RuntimeValue> = match input_format_str.as_str() {
-        "text" => mq_lang::parse_text_input(input_str).unwrap(),
+        "text" => match mq_lang::parse_text_input(input_str) {
+            Ok(v) => v,
+            Err(e) => {
+                return MqResult {
+                    values: ptr::null_mut(),
+                    values_len: 0,
+                    error_msg: to_c_string(format!("Text parsing error: {}", e)),
+                };
+            }
+        },
         "markdown" => match mq_lang::parse_markdown_input(input_str) {
             Ok(v) => v,
             Err(e) => {
@@ -340,21 +356,14 @@ unsafe fn mq_eval_inner(
 
     match engine.eval(code, mq_input_values.into_iter()) {
         Ok(result_values) => {
-            let mut c_values: Vec<*mut c_char> = Vec::new();
-            let values_len = result_values.len();
+            let c_values: Box<[*mut c_char]> = result_values.into_iter().map(|v| to_c_string(v.to_string())).collect();
+            let values_len = c_values.len();
 
-            for value in result_values {
-                // For now, convert all values to their string representation.
-                // More sophisticated type handling could be added later.
-                c_values.push(to_c_string(value.to_string()));
-            }
-
+            // A boxed slice has capacity == len, which `mq_free_result` relies on to rebuild it.
             let ptr = if c_values.is_empty() {
                 ptr::null_mut()
             } else {
-                let p = c_values.as_mut_ptr();
-                std::mem::forget(c_values); // Prevent Rust from freeing the Vec's memory
-                p
+                Box::into_raw(c_values) as *mut *mut c_char
             };
 
             MqResult {
@@ -405,16 +414,11 @@ pub extern "C" fn mq_free_result(result: MqResult) {
 
         if !result.values.is_null() {
             unsafe {
-                // Reconstruct the Vec from the raw parts to properly deallocate it
-                // along with its elements.
-                let values_vec = Vec::from_raw_parts(result.values, result.values_len, result.values_len);
-                for value_ptr in values_vec {
-                    if !value_ptr.is_null() {
-                        // This was already a CString, so free it with mq_free_string
-                        mq_free_string(value_ptr);
-                    }
+                // Rebuild the boxed slice allocated in `mq_eval` and free its strings.
+                let values = Box::from_raw(ptr::slice_from_raw_parts_mut(result.values, result.values_len));
+                for &value_ptr in values.iter() {
+                    mq_free_string(value_ptr);
                 }
-                // The Vec itself is dropped here, freeing the memory it owned for the pointers.
             }
         }
     });
@@ -540,6 +544,31 @@ pub extern "C" fn mq_set_max_call_stack_depth(engine_ptr: *mut MqContext, max_ca
         let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
         engine.set_max_call_stack_depth(max_call_stack_depth);
     });
+}
+
+/// Timeout value for `mq_set_timeout_ms` that disables the timeout (the default).
+pub const MQ_NO_TIMEOUT: u64 = 0;
+
+/// Sets the maximum wall-clock time, in milliseconds, a single `mq_eval` call may run,
+/// to guard against non-terminating untrusted mq code. When exceeded, `mq_eval` returns
+/// an error. The deadline is checked periodically, so it may be overshot slightly.
+/// Pass `MQ_NO_TIMEOUT` to disable it. Has no effect if `engine_ptr` is null.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_set_timeout_ms(engine_ptr: *mut MqContext, timeout_ms: u64) {
+    guard(move || {
+        if engine_ptr.is_null() {
+            return;
+        }
+        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
+        engine.set_timeout((timeout_ms != MQ_NO_TIMEOUT).then(|| std::time::Duration::from_millis(timeout_ms)));
+    });
+}
+
+/// Returns true if panics are caught at the API boundary, false if the library was
+/// built with `panic = "abort"` (e.g. `--release`), where any panic aborts the host process.
+#[unsafe(no_mangle)]
+pub extern "C" fn mq_is_panic_safe() -> bool {
+    cfg!(panic = "unwind")
 }
 
 /// Sets the search paths used to resolve modules loaded via `mq_import_module`

@@ -459,6 +459,31 @@ void test_clear_http_cache_does_not_crash() {
     printf("PASS\n");
 }
 
+void test_timeout_and_nul_and_panic_safe() {
+    printf("Test 23: mq_set_timeout_ms, NUL in values, mq_is_panic_safe... ");
+
+    mq_context_t *engine = mq_create();
+    mq_set_timeout_ms(engine, 100);
+    mq_set_timeout_ms(NULL, 100);
+
+    struct mq_result_t result = mq_eval(engine, "while(true): 1 end", "test", "text");
+    assert_not_null(result.error_msg, "Should time out on an infinite loop");
+    mq_free_result(result);
+
+    result = mq_eval(engine, "\"a\\u0000b\"", "test", "text");
+    assert_null(result.error_msg, "NUL in a value should not be an error");
+    assert_equals(result.values_len, 1, "Should return one value");
+    assert_not_null(result.values[0], "Value with NUL should not be NULL");
+    mq_free_result(result);
+
+    // Library is built by `cargo build` (unwind), so panics are caught.
+    assert_equals(mq_is_panic_safe(), 1, "Debug build should be panic safe");
+
+    mq_destroy(engine);
+
+    printf("PASS\n");
+}
+
 int main() {
     printf("Running mq-ffi C tests...\n\n");
 
@@ -484,6 +509,7 @@ int main() {
     test_set_search_paths_edge_cases();
     test_http_allowed_domains_does_not_crash();
     test_clear_http_cache_does_not_crash();
+    test_timeout_and_nul_and_panic_safe();
 
     printf("\nAll tests passed!\n");
     return 0;

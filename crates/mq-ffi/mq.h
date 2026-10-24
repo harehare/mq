@@ -7,6 +7,11 @@
 #include <stdlib.h>
 
 /**
+ * Timeout value for `mq_set_timeout_ms` that disables the timeout (the default).
+ */
+#define MQ_NO_TIMEOUT 0
+
+/**
  * Opaque handle to an mq engine.
  */
 typedef void mq_context_t;
@@ -152,6 +157,20 @@ const char *mq_version(void);
  * runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null.
  */
 void mq_set_max_call_stack_depth(mq_context_t *engine_ptr, uint32_t max_call_stack_depth);
+
+/**
+ * Sets the maximum wall-clock time, in milliseconds, a single `mq_eval` call may run,
+ * to guard against non-terminating untrusted mq code. When exceeded, `mq_eval` returns
+ * an error. The deadline is checked periodically, so it may be overshot slightly.
+ * Pass `MQ_NO_TIMEOUT` to disable it. Has no effect if `engine_ptr` is null.
+ */
+void mq_set_timeout_ms(mq_context_t *engine_ptr, uint64_t timeout_ms);
+
+/**
+ * Returns true if panics are caught at the API boundary, false if the library was
+ * built with `panic = "abort"` (e.g. `--release`), where any panic aborts the host process.
+ */
+bool mq_is_panic_safe(void);
 
 /**
  * Sets the search paths used to resolve modules loaded via `mq_import_module`
