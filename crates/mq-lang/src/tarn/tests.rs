@@ -1767,7 +1767,19 @@ fn parameter_binding_rejects_calls_with_more_than_one_required_gap(
 ) {
     let err = run_result(code).unwrap_err();
     assert!(
-        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual } if got_expected == expected && got_actual == actual)),
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual, .. } if got_expected == expected && got_actual == actual)),
+        "unexpected error for {code}"
+    );
+}
+
+/// Arity errors name the mq-defined callee they were raised for.
+#[rstest]
+#[case::user_defined("def f(a): a; | f(1, 2)", "f")]
+#[case::user_defined_with_default("def g(a, b, c): a; | g(1, 2, 3, 4)", "g")]
+fn arity_error_reports_callee_name(#[case] code: &str, #[case] name: &str) {
+    let err = run_result(code).unwrap_err();
+    assert!(
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { name: Some(got), .. } if got.to_string() == name)),
         "unexpected error for {code}"
     );
 }
@@ -3134,7 +3146,7 @@ fn invalid_function_arity_reports_the_declared_bounds(
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let err = compile_and_run(&program, token_arena).unwrap_err();
     assert!(
-        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual } if got_expected == expected && got_actual == actual))
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual, .. } if got_expected == expected && got_actual == actual))
     );
 }
 
@@ -3149,7 +3161,7 @@ fn large_call_arity_error_reports_the_full_argument_count() {
     .unwrap();
     let err = compile_and_run(&program, token_arena).unwrap_err();
     assert!(
-        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: 1, actual: 256 }))
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: 1, actual: 256, .. }))
     );
 }
 
