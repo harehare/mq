@@ -3377,7 +3377,16 @@ end
 # Returns: bool
 def is_integer(n): is_number(n) && !is_nan(n) && n == floor(n);
 
+def _check_gcd_args(a, b):
+  if (!is_integer(a) || !is_integer(b) || abs(a) == infinite() || abs(b) == infinite()):
+    error("gcd/lcm: arguments must be finite integers")
+  else:
+    None
+end
+
 # Returns the greatest common divisor of two integers.
+#
+# Raises an error if an argument is not a finite integer.
 #
 # Example:
 # ```
@@ -3388,7 +3397,8 @@ def is_integer(n): is_number(n) && !is_nan(n) && n == floor(n);
 # Returns: number
 def gcd(a, b):
   do
-    var m = abs(a)
+    _check_gcd_args(a, b)
+    | var m = abs(a)
     | var n = abs(b)
     | while (n != 0):
         let t = n
@@ -3401,6 +3411,8 @@ end
 
 # Returns the least common multiple of two integers.
 #
+# Raises an error if an argument is not a finite integer.
+#
 # Example:
 # ```
 # lcm(4, 6)
@@ -3408,7 +3420,10 @@ end
 # ```
 #
 # Returns: number
-def lcm(a, b): if (a == 0 || b == 0): 0 else: abs(a * b) / gcd(a, b);
+def lcm(a, b):
+  _check_gcd_args(a, b)
+  | if (a == 0 || b == 0): 0 else: abs(a * b) / gcd(a, b)
+end
 
 # Applies a function to each value of a dict, keeping the keys.
 #
