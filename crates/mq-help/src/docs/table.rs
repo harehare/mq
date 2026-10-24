@@ -1602,6 +1602,20 @@ key: 1
         kind: DocKind::Function,
     },
     BuiltinDoc {
+        name: "contains",
+        aliases: &[],
+        description: "Checks if a string, byte array, array, or dict contains a substring, byte subsequence, element, or key.",
+        params: &["haystack", "needle"],
+        param_types: &["dynamic", "dynamic"],
+        returns: "bool",
+        examples: &[BuiltinExample {
+            code: r#"contains("hello world", "world")"#,
+            expected: r#"true"#,
+        }],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "convert",
         aliases: &[],
         description: "Converts the input value to the specified format. Supported formats: base64, html, text, uri, heading (#, ##, etc.), blockquote (>), list item (-), or link (URL).",
@@ -2272,7 +2286,7 @@ key: 1
     BuiltinDoc {
         name: "index",
         aliases: &[],
-        description: "Finds the first occurrence of a substring or byte subsequence. Returns -1 if not found.",
+        description: "Finds the first occurrence of a substring or byte subsequence. Returns -1 if not found. String offsets count Unicode scalar values, like `slice` and `len`; byte offsets apply only to bytes.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
         returns: "number",
@@ -2286,7 +2300,7 @@ key: 1
     BuiltinDoc {
         name: "indices",
         aliases: &[],
-        description: "Finds all occurrences of a substring, byte subsequence, or array element. Returns an array of positions, or an empty array if not found.",
+        description: "Finds all occurrences of a substring, byte subsequence, or array element. Returns an array of positions, or an empty array if not found. String positions count Unicode scalar values, like `slice` and `len`.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
         returns: "array",
@@ -2957,7 +2971,7 @@ key: 1
     BuiltinDoc {
         name: "rindex",
         aliases: &[],
-        description: "Finds the last occurrence of a substring or byte subsequence. Returns -1 if not found.",
+        description: "Finds the last occurrence of a substring or byte subsequence. Returns -1 if not found. String offsets count Unicode scalar values, like `slice` and `len`; byte offsets apply only to bytes.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
         returns: "number",

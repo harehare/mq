@@ -5400,3 +5400,65 @@ fn test_mock_fetch_is_refused_by_non_mock_io() {
         "mock_fetch should be refused against a real, network-backed Io"
     );
 }
+
+#[rstest]
+#[case::ascii("hello", "l", 2, 3)]
+#[case::latin("héllo", "l", 2, 3)]
+#[case::cjk("日本語", "語", 2, 2)]
+#[case::missing("héllo", "z", -1, -1)]
+fn test_string_index_rindex_use_char_offsets(
+    #[case] haystack: &str,
+    #[case] needle: &str,
+    #[case] index: i64,
+    #[case] rindex: i64,
+) {
+    let args = || vec![RuntimeValue::from(haystack), RuntimeValue::from(needle)];
+    assert_eq!(call("index", args()), Ok(RuntimeValue::Number(index.into())));
+    assert_eq!(call("rindex", args()), Ok(RuntimeValue::Number(rindex.into())));
+}
+
+#[rstest]
+#[case::ascii("abab", "ab", vec![0, 2])]
+#[case::latin("héllo", "l", vec![2, 3])]
+#[case::cjk("日本語語", "語", vec![2, 3])]
+#[case::mixed("é語é語", "語", vec![1, 3])]
+fn test_string_indices_use_char_offsets(#[case] haystack: &str, #[case] needle: &str, #[case] expected: Vec<i64>) {
+    let expected = RuntimeValue::Array(Shared::new(
+        expected.into_iter().map(|i| RuntimeValue::Number(i.into())).collect(),
+    ));
+    assert_eq!(
+        call(
+            "indices",
+            vec![RuntimeValue::from(haystack), RuntimeValue::from(needle)]
+        ),
+        Ok(expected)
+    );
+}
+
+#[rstest]
+#[case::string(RuntimeValue::from("héllo"), RuntimeValue::from("ll"), true)]
+#[case::string_empty_needle(RuntimeValue::from("abc"), RuntimeValue::from(""), true)]
+#[case::string_missing(RuntimeValue::from("abc"), RuntimeValue::from("z"), false)]
+#[case::bytes(RuntimeValue::Bytes(vec![1, 2, 3].into()), RuntimeValue::Bytes(vec![2, 3].into()), true)]
+#[case::bytes_empty_needle(RuntimeValue::Bytes(vec![1, 2].into()), RuntimeValue::Bytes(Vec::new().into()), false)]
+#[case::array(RuntimeValue::Array(Shared::new(vec![1.into(), 2.into()])), RuntimeValue::Number(2.into()), true)]
+#[case::array_missing(RuntimeValue::Array(Shared::new(vec![1.into()])), RuntimeValue::Number(2.into()), false)]
+#[case::none(RuntimeValue::NONE, RuntimeValue::from("a"), false)]
+fn test_contains(#[case] haystack: RuntimeValue, #[case] needle: RuntimeValue, #[case] expected: bool) {
+    assert_eq!(call("contains", vec![haystack, needle]), Ok(expected.into()));
+}
+
+#[rstest]
+#[case::present(RuntimeValue::from("a"), true)]
+#[case::none_value(RuntimeValue::from("n"), false)]
+#[case::missing(RuntimeValue::from("z"), false)]
+#[case::non_key_type(RuntimeValue::Number(1.into()), false)]
+fn test_contains_dict(#[case] key: RuntimeValue, #[case] expected: bool) {
+    let mut map = DictMap::default();
+    map.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
+    map.insert(Ident::new("n"), RuntimeValue::NONE);
+    assert_eq!(
+        call("contains", vec![RuntimeValue::Dict(Shared::new(map)), key]),
+        Ok(expected.into())
+    );
+}

@@ -179,22 +179,6 @@ def is_bytes(b): type(b) == "bytes";
 # Returns: bool
 def is_coroutine(c): type(c) == "coroutine";
 
-# Checks if a string, byte array, or dict contains a substring, byte subsequence, or key
-#
-# Example:
-# ```
-# contains("hello world", "world")
-# #=> true
-# ```
-#
-# Returns: bool
-def contains(haystack, needle):
-  if (is_dict(haystack)):
-    !is_none(haystack[needle])
-  else:
-    index(haystack, needle) != -1
-end
-
 # Removes prefix string from input if it exists
 #
 # Example:
