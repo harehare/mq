@@ -2272,7 +2272,7 @@ key: 1
     BuiltinDoc {
         name: "index",
         aliases: &[],
-        description: "Finds the first occurrence of a substring or byte subsequence. Returns -1 if not found.",
+        description: "Finds the first occurrence of a substring or byte subsequence. Returns -1 if not found. String offsets count Unicode scalar values, like `slice` and `len`; byte offsets apply only to bytes.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
         returns: "number",
@@ -2286,7 +2286,7 @@ key: 1
     BuiltinDoc {
         name: "indices",
         aliases: &[],
-        description: "Finds all occurrences of a substring, byte subsequence, or array element. Returns an array of positions, or an empty array if not found.",
+        description: "Finds all occurrences of a substring, byte subsequence, or array element. Returns an array of positions, or an empty array if not found. String positions count Unicode scalar values, like `slice` and `len`.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
         returns: "array",
@@ -2957,7 +2957,7 @@ key: 1
     BuiltinDoc {
         name: "rindex",
         aliases: &[],
-        description: "Finds the last occurrence of a substring or byte subsequence. Returns -1 if not found.",
+        description: "Finds the last occurrence of a substring or byte subsequence. Returns -1 if not found. String offsets count Unicode scalar values, like `slice` and `len`; byte offsets apply only to bytes.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
         returns: "number",

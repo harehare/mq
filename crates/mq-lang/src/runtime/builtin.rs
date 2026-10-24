@@ -2104,19 +2104,30 @@ fn hypot_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     }
 }
 
+/// Converts a byte offset into `s` to a Unicode scalar value offset, matching `slice` and `len`.
+fn char_offset(s: &str, byte_offset: usize) -> usize {
+    if s.is_ascii() {
+        byte_offset
+    } else {
+        s[..byte_offset].chars().count()
+    }
+}
+
+fn char_find(s: &str, needle: &str) -> i64 {
+    s.find(needle).map_or(-1, |b| char_offset(s, b) as i64)
+}
+
+fn char_rfind(s: &str, needle: &str) -> i64 {
+    s.rfind(needle).map_or(-1, |b| char_offset(s, b) as i64)
+}
+
 #[mq_macros::mq_fn(name = "index", params = Fixed(2))]
 fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
-            (s1.find(s2.as_str()).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
-        )),
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(char_find(s1, s2).into())),
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
-            .map(|md| {
-                Ok(RuntimeValue::Number(
-                    (md.value().find(&**s).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
-                ))
-            })
+            .map(|md| Ok(RuntimeValue::Number(char_find(md.value().as_str(), s).into())))
             .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
         [RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)] => {
             let pos = haystack
@@ -2147,9 +2158,21 @@ fn indices_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             return Vec::new();
         }
 
+        let ascii = haystack.is_ascii();
+        let (mut last_byte, mut last_char) = (0, 0);
+
         haystack
             .match_indices(needle)
-            .map(|(i, _)| RuntimeValue::Number((i as i64).into()))
+            .map(|(i, _)| {
+                let pos = if ascii {
+                    i
+                } else {
+                    last_char += haystack[last_byte..i].chars().count();
+                    last_byte = i;
+                    last_char
+                };
+                RuntimeValue::Number((pos as i64).into())
+            })
             .collect()
     }
 
@@ -2340,16 +2363,10 @@ fn token_compress_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Shar
 #[mq_macros::mq_fn(name = "rindex", params = Fixed(2))]
 fn rindex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
-            s1.rfind(&**s2).map(|v| v as isize).unwrap_or_else(|| -1).into(),
-        )),
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(char_rfind(s1, s2).into())),
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
-            .map(|md| {
-                Ok(RuntimeValue::Number(
-                    md.value().rfind(&**s).map(|v| v as isize).unwrap_or_else(|| -1).into(),
-                ))
-            })
+            .map(|md| Ok(RuntimeValue::Number(char_rfind(md.value().as_str(), s).into())))
             .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
         [RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)] => {
             let nlen = needle.len().max(1);

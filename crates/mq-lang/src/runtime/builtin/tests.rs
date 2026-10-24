@@ -5400,3 +5400,37 @@ fn test_mock_fetch_is_refused_by_non_mock_io() {
         "mock_fetch should be refused against a real, network-backed Io"
     );
 }
+
+#[rstest]
+#[case::ascii("hello", "l", 2, 3)]
+#[case::latin("héllo", "l", 2, 3)]
+#[case::cjk("日本語", "語", 2, 2)]
+#[case::missing("héllo", "z", -1, -1)]
+fn test_string_index_rindex_use_char_offsets(
+    #[case] haystack: &str,
+    #[case] needle: &str,
+    #[case] index: i64,
+    #[case] rindex: i64,
+) {
+    let args = || vec![RuntimeValue::from(haystack), RuntimeValue::from(needle)];
+    assert_eq!(call("index", args()), Ok(RuntimeValue::Number(index.into())));
+    assert_eq!(call("rindex", args()), Ok(RuntimeValue::Number(rindex.into())));
+}
+
+#[rstest]
+#[case::ascii("abab", "ab", vec![0, 2])]
+#[case::latin("héllo", "l", vec![2, 3])]
+#[case::cjk("日本語語", "語", vec![2, 3])]
+#[case::mixed("é語é語", "語", vec![1, 3])]
+fn test_string_indices_use_char_offsets(#[case] haystack: &str, #[case] needle: &str, #[case] expected: Vec<i64>) {
+    let expected = RuntimeValue::Array(Shared::new(
+        expected.into_iter().map(|i| RuntimeValue::Number(i.into())).collect(),
+    ));
+    assert_eq!(
+        call(
+            "indices",
+            vec![RuntimeValue::from(haystack), RuntimeValue::from(needle)]
+        ),
+        Ok(expected)
+    );
+}
