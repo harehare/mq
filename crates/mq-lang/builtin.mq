@@ -2040,7 +2040,9 @@ def bsearch(arr, target):
     end
 end
 
-# Converts a string into a URL-friendly slug by lowercasing, replacing non-alphanumeric characters with hyphens, and trimming hyphens from the ends.
+# Converts a string into a URL-friendly slug by lowercasing, replacing runs of characters that are not
+# Unicode letters, marks or digits with the separator, and trimming hyphens from the ends.
+# Non-ASCII letters are kept as is, not transliterated.
 #
 # Example:
 # ```
@@ -2052,7 +2054,7 @@ end
 def slugify(s, separator = "-"):
   s
   | downcase()
-  | gsub("[^a-z0-9]+", separator)
+  | gsub("[\\W_]+", separator)
   | gsub("^-+|-+$", "")
 end
 

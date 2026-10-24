@@ -1230,6 +1230,9 @@ end
 #   ["Hello World!", "hello-world"],
 #   ["This is a test.", "this-is-a-test"],
 #   ["Special characters: @#$%^&*()", "special-characters"],
+#   ["Héllo Wörld! 日本", "héllo-wörld-日本"],
+#   ["日本語の見出し", "日本語の見出し"],
+#   ["  --Hello--  ", "hello"],
 # ])
 def test_slugify(value, expected):
   let result = slugify(value)
