@@ -2584,6 +2584,7 @@ dependencies = [
  "clap",
  "crossbeam",
  "dashmap",
+ "encoding_rs",
  "fantoccini",
  "futures",
  "httpmock",

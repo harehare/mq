@@ -7,7 +7,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use chromiumoxide::cdp::browser_protocol::page::EventLifecycleEvent;
 use futures::StreamExt;
 use reqwest::Client as ReqwestClient;
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use tokio::time::sleep;
 use url::Url;
 
@@ -69,18 +69,64 @@ pub enum AuthConfig {
     },
 }
 
-/// Transient (worth retrying) vs. fatal failures.
-enum FetchError {
-    Retryable(String),
-    Fatal(String),
+/// Why a fetch failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FetchErrorKind {
+    /// Connection, timeout or body read failure, or a browser error.
+    Network,
+    /// The server answered with a non-success HTTP status.
+    Status(u16),
+    /// The response is not HTML and [`FetchOptions::html_only`] is set.
+    NotHtml,
+    /// The response body exceeds [`FetchOptions::max_bytes`].
+    TooLarge,
+}
+
+/// A failed fetch.
+#[derive(Debug, Clone)]
+pub struct FetchError {
+    /// What went wrong.
+    pub kind: FetchErrorKind,
+    /// Human-readable description.
+    pub message: String,
 }
 
 impl FetchError {
-    fn into_message(self) -> String {
-        match self {
-            FetchError::Retryable(msg) | FetchError::Fatal(msg) => msg,
+    fn new(kind: FetchErrorKind, message: String) -> Self {
+        Self { kind, message }
+    }
+
+    fn network(message: String) -> Self {
+        Self::new(FetchErrorKind::Network, message)
+    }
+
+    /// Network errors, `429` and `5xx` are worth retrying.
+    fn is_retryable(&self) -> bool {
+        match self.kind {
+            FetchErrorKind::Network => true,
+            FetchErrorKind::Status(code) => code == 429 || code >= 500,
+            FetchErrorKind::NotHtml | FetchErrorKind::TooLarge => false,
         }
     }
+}
+
+impl std::fmt::Display for FetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+/// Constraints on a fetched response. The default accepts anything.
+///
+/// Content type and size are enforced for the `reqwest` client only. Browser
+/// clients cannot report the response headers, so only `max_bytes` is checked,
+/// after the page has been rendered.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FetchOptions {
+    /// Reject responses whose `Content-Type` is not HTML.
+    pub html_only: bool,
+    /// Reject responses larger than this many bytes.
+    pub max_bytes: Option<usize>,
 }
 
 /// Wait strategy configuration for headless Chrome.
@@ -254,57 +300,101 @@ impl HttpClient {
     /// Fetch content from a URL, retrying transient failures with
     /// exponential backoff according to this client's [`RetryConfig`].
     pub async fn fetch(&self, url: Url) -> Result<String, String> {
+        self.fetch_with(url, FetchOptions::default())
+            .await
+            .map_err(|e| e.message)
+    }
+
+    /// Like [`HttpClient::fetch`], with `options` applied and a typed error.
+    pub async fn fetch_with(&self, url: Url, options: FetchOptions) -> Result<String, FetchError> {
         let retry_config = self.retry_config().clone();
         let mut backoff = retry_config.initial_backoff;
         let mut attempt: u32 = 0;
 
         loop {
-            match self.fetch_once(url.clone()).await {
+            match self.fetch_once(url.clone(), options).await {
                 Ok(content) => return Ok(content),
-                Err(FetchError::Retryable(msg)) if attempt < retry_config.max_retries => {
+                Err(err) if err.is_retryable() && attempt < retry_config.max_retries => {
                     attempt += 1;
                     tracing::warn!(
                         "Fetch attempt {}/{} failed for {}: {}. Retrying in {:?}.",
                         attempt,
                         retry_config.max_retries,
                         url,
-                        msg,
+                        err,
                         backoff
                     );
                     sleep(backoff).await;
                     backoff = retry_config.next_backoff(backoff);
                 }
-                Err(err) => return Err(err.into_message()),
+                Err(err) => return Err(err),
             }
         }
     }
 
-    async fn fetch_once(&self, url: Url) -> Result<String, FetchError> {
+    async fn fetch_once(&self, url: Url, options: FetchOptions) -> Result<String, FetchError> {
+        let content = self.fetch_raw(url.clone(), options).await?;
+        match (self, options.max_bytes) {
+            (HttpClient::Reqwest(..), _) | (_, None) => Ok(content),
+            (_, Some(max)) if content.len() <= max => Ok(content),
+            (_, Some(max)) => Err(too_large(&url, max)),
+        }
+    }
+
+    async fn fetch_raw(&self, url: Url, options: FetchOptions) -> Result<String, FetchError> {
         match self {
             HttpClient::Reqwest(client, _) => {
-                let response = client
+                let mut response = client
                     .get(url.clone())
                     .send()
                     .await
-                    .map_err(|e| FetchError::Retryable(format!("Failed to fetch URL {}: {}", url, e)))?;
+                    .map_err(|e| FetchError::network(format!("Failed to fetch URL {}: {}", url, e)))?;
 
                 let status = response.status();
-                if status.is_success() {
-                    response
-                        .text()
-                        .await
-                        .map_err(|e| FetchError::Retryable(format!("Failed to read response text: {}", e)))
-                } else if status.as_u16() == 429 || status.is_server_error() {
-                    Err(FetchError::Retryable(format!(
-                        "Request to {} failed with status: {}",
-                        url, status
-                    )))
-                } else {
-                    Err(FetchError::Fatal(format!(
-                        "Request to {} failed with status: {}",
-                        url, status
-                    )))
+                if !status.is_success() {
+                    return Err(FetchError::new(
+                        FetchErrorKind::Status(status.as_u16()),
+                        format!("Request to {} failed with status: {}", url, status),
+                    ));
                 }
+
+                let content_type = response
+                    .headers()
+                    .get(CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_string);
+
+                if options.html_only
+                    && let Some(content_type) = &content_type
+                    && !is_html_content_type(content_type)
+                {
+                    return Err(FetchError::new(
+                        FetchErrorKind::NotHtml,
+                        format!("Response from {} is not HTML (Content-Type: {})", url, content_type),
+                    ));
+                }
+
+                if let Some(max) = options.max_bytes
+                    && response.content_length().is_some_and(|len| len > max as u64)
+                {
+                    return Err(too_large(&url, max));
+                }
+
+                let mut body = Vec::new();
+                while let Some(chunk) = response
+                    .chunk()
+                    .await
+                    .map_err(|e| FetchError::network(format!("Failed to read response body: {}", e)))?
+                {
+                    if let Some(max) = options.max_bytes
+                        && body.len() + chunk.len() > max
+                    {
+                        return Err(too_large(&url, max));
+                    }
+                    body.extend_from_slice(&chunk);
+                }
+
+                Ok(decode_body(&body, content_type.as_deref()))
             }
             HttpClient::Fantoccini(client, _) => {
                 let url_str = url.as_str();
@@ -312,12 +402,12 @@ impl HttpClient {
                 client
                     .goto(url_str)
                     .await
-                    .map_err(|e| FetchError::Retryable(format!("Fantoccini failed to navigate to {}: {}", url, e)))?;
+                    .map_err(|e| FetchError::network(format!("Fantoccini failed to navigate to {}: {}", url, e)))?;
 
                 let page_source = client
                     .source()
                     .await
-                    .map_err(|e| FetchError::Retryable(format!("Fantoccini failed to get page source: {}", e)))?;
+                    .map_err(|e| FetchError::network(format!("Fantoccini failed to get page source: {}", e)))?;
 
                 Ok(page_source)
             }
@@ -329,7 +419,7 @@ impl HttpClient {
                 let page = browser
                     .new_page("about:blank")
                     .await
-                    .map_err(|e| FetchError::Retryable(format!("Chrome failed to open blank page: {}", e)))?;
+                    .map_err(|e| FetchError::network(format!("Chrome failed to open blank page: {}", e)))?;
 
                 // Strategy 1: register the networkIdle listener BEFORE navigation
                 // so no lifecycle event can slip past between load and registration.
@@ -406,10 +496,38 @@ impl HttpClient {
 
                 let _ = page.close().await;
 
-                result.map_err(FetchError::Retryable)
+                result.map_err(FetchError::network)
             }
         }
     }
+}
+
+fn too_large(url: &Url, max: usize) -> FetchError {
+    FetchError::new(
+        FetchErrorKind::TooLarge,
+        format!("Response from {} exceeds the {} byte limit", url, max),
+    )
+}
+
+fn is_html_content_type(content_type: &str) -> bool {
+    let essence = content_type.split(';').next().unwrap_or_default().trim();
+    essence.eq_ignore_ascii_case("text/html") || essence.eq_ignore_ascii_case("application/xhtml+xml")
+}
+
+/// Decodes `body` using the `charset` of `content_type`, falling back to UTF-8.
+fn decode_body(body: &[u8], content_type: Option<&str>) -> String {
+    let encoding = content_type
+        .and_then(|content_type| {
+            content_type.split(';').skip(1).find_map(|param| {
+                let (key, value) = param.split_once('=')?;
+                key.trim()
+                    .eq_ignore_ascii_case("charset")
+                    .then(|| value.trim().trim_matches('"'))
+            })
+        })
+        .and_then(|label| encoding_rs::Encoding::for_label(label.as_bytes()))
+        .unwrap_or(encoding_rs::UTF_8);
+    encoding.decode(body).0.into_owned()
 }
 
 #[cfg(test)]
@@ -477,6 +595,48 @@ mod tests {
 
         let backoff = retry_config.next_backoff(backoff);
         assert_eq!(backoff, Duration::from_secs(3));
+    }
+
+    #[rstest::rstest]
+    #[case("text/html", true)]
+    #[case("Text/HTML; charset=utf-8", true)]
+    #[case("application/xhtml+xml", true)]
+    #[case("application/pdf", false)]
+    #[case("text/plain", false)]
+    fn test_is_html_content_type(#[case] content_type: &str, #[case] expected: bool) {
+        assert_eq!(is_html_content_type(content_type), expected);
+    }
+
+    #[test]
+    fn test_decode_body_uses_charset_param() {
+        let sjis = [0x93, 0xfa, 0x96, 0x7b]; // "日本"
+        assert_eq!(decode_body(&sjis, Some("text/html; charset=Shift_JIS")), "日本");
+        assert_eq!(decode_body("日本".as_bytes(), Some("text/html")), "日本");
+        assert_eq!(decode_body("日本".as_bytes(), None), "日本");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_with_enforces_max_bytes_while_streaming() {
+        use httpmock::MockServer;
+
+        let server = MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET).path("/big");
+                then.status(200).body("x".repeat(1000));
+            })
+            .await;
+
+        let client = HttpClient::new_reqwest(5.0).unwrap();
+        let url = Url::parse(&format!("http://{}/big", server.address())).unwrap();
+        let options = |max_bytes| FetchOptions {
+            html_only: false,
+            max_bytes,
+        };
+
+        let err = client.fetch_with(url.clone(), options(Some(999))).await.unwrap_err();
+        assert_eq!(err.kind, FetchErrorKind::TooLarge);
+        assert_eq!(client.fetch_with(url, options(Some(1000))).await.unwrap().len(), 1000);
     }
 
     #[test]
