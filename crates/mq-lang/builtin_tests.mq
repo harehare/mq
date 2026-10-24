@@ -1271,6 +1271,17 @@ def test_chunks(value, n, expected):
 end
 
 # @parametrize([
+#   [[1, 2, 3], 0],
+#   [[1, 2, 3], None],
+#   [[1, 2, 3], nan()],
+#   ["abc", None],
+# ])
+def test_chunks_invalid_size_errors(value, n):
+  let result = try: chunks(value, n) catch(e): e["message"]
+  | assert(contains(result, "size must be a positive integer"))
+end
+
+# @parametrize([
 #   [[1, 2, 3, 4, 5], fn(x): x % 2;, [[1], [2], [3], [4], [5]]],
 #   [[1, 2, 3, 4], fn(x): x > 2;, [[1, 2], [3, 4]]],
 #   [[], fn(x): x;, []],
