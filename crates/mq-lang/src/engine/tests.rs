@@ -437,6 +437,9 @@ fn test_set_timeout() {
     let timeout = std::time::Duration::from_secs(1);
     engine.set_timeout(timeout);
     assert_eq!(engine.vm.options.timeout, Some(timeout));
+
+    engine.set_timeout(None);
+    assert_eq!(engine.vm.options.timeout, None);
 }
 
 #[test]
