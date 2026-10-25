@@ -7,6 +7,7 @@ homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query", "test"]
 license.workspace = true
 name = "mq-test"
+readme = "README.md"
 repository.workspace = true
 version.workspace = true
 
