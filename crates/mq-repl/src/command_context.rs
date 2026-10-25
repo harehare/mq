@@ -567,7 +567,12 @@ impl CommandContext {
                 self.hir
                     .symbols()
                     .filter_map(|(_, symbol)| {
-                        if self.hir.is_builtin_symbol(symbol) {
+                        if self.hir.is_builtin_symbol(symbol)
+                            || symbol
+                                .source
+                                .source_id
+                                .is_some_and(|source_id| self.hir.is_module_source(source_id))
+                        {
                             None
                         } else {
                             match &symbol.kind {
@@ -840,6 +845,18 @@ mod tests {
         } else {
             panic!("Expected String output");
         }
+    }
+
+    #[test]
+    fn test_execute_vars_excludes_module_symbols() {
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), Vec::new());
+
+        ctx.execute("import \"yaml\" | let x = 1").unwrap();
+
+        let CommandOutput::String(vars) = ctx.execute("/vars").unwrap() else {
+            panic!("Expected String output");
+        };
+        assert_eq!(vars, vec!["x: 1".to_string()]);
     }
 
     #[test]
