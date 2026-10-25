@@ -136,18 +136,9 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_binary(ctx, "sub", Type::Number, Type::Number, Type::Number);
 
     // Multiplication: number * number -> number
-    // [a] * number -> [a] (array repetition)
     for name in ["*", "mul"] {
         register_binary(ctx, name, Type::Number, Type::Number, Type::Number);
         register_binary(ctx, name, Type::String, Type::Number, Type::String);
-        let a = ctx.fresh_var();
-        register_binary(
-            ctx,
-            name,
-            Type::array(Type::Var(a)),
-            Type::Var(a),
-            Type::array(Type::Var(a)),
-        );
     }
 
     // Division, modulo, power: (number, number) -> number
