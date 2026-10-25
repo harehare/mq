@@ -5,7 +5,7 @@ mq-crawler is a web crawler that fetches HTML content from websites, converts it
 ## Key Features
 
 - **HTML to Markdown conversion**: Automatically converts crawled HTML pages to clean Markdown
-- **robots.txt compliance**: Respects robots.txt rules for ethical web crawling
+- **robots.txt compliance**: Respects robots.txt rules per origin (including non-default ports), following RFC 9309 for missing or unreachable files
 - **mq-lang integration**: Processes content with mq-lang queries for filtering and transformation
 - **Configurable crawling**: Customizable delays, domain restrictions, and link discovery
 - **Flexible output**: Save to files or output to stdout
@@ -70,6 +70,7 @@ mq-crawl [OPTIONS] <URL>
 | `-c, --concurrency <N>` | Number of concurrent workers | `1` |
 | `--depth <DEPTH>` | Maximum crawl depth (0 = start URL only) | unlimited |
 | `--max-pages <N>` | Maximum total number of pages to visit before stopping | unlimited |
+| `--max-response-bytes <BYTES>` | Maximum size of a page body; larger pages are reported as failed (`0` = unlimited) | 10485760 |
 | `--checkpoint-path <PATH>` | File to periodically save crawl progress to (JSON), enabling `--resume-from` | - |
 | `--checkpoint-interval-pages <N>` | Pages crawled between checkpoint saves (requires `--checkpoint-path`) | `20` |
 | `--resume-from <PATH>` | Resume a crawl from a checkpoint file written via `--checkpoint-path` | - |
@@ -95,6 +96,8 @@ mq-crawl [OPTIONS] <URL>
 | `--generate-front-matter` | Generate YAML front matter from page metadata | - |
 | `--use-title-as-h1` | Use the HTML `<title>` as the first H1 heading | - |
 | `-f, --format <FORMAT>` | Output format: `text` or `json` | `text` |
+
+`mq-crawl` exits non-zero when it fails to start, the crawl fails, or any page failed to fetch. Pages skipped by robots.txt or for being non-HTML do not count. Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
 
 ### Examples
 
@@ -145,6 +148,8 @@ Use `--max-pages` to cap the total number of pages visited (queued, in-flight, o
 # Stop after visiting 500 pages, regardless of depth
 mq-crawl --max-pages 500 https://example.com
 ```
+
+Pages larger than `--max-response-bytes` (10 MiB by default) are reported as failed, and responses whose `Content-Type` is not HTML (PDFs, images, ...) are skipped. With `--headless` or `--webdriver-url`, only the size limit applies, after rendering.
 
 ### Checkpoint & Resume
 

@@ -1,5 +1,5 @@
-use crate::http_client::HttpClient;
-use crate::robots::RobotsTxt;
+use crate::http_client::{FetchErrorKind, FetchOptions, HttpClient};
+use crate::robots::{RobotsTxt, origin_key};
 use crossbeam::queue::SegQueue;
 use dashmap::mapref::entry::Entry;
 use dashmap::{DashMap, DashSet};
@@ -38,6 +38,8 @@ pub struct CrawlResult {
     pub pages_crawled: usize,
     /// Pages skipped because robots.txt disallows them.
     pub pages_skipped_robots: usize,
+    /// Pages skipped because the response was not HTML.
+    pub pages_skipped_non_html: usize,
     /// Pages that failed to fetch or process.
     pub pages_failed: usize,
     /// Links found across all pages.
@@ -53,6 +55,9 @@ pub struct CrawlResultStats {
     pub pages_crawled: usize,
     /// Pages skipped because robots.txt disallows them.
     pub pages_skipped_robots: usize,
+    /// Pages skipped because the response was not HTML.
+    #[serde(default)]
+    pub pages_skipped_non_html: usize,
     /// Pages that failed to fetch or process.
     pub pages_failed: usize,
     /// Links found across all pages.
@@ -78,6 +83,7 @@ impl CrawlResult {
         CrawlResultStats {
             pages_crawled: self.pages_crawled,
             pages_skipped_robots: self.pages_skipped_robots,
+            pages_skipped_non_html: self.pages_skipped_non_html,
             pages_failed: self.pages_failed,
             links_discovered: self.links_discovered,
             total_pages_visited: self.total_pages_visited,
@@ -95,6 +101,7 @@ impl CrawlResult {
                 let _ = writeln!(handle, "\n=== Crawl Statistics ===");
                 let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
                 let _ = writeln!(handle, "Pages skipped (robots.txt): {}", self.pages_skipped_robots);
+                let _ = writeln!(handle, "Pages skipped (non-HTML): {}", self.pages_skipped_non_html);
                 let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
                 let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
                 let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
@@ -200,6 +207,7 @@ pub struct Crawler {
     http_client: HttpClient,
     initial_domain: String,
     max_pages: Option<usize>,
+    max_response_bytes: Option<usize>,
     mq_query: String,
     output_path: Option<String>,
     result: Arc<RwLock<CrawlResult>>,
@@ -235,6 +243,8 @@ pub struct CrawlerOptions {
     pub additional_seed_urls: Vec<Url>,
     /// Maximum number of pages to crawl. Unlimited when unset.
     pub max_pages: Option<usize>,
+    /// Largest page body accepted, in bytes. Unlimited when unset.
+    pub max_response_bytes: Option<usize>,
     /// File the crawl progress is periodically saved to.
     pub checkpoint_path: Option<String>,
     /// Pages crawled between checkpoint saves. Values below 1 are treated as 1.
@@ -258,13 +268,14 @@ impl Crawler {
             allowed_domains,
             additional_seed_urls,
             max_pages,
+            max_response_bytes,
             checkpoint_path,
             checkpoint_interval_pages,
             resume_checkpoint,
         } = options;
         let initial_domain = start_url
-            .domain()
-            .ok_or_else(|| "Start URL has no domain".to_string())?
+            .host_str()
+            .ok_or_else(|| "Start URL has no host".to_string())?
             .to_string();
         let user_agent = format!("mq crawler/0.1 ({})", env!("CARGO_PKG_HOMEPAGE"));
 
@@ -286,6 +297,7 @@ impl Crawler {
             }
             initial_result.pages_crawled = checkpoint.stats.pages_crawled;
             initial_result.pages_skipped_robots = checkpoint.stats.pages_skipped_robots;
+            initial_result.pages_skipped_non_html = checkpoint.stats.pages_skipped_non_html;
             initial_result.pages_failed = checkpoint.stats.pages_failed;
             initial_result.links_discovered = checkpoint.stats.links_discovered;
         } else {
@@ -306,6 +318,7 @@ impl Crawler {
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
             domain_last_request: Arc::new(DashMap::new()),
             max_pages,
+            max_response_bytes,
             mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
@@ -321,14 +334,11 @@ impl Crawler {
     }
 
     async fn get_or_fetch_robots(&self, url_to_check: &Url) -> Result<Arc<RobotsTxt>, String> {
-        let domain = url_to_check
-            .domain()
-            .ok_or_else(|| "URL has no domain".to_string())?
-            .to_string();
+        let origin = origin_key(url_to_check).ok_or_else(|| "URL has no host".to_string())?;
 
-        // Check if we already have this domain's robots cached
+        // Check if we already have this origin's robots cached
         {
-            if let Some(robots) = self.robots_cache.get(&domain) {
+            if let Some(robots) = self.robots_cache.get(&origin) {
                 return Ok(robots.clone());
             }
         }
@@ -338,8 +348,13 @@ impl Crawler {
         let arc_robots = Arc::new(robots);
 
         // Cache the result
-        self.robots_cache.insert(domain.clone(), arc_robots.clone());
+        self.robots_cache.insert(origin, arc_robots.clone());
         Ok(arc_robots)
+    }
+
+    /// Statistics for the crawl so far. Call after [`Crawler::run`] for the final counts.
+    pub async fn stats(&self) -> CrawlResultStats {
+        self.result.read().await.to_stats()
     }
 
     /// Runs the crawl to completion.
@@ -519,8 +534,8 @@ impl Crawler {
     }
 
     fn should_skip_url_without_visited_check(&self, url: &Url) -> bool {
-        let Some(domain) = url.domain() else {
-            tracing::info!("Skipping URL with no domain: {}", url);
+        let Some(domain) = url.host_str() else {
+            tracing::info!("Skipping URL with no host: {}", url);
             return true;
         };
 
@@ -571,7 +586,7 @@ impl Crawler {
     }
 
     async fn process_url_with_rate_limit(&self, url: Url, depth: usize) {
-        if let Some(domain) = url.domain() {
+        if let Some(domain) = url.host_str() {
             self.wait_for_domain_rate_limit(domain).await;
         }
         self.process_url(url, depth).await;
@@ -585,6 +600,7 @@ impl Crawler {
             Ok(rules) => rules,
             Err(e) => {
                 tracing::error!("Failed to fetch robots.txt for {}: {}", current_url, e);
+                self.result.write().await.pages_failed += 1;
                 return;
             }
         };
@@ -598,7 +614,11 @@ impl Crawler {
             return;
         }
 
-        match self.http_client.fetch(current_url.clone()).await {
+        let fetch_options = FetchOptions {
+            html_only: true,
+            max_bytes: self.max_response_bytes,
+        };
+        match self.http_client.fetch_with(current_url.clone(), fetch_options).await {
             Ok(html_content) => {
                 tracing::info!("Applying mq query to content from {}", current_url);
 
@@ -653,6 +673,11 @@ impl Crawler {
                     }
                 }
             }
+            Err(e) if e.kind == FetchErrorKind::NotHtml => {
+                tracing::warn!("Skipping {}: {}", current_url, e);
+                let mut result = self.result.write().await;
+                result.pages_skipped_non_html += 1;
+            }
             Err(e) => {
                 tracing::error!("Failed to fetch URL {}: {}", current_url, e);
                 {
@@ -706,7 +731,7 @@ impl Crawler {
         tracing::debug!("Preparing to output markdown for {}", url);
         if let Some(ref output_dir_str) = self.output_path {
             // Renamed path_str to output_dir_str
-            let domain_str = url.domain().unwrap_or("unknown_domain");
+            let domain_str = url.host_str().unwrap_or("unknown_domain");
             let path_str = url.path();
 
             // Sanitize domain and path components
@@ -731,7 +756,7 @@ impl Crawler {
         } else {
             let filename = format!(
                 "{}_{}.md",
-                sanitize_filename_component(url.domain().unwrap_or("unknown_domain"), 50),
+                sanitize_filename_component(url.host_str().unwrap_or("unknown_domain"), 50),
                 if url.path() == "/" || url.path().is_empty() {
                     "index".to_string()
                 } else {
@@ -1077,6 +1102,137 @@ mod tests {
         page1_mock.assert_async().await;
     }
 
+    #[rstest]
+    #[case("http://127.0.0.1:8080/", "127.0.0.1")]
+    #[case("http://[::1]:8080/", "[::1]")]
+    #[tokio::test]
+    async fn test_crawler_new_accepts_ip_start_url(#[case] start: &str, #[case] host: &str) {
+        let start_url = Url::parse(start).unwrap();
+        let crawler = Crawler::new(HttpClient::default(), start_url, CrawlerOptions::default())
+            .await
+            .unwrap();
+
+        assert_eq!(crawler.initial_domain, host);
+        let same_host = Url::parse(&format!("http://{}/page", host)).unwrap();
+        assert!(!crawler.should_skip_url_without_visited_check(&same_host));
+        let other_host = Url::parse("http://192.0.2.1/page").unwrap();
+        assert!(crawler.should_skip_url_without_visited_check(&other_host));
+    }
+
+    #[tokio::test]
+    async fn test_crawl_honours_robots_txt_on_non_default_port() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/robots.txt");
+                then.status(200).body("User-agent: *\nDisallow: /private");
+            })
+            .await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body(r#"<html><body><a href="/private/x">x</a></body></html>"#);
+            })
+            .await;
+        let private_mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/private/x");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body("<html><body>secret</body></html>");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/", port)).unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions::default(),
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        assert_eq!(private_mock.calls_async().await, 0);
+        let result = crawler.result.read().await;
+        assert_eq!(result.pages_crawled, 1);
+        assert_eq!(result.pages_skipped_robots, 1);
+    }
+
+    #[tokio::test]
+    async fn test_crawl_skips_non_html_responses() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html; charset=utf-8")
+                    .body(r#"<html><body><a href="/doc.pdf">pdf</a></body></html>"#);
+            })
+            .await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/doc.pdf");
+                then.status(200)
+                    .header("content-type", "application/pdf")
+                    .body("%PDF-1.4 binary");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/", port)).unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions::default(),
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        let result = crawler.result.read().await;
+        assert_eq!(result.pages_crawled, 1);
+        assert_eq!(result.pages_skipped_non_html, 1);
+        assert_eq!(result.pages_failed, 0);
+    }
+
+    #[tokio::test]
+    async fn test_crawl_rejects_response_over_max_bytes() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body(format!("<html><body>{}</body></html>", "x".repeat(1000)));
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/", port)).unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions {
+                max_response_bytes: Some(100),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        let stats = crawler.stats().await;
+        assert_eq!(stats.pages_crawled, 0);
+        assert_eq!(stats.pages_failed, 1);
+    }
+
     #[tokio::test]
     async fn test_save_checkpoint_captures_visited_and_frontier() {
         let start_url = Url::parse("http://start.invalid/").unwrap();
@@ -1129,6 +1285,7 @@ mod tests {
             stats: CrawlResultStats {
                 pages_crawled: 5,
                 pages_skipped_robots: 1,
+                pages_skipped_non_html: 4,
                 pages_failed: 2,
                 links_discovered: 7,
                 total_pages_visited: 1,
@@ -1163,6 +1320,7 @@ mod tests {
         let result = crawler.result.read().await;
         assert_eq!(result.pages_crawled, 5);
         assert_eq!(result.pages_skipped_robots, 1);
+        assert_eq!(result.pages_skipped_non_html, 4);
         assert_eq!(result.pages_failed, 2);
         assert_eq!(result.links_discovered, 7);
     }

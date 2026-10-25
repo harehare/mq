@@ -2,7 +2,9 @@
 
 use clap::Parser;
 use fantoccini::wd::TimeoutConfiguration;
+use miette::miette;
 use mq_crawler::crawler::{Crawler, CrawlerOptions};
+use std::process::ExitCode;
 use url::Url;
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -40,6 +42,9 @@ struct CliArgs {
     /// If not specified, crawling continues until the frontier is exhausted or --depth is reached.
     #[clap(long)]
     max_pages: Option<usize>,
+    /// Maximum size (in bytes) of a page body. Larger pages are reported as failed. 0 means unlimited.
+    #[clap(long, default_value_t = 10 * 1024 * 1024, value_name = "BYTES")]
+    max_response_bytes: usize,
     /// Path to write periodic crawl checkpoints to (JSON). Enables resuming an
     /// interrupted crawl later with --resume-from. A checkpoint is written every
     /// --checkpoint-interval-pages pages, and once more when the crawl stops.
@@ -209,17 +214,26 @@ pub struct ConversionArgs {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     tracing_subscriber::fmt().with_writer(std::io::stderr).init();
-    let args = CliArgs::parse();
 
+    match run(CliArgs::parse()).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{:?}", e);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run(args: CliArgs) -> miette::Result<()> {
     tracing::info!("Initializing crawler for URL: {}", args.url);
 
     // Build the effective allowed domains list.
     // When --allowed-domains is provided, always include the start URL's domain as well.
     let effective_allowed = args.allowed_domains.map(|v| {
         let mut v: Vec<String> = v.into_iter().map(|d| d.trim().to_lowercase()).collect();
-        if let Some(start_domain) = args.url.domain() {
+        if let Some(start_domain) = args.url.host_str() {
             let start_domain = start_domain.to_lowercase();
             if !v.contains(&start_domain) {
                 v.push(start_domain);
@@ -235,13 +249,7 @@ async fn main() {
         backoff_multiplier: args.retry_backoff_multiplier,
     };
 
-    let header_map = match build_header_map(&args.headers, &args.cookie) {
-        Ok(header_map) => header_map,
-        Err(e) => {
-            tracing::error!("{}", e);
-            return;
-        }
-    };
+    let header_map = build_header_map(&args.headers, &args.cookie).map_err(|e| miette!(e))?;
 
     let auth = if let Some(ref basic) = args.basic_auth {
         let (username, password) = basic.split_once(':').unwrap_or((basic.as_str(), ""));
@@ -269,10 +277,10 @@ async fn main() {
         mq_crawler::http_client::HttpClient::Fantoccini(
             {
                 let fantoccini_client = fantoccini::ClientBuilder::rustls()
-                    .expect("Failed to create rustls client builder")
+                    .map_err(|e| miette!("Failed to create rustls client builder: {}", e))?
                     .connect(url.as_ref())
                     .await
-                    .expect("Failed to connect to WebDriver");
+                    .map_err(|e| miette!("Failed to connect to WebDriver at {}: {}", url, e))?;
 
                 fantoccini_client
                     .update_timeouts(TimeoutConfiguration::new(
@@ -281,7 +289,7 @@ async fn main() {
                         Some(std::time::Duration::from_secs_f64(args.implicit_timeout)),
                     ))
                     .await
-                    .expect("Failed to set timeouts on Fantoccini client");
+                    .map_err(|e| miette!("Failed to set timeouts on Fantoccini client: {}", e))?;
 
                 fantoccini_client
             },
@@ -320,7 +328,12 @@ async fn main() {
 
         mq_crawler::http_client::HttpClient::new_chromium(args.chrome_path, wait_config, retry_config.clone())
             .await
-            .expect("Failed to launch headless Chrome. Ensure Chrome or Chromium is installed.")
+            .map_err(|e| {
+                miette!(
+                    "Failed to launch headless Chrome. Ensure Chrome or Chromium is installed: {}",
+                    e
+                )
+            })?
     } else if effective_allowed.is_some() {
         mq_crawler::http_client::HttpClient::new_reqwest_with_options(
             args.page_load_timeout,
@@ -329,7 +342,7 @@ async fn main() {
             header_map,
             auth,
         )
-        .unwrap()
+        .map_err(|e| miette!(e))?
     } else {
         mq_crawler::http_client::HttpClient::new_reqwest_with_options(
             args.page_load_timeout,
@@ -338,7 +351,7 @@ async fn main() {
             header_map,
             auth,
         )
-        .unwrap()
+        .map_err(|e| miette!(e))?
     };
 
     let format = match args.format {
@@ -353,28 +366,20 @@ async fn main() {
                 tracing::info!("Discovered {} seed URL(s) from sitemap.", urls.len());
                 urls
             }
-            Err(e) => {
-                tracing::error!("Failed to fetch sitemap {}: {}", sitemap_url, e);
-                return;
-            }
+            Err(e) => return Err(miette!("Failed to fetch sitemap {}: {}", sitemap_url, e)),
         }
     } else {
         Vec::new()
     };
 
-    let resume_checkpoint = if let Some(ref resume_path) = args.resume_from {
-        match mq_crawler::crawler::CrawlCheckpoint::load(resume_path) {
-            Ok(checkpoint) => Some(checkpoint),
-            Err(e) => {
-                tracing::error!("Failed to load checkpoint '{}': {}", resume_path, e);
-                return;
-            }
-        }
-    } else {
-        None
-    };
+    let resume_checkpoint = args
+        .resume_from
+        .as_deref()
+        .map(mq_crawler::crawler::CrawlCheckpoint::load)
+        .transpose()
+        .map_err(|e| miette!(e))?;
 
-    match Crawler::new(
+    let mut crawler = Crawler::new(
         client,
         args.url.clone(),
         CrawlerOptions {
@@ -394,22 +399,23 @@ async fn main() {
             allowed_domains: effective_allowed,
             additional_seed_urls: sitemap_seed_urls,
             max_pages: args.max_pages,
+            max_response_bytes: Some(args.max_response_bytes).filter(|&bytes| bytes > 0),
             checkpoint_path: args.checkpoint_path,
             checkpoint_interval_pages: args.checkpoint_interval_pages,
             resume_checkpoint,
         },
     )
     .await
-    {
-        Ok(mut crawler) => {
-            if let Err(e) = crawler.run().await {
-                tracing::error!("Crawler run failed: {}", e);
-            } else {
-                tracing::info!("Crawling complete.");
-            }
-        }
-        Err(e) => {
-            tracing::error!("Failed to initialize crawler: {}", e);
-        }
+    .map_err(|e| miette!("Failed to initialize crawler: {}", e))?;
+
+    crawler.run().await.map_err(|e| miette!("Crawler run failed: {}", e))?;
+
+    // Skipped pages (robots.txt, non-HTML) are deliberate; only failed fetches fail the crawl.
+    let pages_failed = crawler.stats().await.pages_failed;
+    if pages_failed > 0 {
+        return Err(miette!("Crawl finished with {} failed page(s).", pages_failed));
     }
+
+    tracing::info!("Crawling complete.");
+    Ok(())
 }

@@ -188,6 +188,23 @@ mq-crawl --bearer-token eyJhbGciOi... https://example.com
 mq-crawl --robots-path ./custom-robots.txt https://example.com
 ```
 
+robots.txt is fetched per origin (scheme, host and port) and follows RFC 9309: a `4xx` response (except `429`) allows everything, while an unreachable file or a `5xx`/`429` response disallows everything.
+
+### Response Limits
+
+```bash
+# Skip pages larger than 2 MiB (default: 10 MiB, 0 = unlimited)
+mq-crawl --max-response-bytes 2097152 https://example.com
+```
+
+Responses whose `Content-Type` is not HTML (PDFs, images, ...) are skipped and counted as "Pages skipped (non-HTML)". Oversized pages count as failed. With `--headless` or `--webdriver-url`, only the size limit applies, after rendering.
+
+### Exit Codes and Short Flags
+
+`mq-crawl` exits non-zero when it fails to start (bad arguments, unreachable WebDriver, invalid checkpoint) the crawl itself fails, or any page failed to fetch (including oversized responses). Pages skipped by robots.txt or for being non-HTML do not affect the exit code. Errors are printed as `miette` diagnostics.
+
+Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
+
 ### HTML to Markdown Options
 
 ```bash
@@ -275,6 +292,8 @@ Options:
           Maximum crawl depth. 0 means only the specified URL, 1 means specified URL and its direct links, etc. If not specified, crawling depth is unlimited
       --max-pages <MAX_PAGES>
           Maximum total number of pages to visit (queued, in-flight, or crawled) before stopping. If not specified, crawling continues until the frontier is exhausted or --depth is reached
+      --max-response-bytes <BYTES>
+          Maximum size (in bytes) of a page body. Larger pages are reported as failed. 0 means unlimited [default: 10485760]
       --checkpoint-path <PATH>
           Path to write periodic crawl checkpoints to (JSON). Enables resuming an interrupted crawl later with --resume-from. A checkpoint is written every --checkpoint-interval-pages pages, and once more when the crawl stops
       --checkpoint-interval-pages <CHECKPOINT_INTERVAL_PAGES>
