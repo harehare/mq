@@ -36,11 +36,27 @@ pub struct BenchRecord {
     pub min_ns: u128,
     /// Slowest iteration in nanoseconds.
     pub max_ns: u128,
+    /// Error message when the bench failed; timings are zero in that case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 impl BenchRecord {
     fn key(&self) -> String {
         format!("{}::{}", self.file, self.name)
+    }
+
+    fn failed(file: &Path, name: &str, error: String) -> Self {
+        Self {
+            file: file.display().to_string(),
+            name: name.to_string(),
+            iterations: 0,
+            mean_ns: 0,
+            median_ns: 0,
+            min_ns: 0,
+            max_ns: 0,
+            error: Some(error),
+        }
     }
 }
 
@@ -107,7 +123,7 @@ impl BenchRunner {
         self
     }
 
-    /// Only runs benches whose (display) name contains this substring, case-insensitively.
+    /// Only runs benches whose name contains this substring, case-insensitively.
     pub fn with_filter(mut self, filter: Option<String>) -> Self {
         self.filter = filter;
         self
@@ -149,6 +165,9 @@ impl BenchRunner {
 
         let mut records: Vec<BenchRecord> = Vec::new();
         let mut any_failed = false;
+        // Printed after the progress bars are cleared: `MultiProgress::println` is a no-op
+        // when stderr is not a terminal.
+        let mut failures: Vec<String> = Vec::new();
 
         let mut plan: Vec<(&Path, String, Vec<DiscoveredBench>)> = Vec::new();
         for file in &bench_files {
@@ -156,7 +175,7 @@ impl BenchRunner {
                 Ok(content) => content,
                 Err(e) => {
                     any_failed = true;
-                    eprintln!("# {}\n\n❌ Failed to read file: {e}\n\n---\n", file.display());
+                    failures.push(format!("# {}\n\n❌ Failed to read file: {e}\n\n---\n", file.display()));
                     continue;
                 }
             };
@@ -201,13 +220,18 @@ impl BenchRunner {
                     Ok(record) => records.push(record),
                     Err(e) => {
                         any_failed = true;
-                        let _ = multi.println(Self::render_file_error(file, *e));
+                        records.push(BenchRecord::failed(file, &bench.name, e.to_string()));
+                        failures.push(Self::render_file_error(file, &bench.name, *e));
                     }
                 }
             }
         }
         bar.finish_and_clear();
         overall.finish_and_clear();
+
+        for failure in &failures {
+            eprintln!("{failure}");
+        }
 
         let baseline = self.load_baseline()?;
         let output = match self.format {
@@ -295,6 +319,7 @@ impl BenchRunner {
             median_ns: durations[durations.len() / 2].as_nanos(),
             min_ns: durations[0].as_nanos(),
             max_ns: durations[durations.len() - 1].as_nanos(),
+            error: None,
         })
     }
 
@@ -307,12 +332,12 @@ impl BenchRunner {
         Ok(Some(records.into_iter().map(|r| (r.key(), r)).collect()))
     }
 
-    fn render_file_error(file: &Path, mut error: mq_lang::Error) -> String {
+    fn render_file_error(file: &Path, bench: &str, mut error: mq_lang::Error) -> String {
         if error.source_code.name().is_empty() {
             error.source_code = NamedSource::new(file.display().to_string(), error.source_code.inner().clone());
         }
         format!(
-            "# {}\n\n❌ Failed to run bench\n\n{:?}\n---\n",
+            "# {}\n\n❌ Failed to run {bench}\n\n{:?}\n---\n",
             file.display(),
             miette::Report::new(error)
         )
@@ -320,16 +345,9 @@ impl BenchRunner {
 
     fn matches(&self, bench: &DiscoveredBench) -> bool {
         match &self.filter {
-            Some(filter) => Self::display_name(&bench.name)
-                .to_lowercase()
-                .contains(&filter.to_lowercase()),
+            Some(filter) => bench.name.to_lowercase().contains(&filter.to_lowercase()),
             None => true,
         }
-    }
-
-    /// Strips the `bench_` prefix used for the reported display name.
-    fn display_name(name: &str) -> &str {
-        name.strip_prefix("bench_").unwrap_or(name)
     }
 
     fn discover_benches(content: &str) -> Vec<DiscoveredBench> {
@@ -394,23 +412,30 @@ impl BenchRunner {
         let rows = records
             .iter()
             .map(|record| {
-                let mut row = vec![
-                    record.file.clone(),
-                    Self::display_name(&record.name).to_string(),
-                    record.iterations.to_string(),
-                    Self::format_ns(record.mean_ns),
-                    Self::format_ns(record.median_ns),
-                    Self::format_ns(record.min_ns),
-                    Self::format_ns(record.max_ns),
-                ];
+                let mut row = if record.error.is_some() {
+                    let mut row = vec![record.file.clone(), record.name.clone(), "-".to_string()];
+                    row.push("failed".to_string());
+                    row.extend(std::iter::repeat_n("-".to_string(), 3));
+                    row
+                } else {
+                    vec![
+                        record.file.clone(),
+                        record.name.clone(),
+                        record.iterations.to_string(),
+                        Self::format_ns(record.mean_ns),
+                        Self::format_ns(record.median_ns),
+                        Self::format_ns(record.min_ns),
+                        Self::format_ns(record.max_ns),
+                    ]
+                };
 
                 if let Some(baseline) = baseline {
                     let delta = match baseline.get(&record.key()) {
-                        Some(base) => {
+                        Some(base) if record.error.is_none() && base.error.is_none() && base.mean_ns > 0 => {
                             let pct = (record.mean_ns as f64 - base.mean_ns as f64) / base.mean_ns as f64 * 100.0;
                             Self::format_delta(pct)
                         }
-                        None => "—".to_string(),
+                        _ => "—".to_string(),
                     };
                     row.push(delta);
                 }
@@ -573,6 +598,10 @@ mod tests {
             .run()
             .unwrap();
         assert!(!passed);
+
+        let record = BenchRecord::failed(Path::new("bench.mq"), "bench_fails", "boom".to_string());
+        let (_, rows) = BenchRunner::result_rows(&[record], None);
+        assert_eq!(rows[0][3], "failed");
 
         fs::remove_dir_all(&dir).ok();
     }
