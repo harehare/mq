@@ -1257,7 +1257,7 @@ impl<'a> Parser<'a> {
                     && matches!(Selector::try_from(&**peek_token), Ok(Selector::Property(_)))
                 {
                     let first_token = Shared::clone(token);
-                    let block_leading = node.leading_trivia.clone();
+                    let block_leading = std::mem::take(&mut node.leading_trivia);
                     let block_trailing = node.trailing_trivia.clone();
                     let mut nodes = vec![Shared::new(node)];
                     while let Some(peek_token) = self.peek()
@@ -1286,7 +1286,7 @@ impl<'a> Parser<'a> {
                     && matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket))
                 {
                     let first_token = Shared::clone(token);
-                    let block_leading = node.leading_trivia.clone();
+                    let block_leading = std::mem::take(&mut node.leading_trivia);
                     let block_trailing = node.trailing_trivia.clone();
                     let list_node = self.build_list_selector_node()?;
                     return Ok(Shared::new(Node {
@@ -1320,7 +1320,7 @@ impl<'a> Parser<'a> {
                     && matches!(Selector::try_from(&**next_token), Ok(sel) if !sel.is_attribute_selector())
                 {
                     let first_token = Shared::clone(token);
-                    let block_leading = node.leading_trivia.clone();
+                    let block_leading = std::mem::take(&mut node.leading_trivia);
                     let mut nodes = vec![Shared::new(node)];
 
                     while let Some(step_token) = self.peek() {
