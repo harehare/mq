@@ -618,10 +618,8 @@ impl RuntimeValue {
                 Some(sel) => node.find_at_index(sel.index_value()).is_some(),
                 None => true,
             },
-            RuntimeValue::Symbol(_)
-            | RuntimeValue::NativeFunction(_)
-            | RuntimeValue::CoroutineBuiltin(_)
-            | RuntimeValue::Dict(_) => true,
+            RuntimeValue::Dict(m) => !m.is_empty(),
+            RuntimeValue::Symbol(_) | RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_) => true,
             RuntimeValue::Closure(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => true,
@@ -1075,6 +1073,13 @@ mod tests {
             map.insert(Ident::new(key), value.clone());
         }
         RuntimeValue::Dict(Shared::new(map))
+    }
+
+    #[rstest]
+    #[case::empty(dict(&[]), false)]
+    #[case::non_empty(dict(&[("a", RuntimeValue::NONE)]), true)]
+    fn test_dict_is_truthy(#[case] value: RuntimeValue, #[case] expected: bool) {
+        assert_eq!(value.is_truthy(), expected);
     }
 
     #[rstest]

@@ -30,7 +30,17 @@ The if expression evaluates a condition and executes code based on the result:
 ```
 
 The if expression can be nested and chained with elif and else clauses.
-The conditions must evaluate to boolean values.
+
+### Truthiness
+
+A condition is false for `false`, `None`, `0`, `""`, `[]` and `{}`. Every other value is true, including `"0"` and `[0]`.
+
+| Value                    | Condition |
+| ------------------------ | --------- |
+| `false`, `None`          | false     |
+| `0`                      | false     |
+| `""`, `[]`, `{}`         | false     |
+| `"0"`, `[0]`, `{"a": 1}` | true      |
 
 ## Unless Expression
 
