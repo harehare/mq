@@ -104,11 +104,10 @@ With `-e` / `--exit-status` the exit code also reflects the result:
 
 | Code | Meaning |
 | ---- | ------- |
-| 0 | A truthy value was produced |
-| 1 | The only values produced were falsy (`false`, `None`, empty strings and collections) |
-| 4 | No result, such as `select()` matching nothing |
+| 0 | At least one result was not empty |
+| 4 | Every result was empty, such as `select()` matching nothing |
 
-On Markdown input, each result is turned into a node, so the exit code depends on its text. `false` becomes the text `false`, which counts as a truthy result, while `None`, `""` and `[]` become empty nodes and exit with `4`. The `1` row applies to input that is not Markdown, such as `-I null` or `-I text`.
+`None`, `""`, `[]`, `{}` and a non-matching `select()` are empty. Other values, including `false` and `0`, are results.
 
 ```sh
 mq -e 'select(.h2)' doc.md || echo "exit: $?"

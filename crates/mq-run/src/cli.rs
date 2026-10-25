@@ -24,7 +24,7 @@ use which::which;
 
 use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
-use exit_status::{BEST_OUTCOME, ExitReason, Outcome, ReadFailure};
+use exit_status::{ExitReason, HAD_RESULT, ReadFailure};
 use mq_help as help;
 
 #[cfg(feature = "debug-trace")]
@@ -787,7 +787,7 @@ struct OutputArgs {
     #[clap(long, value_name = "NUM", conflicts_with = "quiet")]
     context: Option<usize>,
 
-    /// Set the exit code from the result, like jq's -e: 0 truthy, 1 false/null, 4 no result.
+    /// Exit with 4 if every result is empty (None, "", [] or an unmatched select), otherwise 0.
     #[arg(short = 'e', long = "exit-status", default_value_t = false)]
     exit_status: bool,
 
@@ -1928,14 +1928,10 @@ impl Cli {
             std::process::exit(ExitReason::Failure.code());
         }
 
-        // --exit-status / -e: exit with code 1 if no truthy value was
-        // produced. Mirrors jq's behaviour: false and null are falsy;
-        // everything else (including empty string, 0, [], {}) is truthy.
-        if self.output.exit_status
-            && let Some(reason) = BEST_OUTCOME.get().exit_reason()
-        {
+        // --exit-status / -e: exit with 4 if every result was empty.
+        if self.output.exit_status && !HAD_RESULT.get() {
             result?;
-            std::process::exit(reason.code());
+            std::process::exit(ExitReason::NoResult.code());
         }
 
         result
@@ -3279,11 +3275,10 @@ impl Cli {
         Ok(buf)
     }
 
-    /// Records the best outcome in `values` for --exit-status.
+    /// Records whether `values` has a result for --exit-status.
     fn record_exit_status(&self, values: &[mq_lang::RuntimeValue]) {
         if self.output.exit_status {
-            let outcome = values.iter().map(Outcome::of).max().unwrap_or(Outcome::NoResult);
-            BEST_OUTCOME.record(outcome);
+            HAD_RESULT.record(values);
         }
     }
 

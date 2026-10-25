@@ -1397,11 +1397,14 @@ fn test_let_simple_regression() -> Result<(), Box<dyn std::error::Error>> {
 #[rstest]
 // select() on markdown input replaces non-matching nodes with an empty
 // value instead of dropping them, so --exit-status must treat that empty
-// value as falsy, not just `None`/`false`.
+// value as no result, not just `None`.
 #[case::truthy_match(vec!["--unbuffered", "--exit-status", "select(.h1)"], "# title\n\nbody", 0)]
 #[case::no_match_is_no_result(vec!["--unbuffered", "-e", "select(.h2)"], "# title\n\nbody", 4)]
-#[case::bare_false(vec!["--unbuffered", "-I", "null", "-e", "false"], "", 1)]
-#[case::bare_null(vec!["--unbuffered", "-I", "null", "-e", "None"], "", 1)]
+#[case::bare_false_is_a_result(vec!["--unbuffered", "-I", "null", "-e", "false"], "", 0)]
+#[case::bare_null(vec!["--unbuffered", "-I", "null", "-e", "None"], "", 4)]
+#[case::bare_empty_string(vec!["--unbuffered", "-I", "null", "-e", "\"\""], "", 4)]
+#[case::markdown_false_is_a_result(vec!["--unbuffered", "-e", "false"], "# title", 0)]
+#[case::markdown_null(vec!["--unbuffered", "-e", "None"], "# title", 4)]
 #[case::bare_truthy_number(vec!["--unbuffered", "-I", "null", "-e", "1"], "", 0)]
 #[case::runtime_error(vec!["--unbuffered", "-I", "null", "-e", "error(\"x\")"], "", 5)]
 #[case::syntax_error(vec!["--unbuffered", "-I", "null", "-e", "bad("], "", 3)]
@@ -1553,9 +1556,9 @@ fn test_quiet_preserves_exit_status() {
         .arg("--exit-status")
         .arg("-I")
         .arg("null")
-        .arg("false")
+        .arg("None")
         .assert()
-        .code(1)
+        .code(4)
         .stdout("")
         .stderr("");
 }
