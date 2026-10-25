@@ -309,13 +309,14 @@ impl LanguageServer for Backend {
         let position = params.text_document_position.position;
 
         let source_map_guard = self.source_map.read().unwrap();
-        Ok(rename::response(
+        rename::response(
             Arc::clone(&self.hir),
             url,
             position,
             &params.new_name,
             &source_map_guard,
-        ))
+        )
+        .map_err(jsonrpc::Error::invalid_params)
     }
 
     async fn prepare_rename(
