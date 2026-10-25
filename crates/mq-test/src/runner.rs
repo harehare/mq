@@ -308,11 +308,18 @@ impl TestRunner {
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
             );
             engine.load_builtin_module();
-            engine.define_string_value("TEST_FILE", file.to_string_lossy().as_ref());
 
             // Resolve relative `include` statements in the test file, then fall back to `-L` dirs.
             if let Some(paths) = self.search_paths(file) {
                 engine.set_search_paths(paths);
+            }
+
+            {
+                let test_file = file.to_string_lossy().into_owned();
+                engine.register_fn(
+                    "current_test_file",
+                    move || -> Result<String, mq_lang::HostFunctionError> { Ok(test_file.clone()) },
+                );
             }
 
             {
@@ -914,7 +921,7 @@ impl TestRunner {
             .collect::<Vec<_>>()
             .join(",\n");
 
-        format!("{content}\n| {report_fn}(flatten([\n{cases}\n]))")
+        format!("{content}\n| include \"test\"\n| {report_fn}(flatten([\n{cases}\n]))")
     }
 }
 

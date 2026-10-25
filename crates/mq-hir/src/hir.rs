@@ -479,14 +479,14 @@ mod tests {
     #[test]
     fn test_declare_global_resolves_host_defined_names() {
         let mut hir = Hir::default();
-        hir.declare_global("TEST_FILE");
-        hir.add_code(None, "TEST_FILE | to_string()");
+        hir.declare_global("GLOBAL_NAME");
+        hir.add_code(None, "GLOBAL_NAME | to_string()");
         assert!(hir.errors().is_empty());
 
         let mut hir = Hir::default();
-        hir.add_code(None, "TEST_FILE");
+        hir.add_code(None, "GLOBAL_NAME");
         assert_eq!(hir.errors().len(), 1);
-        hir.declare_global("TEST_FILE");
+        hir.declare_global("GLOBAL_NAME");
         assert!(hir.errors().is_empty());
     }
 
@@ -494,8 +494,8 @@ mod tests {
     fn test_declare_global_is_ignored_when_builtins_are_disabled() {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        hir.declare_global("TEST_FILE");
-        hir.add_code(None, "TEST_FILE");
+        hir.declare_global("GLOBAL_NAME");
+        hir.add_code(None, "GLOBAL_NAME");
         assert_eq!(hir.errors().len(), 1);
     }
 
