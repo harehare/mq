@@ -382,6 +382,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     ///
     /// Diagnostics show only `code`, so a prelude the caller adds on the user's behalf
     /// never appears in error output or shifts its positions.
+    #[doc(hidden)]
     pub fn compile_with_prelude(&mut self, prelude: &str, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
         if prelude.is_empty() && code.is_empty() {
             return Ok(CompiledProgram::cached(String::new(), Vec::new()));

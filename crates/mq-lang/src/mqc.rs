@@ -279,6 +279,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     }
 
     /// Like [`Self::precompile`], running `prelude` before `code` (see [`Self::compile_with_prelude`]).
+    #[doc(hidden)]
     pub fn precompile_with_prelude(
         &mut self,
         prelude: &str,
