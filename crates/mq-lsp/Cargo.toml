@@ -33,6 +33,9 @@ tower-lsp-server = {workspace = true}
 url = {workspace = true}
 rustc-hash = {workspace = true}
 
+[dev-dependencies]
+rstest = {workspace = true}
+
 [[bin]]
 name = "mq-lsp"
 path = "src/main.rs"

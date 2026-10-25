@@ -273,6 +273,21 @@ pub fn is_builtin_function(name: &str) -> bool {
     name == NEXT || name == SEND || runtime::builtin::get_builtin_functions(&Ident::new(name)).is_some()
 }
 
+/// Returns whether `name` lexes as a single identifier, so keywords, literals and operators are rejected.
+///
+/// ```rust
+/// assert!(mq_lang::is_valid_ident("my_function"));
+/// assert!(!mq_lang::is_valid_ident("def"));
+/// assert!(!mq_lang::is_valid_ident("a-b"));
+/// ```
+pub fn is_valid_ident(name: &str) -> bool {
+    Lexer::new(lexer::Options::default())
+        .tokenize(name, Module::TOP_LEVEL_MODULE_ID)
+        .is_ok_and(
+            |tokens| matches!(tokens.as_slice(), [token] | [token, _] if matches!(token.kind, TokenKind::Ident(_))),
+        )
+}
+
 /// Returns a vector containing a single `Value` representing an empty input.
 pub fn null_input() -> Vec<RuntimeValue> {
     vec!["".to_string().into()]

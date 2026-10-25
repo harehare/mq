@@ -2770,6 +2770,7 @@ dependencies = [
  "mq-lang",
  "mq-lint",
  "mq-markdown",
+ "rstest",
  "rustc-hash",
  "serde_json",
  "smol_str",

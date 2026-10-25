@@ -59,24 +59,44 @@ pub(crate) fn prepare(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Positio
 
 /// Renames the symbol at `position` and all of its references, across every
 /// source file the HIR knows about.
+///
+/// Returns `Err` with a message when `new_name` is not a valid identifier or collides with
+/// another declaration in the same scope.
 pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
     position: Position,
     new_name: &str,
     source_map: &BiMap<String, mq_hir::SourceId>,
-) -> Option<WorkspaceEdit> {
-    let hir_guard = hir.read().unwrap();
-    let source = hir_guard.source_by_url(&url)?;
+) -> Result<Option<WorkspaceEdit>, String> {
+    if !mq_lang::is_valid_ident(new_name) {
+        return Err(format!("`{new_name}` is not a valid identifier"));
+    }
+    rename(hir, url, position, new_name, source_map)
+}
 
-    let (symbol_id, symbol) = hir_guard.find_symbol_in_position(
+fn rename(
+    hir: Arc<RwLock<mq_hir::Hir>>,
+    url: Url,
+    position: Position,
+    new_name: &str,
+    source_map: &BiMap<String, mq_hir::SourceId>,
+) -> Result<Option<WorkspaceEdit>, String> {
+    let hir_guard = hir.read().unwrap();
+    let Some(source) = hir_guard.source_by_url(&url) else {
+        return Ok(None);
+    };
+
+    let Some((symbol_id, symbol)) = hir_guard.find_symbol_in_position(
         source,
         mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
-    )?;
+    ) else {
+        return Ok(None);
+    };
 
     // Builtin functions live outside any editable source and must not be renamed.
     if hir_guard.is_builtin_symbol(&symbol) {
-        return None;
+        return Ok(None);
     }
 
     let def_id = match symbol.kind {
@@ -84,13 +104,28 @@ pub(crate) fn response(
         | mq_hir::SymbolKind::Ref
         | mq_hir::SymbolKind::CallDynamic
         | mq_hir::SymbolKind::Argument
-        | mq_hir::SymbolKind::QualifiedAccess => hir_guard.resolve_reference_symbol(symbol_id)?,
+        | mq_hir::SymbolKind::QualifiedAccess => match hir_guard.resolve_reference_symbol(symbol_id) {
+            Some(id) => id,
+            None => return Ok(None),
+        },
         _ => symbol_id,
     };
 
-    let def_symbol = hir_guard.symbol(def_id)?;
+    let Some(def_symbol) = hir_guard.symbol(def_id) else {
+        return Ok(None);
+    };
     if hir_guard.is_builtin_symbol(def_symbol) {
-        return None;
+        return Ok(None);
+    }
+
+    let collides = def_symbol.value.as_deref() != Some(new_name)
+        && hir_guard.find_symbols_in_scope(def_symbol.scope).iter().any(|s| {
+            s.scope == def_symbol.scope
+                && s.value.as_deref() == Some(new_name)
+                && (s.is_function() || s.is_variable() || s.is_parameter() || s.is_pattern_variable() || s.is_module())
+        });
+    if collides {
+        return Err(format!("`{new_name}` is already defined in this scope"));
     }
 
     let mut symbols_to_rename = vec![(def_id, def_symbol.clone())];
@@ -118,14 +153,14 @@ pub(crate) fn response(
         });
     }
 
-    if changes.is_empty() {
+    Ok(if changes.is_empty() {
         None
     } else {
         Some(WorkspaceEdit {
             changes: Some(changes),
             ..Default::default()
         })
-    }
+    })
 }
 
 #[cfg(test)]
@@ -149,7 +184,7 @@ mod tests {
         let code = "def func1(): 1; | func1()";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 5), "renamed", &source_map);
+        let result = response(hir, url, Position::new(0, 5), "renamed", &source_map).unwrap();
 
         assert!(result.is_some());
         let edit = result.unwrap();
@@ -163,7 +198,7 @@ mod tests {
         let code = "def func1(): 1; | func1()";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 20), "renamed", &source_map);
+        let result = response(hir, url, Position::new(0, 20), "renamed", &source_map).unwrap();
 
         assert!(result.is_some());
         let edit = result.unwrap();
@@ -176,14 +211,14 @@ mod tests {
         let code = "\"hello\" | len";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 11), "renamed", &source_map);
+        let result = response(hir, url, Position::new(0, 11), "renamed", &source_map).unwrap();
         assert!(result.is_none());
     }
 
     #[test]
     fn test_no_rename_when_no_symbol_at_position() {
         let (hir, url, source_map) = setup("let x = 1");
-        let result = response(hir, url, Position::new(5, 5), "renamed", &source_map);
+        let result = response(hir, url, Position::new(5, 5), "renamed", &source_map).unwrap();
         assert!(result.is_none());
     }
 
@@ -192,7 +227,7 @@ mod tests {
         let code = "let val1 = 1 | val1";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 5), "renamed_val", &source_map);
+        let result = response(hir, url, Position::new(0, 5), "renamed_val", &source_map).unwrap();
 
         assert!(result.is_some());
         let edits = result.unwrap().changes.unwrap().into_values().next().unwrap();
@@ -205,7 +240,7 @@ mod tests {
         let code = "let val1 = 1 | val1";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 16), "renamed_val", &source_map);
+        let result = response(hir, url, Position::new(0, 16), "renamed_val", &source_map).unwrap();
 
         assert!(result.is_some());
         let edits = result.unwrap().changes.unwrap().into_values().next().unwrap();
@@ -217,7 +252,7 @@ mod tests {
         let code = "def func1(x): x + 1;";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 10), "renamed_param", &source_map);
+        let result = response(hir, url, Position::new(0, 10), "renamed_param", &source_map).unwrap();
 
         assert!(result.is_some());
         let edits = result.unwrap().changes.unwrap().into_values().next().unwrap();
@@ -231,7 +266,7 @@ mod tests {
         let code = "def unused_func(): 1;";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 5), "renamed_unused", &source_map);
+        let result = response(hir, url, Position::new(0, 5), "renamed_unused", &source_map).unwrap();
 
         assert!(result.is_some());
         let edits = result.unwrap().changes.unwrap().into_values().next().unwrap();
@@ -244,7 +279,7 @@ mod tests {
         let code = "totally_unknown_fn()";
         let (hir, url, source_map) = setup(code);
 
-        let result = response(hir, url, Position::new(0, 5), "renamed", &source_map);
+        let result = response(hir, url, Position::new(0, 5), "renamed", &source_map).unwrap();
         assert!(result.is_none());
     }
 
@@ -275,7 +310,8 @@ mod tests {
             Position::new(0, 18),
             "csv_load",
             &source_map,
-        );
+        )
+        .unwrap();
 
         assert!(result.is_some());
         let changes = result.unwrap().changes.unwrap();
@@ -345,7 +381,8 @@ mod tests {
             Position::new(0, 18),
             "csv_load",
             &source_map,
-        );
+        )
+        .unwrap();
 
         assert!(result.is_some());
         let changes = result.unwrap().changes.unwrap();
@@ -354,5 +391,34 @@ mod tests {
         let edits = changes.into_values().next().unwrap();
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, "csv_load");
+    }
+
+    #[rstest::rstest]
+    #[case("1bad name")]
+    #[case("def")]
+    #[case("let")]
+    #[case("a-b")]
+    #[case("")]
+    #[case("true")]
+    fn test_rename_rejects_invalid_name(#[case] new_name: &str) {
+        let (hir, url, source_map) = setup("def func1(): 1; | func1()");
+        assert!(response(hir, url, Position::new(0, 5), new_name, &source_map).is_err());
+    }
+
+    #[test]
+    fn test_rename_rejects_collision_with_existing_function() {
+        let (hir, url, source_map) = setup("def twice(): 2; | def func1(): 1; | func1()");
+        let err = response(hir, url, Position::new(0, 23), "twice", &source_map).unwrap_err();
+        assert!(err.contains("already defined"), "{err}");
+    }
+
+    #[test]
+    fn test_rename_to_same_name_is_not_a_collision() {
+        let (hir, url, source_map) = setup("def func1(): 1; | func1()");
+        assert!(
+            response(hir, url, Position::new(0, 5), "func1", &source_map)
+                .unwrap()
+                .is_some()
+        );
     }
 }
