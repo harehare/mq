@@ -235,6 +235,11 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         self.inner.write(path, content)
     }
 
+    fn create_dir_all(&self, path: &Path) -> Result<(), IoError> {
+        self.check_write(path)?;
+        self.inner.create_dir_all(path)
+    }
+
     fn exists(&self, path: &Path) -> Result<bool, IoError> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));

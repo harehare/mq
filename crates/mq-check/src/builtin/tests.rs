@@ -559,6 +559,8 @@ fn test_io_functions(#[case] code: &str, #[case] should_succeed: bool) {
 #[case::glob_match("glob_match(\"*.md\", \"a.md\")", true)]
 #[case::write_file_string("write_file(\"a.md\", \"content\")", true)]
 #[case::write_file_bytes("write_file(\"a.md\", to_bytes(\"content\"))", true)]
+#[case::mkdir("mkdir(\"out/sub\")", true)]
+#[case::mkdir_number("mkdir(42)", false)] // Should fail: wrong type
 #[case::http_get("http(\"get\", \"https://example.invalid\")", true)]
 #[case::http_get_symbol("http(:get, \"https://example.invalid\")", true)]
 #[case::http_post("http(\"post\", \"https://example.invalid\", \"{}\")", true)]

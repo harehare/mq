@@ -2594,6 +2594,17 @@ key: 1
         kind: DocKind::Function,
     },
     BuiltinDoc {
+        name: "mkdir",
+        aliases: &[],
+        description: "Creates the directory at the given path along with any missing parents, like `mkdir -p`. Succeeds if it already exists. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
+        params: &["path"],
+        param_types: &["string"],
+        returns: "none",
+        examples: &[],
+        capability: Some("file-io"),
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "mktime",
         aliases: &[],
         description: "Converts broken-down UTC time array [year, mon (0-11), mday, hour, min, sec, wday, yday] to Unix timestamp (seconds since epoch).",

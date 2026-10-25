@@ -40,6 +40,7 @@ const SKIPPED: &[&str] = &[
     "http_all",
     "infinite",
     "input",
+    "mkdir",
     "mock_fetch",
     "open_file",
     "open_http",

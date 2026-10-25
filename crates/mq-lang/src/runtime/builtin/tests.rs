@@ -4945,6 +4945,26 @@ fn test_write_file_capability_gate_and_success() {
     );
 }
 
+#[cfg(feature = "file-io")]
+#[test]
+fn test_mkdir_capability_gate_and_nested_idempotent_create() {
+    let tmp = tempfile::tempdir().expect("failed to create temp dir");
+    let dir = tmp.path().join("a").join("b");
+    let args = || vec![RuntimeValue::String(Shared::new(dir.to_string_lossy().to_string()))];
+    assert!(
+        call("mkdir", args()).is_err(),
+        "mkdir should be blocked when write access is not allowed"
+    );
+    assert!(!dir.exists());
+
+    let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_write(true)));
+    assert_eq!(call("mkdir", args()), Ok(RuntimeValue::NONE));
+    assert!(dir.is_dir());
+    assert_eq!(call("mkdir", args()), Ok(RuntimeValue::NONE));
+
+    assert!(call("mkdir", vec![RuntimeValue::Number(1.into())]).is_err());
+}
+
 #[cfg(feature = "process-io")]
 #[test]
 fn test_system_capability_gate_and_success() {

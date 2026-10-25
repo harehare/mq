@@ -1863,6 +1863,9 @@ fn register_file_io(ctx: &mut InferenceContext) {
     register_binary(ctx, "write_file", Type::String, Type::String, Type::None);
     register_binary(ctx, "write_file", Type::String, Type::Bytes, Type::None);
 
+    // mkdir: string -> none
+    register_unary(ctx, "mkdir", Type::String, Type::None);
+
     // embed_images: (markdown[, base_dir]) -> markdown; extract_images: (markdown, dir) -> markdown
     register_unary(ctx, "embed_images", Type::markdown(), Type::markdown());
     register_binary(ctx, "embed_images", Type::markdown(), Type::String, Type::markdown());

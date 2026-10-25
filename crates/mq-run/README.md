@@ -100,7 +100,7 @@ $ mq -R -I null 'read_file("README.md") | len()'
 | Flag                                             | Allows                                                           |
 | ------------------------------------------------ | ---------------------------------------------------------------- |
 | `-R`, `--allow-read[=PATH]`                      | `read_file`, `open_file`, `walk_files`, `collection` and friends |
-| `-W`, `--allow-write[=PATH]`                     | `write_file`, `extract_images`; under `--sandbox`, also `-o`     |
+| `-W`, `--allow-write[=PATH]`                     | `write_file`, `mkdir`, `extract_images`; under `--sandbox`, also `-o`     |
 | `-N`, `--allow-net[=DOMAIN]`                     | `http` (HTTPS only, never loopback or private addresses)         |
 | `--allow-run[=COMMAND]`                          | `system`, run directly without a shell                           |
 | `-E`, `--allow-env[=NAME]`                       | `$VAR` interpolation                                             |
