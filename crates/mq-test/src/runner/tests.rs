@@ -1039,6 +1039,21 @@ fn test_run_reports_failure_without_aborting_other_files() {
 }
 
 #[test]
+fn test_run_supports_importing_the_test_module() {
+    let dir = temp_project_dir("import_test_module");
+    let file = dir.join("imported.mq");
+    fs::write(
+        &file,
+        "import \"test\"\n|\ndef test_passes():\n  test::assert_eq(1, 1)\nend\n",
+    )
+    .unwrap();
+
+    assert!(TestRunner::new(vec![file]).run().unwrap());
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_still_run() {
     let mut engine = mq_lang::Engine::with_io(
         mq_lang::DefaultModuleResolver::default(),

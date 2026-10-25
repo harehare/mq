@@ -368,7 +368,7 @@ end
 # Returns: bool
 def run_tests(tests):
   let final_test_count = len(tests)
-  | let file_name = try: TEST_FILE catch: ""
+  | let file_name = current_test_file()
   | let header = "# " + file_name + "\n\nStarting " + to_string(final_test_count) + " tests...\n\n" +
     "| Status | Duration | Test Name |\n| :--- | :--- | :--- |"
   | let test_results = _run_tests_results(tests)

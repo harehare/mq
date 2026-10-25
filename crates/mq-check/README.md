@@ -204,7 +204,7 @@ A default is used when the call leaves it out. A function with a variadic parame
 
 ### Test files
 
-`mq-check` treats `TEST_FILE` and `assert_snapshot`, which `mq-test` defines at runtime, as defined names. Library users can declare them with `Hir::declare_global` (see `mq_check::TEST_RUNNER_GLOBALS`).
+`mq-check` treats `current_test_file` and `assert_snapshot`, which `mq-test` defines at runtime, as defined names. Library users can declare them with `Hir::declare_global` (see `mq_check::TEST_RUNNER_GLOBALS`).
 
 ### `--input-type`
 

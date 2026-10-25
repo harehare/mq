@@ -83,7 +83,7 @@ Positions are one-based, like the rest of mq.
 
 ### Test files
 
-A runner can define names the program does not declare, such as `mq-test`'s `TEST_FILE`, with `Hir::declare_global` so they are not reported as unresolved.
+A runner can define names the program does not declare, such as `mq-test`'s `assert_snapshot`, with `Hir::declare_global` so they are not reported as unresolved.
 
 ## Features
 

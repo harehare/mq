@@ -692,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_collect_check_diagnostics_ignores_errors_inside_included_modules() {
-        // `TEST_FILE` is injected by the test runner, so the `test` module itself leaves it
+        // `current_test_file` is injected by the test runner, so the `test` module itself leaves it
         // unresolved. That is a problem of the module, not of the checked source.
         let diagnostics = collect_check_diagnostics(
             "include \"test\" | assert_eq(1, 1)",
@@ -700,7 +700,7 @@ mod tests {
             &TypeCheckerOptions::default(),
         );
         assert!(
-            !diagnostics.iter().any(|d| d.message.contains("TEST_FILE")),
+            !diagnostics.iter().any(|d| d.message.contains("current_test_file")),
             "{diagnostics:?}"
         );
     }
