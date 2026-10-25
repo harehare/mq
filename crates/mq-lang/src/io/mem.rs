@@ -1,6 +1,6 @@
 use super::{FileKind, FileMetadata, Io, IoError, IoReader};
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
@@ -20,6 +20,7 @@ use std::sync::{
 #[derive(Debug, Default)]
 pub struct MemIo {
     files: Mutex<HashMap<PathBuf, Vec<u8>>>,
+    dirs: Mutex<HashSet<PathBuf>>,
     env: Mutex<HashMap<String, String>>,
     fetch_responses: Mutex<HashMap<String, String>>,
     command_responses: Mutex<HashMap<String, String>>,
@@ -74,6 +75,11 @@ fn command_key(command: &str, args: &[String]) -> String {
 }
 
 impl MemIo {
+    /// Whether `path` is a directory made by `create_dir_all`, or an ancestor of one.
+    fn is_dir(&self, path: &Path) -> bool {
+        self.dirs.lock().unwrap().iter().any(|dir| dir.starts_with(path))
+    }
+
     /// Number of readers from [`Io::open_read`] that have not been dropped yet.
     pub fn open_readers(&self) -> usize {
         self.open_readers.load(Ordering::SeqCst)
@@ -181,8 +187,19 @@ impl Io for MemIo {
         Ok(())
     }
 
+    fn create_dir_all(&self, path: &Path) -> Result<(), IoError> {
+        if self.files.lock().unwrap().contains_key(path) {
+            return Err(IoError::Other(Cow::Owned(format!(
+                "{} exists and is not a directory",
+                path.display()
+            ))));
+        }
+        self.dirs.lock().unwrap().insert(path.to_path_buf());
+        Ok(())
+    }
+
     fn exists(&self, path: &Path) -> Result<bool, IoError> {
-        Ok(self.files.lock().unwrap().contains_key(path))
+        Ok(self.files.lock().unwrap().contains_key(path) || self.is_dir(path))
     }
 
     fn file_size(&self, path: &Path) -> Result<u64, IoError> {
@@ -195,8 +212,8 @@ impl Io for MemIo {
     }
 
     /// No mtime tracking (this is an in-memory fake with no clock of its own), so
-    /// `modified` is always `None`. A path is a `Dir` if it's a strict ancestor of some
-    /// registered file, since `MemIo` has no separate concept of an empty directory.
+    /// `modified` is always `None`. A path is a `Dir` if it was created by `create_dir_all`
+    /// (or is an ancestor of one) or is a strict ancestor of some registered file.
     fn metadata(&self, path: &Path) -> Result<FileMetadata, IoError> {
         let files = self.files.lock().unwrap();
         if let Some(bytes) = files.get(path) {
@@ -206,7 +223,7 @@ impl Io for MemIo {
                 modified: None,
             });
         }
-        if files.keys().any(|p| p.as_path() != path && p.starts_with(path)) {
+        if self.is_dir(path) || files.keys().any(|p| p.as_path() != path && p.starts_with(path)) {
             return Ok(FileMetadata {
                 kind: FileKind::Dir,
                 size: 0,
@@ -218,10 +235,16 @@ impl Io for MemIo {
 
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
         let files = self.files.lock().unwrap();
+        let dirs = self.dirs.lock().unwrap();
         Ok(files
             .keys()
             .filter(|p| p.parent() == Some(path))
             .map(|p| (p.clone(), false))
+            .chain(
+                dirs.iter()
+                    .filter(|p| p.parent() == Some(path))
+                    .map(|p| (p.clone(), true)),
+            )
             .collect())
     }
 
@@ -330,6 +353,21 @@ mod tests {
         assert_eq!(io.read_to_string(Path::new("/a.txt")).unwrap(), "hello");
         assert_eq!(io.read_bytes(Path::new("/a.txt")).unwrap(), b"hello");
         assert!(io.exists(Path::new("/a.txt")).unwrap());
+    }
+
+    #[test]
+    fn test_create_dir_all_makes_nested_dirs_visible() {
+        let io = MemIo::default();
+        io.create_dir_all(Path::new("/a/b/c")).unwrap();
+        assert!(io.exists(Path::new("/a/b/c")).unwrap());
+        assert_eq!(io.metadata(Path::new("/a/b")).unwrap().kind, FileKind::Dir);
+        io.create_dir_all(Path::new("/a/b/c")).unwrap();
+    }
+
+    #[test]
+    fn test_create_dir_all_rejects_an_existing_file() {
+        let io = MemIo::default().with_file("/a.txt", "x");
+        assert!(io.create_dir_all(Path::new("/a.txt")).is_err());
     }
 
     #[test]

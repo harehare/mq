@@ -125,6 +125,12 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
 
     /// Writes `content` to `path`, replacing the file.
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError>;
+    /// Creates `path` and any missing parent directories. Succeeds if it already exists as a
+    /// directory. The default refuses, for hosts with no directory concept.
+    fn create_dir_all(&self, _path: &Path) -> Result<(), IoError> {
+        Err(IoError::Other(Cow::Borrowed("creating directories is not supported")))
+    }
+
     /// Whether `path` exists.
     fn exists(&self, path: &Path) -> Result<bool, IoError>;
 

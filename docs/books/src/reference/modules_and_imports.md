@@ -491,7 +491,7 @@ mq --allow-http-import --frozen 'self' file.md
 ## Network and File-Write Capabilities
 
 `http(method, url)` / `http(method, url, body)` / `http(method, url, headers)` /
-`http(method, url, body, headers)` and `write_file(path, content)` are disabled by default and
+`http(method, url, body, headers)`, `write_file(path, content)` and `mkdir(path)` are disabled by default and
 must be explicitly enabled with `--allow-net` / `--allow-write`. Calling them without the
 corresponding flag raises a runtime error explaining how to opt in.
 

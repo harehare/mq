@@ -126,6 +126,10 @@ impl Io for NativeIo {
         std::fs::write(path, content).map_err(|e| io_err(e, path))
     }
 
+    fn create_dir_all(&self, path: &Path) -> Result<(), IoError> {
+        std::fs::create_dir_all(path).map_err(|e| io_err(e, path))
+    }
+
     fn exists(&self, path: &Path) -> Result<bool, IoError> {
         Ok(path.exists())
     }

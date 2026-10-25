@@ -4989,6 +4989,21 @@ fn write_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
+/// Creates the directory `path` and any missing parents, like `mkdir -p`. Succeeds if it
+/// already exists. Requires the ambient [`Io`]'s write permission (see [`io_context`]).
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "mkdir", params = Fixed(1))]
+fn mkdir_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path)] => io_context::current()
+            .create_dir_all(std::path::Path::new(path.as_str()))
+            .map(|()| RuntimeValue::NONE)
+            .map_err(|e| Error::Runtime(format!("Failed to create directory {}: {}", path, e))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => Err(invalid_arity(ident, 1, args.len())),
+    }
+}
+
 #[cfg(feature = "file-io")]
 fn is_embeddable_image_url(url: &str) -> bool {
     !url.starts_with("data:") && !url.contains("://")
@@ -5971,6 +5986,8 @@ mq_macros::builtin_dispatch! {
     WALK_FILES,
     #[cfg(feature = "file-io")]
     WRITE_FILE,
+    #[cfg(feature = "file-io")]
+    MKDIR,
     #[cfg(feature = "file-io")]
     EMBED_IMAGES,
     #[cfg(feature = "file-io")]

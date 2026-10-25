@@ -6,14 +6,14 @@ use mq_hir::SymbolKind;
 /// Kept in sync with the functions gated in
 /// `mq-lang/src/eval/builtin/capability.rs` (`http`, `read_file`,
 /// `read_file_bytes`, `open_file`, `collection`, `walk_files`, `file_exists`, `file_info`,
-/// `write_file`).
+/// `write_file`, `mkdir`).
 fn capability_flag(name: &str) -> Option<&'static str> {
     match name {
         "http" => Some("--allow-net"),
         "read_file" | "read_file_bytes" | "open_file" | "collection" | "walk_files" | "file_exists" | "file_info" => {
             Some("--allow-read")
         }
-        "write_file" => Some("--allow-write"),
+        "write_file" | "mkdir" => Some("--allow-write"),
         _ => None,
     }
 }
@@ -78,6 +78,7 @@ mod tests {
     #[case(r#"read_file_bytes("image.png")"#, 1, "read_file_bytes", "--allow-read")]
     #[case(r#"open_file("big.log")"#, 1, "open_file", "--allow-read")]
     #[case(r#"write_file("out.txt", "data")"#, 1, "write_file", "--allow-write")]
+    #[case(r#"mkdir("out")"#, 1, "mkdir", "--allow-write")]
     #[case(r#"collection("./docs")"#, 1, "collection", "--allow-read")]
     #[case(r#"walk_files("./docs")"#, 1, "walk_files", "--allow-read")]
     #[case(r#"file_exists("./docs")"#, 1, "file_exists", "--allow-read")]

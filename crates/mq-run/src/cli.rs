@@ -555,7 +555,7 @@ struct ProgramArgs {
     #[arg(short = 'R', long = "allow-read", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "PATH")]
     allow_read: Option<Vec<PathBuf>>,
 
-    /// Allow the `write_file`/`extract_images` functions to write to the filesystem.
+    /// Allow the `write_file`/`mkdir`/`extract_images` functions to write to the filesystem.
     /// Under `--sandbox`, this also gates `-o`/`--output` (and `--append`, `--no-clobber`,
     /// `--atomic-output`), which are rejected unless the target is allowed. Without
     /// `--sandbox`, `-o` is not restricted. Disabled by default. Pass with no value to allow writing anywhere, or

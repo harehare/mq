@@ -99,6 +99,7 @@ pub const UNAUDITED_BUILTINS: &[&str] = &[
     "juxt",
     "load_markdown",
     "merge_with",
+    "mkdir",
     "mktime",
     "mock_fetch",
     "open_file",

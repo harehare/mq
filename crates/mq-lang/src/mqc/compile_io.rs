@@ -50,6 +50,10 @@ impl Io for CompileTimeIo {
         self.inner.write(path, content)
     }
 
+    fn create_dir_all(&self, path: &Path) -> Result<(), IoError> {
+        self.inner.create_dir_all(path)
+    }
+
     fn exists(&self, path: &Path) -> Result<bool, IoError> {
         self.inner.exists(path)
     }
