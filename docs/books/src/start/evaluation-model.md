@@ -192,4 +192,4 @@ mq -I null '1 + 1'
 
 ## Exit status
 
-With `-e` / `--exit-status` on Markdown input, a run where every result is `None` or a non-matching `select` exits with `4`. See [Input and Output Behavior](input-and-output.md#exit-codes) for the full table.
+With `-e` / `--exit-status`, a run where every result is empty, such as `None` or a non-matching `select`, exits with `4`. See [Input and Output Behavior](input-and-output.md#exit-codes) for the full table.
