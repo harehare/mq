@@ -41,13 +41,26 @@ mq-dbg -f your-script.mq input.md
 
 ## Debugger Interface
 
-Once the debugger starts, you'll see a prompt `(mqdbg)` where you can enter debugging commands. The debugger will automatically display the current source code location with line numbers, highlighting the current execution point.
+`mq-dbg` runs the script to completion unless it reaches a `breakpoint()` call or fails with `--stop-on-error` set. At that point it shows the current source location with line numbers, marks the current line with `=>`, and opens the `(mqdbg)` prompt for debugging commands.
+
+Given this script, saved as `headings.mq`:
 
 ```
-   10| def process_headers() {
-=> 11|   . | select(.type == "heading")
-   12|     | map(.level)
-   13| }
+def level_of(h):
+  breakpoint()
+  | h.depth;
+
+.h | level_of()
+```
+
+`mq-dbg -f headings.mq input.md` stops at the `breakpoint()` call:
+
+```
+   1| def level_of(h):
+=> 2|   breakpoint()
+   3|   | h.depth;
+   4|
+   5| .h | level_of()
 (mqdbg)
 ```
 
@@ -109,11 +122,14 @@ Breakpoints:
 
 You can also set breakpoints directly in your mq code using the `breakpoint()` function:
 
+<!-- doc-test: skip -->
 ```mq
-def process_data(items) {
-   breakpoint()  # Execution will pause here when debugger is attached
-   | items | filter(fn(item): item == "test")
-}
+def process_data(items):
+  breakpoint()  # Execution will pause here when debugger is attached
+  | filter(items, fn(item): item == "test";);
+
+process_data(["test", "other"])
+# => ["test"]
 ```
 
 When the debugger encounters a `breakpoint()` function call during execution, it will automatically pause and enter interactive debugging mode.
