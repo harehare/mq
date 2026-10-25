@@ -242,8 +242,7 @@ impl DebuggerHandler {
             }
         }
 
-        let (start, snippet) = self.get_source_code_with_context(context, context.range.start.line as usize, 5);
-        Self::print_source_code(start, context.range.start.line as usize + 1, snippet);
+        self.print_current_source(context);
         #[cfg(feature = "debug-trace")]
         if self.dump_stack {
             self.print_operand_stack(context);
@@ -266,12 +265,9 @@ impl DebuggerHandler {
                             let range = self.engine.token_arena().read().unwrap()[frame.token_id].range;
 
                             match &frame.expr {
-                                mq_lang::AstExpr::Call(ident, _) => Some(format!(
-                                    "{} at {}:{}",
-                                    ident,
-                                    range.start.line + 1,
-                                    range.start.column + 1
-                                )),
+                                mq_lang::AstExpr::Call(ident, _) => {
+                                    Some(format!("{} at {}:{}", ident, range.start.line, range.start.column))
+                                }
                                 _ => None,
                             }
                         })
@@ -287,14 +283,10 @@ impl DebuggerHandler {
                 Command::Clear(line_opt) => {
                     return Ok(mq_lang::DebuggerAction::Clear(line_opt));
                 }
-                Command::List => {
-                    let (start, snippet) =
-                        self.get_source_code_with_context(context, context.range.start.line as usize, 5);
-                    Self::print_source_code(start, context.range.start.line as usize + 1, snippet);
-                }
+                Command::List => self.print_current_source(context),
                 Command::LongList => {
                     let lines: Vec<String> = context.source.code.lines().map(|s| s.to_string()).collect();
-                    Self::print_source_code(0, context.range.start.line as usize + 1, lines);
+                    Self::print_source_code(0, Self::current_line(context), lines);
                 }
                 Command::Info => {
                     println!(
@@ -404,8 +396,8 @@ impl DebuggerHandler {
                 "  {}: {}:{}:{}",
                 "location".cyan(),
                 source_name.dimmed(),
-                (position.line + 1).to_string().dimmed(),
-                (position.column + 1).to_string().dimmed()
+                position.line.to_string().dimmed(),
+                position.column.to_string().dimmed()
             );
             println!(
                 "  {}: {} {}",
@@ -415,11 +407,7 @@ impl DebuggerHandler {
             );
         } else {
             println!("Tarn VM operand stack");
-            println!(
-                "  location: {source_name}:{}:{}",
-                position.line + 1,
-                position.column + 1
-            );
+            println!("  location: {source_name}:{}:{}", position.line, position.column);
             println!("  values: {} (bottom → top)", context.operand_stack.len());
         }
         if context.operand_stack.is_empty() {
@@ -465,6 +453,17 @@ impl DebuggerHandler {
         } else {
             preview
         }
+    }
+
+    /// One-based line the debugger is paused on.
+    fn current_line(context: &DebugContext) -> usize {
+        (context.range.start.line as usize).max(1)
+    }
+
+    fn print_current_source(&self, context: &DebugContext) {
+        let line = Self::current_line(context);
+        let (start, snippet) = self.get_source_code_with_context(context, line - 1, 5);
+        Self::print_source_code(start, line, snippet);
     }
 
     fn get_source_code_with_context(
