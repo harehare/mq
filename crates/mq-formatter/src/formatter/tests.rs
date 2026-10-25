@@ -1734,3 +1734,16 @@ proptest::proptest! {
         proptest::prop_assert_eq!(twice, once);
     }
 }
+
+#[rstest]
+#[case::space_chain("# c\n.blockquote .code\n")]
+#[case::space_chain_call("# c\n.blockquote .code(\"rust\")\n")]
+#[case::two_comments("# c1\n# c2\n.blockquote .list\n")]
+#[case::property_list("# c\n.\"a\"[]\n")]
+#[case::property_chain("# c\n.\"a\".\"b\"\n")]
+fn test_format_selector_chain_keeps_leading_comment_once(#[case] code: &str) {
+    let once = Formatter::new(None).format(code).unwrap();
+    let twice = Formatter::new(None).format(&once).unwrap();
+    assert_eq!(once, code);
+    assert_eq!(once, twice);
+}
