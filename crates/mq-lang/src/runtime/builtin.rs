@@ -60,7 +60,6 @@ use mq_markdown;
 
 /// Maximum number of elements allowed in a generated range
 pub(super) const MAX_RANGE_SIZE: usize = 1_000_000;
-const MAX_REPEAT_COUNT: usize = 1_000;
 /// Maximum number of bytes a single `read_bytes` call may request from a reader handle
 #[cfg(any(feature = "file-io", feature = "http"))]
 pub(super) const MAX_READ_BYTES: usize = 64 * 1024 * 1024;
@@ -2959,34 +2958,6 @@ fn div_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 fn mul_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
-        [RuntimeValue::Array(array), RuntimeValue::Number(n)]
-        | [RuntimeValue::Number(n), RuntimeValue::Array(array)] => {
-            if n.is_int() && n.value() >= 0.0 && n.value() <= MAX_REPEAT_COUNT as f64 {
-                // Integer multiplication within repeat limit: repeat the array
-                repeat(&mut RuntimeValue::Array(std::mem::take(array)), n.value() as usize)
-            } else {
-                // Non-integer, negative, or too large multiplication: multiply each element
-                let result: Result<Vec<RuntimeValue>, Error> = Shared::unwrap_or_clone(std::mem::take(array))
-                    .into_iter()
-                    .map(|v| {
-                        let mut args = vec![v, RuntimeValue::Number(*n)];
-                        match args.as_mut_slice() {
-                            [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 * *n2).into()),
-                            [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
-                                (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 * n2).into()),
-                                (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
-                                _ => Err(Error::InvalidTypes(
-                                    constants::builtins::MUL.to_string(),
-                                    vec![std::mem::take(&mut args[0]), std::mem::take(&mut args[1])],
-                                )),
-                            },
-                            _ => Err(invalid_arity(constants::builtins::MUL, 2, args.len())),
-                        }
-                    })
-                    .collect();
-                result.map(|v| RuntimeValue::Array(Shared::new(v)))
-            }
-        }
         [v, RuntimeValue::Number(n)] | [RuntimeValue::Number(n), v] => {
             if n.is_int() && n.value() >= 0.0 {
                 repeat(v, n.value() as usize)

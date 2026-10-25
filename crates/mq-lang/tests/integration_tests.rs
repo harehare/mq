@@ -2058,18 +2058,6 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::array_index_out_of_bounds("[1, 2, 3] | .[5]",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::NONE].into()))]
-#[case::array_mul_decimal("[2,1]*0.2",
-        vec![RuntimeValue::Number(0.into())],
-        Ok(vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::Number(0.4.into()),
-            RuntimeValue::Number(0.2.into())
-        ]))].into()))]
-#[case::array_mul_large_number("[0.4,0.2]*5E9",
-        vec![RuntimeValue::Number(0.into())],
-        Ok(vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::Number(2000000000.0.into()),
-            RuntimeValue::Number(1000000000.0.into())
-        ]))].into()))]
 #[case::array_mul_small_integer("[1,2]*5",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Array(Shared::new(vec![
@@ -2094,18 +2082,6 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
             }
             RuntimeValue::Array(Shared::new(arr))
         }].into()))]
-#[case::array_mul_over_boundary("[1,2]*1001",
-        vec![RuntimeValue::Number(0.into())],
-        Ok(vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::Number(1001.into()),
-            RuntimeValue::Number(2002.into())
-        ]))].into()))]
-#[case::range_mul_decimal_large("2..1*.2*5E9",
-        vec![RuntimeValue::Number(0.into())],
-        Ok(vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::Number(2000000000.0.into()),
-            RuntimeValue::Number(1000000000.0.into())
-        ]))].into()))]
 #[case::array_concat_normal("[1,2]+[3,4]",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Array(Shared::new(vec![
@@ -4076,6 +4052,10 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::send_without_value("send()", vec![RuntimeValue::None],)]
 #[case::send_too_many_arguments("send(None, None, None)", vec![RuntimeValue::None],)]
 #[case::yield_in_inline_module("def g(): module m: yield: 1 end; | g()", vec![RuntimeValue::None],)]
+#[case::mul_array_fraction_is_error("[1, 2] * 2.5", vec![RuntimeValue::None],)]
+#[case::mul_array_negative_is_error("[1, 2] * -1", vec![RuntimeValue::None],)]
+#[case::mul_number_array_fraction_is_error("0.5 * [1, 2]", vec![RuntimeValue::None],)]
+#[case::mul_array_too_large_is_error("[1, 2] * 1000000", vec![RuntimeValue::None],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }
