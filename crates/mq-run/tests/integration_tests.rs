@@ -2582,3 +2582,23 @@ fn test_update_mode_to_h_preserves_non_matching_nodes() -> Result<(), Box<dyn st
 
     Ok(())
 }
+
+/// A reader-less stderr pipe (EPIPE) must not turn the error report into a panic.
+#[cfg(unix)]
+#[rstest]
+#[case::human("human")]
+#[case::json("json")]
+fn test_error_report_ignores_broken_stderr(#[case] format: &str) {
+    let (reader, writer) = std::io::pipe().expect("Failed to create pipe");
+    drop(reader);
+
+    let status = std::process::Command::new(cargo::cargo_bin!("mq"))
+        .args(["--error-format", format, "bad("])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(writer)
+        .status()
+        .expect("Failed to run mq");
+
+    assert_eq!(status.code(), Some(3), "expected a syntax error exit code, not a panic");
+}
