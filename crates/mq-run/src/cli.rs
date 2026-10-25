@@ -1077,7 +1077,7 @@ impl Cli {
         match Self::execute_external_command(name, &command_path, &args[2..]) {
             Ok(code) => Some(std::process::ExitCode::from(code)),
             Err(err) => {
-                eprintln!("{:?}", err);
+                let _ = writeln!(io::stderr(), "{err:?}");
                 Some(std::process::ExitCode::FAILURE)
             }
         }
@@ -1721,20 +1721,24 @@ impl Cli {
         }
     }
 
-    /// Prints an uncaught error to stderr per `--error-format`.
+    /// Prints an uncaught error to stderr per `--error-format`. Write failures such as a closed stderr are ignored.
     pub fn report_error(&self, err: &miette::Report) {
-        match self.error_format {
-            ErrorFormat::Human => {
-                eprintln!("Error: {err:?}");
-                if let Some(hint) = Self::capability_hint(&err.to_string()) {
-                    eprintln!("  hint: {hint}");
-                }
-            }
+        let mut stderr = io::stderr().lock();
+        let _ = match self.error_format {
+            ErrorFormat::Human => Self::write_human_error(&mut stderr, err),
             ErrorFormat::Json => match Self::render_error_json(err) {
-                Some(json) => eprintln!("{json}"),
-                None => eprintln!("Error: {err:?}"),
+                Some(json) => writeln!(stderr, "{json}"),
+                None => writeln!(stderr, "Error: {err:?}"),
             },
+        };
+    }
+
+    fn write_human_error<W: Write>(out: &mut W, err: &miette::Report) -> io::Result<()> {
+        writeln!(out, "Error: {err:?}")?;
+        if let Some(hint) = Self::capability_hint(&err.to_string()) {
+            writeln!(out, "  hint: {hint}")?;
         }
+        Ok(())
     }
 
     #[cold]
