@@ -34,7 +34,7 @@ These are the examples that do not match, grouped by reason. None of them is a p
 | Autolink literals | GFM extended autolinks (`www.example.com`) that the base spec does not have                                                        | 598, 604, 607, 608                          |
 | Tag filter        | `<script>`, `<style>` and `<textarea>` are written as text                                                                         | 140, 141, 142, 145, 147                     |
 
-The CommonMark 0.31.2 failures are the same five groups (frontmatter 96 and 98; link protocols 500, 598, 599 and 601; autolink literals 602, 608, 611 and 612; tag filter 170, 171, 172, 173, 176 and 178). The GFM extensions spec has four: example 20 is input that only has to not crash and has no expected output, and examples 23 to 25 are footnotes, which are rendered as current GitHub and micromark do rather than as the older spec text.
+The CommonMark 0.31.2 failures are the same five groups (frontmatter 96 and 98; link protocols 500, 598, 599 and 601; autolink literals 602, 608, 611 and 612; tag filter 170, 171, 172, 173, 176 and 178). The GFM extensions spec has four: example 20 is input that only has to not crash and has no expected output, and examples 23 to 25 are footnotes, which are rendered as current GitHub does rather than as the older spec text.
 
 ## Performance
 
@@ -47,6 +47,8 @@ Rough numbers from a `--release` build, median of 31 runs for the small inputs a
 | the same documentation, 20 times over | 5.9 MB | 110,560 | 55 ms (108 MB/s)  | 116 ms  | 42 ms     |
 
 `to_html(&str)`, which parses and renders in one call, runs at 83 to 116 MB/s on the same inputs. Twenty times the input takes about 22 times as long, so the cost grows with the size of the document.
+
+For reference, [`comrak`](https://github.com/kivikakk/comrak) (a Rust port of cmark-gfm) 0.40.0 is in the same range. Parse time on the same three inputs, GFM enabled, in a separate run: 1.8 / 2.9 / 61 ms for `comrak` against 2.0 / 2.6 / 57 ms for `mq-markdown`.
 
 ### Adversarial input
 
@@ -66,21 +68,7 @@ Input that is built to make a parser slow is a known problem for Markdown, so th
 
 Nesting is bounded rather than slow: block containers (quotes and lists) and inline emphasis nest to 128 levels, and the rest is kept as text. For example, 1,000 `> ` markers produce 128 nested block quotes and the remaining `> ` characters stay in the text, so a hostile document cannot exhaust the stack. MDX elements nested deeper than 128 are an error. `tests/parser_limits_tests.rs` runs these cases, and others such as unclosed comments, runs of backticks of every length and tab-separated inlines, in the normal test suite.
 
-### For reference: other Rust parsers
-
-Other crates differ in what they build and how they are configured, so this is a guide to what to expect, not a ranking. Same inputs as above, GFM enabled in each, `--release`, median of 31 runs (7 for the large input), with `comrak` 0.40.0 and `markdown` (markdown-rs) 1.0.0. Parse builds the tree, and HTML is the one-call Markdown to HTML.
-
-| Input (size)                | mq-markdown parse / HTML | comrak parse / HTML | markdown-rs parse / HTML |
-| --------------------------- | ------------------------ | ------------------- | ------------------------ |
-| CommonMark spec (205 KB)    | 2.0 ms / 1.6 ms          | 1.8 ms / 2.3 ms     | 31.9 ms / 32.4 ms        |
-| mq documentation (298 KB)   | 2.6 ms / 3.3 ms          | 2.9 ms / 3.5 ms     | 41.2 ms / 43.4 ms        |
-| the same, 20 times (5.9 MB) | 57 ms / 70 ms            | 61 ms / 77 ms       | 9,292 ms / 9,977 ms      |
-
-- `mq-markdown` and `comrak` build a full syntax tree and are in the same range here. Both ran at roughly 80 to 130 MB/s.
-- `markdown-rs` also builds a tree (mdast). On these inputs it took tens of milliseconds for a few hundred KB, and the 5.9 MB input took 9.3 s, which is more than the 20 times growth in size. Its readme recommends capping the input size (500 KB) and running it on a thread you can stop, so a large or untrusted document is where this matters.
-- Crates that do not build a tree are not in this table, since the work they do is different.
-
-The numbers are a rough guide from one run on one machine, not a benchmark suite. Documents with many tables, long code blocks or heavy inline markup can shift the order. To check your own, parse your documents with `std::time::Instant` in a `--release` build.
+The numbers are a rough guide from one run on one machine, not a benchmark suite. To check your own, parse your documents with `std::time::Instant` in a `--release` build.
 
 ## Install
 
