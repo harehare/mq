@@ -483,7 +483,7 @@ struct ProgramArgs {
     #[arg(short = 'L', long = "directory")]
     module_directories: Option<Vec<PathBuf>>,
 
-    /// Load additional modules from specified files
+    /// Load additional modules by name
     #[arg(short = 'M', long)]
     module_names: Option<Vec<String>>,
 
