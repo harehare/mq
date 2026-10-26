@@ -2115,6 +2115,16 @@ impl Cli {
             None => ".".to_string(),
         };
 
+        if query
+            .lines()
+            .all(|line| matches!(line.trim().chars().next(), None | Some('#')))
+        {
+            return Err(miette!(
+                help = "use `.` to pass the input through unchanged",
+                "empty query: no expression to evaluate"
+            ));
+        }
+
         Ok(query)
     }
 
