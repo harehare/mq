@@ -2548,6 +2548,10 @@ fn test_watch_reruns_on_file_change() -> Result<(), Box<dyn std::error::Error>> 
         "expected a re-run to print the heading after the file changed"
     );
 
+    // The query's own reads must not retrigger it (Access events on Linux).
+    let extra_runs = std::iter::from_fn(|| rx.recv_timeout(Duration::from_millis(1500)).ok()).count();
+    assert_eq!(extra_runs, 0, "watch re-ran without any further edit");
+
     Ok(())
 }
 

@@ -2576,6 +2576,16 @@ impl Cli {
         }
     }
 
+    /// Access events are excluded: the query's own read of a watched file would
+    /// otherwise trigger the next re-run endlessly.
+    #[cfg(feature = "watch")]
+    fn is_content_change(kind: &notify::EventKind) -> bool {
+        matches!(
+            kind,
+            notify::EventKind::Create(_) | notify::EventKind::Modify(_) | notify::EventKind::Remove(_)
+        )
+    }
+
     /// Watches each target's parent dir (not the file itself) and filters by filename,
     /// since editors that save via delete-and-rename would break a watch on the file's inode.
     #[cfg(feature = "watch")]
@@ -2601,7 +2611,9 @@ impl Cli {
 
         let (tx, rx) = mpsc::channel::<PathBuf>();
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if let Ok(event) = res {
+            if let Ok(event) = res
+                && Self::is_content_change(&event.kind)
+            {
                 for path in event.paths {
                     let _ = tx.send(path);
                 }
