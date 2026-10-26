@@ -196,11 +196,27 @@ impl Error {
 // scope at the point of failure, considered alongside builtins.
 #[cold]
 fn not_defined_help(name: &str, candidates: &[String]) -> Cow<'static, str> {
+    if !candidates.iter().any(|c| c == name)
+        && let Some(literal) = foreign_literal(name)
+    {
+        return Cow::Owned(format!("'{name}' is not defined. mq uses `{literal}`."));
+    }
+
     match crate::suggest::suggest_name(name, candidates.iter().map(|s| s.as_str())) {
         Some(similar) => Cow::Owned(format!(
             "'{name}' is not defined. A function with a similar name exists: `{similar}`."
         )),
         None => Cow::Owned(format!("'{name}' is not defined. Did you forget to declare it?")),
+    }
+}
+
+// mq literal that corresponds to a literal spelled differently in JSON, Python or similar.
+fn foreign_literal(name: &str) -> Option<&'static str> {
+    match name {
+        "null" | "nil" | "NULL" | "Null" | "undefined" => Some("None"),
+        "True" | "TRUE" => Some("true"),
+        "False" | "FALSE" => Some("false"),
+        _ => None,
     }
 }
 
@@ -1035,6 +1051,23 @@ mod test {
             help,
             Some("'slpit' is not defined. A function with a similar name exists: `split`.".to_string())
         );
+    }
+
+    #[test]
+    fn test_not_defined_help_suggests_none_for_null() {
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let cause = InnerError::Runtime(RuntimeError::NotDefined(
+            Token {
+                range: Range::default(),
+                kind: TokenKind::Eof,
+                module_id: ArenaId::new(0),
+            },
+            "null".to_string(),
+            Box::new([]),
+        ));
+        let error = Error::from_error("source code", cause, module_loader);
+        let help = error.help().map(|h| h.to_string());
+        assert_eq!(help, Some("'null' is not defined. mq uses `None`.".to_string()));
     }
 
     #[test]
