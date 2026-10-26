@@ -2634,3 +2634,24 @@ fn test_cli_reports_query_error_before_stdin_closes(#[case] query: &str) {
     };
     assert_eq!(status.and_then(|s| s.code()), Some(3));
 }
+
+#[rstest::rstest]
+#[case::auto_non_tty(&[], false)]
+#[case::never(&["--color=never"], false)]
+#[case::always(&["--color=always"], true)]
+#[case::short_flag(&["-C"], true)]
+fn test_color_choice(#[case] args: &[&str], #[case] expect_ansi: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .args(args)
+        .arg(".h")
+        .env_remove("NO_COLOR")
+        .write_stdin("# title\n")
+        .assert()
+        .success();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert_eq!(output.contains('\u{1b}'), expect_ansi, "{output:?}");
+
+    Ok(())
+}

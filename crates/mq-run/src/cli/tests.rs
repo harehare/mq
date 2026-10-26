@@ -936,7 +936,7 @@ fn test_cli_color_output() {
     let cli = Cli {
         input: InputArgs::default(),
         output: OutputArgs {
-            color_output: true,
+            color: ColorChoice::Always,
             ..Default::default()
         },
         commands: None,
