@@ -448,6 +448,7 @@ impl Diagnostic for Error {
     #[cold]
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
         let label = match &self.cause {
+            InnerError::Syntax(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::Eof => "invalid input",
             InnerError::Syntax(SyntaxError::UnexpectedToken(_)) => "unexpected token",
             InnerError::Syntax(SyntaxError::InsufficientTokens(_)) => "expression incomplete here",
             InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, _)) => "expected `)` here",
@@ -465,6 +466,11 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::UnmatchedEnd(_)) => "unmatched `end` keyword",
             InnerError::Syntax(SyntaxError::TooDeeplyNested(_, _)) => "nesting too deep",
             InnerError::Runtime(_) => "error occurred here",
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(token)))
+                if token.kind == TokenKind::Eof =>
+            {
+                "invalid input"
+            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(_))) => "unexpected token",
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InsufficientTokens(_))) => {
                 "expression incomplete here"
@@ -552,6 +558,24 @@ mod test {
     #[fixture]
     fn module_loader() -> ModuleLoader {
         ModuleLoader::default()
+    }
+
+    #[test]
+    fn test_unconsumed_input_is_not_reported_as_eof_token() {
+        let token = |kind| Token {
+            range: Range::default(),
+            kind,
+            module_id: ArenaId::new(0),
+        };
+
+        assert_eq!(
+            SyntaxError::UnexpectedToken(token(TokenKind::Eof)).to_string(),
+            "Invalid or unsupported input"
+        );
+        assert_eq!(
+            SyntaxError::UnexpectedToken(token(TokenKind::Pipe)).to_string(),
+            "Unexpected token `|`"
+        );
     }
 
     #[test]
