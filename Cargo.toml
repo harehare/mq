@@ -97,9 +97,9 @@ ignore = "0.4.31"
 regex = {version = "1.13", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case"]}
 reqwest = {version = "0.13"}
 robots_txt = "0.7"
-rstest = "0.27.0"
+rstest = "0.28.0"
 rustc-hash = "2.1.2"
-rustyline = {version = "18.0.0", default-features = false}
+rustyline = {version = "19.0.0", default-features = false}
 scopeguard = "1.2.0"
 scraper = "0.27.0"
 serde = "1.0"
