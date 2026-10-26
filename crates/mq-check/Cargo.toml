@@ -45,7 +45,7 @@ url = {workspace = true, optional = true}
 
 [dev-dependencies]
 mq-help = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "file-io", "process-io", "debugger"]}
+mq-lang = {workspace = true, features = ["cst", "file-io", "process-io", "debugger", "mock-io"]}
 mq-test = {workspace = true}
 proptest = {workspace = true}
 rstest = {workspace = true}
