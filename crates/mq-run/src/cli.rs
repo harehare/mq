@@ -2116,7 +2116,7 @@ impl Cli {
         };
 
         if query
-            .lines()
+            .split(['\r', '\n'])
             .all(|line| matches!(line.trim().chars().next(), None | Some('#')))
         {
             return Err(miette!(

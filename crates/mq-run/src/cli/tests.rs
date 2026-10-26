@@ -3568,6 +3568,7 @@ fn test_argjson_combined_with_args_and_argv() {
 #[case::empty("")]
 #[case::whitespace("  \n ")]
 #[case::comment("# only a comment")]
+#[case::comment_cr("# only a comment\r# another")]
 fn test_empty_query_is_rejected(#[case] query: &str) {
     let cli = Cli {
         input: InputArgs {
@@ -3583,6 +3584,16 @@ fn test_empty_query_is_rejected(#[case] query: &str) {
 
     let err = cli.run().expect_err("empty query should fail").to_string();
     assert!(err.contains("empty query"), "unexpected error: {err}");
+}
+
+#[test]
+fn test_comment_ended_by_carriage_return_is_not_empty() {
+    let cli = Cli {
+        query: Some("# comment\r.".to_string()),
+        ..Cli::default()
+    };
+
+    assert_eq!(cli.get_query().unwrap(), "# comment\r.");
 }
 
 #[rstest]
