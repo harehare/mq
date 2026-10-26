@@ -29,7 +29,7 @@ use crate::io::Io;
 use crate::lexer::token::{Token, TokenKind};
 use crate::runtime::builtin::{self, io_context};
 use crate::tarn::{self, split_program::SplitProgram};
-use crate::{Engine, Ident, ModuleResolver, Position, Range, Shared, error, parse, token_alloc};
+use crate::{Engine, Ident, ModuleResolver, Position, Range, Shared, error, parse_with_prelude, token_alloc};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use wire::{Reader, Writer};
@@ -275,12 +275,23 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// once and saved. Engine globals are not saved: the program reads them when it runs.
     /// `metadata` is stored as-is for the embedder (see [`Mqc::metadata`]).
     pub fn precompile(&mut self, code: &str, metadata: &[(&str, &str)]) -> Result<Mqc, MqcError> {
+        self.precompile_with_prelude("", code, metadata)
+    }
+
+    /// Like [`Self::precompile`], running `prelude` before `code` (see [`Self::compile_with_prelude`]).
+    #[doc(hidden)]
+    pub fn precompile_with_prelude(
+        &mut self,
+        prelude: &str,
+        code: &str,
+        metadata: &[(&str, &str)],
+    ) -> Result<Mqc, MqcError> {
         let io = Shared::new(compile_io::CompileTimeIo::new(
             Shared::clone(&self.vm.io) as Shared<dyn Io>
         ));
         let result = {
             let _io_guard = io_context::scoped(Shared::clone(&io) as Shared<dyn Io>);
-            self.precompile_inner(code, metadata)
+            self.precompile_inner(prelude, code, metadata)
         };
         // A read may also fail silently inside `try`, so check even on success.
         match io.env_read() {
@@ -289,8 +300,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         }
     }
 
-    fn precompile_inner(&mut self, code: &str, metadata: &[(&str, &str)]) -> Result<Mqc, MqcError> {
-        let program = parse(code, Shared::clone(&self.token_arena)).map_err(MqcError::Compile)?;
+    fn precompile_inner(&mut self, prelude: &str, code: &str, metadata: &[(&str, &str)]) -> Result<Mqc, MqcError> {
+        let program = parse_with_prelude(prelude, code, Shared::clone(&self.token_arena)).map_err(MqcError::Compile)?;
         let prepared = tarn::build_program(&program, Shared::clone(&self.token_arena), &self.vm_module_prelude)
             .map_err(MqcError::Compile)?;
         let program = prepared.as_ref().unwrap_or(&program);

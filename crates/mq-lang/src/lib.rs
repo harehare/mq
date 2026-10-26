@@ -194,6 +194,21 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
         .map_err(|e| Box::new(error::Error::from_error(code, e, DefaultModuleLoader::default())))
 }
 
+/// Parses `prelude` and `code` separately and joins them, so diagnostics only ever
+/// point into `code`.
+pub(crate) fn parse_with_prelude(
+    prelude: &str,
+    code: &str,
+    token_arena: TokenArena,
+) -> Result<Program, Box<error::Error>> {
+    if prelude.is_empty() {
+        return parse(code, token_arena);
+    }
+    let mut program = parse(prelude, Shared::clone(&token_arena))?;
+    program.extend(parse(code, token_arena)?);
+    Ok(program)
+}
+
 /// Parses `code` as the source of `module_id`.
 pub(crate) fn parse_in_module(
     code: &str,

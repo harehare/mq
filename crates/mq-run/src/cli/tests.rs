@@ -2724,6 +2724,25 @@ fn test_auto_query_prefix_none_for_no_file() {
 }
 
 #[rstest]
+#[case::none("file.md", false, "")]
+#[case::aggregate("file.md", true, "nodes")]
+#[case::format("file.json", false, r#"import "json" | json::json_parse()"#)]
+#[case::format_then_aggregate("file.json", true, r#"import "json" | json::json_parse() | nodes"#)]
+fn test_query_prelude(#[case] filename: &str, #[case] aggregate: bool, #[case] expected: &str) {
+    let cli = Cli {
+        input: InputArgs {
+            program: ProgramArgs {
+                aggregate,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Cli::default()
+    };
+    assert_eq!(cli.query_prelude(&Some(PathBuf::from(filename))), expected);
+}
+
+#[rstest]
 #[case(InputFormat::Csv, None, false, r#"import "csv" | csv::csv_parse(true)"#)]
 #[case(InputFormat::Csv, None, true, r#"import "csv" | csv::csv_parse(false)"#)]
 #[case(
