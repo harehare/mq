@@ -30,7 +30,7 @@ all at once, including `$VAR` access.
 
 ### `NO_COLOR`
 
-When set to a non-empty value, disables all colored output regardless of the `-C` flag. This follows the [NO_COLOR](https://no-color.org/) standard.
+When set to a non-empty value, disables all colored output, including `--color=always` and `-C`. This follows the [NO_COLOR](https://no-color.org/) standard.
 
 ```sh
 # Disable colored output
@@ -39,7 +39,7 @@ NO_COLOR=1 mq -C '.h' README.md
 
 ### `MQ_COLORS`
 
-Customizes the colors used when `-C` (color output) is enabled. The format is a colon-separated list of `key=value` pairs, where each value is a semicolon-separated list of [SGR (Select Graphic Rendition)](https://en.wikipedia.org/wiki/ANSI_escape_code#SGR) parameters.
+Customizes the colors used when color output is enabled (see [`--color`](../start/input-and-output.md#color)). The format is a colon-separated list of `key=value` pairs, where each value is a semicolon-separated list of [SGR (Select Graphic Rendition)](https://en.wikipedia.org/wiki/ANSI_escape_code#SGR) parameters.
 
 ```sh
 # Make headings bold red, code blocks blue

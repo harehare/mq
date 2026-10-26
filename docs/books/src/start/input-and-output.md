@@ -20,16 +20,16 @@ A block quote that starts with `[!TYPE]` is a callout. It becomes a `div` with t
 
 ```html
 <div class="callout" data-callout="note">
-<div class="callout-title">Title</div>
-<div class="callout-content">
-<p>body</p>
-</div>
+  <div class="callout-title">Title</div>
+  <div class="callout-content">
+    <p>body</p>
+  </div>
 </div>
 <details class="callout" data-callout="tip">
-<summary class="callout-title">Folded</summary>
-<div class="callout-content">
-<p>hidden</p>
-</div>
+  <summary class="callout-title">Folded</summary>
+  <div class="callout-content">
+    <p>hidden</p>
+  </div>
 </details>
 ```
 
@@ -47,6 +47,24 @@ Raw HTML in the input is kept, except for the tags that GFM filters: `<script>`,
 
 ```html
 &lt;script>alert(1)&lt;/script>
+```
+
+## Color
+
+`--color=WHEN` controls whether Markdown output is colorized. `WHEN` is one of:
+
+| Value            | Behavior                                                                       |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `auto` (default) | Color only when stdout is a terminal, `-o` is not set and `TERM` is not `dumb` |
+| `always`         | Always color                                                                   |
+| `never`          | Never color                                                                    |
+
+`-C` alone is the same as `--color=always`, and `--color-output` is an alias of `--color`. `NO_COLOR` overrides `always`. See [Environment Variables](../reference/env.md#color-configuration) for `NO_COLOR` and `MQ_COLORS`.
+
+```sh
+mq '.h' README.md               # colored on a terminal, plain when piped
+mq -C '.h' README.md | less -R  # force color
+mq --color=never '.h' README.md # no color
 ```
 
 ## List style
@@ -93,19 +111,19 @@ body
 
 Exit codes follow jq. `halt(code)` exits with `code`.
 
-| Code | Meaning |
-| ---- | ------- |
-| 0 | Success |
-| 2 | An input or query file could not be read, or the command-line arguments are invalid |
-| 3 | The query has a syntax or module error |
-| 5 | A runtime error |
+| Code | Meaning                                                                             |
+| ---- | ----------------------------------------------------------------------------------- |
+| 0    | Success                                                                             |
+| 2    | An input or query file could not be read, or the command-line arguments are invalid |
+| 3    | The query has a syntax or module error                                              |
+| 5    | A runtime error                                                                     |
 
 With `-e` / `--exit-status` the exit code also reflects the result:
 
-| Code | Meaning |
-| ---- | ------- |
-| 0 | At least one result was not empty |
-| 4 | Every result was empty, such as `select()` matching nothing |
+| Code | Meaning                                                     |
+| ---- | ----------------------------------------------------------- |
+| 0    | At least one result was not empty                           |
+| 4    | Every result was empty, such as `select()` matching nothing |
 
 `None`, `""`, `[]`, `{}` and a non-matching `select()` are empty. Other values, including `false` and `0`, are results.
 
