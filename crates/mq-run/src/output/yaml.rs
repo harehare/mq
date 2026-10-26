@@ -7,12 +7,12 @@ use miette::miette;
 use yaml_rust2::{Yaml, YamlEmitter, yaml::Hash};
 
 /// Whether another YAML parser would read `s` as a non-string even though `yaml-rust2` leaves it
-/// unquoted: `0o17` (1.2 octal), `1_000` (1.1 integer) and `2024-01-01` (1.1 date).
+/// unquoted: `0o17` (1.2 octal), `1_000` (1.1 integer, optionally signed) and `2024-01-01` (1.1 date).
 fn needs_forced_quotes(s: &str) -> bool {
-    let is_octal = s
+    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+    let is_octal = unsigned
         .strip_prefix("0o")
         .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| (b'0'..=b'7').contains(&b)));
-    let unsigned = s.strip_prefix('+').unwrap_or(s);
     let is_underscored_number = unsigned.contains('_')
         && unsigned.starts_with(|c: char| c.is_ascii_digit())
         && unsigned.bytes().all(|b| b.is_ascii_digit() || b == b'_');
@@ -90,6 +90,9 @@ mod tests {
     #[case("0o17", "\"0o17\"")]
     #[case("1_000", "\"1_000\"")]
     #[case("+1_000", "\"+1_000\"")]
+    #[case("-1_000", "\"-1_000\"")]
+    #[case("+0o17", "\"+0o17\"")]
+    #[case("-0o17", "\"-0o17\"")]
     #[case("2024-01-01", "\"2024-01-01\"")]
     #[case("2024-1-1", "\"2024-1-1\"")]
     #[case("0o18", "0o18")]
