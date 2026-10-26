@@ -39,7 +39,7 @@ mq -F grep 'select(contains("TODO"))' file.md               # Grep-style output
 mq '."name"' package.json                                   # JSON field (auto-detected)
 mq '."version"' Cargo.toml                                  # TOML field (auto-detected)
 mq '."dependencies" | keys' package.json                    # JSON object keys
-mq --csv 'include "csv" | csv_parse(true) | csv_to_markdown_table()' data.csv
+mq -I raw 'include "csv" | csv_parse(true) | csv_to_markdown_table()' data.csv
 mq -I raw 'identity()' data.json                            # Disable auto-parse
 ```
 
