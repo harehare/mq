@@ -13,11 +13,38 @@ use mq_lang::DictMap;
 use mq_lang::Shared;
 use mq_lang::{Ident, RuntimeValue};
 use quick_xml::Writer;
-use quick_xml::escape::escape;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 
 fn xml_err(e: std::io::Error) -> miette::Report {
     miette!("Failed to write XML: {}", e)
+}
+
+fn is_name_start_char(c: char) -> bool {
+    matches!(c,
+        '_' | 'A'..='Z' | 'a'..='z' | '\u{C0}'..='\u{D6}' | '\u{D8}'..='\u{F6}' | '\u{F8}'..='\u{2FF}'
+        | '\u{370}'..='\u{37D}' | '\u{37F}'..='\u{1FFF}' | '\u{200C}'..='\u{200D}'
+        | '\u{2070}'..='\u{218F}' | '\u{2C00}'..='\u{2FEF}' | '\u{3001}'..='\u{D7FF}'
+        | '\u{F900}'..='\u{FDCF}' | '\u{FDF0}'..='\u{FFFD}' | '\u{10000}'..='\u{EFFFF}')
+}
+
+fn is_name_char(c: char) -> bool {
+    is_name_start_char(c)
+        || matches!(c, '-' | '.' | '0'..='9' | '\u{B7}' | '\u{300}'..='\u{36F}' | '\u{203F}'..='\u{2040}')
+}
+
+/// Returns true if `name` is a valid XML name. A `:` is accepted only when `allow_colon` is set.
+fn is_valid_name(name: &str, allow_colon: bool) -> bool {
+    let ok_start = |c: char| is_name_start_char(c) || (allow_colon && c == ':');
+    let ok_char = |c: char| is_name_char(c) || (allow_colon && c == ':');
+    let mut chars = name.chars();
+    chars.next().is_some_and(ok_start) && chars.all(ok_char)
+}
+
+fn invalid_name_err(kind: &str, name: &str) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!("invalid XML {kind} name: {name:?}"),
+    )
 }
 
 fn is_element_shape(map: &DictMap) -> bool {
@@ -32,10 +59,17 @@ fn write_element(writer: &mut Writer<&mut Vec<u8>>, map: &DictMap) -> std::io::R
         _ => return Ok(()),
     };
 
+    if !is_valid_name(&tag, true) {
+        return Err(invalid_name_err("element", &tag));
+    }
+
     let mut start = BytesStart::new(tag.as_str());
     if let Some(RuntimeValue::Dict(attrs)) = map.get(&Ident::new("attributes")) {
         for (k, v) in attrs.iter() {
-            start.push_attribute((k.to_string().as_str(), escape(v.to_string()).as_ref()));
+            if !is_valid_name(&k.to_string(), true) {
+                return Err(invalid_name_err("attribute", &k.to_string()));
+            }
+            start.push_attribute((k.to_string().as_str(), v.to_string().as_str()));
         }
     }
 
@@ -66,18 +100,31 @@ fn write_element(writer: &mut Writer<&mut Vec<u8>>, map: &DictMap) -> std::io::R
     Ok(())
 }
 
+/// Builds the start tag for `key`. Keys that are not valid XML names are written as
+/// `<item key="...">` so the output stays well-formed.
+fn start_tag(key: &str) -> (BytesStart<'_>, &str) {
+    if is_valid_name(key, false) {
+        (BytesStart::new(key), key)
+    } else {
+        let mut start = BytesStart::new("item");
+        start.push_attribute(("key", key));
+        (start, "item")
+    }
+}
+
 /// Writes an arbitrary JSON value under `tag`, mapping objects to child elements,
 /// arrays to repeated `<item>` elements, and scalars to text content.
 fn write_json_as_xml(writer: &mut Writer<&mut Vec<u8>>, tag: &str, value: &serde_json::Value) -> std::io::Result<()> {
+    let (start, tag) = start_tag(tag);
     match value {
         serde_json::Value::Null => {
-            writer.write_event(Event::Empty(BytesStart::new(tag)))?;
+            writer.write_event(Event::Empty(start.to_owned()))?;
         }
         serde_json::Value::Object(map) => {
             if map.is_empty() {
-                writer.write_event(Event::Empty(BytesStart::new(tag)))?;
+                writer.write_event(Event::Empty(start.to_owned()))?;
             } else {
-                writer.write_event(Event::Start(BytesStart::new(tag)))?;
+                writer.write_event(Event::Start(start.to_owned()))?;
                 for (k, v) in map {
                     write_json_as_xml(writer, k, v)?;
                 }
@@ -86,9 +133,9 @@ fn write_json_as_xml(writer: &mut Writer<&mut Vec<u8>>, tag: &str, value: &serde
         }
         serde_json::Value::Array(items) => {
             if items.is_empty() {
-                writer.write_event(Event::Empty(BytesStart::new(tag)))?;
+                writer.write_event(Event::Empty(start.to_owned()))?;
             } else {
-                writer.write_event(Event::Start(BytesStart::new(tag)))?;
+                writer.write_event(Event::Start(start.to_owned()))?;
                 for item in items {
                     write_json_as_xml(writer, "item", item)?;
                 }
@@ -96,12 +143,12 @@ fn write_json_as_xml(writer: &mut Writer<&mut Vec<u8>>, tag: &str, value: &serde
             }
         }
         serde_json::Value::String(s) => {
-            writer.write_event(Event::Start(BytesStart::new(tag)))?;
+            writer.write_event(Event::Start(start.to_owned()))?;
             writer.write_event(Event::Text(BytesText::new(s)))?;
             writer.write_event(Event::End(BytesEnd::new(tag)))?;
         }
         serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {
-            writer.write_event(Event::Start(BytesStart::new(tag)))?;
+            writer.write_event(Event::Start(start.to_owned()))?;
             writer.write_event(Event::Text(BytesText::new(&value.to_string())))?;
             writer.write_event(Event::End(BytesEnd::new(tag)))?;
         }
@@ -188,6 +235,45 @@ mod tests {
         let values = vec![RuntimeValue::String(Shared::new("<tag> & \"quote\"".to_string()))];
         let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
         assert!(result.contains("&lt;tag&gt; &amp;"));
+    }
+
+    #[test]
+    fn test_attribute_value_escaped_once() {
+        let mut attrs = DictMap::default();
+        attrs.insert(
+            Ident::new("k"),
+            RuntimeValue::String(Shared::new("a & <b>".to_string())),
+        );
+        let mut map = DictMap::default();
+        map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("a".to_string())));
+        map.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
+        let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
+        assert!(result.contains("k=\"a &amp; &lt;b&gt;\""));
+    }
+
+    #[test]
+    fn test_invalid_key_falls_back_to_item() {
+        let mut map = DictMap::default();
+        for (i, k) in ["a<b", "k y", "1x", "x:y", ""].iter().enumerate() {
+            map.insert(Ident::new(k), RuntimeValue::Number((i as i64).into()));
+        }
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
+        let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
+        assert!(result.contains("<item key=\"a&lt;b\">0</item>"));
+        assert!(result.contains("<item key=\"k y\">1</item>"));
+        assert!(result.contains("<item key=\"1x\">2</item>"));
+        assert!(result.contains("<item key=\"x:y\">3</item>"));
+        assert!(result.contains("<item key=\"\">4</item>"));
+    }
+
+    #[test]
+    fn test_invalid_element_tag_errors() {
+        let mut map = DictMap::default();
+        map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("a b".to_string())));
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
+        let err = runtime_values_to_xml(&values, b' ', 2).unwrap_err();
+        assert!(err.to_string().contains("a b"));
     }
 
     #[test]
