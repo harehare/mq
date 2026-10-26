@@ -1854,9 +1854,16 @@ impl Cli {
     /// input/output flag validation applies to them.
     fn run_standalone_command(&self) -> Option<miette::Result<()>> {
         match self.commands.as_ref()? {
-            Commands::Subcommands { json } => Some(Self::run_commands(*json)),
+            Commands::Subcommands { json } => {
+                // `colored` decides on its own; apply `--color` before formatting. Safe here: no parallel work yet.
+                colored::control::set_override(self.use_color());
+                Some(Self::run_commands(*json))
+            }
             Commands::Completion { shell } => Some(Self::generate_completion(shell)),
-            Commands::Help { name, json, markdown } => Some(Self::run_help(name.as_deref(), *json, *markdown)),
+            Commands::Help { name, json, markdown } => {
+                colored::control::set_override(self.use_color());
+                Some(Self::run_help(name.as_deref(), *json, *markdown))
+            }
             Commands::Compile {
                 query,
                 from_file,

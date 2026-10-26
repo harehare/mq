@@ -2655,3 +2655,21 @@ fn test_color_choice(#[case] args: &[&str], #[case] expect_ansi: bool) -> Result
 
     Ok(())
 }
+
+#[rstest::rstest]
+#[case::help_never(&["--color=never", "help"], false)]
+#[case::help_always(&["--color=always", "help"], true)]
+#[case::commands_never(&["--color=never", "commands"], false)]
+#[case::commands_always(&["--color=always", "commands"], true)]
+fn test_color_choice_standalone_commands(
+    #[case] args: &[&str],
+    #[case] expect_ansi: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd.args(args).env_remove("NO_COLOR").assert().success();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert_eq!(output.contains('\u{1b}'), expect_ansi, "{output:?}");
+
+    Ok(())
+}
