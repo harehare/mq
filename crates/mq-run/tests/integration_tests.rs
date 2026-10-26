@@ -2602,3 +2602,31 @@ fn test_error_report_ignores_broken_stderr(#[case] format: &str) {
 
     assert_eq!(status.code(), Some(3), "expected a syntax error exit code, not a panic");
 }
+
+#[rstest]
+#[case::syntax("1 +")]
+#[case::selector(".zzz")]
+fn test_cli_reports_query_error_before_stdin_closes(#[case] query: &str) {
+    use std::process::{Command as StdCommand, Stdio};
+
+    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin!("mq"))
+        .arg(query)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    // Stdin stays open, so only a compile-before-read exit can finish within the deadline.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(status.and_then(|s| s.code()), Some(3));
+}

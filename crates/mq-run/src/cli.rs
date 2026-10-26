@@ -2647,8 +2647,29 @@ impl Cli {
         }
     }
 
+    /// Reports query errors before blocking on stdin, as the compiled program is otherwise
+    /// only built after the input has been read.
+    fn precompile_before_stdin(&self, query: &str) -> miette::Result<()> {
+        if matches!(self.explicit_input_format(), Some(InputFormat::Null)) {
+            return Ok(());
+        }
+        let files = match self.resolved_files()? {
+            Some(files) => files,
+            None if io::stdin().is_terminal() => return Ok(()),
+            None => vec![PathBuf::from("-")],
+        };
+        if !files.iter().any(|f| Self::is_stdin_path(f)) {
+            return Ok(());
+        }
+        let mut engine = self.create_engine()?;
+        let mut cache = ProgramCache::default();
+        self.program_index(&mut engine, &mut cache, query, &None)?;
+        Ok(())
+    }
+
     fn process_batch(&self) -> Result<(), miette::Error> {
         let query = self.get_query()?;
+        self.precompile_before_stdin(&query)?;
         let files = self.read_contents()?;
 
         if self.output.count {
