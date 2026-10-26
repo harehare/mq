@@ -1380,6 +1380,16 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::Bool,
     );
 
+    // in: ({k: v}, k) -> bool (dict key membership)
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "in",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::Var(k),
+        Type::Bool,
+    );
+
     // bsearch: ([a], a) -> number
     let a = ctx.fresh_var();
     register_binary(ctx, "bsearch", Type::array(Type::Var(a)), Type::Var(a), Type::Number);

@@ -25,6 +25,9 @@ use mq_check::{TypeChecker, TypeError};
 use mq_hir::Hir;
 use mq_lang::RuntimeValue;
 
+/// Runs against an in-memory `Io` that allows writes, so `mkdir` succeeds without touching the disk.
+type Engine = mq_lang::Engine<mq_lang::DefaultModuleResolver, mq_lang::MemIo>;
+
 /// Builtins that do I/O, never return or depend on the environment: not safe to call.
 const SKIPPED: &[&str] = &[
     "breakpoint",
@@ -40,7 +43,6 @@ const SKIPPED: &[&str] = &[
     "http_all",
     "infinite",
     "input",
-    "mkdir",
     "mock_fetch",
     "open_file",
     "open_http",
@@ -310,13 +312,7 @@ struct Audit {
 }
 
 impl Audit {
-    fn call(
-        &mut self,
-        engine: &mut mq_lang::DefaultEngine,
-        values: &[Option<RuntimeValue>],
-        name: &str,
-        list: &[usize],
-    ) {
+    fn call(&mut self, engine: &mut Engine, values: &[Option<RuntimeValue>], name: &str, list: &[usize]) {
         let sources: Vec<&str> = list.iter().map(|&value| VALUES[value].1).collect();
         let code = format!("{name}({})", sources.join(", "));
         self.calls += 1;
@@ -347,7 +343,7 @@ impl Audit {
     }
 
     /// Counts a valid call of a builtin that the values do not reach.
-    fn evidence(&mut self, engine: &mut mq_lang::DefaultEngine) {
+    fn evidence(&mut self, engine: &mut Engine) {
         for (name, code) in EVIDENCE {
             if engine.eval(code, mq_lang::null_input().into_iter()).is_ok() && rejection(code).is_none() {
                 *self.accepted.entry((*name).to_string()).or_default() += 1;
@@ -399,7 +395,7 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
         .and_then(|value| value.parse().ok())
         .unwrap_or(150);
 
-    let mut engine = mq_lang::DefaultEngine::default();
+    let mut engine = Engine::with_default_io(mq_lang::Shared::new(mq_lang::MemIo::default()));
     engine.load_builtin_module();
     engine.set_timeout(Duration::from_millis(300));
     let values: Vec<Option<RuntimeValue>> = VALUES
