@@ -3197,7 +3197,11 @@ impl Cli {
                 for value in runtime_values {
                     match value {
                         mq_lang::RuntimeValue::Bytes(b) => buf.extend_from_slice(b),
-                        _ => buf.extend_from_slice(value.to_string().as_bytes()),
+                        mq_lang::RuntimeValue::Markdown(node, _) if node.is_empty() || node.is_empty_fragment() => {}
+                        _ => {
+                            buf.extend_from_slice(value.to_string().as_bytes());
+                            buf.push(b'\n');
+                        }
                     }
                 }
             }

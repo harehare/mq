@@ -1631,7 +1631,7 @@ fn test_output_format_raw() {
 #[case::from_string("raw_from_string", r#"to_bytes("hello")"#, b"hello" as &[u8])]
 #[case::from_number_array("raw_from_array", "to_bytes([104, 101, 108, 108, 111])", b"hello")]
 #[case::binary_data("raw_binary", "to_bytes([0, 255, 128, 1])", &[0u8, 255, 128, 1])]
-#[case::non_bytes_string("raw_string_value", r#""hello""#, b"hello")]
+#[case::non_bytes_string("raw_string_value", r#""hello""#, b"hello\n")]
 #[case::utf8("raw_utf8", r#"to_bytes("あ")"#, &[0xe3u8, 0x81, 0x82])]
 #[case::empty("raw_empty", "to_bytes([])", b"")]
 fn test_output_format_raw_bytes(#[case] suffix: &str, #[case] query: &str, #[case] expected: &[u8]) {

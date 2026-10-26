@@ -2,6 +2,89 @@
 
 How mq reads Markdown and writes it back, and the options that change it. For the full list of flags, see the [CLI reference](../reference/cli.md).
 
+## Output formats
+
+`-F` / `--output-format` selects how results are written. The default is `markdown`. Each result is a Markdown node, a string, a number, a boolean, `None`, an array or a dict. The examples use `-I null` to show non-Markdown values.
+
+| Format | Writes | Separator between results |
+| ------ | ------ | ------------------------- |
+| `markdown` | Markdown source of the nodes. Other values are written as their text | Block spacing of the Markdown renderer |
+| `text` | Plain text of the nodes, with formatting removed | Each node ends with a newline, so empty nodes leave blank lines |
+| `html` | [HTML](#html-output) | Newline |
+| `json` | A JSON array of the results. A single non-Markdown result is written as itself | None, one document |
+| `jsonl` | One JSON value per line | Newline |
+| `table` | A boxed table of the results, nested values as nested tables | None, one table |
+| `grep` | `file:line:` followed by the node for Markdown, `path: value` for other values | Newline |
+| `gron` | One `json.path = value;` assignment per line | Newline |
+| `raw` | The string form of each value, byte for byte | Newline after each value, except `Bytes` |
+| `csv` | A header row, then one row per result | Newline |
+| `toml` | A TOML document | None, one document |
+| `toon` | [TOON](https://github.com/toon-format/toon) | None, one document |
+| `xml` | An XML document with a `root` element | None, one document |
+| `yaml` | A YAML document | None, one document |
+| `shell` | `name=value` lines for `eval` | Newline |
+| `none` | Nothing. Use it for side effects such as `write_file` | |
+
+### Scalars, `None` and nested values
+
+`None` is written as `null` by `json`, `jsonl`, `gron` and `toon`, as `~` by `yaml`, as an empty element by `xml`, and as an empty string by `markdown`, `text`, `html`, `raw`, `grep`, `csv` and `shell`.
+
+Arrays and dicts are written as JSON-like text by `markdown`, `text`, `html` and `raw`. `json`, `jsonl`, `toml`, `toon`, `xml` and `yaml` keep the structure. `csv` and `table` use dict keys as columns, and `csv` writes a nested value as a JSON string in one cell. `gron` and `shell` flatten the structure into paths (`json.l[0]` and `l_0`).
+
+```sh
+$ mq -I null -F json '{"k": "v", "n": None, "l": [1, 2]}'
+{
+  "k": "v",
+  "n": null,
+  "l": [
+    1,
+    2
+  ]
+}
+$ mq -I null -F yaml '{"k": "v", "n": None, "l": [1, 2]}'
+k: v
+"n": ~
+l:
+  - 1
+  - 2
+$ mq -I null -F gron '{"k": "v", "l": [1, 2]}'
+json = {};
+json.k = "v";
+json.l = [];
+json.l[0] = 1;
+json.l[1] = 2;
+$ mq -I null -F shell '{"k": "v", "l": [1, 2]}'
+k=v
+l_0=1
+l_1=2
+```
+
+`toml` needs a dict at the top level and fails on anything else, because a TOML document is a table.
+
+### `raw`
+
+`-F raw` is the equivalent of `jq -r`. A string is written without quotes, and each value is followed by a newline. Empty nodes, such as the non-matches of a selector, are skipped. A `Bytes` value (see `to_bytes`) is written as is, with no newline, so binary output stays exact.
+
+```sh
+$ mq -F raw '.h' doc.md
+# One
+## Two
+$ mq -I null -F raw 'to_bytes("a")' | od -c
+0000000   a
+```
+
+A Markdown node is written as its Markdown source. For its plain text, use `-F text`.
+
+### Options
+
+| Option | Applies to |
+| ------ | ---------- |
+| `-c`, `--compact` | `json` |
+| `--indent`, `--tab` | `json`, `xml` |
+| `-C`, `--color-output` | `markdown`, `json`, `jsonl`, `table`, `csv` |
+| `--list-style`, `--link-title-style`, `--link-url-style` | `markdown`, `text`, `html`, `grep` |
+| `-o`, `--output` | all formats |
+
 ## HTML output
 
 `-F html` renders the result as HTML.
