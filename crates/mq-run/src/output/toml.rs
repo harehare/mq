@@ -11,7 +11,7 @@
 //! Values with no JSON form (`nan()`, `infinite()`, functions) are errors, not omissions.
 
 use miette::miette;
-use mq_lang::{DictMap, RuntimeValue, Shared};
+use mq_lang::RuntimeValue;
 
 /// Formats a dict key as a path component: bare when it is a plain TOML key, quoted otherwise.
 fn child_key_path(path: &str, key: &str) -> String {
@@ -37,49 +37,48 @@ fn is_representable(value: &RuntimeValue) -> bool {
     }
 }
 
-/// Drops `None`-valued dict keys, or returns an error naming the path of a `None` inside an
-/// array or of a value TOML cannot represent (e.g. `nan()`, functions).
-fn strip_none(value: &RuntimeValue, path: &str) -> Result<RuntimeValue, String> {
+/// Checks that every value TOML must hold is representable. `None` dict values are allowed
+/// (see [`strip_json_nulls`]); a `None` inside an array or a value with no JSON form
+/// (e.g. `nan()`, functions) is an error naming its path.
+fn check_representable(value: &RuntimeValue, path: &str) -> Result<(), String> {
     match value {
-        RuntimeValue::Dict(map) => {
-            let mut out = DictMap::default();
-            for (k, v) in map.iter() {
-                if matches!(v, RuntimeValue::None) {
-                    continue;
-                }
-                out.insert(*k, strip_none(v, &child_key_path(path, &k.to_string()))?);
-            }
-            Ok(RuntimeValue::Dict(Shared::new(out)))
-        }
-        RuntimeValue::Array(arr) => arr
+        RuntimeValue::Dict(map) => map
             .iter()
-            .enumerate()
-            .map(|(i, v)| {
-                let child = format!("{path}[{i}]");
-                if matches!(v, RuntimeValue::None) {
-                    Err(format!("TOML has no null: found None at '{child}'"))
-                } else {
-                    strip_none(v, &child)
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(|items| RuntimeValue::Array(Shared::new(items))),
-        v if is_representable(v) => Ok(v.clone()),
+            .filter(|(_, v)| !matches!(v, RuntimeValue::None))
+            .try_for_each(|(k, v)| check_representable(v, &child_key_path(path, &k.to_string()))),
+        RuntimeValue::Array(arr) => arr.iter().enumerate().try_for_each(|(i, v)| {
+            let child = format!("{path}[{i}]");
+            if matches!(v, RuntimeValue::None) {
+                Err(format!("TOML has no null: found None at '{child}'"))
+            } else {
+                check_representable(v, &child)
+            }
+        }),
+        v if is_representable(v) => Ok(()),
         _ => Err(format!("TOML cannot represent this value at '{path}'")),
+    }
+}
+
+/// Removes null-valued object fields, including optional fields of Markdown nodes.
+fn strip_json_nulls(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.retain(|_, v| !v.is_null());
+            map.values_mut().for_each(strip_json_nulls);
+        }
+        serde_json::Value::Array(arr) => arr.iter_mut().for_each(strip_json_nulls),
+        _ => {}
     }
 }
 
 /// Converts a list of [`mq_lang::RuntimeValue`]s into a TOML string.
 pub(crate) fn runtime_values_to_toml(runtime_values: &[RuntimeValue]) -> miette::Result<String> {
-    let stripped = runtime_values
-        .iter()
-        .map(|v| match v {
-            RuntimeValue::Dict(_) | RuntimeValue::Array(_) => strip_none(v, ""),
-            _ => Ok(v.clone()),
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| miette!("{}", e))?;
-    let value = super::json::runtime_values_to_json_value(&stripped);
+    for v in runtime_values {
+        if matches!(v, RuntimeValue::Dict(_) | RuntimeValue::Array(_)) {
+            check_representable(v, "").map_err(|e| miette!("{}", e))?;
+        }
+    }
+    let mut value = super::json::runtime_values_to_json_value(runtime_values);
 
     if !value.is_object() {
         return Err(miette!(
@@ -88,12 +87,14 @@ pub(crate) fn runtime_values_to_toml(runtime_values: &[RuntimeValue]) -> miette:
         ));
     }
 
+    strip_json_nulls(&mut value);
     toml::to_string_pretty(&value).map_err(|e| miette!("Failed to serialize to TOML: {}", e))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mq_lang::{DictMap, Shared};
 
     #[test]
     fn test_dict_value() {
@@ -229,5 +230,15 @@ mod tests {
         )]);
         let err = runtime_values_to_toml(&[quoted]).unwrap_err();
         assert!(err.to_string().contains(r#"'"q\"\\"[0]'"#), "{err}");
+    }
+
+    #[test]
+    fn test_markdown_null_fields_are_omitted() {
+        let md = mq_markdown::Markdown::from_markdown_str("```\nfoo\n```").unwrap();
+        let node = md.nodes.into_iter().next().unwrap();
+        let top = dict(vec![("code", RuntimeValue::Markdown(Shared::new(node), None))]);
+        let result = runtime_values_to_toml(&[top]).unwrap();
+        assert!(result.contains("value = \"foo\""), "{result}");
+        assert!(!result.contains("lang"), "{result}");
     }
 }
