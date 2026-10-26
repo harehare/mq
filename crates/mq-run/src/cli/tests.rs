@@ -4112,3 +4112,19 @@ fn test_watch_targets_includes_query_file_when_from_file() {
         vec![input_file, PathBuf::from(query_file)]
     );
 }
+
+#[cfg(feature = "watch")]
+#[rstest]
+#[case(notify::EventKind::Create(notify::event::CreateKind::File), true)]
+#[case(notify::EventKind::Modify(notify::event::ModifyKind::Any), true)]
+#[case(notify::EventKind::Remove(notify::event::RemoveKind::File), true)]
+#[case(notify::EventKind::Access(notify::event::AccessKind::Read), false)]
+#[case(
+    notify::EventKind::Access(notify::event::AccessKind::Close(notify::event::AccessMode::Write)),
+    false
+)]
+#[case(notify::EventKind::Other, false)]
+#[case(notify::EventKind::Any, false)]
+fn test_is_content_change(#[case] kind: notify::EventKind, #[case] expected: bool) {
+    assert_eq!(Cli::is_content_change(&kind), expected);
+}
