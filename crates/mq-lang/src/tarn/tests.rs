@@ -1444,9 +1444,9 @@ fn let_shadowing_a_loop_local_reuses_its_slot_instead_of_hanging() {
 }
 
 #[test]
-fn let_shadowing_mutates_a_prior_closures_capture() {
+fn let_shadowing_keeps_a_prior_closures_capture() {
     let result = run("let x = 1 | let f = fn(): x; | let x = 2 | f()");
-    assert_eq!(result, RuntimeValue::Number(2.0.into()));
+    assert_eq!(result, RuntimeValue::Number(1.0.into()));
 }
 
 #[test]
@@ -4761,4 +4761,30 @@ fn condition_jumps_match_value_semantics_for_nested_conditions(#[case] shape: &s
 #[case::until_and_unless_keep_working("var i = 0 | until (i >= 3 || i == 10): i += 1; | i", 3.0)]
 fn condition_jumps_short_circuit_and_drive_loops(#[case] code: &str, #[case] expected: f64) {
     assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
+#[rstest]
+#[case::top_level("let x = 1 | let g = fn(): x; | let y = g() | let x = 2 | [y, g()]", "[1, 1]")]
+#[case::inside_def("def mk(): let x = 1 | let g = fn(): x; | let x = 2 | g(); | mk()", "1")]
+#[case::var_still_by_reference("var x = 1 | let g = fn(): x; | x = 5 | g()", "5")]
+fn let_rebinding_does_not_change_existing_closures(#[case] code: &str, #[case] expected: &str) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
+    let program = crate::parse(expected, Shared::clone(&token_arena)).unwrap();
+    let expected = compile_and_run(&program, Shared::clone(&token_arena)).unwrap();
+    assert_eq!(run(code), expected);
+}
+
+#[test]
+fn module_rejects_binding_the_same_name_twice() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
+    let program = crate::parse(
+        "module m: let x = 1 | let x = 2 | def r(): x; end | m::r()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let result = compile_and_run(&program, token_arena);
+    assert!(
+        matches!(&result, Err(Error::Compile(compiler::CompileError::DuplicateModuleBinding(name, _))) if name == "x"),
+        "{result:?}"
+    );
 }
