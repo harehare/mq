@@ -140,6 +140,10 @@ fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Ve
         after_paragraph = step.interrupt;
     }
 
+    // Containers mostly hold a few blocks, and a `Vec` starts at four.
+    if depth > 0 {
+        blocks.shrink_to_fit();
+    }
     blocks
 }
 

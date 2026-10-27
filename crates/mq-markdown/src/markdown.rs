@@ -65,7 +65,7 @@ impl fmt::Display for Markdown {
 
 /// The line where the block before a node ends. An item that ends in a fence without a closing one
 /// ends at the start of the line after it, which is not yet a line of its own.
-fn last_line(position: &Position, node: Option<&Node>) -> usize {
+fn last_line(position: &Position, node: Option<&Node>) -> u32 {
     if matches!(node, Some(Node::List(_))) && position.end.column == 1 && position.end.line > position.start.line {
         position.end.line - 1
     } else {

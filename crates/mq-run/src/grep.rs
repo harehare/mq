@@ -25,7 +25,7 @@ pub(crate) fn print_grep(
     let filename = file.as_ref().map(|p| p.to_string_lossy().into_owned());
 
     // Collect start lines of matched nodes for quick lookup.
-    let match_lines: HashSet<usize> = runtime_values
+    let match_lines: HashSet<u32> = runtime_values
         .values()
         .iter()
         .filter_map(|v| {
@@ -105,7 +105,7 @@ pub(crate) fn print_grep(
     handle.finish()
 }
 
-fn format_line(filename: &Option<String>, line_num: Option<usize>, content: &str, sep: &str) -> String {
+fn format_line(filename: &Option<String>, line_num: Option<u32>, content: &str, sep: &str) -> String {
     match (filename, line_num) {
         (Some(f), Some(l)) => format!("{}{}{}{}{}\n", f, sep, l, sep, content),
         (Some(f), None) => format!("{}{}{}\n", f, sep, content),
@@ -208,7 +208,7 @@ mod tests {
     #[case::no_filename_no_line(None, None, "plain", ":", "plain\n")]
     fn test_format_line(
         #[case] filename: Option<String>,
-        #[case] line_num: Option<usize>,
+        #[case] line_num: Option<u32>,
         #[case] content: &str,
         #[case] sep: &str,
         #[case] expected: &str,

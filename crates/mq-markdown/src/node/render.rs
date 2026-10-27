@@ -142,7 +142,15 @@ impl Node {
                         let blank = position
                             .as_ref()
                             .map_or(0, |p| p.end.line.saturating_sub(p.start.line).saturating_sub(1));
-                        format!("{}{}{}\n{}{}{}", cs, fence_str, info, "\n".repeat(blank), fence_str, ce)
+                        format!(
+                            "{}{}{}\n{}{}{}",
+                            cs,
+                            fence_str,
+                            info,
+                            "\n".repeat(blank as usize),
+                            fence_str,
+                            ce
+                        )
                     } else {
                         format!("{}{}{}\n{}\n{}{}", cs, fence_str, info, value, fence_str, ce)
                     }
@@ -745,7 +753,7 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
                         .map(|p| pos.start.line > p.end.line)
                         .unwrap_or_default()
                 {
-                    " ".repeat(pos.start.column.saturating_sub(1))
+                    " ".repeat(pos.start.column.saturating_sub(1) as usize)
                 } else {
                     "".to_string()
                 };
@@ -753,11 +761,11 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
                 pre_position = Some(pos);
 
                 let piece = if space.is_empty() {
-                    format!("{}{}", "\n".repeat(new_line_count), rendered())
+                    format!("{}{}", "\n".repeat(new_line_count as usize), rendered())
                 } else {
                     format!(
                         "{}{}",
-                        "\n".repeat(new_line_count),
+                        "\n".repeat(new_line_count as usize),
                         rendered().lines().map(|line| format!("{}{}", space, line)).join("\n")
                     )
                 };
@@ -775,7 +783,7 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
 
 /// The number of line endings to write before `node` after `previous`, raised to a blank line where
 /// the node would otherwise read back as part of `previous`.
-pub(crate) fn separated_from(count: usize, previous: Option<&Node>, node: &Node, rendered: &str) -> usize {
+pub(crate) fn separated_from(count: u32, previous: Option<&Node>, node: &Node, rendered: &str) -> u32 {
     if count >= 2 {
         return count;
     }
@@ -837,7 +845,7 @@ fn separate(
             .unwrap_or_default();
         let new_line_count = separated_from(new_line_count, previous, node, rendered);
         *pre_position = Some(pos);
-        result.push_str(&"\n".repeat(new_line_count));
+        result.push_str(&"\n".repeat(new_line_count as usize));
         // An item that starts on the line of the marker that holds it follows it directly.
         if new_line_count == 0 && matches!((previous, node), (Some(Node::List(_)), Node::List(_))) {
             *rendered = rendered.trim_start().to_string();

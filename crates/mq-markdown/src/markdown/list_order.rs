@@ -50,7 +50,7 @@ pub(crate) fn reorder(nodes: &[Node]) -> Option<Reordered> {
     Some(out)
 }
 
-fn start_line(node: &Node) -> Option<usize> {
+fn start_line(node: &Node) -> Option<u32> {
     node.position().map(|position| position.start.line)
 }
 
@@ -67,7 +67,7 @@ fn reorder_into(nodes: &[Node], out: &mut Reordered) {
             .iter()
             .take_while(|next| matches!(next, Node::List(next) if next.level > item.level))
             .count();
-        let lines: Option<Vec<usize>> = item.values.iter().map(start_line).collect();
+        let lines: Option<Vec<u32>> = item.values.iter().map(start_line).collect();
         let (true, Some(lines)) = (!item.values.is_empty() && nested > 0, lines) else {
             out.push(node.clone());
             index += 1;
@@ -86,7 +86,7 @@ fn reorder_into(nodes: &[Node], out: &mut Reordered) {
                 from = at;
             }
         }
-        let segment_lines: Option<Vec<usize>> = segments.iter().map(|segment| start_line(&segment[0])).collect();
+        let segment_lines: Option<Vec<u32>> = segments.iter().map(|segment| start_line(&segment[0])).collect();
         let Some(segment_lines) = segment_lines else {
             out.push(node.clone());
             index += 1;

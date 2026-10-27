@@ -157,7 +157,7 @@ fn attributes(#[case] input: &str, #[case] name: &str, #[case] expected: &str) {
 #[case::escape_at_the_start("\\*a", 0, (1, 1), (1, 4))]
 #[case::escape_after_text("a\\*b", 0, (1, 1), (1, 5))]
 #[case::after_footnote("a[^1]\n\n[^1]: b", 1, (1, 2), (1, 6))]
-fn positions(#[case] input: &str, #[case] index: usize, #[case] start: (usize, usize), #[case] end: (usize, usize)) {
+fn positions(#[case] input: &str, #[case] index: usize, #[case] start: (u32, u32), #[case] end: (u32, u32)) {
     let nodes = parse(input);
     let position = nodes[index]
         .position()
@@ -179,8 +179,8 @@ fn positions(#[case] input: &str, #[case] index: usize, #[case] start: (usize, u
 fn table_rows_include_trailing_whitespace(#[case] input: &str) {
     for node in parse(input) {
         let position = node.position().unwrap();
-        let line = input.lines().nth(position.end.line - 1).unwrap();
-        assert!(position.end.column <= line.len() + 1, "{node:?}");
+        let line = input.lines().nth(position.end.line as usize - 1).unwrap();
+        assert!(position.end.column as usize <= line.len() + 1, "{node:?}");
     }
     let last_cell = parse(input)
         .into_iter()
@@ -188,8 +188,8 @@ fn table_rows_include_trailing_whitespace(#[case] input: &str) {
         .unwrap();
     let end = last_cell.position().unwrap().end;
     assert_eq!(
-        end.column,
-        input.lines().nth(end.line - 1).unwrap().len() + 1,
+        end.column as usize,
+        input.lines().nth(end.line as usize - 1).unwrap().len() + 1,
         "{last_cell:?}"
     );
 }

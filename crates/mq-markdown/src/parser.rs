@@ -413,7 +413,7 @@ mod tests {
                 let (start, end) = (&position.start, &position.end);
                 let ordered = (start.line, start.column) <= (end.line, end.column);
                 assert!(
-                    ordered && start.line >= 1 && start.column >= 1 && end.line <= lines,
+                    ordered && start.line >= 1 && start.column >= 1 && end.line as usize <= lines,
                     "{node:?} has a position outside of {input:?}"
                 );
             }

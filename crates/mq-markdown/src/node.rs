@@ -1334,9 +1334,9 @@ pub struct Position {
 )]
 pub struct Point {
     /// The one-based line.
-    pub line: usize,
+    pub line: u32,
     /// The one-based column, counted in UTF-16 code units. A tab is one column.
-    pub column: usize,
+    pub column: u32,
 }
 
 impl From<String> for Node {

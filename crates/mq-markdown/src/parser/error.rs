@@ -293,7 +293,7 @@ fn offset_of(content: &str, point: &Point) -> Option<usize> {
         if column + 1 >= point.column {
             return Some(start + index);
         }
-        column += char.len_utf16();
+        column += char.len_utf16() as u32;
     }
     Some(start + line.len())
 }
@@ -312,12 +312,7 @@ mod tests {
     #[case::astral("😀x", 1, 3, Some(4))]
     #[case::end_of_line("ab\ncd", 1, 3, Some(2))]
     #[case::missing_line("ab", 3, 1, None)]
-    fn offset_of_point(
-        #[case] content: &str,
-        #[case] line: usize,
-        #[case] column: usize,
-        #[case] expected: Option<usize>,
-    ) {
+    fn offset_of_point(#[case] content: &str, #[case] line: u32, #[case] column: u32, #[case] expected: Option<usize>) {
         assert_eq!(offset_of(content, &Point { line, column }), expected);
     }
 }

@@ -17,7 +17,7 @@ pub(super) struct Indent {
 
 #[derive(Clone, Copy)]
 pub(super) struct Line<'a> {
-    pub(super) number: usize,
+    pub(super) number: u32,
     /// Byte offset of `text` within the original line, non-zero inside containers.
     pub(super) column: usize,
     pub(super) text: &'a str,
@@ -94,7 +94,7 @@ impl<'a> Line<'a> {
         let offset = self.column + byte;
         Point {
             line: self.number,
-            column: offset - extra_bytes(&self.whole.as_bytes()[..offset.min(self.whole.len())]) + 1,
+            column: to_u32(offset - extra_bytes(&self.whole.as_bytes()[..offset.min(self.whole.len())]) + 1),
         }
     }
 
@@ -185,6 +185,11 @@ pub(super) fn tab_stops(src: &str) -> Vec<TabStop> {
     stops
 }
 
+/// Converts a count to a [`Point`] coordinate, saturating on inputs past `u32::MAX`.
+pub(super) fn to_u32(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
 /// How many of `bytes`, which are whole characters, are more than UTF-16 code units: each continuation
 /// byte is one, except that a character of four bytes is two code units.
 pub(super) fn extra_bytes(bytes: &[u8]) -> usize {
@@ -242,7 +247,7 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
             }
         }
         lines.push(Line {
-            number: lines.len() + 1,
+            number: to_u32(lines.len() + 1),
             column: 0,
             text: &src[start..end],
             eol: &src[end..index],
@@ -262,7 +267,7 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
 
     if start < src.len() {
         lines.push(Line {
-            number: lines.len() + 1,
+            number: to_u32(lines.len() + 1),
             column: 0,
             text: &src[start..],
             eol: "",

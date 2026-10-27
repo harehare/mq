@@ -58,7 +58,7 @@ fn first_line_ending(content: &str) -> &'static str {
 
 /// Whether the source has a line ending after the line on which `end` ends. A document that has no
 /// block to render has none.
-fn has_line_ending_after(content: &str, end: Option<usize>) -> bool {
+fn has_line_ending_after(content: &str, end: Option<u32>) -> bool {
     let Some(end) = end else { return false };
     let mut lines = 1;
     let mut bytes = content.bytes().peekable();
@@ -74,7 +74,7 @@ fn has_line_ending_after(content: &str, end: Option<usize>) -> bool {
             _ => {}
         }
     }
-    end < lines
+    (end as usize) < lines
 }
 
 /// Whether a list is followed by nothing but blocks without output, such as definitions, and no blank
@@ -103,14 +103,14 @@ fn list_then_hidden(content: &str, blocks: &[Block]) -> bool {
 }
 
 /// The line on which the last block that produces output ends.
-fn last_rendered(blocks: &[Block]) -> Option<usize> {
+fn last_rendered(blocks: &[Block]) -> Option<u32> {
     blocks.iter().rev().find_map(|block| match block {
         Block::Node(Node::Definition(_) | Node::Yaml(_) | Node::Toml(_)) | Block::Footnote(_) => None,
         _ => end_line(block),
     })
 }
 
-fn end_line(block: &Block) -> Option<usize> {
+fn end_line(block: &Block) -> Option<u32> {
     match block {
         Block::Node(node) => node.position().map(|position| position.end.line),
         Block::Fenced(fenced) => fenced.node.position().map(|position| position.end.line),
@@ -136,7 +136,7 @@ fn end_line(block: &Block) -> Option<usize> {
     }
 }
 
-fn start_line(block: &Block) -> Option<usize> {
+fn start_line(block: &Block) -> Option<u32> {
     match block {
         Block::Node(node) => node.position().map(|position| position.start.line),
         Block::Fenced(fenced) => fenced.node.position().map(|position| position.start.line),
