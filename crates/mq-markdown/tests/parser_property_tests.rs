@@ -208,8 +208,8 @@ proptest! {
         let source = blocks.join("\n\n") + "\n";
         for node in walk(parse(&source)) {
             let Some(position) = node.position() else { continue };
-            let start = byte_offset(&source, position.start.line, position.start.column);
-            let end = byte_offset(&source, position.end.line, position.end.column);
+            let start = byte_offset(&source, position.start.line as usize, position.start.column as usize);
+            let end = byte_offset(&source, position.end.line as usize, position.end.column as usize);
             prop_assert!(start.is_some() && end.is_some(), "{node:?}");
             let (start, end) = (start.unwrap(), end.unwrap());
             prop_assert!(start <= end && end <= source.len(), "{node:?} in {source:?}");
@@ -332,13 +332,13 @@ proptest! {
         replacement in prop::sample::select(vec!['あ', 'é', '🎉', 'ａ'])
     ) {
         let replaced = replace_letters(&source, &[replacement; 6]);
-        let lines = replaced.matches('\n').count() + 1;
+        let lines = replaced.matches('\n').count() as u32 + 1;
         for node in walk(parse(&replaced)) {
             let Some(position) = node.position() else { continue };
             prop_assert!(position.end.line <= lines, "{node:?}");
-            let line = replaced.split('\n').nth(position.end.line - 1).unwrap_or_default();
+            let line = replaced.split('\n').nth(position.end.line as usize - 1).unwrap_or_default();
             // A column can be one past the end of its line, and no further.
-            prop_assert!(position.end.column <= line.len() + 1, "{node:?} in {replaced:?}");
+            prop_assert!(position.end.column as usize <= line.len() + 1, "{node:?} in {replaced:?}");
         }
     }
 }

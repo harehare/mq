@@ -62,8 +62,8 @@ fn diagnostic(input: &str) -> MdxDiagnostic {
 fn reports_kind_and_position(
     #[case] input: &str,
     #[case] kind: MdxErrorKind,
-    #[case] line: usize,
-    #[case] column: usize,
+    #[case] line: u32,
+    #[case] column: u32,
     #[case] offset: usize,
 ) {
     let diagnostic = diagnostic(input);

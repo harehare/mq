@@ -233,10 +233,10 @@ pub unsafe extern "C" fn mq_value_position(values: *const MqValues, index: usize
         .and_then(|values| values.get(index))
         .and_then(|(value, _)| value.position())
         .map(|p| MqPosition {
-            start_line: saturate(p.start.line),
-            start_column: saturate(p.start.column),
-            end_line: saturate(p.end.line),
-            end_column: saturate(p.end.column),
+            start_line: p.start.line,
+            start_column: p.start.column,
+            end_line: p.end.line,
+            end_column: p.end.column,
         });
     store(position, out)
 }
@@ -269,10 +269,6 @@ pub unsafe extern "C" fn mq_values_to_json(values: *const MqValues) -> *mut c_ch
         let array = values.values.iter().map(|v| v.clone().to_json_value()).collect();
         to_c_string(serde_json::Value::Array(array).to_string())
     })
-}
-
-fn saturate(n: usize) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 // Writes `value` to `out` if both exist.

@@ -4,7 +4,7 @@
 //! it runs in [`super::resolve`] once all blocks are known.
 
 use super::error::MdxError;
-use super::line::extra_bytes;
+use super::line::{extra_bytes, to_u32};
 use super::mdx::TagKind;
 use super::scan::eol_len;
 use crate::node::{HeadingDepth, ListMarker, MdxAttributeContent, Node, Point, Position, TableAlignKind};
@@ -163,7 +163,7 @@ impl InlineSource {
         };
         Point {
             line: point.line,
-            column: point.column + (offset - start) - extra,
+            column: point.column + to_u32(offset - start - extra),
         }
     }
 }
