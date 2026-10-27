@@ -1083,9 +1083,15 @@ fn register_dict(ctx: &mut InferenceContext) {
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_unary(ctx, "len", Type::dict(Type::Var(k), Type::Var(v)), Type::Number);
 
-    // get: ([a], number) -> a (array element access)
+    // get: ([a], number) -> a | none (array element access, none when out of range)
     let a = ctx.fresh_var();
-    register_binary(ctx, "get", Type::array(Type::Var(a)), Type::Number, Type::Var(a));
+    register_binary(
+        ctx,
+        "get",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::union(vec![Type::Var(a), Type::None]),
+    );
 
     // get: (string, number) -> string (a character), (markdown, number) -> markdown, (none, a) -> none
     register_binary(ctx, "get", Type::String, Type::Number, Type::String);
@@ -1191,9 +1197,14 @@ fn register_type_checks(ctx: &mut InferenceContext) {
 
 /// Collection functions: first, last, map
 fn register_collection(ctx: &mut InferenceContext) {
-    // first: ([a]) -> a
+    // first: ([a]) -> a | none. none for an empty array.
     let a = ctx.fresh_var();
-    register_unary(ctx, "first", Type::array(Type::Var(a)), Type::Var(a));
+    register_unary(
+        ctx,
+        "first",
+        Type::array(Type::Var(a)),
+        Type::union(vec![Type::Var(a), Type::None]),
+    );
 
     // last: (generator<a>) -> a | none. Consumes the generator.
     let a = ctx.fresh_var();
@@ -1255,9 +1266,14 @@ fn register_collection(ctx: &mut InferenceContext) {
     // first: (string) -> string (first character)
     register_unary(ctx, "first", Type::String, Type::String);
 
-    // last: ([a]) -> a
+    // last: ([a]) -> a | none. none for an empty array.
     let a = ctx.fresh_var();
-    register_unary(ctx, "last", Type::array(Type::Var(a)), Type::Var(a));
+    register_unary(
+        ctx,
+        "last",
+        Type::array(Type::Var(a)),
+        Type::union(vec![Type::Var(a), Type::None]),
+    );
 
     // last: (string) -> string (last character)
     register_unary(ctx, "last", Type::String, Type::String);
