@@ -38,7 +38,7 @@ impl LintRule for MissingElseInExpr {
                     .is_some_and(|p| matches!(p.kind, SymbolKind::Function(_) | SymbolKind::Block)),
             };
             in_pipeline
-                && !ctx.hir.symbols_for_source(ctx.source_id).any(|(_, other)| {
+                && !ctx.all_symbols().any(|(_, other)| {
                     other.parent == sym.parent
                         && other
                             .source
@@ -83,6 +83,8 @@ mod tests {
     #[case("if (true): 1 | add(1)")]
     #[case("if (.h1): 2 | add(1)")]
     #[case("if (true): 1 elif (false): 2 | add(1)")]
+    #[case("if (true): 1 | .h1")]
+    #[case("if (true): 1 | let x = 2")]
     fn detects_missing_else(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 1);
