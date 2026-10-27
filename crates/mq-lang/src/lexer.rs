@@ -32,6 +32,7 @@ impl Lexer {
 
     /// Like [`Lexer::tokenize`], but token ranges are reported as if `input` began at `start`.
     pub fn tokenize_from(&self, input: &str, module_id: ModuleId, start: Position) -> Result<Vec<Token>, SyntaxError> {
+        let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
         let mut cursor = Cursor::new(input, module_id);
         cursor.line = start.line;
         cursor.col = start.column;
@@ -919,6 +920,16 @@ mod tests {
             .unwrap();
         assert_eq!(tokens[0].range.start, Position { line: 3, column: 8 });
         assert_eq!(tokens[1].range.start, Position { line: 4, column: 2 });
+    }
+
+    #[rstest]
+    #[case(Options::default())]
+    #[case(Options { include_spaces: true, ..Options::default() })]
+    fn tokenize_skips_leading_bom(#[case] options: Options) {
+        let lexer = Lexer::new(options);
+        let with_bom = lexer.tokenize("\u{FEFF}upcase()", 1.into()).unwrap();
+        let without_bom = lexer.tokenize("upcase()", 1.into()).unwrap();
+        assert_eq!(with_bom, without_bom);
     }
 
     #[rstest]
