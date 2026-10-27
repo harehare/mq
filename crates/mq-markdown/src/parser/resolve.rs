@@ -192,7 +192,12 @@ fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Resu
             Some(opened_at),
         ));
     }
-    nodes.append(&mut frames.root);
+    if nodes.is_empty() {
+        *nodes = frames.root;
+        nodes.shrink_to_fit();
+    } else {
+        nodes.append(&mut frames.root);
+    }
 
     Ok(())
 }
