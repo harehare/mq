@@ -239,6 +239,29 @@ let sum_all = fn(*args): sum(args);
 # => 6
 ```
 
+### Nested Functions
+
+Each function body needs its own terminator. A function that returns a function needs two:
+
+```
+let mk = fn(i): fn(): i;; | [mk(1), mk(2)] | map(fn(g): g();)
+# => [1, 2]
+```
+
+With a single `;`, the inner function is closed but the outer one is not. The outer body then keeps going and swallows the rest of the program, so nothing after it runs and no error is reported:
+
+```
+let mk = fn(i): fn(): i; | 5
+# => (no output)
+```
+
+Use `end` for the outer function to make the nesting explicit:
+
+```
+let mk = fn(i): fn(): i; end | 5
+# => 5
+```
+
 ## Rules
 
 - Parameters with default values must come after parameters without default values
