@@ -306,6 +306,18 @@ pub enum ErrorFormat {
     Json,
 }
 
+/// When to colorize output, set via `--color`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, clap::ValueEnum)]
+pub enum ColorChoice {
+    /// Colorize only when stdout is a terminal (default).
+    #[default]
+    Auto,
+    /// Always colorize, unless `NO_COLOR` is set.
+    Always,
+    /// Never colorize.
+    Never,
+}
+
 /// Preset combination of `--allow-*` flags, set via `--sandbox`.
 #[derive(Clone, Debug, clap::ValueEnum, PartialEq)]
 enum SandboxProfile {
@@ -766,14 +778,20 @@ struct OutputArgs {
     #[clap(skip)]
     output_claimed: std::sync::Arc<AtomicBool>,
 
-    /// Colorize markdown output
+    /// When to colorize output. `-C` alone means `always`
     #[arg(
         short = 'C',
-        long = "color-output",
-        default_value_t = false,
+        long = "color",
+        visible_alias = "color-output",
+        value_enum,
+        value_name = "WHEN",
+        num_args = 0..=1,
+        require_equals = true,
+        default_value_t = ColorChoice::Auto,
+        default_missing_value = "always",
         conflicts_with = "quiet"
     )]
-    color_output: bool,
+    color: ColorChoice,
 
     /// Show NUM nodes before each match. Only effective with -F grep.
     #[clap(short = 'B', long, value_name = "NUM", conflicts_with = "quiet")]
@@ -1836,9 +1854,16 @@ impl Cli {
     /// input/output flag validation applies to them.
     fn run_standalone_command(&self) -> Option<miette::Result<()>> {
         match self.commands.as_ref()? {
-            Commands::Subcommands { json } => Some(Self::run_commands(*json)),
+            Commands::Subcommands { json } => {
+                // `colored` decides on its own; apply `--color` before formatting. Safe here: no parallel work yet.
+                colored::control::set_override(self.use_color());
+                Some(Self::run_commands(*json))
+            }
             Commands::Completion { shell } => Some(Self::generate_completion(shell)),
-            Commands::Help { name, json, markdown } => Some(Self::run_help(name.as_deref(), *json, *markdown)),
+            Commands::Help { name, json, markdown } => {
+                colored::control::set_override(self.use_color());
+                Some(Self::run_help(name.as_deref(), *json, *markdown))
+            }
             Commands::Compile {
                 query,
                 from_file,
@@ -2087,7 +2112,7 @@ impl Cli {
             let handler = {
                 let mut handler = DebuggerHandler::new(engine.clone(), self.stop_on_error);
                 handler.set_dump_stack(self.dump_stack);
-                handler.set_color_output(self.output.color_output && !Self::is_no_color());
+                handler.set_color_output(self.use_color());
                 handler
             };
             #[cfg(not(feature = "debug-trace"))]
@@ -2438,7 +2463,7 @@ impl Cli {
     ) -> miette::Result<()> {
         if let Some(format) = self.dump_bytecode {
             let dump = engine.dump_bytecode(program).map_err(|error| *error)?;
-            let color = self.output.color_output && !Self::is_no_color();
+            let color = self.use_color();
             io::stdout()
                 .write_all(format.render(&dump, color).as_bytes())
                 .into_diagnostic()?;
@@ -3088,6 +3113,20 @@ impl Cli {
             })
     }
 
+    /// Whether stdout output should be colorized. `NO_COLOR` wins over `--color=always`.
+    fn use_color(&self) -> bool {
+        match self.output.color {
+            ColorChoice::Never => false,
+            _ if Self::is_no_color() => false,
+            ColorChoice::Always => true,
+            ColorChoice::Auto => {
+                self.output.output_file.is_none()
+                    && io::stdout().is_terminal()
+                    && std::env::var("TERM").map_or(true, |t| t != "dumb")
+            }
+        }
+    }
+
     /// Returns `true` if the `NO_COLOR` environment variable is set and non-empty.
     fn is_no_color() -> bool {
         std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty())
@@ -3350,7 +3389,7 @@ impl Cli {
             &self.output.output_claimed,
         )?;
 
-        let colorize = self.output.color_output && !Self::is_no_color();
+        let colorize = self.use_color();
         let buf = self.render(runtime_values, colorize, mdx)?;
         Self::write_ignore_pipe(&mut handle, &buf)?;
         handle.finish()?;
@@ -3380,7 +3419,7 @@ impl Cli {
 
     /// Prints a unified diff of `original` vs `rendered` to stdout (or `-o`), headed
     /// by the file path (or `<stdin>` when there is none). Colorizes `+`/`-`/`@@`
-    /// lines when `-C`/`--color-output` is set and `NO_COLOR` isn't.
+    /// lines when color is enabled (see `use_color`).
     fn print_unified_diff(&self, original: &str, rendered: &str, file: &Option<PathBuf>) -> miette::Result<()> {
         if self.quiet {
             return Ok(());
@@ -3405,7 +3444,7 @@ impl Cli {
             .to_string();
 
         // Raw ANSI, not `colored::Colorize`; it auto-disables on non-tty stdout, but -C should force color.
-        let colorize = self.output.color_output && !Self::is_no_color();
+        let colorize = self.use_color();
         let mut out = String::with_capacity(diff_text.len());
         for line in diff_text.lines() {
             if colorize && line.starts_with('+') && !line.starts_with("+++") {
