@@ -1973,10 +1973,12 @@ fn is_index_assign_target(symbol_id: SymbolId, hir: &Hir, children_index: &Child
 
 /// Constrains the bracket access `v[i]` or `v[a:b]` on a value of type `container_ty`.
 ///
-/// Two args are a range slice `v[start:end]` lowered as `v(start, end)`. One arg is an element
-/// access `v[i]` lowered as `v(i)`. Chained accesses are lowered the same way: `v[0][:key]` is
-/// `v(0, :key)`. A String/Symbol literal after the first argument can never be a slice bound, so
-/// it marks such a chain.
+/// Two args in one bracket group are a range slice `v[start:end]` lowered as `v(start, end)`.
+/// One arg is an element access `v[i]` lowered as `v(i)`. Chained accesses are lowered the same
+/// way: `v[0][1]` is `v(0, 1)` and `v[0][:key]` is `v(0, :key)`. The bracket group count tells
+/// them apart from a slice. A String/Symbol literal after the first argument can never be a
+/// slice bound, so it marks such a chain. A chain mixed with slices is ambiguous and left
+/// unconstrained.
 fn constrain_bracket_access(
     hir: &Hir,
     ctx: &mut InferenceContext,
@@ -1986,15 +1988,28 @@ fn constrain_bracket_access(
     container_ty: Type,
     range: Option<mq_lang::Range>,
 ) {
+    let groups = hir.bracket_group_count(symbol_id);
     let is_chained_access = children.iter().skip(1).any(|&child_id| {
         hir.symbol(child_id)
             .is_some_and(|s| matches!(s.kind, SymbolKind::String | SymbolKind::Symbol))
     });
-    if is_chained_access {
+    if is_chained_access || (groups > 1 && children.len() != groups) {
         // The container's element type is not tracked through the chain, so leave the
         // result unconstrained.
         let ty_var = ctx.fresh_var();
         ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+    } else if groups > 1 {
+        // Element access chain: each index applies to the previous result.
+        let mut container_ty = container_ty;
+        for (i, (&arg_id, arg_ty)) in children.iter().zip(explicit_arg_tys).enumerate() {
+            let result_ty = Type::Var(ctx.fresh_var());
+            constrain_element_access(hir, ctx, container_ty, arg_id, arg_ty, result_ty.clone(), range);
+            if i + 1 == children.len() {
+                ctx.set_symbol_type(symbol_id, result_ty);
+                break;
+            }
+            container_ty = result_ty;
+        }
     } else if children.len() == 2 {
         // Range slice: delegate to the "slice" builtin.
         let mut slice_arg_tys = vec![container_ty];
@@ -2002,42 +2017,51 @@ fn constrain_bracket_access(
         let defer = might_receive_piped_input(hir, symbol_id);
         resolve_builtin_call(ctx, symbol_id, "slice", &slice_arg_tys, range, defer);
     } else {
-        // Element access: defer as a tuple access so that Array/Tuple/Dict container types
-        // are handled correctly after unification.
-        let literal_index = children.first().and_then(|&arg_id| {
-            let arg_sym = hir.symbol(arg_id)?;
-            if matches!(arg_sym.kind, SymbolKind::Number) {
-                arg_sym.value.as_ref()?.parse::<usize>().ok()
-            } else {
-                None
-            }
-        });
-
-        // Only constrain the index to Number when it is a literal numeric index (e.g. v[0]).
-        // For variable indices (e.g. a String key used for Dict access), skip this constraint:
-        // the correct element type is resolved via resolve_deferred_tuple_accesses once the
-        // container's type is known.
-        if literal_index.is_some()
-            && let Some(index_ty) = explicit_arg_tys.first()
-        {
-            ctx.add_constraint(Constraint::Equal(
-                index_ty.clone(),
-                Type::Number,
-                range,
-                ConstraintOrigin::General,
-            ));
+        let result_ty = Type::Var(ctx.fresh_var());
+        ctx.set_symbol_type(symbol_id, result_ty.clone());
+        if let (Some(&arg_id), Some(arg_ty)) = (children.first(), explicit_arg_tys.first()) {
+            constrain_element_access(hir, ctx, container_ty, arg_id, arg_ty, result_ty, range);
         }
-
-        let ty_var = ctx.fresh_var();
-        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-
-        ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
-            call_symbol_id: symbol_id,
-            container_ty,
-            index: literal_index,
-            range: get_symbol_range(hir, symbol_id),
-        });
     }
+}
+
+/// Constrains the element access `container[arg]`, whose result is `result_ty`.
+///
+/// It is deferred as a tuple access so that Array/Tuple/Dict container types are handled
+/// correctly after unification.
+fn constrain_element_access(
+    hir: &Hir,
+    ctx: &mut InferenceContext,
+    container_ty: Type,
+    arg_id: SymbolId,
+    arg_ty: &Type,
+    result_ty: Type,
+    range: Option<mq_lang::Range>,
+) {
+    let literal_index = hir
+        .symbol(arg_id)
+        .filter(|arg_sym| matches!(arg_sym.kind, SymbolKind::Number))
+        .and_then(|arg_sym| arg_sym.value.as_ref()?.parse::<usize>().ok());
+
+    // Only constrain the index to Number when it is a literal numeric index (e.g. v[0]).
+    // For variable indices (e.g. a String key used for Dict access), skip this constraint:
+    // the correct element type is resolved via resolve_deferred_tuple_accesses once the
+    // container's type is known.
+    if literal_index.is_some() {
+        ctx.add_constraint(Constraint::Equal(
+            arg_ty.clone(),
+            Type::Number,
+            range,
+            ConstraintOrigin::General,
+        ));
+    }
+
+    ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
+        result_ty,
+        container_ty,
+        index: literal_index,
+        range,
+    });
 }
 
 /// Constrain a call: a user function (with arity, defaults and piped input), or a builtin.

@@ -165,8 +165,8 @@ pub struct DeferredCallReturnAccess {
 /// the variable's Tuple type is fully resolved.
 #[derive(Debug, Clone)]
 pub struct DeferredTupleAccess {
-    /// The call symbol ID (the bracket access expression)
-    pub call_symbol_id: SymbolId,
+    /// The type of the accessed element
+    pub result_ty: Type,
     /// The type of the indexed value
     pub container_ty: Type,
     /// The literal index value (None if dynamic index)
