@@ -64,7 +64,10 @@ impl Hir {
                 SymbolKind::Call | SymbolKind::Ref => {
                     // builtin.mq may call functions gated behind mq-lang features this build lacks.
                     // A nameless `Call` is the index/slice in `f(x)[0]`, so there is nothing to resolve.
+                    // `self[0]` indexes the keyword value, which is never defined.
                     if symbol.value.is_none()
+                        || (matches!(symbol.value.as_deref(), Some("self"))
+                            && self.bracket_group_counts.contains_key(&symbol_id))
                         || self.references.contains_key(&symbol_id)
                         || self.is_builtin_symbol(symbol)
                     {
@@ -239,6 +242,22 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::slice("self[:10]", 0)]
+    #[case::index("self[0]", 0)]
+    #[case::unknown("selfx[0]", 1)]
+    fn test_indexed_self_is_not_unresolved(#[case] code: &str, #[case] expected: usize) {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, code);
+
+        let unresolved = hir
+            .errors()
+            .iter()
+            .filter(|e| matches!(e, HirError::UnresolvedSymbol { .. }))
+            .count();
+        assert_eq!(unresolved, expected, "{code}");
+    }
 
     #[test]
     fn test_find_similar_names() {

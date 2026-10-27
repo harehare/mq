@@ -308,3 +308,11 @@ fn test_user_functions_that_are_not_exact_predicates_do_not_narrow(#[case] defin
     let types = ref_types(&code, "h");
     assert_eq!(types[types.len() - 2], "markdown", "{types:?}");
 }
+
+#[rstest]
+#[case::compact(r#"nodes | compact(.code)"#)]
+#[case::first_of_compact(r#"nodes | let n = first(compact(.code)) | n"#)]
+#[case::map(r#"nodes | map(.code, to_text)"#)]
+fn test_argument_selector_on_unknown_input_may_select_an_array(#[case] code: &str) {
+    assert!(errors(code).is_empty(), "{code}");
+}

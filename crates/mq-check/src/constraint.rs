@@ -1757,6 +1757,11 @@ pub(super) fn generate_symbol_constraints(
                 // an array of all descendant Markdown nodes.
                 if let mq_lang::Selector::Attr(attr_kind) = selector {
                     attr_kind_to_type(attr_kind)
+                } else if matches!(ctx.input_type(), Type::Dynamic) && !matches!(selector, mq_lang::Selector::Recursive)
+                {
+                    // An argument selector runs on the unknown input, so it may select from
+                    // a single node or from an array of nodes (`nodes | compact(.code)`).
+                    Type::Var(ctx.fresh_var())
                 } else if matches!(selector, mq_lang::Selector::Recursive) {
                     Type::array(Type::markdown())
                 } else {
