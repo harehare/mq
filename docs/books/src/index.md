@@ -12,6 +12,12 @@ The quickest way to install `mq` is via the install script:
 curl -sSL https://mqlang.org/install.sh | bash
 ```
 
+On Windows, use PowerShell:
+
+```powershell
+powershell -c "irm https://mqlang.org/install.ps1 | iex"
+```
+
 On macOS and Linux, you can also use Homebrew:
 
 ```bash

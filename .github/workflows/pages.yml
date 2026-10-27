@@ -54,6 +54,7 @@ jobs:
       - name: Copy install script
         run: |
           cp ./scripts/install.sh ./docs
+          cp ./scripts/install.ps1 ./docs
           cp ./scripts/install_lsp.sh ./docs
           cp ./scripts/install_crawler.sh ./docs
       - name: Deploy
