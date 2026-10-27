@@ -1538,6 +1538,21 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    /// Slot for a `let`/`var` binding of `name`.
+    ///
+    /// Rebinding an already bound immutable `let` gets a fresh slot when a nested function uses
+    /// the name, so closures made earlier keep reading the previous binding.
+    fn declare_binding_slot(&mut self, name: Ident, mutable: bool) -> u16 {
+        let existing = self.scope_mut().resolve_local(name);
+        match existing {
+            Some(slot) if !mutable && self.scope_mut().is_immutable(slot) && self.is_used_by_nested_function(name) => {
+                self.scope_mut().declare(name)
+            }
+            Some(slot) => slot,
+            None => self.scope_mut().declare(name),
+        }
+    }
+
     fn compile_let_or_var_binding(
         &mut self,
         pattern: &Pattern,
@@ -1549,7 +1564,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 let Expr::Fn(params, body) = &value.expr else {
                     unreachable!("guarded above");
                 };
-                let slot = self.scope_mut().declare_or_reuse(ident.name);
+                let slot = self.declare_binding_slot(ident.name, mutable);
                 if mutable {
                     self.scope_mut().unmark_immutable(slot);
                 } else {
@@ -1566,7 +1581,7 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Pattern::Ident(ident) => {
                 self.compile_expr(value)?;
-                let slot = self.scope_mut().declare_or_reuse(ident.name);
+                let slot = self.declare_binding_slot(ident.name, mutable);
                 if mutable {
                     self.scope_mut().unmark_immutable(slot);
                 } else {
