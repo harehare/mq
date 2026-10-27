@@ -50,10 +50,10 @@ pub enum Command {
 ///
 /// This list must be kept in sync with the keyword definitions in
 /// `crates/mq-lang/src/lexer.rs` (see the lexer keyword table in `ident_or_keyword`).
-const KEYWORDS: &[&str; 28] = &[
+const KEYWORDS: &[&str; 29] = &[
     "def", "let", "if", "unless", "elif", "else", "end", "while", "until", "loop", "foreach", "self", "nodes", "fn",
     "break", "continue", "include", "true", "false", "None", "match", "try", "catch", "import", "module", "do", "var",
-    "as",
+    "as", "yield",
 ];
 
 impl fmt::Display for Command {
