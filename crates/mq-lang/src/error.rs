@@ -237,6 +237,33 @@ pub(crate) fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str
     }
 }
 
+impl Error {
+    // Like `selector_help`, but a selector written directly after an identifier (`d.a`) is
+    // read as an attempted dict key access.
+    #[cold]
+    fn selector_help_in_source(&self, sel: &selector::UnknownSelector) -> Cow<'static, str> {
+        if let TokenKind::Selector(s) = &sel.0.kind
+            && let Some(key) = s.strip_prefix('.')
+            && !key.is_empty()
+            && key.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && let Some(receiver) = preceding_identifier(self.source_code.inner(), self.location.offset())
+        {
+            return Cow::Owned(format!(
+                "`.{key}` selects Markdown nodes, not dict keys. To read a dict key, use `{receiver}[\"{key}\"]` or `get({receiver}, \"{key}\")`."
+            ));
+        }
+        selector_help(sel)
+    }
+}
+
+// Identifier ending exactly at byte `offset`, with no gap.
+fn preceding_identifier(source: &str, offset: usize) -> Option<&str> {
+    let head = source.get(..offset)?;
+    let ident = head.trim_end_matches(|c: char| c.is_alphanumeric() || c == '_');
+    let name = &head[ident.len()..];
+    (!name.is_empty() && !name.starts_with(|c: char| c.is_ascii_digit())).then_some(name)
+}
+
 impl Diagnostic for Error {
     #[cold]
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
@@ -283,7 +310,7 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::InsufficientTokens(_)) => Some(Cow::Borrowed(
                 "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.",
             )),
-            InnerError::Syntax(SyntaxError::UnknownSelector(sel)) => Some(selector_help(sel)),
+            InnerError::Syntax(SyntaxError::UnknownSelector(sel)) => Some(self.selector_help_in_source(sel)),
             InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, _)) => Some(Cow::Borrowed(
                 "Expected a closing parenthesis ')'. Check your parentheses for balance.",
             )),
@@ -422,7 +449,9 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InvalidAssignmentTarget(_))) => Some(
                 Cow::Borrowed("Invalid assignment target. Ensure you're assigning to a valid variable or property."),
             ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(sel))) => Some(selector_help(sel)),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(sel))) => {
+                Some(self.selector_help_in_source(sel))
+            }
             InnerError::Module(ModuleError::InvalidModule) => Some(Cow::Borrowed("Invalid module format or content.")),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => {
                 Some(Cow::Borrowed(
@@ -1209,5 +1238,22 @@ mod test {
                 "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).".to_string()
             )
         );
+    }
+
+    #[rstest]
+    #[case::attached("let d = {\"a\":1} | d.a", 19, true)]
+    #[case::separated("let d = {\"a\":1} | d .a", 20, false)]
+    fn test_unknown_selector_help_dict_access(#[case] source: &str, #[case] offset: usize, #[case] dict_hint: bool) {
+        let token = Token {
+            range: Range::default(),
+            kind: TokenKind::Selector(smol_str::SmolStr::new(".a")),
+            module_id: ArenaId::new(0),
+        };
+        let cause = InnerError::Syntax(SyntaxError::UnknownSelector(selector::UnknownSelector::new(token)));
+        let module_loader: ModuleLoader = ModuleLoader::default();
+        let mut error = Error::from_error(source, cause, module_loader);
+        error.location = SourceSpan::new(offset.into(), 2);
+        let help = error.help().map(|h| h.to_string()).unwrap();
+        assert_eq!(help.contains("d[\"a\"]") && help.contains("get(d, \"a\")"), dict_hint);
     }
 }
