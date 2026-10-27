@@ -184,6 +184,9 @@ fn compile_error_to_runtime_error(
         compiler::CompileError::UndefinedIdent(name, _) => RuntimeError::UndefinedReference(token, name, Box::new([])),
         compiler::CompileError::Unsupported(what, _) => RuntimeError::Runtime(token, format!("unsupported: {what}")),
         compiler::CompileError::AssignToImmutable(name, _) => RuntimeError::AssignToImmutable(token, name),
+        compiler::CompileError::DuplicateModuleBinding(name, _) => {
+            RuntimeError::Runtime(token, format!("module binds \"{name}\" more than once"))
+        }
         compiler::CompileError::InvalidBytecode(message) => RuntimeError::Runtime(token, message),
         compiler::CompileError::YieldOutsideFunction(_) => {
             RuntimeError::Runtime(token, "yield outside a function".to_string())

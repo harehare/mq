@@ -4773,3 +4773,18 @@ fn let_rebinding_does_not_change_existing_closures(#[case] code: &str, #[case] e
     let expected = compile_and_run(&program, Shared::clone(&token_arena)).unwrap();
     assert_eq!(run(code), expected);
 }
+
+#[test]
+fn module_rejects_binding_the_same_name_twice() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
+    let program = crate::parse(
+        "module m: let x = 1 | let x = 2 | def r(): x; end | m::r()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let result = compile_and_run(&program, token_arena);
+    assert!(
+        matches!(&result, Err(Error::Compile(compiler::CompileError::DuplicateModuleBinding(name, _))) if name == "x"),
+        "{result:?}"
+    );
+}
