@@ -500,7 +500,7 @@ static HIGHLIGHT_PATTERNS: LazyLock<Vec<(Regex, Paint)>> = LazyLock::new(|| {
         ),
         // Keywords
         (
-            r"\b(as|break|catch|continue|def|do|elif|else|end|fn|foreach|if|unless|import|include|let|loop|match|module|nodes|self|try|until|var|while)\b",
+            r"\b(as|break|catch|continue|def|do|elif|else|end|fn|foreach|if|unless|import|include|let|loop|match|module|nodes|self|try|until|var|while|yield)\b",
             |s| s.truecolor(103, 184, 227).bold().to_string(),
         ),
         // Boolean / None constants

@@ -24,7 +24,7 @@ static HIGHLIGHT_PATTERNS: LazyLock<Vec<(Regex, Paint)>> = LazyLock::new(|| {
         ),
         (r#""([^"\\]|\\.)*""#, |s| s.bright_green()),
         (
-            r"\b(def|let|if|unless|elif|else|end|while|until|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var)\b",
+            r"\b(def|let|if|unless|elif|else|end|while|until|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var|try|catch|loop|as|yield)\b",
             |s| s.bright_blue(),
         ),
         (r"\b\d+\b", |s| s.bright_magenta()),
