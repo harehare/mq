@@ -238,30 +238,35 @@ pub(crate) fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str
 }
 
 impl Error {
-    // Like `selector_help`, but a selector written directly after an identifier (`d.a`) is
-    // read as an attempted dict key access.
+    // Like `selector_help`, but a selector written directly after an identifier (`d.a`) may be
+    // an attempted dict key access, so the key access hint is added to any similar-selector hint.
     #[cold]
     fn selector_help_in_source(&self, sel: &selector::UnknownSelector) -> Cow<'static, str> {
+        let help = selector_help(sel);
         if let TokenKind::Selector(s) = &sel.0.kind
             && let Some(key) = s.strip_prefix('.')
             && !key.is_empty()
             && key.chars().all(|c| c.is_alphanumeric() || c == '_')
             && let Some(receiver) = preceding_identifier(self.source_code.inner(), self.location.offset())
         {
-            return Cow::Owned(format!(
-                "`.{key}` selects Markdown nodes, not dict keys. To read a dict key, use `{receiver}[\"{key}\"]` or `get({receiver}, \"{key}\")`."
-            ));
+            let access = format!("To read a dict key, use `{receiver}[\"{key}\"]` or `get({receiver}, \"{key}\")`.");
+            return if crate::suggest::suggest_selector(s).is_some() {
+                Cow::Owned(format!("{help} {access}"))
+            } else {
+                Cow::Owned(format!("`.{key}` selects Markdown nodes, not dict keys. {access}"))
+            };
         }
-        selector_help(sel)
+        help
     }
 }
 
-// Identifier ending exactly at byte `offset`, with no gap.
+// Identifier ending exactly at byte `offset`, with no gap. A word preceded by `.` is the tail of
+// a selector (`.h` in `.h.bad`), not an identifier.
 fn preceding_identifier(source: &str, offset: usize) -> Option<&str> {
     let head = source.get(..offset)?;
     let ident = head.trim_end_matches(|c: char| c.is_alphanumeric() || c == '_');
     let name = &head[ident.len()..];
-    (!name.is_empty() && !name.starts_with(|c: char| c.is_ascii_digit())).then_some(name)
+    (!name.is_empty() && !name.starts_with(|c: char| c.is_ascii_digit()) && !ident.ends_with('.')).then_some(name)
 }
 
 impl Diagnostic for Error {
@@ -1241,19 +1246,28 @@ mod test {
     }
 
     #[rstest]
-    #[case::attached("let d = {\"a\":1} | d.a", 19, true)]
-    #[case::separated("let d = {\"a\":1} | d .a", 20, false)]
-    fn test_unknown_selector_help_dict_access(#[case] source: &str, #[case] offset: usize, #[case] dict_hint: bool) {
+    #[case::attached("let d = {\"a\":1} | d.zzzzzz", 19, ".zzzzzz", true, false)]
+    #[case::separated("let d = {\"a\":1} | d .zzzzzz", 20, ".zzzzzz", false, false)]
+    #[case::selector_chain(".h.zzzzzz", 2, ".zzzzzz", false, false)]
+    #[case::attribute_typo("node.vlaue", 4, ".vlaue", true, true)]
+    fn test_unknown_selector_help_dict_access(
+        #[case] source: &str,
+        #[case] offset: usize,
+        #[case] selector: &str,
+        #[case] dict_hint: bool,
+        #[case] similar_hint: bool,
+    ) {
         let token = Token {
             range: Range::default(),
-            kind: TokenKind::Selector(smol_str::SmolStr::new(".a")),
+            kind: TokenKind::Selector(smol_str::SmolStr::new(selector)),
             module_id: ArenaId::new(0),
         };
         let cause = InnerError::Syntax(SyntaxError::UnknownSelector(selector::UnknownSelector::new(token)));
         let module_loader: ModuleLoader = ModuleLoader::default();
         let mut error = Error::from_error(source, cause, module_loader);
-        error.location = SourceSpan::new(offset.into(), 2);
+        error.location = SourceSpan::new(offset.into(), selector.len());
         let help = error.help().map(|h| h.to_string()).unwrap();
-        assert_eq!(help.contains("d[\"a\"]") && help.contains("get(d, \"a\")"), dict_hint);
+        assert_eq!(help.contains("get("), dict_hint);
+        assert_eq!(help.contains("similar name exists"), similar_hint);
     }
 }
