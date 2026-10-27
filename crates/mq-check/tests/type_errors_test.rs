@@ -848,9 +848,9 @@ fn test_parenthesized_call_of_a_variable_is_not_a_slice() {
 }
 
 #[rstest]
-#[case::node_upcase(r##"upcase(first(to_markdown("# h")))""##)]
+#[case::node_upcase(r##"upcase(to_md_fragment(["h"]))""##)]
 #[case::node_starts_with(r##"starts_with(first(to_markdown("# h")), "h")""##)]
-#[case::node_len(r##"len(first(to_markdown("# h")))""##)]
+#[case::node_len(r##"len(to_md_fragment(["h"]))""##)]
 #[case::node_regex(r##"regex_match(first(to_markdown("# h")), "h")""##)]
 #[case::none_starts_with(r#"starts_with(None, "a")"#)]
 #[case::none_index(r#"index(None, "a")"#)]
@@ -876,7 +876,7 @@ fn test_parenthesized_call_of_a_variable_is_not_a_slice() {
 #[case::order_none("None < None")]
 #[case::insert_into_string(r#"insert("ab", 1, "x")"#)]
 #[case::set_other_key_type(r#"set({"a": 1}, :sym, "x")"#)]
-#[case::update_node_text(r##"update(first(to_markdown("# h")), "x")"##)]
+#[case::update_node_text(r##"update(to_md_fragment(["h"]), "x")"##)]
 fn test_builtin_accepts_what_the_runtime_accepts(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "the runtime accepts it: {:?}", result);
@@ -979,4 +979,25 @@ fn test_valid_code_has_no_type_error(#[case] code: &str) {
         found.iter().all(TypeError::is_advisory),
         "unexpected type error for {code}: {found:?}"
     );
+}
+
+#[rstest]
+#[case::first("first([1, 2]) | add(1)")]
+#[case::last("last([1, 2]) | add(1)")]
+#[case::get("get([1, 2], 0) | add(1)")]
+fn test_array_element_access_may_be_none(#[case] code: &str) {
+    assert!(
+        !check_types_with_builtins(code).is_empty(),
+        "an array element can be none, so `{code}` must be rejected"
+    );
+}
+
+#[rstest]
+#[case::first_narrowed("let n = first([1, 2]) | if (is_none(n)): 0 else: n + 1")]
+#[case::last_narrowed("let n = last([1, 2]) | if (is_none(n)): 0 else: n + 1")]
+#[case::get_narrowed("let n = get([1, 2], 0) | if (is_none(n)): 0 else: n + 1")]
+#[case::default("first([1, 2]) | default(0) | add(1)")]
+fn test_array_element_access_none_can_be_handled(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(result.is_empty(), "`{code}` must type check: {result:?}");
 }

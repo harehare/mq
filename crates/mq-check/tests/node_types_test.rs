@@ -24,7 +24,7 @@ fn ref_types(code: &str, name: &str) -> Vec<String> {
 }
 
 /// A markdown value of unknown kind, as the second line of a function body.
-const ANY_NODE: &str = "let h = first(to_markdown(\"# a\"))";
+const ANY_NODE: &str = "let h = to_md_fragment([\"a\"])";
 
 #[rstest]
 #[case::h1("is_h1", "h1")]
@@ -115,18 +115,18 @@ fn selector_type(code: &str, selector: &str) -> String {
 }
 
 #[rstest]
-#[case::heading_depth("to_markdown(\"# a\") | first() | .h1.depth", ".depth", "number")]
-#[case::required_attr_of_one_kind("to_markdown(\"x\") | first() | .code.fence", ".fence", "bool")]
-#[case::optional_attr_may_be_none("to_markdown(\"x\") | first() | .code.lang", ".lang", "(string | none)")]
-#[case::list_checked_is_optional("to_markdown(\"- a\") | first() | .list.checked", ".checked", "(bool | none)")]
-#[case::unknown_kind_keeps_the_plain_type("to_markdown(\"x\") | first() | .lang", ".lang", "string")]
+#[case::heading_depth("to_md_fragment([\"a\"]) | .h1.depth", ".depth", "number")]
+#[case::required_attr_of_one_kind("to_md_fragment([\"a\"]) | .code.fence", ".fence", "bool")]
+#[case::optional_attr_may_be_none("to_md_fragment([\"a\"]) | .code.lang", ".lang", "(string | none)")]
+#[case::list_checked_is_optional("to_md_fragment([\"a\"]) | .list.checked", ".checked", "(bool | none)")]
+#[case::unknown_kind_keeps_the_plain_type("to_md_fragment([\"a\"]) | .lang", ".lang", "string")]
 fn test_attribute_type_depends_on_the_node_kind(#[case] code: &str, #[case] selector: &str, #[case] expected: &str) {
     assert_eq!(selector_type(code, selector), expected);
 }
 
 #[rstest]
-#[case::depth_of_code("to_markdown(\"x\") | first() | .code.depth", "depth")]
-#[case::lang_of_heading("to_markdown(\"x\") | first() | .h1.lang", "lang")]
+#[case::depth_of_code("to_md_fragment([\"a\"]) | .code.depth", "depth")]
+#[case::lang_of_heading("to_md_fragment([\"a\"]) | .h1.lang", "lang")]
 fn test_attribute_no_kind_has_is_an_error(#[case] code: &str, #[case] attr: &str) {
     let errors = errors(code);
     assert!(
@@ -144,8 +144,8 @@ fn test_attribute_of_a_narrowed_variable_is_accepted() {
 }
 
 #[rstest]
-#[case::number_attribute(r##"let n = first(to_markdown("# a")) | attr(n, "depth") + 1"##)]
-#[case::string_attribute(r##"to_markdown("# a") | first() | attr("value") | upcase()"##)]
+#[case::number_attribute(r##"let n = to_md_fragment(["a"]) | attr(n, "depth") + 1"##)]
+#[case::string_attribute(r##"to_md_fragment(["a"]) | attr("value") | upcase()"##)]
 fn test_attr_call_result_is_decided_by_its_use(#[case] code: &str) {
     assert!(errors(code).is_empty());
 }
@@ -243,7 +243,7 @@ fn test_an_unknown_node_name_does_not_narrow() {
 
 #[rstest]
 #[case::depth_is_a_number(r#"let n = to_h("a", 2) | attr(n, "depth") + 1"#)]
-#[case::value_is_a_string(r##"let n = first(to_markdown("# a")) | attr(n, "value") | upcase()"##)]
+#[case::value_is_a_string(r##"let n = to_md_fragment(["a"]) | attr(n, "value") | upcase()"##)]
 #[case::optional_attribute_may_be_none(r#"let n = to_code("a", "rust") | attr(n, "lang") | upcase()"#)]
 fn test_attr_with_a_literal_name_has_the_attribute_type(#[case] code: &str) {
     let errors = errors(code);
@@ -252,7 +252,7 @@ fn test_attr_with_a_literal_name_has_the_attribute_type(#[case] code: &str) {
 
 #[rstest]
 #[case::depth_of_code(r#"let n = to_code("a", "rust") | attr(n, "depth")"#, "depth")]
-#[case::unknown_attribute(r##"let n = first(to_markdown("# a")) | attr(n, "href")"##, "href")]
+#[case::unknown_attribute(r##"let n = to_md_fragment(["a"]) | attr(n, "href")"##, "href")]
 fn test_attr_with_a_name_no_kind_has_is_an_error(#[case] code: &str, #[case] attr: &str) {
     let errors = errors(code);
     assert!(
@@ -263,7 +263,7 @@ fn test_attr_with_a_name_no_kind_has_is_an_error(#[case] code: &str, #[case] att
 
 #[test]
 fn test_attr_with_a_dynamic_name_is_left_open() {
-    assert!(errors(r##"let n = first(to_markdown("# a")) | let name = "depth" | attr(n, name) + 1"##).is_empty());
+    assert!(errors(r##"let n = to_md_fragment(["a"]) | let name = "depth" | attr(n, name) + 1"##).is_empty());
 }
 
 #[rstest]
