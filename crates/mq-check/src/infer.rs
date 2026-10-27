@@ -167,8 +167,8 @@ pub struct DeferredCallReturnAccess {
 pub struct DeferredTupleAccess {
     /// The call symbol ID (the bracket access expression)
     pub call_symbol_id: SymbolId,
-    /// The variable definition symbol ID
-    pub def_id: SymbolId,
+    /// The type of the indexed value
+    pub container_ty: Type,
     /// The literal index value (None if dynamic index)
     pub index: Option<usize>,
     /// Source range for error reporting

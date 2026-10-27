@@ -323,10 +323,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
 
     let mut resolved_any = false;
     for access in &accesses {
-        let var_ty = match ctx.get_symbol_type(access.def_id).cloned() {
-            Some(ty) => ctx.resolve_type(&ty),
-            None => continue,
-        };
+        let var_ty = ctx.resolve_type(&access.container_ty);
 
         match &var_ty {
             types::Type::Tuple(elems) => {

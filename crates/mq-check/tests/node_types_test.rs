@@ -316,3 +316,22 @@ fn test_user_functions_that_are_not_exact_predicates_do_not_narrow(#[case] defin
 fn test_argument_selector_on_unknown_input_may_select_an_array(#[case] code: &str) {
     assert!(errors(code).is_empty(), "{code}");
 }
+
+#[rstest]
+#[case::missing_attribute(r#"compact(.code.depth)"#, false)]
+#[case::missing_attribute_on_unknown_input(r#"nodes | compact(.code.depth)"#, false)]
+#[case::valid_attribute(r#"nodes | compact(.h.depth)"#, true)]
+#[case::valid_value(r#"nodes | compact(.code.value)"#, true)]
+fn test_argument_selector_chain_checks_attributes(#[case] code: &str, #[case] ok: bool) {
+    assert_eq!(errors(code).is_empty(), ok, "{code}");
+}
+
+#[rstest]
+#[case::number_element(r#"[1, 2] | self[0] | upcase()"#, false)]
+#[case::string_element(r#"["a", "b"] | self[0] | upcase()"#, true)]
+#[case::number_slice(r#"[1, 2, 3] | self[1:2] | upcase()"#, false)]
+#[case::string_index(r#""abc" | self[0] | upcase()"#, true)]
+#[case::unknown_input(r#"self[0] | upcase()"#, true)]
+fn test_indexed_self_has_the_element_type_of_the_piped_input(#[case] code: &str, #[case] ok: bool) {
+    assert_eq!(errors(code).is_empty(), ok, "{code}");
+}
