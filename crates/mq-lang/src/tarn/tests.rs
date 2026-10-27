@@ -4774,6 +4774,33 @@ fn let_rebinding_does_not_change_existing_closures(#[case] code: &str, #[case] e
     assert_eq!(run(code), expected);
 }
 
+#[rstest]
+#[case::def_def("module m: def a(): 1; def a(): 2; end | m::a()", "a")]
+#[case::def_then_let("module m: def a(): 1; let a = 2 end | m::a", "a")]
+#[case::let_then_def("module m: let a = 2 | def a(): 1; end | m::a", "a")]
+fn module_rejects_binding_the_same_name_twice_across_kinds(#[case] code: &str, #[case] name: &str) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let result = compile_and_run(&program, token_arena);
+    assert!(
+        matches!(&result, Err(Error::Compile(compiler::CompileError::DuplicateModuleBinding(n, _))) if n == name),
+        "{result:?}"
+    );
+}
+
+#[rstest]
+#[case::def_def("module m: def a(): 1; end | module m: def a(): 2; end | m::a()")]
+#[case::let_def("module m: let a = 1 end | module m: def a(): 2; end | m::a")]
+fn module_extension_rejects_existing_member(#[case] code: &str) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let result = compile_and_run(&program, token_arena);
+    assert!(
+        matches!(&result, Err(Error::Compile(compiler::CompileError::DuplicateModuleBinding(name, _))) if name == "a"),
+        "{result:?}"
+    );
+}
+
 #[test]
 fn module_rejects_binding_the_same_name_twice() {
     let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
