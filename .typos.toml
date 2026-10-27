@@ -14,6 +14,8 @@ juxt = "juxt"
 mport = "mport"
 reakpoint = "reakpoint"
 sction = "sction"
+# Intentional misspelling of `.value` in the unknown-selector hint test
+vlaue = "vlaue"
 
 [default.extend-identifiers]
 # bimap is a crate name (bijective map)
