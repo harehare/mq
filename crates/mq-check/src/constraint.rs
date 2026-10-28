@@ -76,12 +76,26 @@ impl ConstraintOrigin {
 pub enum Constraint {
     /// Two types must be equal
     Equal(Type, Type, Option<mq_lang::Range>, ConstraintOrigin),
+    /// A variable takes the value of another variable or parameter, `var x = ... | x = y`.
+    /// The variable is `source` when `source_def` has a known type, and `previous | source`
+    /// otherwise, since an unknown `source` may be the variable itself.
+    Join {
+        var: Type,
+        previous: Type,
+        source: Type,
+        source_def: Type,
+        range: Option<mq_lang::Range>,
+        origin: ConstraintOrigin,
+    },
 }
 
 impl fmt::Display for Constraint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Constraint::Equal(t1, t2, _, _) => write!(f, "{} ~ {}", t1, t2),
+            Constraint::Join {
+                var, previous, source, ..
+            } => write!(f, "{} ~ {} | {}", var, previous, source),
         }
     }
 }
@@ -828,22 +842,32 @@ pub(super) fn generate_symbol_constraints(
                             }
 
                             let new_var_ty = ctx.fresh_var();
-                            // A variable or parameter of unknown type keeps what the variable held before.
-                            let assigned_ty = if is_binding_ref(hir, rhs_id) {
-                                Type::union(vec![before.clone(), rhs_ty.clone()])
-                            } else {
-                                rhs_ty.clone()
-                            };
                             ctx.set_symbol_type_no_bind(var_id, Type::Var(new_var_ty));
                             let var_name = hir.symbol(lhs_id).and_then(|s| s.value.clone()).unwrap_or_default();
-                            ctx.add_constraint(Constraint::Equal(
-                                Type::Var(new_var_ty),
-                                assigned_ty,
-                                range,
-                                ConstraintOrigin::Assignment {
-                                    var_name: SmolStr::new(var_name.as_str()),
-                                },
-                            ));
+                            let origin = ConstraintOrigin::Assignment {
+                                var_name: SmolStr::new(var_name.as_str()),
+                            };
+                            // A variable or parameter of unknown type keeps what the variable held before.
+                            let source_def = is_binding_ref(hir, rhs_id)
+                                .then(|| hir.resolve_reference_symbol(rhs_id))
+                                .flatten()
+                                .map(|def| ctx.get_or_create_symbol_type(def));
+                            match source_def {
+                                Some(source_def) => ctx.add_constraint(Constraint::Join {
+                                    var: Type::Var(new_var_ty),
+                                    previous: before.clone(),
+                                    source: rhs_ty.clone(),
+                                    source_def,
+                                    range,
+                                    origin,
+                                }),
+                                None => ctx.add_constraint(Constraint::Equal(
+                                    Type::Var(new_var_ty),
+                                    rhs_ty.clone(),
+                                    range,
+                                    origin,
+                                )),
+                            }
 
                             // No need to re-bind subsequent Refs: Assigns are processed
                             // in Pass 2.5 (before Refs/Calls in Pass 3), so Refs will

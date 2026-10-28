@@ -16,6 +16,21 @@ pub fn solve_constraints(ctx: &mut InferenceContext) {
             Constraint::Equal(t1, t2, range, origin) => {
                 unify(ctx, &t1, &t2, range, &origin);
             }
+            Constraint::Join {
+                var,
+                previous,
+                source,
+                source_def,
+                range,
+                origin,
+            } => {
+                let assigned = if ctx.is_settled(&source_def) {
+                    source
+                } else {
+                    Type::union(vec![previous, source])
+                };
+                unify(ctx, &var, &assigned, range, &origin);
+            }
         }
     }
 }
