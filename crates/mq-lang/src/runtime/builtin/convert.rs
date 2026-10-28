@@ -5,7 +5,7 @@ use crate::runtime::builtin::Error;
 use base64::prelude::*;
 use encoding_rs::Encoding;
 use html_escape::decode_html_entities;
-use percent_encoding::{NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
 use sha2::Digest;
 use url::Url;
 
@@ -32,6 +32,9 @@ pub(super) enum Convert {
     UriEncode,
     UriDecode,
 }
+
+/// Everything except the RFC 3986 unreserved characters (`A-Za-z0-9-_.~`).
+const URI_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'_').remove(b'.').remove(b'~');
 
 fn is_url(s: &str) -> bool {
     Url::parse(s).is_ok()
@@ -108,7 +111,12 @@ impl Convert {
                 }
                 _ => RuntimeValue::NONE,
             },
-            Convert::Html => to_html(input).unwrap_or(RuntimeValue::NONE),
+            Convert::Html => match input {
+                RuntimeValue::None => RuntimeValue::NONE,
+                RuntimeValue::String(s) => html_escape(s).unwrap_or(RuntimeValue::NONE),
+                RuntimeValue::Markdown(node, _) => html_escape(node.value().as_str()).unwrap_or(RuntimeValue::NONE),
+                _ => html_escape(&input.to_string()).unwrap_or(RuntimeValue::NONE),
+            },
             Convert::Text => to_text(input).unwrap_or(RuntimeValue::NONE),
             Convert::UriEncode => match input {
                 RuntimeValue::String(s) => url_encode(s).unwrap_or(RuntimeValue::NONE),
@@ -445,7 +453,7 @@ pub(super) fn base64urld_bytes(input: &str) -> Result<RuntimeValue, Error> {
 #[inline(always)]
 pub(super) fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(Shared::new(
-        utf8_percent_encode(input, NON_ALPHANUMERIC).to_string(),
+        utf8_percent_encode(input, URI_ENCODE_SET).to_string(),
     )))
 }
 
@@ -897,13 +905,14 @@ pub(super) fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
         return Ok(RuntimeValue::String(Shared::new("''".to_string())));
     }
 
-    // Check if the string contains characters that need escaping
-    let needs_quoting = input.chars().any(|c| {
-        !matches!(c,
-            'a'..='z' | 'A'..='Z' | '0'..='9' |
-            '-' | '_' | '=' | '/' | '.' | ',' | ':' | '@'
-        )
-    });
+    // A leading `=` is expanded as a command path by zsh, so it must be quoted
+    let needs_quoting = input.starts_with('=')
+        || input.chars().any(|c| {
+            !matches!(c,
+                'a'..='z' | 'A'..='Z' | '0'..='9' |
+                '-' | '_' | '=' | '/' | '.' | ',' | ':' | '@'
+            )
+        });
 
     if !needs_quoting {
         // Safe to use without quoting
