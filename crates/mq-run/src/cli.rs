@@ -7,7 +7,7 @@ use mq_lang::DefaultEngine;
 use mq_lang::DictMap;
 use mq_lang::Shared;
 use rayon::prelude::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
@@ -3017,16 +3017,23 @@ impl Cli {
                 .filter_map(Result::ok)
                 .collect::<Vec<_>>();
 
-            if matches.is_empty() {
-                expanded.push(file.clone());
-            }
+            let mut seen = HashSet::new();
+            let mut from_glob = Vec::new();
 
             for matched in matches {
-                if matched.is_dir() {
-                    expanded.extend(Self::collect_markdown_files(&matched)?);
+                let paths = if matched.is_dir() {
+                    Self::walk_markdown_files(&matched)?
                 } else {
-                    expanded.push(matched);
-                }
+                    vec![matched]
+                };
+
+                from_glob.extend(paths.into_iter().filter(|p| seen.insert(p.clone())));
+            }
+
+            if from_glob.is_empty() {
+                expanded.push(file.clone());
+            } else {
+                expanded.extend(from_glob);
             }
         }
 
@@ -3036,6 +3043,16 @@ impl Cli {
     /// Recursively collects Markdown files under `dir`, sorted by path. Hidden and gitignored
     /// entries are skipped.
     fn collect_markdown_files(dir: &Path) -> miette::Result<Vec<PathBuf>> {
+        let found = Self::walk_markdown_files(dir)?;
+
+        if found.is_empty() {
+            return Err(miette!("no Markdown files found in `{}`", dir.display()));
+        }
+
+        Ok(found)
+    }
+
+    fn walk_markdown_files(dir: &Path) -> miette::Result<Vec<PathBuf>> {
         let mut found = Vec::new();
 
         for entry in ignore::WalkBuilder::new(dir).build() {
@@ -3050,10 +3067,6 @@ impl Cli {
             if is_markdown {
                 found.push(path.to_path_buf());
             }
-        }
-
-        if found.is_empty() {
-            return Err(miette!("no Markdown files found in `{}`", dir.display()));
         }
 
         found.sort();
