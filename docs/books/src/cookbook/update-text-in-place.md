@@ -67,6 +67,7 @@ mq -U -i 'select(contains("1.2.0")) | replace("1.2.0", "1.3.0")' docs/*.md
 - Each file is replaced atomically, keeps its mode, owner and group (best effort, as an unprivileged user cannot chown), and a symlink is followed to its target. Extended attributes, ACLs and hard links are not preserved.
 - A file whose content would not change is not touched.
 - `--backup=SUFFIX` first copies each changed file to `<file>SUFFIX` (for example `--backup=.bak` gives `CHANGELOG.md.bak`).
+- With `--sandbox` or `--allow-write=PATH`, every file must be covered by `--allow-write`, otherwise `-i` fails before writing anything.
 - Combine it with `--diff` to preview without writing; the exit code is still `1` if anything would change.
 - stdin, gzip input, `-o`, and non-Markdown `-F` formats are rejected. The same file given twice is rejected too.
 - Files are written one at a time, so a failure on a later file leaves earlier files already rewritten.

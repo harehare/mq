@@ -1963,6 +1963,36 @@ fn test_in_place_rejects_invalid_options(#[case] args: &[&str]) {
     cmd.args(args).write_stdin("# title\n").assert().failure();
 }
 
+/// `{file}` in a flag is replaced by the path of the file being edited.
+#[rstest]
+#[case::sandbox_without_write("sandbox_strict", &["--sandbox", "strict"][..], false)]
+#[case::allow_write_elsewhere("allow_elsewhere", &["--allow-write=/nonexistent/other.md"][..], false)]
+#[case::sandbox_allow_write_target("sandbox_target", &["--sandbox", "strict", "--allow-write={file}"][..], true)]
+#[case::allow_write_target("allow_target", &["--allow-write={file}"][..], true)]
+#[case::no_permission_flags("no_flags", &[][..], true)]
+fn test_in_place_write_permission(#[case] name: &str, #[case] flags: &[&str], #[case] succeeds: bool) {
+    let (_, file) = create_file(&format!("test_in_place_perm_{name}.md"), "# title\n");
+    let file_clone = file.clone();
+
+    defer! {
+        std::fs::remove_file(&file_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    for flag in flags {
+        cmd.arg(flag.replace("{file}", &file.to_string_lossy()));
+    }
+    let assert = cmd.args(["-U", "-i", ".h | upcase()"]).arg(&file).assert();
+
+    if succeeds {
+        assert.success();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "# TITLE\n");
+    } else {
+        assert.failure();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "# title\n");
+    }
+}
+
 #[test]
 fn test_in_place_rejects_same_file_twice() -> Result<(), Box<dyn std::error::Error>> {
     let (_, file) = create_file("test_in_place_twice.md", "# title\n");

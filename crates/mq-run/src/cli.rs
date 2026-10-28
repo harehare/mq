@@ -2286,11 +2286,16 @@ impl Cli {
         self.check_write_permitted(path)
     }
 
-    /// Under `--sandbox`, rejects writing `path` unless `--allow-write` permits it.
-    fn check_write_permitted(&self, path: &Path) -> miette::Result<()> {
-        if self.input.program.sandbox.is_none() {
+    /// Rejects `--in-place` on `path` when `--sandbox` or `--allow-write` is given and
+    /// `--allow-write` does not cover it. With neither, `-i` itself is the consent.
+    fn check_in_place_permitted(&self, path: &Path) -> miette::Result<()> {
+        if self.input.program.sandbox.is_none() && self.input.program.allow_write.is_none() {
             return Ok(());
         }
+        self.check_write_permitted(path)
+    }
+
+    fn check_write_permitted(&self, path: &Path) -> miette::Result<()> {
         self.input
             .program
             .build_sandboxed_io()
@@ -2819,7 +2824,7 @@ impl Cli {
                     return Err(miette!("--in-place does not support gzip input: {}", path.display()));
                 }
                 Some(path) => {
-                    self.check_write_permitted(path)?;
+                    self.check_in_place_permitted(path)?;
                     // A second pass would re-read stale content and overwrite the backup.
                     if !seen.insert(fs::canonicalize(path).unwrap_or_else(|_| path.clone())) {
                         return Err(miette!("--in-place was given the same file twice: {}", path.display()));
