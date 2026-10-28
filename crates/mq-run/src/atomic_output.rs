@@ -265,11 +265,17 @@ impl OutputSink {
             .into_inner()
             .map_err(|e| miette!("failed to flush temporary output file: {}", e.error()))?;
         file.sync_all().into_diagnostic()?;
-        drop(file);
 
         if let Ok(meta) = fs::metadata(target_path) {
+            // Ownership first: chown clears setuid/setgid. Failing is fine without privilege.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::{MetadataExt, fchown};
+                let _ = fchown(&file, Some(meta.uid()), Some(meta.gid()));
+            }
             let _ = fs::set_permissions(temp_path, meta.permissions());
         }
+        drop(file);
 
         fs::rename(temp_path, target_path).into_diagnostic()?;
         Ok(())
@@ -641,6 +647,26 @@ mod tests {
 
         assert!(!claimed.load(Ordering::SeqCst));
         assert_eq!(fs::read_to_string(&target).unwrap(), "original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_replace_file_keeps_owner_group_and_mode() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let dir = temp_dir("replace-owner");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("doc.md");
+        fs::write(&target, "old").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+        let before = fs::metadata(&target).unwrap();
+
+        OutputSink::replace_file(&target, b"new", None).unwrap();
+
+        let after = fs::metadata(&target).unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+        assert_eq!((after.uid(), after.gid()), (before.uid(), before.gid()));
+        assert_eq!(after.permissions().mode() & 0o7777, 0o640);
     }
 
     #[cfg(unix)]

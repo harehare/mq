@@ -64,7 +64,7 @@ $ mq -U --diff 'select(contains("1.2.0")) | replace("1.2.0", "1.3.0")' CHANGELOG
 mq -U -i 'select(contains("1.2.0")) | replace("1.2.0", "1.3.0")' docs/*.md
 ```
 
-- Each file is replaced atomically, keeps its mode, and a symlink is followed to its target.
+- Each file is replaced atomically, keeps its mode, owner and group (best effort, as an unprivileged user cannot chown), and a symlink is followed to its target. Extended attributes, ACLs and hard links are not preserved.
 - A file whose content would not change is not touched.
 - `--backup=SUFFIX` first copies each changed file to `<file>SUFFIX` (for example `--backup=.bak` gives `CHANGELOG.md.bak`).
 - Combine it with `--diff` to preview without writing; the exit code is still `1` if anything would change.
