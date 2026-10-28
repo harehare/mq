@@ -741,7 +741,11 @@ impl InferenceContext {
     ) {
         let key = (
             range,
-            format!("{} with arguments ({})", op_name, format_type_list(arg_tys)),
+            format!(
+                "{} with arguments ({})",
+                op_name,
+                self.format_arguments(op_name, arg_tys)
+            ),
         );
         let found = if in_element_callback {
             InlinedError::ElementCallback
@@ -766,9 +770,29 @@ impl InferenceContext {
         }
     }
 
+    /// The argument types of a call as shown in a message. The input of the query comes first
+    /// when its type is unknown, and a call with more arguments than any overload takes was given
+    /// that input as one of them, which the user did not write.
+    fn format_arguments(&self, op_name: &str, arg_tys: &[Type]) -> String {
+        let max_arity = self.get_builtin_overloads(op_name).and_then(|overloads| {
+            overloads
+                .iter()
+                .filter_map(|overload| match overload {
+                    Type::Function(params, _) => Some(params.len()),
+                    _ => None,
+                })
+                .max()
+        });
+        let shown = match (arg_tys.split_first(), max_arity) {
+            (Some((first, rest)), Some(max)) if first.is_dynamic() && arg_tys.len() > max => rest,
+            _ => arg_tys,
+        };
+        format_type_list(shown)
+    }
+
     /// Reports a "no matching overload" error with formatted argument types.
     pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
-        let args_str = format_type_list(arg_tys);
+        let args_str = self.format_arguments(op_name, arg_tys);
         let context = self.format_available_overloads(op_name);
         self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),

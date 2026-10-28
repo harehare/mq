@@ -1001,3 +1001,16 @@ fn test_array_element_access_none_can_be_handled(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "`{code}` must type check: {result:?}");
 }
+
+#[rstest]
+#[case::root_call(r#"abs("a")"#, "`abs` cannot be applied to (string)")]
+#[case::extra_argument(r#"abs("a", 1)"#, "`abs` cannot be applied to (string, number)")]
+#[case::piped(r#""a" | abs()"#, "`abs` cannot be applied to (string)")]
+fn test_no_overload_message_leaves_out_the_unknown_query_input(#[case] code: &str, #[case] expected: &str) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(
+        errors.first().map(ToString::to_string).as_deref(),
+        Some(expected),
+        "{errors:?}"
+    );
+}
