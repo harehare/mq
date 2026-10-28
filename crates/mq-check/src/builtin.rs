@@ -1468,12 +1468,9 @@ fn register_io(ctx: &mut InferenceContext) {
     let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
     register_binary(ctx, "stderr", Type::Var(a), Type::Var(b), Type::Var(a));
 
-    // error/halt never return, so use a fresh type variable (acts as bottom/never type)
-    // This allows error() in if/else branches without type conflicts
-    let a = ctx.fresh_var();
-    register_unary(ctx, "error", Type::String, Type::Var(a));
-    let a = ctx.fresh_var();
-    register_unary(ctx, "halt", Type::Number, Type::Var(a));
+    // error/halt never return, so their result is the bottom type, which any branch absorbs
+    register_unary(ctx, "error", Type::String, Type::Never);
+    register_unary(ctx, "halt", Type::Number, Type::Never);
     register_nullary(ctx, "input", Type::String);
     register_nullary(ctx, "env", Type::dict(Type::String, Type::String));
     register_unary(ctx, "env", Type::String, Type::String);
@@ -1706,7 +1703,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
         ctx,
         "get_location",
         Type::Var(value),
-        Type::dict(Type::String, Type::Number),
+        Type::union(vec![Type::dict(Type::String, Type::Number), Type::None]),
     );
 
     // Other markdown functions

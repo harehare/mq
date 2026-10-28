@@ -121,6 +121,11 @@ impl Type {
             }
         }
 
+        // The bottom type contributes no values, unless it is all there is
+        if normalized.len() > 1 {
+            normalized.retain(|ty| !ty.is_never());
+        }
+
         // Node types of one union fold into a single node type of the combined kinds
         let mut nodes: Option<KindSet> = None;
         normalized.retain(|ty| match ty {
