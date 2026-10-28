@@ -16,7 +16,7 @@ pub struct Related {
 
 /// The variables passed to the calls at `at_range`, with their types and where they are defined.
 ///
-/// Only a variable or parameter of the program with a settled type is listed, since a type that
+/// Only a variable or parameter of the program (not of a module) with a settled type is listed, since a type that
 /// is still unknown explains nothing.
 pub(crate) fn variable_arguments(hir: &Hir, ctx: &InferenceContext, at_range: &[SymbolId]) -> Vec<Related> {
     let mut related: Vec<Related> = Vec::new();
@@ -49,11 +49,20 @@ pub(crate) fn variable_arguments(hir: &Hir, ctx: &InferenceContext, at_range: &[
             else {
                 continue;
             };
-            let (id, definition) = definition;
+            let (_, definition) = definition;
+            // A range in a module cannot be shown against the source being checked
+            if definition
+                .source
+                .source_id
+                .is_some_and(|source_id| hir.is_module_source(source_id))
+            {
+                continue;
+            }
             let (Some(name), Some(range)) = (symbol.value.as_deref(), symbol_range(hir, definition)) else {
                 continue;
             };
-            let Some(ty) = ctx.get_symbol_type(id).map(|ty| ctx.resolve_type(ty)) else {
+            // The type the call reads, which a later assignment to the variable does not change
+            let Some(ty) = ctx.get_symbol_type(argument).map(|ty| ctx.resolve_type(ty)) else {
                 continue;
             };
             if ty.has_pending_var() || ty.is_dynamic() || related.iter().any(|r| r.range == range) {

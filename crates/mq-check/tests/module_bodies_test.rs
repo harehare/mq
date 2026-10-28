@@ -107,3 +107,16 @@ fn opened_module_file_is_checked_in_full() {
     hir.add_code(None, r#"include "mymod" | one()"#);
     assert!(!TypeChecker::new().check(&hir).is_empty());
 }
+
+#[test]
+fn variable_of_a_module_is_not_a_related_note() {
+    let dir = std::env::temp_dir().join(format!("mq_check_module_related_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("varmod.mq"), "let ms = \"a\"").unwrap();
+    let mut loader = mq_lang::ModuleLoader::default();
+    loader.set_search_paths(vec![dir]);
+    let mut hir = Hir::new(loader);
+    hir.add_code(None, r#"include "varmod" | abs(ms)"#);
+    let errors = TypeChecker::new().check_classified(&hir);
+    assert!(errors.iter().all(|c| c.related.is_empty()), "{errors:?}");
+}
