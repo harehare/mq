@@ -420,6 +420,7 @@ impl TypeChecker {
         // Generate constraints from HIR (collects errors internally).
         // Returns the children index so it can be reused by later passes.
         let children_index = constraint::generate_constraints(hir, &mut ctx);
+        narrowing::scope_narrowed_refs(hir, &mut ctx);
         laps.lap("generate_constraints");
 
         // Solve constraints through unification (collects errors internally)

@@ -617,6 +617,16 @@ impl InferenceContext {
         std::mem::take(&mut self.deferred_try_catches)
     }
 
+    /// The type narrowings collected so far
+    pub(crate) fn type_narrowings(&self) -> &[TypeNarrowing] {
+        &self.type_narrowings
+    }
+
+    /// Mutable access to the pending constraints
+    pub(crate) fn constraints_mut(&mut self) -> &mut [Constraint] {
+        &mut self.constraints
+    }
+
     /// Adds a type narrowing collected from a type predicate condition
     pub fn add_type_narrowing(&mut self, narrowing: TypeNarrowing) {
         self.type_narrowings.push(narrowing);

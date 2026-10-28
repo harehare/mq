@@ -25,7 +25,7 @@
 //! - OR (same variable): `is_string(x) || is_number(x)` → then: String|Number
 //! - Structural selector: `if (.h): ...` → first function parameter narrowed to Markdown
 
-use crate::constraint::{ChildrenIndex, get_children, get_non_keyword_children};
+use crate::constraint::{ChildrenIndex, Constraint, ConstraintOrigin, get_children, get_non_keyword_children};
 use crate::infer::{CrossArmNarrowing, InferenceContext, NarrowingEntry, PendingNarrowing, TypeNarrowing};
 use crate::kind_set::KindSet;
 use crate::types::Type;
@@ -775,6 +775,55 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> 
     }
 
     dead_branches
+}
+
+/// Makes the references in a narrowed branch read the narrowed type instead of the variable's.
+///
+/// Without this, `if (is_markdown(v)): to_md_name(v)` would also constrain the parameter `v`
+/// itself to markdown for the whole function. Runs before solving, on the constraints that tie
+/// each reference to its definition.
+pub(crate) fn scope_narrowed_refs(hir: &Hir, ctx: &mut InferenceContext) {
+    if ctx.type_narrowings().is_empty() {
+        return;
+    }
+
+    let mut def_to_refs: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
+    for (ref_id, ref_sym) in hir.symbols() {
+        if !matches!(ref_sym.kind, SymbolKind::Ref) {
+            continue;
+        }
+        if let Some(def_id) = hir.resolve_reference_symbol(ref_id) {
+            def_to_refs.entry(def_id).or_default().push(ref_id);
+        }
+    }
+
+    // reference type variable -> (definition type, narrowed type)
+    let mut scoped: FxHashMap<crate::types::TypeVarId, (Type, Type)> = FxHashMap::default();
+    for narrowing in ctx.type_narrowings() {
+        for entry in narrowing.then_narrowings.iter().filter(|e| !e.is_complement) {
+            let (Some(def_ty), Some(refs)) = (ctx.get_symbol_type(entry.def_id), def_to_refs.get(&entry.def_id)) else {
+                continue;
+            };
+            for &ref_id in refs {
+                let in_branch = ref_id == narrowing.then_branch_id
+                    || walk_ancestors(hir, ref_id).any(|(ancestor, _)| ancestor == narrowing.then_branch_id);
+                if let (true, Some(Type::Var(var))) = (in_branch, ctx.get_symbol_type(ref_id)) {
+                    scoped
+                        .entry(*var)
+                        .or_insert_with(|| (def_ty.clone(), entry.narrowed_type.clone()));
+                }
+            }
+        }
+    }
+
+    for constraint in ctx.constraints_mut() {
+        if let Constraint::Equal(Type::Var(var), def_side, _, ConstraintOrigin::General) = constraint
+            && let Some((def_ty, narrowed)) = scoped.get(var)
+            && def_side == def_ty
+        {
+            *def_side = narrowed.clone();
+        }
+    }
 }
 
 /// Computes the effective narrowed type for a NarrowingEntry.

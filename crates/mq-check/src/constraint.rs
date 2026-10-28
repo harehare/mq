@@ -828,11 +828,17 @@ pub(super) fn generate_symbol_constraints(
                             }
 
                             let new_var_ty = ctx.fresh_var();
+                            // A variable or parameter of unknown type keeps what the variable held before.
+                            let assigned_ty = if is_binding_ref(hir, rhs_id) {
+                                Type::union(vec![before.clone(), rhs_ty.clone()])
+                            } else {
+                                rhs_ty.clone()
+                            };
                             ctx.set_symbol_type_no_bind(var_id, Type::Var(new_var_ty));
                             let var_name = hir.symbol(lhs_id).and_then(|s| s.value.clone()).unwrap_or_default();
                             ctx.add_constraint(Constraint::Equal(
                                 Type::Var(new_var_ty),
-                                rhs_ty.clone(),
+                                assigned_ty,
                                 range,
                                 ConstraintOrigin::Assignment {
                                     var_name: SmolStr::new(var_name.as_str()),
@@ -1195,6 +1201,7 @@ pub(super) fn generate_symbol_constraints(
                                     .iter()
                                     .filter_map(|&id| get_children(children_index, id).last().copied()),
                             )
+                            .map(|branch| block_tail(hir, branch, children_index))
                             .any(|branch| is_unpinnable_branch(hir, branch))
                         && resolved.iter().any(|ty| ty != &resolved[0]);
 
@@ -2244,6 +2251,16 @@ fn generate_call_constraints(
     }
 }
 
+/// The value a `do ... end` block ends with, or the symbol itself when it is not a block.
+fn block_tail(hir: &Hir, mut symbol_id: SymbolId, children_index: &ChildrenIndex) -> SymbolId {
+    while hir.symbol(symbol_id).is_some_and(|s| s.kind == SymbolKind::Block)
+        && let Some(&last) = get_non_keyword_children(hir, symbol_id, children_index).last()
+    {
+        symbol_id = last;
+    }
+    symbol_id
+}
+
 /// Whether a branch value must not be unified with the other branches: a reference to a
 /// parameter or variable, or a call of a builtin whose result is typed only after unification.
 /// (A call of a user function stays unified, which is how a recursive call gets its type.)
@@ -2255,7 +2272,21 @@ fn is_unpinnable_branch(hir: &Hir, symbol_id: SymbolId) -> bool {
             .resolve_reference_symbol(symbol_id)
             .and_then(|def| hir.symbol(def))
             .is_some_and(|def| hir.is_builtin_symbol(def));
-    is_binding_ref(hir, symbol_id) || is_builtin_call
+    is_binding_ref(hir, symbol_id) || is_builtin_call || is_non_recursive_user_call(hir, symbol_id)
+}
+
+/// Whether `symbol_id` calls a user function from outside its body, so its result is a proper
+/// instance of the function's type rather than the function's own result being inferred.
+fn is_non_recursive_user_call(hir: &Hir, symbol_id: SymbolId) -> bool {
+    if hir.symbol(symbol_id).is_none_or(|s| s.kind != SymbolKind::Call) {
+        return false;
+    }
+    hir.resolve_reference_symbol(symbol_id)
+        .filter(|&def| {
+            hir.symbol(def)
+                .is_some_and(|d| matches!(d.kind, SymbolKind::Function(_)))
+        })
+        .is_some_and(|def| crate::walk_ancestors(hir, symbol_id).all(|(ancestor, _)| ancestor != def))
 }
 
 /// Whether `symbol_id` is a reference to a function parameter or a `let`/`var` variable.
