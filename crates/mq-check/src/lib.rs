@@ -26,6 +26,7 @@ pub mod kind_set;
 pub(crate) mod narrowing;
 pub(crate) mod node_attr;
 pub(crate) mod probe;
+mod related;
 pub mod type_expr;
 pub mod types;
 pub(crate) mod unify;
@@ -37,6 +38,7 @@ use thiserror::Error;
 use types::TypeScheme;
 
 pub use certainty::{Certainty, Classified, Severity};
+pub use related::Related;
 
 /// Names `mq-test` defines at runtime, which no source declares. Pass them to
 /// [`Hir::declare_global`] when checking test files.

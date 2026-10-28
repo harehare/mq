@@ -10,6 +10,7 @@ use mq_hir::{Hir, SymbolId};
 use rustc_hash::FxHashMap;
 
 use crate::infer::InferenceContext;
+use crate::related::{Related, variable_arguments};
 use crate::{TypeError, symbol_range};
 
 mod prover;
@@ -40,6 +41,8 @@ pub enum Severity {
 pub struct Classified {
     /// The diagnostic.
     pub error: TypeError,
+    /// Other places that explain the diagnostic, e.g. where an argument got its type.
+    pub related: Vec<Related>,
     /// How sure the checker is about it.
     pub certainty: Certainty,
 }
@@ -96,9 +99,14 @@ pub(crate) fn classify_all(
     };
     errors
         .into_iter()
-        .map(|error| Classified {
-            certainty: classifier.classify(&error),
-            error,
+        .map(|error| {
+            let certainty = classifier.classify(&error);
+            let related = classifier.related(&error);
+            Classified {
+                certainty,
+                related,
+                error,
+            }
         })
         .collect()
 }
@@ -114,6 +122,35 @@ struct Classifier<'a> {
 }
 
 impl Classifier<'_> {
+    /// The symbols whose range is `range`.
+    fn symbols_at(&mut self, range: mq_lang::Range) -> &[SymbolId] {
+        let hir = self.hir;
+        self.symbols_at
+            .get_or_insert_with(|| {
+                let mut index: FxHashMap<mq_lang::Range, Vec<SymbolId>> = FxHashMap::default();
+                for (id, symbol) in hir.symbols() {
+                    if let Some(range) = symbol_range(hir, symbol) {
+                        index.entry(range).or_default().push(id);
+                    }
+                }
+                index
+            })
+            .get(&range)
+            .map_or(&[][..], Vec::as_slice)
+    }
+
+    /// Where the variables passed to the call of a type error got their type.
+    fn related(&mut self, error: &TypeError) -> Vec<Related> {
+        if !matches!(error, TypeError::Mismatch { .. } | TypeError::UnificationError { .. }) {
+            return Vec::new();
+        }
+        let Some(range) = error.location() else {
+            return Vec::new();
+        };
+        let (hir, ctx) = (self.hir, self.ctx);
+        variable_arguments(hir, ctx, self.symbols_at(range))
+    }
+
     fn classify(&mut self, error: &TypeError) -> Certainty {
         if error.is_advisory() {
             return Certainty::Uncertain;
@@ -127,19 +164,7 @@ impl Classifier<'_> {
             };
         };
         let (hir, ctx, declared_input) = (self.hir, self.ctx, self.declared_input);
-        let at_range = self
-            .symbols_at
-            .get_or_insert_with(|| {
-                let mut index: FxHashMap<mq_lang::Range, Vec<SymbolId>> = FxHashMap::default();
-                for (id, symbol) in hir.symbols() {
-                    if let Some(range) = symbol_range(hir, symbol) {
-                        index.entry(range).or_default().push(id);
-                    }
-                }
-                index
-            })
-            .get(&range)
-            .map_or(&[][..], Vec::as_slice);
+        let at_range = self.symbols_at(range).to_vec();
         // Whatever the reason, a `try:` body is allowed to fail.
         if at_range.iter().any(|&id| in_try_body(hir, id)) {
             return Certainty::Uncertain;
@@ -157,6 +182,6 @@ impl Classifier<'_> {
         let inlined = ctx.inlined_error(error);
         self.prover
             .get_or_insert_with(|| Prover::new(hir, ctx, declared_input))
-            .classify_at(hir, at_range, operand_mismatch, no_overload, inlined)
+            .classify_at(hir, &at_range, operand_mismatch, no_overload, inlined)
     }
 }

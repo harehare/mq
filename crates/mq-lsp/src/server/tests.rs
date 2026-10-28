@@ -1974,7 +1974,7 @@ async fn test_diagnostics_with_type_checking_enabled_type_error() {
     assert!(
         errors
             .iter()
-            .any(|e| matches!(e, LspError::TypeError(_) | LspError::UncertainTypeError(_))),
+            .any(|e| matches!(e, LspError::TypeError(..) | LspError::UncertainTypeError(..))),
         "expected at least one type error diagnostic for arity mismatch"
     );
 
