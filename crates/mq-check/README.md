@@ -162,7 +162,6 @@ Every diagnostic has a stable code, available as `TypeError::error_code`, and a 
 | --- | --- | --- |
 | `typechecker::type_mismatch` | A value has a different type than expected. | `let s = "a" \| abs(s)` |
 | `typechecker::unification_error` | Two types cannot be made equal, or no overload of a builtin takes the arguments. | `abs("a", 1)` |
-| `typechecker::undefined_symbol` | A name is not defined. The checker does not emit it today: an unresolved name is reported as a syntax error. | `foo(1)` |
 | `typechecker::wrong_arity` | A call passes the wrong number of arguments. | `def f(a, b): a + b; \| f(1, 2, 3)` |
 | `typechecker::undefined_field` | A record has no such key. | `let r = {"a": 1} \| r["b"] + 1` |
 | `typechecker::undefined_attribute` | A node kind has no such attribute. | `to_code("a", "rust") \| .depth` |

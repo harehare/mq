@@ -18,10 +18,6 @@ fn one_of_each() -> Vec<TypeError> {
             location: None,
             context: None,
         },
-        TypeError::UndefinedSymbol {
-            name: String::new(),
-            location: None,
-        },
         TypeError::WrongArity {
             expected: 0,
             found: 0,

@@ -448,7 +448,6 @@ fn error_title(error: &TypeError) -> String {
                 .next()
                 .map_or(String::new(), |first| first.to_lowercase().chain(chars).collect())
         }
-        TypeError::UndefinedSymbol { name, .. } => format!("undefined symbol: {name}"),
         TypeError::WrongArity { expected, found, .. } => {
             format!("wrong arity: expected {expected}, found {found}")
         }
@@ -694,11 +693,7 @@ mod tests {
     #[test]
     fn test_collect_check_diagnostics_reports_undefined_symbol() {
         let diagnostics = collect_check_diagnostics("undefined_fn()", None, &TypeCheckerOptions::default());
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.code == "typechecker::undefined_symbol" || d.code == "hir::unresolved_symbol")
-        );
+        assert!(diagnostics.iter().any(|d| d.code == "hir::unresolved_symbol"));
         assert!(diagnostics.iter().any(|d| d.severity == format::Severity::Error));
     }
 

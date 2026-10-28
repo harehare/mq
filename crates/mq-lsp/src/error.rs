@@ -207,15 +207,16 @@ mod tests {
 
     #[test]
     fn uncertain_type_error_is_a_warning() {
-        let error = mq_check::TypeError::UndefinedSymbol {
-            name: "x".to_string(),
+        let error = mq_check::TypeError::UndefinedField {
+            field: "x".to_string(),
+            record_ty: "{}".to_string(),
             location: range(),
         };
 
         let diagnostic: ls_types::Diagnostic = (&LspError::UncertainTypeError(error, Vec::new())).into();
 
         assert_eq!(diagnostic.severity, Some(ls_types::DiagnosticSeverity::WARNING));
-        assert_eq!(diagnostic.message, "Undefined symbol: x");
+        assert_eq!(diagnostic.message, "Undefined field `x` in record type {}");
     }
 
     #[test]
@@ -232,8 +233,9 @@ mod tests {
 
     #[test]
     fn related_places_become_related_information() {
-        let error = mq_check::TypeError::UndefinedSymbol {
-            name: "x".to_string(),
+        let error = mq_check::TypeError::UndefinedField {
+            field: "x".to_string(),
+            record_ty: "{}".to_string(),
             location: range(),
         };
         let related = vec![mq_check::Related {

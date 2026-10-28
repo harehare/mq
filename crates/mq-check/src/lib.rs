@@ -122,15 +122,6 @@ pub enum TypeError {
         /// Extra hint shown as help.
         context: Option<String>,
     },
-    #[error("Undefined symbol: {name}")]
-    #[diagnostic(code(typechecker::undefined_symbol))]
-    /// A symbol is used but never defined.
-    UndefinedSymbol {
-        /// Name of the undefined symbol.
-        name: String,
-        /// Source range of the error, if known.
-        location: Option<mq_lang::Range>,
-    },
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::wrong_arity))]
     /// A call passes the wrong number of arguments.
@@ -243,7 +234,6 @@ impl TypeError {
         match self {
             TypeError::Mismatch { .. } => "typechecker::type_mismatch",
             TypeError::UnificationError { .. } => "typechecker::unification_error",
-            TypeError::UndefinedSymbol { .. } => "typechecker::undefined_symbol",
             TypeError::WrongArity { .. } => "typechecker::wrong_arity",
             TypeError::UndefinedField { .. } => "typechecker::undefined_field",
             TypeError::UndefinedAttribute { .. } => "typechecker::undefined_attribute",
@@ -271,7 +261,6 @@ impl TypeError {
         match self {
             TypeError::Mismatch { location, .. }
             | TypeError::UnificationError { location, .. }
-            | TypeError::UndefinedSymbol { location, .. }
             | TypeError::WrongArity { location, .. }
             | TypeError::UndefinedField { location, .. }
             | TypeError::UndefinedAttribute { location, .. }
@@ -781,8 +770,9 @@ mod tests {
         assert_eq!(error.error_code(), "typechecker::wrong_arity");
         assert_eq!(error.hint(), Some("check the call"));
         assert_eq!(
-            TypeError::UndefinedSymbol {
-                name: "x".into(),
+            TypeError::UndefinedField {
+                field: "x".into(),
+                record_ty: "{}".into(),
                 location: None
             }
             .hint(),
@@ -793,7 +783,7 @@ mod tests {
     #[rstest]
     #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
     #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
-    #[case(TypeError::UndefinedSymbol { name: "a".into(), location: None }, None)]
+    #[case(TypeError::UndefinedField { field: "a".into(), record_ty: "{}".into(), location: None }, None)]
     fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<mq_lang::Range>) {
         assert_eq!(err.location(), expected);
     }
@@ -811,8 +801,9 @@ mod tests {
         #[case] offset: usize,
         #[case] len: usize,
     ) {
-        let err = TypeError::UndefinedSymbol {
-            name: "x".into(),
+        let err = TypeError::UndefinedField {
+            field: "x".into(),
+            record_ty: "{}".into(),
             location: Some(mq_lang::Range {
                 start: mq_lang::Position {
                     line: start_line,
@@ -831,8 +822,9 @@ mod tests {
     #[test]
     fn test_type_error_span_without_location() {
         assert!(
-            TypeError::UndefinedSymbol {
-                name: "a".into(),
+            TypeError::UndefinedField {
+                field: "a".into(),
+                record_ty: "{}".into(),
                 location: None
             }
             .span("1")

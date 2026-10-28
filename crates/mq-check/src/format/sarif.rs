@@ -59,7 +59,7 @@ mod tests {
     fn test_write_sarif_report_produces_valid_sarif_shape() {
         let diagnostics = vec![CheckDiagnostic {
             severity: Severity::Error,
-            code: "typechecker::undefined_symbol",
+            code: "typechecker::type_mismatch",
             message: "Undefined symbol: foo".to_string(),
             range: Some(mq_lang::Range::default()),
         }];
@@ -72,7 +72,7 @@ mod tests {
         assert_eq!(json["version"], "2.1.0");
         assert_eq!(json["runs"][0]["tool"]["driver"]["name"], "mq-check");
         let result = &json["runs"][0]["results"][0];
-        assert_eq!(result["ruleId"], "typechecker::undefined_symbol");
+        assert_eq!(result["ruleId"], "typechecker::type_mismatch");
         assert_eq!(result["level"], "error");
         assert_eq!(
             result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
