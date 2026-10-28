@@ -87,7 +87,7 @@ const VALUES: &[(&str, &str)] = &[
     ("[string]", "[\"a\", \"b\"]"),
     ("dict", "{\"a\": 1}"),
     ("symbol", ":sym"),
-    ("markdown", "first(to_markdown(\"# h\"))"),
+    ("markdown", "to_md_fragment([\"a\"])"),
     ("bytes", "to_bytes(\"a\")"),
     ("function", "fn(x): x;"),
     // Values that only some builtins take
@@ -111,6 +111,19 @@ const EVIDENCE: &[(&str, &str)] = &[
     ("convert", "convert(\"a\", :html)"),
     ("inspect", "inspect(1)"),
     ("next", "next(to_coroutine([1]))"),
+    ("array", "array(3)"),
+    ("date_add", "date_add([2024, 0, 2, 0, 0, 0, 2, 1], 1, \"days\")"),
+    (
+        "date_diff",
+        "date_diff([2024, 0, 2, 0, 0, 0, 2, 1], [2024, 0, 3, 0, 0, 0, 3, 2], \"days\")",
+    ),
+    ("date_relative", "date_relative(0, \"now\")"),
+    ("decode", "decode(to_bytes(\"a\"), \"utf-8\")"),
+    ("encode", "encode(\"a\", \"utf-8\")"),
+    ("mktime", "mktime([2024, 0, 2, 0, 0, 0, 2, 1])"),
+    ("pack", "pack(\"u8\", 1)"),
+    ("token_compress", "token_compress(to_markdown(\"# a\"), 10)"),
+    ("unpack", "unpack(\"u8\", to_bytes(\"a\"))"),
 ];
 
 /// Single calls that the runtime answers with a value it makes up, and the checker rejects on
