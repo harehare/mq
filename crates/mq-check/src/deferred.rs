@@ -445,6 +445,16 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
     resolved_any
 }
 
+/// Resolves deferred tuple accesses until no more resolve, solving constraints between rounds.
+///
+/// Chained lookups like `v[0][0][0]` use the previous result as the next container, so each
+/// one resolves in a later round. Every productive round removes at least one queued access.
+pub(crate) fn drain_deferred_tuple_accesses(ctx: &mut InferenceContext) {
+    while resolve_deferred_tuple_accesses(ctx) {
+        unify::solve_constraints(ctx);
+    }
+}
+
 /// Result of checking union member overload compatibility.
 enum UnionCheckResult {
     /// All non-None members return a consistent type, with optional None propagation.

@@ -454,9 +454,7 @@ impl TypeChecker {
         laps.lap("narrowing");
 
         // Resolve deferred tuple index accesses now that variable types are known.
-        if deferred::resolve_deferred_tuple_accesses(&mut ctx) {
-            unify::solve_constraints(&mut ctx);
-        }
+        deferred::drain_deferred_tuple_accesses(&mut ctx);
 
         // Check the value assigned through `a[i][j] = v` against the element it replaces.
         if deferred::resolve_deferred_index_assigns(&mut ctx) {
@@ -500,18 +498,14 @@ impl TypeChecker {
         // `resolve_deferred_overloads` runs. This ensures that index accesses on variables
         // with union types containing unresolved vars (e.g., `Union(None, Var)`) are
         // retried with the now-concrete member types.
-        if deferred::resolve_deferred_tuple_accesses(&mut ctx) {
-            unify::solve_constraints(&mut ctx);
-        }
+        deferred::drain_deferred_tuple_accesses(&mut ctx);
 
         laps.lap("deferred_accesses");
 
         // Resolve deferred try/catch branch-type merges, then retry accesses/operators
         // that depend on a `let v = try: ... catch: ...` variable's now-final type.
         deferred::resolve_deferred_try_catches(&mut ctx);
-        if deferred::resolve_deferred_tuple_accesses(&mut ctx) {
-            unify::solve_constraints(&mut ctx);
-        }
+        deferred::drain_deferred_tuple_accesses(&mut ctx);
         laps.lap("deferred_try_catches");
         deferred::resolve_deferred_overloads(&mut ctx);
         laps.lap("resolve_deferred_overloads");

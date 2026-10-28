@@ -531,6 +531,17 @@ fn test_tuple_literal_index_number_element() {
     );
 }
 
+#[rstest]
+#[case::four(r#"[[[[1]]]] | self[0][0][0][0] | upcase()"#)]
+#[case::five(r#"[[[[[1]]]]] | self[0][0][0][0][0] | upcase()"#)]
+fn test_deep_bracket_chain_resolves_element(#[case] code: &str) {
+    let result = check_types_with_builtins(code);
+    assert!(
+        !result.is_empty(),
+        "deep index chain should resolve to a number: {code}"
+    );
+}
+
 #[test]
 fn test_tuple_literal_index_string_element() {
     // v[1] should be String, so v[1] - 1 should be a type error
