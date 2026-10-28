@@ -2115,10 +2115,7 @@ impl Cli {
             None => ".".to_string(),
         };
 
-        if query
-            .split(['\r', '\n'])
-            .all(|line| matches!(line.trim().chars().next(), None | Some('#')))
-        {
+        if query.trim().is_empty() {
             return Err(miette!(
                 help = "use `.` to pass the input through unchanged",
                 "empty query: no expression to evaluate"
