@@ -122,7 +122,7 @@ impl Type {
         }
 
         // The bottom type contributes no values, unless it is all there is
-        if normalized.len() > 1 {
+        if normalized.iter().any(|ty| !ty.is_never()) {
             normalized.retain(|ty| !ty.is_never());
         }
 
@@ -1175,6 +1175,12 @@ mod tests {
 
     fn node(kinds: impl IntoIterator<Item = mq_markdown::NodeKind>) -> Type {
         Type::Node(KindSet::from_kinds(kinds))
+    }
+
+    #[test]
+    fn test_union_of_only_never_stays_never() {
+        assert!(Type::union(vec![Type::Never, Type::Never]).is_never());
+        assert_eq!(Type::union(vec![Type::Never, Type::Number]), Type::Number);
     }
 
     #[test]
