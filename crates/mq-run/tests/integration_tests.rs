@@ -1872,6 +1872,146 @@ fn test_diff_multiple_files_includes_path_headers() -> Result<(), Box<dyn std::e
 }
 
 #[test]
+fn test_in_place_requires_update() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("-i").arg("self").arg("unused.md").assert().failure();
+}
+
+#[test]
+fn test_in_place_rewrites_changed_files_only() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, changed) = create_file("test_in_place_changed.md", "# title\n");
+    let (_, unchanged) = create_file("test_in_place_unchanged.md", "# TITLE\n");
+    let (changed_clone, unchanged_clone) = (changed.clone(), unchanged.clone());
+
+    defer! {
+        std::fs::remove_file(&changed_clone).ok();
+        std::fs::remove_file(&unchanged_clone).ok();
+    }
+    let unchanged_mtime = std::fs::metadata(&unchanged)?.modified()?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", ".h | upcase()"])
+        .arg(&changed)
+        .arg(&unchanged)
+        .assert()
+        .success()
+        .stdout("");
+
+    assert_eq!(std::fs::read_to_string(&changed)?, "# TITLE\n");
+    assert_eq!(std::fs::metadata(&unchanged)?.modified()?, unchanged_mtime);
+
+    Ok(())
+}
+
+#[test]
+fn test_in_place_backup() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, file) = create_file("test_in_place_backup.md", "# title\n");
+    let backup = file.with_file_name("test_in_place_backup.md.bak");
+    let (file_clone, backup_clone) = (file.clone(), backup.clone());
+
+    defer! {
+        std::fs::remove_file(&file_clone).ok();
+        std::fs::remove_file(&backup_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", "--backup=.bak", ".h | upcase()"])
+        .arg(&file)
+        .assert()
+        .success();
+
+    assert_eq!(std::fs::read_to_string(&file)?, "# TITLE\n");
+    assert_eq!(std::fs::read_to_string(&backup)?, "# title\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_in_place_with_diff_only_previews() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, file) = create_file("test_in_place_diff.md", "# title\n");
+    let file_clone = file.clone();
+
+    defer! {
+        std::fs::remove_file(&file_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let output = cmd
+        .args(["--unbuffered", "-U", "-i", "--diff", ".h | upcase()"])
+        .arg(&file)
+        .assert()
+        .failure()
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+
+    assert!(String::from_utf8(output)?.contains("+# TITLE"));
+    assert_eq!(std::fs::read_to_string(&file)?, "# title\n");
+
+    Ok(())
+}
+
+#[rstest]
+#[case::stdin(&["-U", "-i", "self"][..])]
+#[case::output_file(&["-U", "-i", "-o", "out.md", "self", "unused.md"][..])]
+#[case::json_format(&["-U", "-i", "-F", "json", "self", "unused.md"][..])]
+#[case::empty_backup(&["-U", "-i", "--backup=", "self", "unused.md"][..])]
+#[case::backup_with_separator(&["-U", "-i", "--backup=/x", "self", "unused.md"][..])]
+fn test_in_place_rejects_invalid_options(#[case] args: &[&str]) {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(args).write_stdin("# title\n").assert().failure();
+}
+
+#[test]
+fn test_in_place_rejects_same_file_twice() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, file) = create_file("test_in_place_twice.md", "# title\n");
+    let file_clone = file.clone();
+
+    defer! {
+        std::fs::remove_file(&file_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", ".h | upcase()"])
+        .arg(&file)
+        .arg(&file)
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(&file)?, "# title\n");
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn test_in_place_keeps_mode_and_follows_symlink() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let (_, target) = create_file("test_in_place_link_target.md", "# title\n");
+    let link = target.with_file_name("test_in_place_link.md");
+    std::fs::remove_file(&link).ok();
+    symlink(&target, &link)?;
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640))?;
+    let (target_clone, link_clone) = (target.clone(), link.clone());
+
+    defer! {
+        std::fs::remove_file(&link_clone).ok();
+        std::fs::remove_file(&target_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", ".h | upcase()"]).arg(&link).assert().success();
+
+    assert!(std::fs::symlink_metadata(&link)?.file_type().is_symlink());
+    assert_eq!(std::fs::read_to_string(&target)?, "# TITLE\n");
+    assert_eq!(std::fs::metadata(&target)?.permissions().mode() & 0o777, 0o640);
+
+    Ok(())
+}
+
+#[test]
 fn test_diff_original_file_unchanged_on_query_error() -> Result<(), Box<dyn std::error::Error>> {
     let original_content = "# title\n";
     let (_, file) = create_file("test_diff_error_unchanged.md", original_content);

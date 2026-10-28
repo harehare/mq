@@ -275,6 +275,34 @@ impl OutputSink {
         Ok(())
     }
 
+    /// Replaces the regular file at `path` (following symlinks) with `data` atomically,
+    /// keeping its mode. With `backup_suffix`, the previous content is first copied to
+    /// `<file><suffix>` next to it.
+    pub(crate) fn replace_file(path: &Path, data: &[u8], backup_suffix: Option<&str>) -> miette::Result<()> {
+        let target = fs::canonicalize(path).map_err(|e| miette!("failed to resolve {}: {e}", path.display()))?;
+        let is_file = fs::metadata(&target).map(|m| m.is_file()).unwrap_or(false);
+        if !is_file {
+            return Err(miette!("cannot edit {} in place: not a regular file", path.display()));
+        }
+
+        if let Some(suffix) = backup_suffix {
+            let mut backup = target.clone().into_os_string();
+            backup.push(suffix);
+            fs::copy(&target, &backup).map_err(|e| miette!("failed to back up {}: {e}", target.display()))?;
+        }
+
+        let (file, temp_path) = Self::create_temp_file(&target)?;
+        let mut writer = BufWriter::new(file);
+        let result = writer
+            .write_all(data)
+            .into_diagnostic()
+            .and_then(|()| Self::publish_atomic(writer, &temp_path, &target));
+        if result.is_err() {
+            let _ = fs::remove_file(&temp_path);
+        }
+        result
+    }
+
     fn ignore_broken_pipe(result: io::Result<()>) -> miette::Result<()> {
         match result {
             Ok(()) => Ok(()),
