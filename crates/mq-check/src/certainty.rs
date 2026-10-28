@@ -64,55 +64,10 @@ impl Classified {
     }
 }
 
-/// Builtins that `just audit-builtins` does not cover, sorted by name: they do I/O or never
-/// return, take more than three arguments, or never ran with an accepted call. A call to any other
-/// builtin has a known type when its arguments do. The audit fails when this list is out of date.
-#[rustfmt::skip]
-pub const UNAUDITED_BUILTINS: &[&str] = &[
-    "array",
-    "breakpoint",
-    "close",
-    "comp",
-    "debug",
-    "embed_images",
-    "env",
-    "error",
-    "file_exists",
-    "file_info",
-    "file_size",
-    "fold_while",
-    "halt",
-    "halt_error",
-    "http",
-    "http_all",
-    "http_lines",
-    "infinite",
-    "input",
-    "inspect",
-    "join_by",
-    "juxt",
-    "load_markdown",
-    "merge_with",
-    "mock_fetch",
-    "open_file",
-    "open_http",
-    "print",
-    "read_bytes",
-    "read_file",
-    "read_file_bytes",
-    "read_line",
-    "send",
-    "stats_by",
-    "status",
-    "stderr",
-    "stream_bytes",
-    "stream_chunks",
-    "stream_lines",
-    "system",
-    "top_by",
-    "walk_files",
-    "write_file",
-];
+/// Builtins that `just audit-builtins` does not cover, sorted by name. A call to any other builtin
+/// has a known type when its arguments do. The audit fails when this list is out of date, so a new
+/// builtin has to be called by the audit, or listed here until it is.
+pub const UNAUDITED_BUILTINS: &[&str] = &[];
 
 /// Errors whose reason is the types of their operands.
 fn depends_on_operand_types(error: &TypeError) -> bool {
