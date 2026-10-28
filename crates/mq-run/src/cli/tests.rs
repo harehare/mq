@@ -3565,6 +3565,26 @@ fn test_argjson_combined_with_args_and_argv() {
 }
 
 #[rstest]
+#[case::empty("")]
+#[case::whitespace("  \n ")]
+fn test_empty_query_is_rejected(#[case] query: &str) {
+    let cli = Cli {
+        input: InputArgs {
+            program: ProgramArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        query: Some(query.to_string()),
+        ..Cli::default()
+    };
+
+    let err = cli.run().expect_err("empty query should fail").to_string();
+    assert!(err.contains("empty query"), "unexpected error: {err}");
+}
+
+#[rstest]
 #[case::single_object("single_object", r#"{"a": 1}"#, "data", r#"[{"a": 1}]"#)]
 #[case::single_array("single_array", "[1, 2, 3]", "data", r#"[[1, 2, 3]]"#)]
 #[case::multiple_concatenated_values("multiple_values", "1 2 3", "data", "[1, 2, 3]")]

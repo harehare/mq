@@ -14,7 +14,7 @@ pub enum SyntaxError {
     #[error("Access to environment variable `{1}` is not allowed")]
     EnvNotAllowed(Token, SmolStr),
     /// An unexpected token was encountered during parsing.
-    #[error("Unexpected token `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    #[error("{}", if .0.is_eof() { "Invalid or unsupported input".to_string() } else { format!("Unexpected token `{}`", .0) })]
     UnexpectedToken(Token),
     /// Unexpected end-of-file was encountered.
     #[error("Unexpected end of input")]

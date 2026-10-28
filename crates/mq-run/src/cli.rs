@@ -2140,6 +2140,13 @@ impl Cli {
             None => ".".to_string(),
         };
 
+        if query.trim().is_empty() {
+            return Err(miette!(
+                help = "use `.` to pass the input through unchanged",
+                "empty query: no expression to evaluate"
+            ));
+        }
+
         Ok(query)
     }
 
