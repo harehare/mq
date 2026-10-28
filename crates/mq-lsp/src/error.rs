@@ -60,9 +60,26 @@ impl From<&LspError> for ls_types::Diagnostic {
                         ls_types::Position { line: 0, character: 1 },
                     )
                 });
-                let mut diagnostic = ls_types::Diagnostic::new_simple(range, type_error.to_string());
-                if matches!(error, LspError::UncertainTypeError(_)) {
-                    diagnostic.severity = Some(ls_types::DiagnosticSeverity::WARNING);
+                let message = match type_error.hint() {
+                    Some(help) => format!("{type_error} (help: {help})"),
+                    None => type_error.to_string(),
+                };
+                let severity = if matches!(error, LspError::UncertainTypeError(_)) {
+                    ls_types::DiagnosticSeverity::WARNING
+                } else {
+                    ls_types::DiagnosticSeverity::ERROR
+                };
+                let mut diagnostic = ls_types::Diagnostic::new(
+                    range,
+                    Some(severity),
+                    Some(NumberOrString::String(type_error.error_code().to_string())),
+                    Some("mq-check".to_string()),
+                    message,
+                    None,
+                    None,
+                );
+                if matches!(type_error, mq_check::TypeError::UnreachableCode { .. }) {
+                    diagnostic.tags = Some(vec![ls_types::DiagnosticTag::UNNECESSARY]);
                 }
                 diagnostic
             }
@@ -134,5 +151,61 @@ mod tests {
         assert_eq!(lsp_diagnostic.severity, Some(ls_types::DiagnosticSeverity::ERROR));
         assert_eq!(lsp_diagnostic.range.start.line, 0);
         assert_eq!(lsp_diagnostic.range.start.character, 0);
+    }
+    fn range() -> Option<mq_lang::Range> {
+        Some(mq_lang::Range {
+            start: mq_lang::Position { line: 2, column: 3 },
+            end: mq_lang::Position { line: 2, column: 8 },
+        })
+    }
+
+    #[test]
+    fn type_error_carries_code_source_and_help() {
+        let error = mq_check::TypeError::Mismatch {
+            expected: "number".to_string(),
+            found: "string".to_string(),
+            location: range(),
+            context: Some("in argument 1 to 'abs'".to_string()),
+        };
+
+        let diagnostic: ls_types::Diagnostic = (&LspError::TypeError(error)).into();
+
+        assert_eq!(diagnostic.severity, Some(ls_types::DiagnosticSeverity::ERROR));
+        assert_eq!(
+            diagnostic.code,
+            Some(NumberOrString::String("typechecker::type_mismatch".to_string()))
+        );
+        assert_eq!(diagnostic.source, Some("mq-check".to_string()));
+        assert_eq!(
+            diagnostic.message,
+            "Type mismatch: expected number, found string (help: in argument 1 to 'abs')"
+        );
+        assert_eq!(diagnostic.range.start.line, 1);
+        assert_eq!(diagnostic.range.start.character, 2);
+    }
+
+    #[test]
+    fn uncertain_type_error_is_a_warning() {
+        let error = mq_check::TypeError::UndefinedSymbol {
+            name: "x".to_string(),
+            location: range(),
+        };
+
+        let diagnostic: ls_types::Diagnostic = (&LspError::UncertainTypeError(error)).into();
+
+        assert_eq!(diagnostic.severity, Some(ls_types::DiagnosticSeverity::WARNING));
+        assert_eq!(diagnostic.message, "Undefined symbol: x");
+    }
+
+    #[test]
+    fn unreachable_code_is_tagged_unnecessary() {
+        let error = mq_check::TypeError::UnreachableCode {
+            reason: "always false".to_string(),
+            location: range(),
+        };
+
+        let diagnostic: ls_types::Diagnostic = (&LspError::UncertainTypeError(error)).into();
+
+        assert_eq!(diagnostic.tags, Some(vec![ls_types::DiagnosticTag::UNNECESSARY]));
     }
 }

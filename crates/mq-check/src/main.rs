@@ -441,8 +441,12 @@ fn error_title(error: &TypeError) -> String {
         TypeError::Mismatch { expected, found, .. } => {
             format!("type mismatch: expected {expected}, found {found}")
         }
-        TypeError::UnificationError { left, right, .. } => {
-            format!("cannot unify: {left} and {right}")
+        TypeError::UnificationError { .. } => {
+            let message = error.to_string();
+            let mut chars = message.chars();
+            chars
+                .next()
+                .map_or(String::new(), |first| first.to_lowercase().chain(chars).collect())
         }
         TypeError::UndefinedSymbol { name, .. } => format!("undefined symbol: {name}"),
         TypeError::WrongArity { expected, found, .. } => {
@@ -497,7 +501,7 @@ fn write_error(
         if let Some(range) = &location {
             write_snippet(w, code, range, loc_plain.len())?;
         }
-        if let Some(ctx) = error_help(error) {
+        if let Some(ctx) = error.hint() {
             writeln!(
                 w,
                 "  {} {} {}",
@@ -526,7 +530,7 @@ fn write_error(
         if let Some(range) = &location {
             write_snippet(w, code, range, prefix_width)?;
         }
-        if let Some(ctx) = error_help(error) {
+        if let Some(ctx) = error.hint() {
             writeln!(
                 w,
                 "  {} {} {}",
@@ -537,16 +541,6 @@ fn write_error(
         }
     }
     Ok(())
-}
-
-/// Returns the optional help/context string for an error.
-fn error_help(error: &TypeError) -> Option<&str> {
-    match error {
-        TypeError::Mismatch { context, .. }
-        | TypeError::UnificationError { context, .. }
-        | TypeError::WrongArity { context, .. } => context.as_deref(),
-        _ => None,
-    }
 }
 
 /// Writes inferred types with rich formatting to the given writer.

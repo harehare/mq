@@ -106,7 +106,7 @@ pub enum TypeError {
         /// Extra hint shown as help.
         context: Option<String>,
     },
-    #[error("Cannot unify types: {left} and {right}")]
+    #[error("{}", describe_unification(.left, .right))]
     #[diagnostic(code(typechecker::unification_error))]
     /// Two types cannot be unified.
     UnificationError {
@@ -213,6 +213,17 @@ pub enum TypeError {
     },
 }
 
+/// The message of a unification error. A call that no overload takes is put as such, rather than
+/// as two types that differ.
+fn describe_unification(left: &str, right: &str) -> String {
+    match left.split_once(" with arguments ") {
+        Some((name, arguments)) if right == "no matching overload" => {
+            format!("`{name}` cannot be applied to {arguments}")
+        }
+        _ => format!("Cannot unify types: {left} and {right}"),
+    }
+}
+
 impl TypeError {
     /// Whether the diagnostic is advice about the code rather than a type error: it is always shown
     /// as a warning.
@@ -223,6 +234,34 @@ impl TypeError {
                 | TypeError::UnreachableCode { .. }
                 | TypeError::NonExhaustiveMatch { .. }
         )
+    }
+
+    /// The stable diagnostic code of the error, e.g. `typechecker::type_mismatch`.
+    pub fn error_code(&self) -> &'static str {
+        match self {
+            TypeError::Mismatch { .. } => "typechecker::type_mismatch",
+            TypeError::UnificationError { .. } => "typechecker::unification_error",
+            TypeError::UndefinedSymbol { .. } => "typechecker::undefined_symbol",
+            TypeError::WrongArity { .. } => "typechecker::wrong_arity",
+            TypeError::UndefinedField { .. } => "typechecker::undefined_field",
+            TypeError::UndefinedAttribute { .. } => "typechecker::undefined_attribute",
+            TypeError::HeterogeneousArray { .. } => "typechecker::heterogeneous_array",
+            TypeError::NullablePropagation { .. } => "typechecker::nullable_propagation",
+            TypeError::UnreachableCode { .. } => "typechecker::unreachable_code",
+            TypeError::NonExhaustiveMatch { .. } => "typechecker::non_exhaustive_patterns",
+        }
+    }
+
+    /// A hint on how to fix the error, if there is one.
+    pub fn hint(&self) -> Option<&str> {
+        match self {
+            TypeError::Mismatch { context, .. }
+            | TypeError::UnificationError { context, .. }
+            | TypeError::WrongArity { context, .. }
+            | TypeError::NullablePropagation { context, .. }
+            | TypeError::NonExhaustiveMatch { context, .. } => context.as_deref(),
+            _ => None,
+        }
     }
 
     /// Returns the location (range) of the error, if available.
@@ -710,6 +749,43 @@ mod tests {
             assert_eq!(id, symbol_id);
             assert_eq!(s, &scheme);
         }
+    }
+
+    #[rstest]
+    #[case::no_overload(
+        "abs with arguments (string)",
+        "no matching overload",
+        "`abs` cannot be applied to (string)"
+    )]
+    #[case::other("a", "b", "Cannot unify types: a and b")]
+    fn test_unification_error_message(#[case] left: &str, #[case] right: &str, #[case] expected: &str) {
+        let error = TypeError::UnificationError {
+            left: left.into(),
+            right: right.into(),
+            location: None,
+            context: None,
+        };
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[test]
+    fn test_type_error_code_and_help() {
+        let error = TypeError::WrongArity {
+            expected: 1,
+            found: 2,
+            location: None,
+            context: Some("check the call".into()),
+        };
+        assert_eq!(error.error_code(), "typechecker::wrong_arity");
+        assert_eq!(error.hint(), Some("check the call"));
+        assert_eq!(
+            TypeError::UndefinedSymbol {
+                name: "x".into(),
+                location: None
+            }
+            .hint(),
+            None
+        );
     }
 
     #[rstest]
