@@ -121,6 +121,11 @@ impl Type {
             }
         }
 
+        // The bottom type contributes no values, unless it is all there is
+        if normalized.iter().any(|ty| !ty.is_never()) {
+            normalized.retain(|ty| !ty.is_never());
+        }
+
         // Node types of one union fold into a single node type of the combined kinds
         let mut nodes: Option<KindSet> = None;
         normalized.retain(|ty| match ty {
@@ -753,6 +758,17 @@ impl Type {
         self.fmt_renumbered(&mut var_map, &mut counter)
     }
 
+    /// Formats several types that appear in one message, so that a type variable gets the same
+    /// name wherever it occurs and two different variables never share one.
+    pub fn display_renumbered_together(types: &[&Type]) -> Vec<String> {
+        let mut var_map = FxHashMap::default();
+        let mut counter = 0usize;
+        types
+            .iter()
+            .map(|ty| ty.fmt_renumbered(&mut var_map, &mut counter))
+            .collect()
+    }
+
     /// Internal helper for renumbered formatting.
     pub(crate) fn fmt_renumbered(&self, var_map: &mut FxHashMap<TypeVarId, usize>, counter: &mut usize) -> String {
         match self {
@@ -858,11 +874,8 @@ pub fn format_var_name(index: usize) -> String {
 ///
 /// Convenience helper used in error messages and overload reporting.
 pub(crate) fn format_type_list(types: &[Type]) -> String {
-    types
-        .iter()
-        .map(|t| t.display_renumbered())
-        .collect::<Vec<_>>()
-        .join(", ")
+    let refs: Vec<&Type> = types.iter().collect();
+    Type::display_renumbered_together(&refs).join(", ")
 }
 
 impl fmt::Display for Type {
@@ -1056,6 +1069,16 @@ mod tests {
     }
 
     #[test]
+    fn test_types_in_one_message_name_each_variable_once() {
+        let mut ctx = TypeVarContext::new();
+        let (a, b) = (Type::Var(ctx.fresh()), Type::Var(ctx.fresh()));
+
+        let shown = Type::display_renumbered_together(&[&a, &Type::array(b.clone()), &b]);
+
+        assert_eq!(shown, ["'a", "['b]", "'b"]);
+    }
+
+    #[test]
     fn test_type_var_context() {
         let mut ctx = TypeVarContext::new();
         let var1 = ctx.fresh();
@@ -1152,6 +1175,12 @@ mod tests {
 
     fn node(kinds: impl IntoIterator<Item = mq_markdown::NodeKind>) -> Type {
         Type::Node(KindSet::from_kinds(kinds))
+    }
+
+    #[test]
+    fn test_union_of_only_never_stays_never() {
+        assert!(Type::union(vec![Type::Never, Type::Never]).is_never());
+        assert_eq!(Type::union(vec![Type::Never, Type::Number]), Type::Number);
     }
 
     #[test]

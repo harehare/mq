@@ -26,6 +26,7 @@ pub mod kind_set;
 pub(crate) mod narrowing;
 pub(crate) mod node_attr;
 pub(crate) mod probe;
+mod related;
 pub mod type_expr;
 pub mod types;
 pub(crate) mod unify;
@@ -37,6 +38,7 @@ use thiserror::Error;
 use types::TypeScheme;
 
 pub use certainty::{Certainty, Classified, Severity};
+pub use related::Related;
 
 /// Names `mq-test` defines at runtime, which no source declares. Pass them to
 /// [`Hir::declare_global`] when checking test files.
@@ -106,7 +108,7 @@ pub enum TypeError {
         /// Extra hint shown as help.
         context: Option<String>,
     },
-    #[error("Cannot unify types: {left} and {right}")]
+    #[error("{}", describe_unification(.left, .right))]
     #[diagnostic(code(typechecker::unification_error))]
     /// Two types cannot be unified.
     UnificationError {
@@ -119,15 +121,6 @@ pub enum TypeError {
         #[help]
         /// Extra hint shown as help.
         context: Option<String>,
-    },
-    #[error("Undefined symbol: {name}")]
-    #[diagnostic(code(typechecker::undefined_symbol))]
-    /// A symbol is used but never defined.
-    UndefinedSymbol {
-        /// Name of the undefined symbol.
-        name: String,
-        /// Source range of the error, if known.
-        location: Option<mq_lang::Range>,
     },
     #[error("Wrong number of arguments: expected {expected}, found {found}")]
     #[diagnostic(code(typechecker::wrong_arity))]
@@ -213,6 +206,17 @@ pub enum TypeError {
     },
 }
 
+/// The message of a unification error. A call that no overload takes is put as such, rather than
+/// as two types that differ.
+fn describe_unification(left: &str, right: &str) -> String {
+    match left.split_once(" with arguments ") {
+        Some((name, arguments)) if right == "no matching overload" => {
+            format!("`{name}` cannot be applied to {arguments}")
+        }
+        _ => format!("Cannot unify types: {left} and {right}"),
+    }
+}
+
 impl TypeError {
     /// Whether the diagnostic is advice about the code rather than a type error: it is always shown
     /// as a warning.
@@ -225,12 +229,38 @@ impl TypeError {
         )
     }
 
+    /// The stable diagnostic code of the error, e.g. `typechecker::type_mismatch`.
+    pub fn error_code(&self) -> &'static str {
+        match self {
+            TypeError::Mismatch { .. } => "typechecker::type_mismatch",
+            TypeError::UnificationError { .. } => "typechecker::unification_error",
+            TypeError::WrongArity { .. } => "typechecker::wrong_arity",
+            TypeError::UndefinedField { .. } => "typechecker::undefined_field",
+            TypeError::UndefinedAttribute { .. } => "typechecker::undefined_attribute",
+            TypeError::HeterogeneousArray { .. } => "typechecker::heterogeneous_array",
+            TypeError::NullablePropagation { .. } => "typechecker::nullable_propagation",
+            TypeError::UnreachableCode { .. } => "typechecker::unreachable_code",
+            TypeError::NonExhaustiveMatch { .. } => "typechecker::non_exhaustive_patterns",
+        }
+    }
+
+    /// A hint on how to fix the error, if there is one.
+    pub fn hint(&self) -> Option<&str> {
+        match self {
+            TypeError::Mismatch { context, .. }
+            | TypeError::UnificationError { context, .. }
+            | TypeError::WrongArity { context, .. }
+            | TypeError::NullablePropagation { context, .. }
+            | TypeError::NonExhaustiveMatch { context, .. } => context.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Returns the location (range) of the error, if available.
     pub fn location(&self) -> Option<mq_lang::Range> {
         match self {
             TypeError::Mismatch { location, .. }
             | TypeError::UnificationError { location, .. }
-            | TypeError::UndefinedSymbol { location, .. }
             | TypeError::WrongArity { location, .. }
             | TypeError::UndefinedField { location, .. }
             | TypeError::UndefinedAttribute { location, .. }
@@ -420,6 +450,7 @@ impl TypeChecker {
         // Generate constraints from HIR (collects errors internally).
         // Returns the children index so it can be reused by later passes.
         let children_index = constraint::generate_constraints(hir, &mut ctx);
+        narrowing::scope_narrowed_refs(hir, &mut ctx);
         laps.lap("generate_constraints");
 
         // Solve constraints through unification (collects errors internally)
@@ -706,9 +737,47 @@ mod tests {
     }
 
     #[rstest]
+    #[case::no_overload(
+        "abs with arguments (string)",
+        "no matching overload",
+        "`abs` cannot be applied to (string)"
+    )]
+    #[case::other("a", "b", "Cannot unify types: a and b")]
+    fn test_unification_error_message(#[case] left: &str, #[case] right: &str, #[case] expected: &str) {
+        let error = TypeError::UnificationError {
+            left: left.into(),
+            right: right.into(),
+            location: None,
+            context: None,
+        };
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[test]
+    fn test_type_error_code_and_help() {
+        let error = TypeError::WrongArity {
+            expected: 1,
+            found: 2,
+            location: None,
+            context: Some("check the call".into()),
+        };
+        assert_eq!(error.error_code(), "typechecker::wrong_arity");
+        assert_eq!(error.hint(), Some("check the call"));
+        assert_eq!(
+            TypeError::UndefinedField {
+                field: "x".into(),
+                record_ty: "{}".into(),
+                location: None
+            }
+            .hint(),
+            None
+        );
+    }
+
+    #[rstest]
     #[case(TypeError::Mismatch { expected: "n".into(), found: "s".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 1, column: 5 }, end: mq_lang::Position { line: 1, column: 6 } }))]
     #[case(TypeError::UnificationError { left: "l".into(), right: "r".into(), location: Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }), context: None }, Some(mq_lang::Range { start: mq_lang::Position { line: 2, column: 10 }, end: mq_lang::Position { line: 2, column: 11 } }))]
-    #[case(TypeError::UndefinedSymbol { name: "a".into(), location: None }, None)]
+    #[case(TypeError::UndefinedField { field: "a".into(), record_ty: "{}".into(), location: None }, None)]
     fn test_type_error_location(#[case] err: TypeError, #[case] expected: Option<mq_lang::Range>) {
         assert_eq!(err.location(), expected);
     }
@@ -726,8 +795,9 @@ mod tests {
         #[case] offset: usize,
         #[case] len: usize,
     ) {
-        let err = TypeError::UndefinedSymbol {
-            name: "x".into(),
+        let err = TypeError::UndefinedField {
+            field: "x".into(),
+            record_ty: "{}".into(),
             location: Some(mq_lang::Range {
                 start: mq_lang::Position {
                     line: start_line,
@@ -746,8 +816,9 @@ mod tests {
     #[test]
     fn test_type_error_span_without_location() {
         assert!(
-            TypeError::UndefinedSymbol {
-                name: "a".into(),
+            TypeError::UndefinedField {
+                field: "a".into(),
+                record_ty: "{}".into(),
                 location: None
             }
             .span("1")

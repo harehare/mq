@@ -1012,3 +1012,35 @@ fn test_array_element_access_none_can_be_handled(#[case] code: &str) {
     let result = check_types_with_builtins(code);
     assert!(result.is_empty(), "`{code}` must type check: {result:?}");
 }
+
+#[rstest]
+#[case::root_call(r#"abs("a")"#, "`abs` cannot be applied to (string)")]
+#[case::extra_argument(r#"abs("a", 1)"#, "`abs` cannot be applied to (string, number)")]
+#[case::piped(r#""a" | abs()"#, "`abs` cannot be applied to (string)")]
+fn test_no_overload_message_leaves_out_the_unknown_query_input(#[case] code: &str, #[case] expected: &str) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(
+        errors.first().map(ToString::to_string).as_deref(),
+        Some(expected),
+        "{errors:?}"
+    );
+}
+
+#[rstest]
+#[case::known_reference(r#"var x = "a" | let y = 1 | x = y | x | abs()"#, true)]
+#[case::known_reference_old_type_gone(r#"var x = "a" | let y = 1 | x = y | x | upcase()"#, false)]
+#[case::unknown_parameter_keeps_previous_type(r#"def f(p): var x = "a" | x = p | x | upcase();"#, true)]
+fn test_assigning_a_reference_replaces_the_variable_type(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[test]
+fn test_no_overload_message_keeps_an_explicit_dynamic_argument() {
+    let errors = check_types_with_builtins("def f(): abs(next(), 1);");
+    assert_eq!(
+        errors.first().map(ToString::to_string).as_deref(),
+        Some("`abs` cannot be applied to (dynamic(), number)"),
+        "{errors:?}"
+    );
+}

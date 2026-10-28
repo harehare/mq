@@ -244,28 +244,29 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
 /// When a function is called via pipe (e.g., `arr | join(",")`) the piped value
 /// becomes the implicit first argument. This function checks if there's a piped input
 /// and whether prepending it produces a valid overload match. If so, the piped input
-/// is prepended; otherwise, only the explicit arguments are returned.
+/// is prepended; otherwise, only the explicit arguments are returned. The flag tells whether the
+/// piped input was prepended.
 pub(super) fn build_piped_call_args(
     ctx: &mut InferenceContext,
     symbol_id: SymbolId,
     explicit_arg_tys: &[Type],
     func_name: &str,
-) -> Vec<Type> {
+) -> (Vec<Type>, bool) {
     if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
         // Try explicit args first, if they already match an overload,
         // the piped input should not be prepended (it flows through unchanged)
         let resolved_explicit: Vec<Type> = explicit_arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
         if ctx.resolve_overload(func_name, &resolved_explicit).is_some() {
-            return explicit_arg_tys.to_vec();
+            return (explicit_arg_tys.to_vec(), false);
         }
 
         // Explicit args don't match; try with piped input prepended as implicit first argument
         let mut piped_args = vec![piped_ty];
         piped_args.extend_from_slice(explicit_arg_tys);
 
-        piped_args
+        (piped_args, true)
     } else {
-        explicit_arg_tys.to_vec()
+        (explicit_arg_tys.to_vec(), false)
     }
 }
 
@@ -331,15 +332,18 @@ pub(super) fn resolve_builtin_call_with_brackets(
 ) {
     let trailing_bracket_count = hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
     let real_arg_tys = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
-    let (arg_tys, unsettled_piped) = if func_name == PARTIAL {
-        build_partial_args(ctx, symbol_id, real_arg_tys)
+    let (arg_tys, unsettled_piped, implicit_input) = if func_name == PARTIAL {
+        let (arg_tys, unsettled_piped) = build_partial_args(ctx, symbol_id, real_arg_tys);
+        (arg_tys, unsettled_piped, false)
     } else {
-        (build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name), None)
+        let (arg_tys, implicit_input) = build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name);
+        (arg_tys, None, implicit_input)
     };
 
     let mut call = BuiltinCall::new(symbol_id, func_name, &arg_tys, range, CallKind::Function);
     call.may_get_piped_input = might_receive_piped_input(hir, symbol_id);
     call.unsettled_piped = unsettled_piped;
+    call.implicit_input = implicit_input;
     let result_ty = resolve_builtin(ctx, &call).into_type();
     ctx.set_symbol_type(symbol_id, result_ty.clone());
     if trailing_bracket_count == 0 {

@@ -733,6 +733,7 @@ fn settle_partial_piped(ctx: &mut InferenceContext, d: &mut DeferredOverload) {
         && !matches!(first, types::Type::Function(..))
     {
         d.operand_tys.insert(0, piped);
+        d.implicit_input = true;
     }
 }
 
@@ -914,7 +915,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                 let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                 if overload_count > 1 {
                     if ctx.resolve_overload(&d.op_name, &resolved_operands).is_none() {
-                        ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
+                        ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.implicit_input, d.range);
                     } else {
                         next_remaining.push(idx);
                     }
@@ -939,7 +940,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                     unify::solve_constraints(ctx);
                 }
             } else if all_concrete || partial_function_known(&d.op_name, &resolved_operands) {
-                ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
+                ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.implicit_input, d.range);
             } else {
                 // Some operands resolved but no match, defer to next pass
                 next_remaining.push(idx);
@@ -987,7 +988,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                 } else {
                     let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
                     if all_concrete || partial_function_known(&d.op_name, &resolved_operands) {
-                        ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
+                        ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.implicit_input, d.range);
                     } else {
                         // Still unresolved, store back for later processing
                         store_back_for_later.push(idx);
@@ -1338,7 +1339,7 @@ fn check_deferred_overloads_iteratively(
                 // No matching overload, report error
                 // An operator of a module body keeps its own range so the module filter drops it.
                 let range = d.range.filter(crate::is_module_range).or(error_range);
-                ctx.report_no_matching_overload(&d.op_name, &substituted_operands, range);
+                ctx.report_no_matching_overload(&d.op_name, &substituted_operands, d.implicit_input, range);
                 made_progress = true;
             }
         }

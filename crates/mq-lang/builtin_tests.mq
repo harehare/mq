@@ -381,8 +381,9 @@ end
 
 def test_len_coroutine_is_error():
   let source = fn(): yield: 1 | yield: 2;
-  | assert_eq(try: len(source()) catch(e): "error", "error")
-  | assert_eq(try: utf8bytelen(source()) catch(e): "error", "error")
+  | let length_of_source = fn(length): try: length(source()) catch(e): "error";
+  | assert_eq(length_of_source(len), "error")
+  | assert_eq(length_of_source(utf8bytelen), "error")
 end
 
 def test_collect():
@@ -766,8 +767,9 @@ def test_uniq(value, expected):
   | assert_eq(result, expected)
 end
 
-def test_uniq_non_array():
-  assert_eq(try: uniq(1) catch: "error", "error")
+# @parametrize([[1], ["a"]])
+def test_uniq_non_array(value):
+  assert_eq(try: uniq(value) catch: "error", "error")
 end
 
 # @parametrize([
@@ -2230,9 +2232,9 @@ def test_lambda_without_params_does_not_call_callable_argument():
   | assert_eq(lambda(5), 6)
 end
 
-def test_lambda_without_params_takes_exactly_one_argument():
-  let one = fn: self;
-  | assert_eq(try: fold([1, 2], 0, fn: self) catch: "arity", "arity")
+# @parametrize([[fn: self;]])
+def test_lambda_without_params_takes_exactly_one_argument(one):
+  assert_eq(try: fold([1, 2], 0, one) catch: "arity", "arity")
   | assert_eq(try: one(1, 2) catch: "arity", "arity")
 end
 

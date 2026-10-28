@@ -23,6 +23,8 @@ pub struct DeferredOverload {
     /// For `partial`: the piped input, prepended as the function if the first operand turns out
     /// not to be one. `None` once decided, or when the call does not depend on it.
     pub unsettled_piped: Option<Type>,
+    /// The first operand is the input of the query, which the call does not write
+    pub implicit_input: bool,
     /// The source range for error reporting
     pub range: Option<mq_lang::Range>,
     /// The type given as the result until the operation is resolved
@@ -333,6 +335,15 @@ pub struct InferenceContext {
     strict_array: bool,
 }
 
+/// The argument types of a call as shown in a message. The input of the query is left out when
+/// its type is unknown, since the user did not write it.
+fn format_arguments(arg_tys: &[Type], implicit_input: bool) -> String {
+    match arg_tys.split_first() {
+        Some((first, rest)) if implicit_input && first.is_dynamic() => format_type_list(rest),
+        _ => format_type_list(arg_tys),
+    }
+}
+
 impl InferenceContext {
     /// Creates a new inference context with default options
     pub fn new() -> Self {
@@ -617,6 +628,16 @@ impl InferenceContext {
         std::mem::take(&mut self.deferred_try_catches)
     }
 
+    /// The type narrowings collected so far
+    pub(crate) fn type_narrowings(&self) -> &[TypeNarrowing] {
+        &self.type_narrowings
+    }
+
+    /// Mutable access to the pending constraints
+    pub(crate) fn constraints_mut(&mut self) -> &mut [Constraint] {
+        &mut self.constraints
+    }
+
     /// Adds a type narrowing collected from a type predicate condition
     pub fn add_type_narrowing(&mut self, narrowing: TypeNarrowing) {
         self.type_narrowings.push(narrowing);
@@ -678,9 +699,22 @@ impl InferenceContext {
     pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>, origin: &ConstraintOrigin) {
         let resolved_t1 = self.resolve_type(t1);
         let resolved_t2 = self.resolve_type(t2);
+        // A call ties the argument to the parameter, in that order, and the parameter is what
+        // is expected
+        let argument_first = matches!(
+            origin,
+            ConstraintOrigin::Argument { .. } | ConstraintOrigin::PipedInput { .. }
+        );
+        let (first, second) = if argument_first {
+            (&resolved_t2, &resolved_t1)
+        } else {
+            (&resolved_t1, &resolved_t2)
+        };
+        let mut names = Type::display_renumbered_together(&[first, second]).into_iter();
+        let (expected, found) = (names.next().unwrap_or_default(), names.next().unwrap_or_default());
         self.add_error(TypeError::Mismatch {
-            expected: resolved_t1.display_renumbered(),
-            found: resolved_t2.display_renumbered(),
+            expected,
+            found,
             location: range,
             context: origin.to_context_string(),
         });
@@ -724,12 +758,17 @@ impl InferenceContext {
         &mut self,
         op_name: &str,
         arg_tys: &[Type],
+        implicit_input: bool,
         range: Option<mq_lang::Range>,
         in_element_callback: bool,
     ) {
         let key = (
             range,
-            format!("{} with arguments ({})", op_name, format_type_list(arg_tys)),
+            format!(
+                "{} with arguments ({})",
+                op_name,
+                format_arguments(arg_tys, implicit_input)
+            ),
         );
         let found = if in_element_callback {
             InlinedError::ElementCallback
@@ -741,7 +780,7 @@ impl InferenceContext {
         if found == InlinedError::Body {
             *entry = found;
         }
-        self.report_no_matching_overload(op_name, arg_tys, range);
+        self.report_no_matching_overload(op_name, arg_tys, implicit_input, range);
     }
 
     /// How the error was found by running a function body on the arguments of a call, if it was.
@@ -755,8 +794,14 @@ impl InferenceContext {
     }
 
     /// Reports a "no matching overload" error with formatted argument types.
-    pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
-        let args_str = format_type_list(arg_tys);
+    pub fn report_no_matching_overload(
+        &mut self,
+        op_name: &str,
+        arg_tys: &[Type],
+        implicit_input: bool,
+        range: Option<mq_lang::Range>,
+    ) {
+        let args_str = format_arguments(arg_tys, implicit_input);
         let context = self.format_available_overloads(op_name);
         self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),

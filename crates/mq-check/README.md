@@ -143,15 +143,32 @@ def map_array(f, arr): arr | map(f);
 
 ### Error Messages
 
-Type errors display clear, readable type names:
+Type errors name the types involved and point at the code. Type variables that are not resolved get short names (`'a`, `'b`), shared across one message, so two different variables never share a name.
 
 ```mq
-[1, 2, "string"]
+let s = "a" | abs(s)
 // Error: Type mismatch: expected number, found string
-//   at line 1, column 7
+//   help: in argument 1 to 'abs'
+//   note: `s` is `string` (line 1)
 ```
 
-Type variables are displayed with readable names (e.g., `'1v0`, `'2v1`) when unresolved, and as concrete types (e.g., `number`, `string`) when resolved.
+A call that no overload takes reads `` `abs` cannot be applied to (string, number) ``, with the signatures to try as help. When a variable or parameter with a known type is passed to the failing call, the CLI shows where it is defined as a note, and the language server sends it as related information.
+
+### Error codes
+
+Every diagnostic has a stable code, available as `TypeError::error_code`, and a fix hint, `TypeError::hint`, when there is one.
+
+| Code | Meaning | Example |
+| --- | --- | --- |
+| `typechecker::type_mismatch` | A value has a different type than expected. | `let s = "a" \| abs(s)` |
+| `typechecker::unification_error` | Two types cannot be made equal, or no overload of a builtin takes the arguments. | `abs("a", 1)` |
+| `typechecker::wrong_arity` | A call passes the wrong number of arguments. | `def f(a, b): a + b; \| f(1, 2, 3)` |
+| `typechecker::undefined_field` | A record has no such key. | `let r = {"a": 1} \| r["b"] + 1` |
+| `typechecker::undefined_attribute` | A node kind has no such attribute. | `to_code("a", "rust") \| .depth` |
+| `typechecker::heterogeneous_array` | Array elements have mixed types. Only with `--strict-array`. | `[1, "a"]` |
+| `typechecker::nullable_propagation` | An operation gets a value that may be `none` and would silently give `none`. Always a warning. | `def f(x): x \| upcase(); \| f(None)` |
+| `typechecker::unreachable_code` | A branch can never run. Always a warning. | `let n = 1 \| if (is_string(n)): 1 else: 2` |
+| `typechecker::non_exhaustive_patterns` | A `match` does not cover every value of its type. Always a warning. | `match (1): \| 0: "a" end` |
 
 ## CLI Options
 

@@ -521,8 +521,8 @@ impl Backend {
                     .filter_map(|c| {
                         let options = &self.config.type_checker_options;
                         match c.severity(options)? {
-                            mq_check::Severity::Error => Some(LspError::TypeError(c.error)),
-                            mq_check::Severity::Warning => Some(LspError::UncertainTypeError(c.error)),
+                            mq_check::Severity::Error => Some(LspError::TypeError(c.error, c.related)),
+                            mq_check::Severity::Warning => Some(LspError::UncertainTypeError(c.error, c.related)),
                         }
                     }),
             );
@@ -552,7 +552,8 @@ impl Backend {
 
         // Add parsing errors if they exist
         if let Some(errors) = file_errors {
-            diagnostics.extend(errors.iter().map(Into::into));
+            let document = to_uri(uri);
+            diagnostics.extend(errors.iter().map(|error| error.to_diagnostic(&document)));
         }
 
         let source_map_guard = self.source_map.read().unwrap();

@@ -10,6 +10,7 @@ use mq_hir::{Hir, SymbolId};
 use rustc_hash::FxHashMap;
 
 use crate::infer::InferenceContext;
+use crate::related::{Related, variable_arguments};
 use crate::{TypeError, symbol_range};
 
 mod prover;
@@ -40,6 +41,8 @@ pub enum Severity {
 pub struct Classified {
     /// The diagnostic.
     pub error: TypeError,
+    /// Other places that explain the diagnostic, e.g. where an argument got its type.
+    pub related: Vec<Related>,
     /// How sure the checker is about it.
     pub certainty: Certainty,
 }
@@ -64,64 +67,10 @@ impl Classified {
     }
 }
 
-/// Builtins that `just audit-builtins` does not cover, sorted by name: they do I/O or never
-/// return, take more than three arguments, or never ran with an accepted call. A call to any other
-/// builtin has a known type when its arguments do. The audit fails when this list is out of date.
-#[rustfmt::skip]
-pub const UNAUDITED_BUILTINS: &[&str] = &[
-    "array",
-    "breakpoint",
-    "close",
-    "comp",
-    "date_add",
-    "date_diff",
-    "date_relative",
-    "debug",
-    "decode",
-    "embed_images",
-    "encode",
-    "env",
-    "error",
-    "file_exists",
-    "file_info",
-    "file_size",
-    "fold_while",
-    "halt",
-    "halt_error",
-    "http",
-    "http_all",
-    "http_lines",
-    "infinite",
-    "input",
-    "inspect",
-    "join_by",
-    "juxt",
-    "load_markdown",
-    "merge_with",
-    "mktime",
-    "mock_fetch",
-    "open_file",
-    "open_http",
-    "pack",
-    "print",
-    "read_bytes",
-    "read_file",
-    "read_file_bytes",
-    "read_line",
-    "send",
-    "stats_by",
-    "status",
-    "stderr",
-    "stream_bytes",
-    "stream_chunks",
-    "stream_lines",
-    "system",
-    "token_compress",
-    "top_by",
-    "unpack",
-    "walk_files",
-    "write_file",
-];
+/// Builtins that `just audit-builtins` does not cover, sorted by name. A call to any other builtin
+/// has a known type when its arguments do. The audit fails when this list is out of date, so a new
+/// builtin has to be called by the audit, or listed here until it is.
+pub const UNAUDITED_BUILTINS: &[&str] = &[];
 
 /// Errors whose reason is the types of their operands.
 fn depends_on_operand_types(error: &TypeError) -> bool {
@@ -150,9 +99,14 @@ pub(crate) fn classify_all(
     };
     errors
         .into_iter()
-        .map(|error| Classified {
-            certainty: classifier.classify(&error),
-            error,
+        .map(|error| {
+            let certainty = classifier.classify(&error);
+            let related = classifier.related(&error);
+            Classified {
+                certainty,
+                related,
+                error,
+            }
         })
         .collect()
 }
@@ -168,6 +122,35 @@ struct Classifier<'a> {
 }
 
 impl Classifier<'_> {
+    /// The symbols whose range is `range`.
+    fn symbols_at(&mut self, range: mq_lang::Range) -> &[SymbolId] {
+        let hir = self.hir;
+        self.symbols_at
+            .get_or_insert_with(|| {
+                let mut index: FxHashMap<mq_lang::Range, Vec<SymbolId>> = FxHashMap::default();
+                for (id, symbol) in hir.symbols() {
+                    if let Some(range) = symbol_range(hir, symbol) {
+                        index.entry(range).or_default().push(id);
+                    }
+                }
+                index
+            })
+            .get(&range)
+            .map_or(&[][..], Vec::as_slice)
+    }
+
+    /// Where the variables passed to the call of a type error got their type.
+    fn related(&mut self, error: &TypeError) -> Vec<Related> {
+        if !matches!(error, TypeError::Mismatch { .. } | TypeError::UnificationError { .. }) {
+            return Vec::new();
+        }
+        let Some(range) = error.location() else {
+            return Vec::new();
+        };
+        let (hir, ctx) = (self.hir, self.ctx);
+        variable_arguments(hir, ctx, self.symbols_at(range))
+    }
+
     fn classify(&mut self, error: &TypeError) -> Certainty {
         if error.is_advisory() {
             return Certainty::Uncertain;
@@ -181,19 +164,7 @@ impl Classifier<'_> {
             };
         };
         let (hir, ctx, declared_input) = (self.hir, self.ctx, self.declared_input);
-        let at_range = self
-            .symbols_at
-            .get_or_insert_with(|| {
-                let mut index: FxHashMap<mq_lang::Range, Vec<SymbolId>> = FxHashMap::default();
-                for (id, symbol) in hir.symbols() {
-                    if let Some(range) = symbol_range(hir, symbol) {
-                        index.entry(range).or_default().push(id);
-                    }
-                }
-                index
-            })
-            .get(&range)
-            .map_or(&[][..], Vec::as_slice);
+        let at_range = self.symbols_at(range).to_vec();
         // Whatever the reason, a `try:` body is allowed to fail.
         if at_range.iter().any(|&id| in_try_body(hir, id)) {
             return Certainty::Uncertain;
@@ -211,6 +182,6 @@ impl Classifier<'_> {
         let inlined = ctx.inlined_error(error);
         self.prover
             .get_or_insert_with(|| Prover::new(hir, ctx, declared_input))
-            .classify_at(hir, at_range, operand_mismatch, no_overload, inlined)
+            .classify_at(hir, &at_range, operand_mismatch, no_overload, inlined)
     }
 }

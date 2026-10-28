@@ -6,7 +6,7 @@ mod sarif;
 
 use std::io::{self, Write};
 
-use mq_check::{Classified, TypeCheckerOptions, TypeError};
+use mq_check::{Classified, TypeCheckerOptions};
 use mq_hir::{Hir, HirError, HirWarning, SourceId, Symbol};
 
 /// Severity of a check diagnostic.
@@ -167,28 +167,12 @@ pub(crate) fn type_diagnostics(errors: &[Classified], options: &TypeCheckerOptio
             };
             Some(CheckDiagnostic {
                 severity,
-                code: type_error_code(&c.error),
+                code: c.error.error_code(),
                 message: c.error.to_string(),
                 range: c.error.location(),
             })
         })
         .collect()
-}
-
-/// Returns the `miette` diagnostic code for a [`TypeError`] variant.
-fn type_error_code(error: &TypeError) -> &'static str {
-    match error {
-        TypeError::Mismatch { .. } => "typechecker::type_mismatch",
-        TypeError::UnificationError { .. } => "typechecker::unification_error",
-        TypeError::UndefinedSymbol { .. } => "typechecker::undefined_symbol",
-        TypeError::WrongArity { .. } => "typechecker::wrong_arity",
-        TypeError::UndefinedField { .. } => "typechecker::undefined_field",
-        TypeError::UndefinedAttribute { .. } => "typechecker::undefined_attribute",
-        TypeError::HeterogeneousArray { .. } => "typechecker::heterogeneous_array",
-        TypeError::NullablePropagation { .. } => "typechecker::nullable_propagation",
-        TypeError::UnreachableCode { .. } => "typechecker::unreachable_code",
-        TypeError::NonExhaustiveMatch { .. } => "typechecker::non_exhaustive_patterns",
-    }
 }
 
 /// Dispatches to the writer for the requested machine-readable output format.

@@ -16,7 +16,6 @@
 //! `AUDIT_REPORT_ONLY` reports the findings without failing.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::RangeInclusive;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
@@ -28,53 +27,21 @@ use mq_lang::RuntimeValue;
 /// Runs against an in-memory `Io` that allows writes, so `mkdir` succeeds without touching the disk.
 type Engine = mq_lang::Engine<mq_lang::DefaultModuleResolver, mq_lang::MemIo>;
 
-/// Builtins that do I/O, never return or depend on the environment: not safe to call.
-const SKIPPED: &[&str] = &[
-    "breakpoint",
-    "close",
-    "embed_images",
-    "env",
-    "error",
-    "file_exists",
-    "file_info",
-    "file_size",
-    "halt",
-    "http",
-    "http_all",
-    "infinite",
-    "input",
-    "mock_fetch",
-    "open_file",
-    "open_http",
-    "print",
-    "read_bytes",
-    "read_file",
-    "read_file_bytes",
-    "read_line",
-    "send",
-    "status",
-    "stderr",
-    "system",
-    "walk_files",
-    "write_file",
-];
+/// Builtins that never return or never finish: not safe to call. The ones that do I/O run against
+/// `MemIo`.
+const SKIPPED: &[&str] = &["breakpoint", "error", "halt", "infinite"];
 
-/// Words in the body of a function of `builtin.mq` that mean it does I/O or ends the program.
-const EFFECTS: &[&str] = &[
-    "print(",
-    "stderr(",
-    "input(",
-    "read_",
-    "open_",
-    "http",
-    "write_file",
-    "halt",
-    "system(",
-    "walk_files",
-    "breakpoint",
-    "send(",
-    "file_",
-    "sleep",
+/// Words in the body of a function of `builtin.mq` that mean it ends the program.
+const EFFECTS: &[&str] = &["halt", "breakpoint"];
+
+/// Calls of builtins that never return, which are only type checked: they are accepted when the
+/// checker takes them, since running them would end the audit.
+const CHECK_ONLY: &[(&str, &str)] = &[
+    ("breakpoint", "breakpoint()"),
+    ("error", "error(\"a\")"),
+    ("halt", "halt(1)"),
+    ("halt_error", "halt_error(\"a\")"),
+    ("infinite", "infinite()"),
 ];
 
 /// One value of each type: its label in a finding, and its source.
@@ -87,7 +54,7 @@ const VALUES: &[(&str, &str)] = &[
     ("[string]", "[\"a\", \"b\"]"),
     ("dict", "{\"a\": 1}"),
     ("symbol", ":sym"),
-    ("markdown", "first(to_markdown(\"# h\"))"),
+    ("markdown", "to_md_fragment([\"a\"])"),
     ("bytes", "to_bytes(\"a\")"),
     ("function", "fn(x): x;"),
     // Values that only some builtins take
@@ -110,7 +77,70 @@ const EVIDENCE: &[(&str, &str)] = &[
     ("strptime", "strptime(\"2024-01-02\", \"%Y-%m-%d\")"),
     ("convert", "convert(\"a\", :html)"),
     ("inspect", "inspect(1)"),
+    ("input", "input()"),
     ("next", "next(to_coroutine([1]))"),
+    ("array", "array(3, 0)"),
+    ("comp", "comp(upcase, trim)"),
+    ("juxt", "juxt(upcase, trim)"),
+    ("debug", "debug(1)"),
+    ("inspect", "inspect(1)"),
+    (
+        "fold_while",
+        "fold_while([1, 2, 3], 0, fn(acc, x): [acc + x < 5, acc + x];)",
+    ),
+    ("merge_with", "merge_with({\"a\": 1}, {\"a\": 2}, \"replace\")"),
+    ("top_by", "top_by([1, 2, 3], fn(x): x;, 2)"),
+    (
+        "stats_by",
+        "stats_by([{\"g\": \"a\", \"v\": 1}], fn(x): x[\"g\"];, fn(x): x[\"v\"];)",
+    ),
+    ("join_by", "join_by([{\"id\": 1}], [{\"uid\": 1}], \"id\", \"uid\")"),
+    ("http", "http(:get, \"https://example.com/\")"),
+    ("http_all", "http_all([{\"url\": \"https://example.com/\"}])"),
+    ("http_lines", "http_lines(:get, \"https://example.com/\")"),
+    ("send", "send(to_coroutine([1]), 1)"),
+    ("status", "status(to_coroutine([1]))"),
+    ("system", "system(\"echo\", [\"a\"])"),
+    ("date_add", "date_add([2024, 0, 2, 0, 0, 0, 2, 1], 1, \"days\")"),
+    (
+        "date_diff",
+        "date_diff([2024, 0, 2, 0, 0, 0, 2, 1], [2024, 0, 3, 0, 0, 0, 3, 2], \"days\")",
+    ),
+    ("date_relative", "date_relative(0, \"now\")"),
+    ("decode", "decode(to_bytes(\"a\"), \"utf-8\")"),
+    ("encode", "encode(\"a\", \"utf-8\")"),
+    ("mktime", "mktime([2024, 0, 2, 0, 0, 0, 2, 1])"),
+    ("pack", "pack(\"u8\", 1)"),
+    ("token_compress", "token_compress(to_markdown(\"# a\"), 10)"),
+    ("unpack", "unpack(\"u8\", to_bytes(\"a\"))"),
+    ("read_file", "write_file(\"e.txt\", \"a\\nb\") | read_file(\"e.txt\")"),
+    (
+        "read_file_bytes",
+        "write_file(\"e.txt\", \"a\\nb\") | read_file_bytes(\"e.txt\")",
+    ),
+    ("file_size", "write_file(\"e.txt\", \"a\\nb\") | file_size(\"e.txt\")"),
+    ("file_info", "write_file(\"e.txt\", \"a\\nb\") | file_info(\"e.txt\")"),
+    ("open_file", "write_file(\"e.txt\", \"a\\nb\") | open_file(\"e.txt\")"),
+    (
+        "read_line",
+        "write_file(\"e.txt\", \"a\\nb\") | read_line(open_file(\"e.txt\"))",
+    ),
+    (
+        "read_bytes",
+        "write_file(\"e.txt\", \"a\\nb\") | read_bytes(open_file(\"e.txt\"), 1)",
+    ),
+    (
+        "close",
+        "write_file(\"e.txt\", \"a\\nb\") | close(open_file(\"e.txt\"))",
+    ),
+    (
+        "stream_lines",
+        "write_file(\"e.txt\", \"a\\nb\") | stream_lines(\"e.txt\")",
+    ),
+    (
+        "stream_chunks",
+        "write_file(\"e.txt\", \"a\\nb\") | stream_chunks(\"e.txt\", 1)",
+    ),
 ];
 
 /// Single calls that the runtime answers with a value it makes up, and the checker rejects on
@@ -188,7 +218,6 @@ fn is_tolerated(name: &str, labels: &[&str]) -> bool {
 struct MqDef {
     name: String,
     params: usize,
-    variadic: bool,
     /// The body without its comments
     body: String,
 }
@@ -208,7 +237,6 @@ fn mq_defs() -> Vec<MqDef> {
             defs.push(MqDef {
                 name: name.to_string(),
                 params: params.split(',').filter(|p| !p.trim().is_empty()).count(),
-                variadic: params.contains('*'),
                 body: String::new(),
             });
         } else if let Some(last) = defs.last_mut()
@@ -224,7 +252,7 @@ fn mq_defs() -> Vec<MqDef> {
 /// A builtin to call, and the numbers of arguments to call it with.
 struct Target {
     name: String,
-    arities: RangeInclusive<usize>,
+    arities: Vec<usize>,
 }
 
 /// The builtins that are safe to call. A function of `builtin.mq` is called with exactly its
@@ -236,22 +264,19 @@ fn targets() -> Vec<Target> {
         .map(|doc| Target {
             name: doc.name.to_string(),
             arities: if doc.params.is_empty() {
-                0..=0
+                vec![0]
             } else {
-                1..=doc.params.len().clamp(1, 3)
+                (1..=doc.params.len().clamp(1, 3)).collect()
             },
         });
+    // A function with more than three parameters is not called with every combination of values,
+    // so only its `EVIDENCE` vouches for it.
     let written_in_mq = mq_defs()
         .into_iter()
-        .filter(|def| {
-            !def.variadic
-                && def.params <= 3
-                && !SKIPPED.contains(&def.name.as_str())
-                && !EFFECTS.iter().any(|effect| def.body.contains(effect))
-        })
+        .filter(|def| !SKIPPED.contains(&def.name.as_str()) && !EFFECTS.iter().any(|effect| def.body.contains(effect)))
         .map(|def| Target {
+            arities: if def.params <= 3 { vec![def.params] } else { Vec::new() },
             name: def.name,
-            arities: def.params..=def.params,
         });
     natives.chain(written_in_mq).collect()
 }
@@ -309,6 +334,8 @@ struct Audit {
     findings: BTreeMap<String, Vec<String>>,
     /// How many calls of each builtin ran and were accepted
     accepted: BTreeMap<String, usize>,
+    /// The builtins whose `CHECK_ONLY` call the checker accepts
+    checked: BTreeSet<String>,
 }
 
 impl Audit {
@@ -349,6 +376,11 @@ impl Audit {
                 *self.accepted.entry((*name).to_string()).or_default() += 1;
             }
         }
+        for (name, code) in CHECK_ONLY {
+            if rejection(code).is_none() {
+                self.checked.insert((*name).to_string());
+            }
+        }
     }
 
     fn finding_count(&self) -> usize {
@@ -378,6 +410,7 @@ impl Audit {
             .iter()
             .map(|target| target.name.as_str())
             .filter(|name| !self.findings.contains_key(*name) && self.accepted.contains_key(*name))
+            .chain(self.checked.iter().map(String::as_str))
             .collect();
         all_builtin_names()
             .into_iter()
@@ -395,7 +428,12 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
         .and_then(|value| value.parse().ok())
         .unwrap_or(150);
 
-    let mut engine = Engine::with_default_io(mq_lang::Shared::new(mq_lang::MemIo::default()));
+    let io = mq_lang::MemIo::default()
+        .capture_console()
+        .with_fetch_response("https://example.com/", "a\nb")
+        .with_stdin_line("a")
+        .with_command_response("echo", &["a".to_string()], "a");
+    let mut engine = Engine::with_default_io(mq_lang::Shared::new(io));
     engine.load_builtin_module();
     engine.set_timeout(Duration::from_millis(300));
     let values: Vec<Option<RuntimeValue>> = VALUES
@@ -414,7 +452,7 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
     let mut audit = Audit::default();
     audit.evidence(&mut engine);
     for target in &called {
-        for arity in target.arities.clone() {
+        for &arity in &target.arities {
             for list in argument_lists(arity, triples) {
                 audit.call(&mut engine, &values, &target.name, &list);
             }

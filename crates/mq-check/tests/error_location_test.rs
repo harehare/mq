@@ -39,3 +39,35 @@ fn test_homogeneous_array_no_error() {
     let errors = check_types(code);
     assert!(errors.is_empty(), "Homogeneous array should have no errors");
 }
+
+fn classified(code: &str) -> Vec<mq_check::Classified> {
+    let mut hir = mq_hir::Hir::default();
+    hir.add_code(None, code);
+    mq_check::TypeChecker::new().check_classified(&hir)
+}
+
+#[test]
+fn test_argument_mismatch_names_the_expected_type_first() {
+    let errors = classified("let s = \"a\"\n| abs(s)");
+    assert!(matches!(
+        errors.as_slice(),
+        [c] if c.error.to_string() == "Type mismatch: expected number, found string"
+    ));
+}
+
+#[test]
+fn test_variable_argument_points_at_its_definition() {
+    let errors = classified("let s = \"a\"\n| let n = 1\n| abs(s)");
+    let [c] = errors.as_slice() else {
+        panic!("{errors:?}");
+    };
+    assert_eq!(c.related.len(), 1, "{:?}", c.related);
+    assert_eq!(c.related[0].message, "`s` is `string`");
+    assert_eq!(c.related[0].range.start.line, 1);
+}
+
+#[test]
+fn test_literal_argument_has_nothing_to_point_at() {
+    let errors = classified("abs(\"a\")");
+    assert!(errors.iter().all(|c| c.related.is_empty()), "{errors:?}");
+}

@@ -40,7 +40,7 @@ mod tests {
     fn test_write_json_report_produces_expected_shape() {
         let diagnostics = vec![CheckDiagnostic {
             severity: Severity::Error,
-            code: "typechecker::undefined_symbol",
+            code: "typechecker::type_mismatch",
             message: "Undefined symbol: foo".to_string(),
             range: Some(mq_lang::Range::default()),
         }];
@@ -52,7 +52,7 @@ mod tests {
 
         assert_eq!(json[0]["file"], "test.mq");
         assert_eq!(json[0]["severity"], "error");
-        assert_eq!(json[0]["code"], "typechecker::undefined_symbol");
+        assert_eq!(json[0]["code"], "typechecker::type_mismatch");
         assert_eq!(json[0]["message"], "Undefined symbol: foo");
         assert!(json[0]["range"].is_object());
     }

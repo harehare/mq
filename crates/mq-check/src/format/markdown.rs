@@ -58,7 +58,7 @@ mod tests {
     fn test_write_markdown_report_produces_table() {
         let diagnostics = vec![CheckDiagnostic {
             severity: Severity::Error,
-            code: "typechecker::undefined_symbol",
+            code: "typechecker::type_mismatch",
             message: "Undefined symbol: foo".to_string(),
             range: Some(mq_lang::Range::default()),
         }];
@@ -70,7 +70,7 @@ mod tests {
 
         assert!(output.contains("# mq-check Report"));
         assert!(output.contains("| File | Severity | Code | Location | Message |"));
-        assert!(output.contains("`typechecker::undefined_symbol`"));
+        assert!(output.contains("`typechecker::type_mismatch`"));
         assert!(output.contains("Undefined symbol: foo"));
         assert!(output.contains("**Found 1 issue.**"));
     }

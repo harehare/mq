@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use colored::Colorize;
 use format::OutputFormat;
-use mq_check::{Classified, Severity, TypeChecker, TypeCheckerOptions, TypeError, types::Type};
+use mq_check::{Classified, Related, Severity, TypeChecker, TypeCheckerOptions, TypeError, types::Type};
 use mq_hir::Hir;
 use url::Url;
 
@@ -348,7 +348,7 @@ fn check_type(
     let hidden = classified.len() - shown.len();
     let total = shown.len();
     for (i, (c, severity)) in shown.iter().enumerate() {
-        write_error(w, &c.error, *severity == Severity::Warning, code, i + 1, total)?;
+        write_error(w, c, *severity == Severity::Warning, code, i + 1, total)?;
     }
 
     if show_types {
@@ -441,10 +441,13 @@ fn error_title(error: &TypeError) -> String {
         TypeError::Mismatch { expected, found, .. } => {
             format!("type mismatch: expected {expected}, found {found}")
         }
-        TypeError::UnificationError { left, right, .. } => {
-            format!("cannot unify: {left} and {right}")
+        TypeError::UnificationError { .. } => {
+            let message = error.to_string();
+            let mut chars = message.chars();
+            chars
+                .next()
+                .map_or(String::new(), |first| first.to_lowercase().chain(chars).collect())
         }
-        TypeError::UndefinedSymbol { name, .. } => format!("undefined symbol: {name}"),
         TypeError::WrongArity { expected, found, .. } => {
             format!("wrong arity: expected {expected}, found {found}")
         }
@@ -472,12 +475,13 @@ fn error_title(error: &TypeError) -> String {
 /// - Multiple errors → Rust-style block format (`error[E000N] title` / ` --> loc` / snippet)
 fn write_error(
     w: &mut impl Write,
-    error: &TypeError,
+    classified: &Classified,
     warning: bool,
     code: &str,
     index: usize,
     total: usize,
 ) -> io::Result<()> {
+    let error = &classified.error;
     let location = error.location();
     let loc_plain = location
         .map(|range| format!("{}:{}", range.start.line, range.start.column))
@@ -497,7 +501,7 @@ fn write_error(
         if let Some(range) = &location {
             write_snippet(w, code, range, loc_plain.len())?;
         }
-        if let Some(ctx) = error_help(error) {
+        if let Some(ctx) = error.hint() {
             writeln!(
                 w,
                 "  {} {} {}",
@@ -506,6 +510,7 @@ fn write_error(
                 format!("help: {ctx}").bright_blue(),
             )?;
         }
+        write_related(w, code, &classified.related, loc_plain.len())?;
         writeln!(w)?; // blank line between blocks
     } else {
         // ── Compact inline format ─────────────────────────────────────────────
@@ -526,7 +531,7 @@ fn write_error(
         if let Some(range) = &location {
             write_snippet(w, code, range, prefix_width)?;
         }
-        if let Some(ctx) = error_help(error) {
+        if let Some(ctx) = error.hint() {
             writeln!(
                 w,
                 "  {} {} {}",
@@ -535,18 +540,24 @@ fn write_error(
                 format!("help: {ctx}").bright_blue(),
             )?;
         }
+        write_related(w, code, &classified.related, prefix_width)?;
     }
     Ok(())
 }
 
-/// Returns the optional help/context string for an error.
-fn error_help(error: &TypeError) -> Option<&str> {
-    match error {
-        TypeError::Mismatch { context, .. }
-        | TypeError::UnificationError { context, .. }
-        | TypeError::WrongArity { context, .. } => context.as_deref(),
-        _ => None,
+/// Writes the places that explain an error, each with its snippet.
+fn write_related(w: &mut impl Write, code: &str, related: &[Related], prefix_width: usize) -> io::Result<()> {
+    for related in related {
+        writeln!(
+            w,
+            "  {} {} {}",
+            " ".repeat(prefix_width),
+            "│".dimmed(),
+            format!("note: {} (line {})", related.message, related.range.start.line).bright_blue(),
+        )?;
+        write_snippet(w, code, &related.range, prefix_width)?;
     }
+    Ok(())
 }
 
 /// Writes inferred types with rich formatting to the given writer.
@@ -682,11 +693,7 @@ mod tests {
     #[test]
     fn test_collect_check_diagnostics_reports_undefined_symbol() {
         let diagnostics = collect_check_diagnostics("undefined_fn()", None, &TypeCheckerOptions::default());
-        assert!(
-            diagnostics
-                .iter()
-                .any(|d| d.code == "typechecker::undefined_symbol" || d.code == "hir::unresolved_symbol")
-        );
+        assert!(diagnostics.iter().any(|d| d.code == "hir::unresolved_symbol"));
         assert!(diagnostics.iter().any(|d| d.severity == format::Severity::Error));
     }
 
