@@ -1354,6 +1354,7 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_body(&mut self, body: &Program) -> CompileResult<()> {
+        Self::check_module_extensions(body)?;
         for node in body {
             if let Expr::Def(ident, _, _) = &node.expr {
                 self.scope_mut().declare(ident.name);
@@ -2057,7 +2058,8 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_module_directives(&mut self, modules: &Program, parent_module_path: &[Ident]) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
-        let result = self.compile_discarding_in_module_path(modules, parent_module_path);
+        let result = Self::check_module_extensions(modules)
+            .and_then(|()| self.compile_discarding_in_module_path(modules, parent_module_path));
         self.prune_module_functions = previously_pruning;
         result
     }
@@ -2184,6 +2186,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
+        Self::check_imported_module(&module)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| Ident::new(&module.name));
         let depth = self.scopes.len() - 1;
         self.push_module_barrier(depth, module_alias);
@@ -2360,35 +2363,60 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok((rest, let_slots, barrier))
     }
 
-    /// Rejects a member bound by more than one declaration of the same inline module in `program`.
+    /// Rejects a member bound by more than one declaration of the same inline module in `program`,
+    /// descending into nested modules.
     fn check_module_extensions(program: &Program) -> CompileResult<()> {
-        let mut seen: FxHashMap<Ident, FxHashSet<Ident>> = FxHashMap::default();
-        for node in program {
-            let Expr::Module(ident, body) = &node.expr else {
-                continue;
-            };
-            let mut names = Vec::new();
-            for member in body {
-                match &member.expr {
-                    Expr::Def(def_ident, _, _) => names.push(def_ident.name),
-                    Expr::Let(pattern, _) | Expr::Var(pattern, _) => {
-                        let mut pattern_names = Vec::new();
-                        collect_pattern_idents(pattern, &mut pattern_names);
-                        pattern_names.sort();
-                        pattern_names.dedup();
-                        names.extend(pattern_names);
-                    }
-                    _ => {}
-                }
-            }
-            let bound = seen.entry(ident.name).or_default();
-            for name in names {
+        Self::check_module_members(program, &mut Vec::new(), &mut FxHashMap::default())
+    }
+
+    /// Rejects an imported file that binds a name more than once, or whose nested modules do.
+    fn check_imported_module(module: &Module) -> CompileResult<()> {
+        let mut bound = FxHashSet::default();
+        for node in module.functions.iter().chain(&module.vars) {
+            for name in Self::bound_names(node) {
                 if !bound.insert(name) {
                     return Err(CompileError::DuplicateModuleBinding(name.to_string(), node.token_id));
                 }
             }
         }
+        Self::check_module_extensions(&module.modules)
+    }
+
+    fn check_module_members(
+        program: &Program,
+        path: &mut Vec<Ident>,
+        seen: &mut FxHashMap<Vec<Ident>, FxHashSet<Ident>>,
+    ) -> CompileResult<()> {
+        for node in program {
+            let Expr::Module(ident, body) = &node.expr else {
+                continue;
+            };
+            path.push(ident.name);
+            let bound = seen.entry(path.clone()).or_default();
+            for name in body.iter().flat_map(|member| Self::bound_names(member)) {
+                if !bound.insert(name) {
+                    return Err(CompileError::DuplicateModuleBinding(name.to_string(), node.token_id));
+                }
+            }
+            Self::check_module_members(body, path, seen)?;
+            path.pop();
+        }
         Ok(())
+    }
+
+    /// Names a module member binds directly.
+    fn bound_names(member: &Node) -> Vec<Ident> {
+        match &member.expr {
+            Expr::Def(ident, _, _) => vec![ident.name],
+            Expr::Let(pattern, _) | Expr::Var(pattern, _) => {
+                let mut names = Vec::new();
+                collect_pattern_idents(pattern, &mut names);
+                names.sort();
+                names.dedup();
+                names
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Opens a module whose members are declared from here on.

@@ -4801,6 +4801,43 @@ fn module_extension_rejects_existing_member(#[case] code: &str) {
     );
 }
 
+#[rstest]
+#[case::nested(
+    "module outer: module inner: def a(): 1; end end | module outer: module inner: def a(): 2; end end | outer::inner::a()"
+)]
+#[case::in_function("def f(): module m: def a(): 1; end | module m: def a(): 2; end | m::a(); | f()")]
+fn module_extension_rejects_duplicate_member_in_nested_scope(#[case] code: &str) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let result = compile_and_run(&program, token_arena);
+    assert!(
+        matches!(&result, Err(Error::Compile(compiler::CompileError::DuplicateModuleBinding(name, _))) if name == "a"),
+        "{result:?}"
+    );
+}
+
+#[rstest]
+#[case::def_def("def a(): 1; def a(): 2;", r#"import "lib" | lib::a()"#)]
+#[case::def_let("def a(): 1; let a = 2", r#"import "lib" | lib::a"#)]
+#[case::inline_module(
+    "module m: def a(): 1; end | module m: def a(): 2; end",
+    r#"import "lib" | lib::m::a()"#
+)]
+fn import_rejects_duplicate_binding(#[case] lib: &str, #[case] code: &str) {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("lib.mq"), lib).unwrap();
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let resolver =
+        crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
+    let result = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver));
+    assert!(
+        matches!(&result, Err(compiler::CompileError::DuplicateModuleBinding(name, _)) if name == "a"),
+        "{:?}",
+        result.err()
+    );
+}
+
 #[test]
 fn module_rejects_binding_the_same_name_twice() {
     let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
