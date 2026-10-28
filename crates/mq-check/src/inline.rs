@@ -31,6 +31,8 @@ struct Failure {
     op: SymbolId,
     name: SmolStr,
     args: Vec<Type>,
+    /// The first argument is the piped input, which the call does not write
+    implicit_input: bool,
     range: Option<mq_lang::Range>,
     /// Raised in a lambda run on the elements of a collection, which may have none
     in_element_callback: bool,
@@ -110,7 +112,13 @@ pub(crate) fn check_inlined_calls(
             continue;
         }
         let range = failure.range.filter(is_module_range).or(call_range);
-        ctx.report_inlined_overload(&failure.name, &failure.args, range, failure.in_element_callback);
+        ctx.report_inlined_overload(
+            &failure.name,
+            &failure.args,
+            failure.implicit_input,
+            range,
+            failure.in_element_callback,
+        );
     }
 }
 
@@ -441,6 +449,7 @@ impl Inliner<'_> {
         // The piped input comes first when the written arguments do not make a call
         let is_call = self.hir.symbol(id).is_some_and(|s| s.kind == SymbolKind::Call);
         let mut reported = args.clone();
+        let mut implicit_input = false;
         if is_call {
             let completed = |this: &Self, first: Type| {
                 let with_piped: Vec<Type> = std::iter::once(first).chain(args.iter().cloned()).collect();
@@ -452,7 +461,10 @@ impl Inliner<'_> {
                         return Some(*ret).filter(|ret| !ret.has_pending_var() && !ret.is_dynamic());
                     }
                     Some(_) => return None,
-                    None => reported.insert(0, piped.clone()),
+                    None => {
+                        reported.insert(0, piped.clone());
+                        implicit_input = true;
+                    }
                 },
                 None => {
                     // Whatever is piped in, nothing takes one more argument either
@@ -469,6 +481,7 @@ impl Inliner<'_> {
             op: id,
             name: SmolStr::new(name),
             args: reported,
+            implicit_input,
             range: self.hir.symbol(id).and_then(|s| symbol_range(self.hir, s)),
             in_element_callback: self.element_depth > 0,
         });

@@ -43,6 +43,8 @@ pub(super) struct BuiltinCall<'a> {
     pub report: bool,
     /// For `partial`: the piped input, when it is not yet known whether it is the function
     pub unsettled_piped: Option<Type>,
+    /// The first argument is the input of the query, which the call does not write
+    pub implicit_input: bool,
 }
 
 impl<'a> BuiltinCall<'a> {
@@ -62,6 +64,7 @@ impl<'a> BuiltinCall<'a> {
             may_get_piped_input: false,
             report: true,
             unsettled_piped: None,
+            implicit_input: false,
         }
     }
 }
@@ -162,6 +165,7 @@ pub(super) fn resolve_builtin(ctx: &mut InferenceContext, call: &BuiltinCall<'_>
             op_name: SmolStr::new(call.name),
             operand_tys: call.args.to_vec(),
             unsettled_piped: call.unsettled_piped.clone(),
+            implicit_input: call.implicit_input,
             range: call.range,
             result: result.clone(),
         });
@@ -184,7 +188,7 @@ pub(super) fn resolve_builtin(ctx: &mut InferenceContext, call: &BuiltinCall<'_>
         && call.report
         && (!call.may_get_piped_input || !completed_by_piped_input(ctx, call.name, &resolved_args));
     if reportable {
-        ctx.report_no_matching_overload(call.name, &resolved_args, call.range);
+        ctx.report_no_matching_overload(call.name, &resolved_args, call.implicit_input, call.range);
     }
     Resolution::Failed(Type::Var(ctx.fresh_var()))
 }

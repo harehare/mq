@@ -1014,3 +1014,22 @@ fn test_no_overload_message_leaves_out_the_unknown_query_input(#[case] code: &st
         "{errors:?}"
     );
 }
+
+#[rstest]
+#[case::known_reference(r#"var x = "a" | let y = 1 | x = y | x | abs()"#, true)]
+#[case::known_reference_old_type_gone(r#"var x = "a" | let y = 1 | x = y | x | upcase()"#, false)]
+#[case::unknown_parameter_keeps_previous_type(r#"def f(p): var x = "a" | x = p | x | upcase();"#, true)]
+fn test_assigning_a_reference_replaces_the_variable_type(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[test]
+fn test_no_overload_message_keeps_an_explicit_dynamic_argument() {
+    let errors = check_types_with_builtins("def f(): abs(next(), 1);");
+    assert_eq!(
+        errors.first().map(ToString::to_string).as_deref(),
+        Some("`abs` cannot be applied to (dynamic(), number)"),
+        "{errors:?}"
+    );
+}

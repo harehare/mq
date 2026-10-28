@@ -23,6 +23,8 @@ pub struct DeferredOverload {
     /// For `partial`: the piped input, prepended as the function if the first operand turns out
     /// not to be one. `None` once decided, or when the call does not depend on it.
     pub unsettled_piped: Option<Type>,
+    /// The first operand is the input of the query, which the call does not write
+    pub implicit_input: bool,
     /// The source range for error reporting
     pub range: Option<mq_lang::Range>,
     /// The type given as the result until the operation is resolved
@@ -331,6 +333,15 @@ pub struct InferenceContext {
     cross_arm_narrowings: Vec<CrossArmNarrowing>,
     /// When true, heterogeneous arrays produce a type error
     strict_array: bool,
+}
+
+/// The argument types of a call as shown in a message. The input of the query is left out when
+/// its type is unknown, since the user did not write it.
+fn format_arguments(arg_tys: &[Type], implicit_input: bool) -> String {
+    match arg_tys.split_first() {
+        Some((first, rest)) if implicit_input && first.is_dynamic() => format_type_list(rest),
+        _ => format_type_list(arg_tys),
+    }
 }
 
 impl InferenceContext {
@@ -747,6 +758,7 @@ impl InferenceContext {
         &mut self,
         op_name: &str,
         arg_tys: &[Type],
+        implicit_input: bool,
         range: Option<mq_lang::Range>,
         in_element_callback: bool,
     ) {
@@ -755,7 +767,7 @@ impl InferenceContext {
             format!(
                 "{} with arguments ({})",
                 op_name,
-                self.format_arguments(op_name, arg_tys)
+                format_arguments(arg_tys, implicit_input)
             ),
         );
         let found = if in_element_callback {
@@ -768,7 +780,7 @@ impl InferenceContext {
         if found == InlinedError::Body {
             *entry = found;
         }
-        self.report_no_matching_overload(op_name, arg_tys, range);
+        self.report_no_matching_overload(op_name, arg_tys, implicit_input, range);
     }
 
     /// How the error was found by running a function body on the arguments of a call, if it was.
@@ -781,29 +793,15 @@ impl InferenceContext {
         }
     }
 
-    /// The argument types of a call as shown in a message. The input of the query comes first
-    /// when its type is unknown, and a call with more arguments than any overload takes was given
-    /// that input as one of them, which the user did not write.
-    fn format_arguments(&self, op_name: &str, arg_tys: &[Type]) -> String {
-        let max_arity = self.get_builtin_overloads(op_name).and_then(|overloads| {
-            overloads
-                .iter()
-                .filter_map(|overload| match overload {
-                    Type::Function(params, _) => Some(params.len()),
-                    _ => None,
-                })
-                .max()
-        });
-        let shown = match (arg_tys.split_first(), max_arity) {
-            (Some((first, rest)), Some(max)) if first.is_dynamic() && arg_tys.len() > max => rest,
-            _ => arg_tys,
-        };
-        format_type_list(shown)
-    }
-
     /// Reports a "no matching overload" error with formatted argument types.
-    pub fn report_no_matching_overload(&mut self, op_name: &str, arg_tys: &[Type], range: Option<mq_lang::Range>) {
-        let args_str = self.format_arguments(op_name, arg_tys);
+    pub fn report_no_matching_overload(
+        &mut self,
+        op_name: &str,
+        arg_tys: &[Type],
+        implicit_input: bool,
+        range: Option<mq_lang::Range>,
+    ) {
+        let args_str = format_arguments(arg_tys, implicit_input);
         let context = self.format_available_overloads(op_name);
         self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),
