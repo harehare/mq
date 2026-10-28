@@ -149,7 +149,7 @@ void test_eval_unsupported_format() {
         engine,
         ".h",
         "test",
-        "json"
+        "docx"
     );
 
     assert_null(result.values, "Values should be null");
@@ -513,7 +513,7 @@ void test_eval_ex() {
     mq_error_free(err);
 
     // The error details are optional.
-    status = mq_eval_ex(ctx, ".h", "x", "yaml", &values, NULL);
+    status = mq_eval_ex(ctx, ".h", "x", "docx", &values, NULL);
     assert_equals(status, MQ_ERR_INVALID_ARGUMENT, "Unsupported format");
 
     mq_destroy(ctx);

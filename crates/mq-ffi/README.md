@@ -165,6 +165,12 @@ The format name is case-insensitive.
 | `"mdx"` | MDX (Markdown with JSX) |
 | `"html"` | HTML, converted to Markdown |
 | `"text"` | Plain text, one value per line |
+| `"raw"` | The whole input as one string |
+| `"null"` | No input |
+| `"csv"`, `"tsv"`, `"psv"` | Delimited text with a header row |
+| `"json"`, `"jsonl"`, `"yaml"`, `"toml"`, `"toon"`, `"xml"`, `"gron"` | Parsed by the matching module |
+
+`"bytes"` and `"cbor"` are CLI only, since the input is a C string.
 
 ## Support
 

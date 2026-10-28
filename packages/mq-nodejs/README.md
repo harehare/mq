@@ -54,11 +54,12 @@ console.log(md);
 
 #### `run(code, content, options?)`
 
-Run an mq script on markdown content.
+Run an mq script on content in any text input format.
 
 - `code`: string - The mq script to execute
 - `content`: string - The markdown content to process
 - `options`: Partial<Options> - Processing options
+  - `inputFormat`: `markdown` (default), `mdx`, `html`, `text`, `null`, `raw`, `csv`, `tsv`, `psv`, `json`, `jsonl`, `yaml`, `toml`, `toon`, `xml` or `gron`, as in the CLI's `-I`. The binary formats `bytes` and `cbor` are CLI only.
 
 Returns: `Promise<string>` - The processed output
 

@@ -141,7 +141,7 @@ fn test_eval_with_unsupported_format() {
     let engine = mq_create();
     let code = make_c_string(".h");
     let input = make_c_string("test");
-    let format = make_c_string("json");
+    let format = make_c_string("docx");
 
     let result = unsafe { mq_eval(engine, code, input, format) };
 
@@ -150,7 +150,7 @@ fn test_eval_with_unsupported_format() {
     assert!(!result.error_msg.is_null());
 
     let error_msg = unsafe { c_string_to_rust_string(result.error_msg) };
-    assert!(error_msg.contains("Unsupported input format: json"));
+    assert!(error_msg.contains("Unsupported input format: docx"));
 
     mq_free_result(result);
     mq_destroy(engine);
@@ -1118,6 +1118,32 @@ fn test_eval_ex_timeout() {
 }
 
 #[test]
+fn test_eval_with_module_input_formats() {
+    let engine = mq_create();
+    for (format, input, code, expected) in [
+        ("json", r#"{"a": [1, 2]}"#, r#"get("a") | get(1)"#, "2"),
+        ("JSONL", "{\"a\": 1}\n\n{\"a\": 2}\n", r#"get("a")"#, "2"),
+        ("yaml", "a: x", r#"get("a")"#, "x"),
+        ("csv", "n,m\n1,2\n", r#"first() | get("m")"#, "2"),
+    ] {
+        let outcome = eval_ex_with(engine, code, input, format);
+        assert_eq!(outcome.status, MqStatus::MQ_OK, "{format}");
+        assert_eq!(outcome.values.last().map(String::as_str), Some(expected), "{format}");
+    }
+    mq_destroy(engine);
+}
+
+#[test]
+fn test_eval_with_binary_input_format_is_rejected() {
+    let engine = mq_create();
+    for format in ["bytes", "cbor"] {
+        let outcome = eval_ex_with(engine, ".", "x", format);
+        assert_eq!(outcome.status, MqStatus::MQ_ERR_INVALID_ARGUMENT, "{format}");
+    }
+    mq_destroy(engine);
+}
+
+#[test]
 fn test_eval_ex_halt_reports_exit_code() {
     let outcome = eval_ex("halt(3)");
 
@@ -1134,8 +1160,8 @@ fn test_eval_ex_invalid_arguments() {
             "Engine pointer is null",
         ),
         (
-            eval_ex_with(engine, ".h", "x", "yaml"),
-            "Unsupported input format: yaml",
+            eval_ex_with(engine, ".h", "x", "docx"),
+            "Unsupported input format: docx",
         ),
     ] {
         assert_eq!(outcome.status, MqStatus::MQ_ERR_INVALID_ARGUMENT);

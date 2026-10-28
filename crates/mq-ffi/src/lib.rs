@@ -6,9 +6,9 @@
 //! # Features
 //!
 //! - Create and manage mq engine instances
-//! - Evaluate mq code with markdown, MDX, HTML, or plain text input
+//! - Evaluate mq code against the CLI's text input formats
 //! - Memory-safe API with proper ownership handling
-//! - Support for multiple input formats: markdown, MDX, HTML, and plain text
+//! - Support for multiple input formats: markdown, MDX, HTML, plain text, JSON, YAML, CSV and more
 //!
 //! # Basic Usage
 //!
@@ -55,6 +55,12 @@
 //! - `"mdx"` - Markdown with JSX support
 //! - `"html"` - HTML content converted to markdown
 //! - `"text"` - Plain text, split by lines
+//! - `"raw"` - The whole input as one string
+//! - `"null"` - No input
+//! - `"csv"`, `"tsv"`, `"psv"`, `"json"`, `"jsonl"`, `"yaml"`, `"toml"`, `"toon"`, `"xml"`, `"gron"` -
+//!   Parsed by the matching module, as with the CLI's `-I`
+//!
+//! The CLI's binary formats (`bytes`, `cbor`) are not available, since input is a C string.
 //!
 //! # Panic Safety
 //!
@@ -258,7 +264,7 @@ pub unsafe extern "C" fn mq_eval(
     engine_ptr: *mut MqContext,
     code_c: *const c_char,
     input_c: *const c_char,
-    input_format_c: *const c_char, // "markdown" or "mdx" or "text"
+    input_format_c: *const c_char, // see "Input Formats" in the crate docs
 ) -> MqResult {
     std::panic::catch_unwind(move || unsafe { mq_eval_inner(engine_ptr, code_c, input_c, input_format_c) })
         .unwrap_or_else(|payload| MqResult {
@@ -328,22 +334,84 @@ unsafe fn eval_core(
         .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in input_format"))?
         .to_lowercase();
 
-    let (prefix, parsed) = match input_format_str.as_str() {
+    // `prelude` imports and runs the module that parses the formats the engine has no native parser for.
+    let (prefix, prelude, parsed) = match input_format_str.as_str() {
         "text" => (
             "Text parsing error: ",
+            "",
             mq_lang::parse_text_input(input_str).map_err(|e| e.to_string()),
         ),
         "markdown" => (
             "Markdown parsing error: ",
+            "",
             mq_lang::parse_markdown_input(input_str).map_err(|e| e.to_string()),
         ),
         "mdx" => (
             "Markdown parsing error: ",
+            "",
             mq_lang::parse_mdx_input(input_str).map_err(|e| e.to_string()),
         ),
         "html" => (
             "Html parsing error: ",
+            "",
             mq_lang::parse_html_input(input_str).map_err(|e| e.to_string()),
+        ),
+        "raw" => ("", "", Ok(mq_lang::raw_input(input_str))),
+        "null" => ("", "", Ok(mq_lang::null_input())),
+        // One record per non-empty line; the json module parses each.
+        "jsonl" => (
+            "",
+            r#"import "json" | json::json_parse()"#,
+            Ok(input_str
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.to_string().into())
+                .collect()),
+        ),
+        "csv" => (
+            "",
+            r#"import "csv" | csv::csv_parse(true)"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "gron" => (
+            "",
+            r#"import "gron" | gron::gron_parse()"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "json" => (
+            "",
+            r#"import "json" | json::json_parse()"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "psv" => (
+            "",
+            r#"import "csv" | csv::psv_parse(true)"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "toml" => (
+            "",
+            r#"import "toml" | toml::toml_parse()"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "toon" => (
+            "",
+            r#"import "toon" | toon::toon_parse()"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "tsv" => (
+            "",
+            r#"import "csv" | csv::tsv_parse(true)"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "xml" => (
+            "",
+            r#"import "xml" | xml::xml_parse()"#,
+            Ok(mq_lang::raw_input(input_str)),
+        ),
+        "yaml" => (
+            "",
+            r#"import "yaml" | yaml::yaml_parse()"#,
+            Ok(mq_lang::raw_input(input_str)),
         ),
         _ => {
             return Err(FfiError::invalid_argument(format!(
@@ -355,7 +423,7 @@ unsafe fn eval_core(
     let mq_input_values = parsed.map_err(|message| FfiError::input_parse(prefix, message))?;
 
     engine
-        .eval(code, mq_input_values.into_iter())
+        .eval_with_prelude(prelude, code, mq_input_values.into_iter())
         .map(|values| values.into_iter().collect())
         .map_err(FfiError::from_eval)
 }

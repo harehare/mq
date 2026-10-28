@@ -24,7 +24,7 @@ use crate::{
     ModuleLoader, Token, TokenArena,
     arena::Arena,
     error::{self},
-    parse, parse_with_prelude,
+    parse_with_prelude,
     runtime::builtin::io_context,
 };
 
@@ -355,6 +355,20 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// ```
     ///
     pub fn eval<I: Iterator<Item = RuntimeValue>>(&mut self, code: &str, input: I) -> MqResult {
+        self.eval_with_prelude("", code, input)
+    }
+
+    /// Like [`Self::eval`], running `prelude` before `code`.
+    ///
+    /// Diagnostics show only `code`. Unlike [`Self::compile_with_prelude`], the query's tokens are
+    /// freed after the run, so a long-lived engine does not grow.
+    #[doc(hidden)]
+    pub fn eval_with_prelude<I: Iterator<Item = RuntimeValue>>(
+        &mut self,
+        prelude: &str,
+        code: &str,
+        input: I,
+    ) -> MqResult {
         if code.is_empty() {
             return Ok(vec![].into());
         }
@@ -362,7 +376,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         // Scoped before `parse`, not just `eval_compiled_vm`, so bare `$VAR` resolution sees this engine's `Io`.
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let token_arena = self.query_token_arena();
-        let program = parse(code, Shared::clone(&token_arena))?;
+        let program = parse_with_prelude(prelude, code, Shared::clone(&token_arena))?;
 
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(code.to_string());

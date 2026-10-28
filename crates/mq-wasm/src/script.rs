@@ -37,7 +37,8 @@ export interface HoverResult {
 
 export interface Options {
     isUpdate: boolean,
-    inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | 'raw' | null,
+    /** Input format, as in the CLI's `-I`. The binary formats `bytes` and `cbor` are not supported. */
+    inputFormat: 'markdown' | 'mdx' | 'html' | 'text' | 'null' | 'raw' | 'csv' | 'gron' | 'json' | 'jsonl' | 'psv' | 'toml' | 'toon' | 'tsv' | 'xml' | 'yaml' | null,
     listStyle: 'dash' | 'plus' | 'star' | null,
     linkTitleStyle: 'double' | 'single' | 'paren' | null,
     linkUrlStyle: 'angle' | 'none' | null,
@@ -146,6 +147,54 @@ pub enum InputFormat {
     #[serde(rename = "raw")]
     /// Raw string input.
     Raw,
+    #[serde(rename = "csv")]
+    /// CSV with a header row.
+    Csv,
+    #[serde(rename = "gron")]
+    /// gron output.
+    Gron,
+    #[serde(rename = "json")]
+    /// JSON.
+    Json,
+    #[serde(rename = "jsonl")]
+    /// JSON Lines.
+    Jsonl,
+    #[serde(rename = "psv")]
+    /// Pipe-separated values with a header row.
+    Psv,
+    #[serde(rename = "toml")]
+    /// TOML.
+    Toml,
+    #[serde(rename = "toon")]
+    /// TOON.
+    Toon,
+    #[serde(rename = "tsv")]
+    /// Tab-separated values with a header row.
+    Tsv,
+    #[serde(rename = "xml")]
+    /// XML.
+    Xml,
+    #[serde(rename = "yaml")]
+    /// YAML.
+    Yaml,
+}
+
+impl InputFormat {
+    /// The `import` and parse call that turns raw content into values, for module-backed formats.
+    fn prelude(&self) -> &'static str {
+        match self {
+            Self::Csv => r#"import "csv" | csv::csv_parse(true)"#,
+            Self::Gron => r#"import "gron" | gron::gron_parse()"#,
+            Self::Json | Self::Jsonl => r#"import "json" | json::json_parse()"#,
+            Self::Psv => r#"import "csv" | csv::psv_parse(true)"#,
+            Self::Toml => r#"import "toml" | toml::toml_parse()"#,
+            Self::Toon => r#"import "toon" | toon::toon_parse()"#,
+            Self::Tsv => r#"import "csv" | csv::tsv_parse(true)"#,
+            Self::Xml => r#"import "xml" | xml::xml_parse()"#,
+            Self::Yaml => r#"import "yaml" | yaml::yaml_parse()"#,
+            Self::Markdown | Self::Mdx | Self::Text | Self::Html | Self::Null | Self::Raw => "",
+        }
+    }
 }
 
 impl FromStr for InputFormat {
@@ -698,11 +747,28 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
         InputFormat::Markdown => mq_lang::parse_markdown_input(content),
         InputFormat::Raw => Ok(mq_lang::raw_input(content)),
         InputFormat::Null => Ok(mq_lang::null_input()),
+        // One record per non-empty line; the json module parses each.
+        InputFormat::Jsonl => Ok(content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.to_string().into())
+            .collect()),
+        InputFormat::Csv
+        | InputFormat::Gron
+        | InputFormat::Json
+        | InputFormat::Psv
+        | InputFormat::Toml
+        | InputFormat::Toon
+        | InputFormat::Tsv
+        | InputFormat::Xml
+        | InputFormat::Yaml => Ok(mq_lang::raw_input(content)),
     }
     .map_err(|e| JsValue::from_str(&format!("Failed to parse input content: {}", e)))?;
 
+    let prelude = options.input_format.as_ref().map_or("", InputFormat::prelude);
+
     engine
-        .eval(code, input.clone().into_iter())
+        .eval_with_prelude(prelude, code, input.clone().into_iter())
         .map_err(|e| JsValue::from_str(&format!("{}", e)))
         .map(|result_values| {
             let values = if matches!(options.input_format, Some(InputFormat::Markdown)) && is_update {
@@ -1447,6 +1513,26 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(result.await.unwrap(), "HELLO\n");
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_script_run_with_module_input_format() {
+        let result = run(
+            r#"get("a")"#,
+            r#"{"a": "x"}"#,
+            serde_wasm_bindgen::to_value(&Options {
+                is_update: false,
+                input_format: Some(InputFormat::Json),
+                list_style: None,
+                link_title_style: None,
+                link_url_style: None,
+                allowed_domains: None,
+                allow_http_import: None,
+                timeout_ms: None,
+            })
+            .unwrap(),
+        );
+        assert_eq!(result.await.unwrap(), "x\n");
     }
 
     #[allow(unused)]
