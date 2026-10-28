@@ -1,0 +1,82 @@
+name: Install script
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-ps1:
+    name: install.ps1 (${{ matrix.os }}, ${{ matrix.shell }})
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+        shell: [powershell, pwsh]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Parse script
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\scripts\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          $nonAscii = Select-String -Path scripts\install.ps1 -Pattern '[^\x00-\x7F]'
+          if ($nonAscii) { $nonAscii | ForEach-Object { Write-Error "Non-ASCII at line $($_.LineNumber)" }; exit 1 }
+
+      # Same path as `irm https://mqlang.org/install.ps1 | iex`, with the script read from the checkout.
+      - name: Install latest via iex
+        env:
+          MQ_HOME: ${{ runner.temp }}\mq-latest
+        run: |
+          Get-Content -Raw scripts\install.ps1 | Invoke-Expression
+          & "$env:MQ_HOME\mq.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # Installed in the current session without a restart.
+          mq --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Check user PATH is persisted once
+        env:
+          MQ_HOME: ${{ runner.temp }}\mq-latest
+        run: |
+          # Install a second time: the PATH entry must not be duplicated.
+          Get-Content -Raw scripts\install.ps1 | Invoke-Expression
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
+          $count = @($userPath | Where-Object { $_.TrimEnd('\') -ieq $env:MQ_HOME.TrimEnd('\') }).Count
+          if ($count -ne 1) { Write-Error "Expected 1 PATH entry for $env:MQ_HOME, found $count"; exit 1 }
+
+      - name: Install pinned version with mq-dbg
+        env:
+          MQ_HOME: ${{ runner.temp }}\mq-pinned
+          MQ_VERSION: v0.9.3
+          MQ_WITH_DEBUG: "1"
+          MQ_NO_MODIFY_PATH: "1"
+        run: |
+          Get-Content -Raw scripts\install.ps1 | Invoke-Expression
+          foreach ($bin in 'mq', 'mq-dbg') {
+            $exe = "$env:MQ_HOME\$bin.exe"
+            if (-not (Test-Path $exe)) { Write-Error "$exe was not installed"; exit 1 }
+            & $exe --version
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User') -split ';'
+          if ($userPath -contains $env:MQ_HOME) { Write-Error 'MQ_NO_MODIFY_PATH was ignored'; exit 1 }
+
+      - name: Unknown version fails without exiting the shell
+        env:
+          MQ_HOME: ${{ runner.temp }}\mq-missing
+          MQ_VERSION: v0.0.0
+        run: |
+          $failed = $false
+          try { Get-Content -Raw scripts\install.ps1 | Invoke-Expression } catch { $failed = $true }
+          if (-not $failed) { Write-Error 'Installing a nonexistent version should fail'; exit 1 }
+          if (Test-Path "$env:MQ_HOME\mq.exe") { Write-Error 'mq.exe must not be installed on failure'; exit 1 }

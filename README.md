@@ -63,6 +63,12 @@ curl -sSL https://mqlang.org/install.sh | bash
 
 Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`, and updates your shell profile to add mq to your PATH.
 
+On Windows (PowerShell):
+
+```powershell
+powershell -c "irm https://mqlang.org/install.ps1 | iex"
+```
+
 ### Package Managers
 
 | Method                 | Command                                                                           |

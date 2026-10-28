@@ -13,6 +13,31 @@ The installer will:
 - Install it to `~/.local/bin/`
 - Update your shell profile to add mq to your PATH
 
+### Windows (PowerShell)
+
+```powershell
+powershell -c "irm https://mqlang.org/install.ps1 | iex"
+```
+
+The installer will:
+- Download the latest mq binary for your architecture (x86_64 or arm64)
+- Verify its checksum
+- Install it to `%USERPROFILE%\.local\bin\`
+- Add that directory to your user PATH (restart your terminal afterwards)
+
+Options are set through environment variables, because `irm | iex` cannot take arguments:
+
+| Variable            | Description                                           |
+| ------------------- | ----------------------------------------------------- |
+| `MQ_VERSION`        | Release tag to install, e.g. `v0.9.3` (default: latest) |
+| `MQ_HOME`           | Installation directory                                |
+| `MQ_WITH_DEBUG`     | Set to `1` to also install the debugger `mq-dbg`      |
+| `MQ_NO_MODIFY_PATH` | Set to `1` to leave your PATH untouched               |
+
+```powershell
+$env:MQ_WITH_DEBUG = "1"; powershell -c "irm https://mqlang.org/install.ps1 | iex"
+```
+
 ## Cargo
 
 ```sh
