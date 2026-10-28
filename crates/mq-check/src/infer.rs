@@ -688,7 +688,18 @@ impl InferenceContext {
     pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>, origin: &ConstraintOrigin) {
         let resolved_t1 = self.resolve_type(t1);
         let resolved_t2 = self.resolve_type(t2);
-        let mut names = Type::display_renumbered_together(&[&resolved_t1, &resolved_t2]).into_iter();
+        // A call ties the argument to the parameter, in that order, and the parameter is what
+        // is expected
+        let argument_first = matches!(
+            origin,
+            ConstraintOrigin::Argument { .. } | ConstraintOrigin::PipedInput { .. }
+        );
+        let (first, second) = if argument_first {
+            (&resolved_t2, &resolved_t1)
+        } else {
+            (&resolved_t1, &resolved_t2)
+        };
+        let mut names = Type::display_renumbered_together(&[first, second]).into_iter();
         let (expected, found) = (names.next().unwrap_or_default(), names.next().unwrap_or_default());
         self.add_error(TypeError::Mismatch {
             expected,
