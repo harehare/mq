@@ -15,6 +15,19 @@ impl LintRule for PreferSpecificHeading {
 
     fn check(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         // Selector symbols use insert_symbol → use all_symbols
+        // `.h.depth` has no `.hN` equivalent when the depth is read at runtime.
+        let reads_depth = ctx.all_symbols().any(|(_, s)| {
+            matches!(
+                s.kind,
+                SymbolKind::Selector(mq_lang::Selector::Attr(
+                    mq_lang::AttrKind::Depth | mq_lang::AttrKind::Level
+                ))
+            )
+        });
+        if reads_depth {
+            return Vec::new();
+        }
+
         ctx.all_symbols()
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_lang::Selector::Heading(None))))
             .map(|(_, sym)| {
@@ -56,6 +69,9 @@ mod tests {
     #[case(".h2")]
     #[case(".h6")]
     #[case(".h1 | .value")]
+    #[case(".h.depth")]
+    #[case(".h.level")]
+    #[case(".h | .depth")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);

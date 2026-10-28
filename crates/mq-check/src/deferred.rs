@@ -323,10 +323,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
 
     let mut resolved_any = false;
     for access in &accesses {
-        let var_ty = match ctx.get_symbol_type(access.def_id).cloned() {
-            Some(ty) => ctx.resolve_type(&ty),
-            None => continue,
-        };
+        let var_ty = ctx.resolve_type(&access.container_ty);
 
         match &var_ty {
             types::Type::Tuple(elems) => {
@@ -341,13 +338,13 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                     // Dynamic index, return Union of all element types
                     types::Type::union(elems.clone())
                 };
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                let call_ty = access.result_ty.clone();
                 ctx.add_constraint(Constraint::Equal(call_ty, result_ty, None, ConstraintOrigin::General));
                 resolved_any = true;
             }
             types::Type::Array(elem) => {
                 // Normal array, bind to element type
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                let call_ty = access.result_ty.clone();
                 ctx.add_constraint(Constraint::Equal(
                     call_ty,
                     *elem.clone(),
@@ -389,7 +386,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                     } else {
                         types::Type::union(elem_types)
                     };
-                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    let call_ty = access.result_ty.clone();
                     ctx.add_constraint(Constraint::Equal(call_ty, result_ty, None, ConstraintOrigin::General));
                     resolved_any = true;
                 }
@@ -397,7 +394,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
             types::Type::Dict(_, value) => {
                 // Dict bracket access: result type is the dict's value type.
                 // e.g. `d[key]` where d: Dict(String, V) → V
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                let call_ty = access.result_ty.clone();
                 ctx.add_constraint(Constraint::Equal(
                     call_ty,
                     *value.clone(),
@@ -408,7 +405,7 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
             }
             types::Type::String => {
                 // String bracket access: `s[n]` or `s[n:m]` returns a String (character/slice).
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                let call_ty = access.result_ty.clone();
                 ctx.add_constraint(Constraint::Equal(
                     call_ty,
                     types::Type::String,
@@ -439,13 +436,23 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                     access.range,
                     ConstraintOrigin::General,
                 ));
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                let call_ty = access.result_ty.clone();
                 ctx.add_constraint(Constraint::Equal(call_ty, elem_ty, None, ConstraintOrigin::General));
                 resolved_any = true;
             }
         }
     }
     resolved_any
+}
+
+/// Resolves deferred tuple accesses until no more resolve, solving constraints between rounds.
+///
+/// Chained lookups like `v[0][0][0]` use the previous result as the next container, so each
+/// one resolves in a later round. Every productive round removes at least one queued access.
+pub(crate) fn drain_deferred_tuple_accesses(ctx: &mut InferenceContext) {
+    while resolve_deferred_tuple_accesses(ctx) {
+        unify::solve_constraints(ctx);
+    }
 }
 
 /// Result of checking union member overload compatibility.
