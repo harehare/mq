@@ -758,6 +758,17 @@ impl Type {
         self.fmt_renumbered(&mut var_map, &mut counter)
     }
 
+    /// Formats several types that appear in one message, so that a type variable gets the same
+    /// name wherever it occurs and two different variables never share one.
+    pub fn display_renumbered_together(types: &[&Type]) -> Vec<String> {
+        let mut var_map = FxHashMap::default();
+        let mut counter = 0usize;
+        types
+            .iter()
+            .map(|ty| ty.fmt_renumbered(&mut var_map, &mut counter))
+            .collect()
+    }
+
     /// Internal helper for renumbered formatting.
     pub(crate) fn fmt_renumbered(&self, var_map: &mut FxHashMap<TypeVarId, usize>, counter: &mut usize) -> String {
         match self {
@@ -863,11 +874,8 @@ pub fn format_var_name(index: usize) -> String {
 ///
 /// Convenience helper used in error messages and overload reporting.
 pub(crate) fn format_type_list(types: &[Type]) -> String {
-    types
-        .iter()
-        .map(|t| t.display_renumbered())
-        .collect::<Vec<_>>()
-        .join(", ")
+    let refs: Vec<&Type> = types.iter().collect();
+    Type::display_renumbered_together(&refs).join(", ")
 }
 
 impl fmt::Display for Type {
@@ -1058,6 +1066,16 @@ mod tests {
             Type::function(vec![Type::Number, Type::String], Type::Bool).to_string(),
             "(number, string) -> bool"
         );
+    }
+
+    #[test]
+    fn test_types_in_one_message_name_each_variable_once() {
+        let mut ctx = TypeVarContext::new();
+        let (a, b) = (Type::Var(ctx.fresh()), Type::Var(ctx.fresh()));
+
+        let shown = Type::display_renumbered_together(&[&a, &Type::array(b.clone()), &b]);
+
+        assert_eq!(shown, ["'a", "['b]", "'b"]);
     }
 
     #[test]

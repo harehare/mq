@@ -688,9 +688,11 @@ impl InferenceContext {
     pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>, origin: &ConstraintOrigin) {
         let resolved_t1 = self.resolve_type(t1);
         let resolved_t2 = self.resolve_type(t2);
+        let mut names = Type::display_renumbered_together(&[&resolved_t1, &resolved_t2]).into_iter();
+        let (expected, found) = (names.next().unwrap_or_default(), names.next().unwrap_or_default());
         self.add_error(TypeError::Mismatch {
-            expected: resolved_t1.display_renumbered(),
-            found: resolved_t2.display_renumbered(),
+            expected,
+            found,
             location: range,
             context: origin.to_context_string(),
         });
