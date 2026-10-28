@@ -146,7 +146,8 @@ fn test_base64url_decode(#[case] input: &str, #[case] expected: &str) {
 // Test URL encoding
 #[rstest]
 #[case("hello world", "hello%20world")]
-#[case("test@example.com", "test%40example%2Ecom")]
+#[case("test@example.com", "test%40example.com")]
+#[case("a-b_c.d~e", "a-b_c.d~e")]
 #[case("a+b=c", "a%2Bb%3Dc")]
 #[case("", "")]
 #[case("foo/bar", "foo%2Fbar")]
@@ -390,6 +391,7 @@ fn test_sanitize_html(#[case] input: &str, #[case] expected: &str) {
 #[case("hello@world", "hello@world")] // At sign is safe
 #[case("hello/world", "hello/world")] // Slash is safe
 #[case("hello=world", "hello=world")] // Equals is safe
+#[case("=ls", "'=ls'")] // Leading equals is expanded by zsh
 #[case("test123", "test123")] // Alphanumeric is safe
 #[case("TEST", "TEST")] // Uppercase is safe
 #[case("it's a test", "'it'\\''s a test'")] // Multiple issues
@@ -668,15 +670,12 @@ fn test_convert_string_converts(#[case] convert: Convert, #[case] input: Runtime
 #[test]
 fn test_convert_html() {
     let convert = Convert::Html;
-    let input = RuntimeValue::String(Shared::new("**bold**".to_string()));
-    let result = convert.convert(&input);
-    match result {
-        RuntimeValue::String(s) => {
-            let trimmed = s.trim_end();
-            assert_eq!(trimmed, "<p><strong>bold</strong></p>");
-        }
-        _ => panic!("Expected String"),
-    }
+    let input = RuntimeValue::String(Shared::new("a b,\"c\"<x> & 'y'".to_string()));
+    assert_eq!(
+        convert.convert(&input),
+        RuntimeValue::String(Shared::new("a b,&quot;c&quot;&lt;x&gt; &amp; &#39;y&#39;".to_string()))
+    );
+    assert_eq!(convert.convert(&RuntimeValue::None), RuntimeValue::NONE);
 }
 
 #[test]

@@ -122,7 +122,7 @@ The `type` operand can be a symbol or a string that specifies the target format.
 | `:h4`         | `"####"`                       | Convert to a Markdown heading level 4                 |
 | `:h5`         | `"#####"`                      | Convert to a Markdown heading level 5                 |
 | `:h6`         | `"######"`                     | Convert to a Markdown heading level 6                 |
-| `:html`       |                                | Convert Markdown to an HTML string                    |
+| `:html`       |                                | HTML-escape the value (`& < > " '`)                   |
 | `:text`       |                                | Extract the plain text content of a node              |
 | `:sh`         |                                | Shell-escape the value for safe use in shell commands |
 | `:base64`     |                                | Encode the value as a Base64 string                   |
@@ -165,10 +165,9 @@ The `type` operand can be a symbol or a string that specifies the target format.
 "mq" @ "https://harehare.github.io/mq"
 # => [mq](https://harehare.github.io/mq)
 
-# Convert Markdown to HTML
-let md = do to_markdown("# Hello") | first; |
-md @ :html
-# => "<h1>Hello</h1>"
+# HTML-escape a string (use to_html to render Markdown as HTML)
+"<b>\"a\" & 'b'</b>" @ :html
+# => "&lt;b&gt;&quot;a&quot; &amp; &#39;b&#39;&lt;/b&gt;"
 
 # Extract plain text from a Markdown node
 let md = do to_markdown("## Hello World") | first; |
