@@ -30,6 +30,12 @@ mq --limit 1 '.h | to_text()' README.md         # first match only
 mq -A 'len()' README.md                         # number of nodes
 ```
 
+A directory argument reads every `.md`, `.markdown` and `.mdx` file under it, recursively and in path order. Hidden and `.gitignore`d entries are skipped, and a directory with no Markdown file is an error.
+
+```sh
+mq '.h1' docs/                                  # level-1 headings of every Markdown file under docs/
+```
+
 ### Update a document in place
 
 `-U` / `--update` runs the query on every node and writes the whole document back, with the nodes the query changed. Unmatched nodes pass through as they are. Use `self` for "leave this node alone". `--diff` prints a unified diff instead and exits 1 when something would change, which suits CI.

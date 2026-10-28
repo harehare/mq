@@ -4144,6 +4144,19 @@ fn test_directory_expands_to_sorted_markdown_files() {
 }
 
 #[test]
+fn test_glob_matching_directory_expands_to_markdown_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let guide = dir.path().join("guide");
+    fs::create_dir(&guide).unwrap();
+    fs::write(guide.join("chapter.md"), "# C").unwrap();
+    fs::write(dir.path().join("index.md"), "# I").unwrap();
+
+    let files = Cli::expand_glob_patterns(&[dir.path().join("*")]).unwrap();
+
+    assert_eq!(files, vec![guide.join("chapter.md"), dir.path().join("index.md")]);
+}
+
+#[test]
 fn test_directory_without_markdown_files_is_error() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("note.txt"), "skip").unwrap();

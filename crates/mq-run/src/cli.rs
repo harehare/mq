@@ -3019,8 +3019,14 @@ impl Cli {
 
             if matches.is_empty() {
                 expanded.push(file.clone());
-            } else {
-                expanded.extend(matches);
+            }
+
+            for matched in matches {
+                if matched.is_dir() {
+                    expanded.extend(Self::collect_markdown_files(&matched)?);
+                } else {
+                    expanded.push(matched);
+                }
             }
         }
 
