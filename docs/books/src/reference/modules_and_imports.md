@@ -55,6 +55,14 @@ end
 
 Module-level `let` values are computed once per run.
 
+A module may bind each name only once across its `let`, `var` and `def` declarations. Declaring `module m` again extends the existing module with the new members. A member name already bound by an earlier declaration is a compile error:
+
+```mq
+module m: def a(): 1; def a(): 2; end                  # error: module binds "a" more than once
+module m: def a(): 1; end | module m: def b(): 2; end  # ok: m has a and b
+module m: def a(): 1; end | module m: def a(): 2; end  # error: module binds "a" more than once
+```
+
 ## Import
 
 Loads a module from an external file using the syntax `import "module_path"`.

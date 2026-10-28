@@ -26,7 +26,7 @@ pub(crate) enum CompileError {
     Unsupported(&'static str, TokenId),
     Module(ModuleError),
     AssignToImmutable(String, TokenId),
-    /// A module binds the same `let`/`var` name more than once.
+    /// A module binds the same `let`/`var`/`def` name more than once.
     DuplicateModuleBinding(String, TokenId),
     InvalidBytecode(String),
     /// `yield` outside any `def`/`fn` body.
@@ -1166,6 +1166,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         let mut deferred = Vec::with_capacity(program.len());
         let mut defs: Program = Vec::new();
+        Self::check_module_extensions(program)?;
         for node in program {
             self.current_token_id = node.token_id;
             match &node.expr {
@@ -1353,6 +1354,7 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_body(&mut self, body: &Program) -> CompileResult<()> {
+        Self::check_module_extensions(body)?;
         for node in body {
             if let Expr::Def(ident, _, _) = &node.expr {
                 self.scope_mut().declare(ident.name);
@@ -2056,7 +2058,8 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_module_directives(&mut self, modules: &Program, parent_module_path: &[Ident]) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
-        let result = self.compile_discarding_in_module_path(modules, parent_module_path);
+        let result = Self::check_module_extensions(modules)
+            .and_then(|()| self.compile_discarding_in_module_path(modules, parent_module_path));
         self.prune_module_functions = previously_pruning;
         result
     }
@@ -2183,6 +2186,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
+        Self::check_imported_module(&module)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| Ident::new(&module.name));
         let depth = self.scopes.len() - 1;
         self.push_module_barrier(depth, module_alias);
@@ -2259,11 +2263,18 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         self.push_module_barrier(depth, module_path[0]);
 
+        Self::check_module_extensions(program)?;
         let mut def_slots = FxHashMap::default();
         let mut let_slots = FxHashMap::default();
         for node in program {
             match &node.expr {
                 Expr::Def(def_ident, _, _) => {
+                    if def_slots.contains_key(&def_ident.name) || let_slots.contains_key(&def_ident.name) {
+                        return Err(CompileError::DuplicateModuleBinding(
+                            def_ident.name.to_string(),
+                            node.token_id,
+                        ));
+                    }
                     let slot = self.scope_mut().declare(def_ident.name);
                     self.scope_mut().mark_immutable(slot);
                     def_slots.insert(def_ident.name, slot);
@@ -2274,7 +2285,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     names.sort();
                     names.dedup();
                     for name in names {
-                        if let_slots.contains_key(&name) {
+                        if let_slots.contains_key(&name) || def_slots.contains_key(&name) {
                             return Err(CompileError::DuplicateModuleBinding(name.to_string(), node.token_id));
                         }
                         let slot = self.scope_mut().declare(name);
@@ -2350,6 +2361,62 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut barrier = self.module_barriers.pop().expect("pushed above");
         barrier.members = def_slots.into_iter().chain(let_slots.clone()).collect();
         Ok((rest, let_slots, barrier))
+    }
+
+    /// Rejects a member bound by more than one declaration of the same inline module in `program`,
+    /// descending into nested modules.
+    fn check_module_extensions(program: &Program) -> CompileResult<()> {
+        Self::check_module_members(program, &mut Vec::new(), &mut FxHashMap::default())
+    }
+
+    /// Rejects an imported file that binds a name more than once, or whose nested modules do.
+    fn check_imported_module(module: &Module) -> CompileResult<()> {
+        let mut bound = FxHashSet::default();
+        for node in module.functions.iter().chain(&module.vars) {
+            for name in Self::bound_names(node) {
+                if !bound.insert(name) {
+                    return Err(CompileError::DuplicateModuleBinding(name.to_string(), node.token_id));
+                }
+            }
+        }
+        Self::check_module_extensions(&module.modules)
+    }
+
+    fn check_module_members(
+        program: &Program,
+        path: &mut Vec<Ident>,
+        seen: &mut FxHashMap<Vec<Ident>, FxHashSet<Ident>>,
+    ) -> CompileResult<()> {
+        for node in program {
+            let Expr::Module(ident, body) = &node.expr else {
+                continue;
+            };
+            path.push(ident.name);
+            let bound = seen.entry(path.clone()).or_default();
+            for name in body.iter().flat_map(|member| Self::bound_names(member)) {
+                if !bound.insert(name) {
+                    return Err(CompileError::DuplicateModuleBinding(name.to_string(), node.token_id));
+                }
+            }
+            Self::check_module_members(body, path, seen)?;
+            path.pop();
+        }
+        Ok(())
+    }
+
+    /// Names a module member binds directly.
+    fn bound_names(member: &Node) -> Vec<Ident> {
+        match &member.expr {
+            Expr::Def(ident, _, _) => vec![ident.name],
+            Expr::Let(pattern, _) | Expr::Var(pattern, _) => {
+                let mut names = Vec::new();
+                collect_pattern_idents(pattern, &mut names);
+                names.sort();
+                names.dedup();
+                names
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Opens a module whose members are declared from here on.
