@@ -4148,3 +4148,94 @@ fn test_watch_targets_includes_query_file_when_from_file() {
 fn test_is_content_change(#[case] kind: notify::EventKind, #[case] expected: bool) {
     assert_eq!(Cli::is_content_change(&kind), expected);
 }
+
+#[test]
+fn test_directory_expands_to_sorted_markdown_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let sub = dir.path().join("sub");
+    fs::create_dir(&sub).unwrap();
+    fs::write(dir.path().join("b.md"), "# B").unwrap();
+    fs::write(sub.join("a.mdx"), "# A").unwrap();
+    fs::write(dir.path().join("note.txt"), "skip").unwrap();
+
+    let files = Cli::expand_glob_patterns(&[dir.path().to_path_buf()]).unwrap();
+
+    assert_eq!(files, vec![dir.path().join("b.md"), sub.join("a.mdx")]);
+}
+
+#[test]
+fn test_glob_matching_directory_expands_to_markdown_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let guide = dir.path().join("guide");
+    fs::create_dir(&guide).unwrap();
+    fs::write(guide.join("chapter.md"), "# C").unwrap();
+    fs::write(dir.path().join("index.md"), "# I").unwrap();
+
+    let files = Cli::expand_glob_patterns(&[dir.path().join("*")]).unwrap();
+
+    assert_eq!(files, vec![guide.join("chapter.md"), dir.path().join("index.md")]);
+}
+
+#[test]
+fn test_directory_without_markdown_files_is_error() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("note.txt"), "skip").unwrap();
+
+    assert!(Cli::expand_glob_patterns(&[dir.path().to_path_buf()]).is_err());
+}
+
+#[test]
+fn test_glob_deduplicates_files_matched_through_directories() {
+    let dir = tempfile::tempdir().unwrap();
+    let sub = dir.path().join("sub");
+    fs::create_dir(&sub).unwrap();
+    fs::write(dir.path().join("a.md"), "# A").unwrap();
+    fs::write(sub.join("chapter.md"), "# C").unwrap();
+
+    let pattern = dir.path().join("**").join("*");
+    let files = Cli::expand_glob_patterns(&[pattern]).unwrap();
+
+    assert_eq!(files, vec![dir.path().join("a.md"), sub.join("chapter.md")]);
+}
+
+#[test]
+fn test_glob_keeps_repeats_across_arguments() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.md");
+    fs::write(&file, "# A").unwrap();
+
+    let files = Cli::expand_glob_patterns(&[dir.path().join("*.md"), file.clone()]).unwrap();
+
+    assert_eq!(files, vec![file.clone(), file]);
+}
+
+#[test]
+fn test_glob_skips_matched_directories_without_markdown_files() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("empty")).unwrap();
+    fs::write(dir.path().join("a.md"), "# A").unwrap();
+
+    let files = Cli::expand_glob_patterns(&[dir.path().join("*")]).unwrap();
+
+    assert_eq!(files, vec![dir.path().join("a.md")]);
+}
+
+#[test]
+fn test_glob_matching_only_empty_directories_is_error() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("empty")).unwrap();
+
+    let err = Cli::expand_glob_patterns(&[dir.path().join("*")]).unwrap_err();
+
+    assert!(err.to_string().contains("no Markdown files found"));
+}
+
+#[test]
+fn test_glob_without_matches_keeps_pattern() {
+    let dir = tempfile::tempdir().unwrap();
+    let pattern = dir.path().join("*.md");
+
+    let files = Cli::expand_glob_patterns(std::slice::from_ref(&pattern)).unwrap();
+
+    assert_eq!(files, vec![pattern]);
+}

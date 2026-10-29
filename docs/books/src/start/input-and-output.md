@@ -2,6 +2,16 @@
 
 How mq reads Markdown and writes it back, and the options that change it. For the full list of flags, see the [CLI reference](../reference/cli.md).
 
+## Directory input
+
+Passing a directory reads every `.md`, `.markdown` and `.mdx` file under it, recursively and in path order. Hidden and `.gitignore`d entries are skipped, and it is an error if no Markdown file is found.
+
+```sh
+mq '.h1' docs/
+```
+
+For other file types or custom filtering, use a shell glob or `walk_files`.
+
 ## Output formats
 
 `-F` / `--output-format` selects how results are written. The default is `markdown`. Each result is a Markdown node, a string, a number, a boolean, `None`, an array or a dict. The examples use `-I null` to show non-Markdown values.
