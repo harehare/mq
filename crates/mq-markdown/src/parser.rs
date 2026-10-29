@@ -38,8 +38,19 @@ pub(crate) fn parse(content: &str) -> miette::Result<Vec<Node>> {
 
 /// Parses `content` into a flat list of nodes, with frontmatter at the start when `frontmatter` is set.
 pub(crate) fn parse_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
+    let content = replace_nul(content);
+    let content = content.as_ref();
     resolve::resolve(block::parse(content, Flavor::Markdown, frontmatter), Flavor::Markdown)
         .map_err(|error| miette::Report::new(error.into_diagnostic(content)))
+}
+
+/// Replaces U+0000 with U+FFFD, as CommonMark requires.
+fn replace_nul(content: &str) -> std::borrow::Cow<'_, str> {
+    if content.contains('\0') {
+        content.replace('\0', "\u{fffd}").into()
+    } else {
+        content.into()
+    }
 }
 
 /// Renders `content` as HTML.
@@ -55,6 +66,8 @@ pub(crate) fn parse_mdx(content: &str) -> miette::Result<Vec<Node>> {
 
 /// Parses `content` as MDX, with frontmatter at the start when `frontmatter` is set.
 pub(crate) fn parse_mdx_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
+    let content = replace_nul(content);
+    let content = content.as_ref();
     resolve::resolve(block::parse(content, Flavor::Mdx, frontmatter), Flavor::Mdx)
         .map_err(|error| miette::Report::new(error.into_diagnostic(content)))
 }
@@ -62,6 +75,13 @@ pub(crate) fn parse_mdx_with(content: &str, frontmatter: bool) -> miette::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nul_is_replaced_when_parsing() {
+        for nodes in [parse("# a\0b").unwrap(), parse_mdx("# a\0b").unwrap()] {
+            assert_eq!(nodes[0].to_string(), "# a\u{fffd}b");
+        }
+    }
     use proptest::prelude::*;
     use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
 
