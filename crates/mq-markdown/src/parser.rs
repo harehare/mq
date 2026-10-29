@@ -55,7 +55,7 @@ fn replace_nul(content: &str) -> std::borrow::Cow<'_, str> {
 
 /// Renders `content` as HTML.
 pub(crate) fn to_html(content: &str) -> String {
-    render_html::render(content)
+    render_html::render(&replace_nul(content))
 }
 
 /// Parses `content` as MDX: no indented code, HTML, autolinks or GFM, but expressions and JSX.
@@ -81,6 +81,13 @@ mod tests {
         for nodes in [parse("# a\0b").unwrap(), parse_mdx("# a\0b").unwrap()] {
             assert_eq!(nodes[0].to_string(), "# a\u{fffd}b");
         }
+    }
+
+    #[test]
+    fn nul_autolink_matches_between_ast_and_html() {
+        let nodes = parse("<https://a\0b>").unwrap();
+        assert_eq!(nodes[0].to_string(), "[https://a\u{fffd}b](https://a\u{fffd}b)");
+        assert!(to_html("<https://a\0b>").contains("<a href=\"https://a%EF%BF%BDb\">"));
     }
     use proptest::prelude::*;
     use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
