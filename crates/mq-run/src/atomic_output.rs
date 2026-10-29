@@ -281,20 +281,54 @@ impl OutputSink {
         Ok(())
     }
 
+    /// `<path><suffix>`: the backup is named after the input, not the target of a symlink.
+    pub(crate) fn backup_path(path: &Path, suffix: &str) -> miette::Result<PathBuf> {
+        let mut name = path
+            .file_name()
+            .ok_or_else(|| miette!("cannot back up {}: no file name", path.display()))?
+            .to_os_string();
+        name.push(suffix);
+        Ok(path.with_file_name(name))
+    }
+
+    /// [`Self::backup_path`] with the parent directory resolved, to compare against other paths.
+    pub(crate) fn backup_destination(path: &Path, suffix: &str) -> miette::Result<PathBuf> {
+        let backup = Self::backup_path(path, suffix)?;
+        let parent = match backup.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent,
+            _ => Path::new("."),
+        };
+        let parent = fs::canonicalize(parent).map_err(|e| miette!("failed to resolve {}: {e}", parent.display()))?;
+        Ok(parent.join(backup.file_name().unwrap_or_default()))
+    }
+
     /// Replaces the regular file at `path` (following symlinks) with `data` atomically,
     /// keeping its mode. With `backup_suffix`, the previous content is first copied to
-    /// `<file><suffix>` next to it.
-    pub(crate) fn replace_file(path: &Path, data: &[u8], backup_suffix: Option<&str>) -> miette::Result<()> {
+    /// `<path><suffix>`. `permit` vets the input and backup paths, and runs again right
+    /// before each rename, which also fails if a path now resolves somewhere else.
+    pub(crate) fn replace_file(
+        path: &Path,
+        data: &[u8],
+        backup_suffix: Option<&str>,
+        permit: &dyn Fn(&Path) -> miette::Result<()>,
+    ) -> miette::Result<()> {
         let target = fs::canonicalize(path).map_err(|e| miette!("failed to resolve {}: {e}", path.display()))?;
         let is_file = fs::metadata(&target).map(|m| m.is_file()).unwrap_or(false);
         if !is_file {
             return Err(miette!("cannot edit {} in place: not a regular file", path.display()));
         }
+        permit(path)?;
 
         if let Some(suffix) = backup_suffix {
-            let mut backup = target.clone().into_os_string();
-            backup.push(suffix);
-            fs::copy(&target, &backup).map_err(|e| miette!("failed to back up {}: {e}", target.display()))?;
+            let backup = Self::backup_destination(path, suffix)?;
+            let backup_path = Self::backup_path(path, suffix)?;
+            permit(&backup_path)?;
+            Self::write_backup(&target, &backup, || {
+                if Self::backup_destination(path, suffix)? != backup {
+                    return Err(miette!("{} changed while it was being backed up", path.display()));
+                }
+                permit(&backup_path)
+            })?;
         }
 
         let (file, temp_path) = Self::create_temp_file(&target)?;
@@ -302,7 +336,33 @@ impl OutputSink {
         let result = writer
             .write_all(data)
             .into_diagnostic()
+            .and_then(|()| {
+                if fs::canonicalize(path).ok().as_deref() != Some(target.as_path()) {
+                    return Err(miette!("{} changed while it was being edited", path.display()));
+                }
+                permit(path)
+            })
             .and_then(|()| Self::publish_atomic(writer, &temp_path, &target));
+        if result.is_err() {
+            let _ = fs::remove_file(&temp_path);
+        }
+        result
+    }
+
+    /// Copies `source` to `backup` through a temporary file, so a symlink already at
+    /// `backup` is replaced instead of written through.
+    fn write_backup(source: &Path, backup: &Path, verify: impl FnOnce() -> miette::Result<()>) -> miette::Result<()> {
+        let fail = |e: &dyn std::fmt::Display| miette!("failed to back up {}: {e}", source.display());
+        let (mut file, temp_path) = Self::create_temp_file(backup)?;
+        let result = (|| {
+            let mut input = fs::File::open(source).map_err(|e| fail(&e))?;
+            io::copy(&mut input, &mut file).map_err(|e| fail(&e))?;
+            file.sync_all().map_err(|e| fail(&e))?;
+            let permissions = input.metadata().map_err(|e| fail(&e))?.permissions();
+            fs::set_permissions(&temp_path, permissions).map_err(|e| fail(&e))?;
+            verify()?;
+            fs::rename(&temp_path, backup).map_err(|e| fail(&e))
+        })();
         if result.is_err() {
             let _ = fs::remove_file(&temp_path);
         }
@@ -661,7 +721,7 @@ mod tests {
         fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
         let before = fs::metadata(&target).unwrap();
 
-        OutputSink::replace_file(&target, b"new", None).unwrap();
+        OutputSink::replace_file(&target, b"new", None, &|_| Ok(())).unwrap();
 
         let after = fs::metadata(&target).unwrap();
         assert_eq!(fs::read_to_string(&target).unwrap(), "new");

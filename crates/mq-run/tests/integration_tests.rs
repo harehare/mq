@@ -1927,6 +1927,82 @@ fn test_in_place_backup() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_in_place_backup_requires_write_permission() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, file) = create_file("test_in_place_backup_perm.md", "# title\n");
+    let backup = file.with_file_name("test_in_place_backup_perm.md.bak");
+    let (file_clone, backup_clone) = (file.clone(), backup.clone());
+
+    defer! {
+        std::fs::remove_file(&file_clone).ok();
+        std::fs::remove_file(&backup_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg(format!("--allow-write={}", file.display()))
+        .args(["-U", "-i", "--backup=.bak", ".h | upcase()"])
+        .arg(&file)
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(&file)?, "# title\n");
+    assert!(!backup.exists());
+
+    Ok(())
+}
+
+#[test]
+fn test_in_place_backup_rejects_overlap_with_another_input() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, first) = create_file("test_in_place_overlap.md", "# A\n");
+    let (_, second) = create_file("test_in_place_overlap.md.md", "# B\n");
+    let (first_clone, second_clone) = (first.clone(), second.clone());
+
+    defer! {
+        std::fs::remove_file(&first_clone).ok();
+        std::fs::remove_file(&second_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", "--backup=.md", ".h | upcase()"])
+        .arg(&first)
+        .arg(&second)
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(&first)?, "# A\n");
+    assert_eq!(std::fs::read_to_string(&second)?, "# B\n");
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn test_in_place_backup_is_named_after_symlink_input() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = std::env::temp_dir().join("test_in_place_backup_symlink");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("docs"))?;
+    std::fs::create_dir_all(dir.join("shared"))?;
+    let dir_clone = dir.clone();
+
+    defer! {
+        std::fs::remove_dir_all(&dir_clone).ok();
+    }
+    std::fs::write(dir.join("shared/intro.md"), "# title\n")?;
+    std::os::unix::fs::symlink("../shared/intro.md", dir.join("docs/intro.md"))?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", "--backup=.bak", ".h | upcase()"])
+        .arg(dir.join("docs/intro.md"))
+        .assert()
+        .success();
+
+    assert_eq!(std::fs::read_to_string(dir.join("shared/intro.md"))?, "# TITLE\n");
+    assert_eq!(std::fs::read_to_string(dir.join("docs/intro.md.bak"))?, "# title\n");
+    assert!(!dir.join("shared/intro.md.bak").exists());
+
+    Ok(())
+}
+
+#[test]
 fn test_in_place_with_diff_only_previews() -> Result<(), Box<dyn std::error::Error>> {
     let (_, file) = create_file("test_in_place_diff.md", "# title\n");
     let file_clone = file.clone();
