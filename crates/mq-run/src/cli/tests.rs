@@ -4199,3 +4199,23 @@ fn test_glob_skips_matched_directories_without_markdown_files() {
 
     assert_eq!(files, vec![dir.path().join("a.md")]);
 }
+
+#[test]
+fn test_glob_matching_only_empty_directories_is_error() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("empty")).unwrap();
+
+    let err = Cli::expand_glob_patterns(&[dir.path().join("*")]).unwrap_err();
+
+    assert!(err.to_string().contains("no Markdown files found"));
+}
+
+#[test]
+fn test_glob_without_matches_keeps_pattern() {
+    let dir = tempfile::tempdir().unwrap();
+    let pattern = dir.path().join("*.md");
+
+    let files = Cli::expand_glob_patterns(std::slice::from_ref(&pattern)).unwrap();
+
+    assert_eq!(files, vec![pattern]);
+}

@@ -3017,6 +3017,11 @@ impl Cli {
                 .filter_map(Result::ok)
                 .collect::<Vec<_>>();
 
+            if matches.is_empty() {
+                expanded.push(file.clone());
+                continue;
+            }
+
             let mut seen = HashSet::new();
             let mut from_glob = Vec::new();
 
@@ -3031,10 +3036,10 @@ impl Cli {
             }
 
             if from_glob.is_empty() {
-                expanded.push(file.clone());
-            } else {
-                expanded.extend(from_glob);
+                return Err(miette!("no Markdown files found matching `{}`", pattern));
             }
+
+            expanded.extend(from_glob);
         }
 
         Ok(expanded)
