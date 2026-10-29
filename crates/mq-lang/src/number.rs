@@ -193,6 +193,7 @@ impl PartialOrd for Number {
     }
 }
 
+// `==` follows IEEE 754 (NaN != NaN) while `Ord` sorts NaN last and equal to itself, so `Eq` is not reflexive for NaN.
 impl Eq for Number {}
 
 impl Ord for Number {
