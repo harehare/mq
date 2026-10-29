@@ -1062,6 +1062,11 @@ pub(crate) enum BytecodeError {
         required: usize,
         available: usize,
     },
+    StackOverflow {
+        chunk: usize,
+        pc: usize,
+        height: usize,
+    },
     VerificationWorkLimit {
         chunk: usize,
     },
@@ -1151,6 +1156,12 @@ impl fmt::Display for BytecodeError {
                 write!(
                     f,
                     "chunk {chunk} pc {pc} needs {required} stack value(s), but only {available} are available"
+                )
+            }
+            Self::StackOverflow { chunk, pc, height } => {
+                write!(
+                    f,
+                    "chunk {chunk} pc {pc} grows the stack to {height} value(s) in a loop"
                 )
             }
             Self::VerificationWorkLimit { chunk } => {
@@ -1297,7 +1308,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             });
                         }
                     }
-                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
                 OpCode::ForeachCollectAndJump { slot, offset } => {
                     if *slot >= chunk.local_count {
@@ -1307,7 +1318,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             slot: *slot,
                         });
                     }
-                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
                 OpCode::ForeachBinaryLocalNumberConstAndJump {
                     local,
@@ -1324,7 +1335,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             });
                         }
                     }
-                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
                 OpCode::CopyLocal { source, destination } => {
                     for slot in [source, destination] {
@@ -1401,7 +1412,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             });
                         }
                     }
-                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
                 OpCode::JumpIfFalseLocalConst {
                     local,
@@ -1423,7 +1434,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             index: *constant,
                         });
                     }
-                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
                 OpCode::JumpIfFalseLocalNumberConst { local, offset, .. } => {
                     if *local >= chunk.local_count {
@@ -1433,7 +1444,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             slot: *local,
                         });
                     }
-                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
                 OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
                     for slot in [array_slot, index_slot] {
@@ -1476,7 +1487,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             });
                         }
                     }
-                    verify_jump_target(chunk, chunk_index, pc, *exit_offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *exit_offset)?;
                 }
                 OpCode::GetUpvalue(index) | OpCode::SetUpvalue(index) => {
                     if *index as usize >= chunk.upvalue_names.len() {
@@ -1659,7 +1670,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                 }
                 OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) | OpCode::JumpIfTrue(offset) => {
-                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
                 OpCode::TryCatch(info) => {
                     if let Some(slot) = info.break_acc_slot
@@ -1681,10 +1692,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                     if let Some(offset) = info.break_offset {
-                        verify_jump_target(chunk, chunk_index, pc, offset)?;
+                        verify_jump_target(chunk.code.len(), chunk_index, pc, offset)?;
                     }
                     if let Some(offset) = info.continue_offset {
-                        verify_jump_target(chunk, chunk_index, pc, offset)?;
+                        verify_jump_target(chunk.code.len(), chunk_index, pc, offset)?;
                     }
                 }
                 OpCode::Resume(argc) if !matches!(*argc, 1 | 2) => {
@@ -1748,17 +1759,27 @@ fn verify_frame_layout(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecode
 
 /// Verifies stack depth through a chunk's control-flow graph.
 fn verify_stack_effects(chunk: &Chunk, chunk_index: usize, remaining_work: &mut usize) -> Result<(), BytecodeError> {
-    let mut heights = vec![None; chunk.code.len()];
+    let mut heights: Vec<Option<(usize, usize)>> = vec![None; chunk.code.len()];
     let mut pending = std::collections::VecDeque::from([(0usize, 0usize)]);
 
     while let Some((pc, height)) = pending.pop_front() {
         *remaining_work = remaining_work
             .checked_sub(1)
             .ok_or(BytecodeError::VerificationWorkLimit { chunk: chunk_index })?;
+        // Stack-polymorphic branches are safe when their minimum height is safe. The maximum
+        // keeps growing around a cycle that pushes without popping, until the bound below.
         match heights[pc] {
-            // Stack-polymorphic branches are safe when their minimum height is safe.
-            Some(previous) if previous <= height => continue,
-            Some(_) | None => heights[pc] = Some(height),
+            Some((low, high)) if low <= height && height <= high => continue,
+            Some((low, high)) => heights[pc] = Some((low.min(height), high.max(height))),
+            None => heights[pc] = Some((height, height)),
+        }
+        // No opcode grows the stack by more than one value, so only a cycle can exceed this.
+        if height > chunk.code.len() {
+            return Err(BytecodeError::StackOverflow {
+                chunk: chunk_index,
+                pc,
+                height,
+            });
         }
 
         let op = &chunk.code[pc];
@@ -1835,7 +1856,7 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize, remaining_work: &mut 
 }
 
 /// Returns `(required, produced)` for an opcode's operand-stack transition.
-fn stack_effect(op: &OpCode) -> (usize, usize) {
+pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
     match op {
         #[cfg(feature = "debugger")]
         OpCode::StmtBoundary(_) | OpCode::SyncCallNode(_) | OpCode::Breakpoint(_) => (0, 0),
@@ -1995,7 +2016,7 @@ fn verify_chunk_target(chunks: &[Chunk], chunk: usize, pc: usize, target: u16) -
     Ok(())
 }
 
-fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32) -> Result<(), BytecodeError> {
+fn verify_jump_target(code_len: usize, chunk_index: usize, pc: usize, offset: i32) -> Result<(), BytecodeError> {
     let Some(target) = jump_target(pc, offset) else {
         return Err(BytecodeError::JumpOutOfBounds {
             chunk: chunk_index,
@@ -2003,7 +2024,7 @@ fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32)
             target: -1,
         });
     };
-    if target >= chunk.code.len() {
+    if target >= code_len {
         return Err(BytecodeError::JumpOutOfBounds {
             chunk: chunk_index,
             pc,
@@ -2011,6 +2032,53 @@ fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32)
         });
     }
     Ok(())
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// Forgets the error: its drop glue is too large to unwind.
+    fn is_ok(result: Result<(), BytecodeError>) -> bool {
+        let ok = result.is_ok();
+        std::mem::forget(result);
+        ok
+    }
+
+    #[kani::proof]
+    fn jump_target_is_next_pc_plus_offset() {
+        // `pc` indexes a `Vec`, so it never exceeds `isize::MAX`.
+        let pc: usize = kani::any_where(|pc: &usize| *pc <= isize::MAX as usize);
+        let offset: i32 = kani::any();
+        let expected = pc as i128 + 1 + offset as i128;
+        match jump_target(pc, offset) {
+            Some(target) => assert_eq!(target as i128, expected),
+            None => assert!(expected < 0 || expected > usize::MAX as i128),
+        }
+    }
+
+    /// `verify_stack_effects` unwraps `jump_target` and indexes its height table with the result.
+    #[kani::proof]
+    fn verified_jump_target_is_in_bounds() {
+        let code_len: usize = kani::any();
+        let pc: usize = kani::any_where(|pc: &usize| *pc < code_len);
+        let offset: i32 = kani::any();
+        if is_ok(verify_jump_target(code_len, 0, pc, offset)) {
+            let target = jump_target(pc, offset);
+            assert!(target.is_some_and(|t| t < code_len));
+        }
+    }
+
+    /// The interpreter takes jumps from the already incremented instruction pointer.
+    #[kani::proof]
+    fn interpreter_jump_agrees_with_verifier() {
+        let pc: usize = kani::any_where(|pc: &usize| *pc < 1 << 40);
+        let offset: i32 = kani::any();
+        if let Some(target) = jump_target(pc, offset) {
+            let ip = pc + 1;
+            assert_eq!((ip as i64 + offset as i64) as usize, target);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -36,6 +36,9 @@ pub(super) struct Frame {
     /// A tail call replaces its caller's physical frame, but it still consumes a logical
     /// call-stack slot so `max_call_stack_depth` remains a recursion safeguard.
     pub(super) call_depth_cost: u32,
+    /// The call instruction this frame is waiting on and the stack length before it.
+    #[cfg(debug_assertions)]
+    pub(super) effect_probe: Option<(usize, usize)>,
     #[cfg(feature = "debugger")]
     pub(super) caller_node: Option<Shared<Node>>,
     #[cfg(feature = "debugger")]
@@ -61,6 +64,8 @@ impl Frame {
             reusable_locals,
             on_complete,
             call_depth_cost: 0,
+            #[cfg(debug_assertions)]
+            effect_probe: None,
             #[cfg(feature = "debugger")]
             caller_node: None,
             #[cfg(feature = "debugger")]
@@ -462,11 +467,13 @@ mod size_tests {
     #[cfg(not(feature = "debugger"))]
     #[test]
     fn frame_stays_compact() {
-        assert!(
-            std::mem::size_of::<Frame>() <= 64,
-            "Frame grew to {} bytes; every call pushes and pops one",
-            std::mem::size_of::<Frame>()
-        );
+        // Debug builds add `effect_probe`, which release builds do not carry.
+        #[cfg(debug_assertions)]
+        let probe = std::mem::size_of::<Option<(usize, usize)>>();
+        #[cfg(not(debug_assertions))]
+        let probe = 0;
+        let size = std::mem::size_of::<Frame>() - probe;
+        assert!(size <= 64, "Frame grew to {size} bytes; every call pushes and pops one");
     }
 
     #[cfg(all(target_pointer_width = "64", not(feature = "debugger")))]
