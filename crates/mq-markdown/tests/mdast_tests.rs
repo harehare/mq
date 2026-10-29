@@ -757,7 +757,7 @@ fn check(input: &str, expected: &[&str], parse: fn(&str) -> miette::Result<Markd
 #[case("a {} c", &[r#"T"a ""#, "textexpr {}", r#"T" c""#])]
 // should support `\0` and `\r` in expressions
 // Differs from the official packages: A null character is kept in values, as in markdown-rs, and replaced with U+FFFD only in HTML; the JavaScript packages replace it in values too.
-#[case("{`a\0b\rc\nd\r\ne`}", &["flowexpr {`a\0b\rc\nd\r\ne`}"])]
+#[case("{`a\0b\rc\nd\r\ne`}", &["flowexpr {`a\u{fffd}b\rc\nd\r\ne`}"])]
 // should support a spread
 // Differs from the official packages: Expressions and ESM are not parsed as JavaScript, so invalid JavaScript is accepted.
 #[case("a {...b} c", &[r#"T"a ""#, "textexpr {...b}", r#"T" c""#])]
