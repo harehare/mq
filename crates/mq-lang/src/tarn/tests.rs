@@ -66,6 +66,31 @@ fn rarely_emitted_calls_return_their_value(#[case] query: &str, #[case] expected
 }
 
 #[test]
+fn selector_with_arguments_matches_the_requested_heading_depth() {
+    let heading = |depth, text| {
+        RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
+            values: vec![text_node(text)],
+            position: None,
+            depth,
+        }))
+    };
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(".h(1)", Shared::clone(&token_arena)).unwrap();
+
+    let matched = compile_and_run_with_input(
+        &program,
+        heading(mq_markdown::HeadingDepth::H1, "a"),
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let skipped =
+        compile_and_run_with_input(&program, heading(mq_markdown::HeadingDepth::H2, "b"), token_arena).unwrap();
+
+    assert_eq!(matched.to_string(), "# a");
+    assert!(skipped.is_none());
+}
+
+#[test]
 fn default_call_stack_depth_matches_the_build_profile() {
     assert_eq!(
         Options::default().max_call_stack_depth,
