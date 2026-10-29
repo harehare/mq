@@ -43,6 +43,28 @@ fn compile_and_run_full(
     )?)
 }
 
+/// Runs opcodes that few programs emit, so the debug-build stack model check in the interpreter
+/// sees them. Release builds only check the result.
+#[rstest]
+#[case::self_call_without_arguments(
+    "var n = 3 | def f(): if (n <= 0): 0 else: do n -= 1 | let r = f() | r + 1 end; | f()",
+    3
+)]
+#[case::self_call_with_two_arguments("def f(n, m): if (n <= 0): m else: 1 + f(n - 1, m); | f(3, 0)", 3)]
+#[case::self_call_with_implicit_self(
+    "var n = 3 | def f(x): if (n <= 0): 0 else: do n -= 1 | let r = f() | r + 1 end; | 0 | f()",
+    3
+)]
+fn rarely_emitted_calls_return_their_value(#[case] query: &str, #[case] expected: i64) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(query, Shared::clone(&token_arena)).unwrap();
+
+    assert_eq!(
+        compile_and_run(&program, token_arena).unwrap(),
+        RuntimeValue::Number(expected.into())
+    );
+}
+
 #[test]
 fn default_call_stack_depth_matches_the_build_profile() {
     assert_eq!(

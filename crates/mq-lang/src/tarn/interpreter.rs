@@ -18,6 +18,8 @@ use self::calls::{
     generator_coroutine, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
+#[cfg(debug_assertions)]
+use super::bytecode::stack_effect;
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
 use super::compiler::CompiledProgram;
 #[cfg(feature = "debugger")]
@@ -1200,7 +1202,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         }};
     }
 
+    // The instruction just run and the stack length before it.
+    #[cfg(debug_assertions)]
+    let mut effect_probe = frame.effect_probe.take();
+
     let outcome = 'dispatch: loop {
+        #[cfg(debug_assertions)]
+        if let Some((pc, before)) = effect_probe.take() {
+            check_stack_effect(&chunk.code[pc], before, stack.len());
+        }
         if ip >= chunk.code.len() {
             let value = if stack.len() > frame.stack_base as usize {
                 stack.pop().expect("verified bytecode keeps an operand")
@@ -1213,6 +1223,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
         }
         let op = &chunk.code[ip];
+        #[cfg(debug_assertions)]
+        {
+            effect_probe = Some((ip, stack.len()));
+        }
         ip += 1;
         #[cfg(feature = "vm-profile")]
         if op.is_profiled_instruction() {
@@ -2209,6 +2223,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     // `verify_chunks` rejects chunks longer than u32::MAX and verifies all jump targets.
     debug_assert!(u32::try_from(ip).is_ok());
     frame.ip = ip as u32;
+    #[cfg(debug_assertions)]
+    {
+        frame.effect_probe = effect_probe.filter(|_| matches!(outcome, FrameOutcome::Enter(_)));
+    }
     if let FrameOutcome::Complete(_) = &outcome {
         stack.truncate(frame.stack_base as usize);
     }
@@ -2422,6 +2440,20 @@ fn dict_insert(
     };
     runtime_value::dict_mut(map).insert(key, value);
     Ok(dict)
+}
+
+/// Checks the verifier's stack model against what an instruction did.
+///
+/// A `TryCatch` that unwinds to a `break` or `continue` target drops both operands.
+#[cfg(debug_assertions)]
+fn check_stack_effect(op: &OpCode, before: usize, after: usize) {
+    let (required, produced) = stack_effect(op);
+    let expected = before - required + produced;
+    let unwound = matches!(op, OpCode::TryCatch(_)) && after == before - required;
+    assert!(
+        after == expected || unwound,
+        "stack model mismatch for {op:?}: {before} -> {after}, expected {expected}"
+    );
 }
 
 /// Standalone equivalent of the `pop_value!` macro, for the cold handlers below.

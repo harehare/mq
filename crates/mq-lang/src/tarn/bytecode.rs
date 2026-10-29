@@ -1856,7 +1856,7 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize, remaining_work: &mut 
 }
 
 /// Returns `(required, produced)` for an opcode's operand-stack transition.
-fn stack_effect(op: &OpCode) -> (usize, usize) {
+pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
     match op {
         #[cfg(feature = "debugger")]
         OpCode::StmtBoundary(_) | OpCode::SyncCallNode(_) | OpCode::Breakpoint(_) => (0, 0),
