@@ -2808,7 +2808,7 @@ text "b" @3:1-3:2
     "[a]: \0\n\n[a]\n",
     "<p><a href=\"%EF%BF%BD\">a</a></p>\n",
     r#"
-definition "a" "\0" label="a" @1:1-1:7
+definition "a" "�" label="a" @1:1-1:7
 link_ref "a" label="a" @3:1-3:4
   text "a" @3:2-3:3
 "#
@@ -2817,7 +2817,7 @@ link_ref "a" label="a" @3:1-3:4
     "[a](x\0y)",
     "<p><a href=\"x%EF%BF%BDy\">a</a></p>",
     r#"
-link "x\0y" @1:1-1:9
+link "x�y" @1:1-1:9
   text "a" @1:2-1:3
 "#
 )]
@@ -3022,7 +3022,7 @@ break @2:2-3:1
 text "う" @3:1-3:2
 "#
 )]
-#[case::nul_in_text("a\0b", "<p>a�b</p>", r#"text "a\0b" @1:1-1:4"#)]
+#[case::nul_in_text("a\0b", "<p>a�b</p>", r#"text "a�b" @1:1-1:4"#)]
 fn markdown(#[case] input: &str, #[case] html: &str, #[case] expected: &str) {
     let nodes = Markdown::from_markdown_str(input).unwrap().nodes;
     assert_eq!(tree(&nodes), expected.trim_matches('\n'), "{input:?}");

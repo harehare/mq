@@ -38,13 +38,24 @@ pub(crate) fn parse(content: &str) -> miette::Result<Vec<Node>> {
 
 /// Parses `content` into a flat list of nodes, with frontmatter at the start when `frontmatter` is set.
 pub(crate) fn parse_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
+    let content = replace_nul(content);
+    let content = content.as_ref();
     resolve::resolve(block::parse(content, Flavor::Markdown, frontmatter), Flavor::Markdown)
         .map_err(|error| miette::Report::new(error.into_diagnostic(content)))
 }
 
+/// Replaces U+0000 with U+FFFD, as CommonMark requires.
+fn replace_nul(content: &str) -> std::borrow::Cow<'_, str> {
+    if content.contains('\0') {
+        content.replace('\0', "\u{fffd}").into()
+    } else {
+        content.into()
+    }
+}
+
 /// Renders `content` as HTML.
 pub(crate) fn to_html(content: &str) -> String {
-    render_html::render(content)
+    render_html::render(&replace_nul(content))
 }
 
 /// Parses `content` as MDX: no indented code, HTML, autolinks or GFM, but expressions and JSX.
@@ -55,6 +66,8 @@ pub(crate) fn parse_mdx(content: &str) -> miette::Result<Vec<Node>> {
 
 /// Parses `content` as MDX, with frontmatter at the start when `frontmatter` is set.
 pub(crate) fn parse_mdx_with(content: &str, frontmatter: bool) -> miette::Result<Vec<Node>> {
+    let content = replace_nul(content);
+    let content = content.as_ref();
     resolve::resolve(block::parse(content, Flavor::Mdx, frontmatter), Flavor::Mdx)
         .map_err(|error| miette::Report::new(error.into_diagnostic(content)))
 }
@@ -62,6 +75,20 @@ pub(crate) fn parse_mdx_with(content: &str, frontmatter: bool) -> miette::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nul_is_replaced_when_parsing() {
+        for nodes in [parse("# a\0b").unwrap(), parse_mdx("# a\0b").unwrap()] {
+            assert_eq!(nodes[0].to_string(), "# a\u{fffd}b");
+        }
+    }
+
+    #[test]
+    fn nul_autolink_matches_between_ast_and_html() {
+        let nodes = parse("<https://a\0b>").unwrap();
+        assert_eq!(nodes[0].to_string(), "[https://a\u{fffd}b](https://a\u{fffd}b)");
+        assert!(to_html("<https://a\0b>").contains("<a href=\"https://a%EF%BF%BDb\">"));
+    }
     use proptest::prelude::*;
     use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
 
