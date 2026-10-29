@@ -640,3 +640,34 @@ fn widened_call_counts_keep_opcode_size() {
     // Identifier-carrying instructions determine the enum's 64-bit layout.
     assert!(std::mem::size_of::<OpCode>() <= 16);
 }
+
+#[test]
+fn verifier_rejects_loop_that_grows_the_stack() {
+    let chunk = Chunk {
+        code: vec![OpCode::PushNone, OpCode::Jump(-2), OpCode::PushNone, OpCode::Return],
+        local_count: 1,
+        ..Default::default()
+    };
+
+    assert!(matches!(
+        verify_chunks(&[chunk]),
+        Err(BytecodeError::StackOverflow { chunk: 0, .. })
+    ));
+}
+
+#[test]
+fn verifier_accepts_loop_that_keeps_the_stack_balanced() {
+    let chunk = Chunk {
+        code: vec![
+            OpCode::PushNone,
+            OpCode::Pop,
+            OpCode::Jump(-3),
+            OpCode::PushNone,
+            OpCode::Return,
+        ],
+        local_count: 1,
+        ..Default::default()
+    };
+
+    assert_eq!(verify_chunks(&[chunk]), Ok(()));
+}

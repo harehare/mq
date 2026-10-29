@@ -1062,6 +1062,11 @@ pub(crate) enum BytecodeError {
         required: usize,
         available: usize,
     },
+    StackOverflow {
+        chunk: usize,
+        pc: usize,
+        height: usize,
+    },
     VerificationWorkLimit {
         chunk: usize,
     },
@@ -1151,6 +1156,12 @@ impl fmt::Display for BytecodeError {
                 write!(
                     f,
                     "chunk {chunk} pc {pc} needs {required} stack value(s), but only {available} are available"
+                )
+            }
+            Self::StackOverflow { chunk, pc, height } => {
+                write!(
+                    f,
+                    "chunk {chunk} pc {pc} grows the stack to {height} value(s) in a loop"
                 )
             }
             Self::VerificationWorkLimit { chunk } => {
@@ -1748,17 +1759,27 @@ fn verify_frame_layout(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecode
 
 /// Verifies stack depth through a chunk's control-flow graph.
 fn verify_stack_effects(chunk: &Chunk, chunk_index: usize, remaining_work: &mut usize) -> Result<(), BytecodeError> {
-    let mut heights = vec![None; chunk.code.len()];
+    let mut heights: Vec<Option<(usize, usize)>> = vec![None; chunk.code.len()];
     let mut pending = std::collections::VecDeque::from([(0usize, 0usize)]);
 
     while let Some((pc, height)) = pending.pop_front() {
         *remaining_work = remaining_work
             .checked_sub(1)
             .ok_or(BytecodeError::VerificationWorkLimit { chunk: chunk_index })?;
+        // Stack-polymorphic branches are safe when their minimum height is safe. The maximum
+        // keeps growing around a cycle that pushes without popping, until the bound below.
         match heights[pc] {
-            // Stack-polymorphic branches are safe when their minimum height is safe.
-            Some(previous) if previous <= height => continue,
-            Some(_) | None => heights[pc] = Some(height),
+            Some((low, high)) if low <= height && height <= high => continue,
+            Some((low, high)) => heights[pc] = Some((low.min(height), high.max(height))),
+            None => heights[pc] = Some((height, height)),
+        }
+        // No opcode grows the stack by more than one value, so only a cycle can exceed this.
+        if height > chunk.code.len() {
+            return Err(BytecodeError::StackOverflow {
+                chunk: chunk_index,
+                pc,
+                height,
+            });
         }
 
         let op = &chunk.code[pc];
