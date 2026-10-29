@@ -172,6 +172,10 @@ test-fuzz target="interpreter":
         exit 1
     fi
 
+# Prove mq-lang properties with Kani. Run manually: `cargo install --locked kani-verifier && cargo kani setup`.
+kani *args:
+    cargo kani -p mq-lang --features mqc {{args}}
+
 # Run WebAssembly tests in Chrome (main thread and dedicated worker)
 [working-directory: 'crates/mq-wasm']
 test-wasm:

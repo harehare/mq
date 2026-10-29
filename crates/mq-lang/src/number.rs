@@ -206,6 +206,31 @@ impl Ord for Number {
     }
 }
 
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn rem_never_panics() {
+        let (a, b): (f64, f64) = (kani::any(), kani::any());
+        // Kani flags the NaN that `inf - inf` yields in `is_int`, which is not a panic.
+        kani::assume(a.is_finite() && b.is_finite());
+        let _ = Number::new(a) % Number::new(b);
+    }
+
+    #[kani::proof]
+    fn cmp_is_total_order() {
+        let a = Number::new(kani::any());
+        let b = Number::new(kani::any());
+        let c = Number::new(kani::any());
+        assert_eq!(a.cmp(&a), Ordering::Equal);
+        assert_eq!(a.cmp(&b), b.cmp(&a).reverse());
+        if a.cmp(&b) != Ordering::Greater && b.cmp(&c) != Ordering::Greater {
+            assert!(a.cmp(&c) != Ordering::Greater);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
