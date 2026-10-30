@@ -4239,3 +4239,15 @@ fn test_glob_without_matches_keeps_pattern() {
 
     assert_eq!(files, vec![pattern]);
 }
+
+#[rstest]
+#[case::file(Some(PathBuf::from("in.jsonl")), "in.jsonl:3:2: invalid JSON: key must be a string")]
+#[case::stdin(None, "<stdin>:3:2: invalid JSON: key must be a string")]
+fn test_jsonl_error_reports_input_line(#[case] file: Option<PathBuf>, #[case] expected: &str) {
+    let cli = frontmatter_cli(Some(InputFormat::Jsonl), false);
+    let input = ContentData::Text("{\"a\":1}\n\n{bad\n".to_string());
+
+    let err = cli.resolve_input(&file, &input).unwrap_err();
+
+    assert_eq!(err.to_string(), expected);
+}
