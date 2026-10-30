@@ -269,7 +269,8 @@ impl TokenKind {
             | TokenKind::DoubleSlashEqual
             | TokenKind::PipeEqual => Some(0),
             TokenKind::Or => Some(1),
-            TokenKind::And => Some(2),
+            TokenKind::Coalesce => Some(2),
+            TokenKind::And => Some(3),
             TokenKind::EqEq
             | TokenKind::NeEq
             | TokenKind::Gt
@@ -277,10 +278,11 @@ impl TokenKind {
             | TokenKind::Lt
             | TokenKind::Lte
             | TokenKind::TildeEqual
-            | TokenKind::NotTildeEqual => Some(3),
-            TokenKind::Plus | TokenKind::Minus | TokenKind::RightShift | TokenKind::LeftShift => Some(4),
-            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent | TokenKind::Convert => Some(5),
-            TokenKind::DoubleDot | TokenKind::Coalesce => Some(6),
+            | TokenKind::NotTildeEqual => Some(4),
+            TokenKind::Plus | TokenKind::Minus | TokenKind::RightShift | TokenKind::LeftShift => Some(5),
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent => Some(6),
+            TokenKind::Convert => Some(7),
+            TokenKind::DoubleDot => Some(8),
             _ => None,
         }
     }

@@ -1,5 +1,28 @@
 # Operator
 
+## Precedence
+
+Binary operators, from tightest to loosest. All are left-associative.
+
+| Operators | Description |
+| :--- | :--- |
+| `..` | Range |
+| `@` | Conversion |
+| `*` `/` `%` | Multiplicative |
+| `+` `-` `<<` `>>` | Additive and shift |
+| `==` `!=` `<` `<=` `>` `>=` `=~` `!~` | Comparison |
+| `&&` | Logical and |
+| `??` | None coalescing |
+| `\|\|` | Logical or |
+| `=` `+=` `-=` `*=` `/=` `%=` `//=` `\|=` | Assignment |
+
+`as` is not an operator and is not part of this table.
+
+```mq
+1 ?? 2 + 3        # => 1 ?? (2 + 3)
+a * b @ :h1       # => a * (b @ :h1)
+```
+
 ## Pipe Operator
 
 A functional operator that allows chaining multiple filter operations together.
