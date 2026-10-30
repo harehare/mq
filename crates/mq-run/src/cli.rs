@@ -2941,9 +2941,8 @@ impl Cli {
         let mut cache = ProgramCache::default();
         let mut program_index = 0;
         let mut active_file: Option<Option<PathBuf>> = None;
-        let mut line_no = 0;
 
-        self.process_lines(|file, line| {
+        self.process_lines(|file, line_no, line| {
             let file_changed = active_file
                 .as_ref()
                 .is_none_or(|current_file| current_file.as_ref() != file);
@@ -2959,7 +2958,6 @@ impl Cli {
             let current_file = active_file
                 .as_ref()
                 .ok_or_else(|| miette!("streaming input did not select an active file"))?;
-            line_no = if file_changed { 1 } else { line_no + 1 };
             if self.resolved_input_format(current_file, false) == InputFormat::Jsonl {
                 if line.trim().is_empty() {
                     return Ok(());
@@ -2978,14 +2976,14 @@ impl Cli {
 
     fn process_lines<F>(&self, mut process: F) -> miette::Result<()>
     where
-        F: FnMut(Option<&PathBuf>, String) -> miette::Result<()>,
+        F: FnMut(Option<&PathBuf>, usize, String) -> miette::Result<()>,
     {
         // If files are specified, process each file line by line
         if let Some(files) = self.resolved_files()? {
             for file in &files {
                 if Self::is_stdin_path(file) {
-                    for line_result in io::BufReader::new(io::stdin().lock()).lines() {
-                        process(None, line_result.into_diagnostic()?)?;
+                    for (i, line_result) in io::BufReader::new(io::stdin().lock()).lines().enumerate() {
+                        process(None, i + 1, line_result.into_diagnostic()?)?;
                     }
                     continue;
                 }
@@ -2993,18 +2991,18 @@ impl Cli {
                     .into_diagnostic()
                     .wrap_err_with(|| ReadFailure(file.clone()))?;
                 let reader = io::BufReader::new(file_handle);
-                for line_result in reader.lines() {
+                for (i, line_result) in reader.lines().enumerate() {
                     let line = line_result.into_diagnostic()?;
-                    process(Some(file), line)?;
+                    process(Some(file), i + 1, line)?;
                 }
             }
         } else {
             // Otherwise, process stdin line by line
             let stdin = io::stdin();
             let reader = io::BufReader::new(stdin.lock());
-            for line_result in reader.lines() {
+            for (i, line_result) in reader.lines().enumerate() {
                 let line = line_result.into_diagnostic()?;
-                process(None, line)?;
+                process(None, i + 1, line)?;
             }
         }
         Ok(())
