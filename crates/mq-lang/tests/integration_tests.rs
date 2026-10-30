@@ -3874,7 +3874,7 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::too_many_args_user_fn("def f(x): x; | f(1, 2, 3)", vec![RuntimeValue::None],)]
 // too few args to a variadic user-defined function (need 2+ required, given 0)
 #[case::too_few_args_variadic_fn("def f(x, y, *rest): x; | f()", vec![RuntimeValue::None],)]
-// calling a non-function value as a function (InvalidDefinition)
+// calling a non-function value as a function (NotCallable)
 #[case::call_non_function("let x = 42 | x(1)", vec![RuntimeValue::None],)]
 // xor with mismatched byte slice lengths
 #[case::xor_mismatched_lengths(r#"xor(b"\xff\xf0", b"\x00")"#, vec![RuntimeValue::None],)]

@@ -7688,7 +7688,7 @@ fn test_descendant_chain_has_no_synthetic_bridge_node() {
 fn test_unmatched_end_error_message() {
     // Verify the error message text for `UnmatchedEnd`.
     let err = ParseError::UnmatchedEnd(Shared::new(token(TokenKind::End)));
-    assert_eq!(err.to_string(), "Unexpected `end` keyword — no open block to close");
+    assert_eq!(err.to_string(), "Unexpected `end` keyword: no open block to close");
 }
 
 #[test]

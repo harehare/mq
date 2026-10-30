@@ -20,19 +20,19 @@ pub enum SyntaxError {
     #[error("Unexpected end of input")]
     UnexpectedEOFDetected(ModuleId),
     /// Insufficient tokens available to complete parsing.
-    #[error("Insufficient tokens `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    #[error("Incomplete expression {}", if .0.is_eof() { "at end of input".to_string() } else { format!("near `{}`", .0) })]
     InsufficientTokens(Token),
     /// Expected a closing parenthesis `)` but found a different delimiter.
     /// The second field is the opening `(` token, if available.
-    #[error("Expected a closing parenthesis `)` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    #[error("Expected a closing parenthesis `)` but found {}", if .0.is_eof() { "end of input".to_string() } else { format!("`{}`", .0) })]
     ExpectedClosingParen(Token, Option<Box<Token>>),
     /// Expected a closing brace `}` but found a different delimiter.
     /// The second field is the opening `{` token, if available.
-    #[error("Expected a closing brace `}}` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    #[error("Expected a closing brace `}}` but found {}", if .0.is_eof() { "end of input".to_string() } else { format!("`{}`", .0) })]
     ExpectedClosingBrace(Token, Option<Box<Token>>),
     /// Expected a closing bracket `]` but found a different delimiter.
     /// The second field is the opening `[` token, if available.
-    #[error("Expected a closing bracket `]` but got `{}` delimiter", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
+    #[error("Expected a closing bracket `]` but found {}", if .0.is_eof() { "end of input".to_string() } else { format!("`{}`", .0) })]
     ExpectedClosingBracket(Token, Option<Box<Token>>),
     /// An invalid assignment target was encountered (expected an identifier).
     #[error("Invalid assignment target: expected an identifier but got `{}`", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
@@ -56,7 +56,7 @@ pub enum SyntaxError {
     #[error("Expected an expression after `{}` but reached end of file", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     UnexpectedEOFAfterToken(Token),
     /// An `end` keyword was encountered without a matching block opener.
-    #[error("Unexpected `end` keyword — no open block to close")]
+    #[error("Unexpected `end` keyword: no open block to close")]
     UnmatchedEnd(Token),
     /// Expression nesting exceeds the parser's maximum depth.
     #[error("Expression nesting is too deep (maximum depth is {1})")]
@@ -135,7 +135,7 @@ mod tests {
     )]
     #[case(
         SyntaxError::UnmatchedEnd(eof_token()),
-        "Unexpected `end` keyword — no open block to close"
+        "Unexpected `end` keyword: no open block to close"
     )]
     fn test_error_display(#[case] err: SyntaxError, #[case] expected: &str) {
         assert_eq!(err.to_string(), expected);

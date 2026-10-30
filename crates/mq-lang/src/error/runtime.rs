@@ -27,14 +27,15 @@ pub enum RuntimeError {
     // clippy's `result_large_err` threshold.
     #[error("\"{1}\" is not defined")]
     NotDefined(ErrorToken, FunctionName, Box<[FunctionName]>),
-    // A bare identifier reference not bound in any scope. Distinct from InvalidDefinition
+    // A bare identifier reference not bound in any scope. Distinct from NotCallable
     // below, which is a resolved-but-not-callable value.
     #[error("\"{1}\" is not defined")]
     UndefinedReference(ErrorToken, FunctionName, Box<[FunctionName]>),
     #[error("Unable to format date time, {1}")]
     DateTimeFormatError(ErrorToken, String),
-    #[error("Invalid definition for \"{1}\"")]
-    InvalidDefinition(ErrorToken, String),
+    /// A call on a value that is not a function. The string is the value's type name.
+    #[error("Cannot call a value of type {1}")]
+    NotCallable(ErrorToken, String),
     #[error("Maximum recursion depth exceeded ({0})")]
     RecursionError(u32),
     /// Raised by `halt(code)`; not catchable by `try`.
@@ -88,7 +89,7 @@ impl RuntimeError {
             RuntimeError::NotDefined(token, _, _) => Some(token),
             RuntimeError::UndefinedReference(token, _, _) => Some(token),
             RuntimeError::DateTimeFormatError(token, _) => Some(token),
-            RuntimeError::InvalidDefinition(token, _) => Some(token),
+            RuntimeError::NotCallable(token, _) => Some(token),
             RuntimeError::RecursionError(_) => None,
             RuntimeError::Timeout(_) => None,
             RuntimeError::Halt(_) => None,
@@ -127,7 +128,7 @@ mod tests {
     #[case(RuntimeError::NotDefined(eof_token(), "f".to_string(), Box::new([])), true)]
     #[case(RuntimeError::UndefinedReference(eof_token(), "r".to_string(), Box::new([])), true)]
     #[case(RuntimeError::DateTimeFormatError(eof_token(), "err".to_string()), true)]
-    #[case(RuntimeError::InvalidDefinition(eof_token(), "d".to_string()), true)]
+    #[case(RuntimeError::NotCallable(eof_token(), "number".to_string()), true)]
     #[case(RuntimeError::RecursionError(10), false)]
     #[case(RuntimeError::Timeout(Duration::from_secs(1)), false)]
     #[case(RuntimeError::InvalidTypes { token: eof_token(), name: "f".to_string(), args: vec![] }, true)]
