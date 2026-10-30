@@ -772,7 +772,9 @@ export const Playground = () => {
   const handleChangeListStyle = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const value = e.target.value;
-      setListStyle(value as mq.Options["listStyle"]);
+      setListStyle(
+        value === "none" ? null : (value as mq.Options["listStyle"]),
+      );
     },
     [],
   );
@@ -2375,8 +2377,10 @@ img{max-width:100%}
                       <span className="option-name">List Style</span>
                       <select
                         className="dropdown"
+                        value={listStyle || "none"}
                         onChange={handleChangeListStyle}
                       >
+                        <option value="none">Original</option>
                         <option value="dash">-</option>
                         <option value="star">*</option>
                         <option value="plus">+</option>
