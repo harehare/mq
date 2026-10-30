@@ -1,0 +1,4 @@
+rules:
+  # Action versions are managed by .github/workflows/actions.lock
+  unpinned-uses:
+    disable: true
