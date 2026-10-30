@@ -2020,11 +2020,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             arms.push(MatchArm { pattern, guard, body });
         }
 
-        // Consume 'end' keyword
-        if let Some(token) = self.tokens.peek()
-            && matches!(token.kind, TokenKind::End)
-        {
-            self.tokens.next();
+        match self.tokens.peek() {
+            Some(token) if matches!(token.kind, TokenKind::End) => {
+                self.tokens.next();
+            }
+            _ => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }
 
         Ok(Shared::new(Node {

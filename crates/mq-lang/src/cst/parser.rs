@@ -2179,6 +2179,10 @@ impl<'a> Parser<'a> {
             arms.push(self.parse_match_arm(leading_trivia)?);
         }
 
+        if end_token.is_none() {
+            return Err(ParseError::UnexpectedEOFDetected);
+        }
+
         Ok(Shared::new(Node {
             kind: NodeKind::Match {
                 args: args.into(),
