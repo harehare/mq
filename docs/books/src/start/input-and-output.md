@@ -39,7 +39,7 @@ For other file types or custom filtering, use a shell glob or `walk_files`.
 
 `None` is written as `null` by `json`, `jsonl`, `gron` and `toon`, as `~` by `yaml`, as an empty element by `xml`, and as an empty string by `markdown`, `text`, `html`, `raw`, `grep`, `csv` and `shell`.
 
-Arrays and dicts are written as JSON-like text by `markdown`, `text`, `html` and `raw`. `json`, `jsonl`, `toml`, `toon`, `xml` and `yaml` keep the structure. `csv` and `table` use dict keys as columns, and `csv` writes a nested value as a JSON string in one cell. `gron` and `shell` flatten the structure into paths (`json.l[0]` and `l_0`).
+Arrays and dicts are written as JSON-like text by `markdown`, `text`, `html` and `raw`. `json`, `jsonl`, `toml`, `toon`, `xml` and `yaml` keep the structure. `csv` and `table` use dict keys as columns, and `csv` writes a nested value as a JSON string in one cell. `gron` and `shell` flatten the structure into paths (`json.l[0]` and `MQ_l_0`).
 
 ```sh
 $ mq -I null -F json '{"k": "v", "n": None, "l": [1, 2]}'
@@ -64,10 +64,12 @@ json.l = [];
 json.l[0] = 1;
 json.l[1] = 2;
 $ mq -I null -F shell '{"k": "v", "l": [1, 2]}'
-k=v
-l_0=1
-l_1=2
+MQ_k=v
+MQ_l_0=1
+MQ_l_1=2
 ```
+
+`-F shell` prefixes every name with `MQ_` (change it with `--shell-prefix`), so untrusted keys such as `PATH` or `IFS` cannot overwrite the environment when the output is passed to `eval`. Two keys that flatten to the same name (`a b` and `a-b`) are an error. An empty `--shell-prefix` is rejected. Values are always quoted, so `eval "$(mq -F shell ...)"` is safe for untrusted input.
 
 `toml` needs a dict at the top level and fails on anything else, because a TOML document is a table.
 
