@@ -80,19 +80,18 @@ powershell -c "irm https://mqlang.org/install.ps1 | iex"
 | Cargo (crates.io)      | `cargo install mq-run`                                                            |
 | Docker                 | `docker run --rm ghcr.io/harehare/mq:latest`                                      |
 
-
 <details>
 <summary>More install options: cargo variants, binstall, pre-built binaries</summary>
 
 ```sh
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.9.3
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.10.0
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.9.3
+cargo binstall mq-run@0.10.0
 ```
 
 Pre-built binaries for macOS, Linux, and Windows are also available on the [GitHub releases page](https://github.com/harehare/mq/releases).
@@ -112,7 +111,6 @@ Pre-built binaries for macOS, Linux, and Windows are also available on the [GitH
 | Helix          | [![Helix Setup](https://img.shields.io/badge/helix-languages.toml-498eb6?style=flat-square&labelColor=162032&logo=helix&logoColor=white)](https://mqlang.org/book/start/syntax-highlighting.html#helix)                                                                                                                                                                                                                                      |
 | GitHub Actions | [![Setup mq](https://img.shields.io/badge/marketplace-Setup%20mq-498eb6?style=flat-square&labelColor=162032&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-mq)                                                                                                                                                                                                                                            |
 
-
 ```yaml
 steps:
   - uses: actions/checkout@v7
@@ -127,26 +125,25 @@ mq is a Rust + TypeScript monorepo.
 <details>
 <summary>Rust crates and npm packages (click to show)</summary>
 
-| Name                                  | Description                                           | Version                                                                                                                                              |
-| ------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`mq-run`](crates/mq-run)             | Command-line interface for mq                         | [![Crates.io](https://img.shields.io/crates/v/mq-run?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-run)             |
-| [`mq-lang`](crates/mq-lang)           | Core language implementation                          | [![Crates.io](https://img.shields.io/crates/v/mq-lang?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-lang)           |
-| [`mq-markdown`](crates/mq-markdown)   | Markdown parsing and manipulation utilities           | [![Crates.io](https://img.shields.io/crates/v/mq-markdown?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-markdown)   |
-| [`mq-lsp`](crates/mq-lsp)             | Language Server Protocol implementation               | [![Crates.io](https://img.shields.io/crates/v/mq-lsp?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-lsp)             |
-| [`mq-repl`](crates/mq-repl)           | Interactive REPL                                      | [![Crates.io](https://img.shields.io/crates/v/mq-repl?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-repl)           |
-| [`mq-formatter`](crates/mq-formatter) | Code formatter for the mq query language              | [![Crates.io](https://img.shields.io/crates/v/mq-formatter?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-formatter) |
-| [`mq-lint`](crates/mq-lint)           | Static analysis linter                                | [![Crates.io](https://img.shields.io/crates/v/mq-lint?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-lint)           |
-| [`mq-check`](crates/mq-check)         | Type checker                                          | [![Crates.io](https://img.shields.io/crates/v/mq-check?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-check)         |
-| [`mq-hir`](crates/mq-hir)             | High-level Internal Representation (HIR)              | [![Crates.io](https://img.shields.io/crates/v/mq-hir?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-hir)             |
-| [`mq-dap`](crates/mq-dap)             | Debug Adapter Protocol implementation                 | [![Crates.io](https://img.shields.io/crates/v/mq-dap?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-dap)             |
-| [`mq-crawler`](crates/mq-crawler)     | Directory crawler for batch Markdown processing       | [![Crates.io](https://img.shields.io/crates/v/mq-crawler?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-crawler)     |
-| [`mq-macros`](crates/mq-macros)       | Procedural macros for builtin function registration   | [![Crates.io](https://img.shields.io/crates/v/mq-macros?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-macros)       |
-| [`mq-test`](crates/mq-test)           | Test runner for mq                                    | [![Crates.io](https://img.shields.io/crates/v/mq-test?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-test)           |
-| [`mq-ffi`](crates/mq-ffi)             | C API for integrating mq into C applications          | -                                                                                                                                                    |
-| [`mq-wasm`](crates/mq-wasm)           | WebAssembly bindings                                  | -                                                                                                                                                    |
-| [`mq-web`](packages/mq-web)           | Official WebAssembly build for the browser            | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square&labelColor=162032&color=498eb6)](https://www.npmjs.com/package/mq-web)                 |
-| [`mq-nodejs`](packages/mq-nodejs)     | Node.js bindings                                      | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square&labelColor=162032&color=498eb6)](https://www.npmjs.com/package/mq-nodejs)           |
-
+| Name                                  | Description                                         | Version                                                                                                                                              |
+| ------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`mq-run`](crates/mq-run)             | Command-line interface for mq                       | [![Crates.io](https://img.shields.io/crates/v/mq-run?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-run)             |
+| [`mq-lang`](crates/mq-lang)           | Core language implementation                        | [![Crates.io](https://img.shields.io/crates/v/mq-lang?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-lang)           |
+| [`mq-markdown`](crates/mq-markdown)   | Markdown parsing and manipulation utilities         | [![Crates.io](https://img.shields.io/crates/v/mq-markdown?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-markdown)   |
+| [`mq-lsp`](crates/mq-lsp)             | Language Server Protocol implementation             | [![Crates.io](https://img.shields.io/crates/v/mq-lsp?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-lsp)             |
+| [`mq-repl`](crates/mq-repl)           | Interactive REPL                                    | [![Crates.io](https://img.shields.io/crates/v/mq-repl?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-repl)           |
+| [`mq-formatter`](crates/mq-formatter) | Code formatter for the mq query language            | [![Crates.io](https://img.shields.io/crates/v/mq-formatter?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-formatter) |
+| [`mq-lint`](crates/mq-lint)           | Static analysis linter                              | [![Crates.io](https://img.shields.io/crates/v/mq-lint?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-lint)           |
+| [`mq-check`](crates/mq-check)         | Type checker                                        | [![Crates.io](https://img.shields.io/crates/v/mq-check?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-check)         |
+| [`mq-hir`](crates/mq-hir)             | High-level Internal Representation (HIR)            | [![Crates.io](https://img.shields.io/crates/v/mq-hir?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-hir)             |
+| [`mq-dap`](crates/mq-dap)             | Debug Adapter Protocol implementation               | [![Crates.io](https://img.shields.io/crates/v/mq-dap?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-dap)             |
+| [`mq-crawler`](crates/mq-crawler)     | Directory crawler for batch Markdown processing     | [![Crates.io](https://img.shields.io/crates/v/mq-crawler?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-crawler)     |
+| [`mq-macros`](crates/mq-macros)       | Procedural macros for builtin function registration | [![Crates.io](https://img.shields.io/crates/v/mq-macros?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-macros)       |
+| [`mq-test`](crates/mq-test)           | Test runner for mq                                  | [![Crates.io](https://img.shields.io/crates/v/mq-test?style=flat-square&labelColor=162032&color=498eb6)](https://crates.io/crates/mq-test)           |
+| [`mq-ffi`](crates/mq-ffi)             | C API for integrating mq into C applications        | \-                                                                                                                                                   |
+| [`mq-wasm`](crates/mq-wasm)           | WebAssembly bindings                                | \-                                                                                                                                                   |
+| [`mq-web`](packages/mq-web)           | Official WebAssembly build for the browser          | [![npm](https://img.shields.io/npm/v/mq-web?style=flat-square&labelColor=162032&color=498eb6)](https://www.npmjs.com/package/mq-web)                 |
+| [`mq-nodejs`](packages/mq-nodejs)     | Node.js bindings                                    | [![npm](https://img.shields.io/npm/v/mq-nodejs?style=flat-square&labelColor=162032&color=498eb6)](https://www.npmjs.com/package/mq-nodejs)           |
 
 </details>
 
