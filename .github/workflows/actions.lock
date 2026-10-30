@@ -22,7 +22,7 @@ workflows:
         - 'extractions/setup-just@v4.0.0'
         - 'harehare/setup-mq@v1.1.6'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.87.30'
+        - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/codeql.yml':
         - 'actions/checkout@v7.0.1'
         - 'github/codeql-action@v4.39.1'
@@ -48,14 +48,14 @@ workflows:
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.0'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.87.30'
+        - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/npm-publish.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.0'
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-node@v7.1.0'
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.0'
-        - 'taiki-e/install-action@v2.87.30'
+        - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/pages.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.0'
         - 'actions/checkout@v7.0.1'
@@ -63,21 +63,21 @@ workflows:
         - 'cloudflare/wrangler-action@v4.1.3'
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.0'
-        - 'taiki-e/install-action@v2.87.30'
+        - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/release.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.0'
         - 'actions/checkout@v7.0.1'
         - 'actions/download-artifact@v8.0.2'
         - 'actions/upload-artifact@v7.0.2'
         - 'docker/build-push-action@v7.4.0'
-        - 'docker/login-action@v4.6.0'
+        - 'docker/login-action@v4.7.0'
         - 'docker/metadata-action@v6.2.0'
-        - 'docker/setup-buildx-action@v4.4.0'
+        - 'docker/setup-buildx-action@v4.4.1'
         - 'extractions/setup-just@v4.0.0'
-        - 'taiki-e/install-action@v2.87.30'
+        - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/typos.yml':
         - 'actions/checkout@v7.0.1'
-        - 'taiki-e/install-action@v2.87.30'
+        - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/unused-deps.yml':
         - 'actions/checkout@v7.0.1'
         - 'bnjbvr/cargo-machete@main'
@@ -86,7 +86,7 @@ workflows:
         - 'actions/setup-node@v7.1.0'
     '.github/workflows/zizmor.yml':
         - 'actions/checkout@v7.0.1'
-        - 'zizmorcore/zizmor-action@v0.7.1'
+        - 'zizmorcore/zizmor-action@v0.8.0'
 dependencies:
     'actions-rust-lang/setup-rust-toolchain@v2.0.0':
         ref: 'v2.0.0'
@@ -160,9 +160,9 @@ dependencies:
         commit: 'sha1-c3c9e263c25d99ce0380d002d59b67737d91b0dc'
         owner_id: 5429470
         repo_id: 241092383
-    'docker/login-action@v4.6.0':
-        ref: 'v4.6.0'
-        commit: 'sha1-dbcb813823bdd20940b903addbd779551569679f'
+    'docker/login-action@v4.7.0':
+        ref: 'v4.7.0'
+        commit: 'sha1-81c6f93d4bc991e510b342a00b419b3bb4efc5c6'
         owner_id: 5429470
         repo_id: 287743349
     'docker/metadata-action@v6.2.0':
@@ -170,9 +170,9 @@ dependencies:
         commit: 'sha1-dc802804100637a589fabce1cb79ff13a1411302'
         owner_id: 5429470
         repo_id: 306769011
-    'docker/setup-buildx-action@v4.4.0':
-        ref: 'v4.4.0'
-        commit: 'sha1-594f3bf4285d9ea8dc53c9a0c9c4092420091003'
+    'docker/setup-buildx-action@v4.4.1':
+        ref: 'v4.4.1'
+        commit: 'sha1-f87e5991a6d7451dcb8d9637bfbc97413f497069'
         owner_id: 5429470
         repo_id: 288485773
     'embarkstudios/cargo-deny-action@v2.1.1':
@@ -192,9 +192,9 @@ dependencies:
         repo_id: 258510356
         uses:
             - 'extractions/setup-crate@0551596312d4008a6dfbc4d3c38fa20eaef46d2d'
-    'github/codeql-action@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2':
-        ref: 'v4.38.2'
-        commit: 'sha1-2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2'
+    'github/codeql-action@24c54180a607b1449ed407dd24f251e4e9147c8d':
+        ref: 'v4.38.3'
+        commit: 'sha1-24c54180a607b1449ed407dd24f251e4e9147c8d'
         owner_id: 9919
         repo_id: 259445878
     'github/codeql-action@v4.39.1':
@@ -232,15 +232,15 @@ dependencies:
         commit: 'sha1-d1527c8f67ef9af357290475d4af4b0fab8f12e0'
         owner_id: 580492
         repo_id: 298565987
-    'taiki-e/install-action@v2.87.30':
-        ref: 'v2.87.30'
-        commit: 'sha1-a4d3f3f761dcd95cce1b72cb61cb6d1963438177'
+    'taiki-e/install-action@v2.87.31':
+        ref: 'v2.87.31'
+        commit: 'sha1-1e29709c0ec63babbe8f266397a465f29a825f91'
         owner_id: 43724913
         repo_id: 442947557
-    'zizmorcore/zizmor-action@v0.7.1':
-        ref: 'v0.7.1'
-        commit: 'sha1-85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e'
+    'zizmorcore/zizmor-action@v0.8.0':
+        ref: 'v0.8.0'
+        commit: 'sha1-53290badfa369cb0bf7ad16342cb62c2fa47ac7b'
         owner_id: 210636713
         repo_id: 985558803
         uses:
-            - 'github/codeql-action@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2'
+            - 'github/codeql-action@24c54180a607b1449ed407dd24f251e4e9147c8d'

@@ -36,7 +36,7 @@ jobs:
         with:
           cache: false
       - name: Install tools
-        uses: taiki-e/install-action@v2.87.30
+        uses: taiki-e/install-action@v2.87.31
         with:
           tool: wasm-pack,mdbook
       - uses: extractions/setup-just@v4.0.0
