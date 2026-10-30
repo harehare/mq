@@ -6,40 +6,87 @@
 //! (<https://mikefarah.gitbook.io/yq/usage/shellvariables>): nested dict keys
 //! and array indices join with `_`, and empty dicts/arrays are skipped.
 
+use std::collections::HashSet;
+
 use super::json::runtime_values_to_json_value;
 
-pub(crate) fn runtime_values_to_shell(runtime_values: &[mq_lang::RuntimeValue]) -> String {
+/// Prefix prepended to every variable name unless `--shell-prefix` overrides it.
+pub(crate) const DEFAULT_PREFIX: &str = "MQ_";
+
+/// Renders `runtime_values` as `eval`-able assignments, each variable name starting with `prefix`.
+///
+/// Fails when `prefix` is empty or not a valid identifier prefix, or when two keys flatten to
+/// the same variable name.
+pub(crate) fn runtime_values_to_shell(
+    runtime_values: &[mq_lang::RuntimeValue],
+    prefix: &str,
+) -> miette::Result<String> {
+    validate_prefix(prefix)?;
     let value = runtime_values_to_json_value(runtime_values);
     let mut out = String::new();
-    write_shell(&mut out, "", &value);
-    out
+    let mut seen = HashSet::new();
+    write_shell(&mut out, &mut seen, prefix, "", &value)?;
+    Ok(out)
 }
 
-fn write_shell(out: &mut String, path: &str, value: &serde_json::Value) {
+fn validate_prefix(prefix: &str) -> miette::Result<()> {
+    let mut chars = prefix.chars();
+    let valid = chars
+        .next()
+        .is_some_and(|c| (c.is_ascii_alphabetic() || c == '_') && chars.all(|c| c.is_ascii_alphanumeric() || c == '_'));
+    if valid {
+        Ok(())
+    } else {
+        Err(miette::miette!(
+            "invalid --shell-prefix `{prefix}`: must be non-empty and match [A-Za-z_][A-Za-z0-9_]*"
+        ))
+    }
+}
+
+fn write_shell(
+    out: &mut String,
+    seen: &mut HashSet<String>,
+    prefix: &str,
+    path: &str,
+    value: &serde_json::Value,
+) -> miette::Result<()> {
     match value {
         serde_json::Value::Object(map) => {
             for (key, child) in map {
-                write_shell(out, &join_key(path, key), child);
+                write_shell(out, seen, prefix, &join_key(path, key), child)?;
             }
         }
         serde_json::Value::Array(items) => {
             for (i, child) in items.iter().enumerate() {
-                write_shell(out, &join_key(path, &i.to_string()), child);
+                write_shell(out, seen, prefix, &join_key(path, &i.to_string()), child)?;
             }
         }
-        serde_json::Value::Null => write_assignment(out, path, ""),
-        serde_json::Value::Bool(b) => write_assignment(out, path, &b.to_string()),
-        serde_json::Value::Number(n) => write_assignment(out, path, &n.to_string()),
-        serde_json::Value::String(s) => write_assignment(out, path, &shell_quote(s)),
+        serde_json::Value::Null => write_assignment(out, seen, prefix, path, "")?,
+        serde_json::Value::Bool(b) => write_assignment(out, seen, prefix, path, &b.to_string())?,
+        serde_json::Value::Number(n) => write_assignment(out, seen, prefix, path, &n.to_string())?,
+        serde_json::Value::String(s) => write_assignment(out, seen, prefix, path, &shell_quote(s))?,
     }
+    Ok(())
 }
 
-#[inline(always)]
-fn write_assignment(out: &mut String, path: &str, value: &str) {
-    out.push_str(&shell_var_name(path));
+fn write_assignment(
+    out: &mut String,
+    seen: &mut HashSet<String>,
+    prefix: &str,
+    path: &str,
+    value: &str,
+) -> miette::Result<()> {
+    let name = format!("{prefix}{}", shell_var_name(path));
+    if !seen.insert(name.clone()) {
+        return Err(miette::miette!(
+            "variable name `{name}` is produced by more than one key; rename the keys"
+        ));
+    }
+    out.push_str(&name);
     out.push('=');
     out.push_str(value);
     out.push('\n');
+    Ok(())
 }
 
 /// `value` when there's no enclosing key; digit-led paths (bare array indices)
@@ -121,12 +168,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec![mq_lang::RuntimeValue::String(Shared::new("hello".to_string()))], "value=hello\n")]
-    #[case(vec![mq_lang::RuntimeValue::String(Shared::new("hello world".to_string()))], "value='hello world'\n")]
-    #[case(vec![mq_lang::RuntimeValue::Boolean(true)], "value=true\n")]
-    #[case(vec![mq_lang::RuntimeValue::Boolean(false)], "value=false\n")]
-    #[case(vec![mq_lang::RuntimeValue::Number(3i64.into())], "value=3\n")]
-    #[case(vec![mq_lang::RuntimeValue::None], "value=\n")]
+    #[case(vec![mq_lang::RuntimeValue::String(Shared::new("hello".to_string()))], "MQ_value=hello\n")]
+    #[case(vec![mq_lang::RuntimeValue::String(Shared::new("hello world".to_string()))], "MQ_value='hello world'\n")]
+    #[case(vec![mq_lang::RuntimeValue::Boolean(true)], "MQ_value=true\n")]
+    #[case(vec![mq_lang::RuntimeValue::Boolean(false)], "MQ_value=false\n")]
+    #[case(vec![mq_lang::RuntimeValue::Number(3i64.into())], "MQ_value=3\n")]
+    #[case(vec![mq_lang::RuntimeValue::None], "MQ_value=\n")]
     #[case(vec![mq_lang::RuntimeValue::Array(Shared::new(vec![]))], "")]
     #[case(vec![mq_lang::RuntimeValue::Dict(Shared::new(DictMap::default()))], "")]
     #[case(
@@ -134,10 +181,10 @@ mod tests {
             mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
             mq_lang::RuntimeValue::String(Shared::new("y".to_string())),
         ]))],
-        "_0=x\n_1=y\n"
+        "MQ__0=x\nMQ__1=y\n"
     )]
     fn test_runtime_values_to_shell(#[case] values: Vec<mq_lang::RuntimeValue>, #[case] expected: &str) {
-        assert_eq!(runtime_values_to_shell(&values), expected);
+        assert_eq!(runtime_values_to_shell(&values, DEFAULT_PREFIX).unwrap(), expected);
     }
 
     #[test]
@@ -153,7 +200,10 @@ mod tests {
             mq_lang::RuntimeValue::Dict(Shared::new(inner)),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(outer))];
-        assert_eq!(runtime_values_to_shell(&values), "eyes_color=turquoise\n");
+        assert_eq!(
+            runtime_values_to_shell(&values, DEFAULT_PREFIX).unwrap(),
+            "MQ_eyes_color=turquoise\n"
+        );
     }
 
     #[test]
@@ -164,7 +214,10 @@ mod tests {
             mq_lang::RuntimeValue::String(Shared::new("v".to_string())),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(m))];
-        assert_eq!(runtime_values_to_shell(&values), "weird_key_=v\n");
+        assert_eq!(
+            runtime_values_to_shell(&values, DEFAULT_PREFIX).unwrap(),
+            "MQ_weird_key_=v\n"
+        );
     }
 
     #[test]
@@ -180,7 +233,10 @@ mod tests {
             mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::Dict(Shared::new(friend))])),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(outer))];
-        assert_eq!(runtime_values_to_shell(&values), "friends_0_name='James P. Sullivan'\n");
+        assert_eq!(
+            runtime_values_to_shell(&values, DEFAULT_PREFIX).unwrap(),
+            "MQ_friends_0_name='James P. Sullivan'\n"
+        );
     }
 
     #[test]
@@ -188,6 +244,42 @@ mod tests {
         let values = vec![mq_lang::RuntimeValue::Array(Shared::new(vec![
             mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
         ]))];
-        assert_eq!(runtime_values_to_shell(&values), "_0=x\n");
+        assert_eq!(runtime_values_to_shell(&values, DEFAULT_PREFIX).unwrap(), "MQ__0=x\n");
+    }
+
+    fn dict(pairs: &[(&str, &str)]) -> Vec<mq_lang::RuntimeValue> {
+        let mut m = DictMap::default();
+        for (k, v) in pairs {
+            m.insert(
+                mq_lang::Ident::new(k),
+                mq_lang::RuntimeValue::String(Shared::new(v.to_string())),
+            );
+        }
+        vec![mq_lang::RuntimeValue::Dict(Shared::new(m))]
+    }
+
+    #[test]
+    fn test_shell_prefix_applied() {
+        assert_eq!(
+            runtime_values_to_shell(&dict(&[("PATH", "/evil")]), DEFAULT_PREFIX).unwrap(),
+            "MQ_PATH=/evil\n"
+        );
+    }
+
+    #[rstest]
+    #[case(&[("a b", "1"), ("a-b", "2")])]
+    #[case(&[("é", "1"), ("è", "2")])]
+    #[case(&[("", "1"), ("value", "2")])]
+    fn test_shell_collision_is_error(#[case] pairs: &[(&str, &str)]) {
+        assert!(runtime_values_to_shell(&dict(pairs), DEFAULT_PREFIX).is_err());
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("1bad")]
+    #[case("a-b")]
+    #[case("a b")]
+    fn test_shell_invalid_prefix(#[case] prefix: &str) {
+        assert!(runtime_values_to_shell(&dict(&[("a", "1")]), prefix).is_err());
     }
 }

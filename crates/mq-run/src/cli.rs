@@ -721,6 +721,10 @@ struct OutputArgs {
     #[arg(short = 'F', long, value_enum, conflicts_with = "quiet")]
     output_format: Option<OutputFormat>,
 
+    /// Prefix for variable names in `-F shell` output (must be non-empty) [default: MQ_]
+    #[arg(long, value_name = "PREFIX", conflicts_with = "quiet")]
+    shell_prefix: Option<String>,
+
     /// Update matching Markdown nodes and write the result to stdout
     #[arg(short = 'U', long = "update", default_value_t = false)]
     update: bool,
@@ -3411,7 +3415,12 @@ impl Cli {
                 buf.extend_from_slice(yaml_str.as_bytes());
             }
             OutputFormat::Shell => {
-                let shell_str = crate::output::shell::runtime_values_to_shell(runtime_values);
+                let prefix = self
+                    .output
+                    .shell_prefix
+                    .as_deref()
+                    .unwrap_or(crate::output::shell::DEFAULT_PREFIX);
+                let shell_str = crate::output::shell::runtime_values_to_shell(runtime_values, prefix)?;
                 buf.extend_from_slice(shell_str.as_bytes());
             }
             OutputFormat::None => {}
