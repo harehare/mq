@@ -4056,6 +4056,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::mul_array_negative_is_error("[1, 2] * -1", vec![RuntimeValue::None],)]
 #[case::mul_number_array_fraction_is_error("0.5 * [1, 2]", vec![RuntimeValue::None],)]
 #[case::mul_array_too_large_is_error("[1, 2] * 1000000", vec![RuntimeValue::None],)]
+#[case::match_without_end(r#"match (1): | 1: "one""#, vec![RuntimeValue::None],)]
+#[case::match_without_end_after_arms(r#"match (1): | 2: "two" | _: "other""#, vec![RuntimeValue::None],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
 }
