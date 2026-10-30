@@ -38,11 +38,14 @@ mq '.h1' docs/                                  # level-1 headings of every Mark
 
 ### Update a document in place
 
-`-U` / `--update` runs the query on every node and writes the whole document back, with the nodes the query changed. Unmatched nodes pass through as they are. Use `self` for "leave this node alone". `--diff` prints a unified diff instead and exits 1 when something would change, which suits CI.
+`-U` / `--update` runs the query on every node and writes the whole document back, with the nodes the query changed. Unmatched nodes pass through as they are. Use `self` for "leave this node alone". `-i` / `--in-place` rewrites each input file instead of printing (atomically, keeping the file mode and following symlinks; files that would not change are left alone), and `--backup=SUFFIX` keeps a copy of each changed file as `<file>SUFFIX`. `--diff` prints a unified diff instead and exits 1 when something would change, which suits CI; with `-i` it only previews.
 
 ```sh
 # Demote every level-2 heading to level 3
 mq -U 'if (is_h2()): to_h(3) else: self' README.md
+
+# Rewrite many files at once, keeping README.md.bak style backups
+mq -U -i --backup=.bak 'if (is_h2()): to_h(3) else: self' docs/*.md
 
 mq -U --diff 'if (is_h2()): to_h(3) else: self' README.md
 # -## Install

@@ -731,6 +731,22 @@ struct OutputArgs {
     #[arg(long = "diff", default_value_t = false, requires = "update")]
     diff: bool,
 
+    /// With --update, rewrite each input file with the result instead of printing it.
+    /// Writes atomically and keeps the file mode; symlinks are followed and files whose
+    /// content would not change are left untouched. Combined with --diff, only previews.
+    #[arg(
+        short = 'i',
+        long = "in-place",
+        default_value_t = false,
+        requires = "update",
+        conflicts_with_all = ["output_file", "quiet"]
+    )]
+    in_place: bool,
+
+    /// With --in-place, copy each changed file to `<file>SUFFIX` before rewriting it
+    #[arg(long, value_name = "SUFFIX", requires = "in_place")]
+    backup: Option<String>,
+
     /// Unbuffered output
     #[clap(long, default_value_t = false, conflicts_with = "quiet")]
     unbuffered: bool,
@@ -1501,7 +1517,11 @@ impl Cli {
             out,
             "  mq -U --diff '.h1 | update(\"New title\")' file.md  # preview the change as a unified diff"
         );
-        let _ = writeln!(out, "  (-U never edits in place; unmatched content is reformatted too)");
+        let _ = writeln!(
+            out,
+            "  mq -U -i --backup=.bak '.h1 | update(\"New title\")' docs/*.md  # rewrite each file atomically, keeping a .bak copy"
+        );
+        let _ = writeln!(out, "  (unmatched content is reformatted too)");
 
         let _ = writeln!(out, "\n{}", "Filtering with context (-F grep):".bold().cyan());
         let _ = writeln!(
@@ -1646,8 +1666,9 @@ impl Cli {
         let _ = writeln!(
             out,
             "```sh\nmq -U '.h1 | update(\"New title\")' file.md         # whole document to stdout; the file is not touched\n\
-            mq -U --diff '.h1 | update(\"New title\")' file.md  # preview the change as a unified diff\n```\n\n\
-            `-U` never edits in place; unmatched content is reformatted too."
+            mq -U --diff '.h1 | update(\"New title\")' file.md  # preview the change as a unified diff\n\
+            mq -U -i --backup=.bak '.h1 | update(\"New title\")' docs/*.md  # rewrite each file atomically, keeping a .bak copy\n```\n\n\
+            Unmatched content is reformatted too."
         );
 
         let _ = writeln!(out, "\n## Filtering with context (-F grep)\n");
@@ -1908,6 +1929,8 @@ impl Cli {
             return Err(miette!("--diff is not supported with -F grep"));
         }
 
+        self.validate_in_place_options()?;
+
         if self.output.compact && !matches!(self.resolved_output_format(), OutputFormat::Json) {
             return Err(miette!("--compact is only valid with -F json"));
         }
@@ -1919,6 +1942,30 @@ impl Cli {
         }
 
         self.check_output_permitted()
+    }
+
+    fn validate_in_place_options(&self) -> miette::Result<()> {
+        if !self.output.in_place {
+            return Ok(());
+        }
+        if !matches!(self.resolved_output_format(), OutputFormat::Markdown) {
+            return Err(miette!("--in-place only supports Markdown output"));
+        }
+        if self.input.stream {
+            return Err(miette!("--in-place cannot be used with --stream"));
+        }
+        #[cfg(feature = "watch")]
+        if self.input.watch {
+            return Err(miette!("--in-place cannot be used with --watch"));
+        }
+        if let Some(suffix) = &self.output.backup
+            && (suffix.is_empty() || suffix.contains(['/', '\\']))
+        {
+            return Err(miette!(
+                "--backup SUFFIX must be non-empty and contain no path separator"
+            ));
+        }
+        Ok(())
     }
 
     fn run_repl(&self, files: Option<&[PathBuf]>) -> miette::Result<()> {
@@ -2236,11 +2283,24 @@ impl Cli {
         let (Some(_), Some(path)) = (&self.input.program.sandbox, &self.output.output_file) else {
             return Ok(());
         };
+        self.check_write_permitted(path)
+    }
+
+    /// Rejects `--in-place` on `path` when `--sandbox` or `--allow-write` is given and
+    /// `--allow-write` does not cover it. With neither, `-i` itself is the consent.
+    fn check_in_place_permitted(&self, path: &Path) -> miette::Result<()> {
+        if self.input.program.sandbox.is_none() && self.input.program.allow_write.is_none() {
+            return Ok(());
+        }
+        self.check_write_permitted(path)
+    }
+
+    fn check_write_permitted(&self, path: &Path) -> miette::Result<()> {
         self.input
             .program
             .build_sandboxed_io()
             .check_write(path)
-            .map_err(|e| miette!("cannot write output file: {e} (use --allow-write to permit it)"))
+            .map_err(|e| miette!("cannot write {}: {e} (use --allow-write to permit it)", path.display()))
     }
 
     fn clobber_mode(&self) -> ClobberMode {
@@ -2715,6 +2775,7 @@ impl Cli {
         let query = self.get_query()?;
         self.precompile_before_stdin(&query)?;
         let files = self.read_contents()?;
+        self.check_in_place_inputs(&files)?;
 
         if self.output.count {
             return self.process_batch_count(&query, &files);
@@ -2747,6 +2808,57 @@ impl Cli {
             }
         }
 
+        Ok(())
+    }
+
+    /// Rejects inputs `--in-place` cannot write back to, before any file is modified.
+    fn check_in_place_inputs(&self, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
+        if !self.output.in_place || self.output.diff {
+            return Ok(());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for (file, _) in files {
+            match file {
+                None => return Err(miette!("--in-place requires input files, not stdin")),
+                Some(path) if InputFormat::is_gzip_path(path) => {
+                    return Err(miette!("--in-place does not support gzip input: {}", path.display()));
+                }
+                Some(path) => {
+                    self.check_in_place_permitted(path)?;
+                    // A second pass would re-read stale content and overwrite the backup.
+                    if !seen.insert(fs::canonicalize(path).unwrap_or_else(|_| path.clone())) {
+                        return Err(miette!("--in-place was given the same file twice: {}", path.display()));
+                    }
+                }
+            }
+        }
+        self.check_backup_destinations(files, &seen)
+    }
+
+    /// Backups must be permitted writes and must not land on an input or on each other.
+    fn check_backup_destinations(
+        &self,
+        files: &[(Option<PathBuf>, ContentData)],
+        inputs: &std::collections::HashSet<PathBuf>,
+    ) -> miette::Result<()> {
+        let Some(suffix) = &self.output.backup else {
+            return Ok(());
+        };
+        let mut backups = std::collections::HashSet::new();
+        for path in files.iter().filter_map(|(file, _)| file.as_deref()) {
+            self.check_in_place_permitted(&OutputSink::backup_path(path, suffix)?)?;
+            let backup = OutputSink::backup_destination(path, suffix)?;
+            let real = fs::canonicalize(&backup).unwrap_or_else(|_| backup.clone());
+            if inputs.contains(&backup) || inputs.contains(&real) {
+                return Err(miette!(
+                    "--backup would overwrite another input file: {}",
+                    backup.display()
+                ));
+            }
+            if !backups.insert(backup.clone()) {
+                return Err(miette!("--backup would write {} more than once", backup.display()));
+            }
+        }
         Ok(())
     }
 
@@ -2813,6 +2925,10 @@ impl Cli {
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
+        }
+
+        if self.output.in_place {
+            return self.write_in_place(&runtime_values, file, content);
         }
 
         if let Some(separator) = separator {
@@ -3458,6 +3574,28 @@ impl Cli {
         handle.finish()?;
 
         Ok(())
+    }
+
+    /// Rewrites `file` with what `--update` would print, unless that equals the input.
+    fn write_in_place(
+        &self,
+        runtime_values: &mq_lang::RuntimeValues,
+        file: &Option<PathBuf>,
+        content: &ContentData,
+    ) -> miette::Result<()> {
+        self.record_exit_status(runtime_values.values());
+        let path = file
+            .as_deref()
+            .ok_or_else(|| miette!("--in-place requires input files, not stdin"))?;
+        let rendered = self.render(runtime_values.values(), false, self.is_mdx_input(file))?;
+
+        if content.as_bytes() == rendered.as_slice() {
+            return Ok(());
+        }
+
+        OutputSink::replace_file(path, &rendered, self.output.backup.as_deref(), &|dest| {
+            self.check_in_place_permitted(dest)
+        })
     }
 
     /// Renders what `--update` would print and diffs it against the original input.
