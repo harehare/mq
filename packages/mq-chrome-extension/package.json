@@ -32,7 +32,7 @@
     "@lezer/highlight": "^1.2.5",
     "@uiw/react-codemirror": "^4.25.12",
     "codemirror": "^6.0.2",
-    "mq-web": "0.9.3",
+    "mq-web": "0.10.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
