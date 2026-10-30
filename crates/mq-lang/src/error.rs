@@ -273,6 +273,12 @@ fn preceding_identifier(source: &str, offset: usize) -> Option<&str> {
 #[cold]
 fn unexpected_token_hint(source: &str, offset: usize, token: &Token) -> Option<Cow<'static, str>> {
     let before = source.get(..offset)?.trim_end();
+    // Checked first: a token rejected right after `let`/`var` is a bad binding, whatever its kind.
+    if let Some(kw) = binding_keyword(before) {
+        return Some(Cow::Owned(format!(
+            "Expected a variable name or destructuring pattern after `{kw}`."
+        )));
+    }
     match &token.kind {
         TokenKind::LParen => Some(Cow::Borrowed(
             "Only a function name can be followed by `(...)`. Literals and call results cannot be called; bind the function to a name first.",
@@ -280,20 +286,18 @@ fn unexpected_token_hint(source: &str, offset: usize, token: &Token) -> Option<C
         TokenKind::Pipe if before.ends_with('|') => Some(Cow::Borrowed(
             "Expected an expression between two `|`. Remove the extra `|`.",
         )),
-        _ if before.ends_with("let") || before.ends_with("var") => {
-            let kw = &before[before.len() - 3..];
-            let boundary = before[..before.len() - 3]
-                .chars()
-                .next_back()
-                .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
-            boundary.then(|| {
-                Cow::Owned(format!(
-                    "Expected a variable name or destructuring pattern after `{kw}`."
-                ))
-            })
-        }
         _ => None,
     }
+}
+
+// `let` or `var` ending `before` as a whole word.
+fn binding_keyword(before: &str) -> Option<&str> {
+    let head = before.strip_suffix("let").or_else(|| before.strip_suffix("var"))?;
+    let boundary = head
+        .chars()
+        .next_back()
+        .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+    boundary.then(|| &before[head.len()..])
 }
 
 impl Diagnostic for Error {
@@ -1245,6 +1249,7 @@ mod test {
 
     #[rstest]
     #[case::call_on_literal("1(2)", 1, TokenKind::LParen, Some("Only a function name"))]
+    #[case::paren_binding_after_let("let (x) = 1", 4, TokenKind::LParen, Some("after `let`"))]
     #[case::missing_let_name("let = 1", 4, TokenKind::Equal, Some("after `let`"))]
     #[case::missing_var_name("var 1", 4, TokenKind::NumberLiteral(1.into()), Some("after `var`"))]
     #[case::let_as_identifier_suffix("outlet = 1", 7, TokenKind::Equal, None)]
