@@ -154,7 +154,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
                     Some(TokenKind::Pipe) => {
-                        return Err(SyntaxError::UnexpectedToken((**self.tokens.peek().unwrap()).clone()));
+                        let next = self.next_or_eof()?;
+                        return Err(SyntaxError::UnexpectedToken(next.clone()));
                     }
                     Some(TokenKind::Comma | TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace) if !root => {
                         return Err(SyntaxError::UnexpectedToken(token.clone()));
@@ -384,7 +385,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 break;
             }
 
-            let operator_token = parser.tokens.next().unwrap();
+            let operator_token = parser.next_or_eof()?;
             let operator_token_id = parser.alloc_token(operator_token);
 
             let rhs_token = match parser.tokens.next() {
@@ -513,7 +514,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_as_binding(&mut self, expr: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
-        let as_token = self.tokens.next().unwrap();
+        let as_token = self.next_or_eof()?;
         let as_token_id = self.alloc_token(as_token);
 
         let name_token = match self.tokens.next() {
@@ -1129,6 +1130,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    fn next_or_eof(&mut self) -> Result<&'a Token, SyntaxError> {
+        self.tokens
+            .next()
+            .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))
+    }
+
     fn is_next_token(&mut self, expected: impl Fn(&TokenKind) -> bool) -> bool {
         self.tokens.peek().as_ref().map(|t| &t.kind).is_some_and(expected)
     }
@@ -1218,7 +1225,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if Self::is_next_token_allowed(token.as_ref().map(|t| &t.kind)) {
             Ok(literal_node)
         } else {
-            Err(SyntaxError::UnexpectedToken((*token.unwrap()).clone()))
+            Err(
+                token.map_or(SyntaxError::UnexpectedEOFDetected(self.module_id), |token| {
+                    SyntaxError::UnexpectedToken((*token).clone())
+                }),
+            )
         }
     }
 
@@ -1317,7 +1328,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 // Check for a call with a trailing do-block argument (e.g., foo(args) do ...)
                 if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Do)) {
-                    let do_token = self.tokens.next().unwrap(); // consume 'do'
+                    let do_token = self
+                        .tokens
+                        .next()
+                        .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?; // consume 'do'
                     let block = self.parse_block(do_token)?;
                     args.push(block);
 
@@ -1339,7 +1353,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 });
 
                 if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Question)) {
-                    let question_token = self.tokens.next().unwrap();
+                    let question_token = self
+                        .tokens
+                        .next()
+                        .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
                     let question_token_id = self.alloc_token(question_token);
 
                     return Ok(Shared::new(Node {
@@ -1364,7 +1381,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
                     Ok(call_node)
                 } else {
-                    Err(SyntaxError::UnexpectedToken((*self.tokens.peek().unwrap()).clone()))
+                    match self.tokens.peek() {
+                        Some(token) => Err(SyntaxError::UnexpectedToken((**token).clone())),
+                        None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
+                    }
                 }
             }
             Some(TokenKind::LBracket) => {
@@ -1752,15 +1772,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_id = self.alloc_token(while_token);
         let args = self.parse_args()?;
 
-        if args.len() != 1 {
+        let [cond] = args.as_slice() else {
             return Err(SyntaxError::UnexpectedToken(while_token.clone()));
-        }
+        };
 
         self.consume_colon_or_do();
 
         match self.tokens.peek() {
             Some(_) => {
-                let cond = args.first().unwrap();
                 let body_program = self.parse_program(ProgramKind::Block)?;
 
                 Ok(Shared::new(Node {
@@ -1796,15 +1815,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_id = self.alloc_token(until_token);
         let args = self.parse_args()?;
 
-        if args.len() != 1 {
+        let [cond] = args.as_slice() else {
             return Err(SyntaxError::UnexpectedToken(until_token.clone()));
-        }
+        };
 
         self.consume_colon_or_do();
 
         match self.tokens.peek() {
             Some(_) => {
-                let cond = args.first().unwrap();
                 let body_program = self.parse_program(ProgramKind::Block)?;
 
                 Ok(Shared::new(Node {
@@ -1821,10 +1839,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_id = self.alloc_token(unless_token);
         let args = self.parse_args()?;
 
-        if args.len() != 1 {
+        let [cond] = args.as_slice() else {
             return Err(SyntaxError::UnexpectedToken(self.token_arena[token_id].clone()));
-        }
-        let cond = args.first().unwrap();
+        };
 
         self.consume_colon();
 
@@ -1901,11 +1918,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_foreach(&mut self, foreach_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let args = self.parse_args()?;
 
-        if args.len() != 2 {
+        let [first_arg, _] = args.as_slice() else {
             return Err(SyntaxError::UnexpectedToken(foreach_token.clone()));
-        }
+        };
 
-        let first_arg = &args.first().unwrap().expr;
+        let first_arg = &first_arg.expr;
 
         match first_arg {
             Expr::Ident(IdentWithToken {
@@ -1938,10 +1955,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_id = self.alloc_token(if_token);
         let args = self.parse_args()?;
 
-        if args.len() != 1 {
+        let [cond] = args.as_slice() else {
             return Err(SyntaxError::UnexpectedToken(self.token_arena[token_id].clone()));
-        }
-        let cond = args.first().unwrap();
+        };
 
         self.consume_colon();
 
@@ -1975,10 +1991,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         // Parse the value expression: match (value):
         let args = self.parse_args()?;
-        if args.len() != 1 {
+        let [value] = args.as_slice() else {
             return Err(SyntaxError::UnexpectedToken(self.token_arena[token_id].clone()));
-        }
-        let value = Shared::clone(args.first().unwrap());
+        };
+        let value = Shared::clone(value);
 
         self.consume_colon_or_do();
 
@@ -2001,10 +2017,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let if_token = Shared::new((*token).clone());
                     self.tokens.next(); // consume 'if'
                     let guard_args = self.parse_args()?;
-                    if guard_args.len() != 1 {
+                    let [guard] = guard_args.as_slice() else {
                         return Err(SyntaxError::UnexpectedToken((*if_token).clone()));
-                    }
-                    Some(Shared::clone(guard_args.first().unwrap()))
+                    };
+                    Some(Shared::clone(guard))
                 } else {
                     None
                 }
@@ -2094,7 +2110,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_array_pattern(&mut self) -> Result<super::node::Pattern, SyntaxError> {
         let mut patterns = Vec::new();
-        let mut has_rest = false;
         let mut rest_binding: Option<IdentWithToken> = None;
 
         loop {
@@ -2111,7 +2126,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     if let Some(ident_token) = self.tokens.next() {
                         if let TokenKind::Ident(name) = &ident_token.kind {
                             rest_binding = Some(IdentWithToken::new(name));
-                            has_rest = true;
                         } else {
                             return Err(SyntaxError::UnexpectedToken(ident_token.clone()));
                         }
@@ -2142,10 +2156,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
         }
 
-        if has_rest {
-            Ok(Pattern::ArrayRest(patterns, rest_binding.unwrap()))
-        } else {
-            Ok(Pattern::Array(patterns))
+        match rest_binding {
+            Some(rest_binding) => Ok(Pattern::ArrayRest(patterns, rest_binding)),
+            None => Ok(Pattern::Array(patterns)),
         }
     }
 
@@ -2224,9 +2237,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let token_id = self.next_token(|token_kind| matches!(token_kind, TokenKind::Elif))?;
             let args = self.parse_args()?;
 
-            if args.len() != 1 {
+            let [cond] = args.as_slice() else {
                 return Err(SyntaxError::UnexpectedToken(self.token_arena[token_id].clone()));
-            }
+            };
 
             self.consume_colon();
 
@@ -2235,7 +2248,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 None => Err(SyntaxError::UnexpectedToken(self.token_arena[token_id].clone())),
             }?;
 
-            let cond = args.first().unwrap();
             let then_expr = self.parse_expr(expr_token)?;
 
             nodes.push((Some(Shared::clone(cond)), then_expr));
@@ -2260,14 +2272,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 self.parse_dict_pattern()
             }
             TokenKind::Ident(ref name) => {
-                let ident_token = self.tokens.next().unwrap();
+                let ident_token = self.next_or_eof()?;
                 Ok(Pattern::Ident(IdentWithToken::new_with_token(
                     name,
                     Some(self.alloc_ident_token(ident_token)),
                 )))
             }
             _ => {
-                let bad_token = self.tokens.next().unwrap();
+                let bad_token = self.next_or_eof()?;
                 Err(SyntaxError::UnexpectedToken(bad_token.clone()))
             }
         }
@@ -2665,7 +2677,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_id = first.token_id;
         let mut program = vec![first];
         while self.is_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
-            let pipe_token = self.tokens.next().unwrap();
+            let pipe_token = self.next_or_eof()?;
             let next_token = match self.tokens.next() {
                 Some(token) if token.kind == TokenKind::Eof => {
                     return Err(SyntaxError::UnexpectedEOFAfterToken(pipe_token.clone()));
@@ -2746,7 +2758,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if !self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
             return Ok(base_node);
         }
-        let next_token = self.tokens.next().unwrap();
+        let next_token = self.next_or_eof()?;
         let selector = Selector::try_from(next_token).map_err(SyntaxError::UnknownSelector)?;
 
         if selector.is_attribute_selector() {
@@ -2777,7 +2789,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             if !self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
                 break;
             }
-            let peeked_token = self.tokens.next().unwrap();
+            let peeked_token = self.next_or_eof()?;
             let peeked_selector = Selector::try_from(peeked_token).map_err(SyntaxError::UnknownSelector)?;
 
             if peeked_selector.is_attribute_selector() {
@@ -2867,7 +2879,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         // .."key" → recursive descent + Dict key access
                         TokenKind::StringLiteral(key) => {
                             let key = key.clone();
-                            let next = self.tokens.next().unwrap();
+                            let next = self.next_or_eof()?;
                             let prop_node = Shared::new(Node {
                                 token_id: self.alloc_token(next),
                                 expr: Expr::Selector(Selector::Property(Ident::new(key.as_str()))),
@@ -2886,7 +2898,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             if let Some(selector) = Selector::from_selector_str(&selector_str)
                                 && !selector.is_attribute_selector()
                             {
-                                let next = self.tokens.next().unwrap();
+                                let next = self.next_or_eof()?;
                                 let sel_node = Shared::new(Node {
                                     token_id: self.alloc_token(next),
                                     expr: Expr::Selector(selector),
@@ -2963,7 +2975,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             if !next_is_property {
                 break;
             }
-            let next_token = self.tokens.next().unwrap();
+            let next_token = self.next_or_eof()?;
             let sel = Selector::try_from(next_token).map_err(SyntaxError::UnknownSelector)?;
             nodes.push(Shared::new(Node {
                 token_id: self.alloc_token(next_token),
@@ -3117,7 +3129,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match self.tokens.peek() {
             // Token found and matches one of the expected kinds.
             Some(token) if expected_kinds(&token.kind) => {
-                let token = self.tokens.next().unwrap();
+                let token = self.next_or_eof()?;
                 Ok(self.alloc_token(token))
             } // Consume and return.
             // Token found but does not match expected kinds.
