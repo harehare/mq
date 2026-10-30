@@ -23,7 +23,14 @@ pub(crate) enum VmError {
     Builtin(builtin::Error),
     Host(Ident, String),
     ZeroDivision,
-    NotCallable,
+    /// Carries the type name of the value that was called.
+    NotCallable(Box<str>),
+    /// `next`/`send` was given a value that is not a coroutine.
+    InvalidResumeTarget {
+        /// `true` for `send`, `false` for `next`.
+        send: bool,
+        actual: Box<str>,
+    },
     EnvNotFound(String),
     UndefinedGlobal(String),
     #[cfg(feature = "debugger")]
@@ -60,7 +67,10 @@ impl fmt::Display for VmError {
             VmError::Builtin(e) => write!(f, "{e}"),
             VmError::Host(name, msg) => write!(f, "error in host function \"{name}\": {msg}"),
             VmError::ZeroDivision => write!(f, "division by zero"),
-            VmError::NotCallable => write!(f, "value is not callable"),
+            VmError::NotCallable(actual) => write!(f, "cannot call a value of type {actual}"),
+            VmError::InvalidResumeTarget { send, actual } => {
+                write!(f, "invalid types for \"{}\", got {actual}", resume_name(*send))
+            }
             VmError::EnvNotFound(name) => write!(f, "environment variable not found: {name}"),
             VmError::UndefinedGlobal(name) => write!(f, "undefined identifier `{name}`"),
             #[cfg(feature = "debugger")]
@@ -83,7 +93,28 @@ impl fmt::Display for VmError {
     }
 }
 
+fn resume_name(send: bool) -> &'static str {
+    use crate::ast::constants::builtins;
+    if send { builtins::SEND } else { builtins::NEXT }
+}
+
 impl VmError {
+    /// Kept out of line so the `next`/`send` fast path carries no error-construction code.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn invalid_resume_target(send: bool, actual: &RuntimeValue) -> Self {
+        VmError::InvalidResumeTarget {
+            send,
+            actual: actual.name().into(),
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn not_callable(actual: &RuntimeValue) -> Self {
+        VmError::NotCallable(actual.name().into())
+    }
+
     pub(crate) fn token_id(&self) -> Option<TokenId> {
         match self {
             VmError::StackTrace(inner, _) => inner.token_id(),
@@ -111,7 +142,12 @@ impl VmError {
                 RuntimeError::HostFunctionError(token, name.to_string().into_boxed_str(), msg.clone().into_boxed_str())
             }
             VmError::ZeroDivision => RuntimeError::ZeroDivision(token),
-            VmError::NotCallable => RuntimeError::InvalidDefinition(token, "value is not callable".to_string()),
+            VmError::NotCallable(actual) => RuntimeError::NotCallable(token, actual.to_string()),
+            VmError::InvalidResumeTarget { send, actual } => RuntimeError::InvalidTypes {
+                token,
+                name: resume_name(*send).to_string(),
+                args: vec![actual.to_string().into()],
+            },
             VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
             VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
             #[cfg(feature = "debugger")]
@@ -345,7 +381,11 @@ mod tests {
     #[rstest::rstest]
     #[case::host(VmError::Host(Ident::new("f"), "boom".to_string()), "Error in host function \"f\": boom")]
     #[case::zero_division(VmError::ZeroDivision, "Division by zero")]
-    #[case::not_callable(VmError::NotCallable, "Invalid definition for \"value is not callable\"")]
+    #[case::not_callable(VmError::NotCallable("number".into()), "Cannot call a value of type number")]
+    #[case::invalid_resume_target(
+        VmError::InvalidResumeTarget { send: false, actual: "number".into() },
+        "Invalid types for \"next\", got number"
+    )]
     #[case::env_not_found(VmError::EnvNotFound("HOME".to_string()), "Environment variable `HOME` not found")]
     #[case::undefined_global(VmError::UndefinedGlobal("x".to_string()), "\"x\" is not defined")]
     #[cfg_attr(
@@ -393,7 +433,8 @@ mod tests {
             VmError::Builtin(_)
             | VmError::Host(_, _)
             | VmError::ZeroDivision
-            | VmError::NotCallable
+            | VmError::NotCallable(_)
+            | VmError::InvalidResumeTarget { .. }
             | VmError::EnvNotFound(_)
             | VmError::UndefinedGlobal(_)
             | VmError::Corrupt(_)

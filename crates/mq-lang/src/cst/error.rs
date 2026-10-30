@@ -13,7 +13,7 @@ pub enum ParseError {
     InsufficientTokens(Shared<Token>),
     #[error(transparent)]
     UnknownSelector(selector::UnknownSelector),
-    #[error("Unexpected `end` keyword — no open block to close")]
+    #[error("Unexpected `end` keyword: no open block to close")]
     UnmatchedEnd(Shared<Token>),
     #[error("Invalid assignment target: expected an identifier but got `{0}`")]
     InvalidAssignmentTarget(Shared<Token>),

@@ -2205,8 +2205,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 // argc=2 is `send(stream, value)`; argc=1 is `next(stream)`.
                 let resume_value = if *argc == 2 { Some(pop_value!()) } else { None };
                 let arg = pop!();
-                let RuntimeValue::Coroutine(handle) = into_runtime_value(arg, chunks) else {
-                    bail!(VmError::NotCallable);
+                let handle = match into_runtime_value(arg, chunks) {
+                    RuntimeValue::Coroutine(handle) => handle,
+                    other => bail!(VmError::invalid_resume_target(*argc == 2, &other)),
                 };
                 let result = coroutine::resume::<CHECK_TIMEOUT>(
                     &handle,

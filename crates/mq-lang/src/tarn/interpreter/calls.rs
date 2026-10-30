@@ -180,7 +180,11 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
             },
         };
         let RuntimeValue::Coroutine(handle) = stream else {
-            return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable));
+            return Err(locate(
+                call_site.chunk,
+                call_site.ip,
+                VmError::invalid_resume_target(matches!(builtin, ResumeBuiltin::Send), &stream),
+            ));
         };
         let result = super::coroutine::resume::<CHECK_TIMEOUT>(
             &handle,
@@ -218,7 +222,10 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
                 Some(Shared::clone(&vc.chunks)),
             )
         }
-        _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
+        other => {
+            let value = into_runtime_value(other.clone(), chunks);
+            return Err(locate(call_site.chunk, call_site.ip, VmError::not_callable(&value)));
+        }
     };
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
     let mut callee_locals = execution

@@ -7688,7 +7688,7 @@ fn test_descendant_chain_has_no_synthetic_bridge_node() {
 fn test_unmatched_end_error_message() {
     // Verify the error message text for `UnmatchedEnd`.
     let err = ParseError::UnmatchedEnd(Shared::new(token(TokenKind::End)));
-    assert_eq!(err.to_string(), "Unexpected `end` keyword — no open block to close");
+    assert_eq!(err.to_string(), "Unexpected `end` keyword: no open block to close");
 }
 
 #[test]
@@ -8490,10 +8490,10 @@ fn test_every_binary_operator_shape(#[case] code: &str, #[case] expected: &str) 
 #[case::additive_after_multiplicative("a * b + c", "((a * b) + c)")]
 #[case::range_over_multiplicative("a * b .. c", "(a * (b .. c))")]
 #[case::multiplicative_after_range("a .. b * c", "((a .. b) * c)")]
-#[case::coalesce_over_multiplicative("a * b ?? c", "(a * (b ?? c))")]
-#[case::multiplicative_after_coalesce("a ?? b * c", "((a ?? b) * c)")]
+#[case::multiplicative_over_coalesce("a ?? b * c", "(a ?? (b * c))")]
+#[case::coalesce_after_multiplicative("a * b ?? c", "((a * b) ?? c)")]
 #[case::convert_with_multiplicative("a + b @ c", "(a + (b @ c))")]
-#[case::convert_is_left_associative_with_mul("a * b @ c", "((a * b) @ c)")]
+#[case::convert_over_multiplicative("a * b @ c", "(a * (b @ c))")]
 #[case::shift_with_additive("a << b + c", "((a << b) + c)")]
 #[case::additive_with_shift("a + b >> c", "((a + b) >> c)")]
 #[case::regex_match_with_comparison("a =~ b == c", "((a =~ b) == c)")]
@@ -8517,7 +8517,7 @@ fn test_binary_op_precedence_shape(#[case] code: &str, #[case] expected: &str) {
 #[case::range("a .. b .. c", "((a .. b) .. c)")]
 #[case::coalesce("a ?? b ?? c", "((a ?? b) ?? c)")]
 #[case::range_then_coalesce("a .. b ?? c", "((a .. b) ?? c)")]
-#[case::coalesce_then_range("a ?? b .. c", "((a ?? b) .. c)")]
+#[case::coalesce_then_range("a ?? b .. c", "(a ?? (b .. c))")]
 #[case::convert("a @ b @ c", "((a @ b) @ c)")]
 fn test_binary_op_associativity_shape(#[case] code: &str, #[case] expected: &str) {
     assert_eq!(parse_shape(code), (expected.to_string(), false));

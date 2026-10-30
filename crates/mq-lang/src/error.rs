@@ -269,6 +269,37 @@ fn preceding_identifier(source: &str, offset: usize) -> Option<&str> {
     (!name.is_empty() && !name.starts_with(|c: char| c.is_ascii_digit()) && !ident.ends_with('.')).then_some(name)
 }
 
+// Context-specific hint for a token the parser rejected, from the source text before it.
+#[cold]
+fn unexpected_token_hint(source: &str, offset: usize, token: &Token) -> Option<Cow<'static, str>> {
+    let before = source.get(..offset)?.trim_end();
+    // Checked first: a token rejected right after `let`/`var` is a bad binding, whatever its kind.
+    if let Some(kw) = binding_keyword(before) {
+        return Some(Cow::Owned(format!(
+            "Expected a variable name or destructuring pattern after `{kw}`."
+        )));
+    }
+    match &token.kind {
+        TokenKind::LParen => Some(Cow::Borrowed(
+            "Only a function name can be followed by `(...)`. Literals and call results cannot be called; bind the function to a name first.",
+        )),
+        TokenKind::Pipe if before.ends_with('|') => Some(Cow::Borrowed(
+            "Expected an expression between two `|`. Remove the extra `|`.",
+        )),
+        _ => None,
+    }
+}
+
+// `let` or `var` ending `before` as a whole word.
+fn binding_keyword(before: &str) -> Option<&str> {
+    let head = before.strip_suffix("let").or_else(|| before.strip_suffix("var"))?;
+    let boundary = head
+        .chars()
+        .next_back()
+        .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+    boundary.then(|| &before[head.len()..])
+}
+
 impl Diagnostic for Error {
     #[cold]
     fn code<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
@@ -283,7 +314,7 @@ impl Diagnostic for Error {
     #[cold]
     fn url<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         match &self.cause {
-            InnerError::Runtime(RuntimeError::InvalidDefinition(_, _))
+            InnerError::Runtime(RuntimeError::NotCallable(_, _))
             | InnerError::Runtime(RuntimeError::InvalidTypes { .. }) => {
                 Some(Box::new("https://mqlang.org/book") as Box<dyn std::fmt::Display>)
             }
@@ -306,9 +337,13 @@ impl Diagnostic for Error {
                     "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.",
                 ))
             }
-            InnerError::Syntax(SyntaxError::UnexpectedToken(_)) => Some(Cow::Borrowed(
-                "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.",
-            )),
+            InnerError::Syntax(SyntaxError::UnexpectedToken(token)) => Some(
+                unexpected_token_hint(self.source_code.inner(), self.location.offset(), token).unwrap_or(
+                    Cow::Borrowed(
+                        "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.",
+                    ),
+                ),
+            ),
             InnerError::Syntax(SyntaxError::UnexpectedEOFDetected(_)) => Some(Cow::Borrowed(
                 "Unexpected end of input. Check for missing closing brackets, parentheses, or incomplete expressions.",
             )),
@@ -366,8 +401,8 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::DateTimeFormatError(_, _)) => Some(Cow::Borrowed(
                 "Invalid date/time format. Please check your format string.",
             )),
-            InnerError::Runtime(RuntimeError::InvalidDefinition(_, name)) => Some(Cow::Owned(format!(
-                "'{name}' exists but is not a function, so it cannot be called."
+            InnerError::Runtime(RuntimeError::NotCallable(_, actual)) => Some(Cow::Owned(format!(
+                "Only functions can be called with `(...)`, but this value is a {actual}. Check for a variable shadowing a function name."
             ))),
             InnerError::Runtime(RuntimeError::AssignToImmutable(_, name)) => Some(Cow::Owned(format!(
                 "Cannot assign to immutable variable '{name}'. Consider declaring it as mutable."
@@ -699,7 +734,7 @@ mod test {
         "source code"
     )]
     #[case::eval_invalid_definition(
-        InnerError::Runtime(RuntimeError::InvalidDefinition(Token {
+        InnerError::Runtime(RuntimeError::NotCallable(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
@@ -907,11 +942,11 @@ mod test {
         }, "fmt".to_string()))
     )]
     #[case::eval_invalid_definition(
-        InnerError::Runtime(RuntimeError::InvalidDefinition(Token {
+        InnerError::Runtime(RuntimeError::NotCallable(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
             module_id: ArenaId::new(0),
-        }, "bad".into()))
+        }, "number".into()))
     )]
     #[case::eval_undefined_reference(
         InnerError::Runtime(RuntimeError::UndefinedReference(Token {
@@ -1212,24 +1247,50 @@ mod test {
         );
     }
 
+    #[rstest]
+    #[case::call_on_literal("1(2)", 1, TokenKind::LParen, Some("Only a function name"))]
+    #[case::paren_binding_after_let("let (x) = 1", 4, TokenKind::LParen, Some("after `let`"))]
+    #[case::missing_let_name("let = 1", 4, TokenKind::Equal, Some("after `let`"))]
+    #[case::missing_var_name("var 1", 4, TokenKind::NumberLiteral(1.into()), Some("after `var`"))]
+    #[case::let_as_identifier_suffix("outlet = 1", 7, TokenKind::Equal, None)]
+    #[case::double_pipe("1 | | 2", 4, TokenKind::Pipe, Some("between two `|`"))]
+    #[case::no_context("1 + )", 4, TokenKind::RParen, None)]
+    fn test_unexpected_token_hint(
+        #[case] source: &str,
+        #[case] offset: usize,
+        #[case] kind: TokenKind,
+        #[case] expected: Option<&str>,
+    ) {
+        let token = Token {
+            range: Range::default(),
+            kind,
+            module_id: ArenaId::new(0),
+        };
+        let hint = unexpected_token_hint(source, offset, &token);
+        match expected {
+            Some(text) => assert!(hint.is_some_and(|h| h.contains(text))),
+            None => assert!(hint.is_none()),
+        }
+    }
+
     #[test]
-    fn test_invalid_definition_help_does_not_suggest_a_rename() {
+    fn test_not_callable_help_does_not_suggest_a_rename() {
         // `x` already resolves to a real value here (just not a callable one, e.g.
         // `let x = 42 | x(1)`), so a "did you mean" hint would be misleading.
         let module_loader: ModuleLoader = ModuleLoader::default();
-        let cause = InnerError::Runtime(RuntimeError::InvalidDefinition(
+        let cause = InnerError::Runtime(RuntimeError::NotCallable(
             Token {
                 range: Range::default(),
                 kind: TokenKind::Eof,
                 module_id: ArenaId::new(0),
             },
-            "x".to_string(),
+            "number".to_string(),
         ));
         let error = Error::from_error("source code", cause, module_loader);
         let help = error.help().map(|h| h.to_string());
         assert_eq!(
             help,
-            Some("'x' exists but is not a function, so it cannot be called.".to_string())
+            Some("Only functions can be called with `(...)`, but this value is a number. Check for a variable shadowing a function name.".to_string())
         );
     }
 
