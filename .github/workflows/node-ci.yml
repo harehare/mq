@@ -35,7 +35,7 @@ jobs:
           just-version: 1.58.0
       - uses: Swatinem/rust-cache@v2.9.3
       - name: Install wasm-pack
-        uses: taiki-e/install-action@v2.87.30
+        uses: taiki-e/install-action@v2.87.31
         with:
           tool: wasm-pack
       - name: Setup pnpm
