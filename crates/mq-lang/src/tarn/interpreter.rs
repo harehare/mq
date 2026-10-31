@@ -2221,7 +2221,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
         }
     };
-    // `verify_chunks` rejects chunks longer than u32::MAX and verifies all jump targets.
+    // `verify_chunks` rejects chunks longer than i32::MAX and verifies all jump targets.
     debug_assert!(u32::try_from(ip).is_ok());
     frame.ip = ip as u32;
     #[cfg(debug_assertions)]

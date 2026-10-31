@@ -121,6 +121,22 @@ fn verifier_rejects_invalid_constant_and_jump_targets() {
     ));
 }
 
+#[rstest]
+#[case::at_the_limit(usize::from(u16::MAX), false)]
+#[case::over_the_limit(usize::from(u16::MAX) + 1, true)]
+fn verifier_limits_local_slots_to_what_local_count_can_hold(#[case] slots: usize, #[case] rejected: bool) {
+    let chunk = Chunk {
+        code: vec![OpCode::Return],
+        local_names: vec![Ident::default(); slots],
+        local_count: slots as u16,
+        ..Default::default()
+    };
+    assert_eq!(
+        matches!(verify_chunks(&[chunk]), Err(BytecodeError::TooManyLocals { .. })),
+        rejected
+    );
+}
+
 #[test]
 fn stack_verifier_stops_when_its_shared_work_budget_is_exhausted() {
     let chunk = Chunk {

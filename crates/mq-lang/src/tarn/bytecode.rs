@@ -1088,13 +1088,13 @@ impl fmt::Display for BytecodeError {
             Self::MissingReturn(chunk) => write!(f, "chunk {chunk} does not end in a return instruction"),
             Self::TooManyChunks(count) => write!(f, "bytecode has {count} chunks; the VM limit is 65536"),
             Self::TooManyInstructions { chunk, count } => {
-                write!(f, "chunk {chunk} has {count} instructions; the VM limit is 4294967295")
+                write!(f, "chunk {chunk} has {count} instructions; the VM limit is 2147483647")
             }
             Self::TooManyConstants { chunk, count } => {
                 write!(f, "chunk {chunk} has {count} constants; the VM limit is 65536")
             }
             Self::TooManyLocals { chunk, count } => {
-                write!(f, "chunk {chunk} has {count} local slots; the VM limit is 65536")
+                write!(f, "chunk {chunk} has {count} local slots; the VM limit is 65535")
             }
             Self::TooManyUpvalues { chunk, count } => {
                 write!(f, "chunk {chunk} has {count} upvalues; the VM limit is 65536")
@@ -1198,7 +1198,8 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
         .fold(0usize, |total, chunk| total.saturating_add(chunk.code.len()));
     let mut remaining_work = instruction_count.saturating_mul(64).clamp(1_000_000, 16_000_000);
     for (chunk_index, chunk) in chunks.iter().enumerate() {
-        if chunk.code.len() > u32::MAX as usize {
+        // Jump offsets are `i32`, so a longer chunk could wrap one onto a valid target.
+        if chunk.code.len() > i32::MAX as usize {
             return Err(BytecodeError::TooManyInstructions {
                 chunk: chunk_index,
                 count: chunk.code.len(),
@@ -1226,7 +1227,8 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 count: chunk.constants.len(),
             });
         }
-        if chunk.local_names.len() > max_entries {
+        // `local_count` is a `u16`, so 65536 slots would not fit it.
+        if chunk.local_names.len() > usize::from(u16::MAX) {
             return Err(BytecodeError::TooManyLocals {
                 chunk: chunk_index,
                 count: chunk.local_names.len(),
