@@ -227,6 +227,11 @@ pub(crate) enum OpCode {
     Const(u16),
     PushNone,
     GetLocal(u16),
+    /// Moves a local onto the stack and leaves `None` behind.
+    ///
+    /// Replaces the `GetLocal` that is the slot's last use, so a callee or in-place builtin
+    /// can take sole ownership of the value instead of copying it.
+    TakeLocal(u16),
     SetLocal(u16),
     /// Pops a value and a key, then applies `set(local, key, value)` to the local in place.
     SetIndexLocal(u16),
@@ -256,6 +261,11 @@ pub(crate) enum OpCode {
     TeeLocal(u16),
     /// Copies one local slot to another without using the operand stack.
     CopyLocal {
+        source: u16,
+        destination: u16,
+    },
+    /// Like `CopyLocal`, but leaves `None` in the source: its last use.
+    MoveLocal {
         source: u16,
         destination: u16,
     },
@@ -443,6 +453,8 @@ pub(crate) enum OpCode {
     CallUpvalueLocal {
         index: u16,
         local: u16,
+        /// Moves the argument out of `local` (its last use) instead of cloning it.
+        take: bool,
     },
     CallValue(u16),
     /// Invokes a pipeline value only when it is callable without explicit arguments.
@@ -485,6 +497,7 @@ impl OpCode {
     pub(crate) fn for_each_local_slot_mut(&mut self, mut visit: impl FnMut(&mut u16)) {
         match self {
             Self::GetLocal(slot)
+            | Self::TakeLocal(slot)
             | Self::SetLocal(slot)
             | Self::SetIndexLocal(slot)
             | Self::AddAssignLocal(slot)
@@ -510,7 +523,8 @@ impl OpCode {
             | Self::SetLocalAndCopyAndJump {
                 source, destination, ..
             }
-            | Self::CopyLocal { source, destination } => {
+            | Self::CopyLocal { source, destination }
+            | Self::MoveLocal { source, destination } => {
                 visit(source);
                 visit(destination);
             }
@@ -648,6 +662,7 @@ impl OpCode {
             Self::Const(_) => "Const",
             Self::PushNone => "PushNone",
             Self::GetLocal(_) => "GetLocal",
+            Self::TakeLocal(_) => "TakeLocal",
             Self::SetLocal(_) => "SetLocal",
             Self::SetIndexLocal(_) => "SetIndexLocal",
             Self::AddAssignLocal(_) => "AddAssignLocal",
@@ -656,6 +671,7 @@ impl OpCode {
             Self::SetLocalConst { .. } => "SetLocalConst",
             Self::TeeLocal(_) => "TeeLocal",
             Self::CopyLocal { .. } => "CopyLocal",
+            Self::MoveLocal { .. } => "MoveLocal",
             Self::GetUpvalue(_) => "GetUpvalue",
             Self::SetUpvalue(_) => "SetUpvalue",
             Self::MakeClosure(_) => "MakeClosure",
@@ -1267,6 +1283,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                 }
                 OpCode::GetLocal(slot)
+                | OpCode::TakeLocal(slot)
                 | OpCode::SetLocal(slot)
                 | OpCode::SetIndexLocal(slot)
                 | OpCode::AddAssignLocal(slot)
@@ -1339,7 +1356,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                     verify_jump_target(chunk.code.len(), chunk_index, pc, *offset)?;
                 }
-                OpCode::CopyLocal { source, destination } => {
+                OpCode::CopyLocal { source, destination } | OpCode::MoveLocal { source, destination } => {
                     for slot in [source, destination] {
                         if *slot >= chunk.local_count {
                             return Err(BytecodeError::LocalOutOfBounds {
@@ -1509,7 +1526,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
-                OpCode::CallUpvalueLocal { index, local } => {
+                OpCode::CallUpvalueLocal { index, local, .. } => {
                     if *index as usize >= chunk.upvalue_names.len() {
                         return Err(BytecodeError::UpvalueOutOfBounds {
                             chunk: chunk_index,
@@ -1865,6 +1882,7 @@ pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
         OpCode::Const(_)
         | OpCode::PushNone
         | OpCode::GetLocal(_)
+        | OpCode::TakeLocal(_)
         | OpCode::GetUpvalue(_)
         | OpCode::MakeClosure(_)
         | OpCode::MakeStaticClosure(_)
@@ -1889,6 +1907,7 @@ pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
         OpCode::Dup => (1, 2),
         OpCode::SetLocalConst { .. }
         | OpCode::CopyLocal { .. }
+        | OpCode::MoveLocal { .. }
         | OpCode::Jump(_)
         | OpCode::ForeachNext { .. }
         | OpCode::UpdateLocalConst { .. }

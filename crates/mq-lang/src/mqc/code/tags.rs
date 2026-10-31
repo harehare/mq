@@ -218,4 +218,6 @@ pub(super) mod opcode {
     pub(crate) const JUMP_IF_TRUE: u8 = 96;
     pub(crate) const SET_INDEX_LOCAL: u8 = 97;
     pub(crate) const ADD_ASSIGN_LOCAL: u8 = 98;
+    pub(crate) const TAKE_LOCAL: u8 = 99;
+    pub(crate) const MOVE_LOCAL: u8 = 100;
 }
