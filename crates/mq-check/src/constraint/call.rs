@@ -87,12 +87,21 @@ impl Resolution {
     }
 }
 
+/// Whether the runtime leaves the piped input out of a call of the native builtin `name` with
+/// `count` arguments, because the builtin takes that many on its own.
+pub(super) fn builtin_ignores_piped_input(name: &str, count: usize) -> bool {
+    mq_lang::builtin_takes_piped_input(name, count) == Some(false)
+}
+
 /// Whether adding one more argument in front (the piped input) would make the call match an
 /// overload of the builtin `name`.
 fn completed_by_piped_input(ctx: &mut InferenceContext, name: &str, args: &[Type]) -> bool {
     // `partial(f, ...)` keeps its own function: the piped input only stands in for one that is
     // missing, or is the function when a single argument is given.
     if name == PARTIAL && args.len() > 1 && matches!(ctx.resolve_type(&args[0]), Type::Function(..)) {
+        return false;
+    }
+    if builtin_ignores_piped_input(name, args.len()) {
         return false;
     }
     let piped = Type::Var(ctx.fresh_var());

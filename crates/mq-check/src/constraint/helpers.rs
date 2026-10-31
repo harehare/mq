@@ -256,7 +256,9 @@ pub(super) fn build_piped_call_args(
         // Try explicit args first, if they already match an overload,
         // the piped input should not be prepended (it flows through unchanged)
         let resolved_explicit: Vec<Type> = explicit_arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
-        if ctx.resolve_overload(func_name, &resolved_explicit).is_some() {
+        if ctx.resolve_overload(func_name, &resolved_explicit).is_some()
+            || super::call::builtin_ignores_piped_input(func_name, explicit_arg_tys.len())
+        {
             return (explicit_arg_tys.to_vec(), false);
         }
 

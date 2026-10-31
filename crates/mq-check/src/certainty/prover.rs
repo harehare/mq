@@ -350,7 +350,16 @@ impl<'a> Prover<'a> {
         if hir.bracket_group_count(id) > 0 {
             return self.ref_is_exact(hir, id);
         }
-        is_audited_builtin(hir, id, symbol) || self.is_exact_user_call(hir, id)
+        is_audited_builtin(hir, id, symbol) || self.is_exact_user_call(hir, id) || self.is_exact_variable_call(hir, id)
+    }
+
+    /// Whether the callee is a variable of exact value, so that calling it fails when the value
+    /// is no function.
+    fn is_exact_variable_call(&mut self, hir: &Hir, id: SymbolId) -> bool {
+        hir.resolve_reference_symbol(id)
+            .and_then(|def| hir.symbol(def))
+            .is_some_and(|def| def.kind == SymbolKind::Variable)
+            && self.ref_is_exact(hir, id)
     }
 
     /// Whether every expression in the body of a function passed as an argument is exact.

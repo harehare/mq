@@ -288,6 +288,18 @@ pub fn is_builtin_function(name: &str) -> bool {
     name == NEXT || name == SEND || runtime::builtin::get_builtin_functions(&Ident::new(name)).is_some()
 }
 
+/// Returns whether a call of the native builtin `name` with `num_args` arguments takes the piped
+/// value as one more argument, or `None` when `name` is no native builtin.
+///
+/// ```rust
+/// assert_eq!(mq_lang::builtin_takes_piped_input("split", 1), Some(true));
+/// assert_eq!(mq_lang::builtin_takes_piped_input("range", 1), Some(false));
+/// ```
+pub fn builtin_takes_piped_input(name: &str, num_args: usize) -> Option<bool> {
+    let num_args = u8::try_from(num_args).ok()?;
+    runtime::builtin::get_builtin_functions(&Ident::new(name)).map(|f| f.num_params.is_missing_one_params(num_args))
+}
+
 /// Returns whether `name` lexes as a single identifier, so keywords, literals and operators are rejected.
 ///
 /// ```rust
