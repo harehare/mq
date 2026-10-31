@@ -296,6 +296,26 @@ end
 
 # Test execution helper functions
 
+# Finds the first failed assertion inside a (possibly nested) array, e.g. the results collected by
+# `foreach` or `map`. Returns None when there is none.
+def _find_failure(value):
+  if (is_array(value)):
+    first(filter(map(value, _find_failure), fn(r): not(is_none(r));))
+  elif (is_dict(value) && value["error"] == true):
+    value
+  else:
+    None
+end
+
+# Returns the failed assertion in a test's result, or None. A top-level dict with an `error` key
+# is a failure; inside arrays only `"error": true` counts, so ordinary data holding an `error` field is not mistaken for one.
+def _test_failure(result):
+  if (is_dict(result) && contains(result, "error")):
+    result
+  else:
+    _find_failure(result)
+end
+
 # Runs a single test function and captures the result.
 # An error raised by the test body is recorded as a failure, so it cannot abort the remaining tests.
 def _run_test(test_name, test_func):
@@ -304,12 +324,13 @@ def _run_test(test_name, test_func):
   | let result = try: test_func() catch(e): {"error": true, "message": "Error: " + e["message"]}
   | let end_time = now()
   | let duration = end_time - start_time
-  | if (is_dict(result) && contains(result, "error")):
+  | let failure = _test_failure(result)
+  | if (not(is_none(failure))):
       {
         "name": test_name,
         "status": "failed",
         "duration": duration,
-        "error": result["message"]
+        "error": failure["message"]
       }
     else:
       {
@@ -448,7 +469,7 @@ def _property_case_still_fails(adapter, a):
   try:
     do
       let r = adapter(a)
-      | is_dict(r) && contains(r, "error")
+      | not(is_none(_test_failure(r)))
     end
   catch:
     false;
@@ -465,17 +486,18 @@ def _property_case_still_fails(adapter, a):
 # Returns: dict
 def _property_case_result(args, adapter):
   let result = adapter(args)
-  | if (is_dict(result) && contains(result, "error")):
+  | let failure = _test_failure(result)
+  | if (not(is_none(failure))):
       do
         let shrunk = gen::shrink(args, fn(a): _property_case_still_fails(adapter, a);)
         | if (shrunk == args):
-            result
+            failure
           else:
             do
-              let shrunk_result = adapter(shrunk)
+              let shrunk_failure = _test_failure(adapter(shrunk))
               | {
                   "error": true,
-                  "message": shrunk_result["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
+                  "message": shrunk_failure["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
                 }
             end
       end
