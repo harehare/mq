@@ -86,8 +86,8 @@ mod tests {
         let url1 = Url::parse("file:///a.mq").unwrap();
         let url2 = Url::parse("file:///b.mq").unwrap();
 
-        let (source_id1, _) = hir.add_code(Some(url1.clone()), "def func_a(): 1;");
-        let (source_id2, _) = hir.add_code(Some(url2.clone()), "def func_b(): 2; | let var_b = 3");
+        let (source_id1, _, _) = hir.add_code(Some(url1.clone()), "def func_a(): 1;");
+        let (source_id2, _, _) = hir.add_code(Some(url2.clone()), "def func_b(): 2; | let var_b = 3");
 
         let mut source_map = BiMap::new();
         source_map.insert(url1.to_string(), source_id1);

@@ -58,15 +58,15 @@ pub(crate) enum OutputFormat {
 pub(crate) fn syntax_diagnostics(
     hir: &Hir,
     source_id: SourceId,
-    parse_errors: &[(String, mq_lang::Range)],
+    parse_errors: &[mq_lang::Diagnostic],
 ) -> Vec<CheckDiagnostic> {
     let mut diagnostics: Vec<CheckDiagnostic> = parse_errors
         .iter()
-        .map(|(message, range)| CheckDiagnostic {
+        .map(|error| CheckDiagnostic {
             severity: Severity::Error,
             code: "mq::syntax",
-            message: message.clone(),
-            range: Some(*range),
+            message: error.message.clone(),
+            range: error.range,
         })
         .collect();
 

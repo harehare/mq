@@ -79,7 +79,7 @@ mod tests {
     fn test_response_with_references() {
         let (hir, mut source_map) = setup();
         let url = Url::parse("file:///test.mq").unwrap();
-        let (source_id, _) = hir
+        let (source_id, _, _) = hir
             .write()
             .unwrap()
             .add_code(Some(url.clone()), "def func1(): 1; | let x = func1()");

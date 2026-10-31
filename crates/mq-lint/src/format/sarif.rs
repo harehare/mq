@@ -67,7 +67,7 @@ mod tests {
     fn sample_diagnostics() -> Vec<Diagnostic> {
         let config = LintConfig::default();
         let linter = Linter::with_default_rules();
-        crate::collect_diagnostics(r#".checked == true"#, &linter, &config, Severity::Style)
+        crate::collect_diagnostics(r#".checked == true"#, &linter, &config, Severity::Style).unwrap()
     }
 
     #[test]

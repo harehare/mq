@@ -719,7 +719,7 @@ mod tests {
         assert_eq!(env.len(), 0);
 
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, "42");
+        let (source_id, _, _) = hir.add_code(None, "42");
         let (symbol_id, _) = hir.symbols_for_source(source_id).next().unwrap();
 
         let scheme = TypeScheme::mono(types::Type::Number);

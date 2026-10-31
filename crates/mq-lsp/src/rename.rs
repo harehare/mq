@@ -171,7 +171,7 @@ mod tests {
     fn setup(code: &str) -> (Arc<RwLock<Hir>>, Url, BiMap<String, mq_hir::SourceId>) {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
-        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
 
         let mut source_map = BiMap::new();
         source_map.insert(url.to_string(), source_id);
@@ -287,7 +287,8 @@ mod tests {
     fn test_cross_source_rename_via_include_updates_both_files() {
         let mut hir = Hir::default();
         let main_url = Url::parse("file:///main.mq").unwrap();
-        let (main_source_id, _) = hir.add_code(Some(main_url.clone()), "include \"csv\" | csv_parse(\"a,b\", false)");
+        let (main_source_id, _, _) =
+            hir.add_code(Some(main_url.clone()), "include \"csv\" | csv_parse(\"a,b\", false)");
 
         // Resolving the `include` eagerly lowers the module's source into the same
         // HIR under its own synthetic source/url (see hir/lower.rs::add_include_expr).
@@ -368,7 +369,8 @@ mod tests {
     fn test_rename_skips_sources_missing_from_source_map() {
         let mut hir = Hir::default();
         let main_url = Url::parse("file:///main.mq").unwrap();
-        let (main_source_id, _) = hir.add_code(Some(main_url.clone()), "include \"csv\" | csv_parse(\"a,b\", false)");
+        let (main_source_id, _, _) =
+            hir.add_code(Some(main_url.clone()), "include \"csv\" | csv_parse(\"a,b\", false)");
 
         // Only the main file is tracked; the module's synthetic source is not in source_map,
         // mirroring a real session where that file was never opened in the editor.

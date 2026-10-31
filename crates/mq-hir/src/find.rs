@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn test_find_symbol_in_position() {
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, "let x = 5");
+        let (source_id, _, _) = hir.add_code(None, "let x = 5");
         let pos = mq_lang::Position::new(1, 4);
 
         assert!(hir.find_symbol_in_position(source_id, pos).is_some());
@@ -183,7 +183,7 @@ mod tests {
     fn test_find_symbol_in_position_resolves_descendant_chain_step() {
         // A synthetic `..` bridge node must not shadow `.code`'s range.
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, ".blockquote .code");
+        let (source_id, _, _) = hir.add_code(None, ".blockquote .code");
         let pos = mq_lang::Position::new(1, 14);
 
         let (_, symbol) = hir
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn test_find_scope_in_position() {
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, "def example(): 5;");
+        let (source_id, _, _) = hir.add_code(None, "def example(): 5;");
         let pos = mq_lang::Position::new(1, 18);
 
         assert!(hir.find_scope_in_position(source_id, pos).map(|(id, _)| id).is_some());
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_find_symbols_in_scope() {
         let mut hir = Hir::default();
-        let (_, scope_id) = hir.add_code(None, "let x = 5");
+        let (_, scope_id, _) = hir.add_code(None, "let x = 5");
         let symbols = hir.find_symbols_in_scope(scope_id);
 
         assert_eq!(symbols.len(), 1);
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn test_find_symbols_in_module_scope() {
         let mut hir = Hir::default();
-        let (_, scope_id) = hir.add_code(None, "module mod1: def func1(): 1; end");
+        let (_, scope_id, _) = hir.add_code(None, "module mod1: def func1(): 1; end");
         let symbols = hir.find_symbols_in_scope(scope_id);
 
         // Symbols: mod1 (Ident), Module, func1 (Function)
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn test_find_symbols_in_source() {
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, "let x = 5");
+        let (source_id, _, _) = hir.add_code(None, "let x = 5");
         let symbols = hir.find_symbols_in_source(source_id);
 
         assert_eq!(symbols.len(), 3);
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn test_find_scope_by_source() {
         let mut hir = Hir::default();
-        let (source_id, scope_id) = hir.add_code(None, "let x = 5");
+        let (source_id, scope_id, _) = hir.add_code(None, "let x = 5");
 
         hir.source_scopes.insert(source_id, scope_id);
         assert_eq!(hir.find_scope_by_source(&source_id), scope_id);

@@ -59,7 +59,7 @@ mod tests {
 
     fn check(code: &str) -> Vec<Diagnostic> {
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, code);
+        let (source_id, _, _) = hir.add_code(None, code);
         let config = LintConfig::default();
         let ctx = LintContext::new(&hir, source_id, &config);
         UnnecessaryInterpolation.check(&ctx)

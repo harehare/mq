@@ -209,35 +209,6 @@ fn new_hir() -> Hir {
     hir
 }
 
-/// Whether `code` holds only blank lines and `#` comments.
-///
-/// The recovery parser reports an error for a program without expressions, which is valid here.
-fn is_expression_free(code: &str) -> bool {
-    code.lines().all(|line| {
-        let line = line.trim_start_matches([' ', '\t', '\r']);
-        line.is_empty() || line.starts_with('#')
-    })
-}
-
-/// Parses `code` into `hir`, returning its source id and parse errors.
-///
-/// `Hir::add_code` drops parse errors, so the source is parsed here and added as nodes.
-fn load_source(
-    hir: &mut Hir,
-    source_url: Option<Url>,
-    code: &str,
-) -> (mq_hir::SourceId, Vec<(String, mq_lang::Range)>) {
-    let (nodes, errors) = mq_lang::parse_recovery(code);
-    let url = source_url.unwrap_or_else(|| Url::parse("file:///").unwrap());
-    let (source_id, _) = hir.add_nodes(url, &nodes);
-    let errors = if is_expression_free(code) {
-        Vec::new()
-    } else {
-        errors.error_ranges(code)
-    };
-    (source_id, errors)
-}
-
 /// Runs syntax and type checks on a single source, returning every diagnostic found.
 /// Type checking is skipped when syntax errors are present, matching the text report's behavior.
 fn collect_check_diagnostics(
@@ -246,7 +217,7 @@ fn collect_check_diagnostics(
     type_checker_options: &TypeCheckerOptions,
 ) -> Vec<format::CheckDiagnostic> {
     let mut hir = new_hir();
-    let (source_id, parse_errors) = load_source(&mut hir, source_url, code);
+    let (source_id, _, parse_errors) = hir.add_code(source_url, code);
 
     let mut diagnostics = format::syntax_diagnostics(&hir, source_id, &parse_errors);
     let has_syntax_errors = diagnostics.iter().any(|d| d.severity == format::Severity::Error);
@@ -263,7 +234,7 @@ fn collect_check_diagnostics(
 /// Runs syntax and type checks on a single source, returns `true` if any errors were found.
 fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &CheckOptions<'_>) -> io::Result<bool> {
     let mut hir = new_hir();
-    let (source_id, parse_errors) = load_source(&mut hir, source_url, code);
+    let (source_id, _, parse_errors) = hir.add_code(source_url, code);
 
     if let Some(lbl) = opts.label {
         writeln!(w, "{} {}", "──".dimmed(), lbl.bold())?;
@@ -639,7 +610,7 @@ mod tests {
         let mut loader = mq_lang::ModuleLoader::default();
         loader.set_search_paths(vec![dir]);
         let mut hir = Hir::new(loader);
-        let (source_id, parse_errors) = load_source(&mut hir, None, "include \"a\" | fa()");
+        let (source_id, _, parse_errors) = hir.add_code(None, "include \"a\" | fa()");
 
         let diagnostics = format::syntax_diagnostics(&hir, source_id, &parse_errors);
         assert_eq!(diagnostics.len(), 1);

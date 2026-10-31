@@ -99,7 +99,7 @@ mod tests {
         let mut hir = mq_hir::Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
 
-        let (source_id, _) = hir.add_code(Some(url.clone()), "def func1(): 1; | let var1 = 2");
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), "def func1(): 1; | let var1 = 2");
         let mut source_map = BiMap::new();
         source_map.insert(url.to_string(), source_id);
 
@@ -130,7 +130,7 @@ mod tests {
         let code = r#"# deprecated: This function is no longer supported
 def old_func(): 1;
 def new_func(): 2;"#;
-        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
         let mut source_map = BiMap::new();
         source_map.insert(url.to_string(), source_id);
 

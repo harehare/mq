@@ -550,7 +550,7 @@ mod tests {
         let mut hir = mq_hir::Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
         let code = ".checked == true";
-        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
 
         let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
         let range = Range::new(Position::new(0, 0), Position::new(0, code.len() as u32));
