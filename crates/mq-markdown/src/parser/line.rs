@@ -67,12 +67,7 @@ impl<'a> Line<'a> {
 
     /// The zero-based visual column of the byte at `offset` in the line.
     fn visual_column(&self, offset: usize) -> usize {
-        let at = self.base + offset;
-        let passed = self.stops.partition_point(|stop| stop.at < at);
-        match passed.checked_sub(1).map(|index| self.stops[index]) {
-            Some(stop) => stop.after + (at - stop.at - 1),
-            None => offset,
-        }
+        tab_adjusted_column(self.stops, self.base + offset, offset)
     }
 
     /// The leading whitespace.
@@ -163,6 +158,16 @@ impl<'a> Line<'a> {
 pub(super) struct TabStop {
     at: usize,
     after: usize,
+}
+
+/// The column of the byte at `at` in the document: counted from the last tab before it, or `offset` if none.
+/// `stops` is sorted by `at`.
+fn tab_adjusted_column(stops: &[TabStop], at: usize, offset: usize) -> usize {
+    let passed = stops.partition_point(|stop| stop.at < at);
+    match passed.checked_sub(1).map(|index| stops[index]) {
+        Some(stop) => stop.after + (at - stop.at - 1),
+        None => offset,
+    }
 }
 
 /// Every tab in `src` in order. A byte order mark at the start has no width.
@@ -321,5 +326,27 @@ mod proofs {
             extra_bytes(&bytes[..offset]),
             extra_bytes(&bytes[..at]) + extra_bytes(&bytes[at..offset])
         );
+    }
+
+    /// `partition_point` finds the tabs before `at` only if `stops` is sorted, which `tab_stops` gives by
+    /// walking `src` in order.
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn tab_column_does_not_underflow() {
+        let stops: [TabStop; 3] = [0, 1, 2].map(|_| TabStop {
+            at: kani::any(),
+            after: kani::any(),
+        });
+        kani::assume(stops[0].at < stops[1].at && stops[1].at < stops[2].at);
+        // Bounded so that `after + (at - stop.at - 1)` stays within a document's size.
+        kani::assume(stops.iter().all(|stop| stop.at < 1 << 32 && stop.after < 1 << 32));
+        let (at, offset): (usize, usize) = (kani::any(), kani::any());
+        kani::assume(at < 1 << 32 && offset < 1 << 32);
+        let column = tab_adjusted_column(&stops, at, offset);
+        if let Some(stop) = stops.iter().rev().find(|stop| stop.at < at) {
+            assert_eq!(column, stop.after + (at - stop.at - 1));
+        } else {
+            assert_eq!(column, offset);
+        }
     }
 }
