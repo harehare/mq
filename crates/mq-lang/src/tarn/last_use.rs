@@ -9,14 +9,17 @@
 use crate::tarn::bytecode::{Chunk, OpCode, SELF_SLOT, jump_target};
 
 /// Rewrites last-use reads in every chunk into moves.
-pub(crate) fn move_last_uses(chunks: &mut [Chunk]) {
-    for chunk in chunks {
-        move_last_uses_in(chunk);
+///
+/// `retained` are top-level slots that are read after the program finishes, so the entry chunk
+/// never moves them.
+pub(crate) fn move_last_uses(chunks: &mut [Chunk], retained: &[u16]) {
+    for (index, chunk) in chunks.iter_mut().enumerate() {
+        move_last_uses_in(chunk, if index == 0 { retained } else { &[] });
     }
 }
 
-fn move_last_uses_in(chunk: &mut Chunk) {
-    let candidates = candidate_slots(chunk);
+fn move_last_uses_in(chunk: &mut Chunk, retained: &[u16]) {
+    let candidates = candidate_slots(chunk, retained);
     if candidates.is_empty() {
         return;
     }
@@ -53,8 +56,8 @@ fn move_last_uses_in(chunk: &mut Chunk) {
 }
 
 /// Slots a move could never be observed through: read by `GetLocal` or `CopyLocal`, and neither
-/// `self` nor shared with a closure.
-fn candidate_slots(chunk: &Chunk) -> Vec<u16> {
+/// `self`, shared with a closure nor `retained`.
+fn candidate_slots(chunk: &Chunk, retained: &[u16]) -> Vec<u16> {
     let mut slots: Vec<u16> = chunk
         .code
         .iter()
@@ -65,7 +68,9 @@ fn candidate_slots(chunk: &Chunk) -> Vec<u16> {
                 local: slot,
                 take: false,
                 ..
-            } if *slot != SELF_SLOT && !chunk.captured_local_slots().contains(slot) => Some(*slot),
+            } if *slot != SELF_SLOT && !retained.contains(slot) && !chunk.captured_local_slots().contains(slot) => {
+                Some(*slot)
+            }
             _ => None,
         })
         .collect();
@@ -224,7 +229,8 @@ mod tests {
     use crate::runtime::runtime_value::RuntimeValue;
     use crate::tarn::bytecode::{BinaryOp, Chunk, OpCode, TryCatchInfo};
     use crate::tarn::compiler::{
-        CompiledProgram, ResolvedModuleVars, compile_program_for_engine, compile_uninstrumented_program_for_engine,
+        CompileSeeds, CompiledProgram, ResolvedModuleVars, compile_program_for_engine,
+        compile_uninstrumented_program_for_engine,
     };
     use crate::tarn::interpreter::run_with_globals;
     use crate::tarn::last_use::{BitRows, move_last_uses, successors_of};
@@ -258,10 +264,13 @@ mod tests {
             &program,
             token_arena,
             ModuleLoader::new(StdModuleResolver),
-            &[],
-            &[],
-            &[],
-            &ResolvedModuleVars::default(),
+            CompileSeeds {
+                seed_bindings: &[],
+                seed_immutable: &[],
+                external_globals: &[],
+                preresolved_module_vars: &ResolvedModuleVars::default(),
+                retained_bindings: &[],
+            },
         )
         .unwrap()
     }
@@ -479,7 +488,7 @@ mod tests {
 
     fn analyzed(code: Vec<OpCode>, local_count: u16) -> Chunk {
         let mut chunks = [chunk_of(code, local_count)];
-        move_last_uses(&mut chunks);
+        move_last_uses(&mut chunks, &[]);
         let [chunk] = chunks;
         chunk
     }
@@ -564,7 +573,7 @@ mod tests {
         let mut chunk = chunk_of(vec![OpCode::GetLocal(1), OpCode::Return], 2);
         chunk.captured_local_slots = vec![1];
         let mut chunks = [chunk];
-        move_last_uses(&mut chunks);
+        move_last_uses(&mut chunks, &[]);
         assert!(moved_pcs(&chunks[0]).is_empty());
     }
 

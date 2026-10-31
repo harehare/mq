@@ -206,6 +206,7 @@ pub(crate) fn compile_program<R: ModuleResolver>(
             seed_immutable: &[],
             external_globals: &[],
             preresolved_module_vars: &ResolvedModuleVars::default(),
+            retained_bindings: &[],
         },
     )
     .map(|(compiled, _)| compiled)
@@ -229,6 +230,7 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
         seed_immutable: &[],
         external_globals: &[],
         preresolved_module_vars: &ResolvedModuleVars::default(),
+        retained_bindings: &[],
     };
     let mut reachable = soft_builtin_names_in_program(program);
     for name in bindings {
@@ -284,6 +286,7 @@ pub(crate) fn compile_program_with_builtin_prelude<R: ModuleResolver>(
             seed_immutable: &[],
             external_globals: &[],
             preresolved_module_vars: &ResolvedModuleVars::default(),
+            retained_bindings: &[],
         },
     )
     .map(|(compiled, _)| compiled)
@@ -325,6 +328,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
         seed_immutable,
         external_globals,
         preresolved_module_vars,
+        retained_bindings: &[],
     };
     compile_engine_program(program, token_arena, module_loader, seeds, true)
 }
@@ -335,17 +339,8 @@ pub(crate) fn compile_uninstrumented_program_for_engine<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-    seed_bindings: &[Ident],
-    seed_immutable: &[Ident],
-    external_globals: &[Ident],
-    preresolved_module_vars: &ResolvedModuleVars,
+    seeds: CompileSeeds<'_>,
 ) -> CompileResult<CompiledProgram> {
-    let seeds = CompileSeeds {
-        seed_bindings,
-        seed_immutable,
-        external_globals,
-        preresolved_module_vars,
-    };
     compile_engine_program(program, token_arena, module_loader, seeds, false)
 }
 
@@ -419,11 +414,13 @@ pub(crate) struct ResolvedModuleVars {
 /// Bundles `compile_program_impl`'s predeclared-binding inputs so it takes one argument
 /// instead of four.
 #[derive(Clone, Copy)]
-struct CompileSeeds<'a> {
-    seed_bindings: &'a [Ident],
-    seed_immutable: &'a [Ident],
-    external_globals: &'a [Ident],
-    preresolved_module_vars: &'a ResolvedModuleVars,
+pub(crate) struct CompileSeeds<'a> {
+    pub(super) seed_bindings: &'a [Ident],
+    pub(super) seed_immutable: &'a [Ident],
+    pub(super) external_globals: &'a [Ident],
+    pub(super) preresolved_module_vars: &'a ResolvedModuleVars,
+    /// Top-level bindings read after the run, which last-use moves must leave intact.
+    pub(super) retained_bindings: &'a [Ident],
 }
 
 #[derive(Clone, Copy)]
@@ -1093,7 +1090,11 @@ fn compile_program_impl<R: ModuleResolver>(
     }
     super::peephole::specialize_static_exact_calls(&mut compiler.chunks);
     if options.locals_unobserved {
-        crate::tarn::last_use::move_last_uses(&mut compiler.chunks);
+        let retained: Vec<u16> = super::interpreter::capture_slots(&compiler.chunks[0], seeds.retained_bindings)
+            .into_iter()
+            .map(|(_, slot)| slot)
+            .collect();
+        crate::tarn::last_use::move_last_uses(&mut compiler.chunks, &retained);
     }
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;
     #[cfg(feature = "debugger")]

@@ -1,6 +1,7 @@
 //! Engine bytecode split around `nodes`, shared by the cache and `.mqc`.
 #[cfg(not(feature = "debugger"))]
 use super::VmEnvCacheKey;
+use super::compiler::CompileSeeds;
 use super::nodes_split::{
     immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes, split_at_nodes,
 };
@@ -134,19 +135,25 @@ impl SplitProgram {
                 &per_input,
                 Shared::clone(&token_arena),
                 module_loader.clone(),
-                &[],
-                &[],
-                &global_names,
-                &preresolved_module_vars,
+                CompileSeeds {
+                    seed_bindings: &[],
+                    seed_immutable: &[],
+                    external_globals: &global_names,
+                    preresolved_module_vars: &preresolved_module_vars,
+                    retained_bindings: &let_names,
+                },
             )?;
             let program_after = compiler::compile_uninstrumented_program_for_engine(
                 &program_after_nodes(before, after),
                 token_arena,
                 module_loader,
-                &let_names,
-                &immutable_let_names,
-                &global_names,
-                &preresolved_module_vars,
+                CompileSeeds {
+                    seed_bindings: &let_names,
+                    seed_immutable: &immutable_let_names,
+                    external_globals: &global_names,
+                    preresolved_module_vars: &preresolved_module_vars,
+                    retained_bindings: &[],
+                },
             )?;
             (program_before, Some(program_after), let_names)
         } else {
@@ -154,10 +161,13 @@ impl SplitProgram {
                 program,
                 token_arena,
                 module_loader,
-                &[],
-                &[],
-                &global_names,
-                &preresolved_module_vars,
+                CompileSeeds {
+                    seed_bindings: &[],
+                    seed_immutable: &[],
+                    external_globals: &global_names,
+                    preresolved_module_vars: &preresolved_module_vars,
+                    retained_bindings: &[],
+                },
             )?;
             (program, None, Vec::new())
         };

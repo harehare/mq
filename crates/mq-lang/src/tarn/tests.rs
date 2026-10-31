@@ -2241,6 +2241,19 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
 }
 
 #[cfg(not(feature = "debugger"))]
+#[rstest]
+#[case::copied_then_read_after_nodes(r#"let x = "s" | let y = x | nodes | x + "z""#, "sz")]
+#[case::passed_to_call_then_read_after_nodes(r#"def f(a): a; | let x = "s" | let y = f(x) | nodes | x + "z""#, "sz")]
+fn nodes_capture_keeps_bindings_read_by_the_last_use_pass(#[case] code: &str, #[case] expected: &str) {
+    let mut engine = crate::DefaultEngine::default();
+    let compiled = engine.compile(code).unwrap();
+    let results = engine
+        .eval_compiled(&compiled, vec![RuntimeValue::Number(1.0.into())].into_iter())
+        .unwrap();
+    assert_eq!(results.values(), &[RuntimeValue::String(expected.to_string().into())]);
+}
+
+#[cfg(not(feature = "debugger"))]
 #[test]
 fn cached_nodes_capture_reuses_precomputed_slots() {
     let mut engine = crate::DefaultEngine::default();
@@ -4699,7 +4712,18 @@ fn run_with_and_without_def_dropping(code: &str) -> (Result<RuntimeValue, String
         let loader = ModuleLoader::new(StdModuleResolver);
         let resolved = compiler::ResolvedModuleVars::default();
         let compiled = if uninstrumented {
-            compiler::compile_uninstrumented_program_for_engine(&program, token_arena, loader, &[], &[], &[], &resolved)
+            compiler::compile_uninstrumented_program_for_engine(
+                &program,
+                token_arena,
+                loader,
+                compiler::CompileSeeds {
+                    seed_bindings: &[],
+                    seed_immutable: &[],
+                    external_globals: &[],
+                    preresolved_module_vars: &resolved,
+                    retained_bindings: &[],
+                },
+            )
         } else {
             compiler::compile_program_for_engine_with_bindings(&program, token_arena, loader, &[], &[], &[], &resolved)
         }
