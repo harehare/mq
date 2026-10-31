@@ -81,6 +81,8 @@ pub enum RuleId {
     NegatedCondition,
     /// A call to a capability-gated function.
     DangerousCapabilityCall,
+    /// A source that does not parse. Not a lint rule: it cannot be listed or disabled.
+    SyntaxError,
 }
 
 impl RuleId {
@@ -159,6 +161,7 @@ impl RuleId {
             RuleId::ConstantStringConcat => "constant_string_concat",
             RuleId::NegatedCondition => "negated_condition",
             RuleId::DangerousCapabilityCall => "dangerous_capability_call",
+            RuleId::SyntaxError => "syntax_error",
         }
     }
 }
@@ -354,6 +357,11 @@ pub enum LintMessage {
         /// The CLI flag that enables the function.
         flag: String,
     },
+    /// A source that does not parse.
+    SyntaxError {
+        /// The parser's error message.
+        message: String,
+    },
 }
 
 impl LintMessage {
@@ -394,6 +402,7 @@ impl LintMessage {
             LintMessage::ConstantStringConcat => RuleId::ConstantStringConcat,
             LintMessage::NegatedCondition => RuleId::NegatedCondition,
             LintMessage::DangerousCapabilityCall { .. } => RuleId::DangerousCapabilityCall,
+            LintMessage::SyntaxError { .. } => RuleId::SyntaxError,
         }
     }
 
@@ -500,6 +509,7 @@ impl LintMessage {
                 "review this call before enabling `{flag}`; if the code came from an untrusted or \
                  HTTP-imported module, avoid granting the flag process-wide"
             )),
+            LintMessage::SyntaxError { .. } => None,
         }
     }
 }
@@ -618,6 +628,7 @@ impl fmt::Display for LintMessage {
                     "call to capability-gated function `{name}` (requires `{flag}` at runtime)"
                 )
             }
+            LintMessage::SyntaxError { message } => write!(f, "{message}"),
         }
     }
 }

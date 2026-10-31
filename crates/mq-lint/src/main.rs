@@ -11,7 +11,7 @@ use clap::Parser;
 use colored::Colorize;
 use format::OutputFormat;
 use mq_hir::Hir;
-use mq_lint::{Diagnostic, LintConfig, LintContext, Linter, RuleId, Severity};
+use mq_lint::{Diagnostic, LintConfig, LintContext, LintMessage, Linter, RuleId, Severity};
 
 /// Static analysis linter for mq programs
 #[derive(Parser)]
@@ -101,18 +101,25 @@ fn run() -> io::Result<bool> {
         io::stdin().read_to_string(&mut code)?;
 
         if cli.fix {
-            let Ok((fixed, _)) = report_on_err("<stdin>", fix_source(&code, &linter, &config)) else {
-                return Ok(true);
+            return match fix_source(&code, &linter, &config) {
+                Ok((fixed, _)) => {
+                    write!(w, "{fixed}")?;
+                    Ok(false)
+                }
+                Err(errors) => {
+                    // stdout carries the fixed source, so the errors go to stderr as text.
+                    let report = [("<stdin>".to_string(), code, syntax_diagnostics(errors))];
+                    format::write_report(&mut io::stderr(), OutputFormat::Text, &report)?;
+                    Ok(true)
+                }
             };
-            write!(w, "{fixed}")?;
-            return Ok(false);
         }
 
-        let Ok(diagnostics) = report_on_err("<stdin>", collect_diagnostics(&code, &linter, &config, min_severity))
-        else {
-            return Ok(true);
+        let (diagnostics, failed) = match collect_diagnostics(&code, &linter, &config, min_severity) {
+            Ok(diagnostics) => (diagnostics, false),
+            Err(errors) => (syntax_diagnostics(errors), true),
         };
-        let had_diagnostics = !diagnostics.is_empty();
+        let had_diagnostics = failed || !diagnostics.is_empty();
         format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), code, diagnostics)])?;
         return Ok(had_diagnostics);
     }
@@ -126,9 +133,13 @@ fn run() -> io::Result<bool> {
         let label = path.display().to_string();
 
         let code = if cli.fix {
-            let Ok((fixed, fix_count)) = report_on_err(&label, fix_source(&code, &linter, &config)) else {
-                had_syntax_errors = true;
-                continue;
+            let (fixed, fix_count) = match fix_source(&code, &linter, &config) {
+                Ok(fixed) => fixed,
+                Err(errors) => {
+                    had_syntax_errors = true;
+                    results.push((label, code, syntax_diagnostics(errors)));
+                    continue;
+                }
             };
             if fixed != code {
                 std::fs::write(path, &fixed)
@@ -149,11 +160,13 @@ fn run() -> io::Result<bool> {
             code
         };
 
-        let Ok(diagnostics) = report_on_err(&label, collect_diagnostics(&code, &linter, &config, min_severity)) else {
-            had_syntax_errors = true;
-            continue;
-        };
-        results.push((label, code, diagnostics));
+        match collect_diagnostics(&code, &linter, &config, min_severity) {
+            Ok(diagnostics) => results.push((label, code, diagnostics)),
+            Err(errors) => {
+                had_syntax_errors = true;
+                results.push((label, code, syntax_diagnostics(errors)));
+            }
+        }
     }
 
     let had_diagnostics = results.iter().any(|(_, _code, diagnostics)| !diagnostics.is_empty());
@@ -162,20 +175,18 @@ fn run() -> io::Result<bool> {
     Ok(had_diagnostics || had_syntax_errors)
 }
 
-/// Prints the syntax errors of a failed lint to stderr.
-///
-/// Linting a program that does not parse would report findings on a partial tree, so such
-/// sources are skipped.
-fn report_on_err<T>(label: &str, result: Result<T, Vec<mq_lang::Diagnostic>>) -> Result<T, ()> {
-    result.map_err(|errors| {
-        for error in errors {
-            let position = error
-                .range
-                .map(|range| format!(":{}:{}", range.start.line, range.start.column))
-                .unwrap_or_default();
-            eprintln!("{} {label}{position}: {}", "error:".bright_red().bold(), error.message);
-        }
-    })
+/// Converts parser errors into error-severity diagnostics so every output format reports them.
+fn syntax_diagnostics(errors: Vec<mq_lang::Diagnostic>) -> Vec<Diagnostic> {
+    errors
+        .into_iter()
+        .map(|error| {
+            let diagnostic = Diagnostic::new(LintMessage::SyntaxError { message: error.message }, Severity::Error);
+            match error.range {
+                Some(range) => diagnostic.with_range(range),
+                None => diagnostic,
+            }
+        })
+        .collect()
 }
 
 /// Applies every diagnostic with a fix to `code`, returning the rewritten source and how many
@@ -339,5 +350,40 @@ mod tests {
             expected
         );
         assert_eq!(fix_source(code, &linter, &config).is_err(), expected);
+    }
+
+    #[test]
+    fn test_syntax_errors_become_error_diagnostics_in_every_format() {
+        let errors = collect_diagnostics(
+            "[1, 2",
+            &Linter::with_default_rules(),
+            &LintConfig::default(),
+            Severity::Style,
+        )
+        .unwrap_err();
+        let diagnostics = syntax_diagnostics(errors);
+        assert!(!diagnostics.is_empty());
+        assert!(
+            diagnostics
+                .iter()
+                .all(|d| d.rule_id() == RuleId::SyntaxError && d.severity == Severity::Error && d.range.is_some())
+        );
+
+        for format in [
+            OutputFormat::Text,
+            OutputFormat::Json,
+            OutputFormat::Markdown,
+            OutputFormat::Sarif,
+            OutputFormat::Github,
+        ] {
+            let mut out = Vec::new();
+            format::write_report(
+                &mut out,
+                format,
+                &[("broken.mq".to_string(), "[1, 2".to_string(), diagnostics.clone())],
+            )
+            .unwrap();
+            assert!(String::from_utf8(out).unwrap().contains("syntax_error"), "{format:?}");
+        }
     }
 }
