@@ -5,7 +5,6 @@ use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
 use crate::range::Position;
-use crate::runtime::builtin::io_context;
 use crate::selector::Selector;
 use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};
@@ -915,15 +914,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match &token.kind {
             TokenKind::Env(s) => Ok(Shared::new(Node {
                 token_id: self.alloc_token(token),
-                expr: io_context::current()
-                    .env_var(s)
-                    .map_err(|e| match e {
-                        crate::io::IoError::PermissionDenied(_) => {
-                            SyntaxError::EnvNotAllowed(token.clone(), SmolStr::new(s))
-                        }
-                        _ => SyntaxError::EnvNotFound(token.clone(), SmolStr::new(s)),
-                    })
-                    .map(|s| Expr::Literal(Literal::String(s.to_owned())))?,
+                expr: Expr::Env(SmolStr::new(s)),
             })),
             TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
             _ => Err(SyntaxError::UnexpectedToken(token.clone())),

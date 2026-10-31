@@ -326,12 +326,6 @@ impl Diagnostic for Error {
     fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         let msg: Option<Cow<'static, str>> = match &self.cause {
             InnerError::Runtime(RuntimeError::WithStackTrace { .. }) => None,
-            InnerError::Syntax(SyntaxError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
-                "Environment variable '{env}' not found. Did you forget to set it?"
-            ))),
-            InnerError::Syntax(SyntaxError::EnvNotAllowed(_, env)) => Some(Cow::Owned(format!(
-                "Environment variable '{env}' is not permitted. Pass --allow-env to permit it."
-            ))),
             InnerError::Syntax(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::Eof => {
                 Some(Cow::Borrowed(
                     "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.",
@@ -440,6 +434,9 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
                 "Environment variable '{env}' not found. Did you forget to set it?"
             ))),
+            InnerError::Runtime(RuntimeError::EnvNotAllowed(_, env)) => Some(Cow::Owned(format!(
+                "Environment variable '{env}' is not permitted. Pass --allow-env to permit it."
+            ))),
             InnerError::Runtime(RuntimeError::InvalidConvert(_, msg)) => Some(Cow::Owned(format!(
                 "Invalid conversion: {msg}. Check that the conversion is supported and value types match."
             ))),
@@ -454,12 +451,6 @@ impl Diagnostic for Error {
             )),
             InnerError::Module(ModuleError::CircularDependency { .. }) => Some(Cow::Borrowed(
                 "Remove one of the `include`/`import` directives in the cycle.",
-            )),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(_, env))) => {
-                Some(Cow::Owned(format!("Environment variable '{env}' not found in module.")))
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotAllowed(_, env))) => Some(Cow::Owned(
-                format!("Environment variable '{env}' is not permitted in module. Pass --allow-env to permit it."),
             )),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(token)))
                 if token.kind == TokenKind::Eof =>
@@ -541,8 +532,6 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_, _)) => "expected `]` here",
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => "invalid assignment target",
             InnerError::Syntax(SyntaxError::UnknownSelector(_)) => "unknown selector",
-            InnerError::Syntax(SyntaxError::EnvNotFound(_, _)) => "environment variable not found",
-            InnerError::Syntax(SyntaxError::EnvNotAllowed(_, _)) => "environment variable not allowed",
             InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => "parameter without default",
             InnerError::Syntax(SyntaxError::VariadicParameterMustBeLast(_)) => "misplaced variadic parameter",
             InnerError::Syntax(SyntaxError::MultipleVariadicParameters(_)) => "duplicate variadic parameter",
@@ -573,9 +562,6 @@ impl Diagnostic for Error {
                 "invalid assignment target"
             }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnknownSelector(_))) => "unknown selector",
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(_, _))) => {
-                "environment variable not found"
-            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => {
                 "parameter without default"
             }
@@ -686,14 +672,6 @@ mod test {
         "source code"
     )]
     #[case::parse_env_not_found(
-        InnerError::Syntax(SyntaxError::EnvNotFound(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }, "ENV_VAR".into())),
-        "source code"
-    )]
-    #[case::parse_env_not_found(
         InnerError::Syntax(SyntaxError::InsufficientTokens(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
@@ -776,14 +754,6 @@ mod test {
     #[case::module_not_found(InnerError::Module(ModuleError::NotFound(Cow::Borrowed("test"))), "source code")]
     #[case::module_io_error(InnerError::Module(ModuleError::IOError(Cow::Borrowed("test"))), "source code")]
     #[case::module_parse_error(
-        InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }, "test".into()))),
-        "source code"
-    )]
-    #[case::module_parse_error(
         InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(Token {
             range: Range::default(),
             kind: TokenKind::Eof,
@@ -863,13 +833,6 @@ mod test {
     }
 
     #[rstest]
-    #[case::parse_env_not_found(
-        InnerError::Syntax(SyntaxError::EnvNotFound(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }, "ENV_VAR".into()))
-    )]
     #[case::parse_unexpected_token(
         InnerError::Syntax(SyntaxError::UnexpectedToken(Token {
             range: Range::default(),
@@ -1003,13 +966,6 @@ mod test {
     )]
     #[case::module_not_found(InnerError::Module(ModuleError::NotFound(Cow::Borrowed("mod"))))]
     #[case::module_io_error(InnerError::Module(ModuleError::IOError(Cow::Borrowed("io"))))]
-    #[case::module_parse_error_env_not_found(
-        InnerError::Module(ModuleError::SyntaxError(SyntaxError::EnvNotFound(Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: ArenaId::new(0),
-        }, "ENV".into())))
-    )]
     #[case::module_parse_error_unexpected_token(
         InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(Token {
             range: Range::default(),

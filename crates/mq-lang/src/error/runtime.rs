@@ -66,6 +66,8 @@ pub enum RuntimeError {
     ZeroDivision(ErrorToken),
     #[error("Environment variable `{1}` not found")]
     EnvNotFound(Token, SmolStr),
+    #[error("Access to environment variable `{1}` is not allowed")]
+    EnvNotAllowed(Token, SmolStr),
     #[error("Cannot assign to immutable variable \"{1}\"")]
     AssignToImmutable(Token, String),
     #[error("Invalid convert: {1}")]
@@ -100,6 +102,7 @@ impl RuntimeError {
             RuntimeError::Runtime(token, _) => Some(token),
             RuntimeError::ZeroDivision(token) => Some(token),
             RuntimeError::EnvNotFound(token, _) => Some(token),
+            RuntimeError::EnvNotAllowed(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
             RuntimeError::InvalidConvert(token, _) => Some(token),
             RuntimeError::DestructuringFailed(token) => Some(token),
@@ -137,6 +140,7 @@ mod tests {
     #[case(RuntimeError::Runtime(eof_token(), "err".to_string()), true)]
     #[case(RuntimeError::ZeroDivision(eof_token()), true)]
     #[case(RuntimeError::EnvNotFound(eof_token(), "VAR".into()), true)]
+    #[case(RuntimeError::EnvNotAllowed(eof_token(), "VAR".into()), true)]
     #[case(RuntimeError::AssignToImmutable(eof_token(), "x".to_string()), true)]
     #[case(RuntimeError::InvalidConvert(eof_token(), "msg".to_string()), true)]
     #[case(RuntimeError::DestructuringFailed(eof_token()), true)]
