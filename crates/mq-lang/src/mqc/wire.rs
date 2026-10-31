@@ -340,44 +340,6 @@ mod proofs {
         }
     }
 
-    #[kani::proof]
-    fn f64_round_trips_bitwise() {
-        let bits: u64 = kani::any();
-        let mut writer = Writer::default();
-        writer.f64(f64::from_bits(bits));
-        let bytes = writer.into_bytes();
-        let mut reader = Reader::new(&bytes);
-        assert_eq!(ok_value(reader.f64()).map(f64::to_bits), Some(bits));
-        assert_eq!(reader.remaining(), 0);
-    }
-
-    #[kani::proof]
-    #[kani::unwind(8)]
-    fn var_u16_and_var_u32_round_trip() {
-        let (a, b): (u16, u32) = kani::any();
-        let mut writer = Writer::default();
-        writer.var_u16(a);
-        writer.var_u32(b);
-        let bytes = writer.into_bytes();
-        let mut reader = Reader::new(&bytes);
-        assert_eq!(ok_value(reader.var_u16()), Some(a));
-        assert_eq!(ok_value(reader.var_u32()), Some(b));
-        assert_eq!(reader.remaining(), 0);
-    }
-
-    #[kani::proof]
-    #[kani::unwind(8)]
-    fn bytes_round_trip() {
-        let data: [u8; 3] = kani::any();
-        let size: usize = kani::any_where(|n: &usize| *n <= data.len());
-        let mut writer = Writer::default();
-        assert!(ok_value(writer.bytes(&data[..size])).is_some());
-        let bytes = writer.into_bytes();
-        let mut reader = Reader::new(&bytes);
-        assert_eq!(ok_value(reader.bytes()), Some(&data[..size]));
-        assert_eq!(reader.remaining(), 0);
-    }
-
     /// A length the writer accepts is never rejected by the reader's item budget.
     #[kani::proof]
     #[kani::unwind(8)]

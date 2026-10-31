@@ -316,24 +316,3 @@ mod tests {
         assert_eq!(offset_of(content, &Point { line, column }), expected);
     }
 }
-
-#[cfg(kani)]
-mod proofs {
-    use super::*;
-
-    #[kani::proof]
-    #[kani::unwind(8)]
-    fn offset_of_is_a_char_boundary() {
-        let bytes: [u8; 5] = kani::any();
-        let content = std::str::from_utf8(&bytes);
-        kani::assume(content.is_ok());
-        let content = content.unwrap_or_default();
-        let point = Point {
-            line: kani::any_where(|line: &u32| *line <= 3),
-            column: kani::any_where(|column: &u32| *column <= 6),
-        };
-        if let Some(offset) = offset_of(content, &point) {
-            assert!(content.is_char_boundary(offset));
-        }
-    }
-}

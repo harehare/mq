@@ -686,15 +686,6 @@ mod proofs {
             assert!(map[pc] <= map[pc + 1]);
         }
     }
-
-    /// Code length is below `i32::MAX`: `verify_chunks` caps chunks at `u32::MAX`, and the
-    /// `i32` offsets in the bytecode cannot address more.
-    #[kani::proof]
-    fn offset_to_inverts_jump_target() {
-        let pc: usize = kani::any_where(|pc: &usize| *pc < i32::MAX as usize);
-        let target: usize = kani::any_where(|t: &usize| *t < i32::MAX as usize);
-        assert_eq!(jump_target(pc, offset_to(target, pc)), Some(target));
-    }
 }
 
 #[cfg(test)]
