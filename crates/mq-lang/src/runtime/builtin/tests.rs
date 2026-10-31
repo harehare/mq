@@ -5534,6 +5534,58 @@ proptest::proptest! {
     }
 }
 
+/// A non-ASCII char at every position of strings whose lengths straddle the word and vector widths
+/// `is_ascii` scans in, so a char in a chunk, in the tail or right at a boundary is still counted.
+#[test]
+fn test_count_chars_is_right_wherever_a_non_ascii_char_sits() {
+    for len in [0usize, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129] {
+        let ascii = "a".repeat(len);
+        assert_eq!(char_index::count_chars(&ascii), len);
+        for at in 0..len {
+            for wide in ["é", "あ", "😀"] {
+                let mut text = String::new();
+                text.push_str(&ascii[..at]);
+                text.push_str(wide);
+                text.push_str(&ascii[at + 1..]);
+                assert_eq!(char_index::count_chars(&text), len, "{wide} at {at} of {len}");
+            }
+        }
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn test_count_chars_matches_chars_count(text in "[aあ😀é]{0,400}") {
+        proptest::prop_assert_eq!(char_index::count_chars(&text), text.chars().count());
+    }
+
+    #[test]
+    fn test_count_chars_matches_chars_count_for_mostly_ascii_text(text in "[a-z ]{0,300}[あ😀é]?[a-z ]{0,300}") {
+        proptest::prop_assert_eq!(char_index::count_chars(&text), text.chars().count());
+    }
+}
+
+#[rstest]
+#[case::ascii("hello", 5)]
+#[case::empty("", 0)]
+#[case::japanese("日本語", 3)]
+#[case::emoji("a😀b", 3)]
+#[case::combining("e\u{301}", 2)]
+#[case::non_ascii_last(format!("{}あ", "a".repeat(2000)), 2001)]
+#[case::non_ascii_first(format!("あ{}", "a".repeat(2000)), 2001)]
+fn test_len_counts_chars_not_bytes(#[case] text: impl Into<String>, #[case] expected: usize) {
+    let s = RuntimeValue::String(Shared::new(text.into()));
+    assert_eq!(
+        eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("len"),
+            vec![s].into(),
+            &VmEnv::default()
+        ),
+        Ok(RuntimeValue::Number(expected.into()))
+    );
+}
+
 #[test]
 fn test_char_at_sees_mutation_of_an_indexed_string() {
     let mut s = Shared::new("a".repeat(2000));

@@ -71,10 +71,16 @@ fn with_index<R>(s: &Shared<String>, f: impl FnOnce(&CharIndex) -> R) -> R {
     })
 }
 
+/// Number of chars in `s`. An ASCII string has one char per byte, which `is_ascii` confirms several
+/// times faster than counting, and a string with other chars fails the check at the first of them.
+pub(super) fn count_chars(s: &str) -> usize {
+    if s.is_ascii() { s.len() } else { s.chars().count() }
+}
+
 /// Number of chars in `s`.
 pub(super) fn char_len(s: &Shared<String>) -> usize {
     if s.len() < MIN_INDEXED_LEN {
-        s.chars().count()
+        count_chars(s)
     } else {
         with_index(s, |index| index.char_len)
     }
