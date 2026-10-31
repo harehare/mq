@@ -2673,3 +2673,197 @@ fn test_color_choice_standalone_commands(
 
     Ok(())
 }
+
+/// Creates a fresh temp dir holding `docs/a.md`, for `--out-dir` tests run with it as cwd.
+fn out_dir_workspace(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("docs/sub")).expect("failed to create workspace");
+    std::fs::write(dir.join("docs/a.md"), "# A").expect("failed to write input");
+    std::fs::write(dir.join("docs/sub/b.md"), "# B").expect("failed to write input");
+    dir
+}
+
+#[test]
+fn test_out_dir_keeps_input_paths_and_swaps_extension() {
+    let dir = out_dir_workspace("mq_out_dir_keeps_paths");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["-F", "html", "--out-dir", "site", ".", "docs/a.md", "docs/sub/b.md"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(dir.join("site/docs/a.html")).unwrap(),
+        "<h1>A</h1>\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("site/docs/sub/b.html")).unwrap(),
+        "<h1>B</h1>\n"
+    );
+}
+
+#[test]
+fn test_out_dir_no_clobber_checks_each_file() {
+    let dir = out_dir_workspace("mq_out_dir_no_clobber");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+    std::fs::create_dir_all(dir.join("site/docs")).unwrap();
+    std::fs::write(dir.join("site/docs/a.md"), "KEEP").unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--out-dir", "site", "--no-clobber", ".", "docs/a.md"])
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(dir.join("site/docs/a.md")).unwrap(), "KEEP");
+}
+
+#[rstest]
+#[case::absolute_path(true, &[])]
+#[case::parent_dir(false, &["../docs/a.md"])]
+fn test_out_dir_rejects_paths_outside_cwd(#[case] absolute: bool, #[case] extra: &[&str]) {
+    let dir = out_dir_workspace(&format!("mq_out_dir_reject_{absolute}"));
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+    std::fs::create_dir_all(dir.join("inner")).unwrap();
+    let input = if absolute {
+        dir.join("docs/a.md").to_string_lossy().into_owned()
+    } else {
+        extra[0].to_string()
+    };
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(dir.join("inner"))
+        .args(["--out-dir", "site", ".", &input])
+        .assert()
+        .failure();
+
+    assert!(!dir.join("inner/site").exists());
+}
+
+#[test]
+fn test_out_dir_rejects_stdin() {
+    cargo::cargo_bin_cmd!("mq")
+        .args(["--out-dir", "unused_out_dir", "self"])
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_out_dir_rejects_symlink_escape() {
+    let dir = out_dir_workspace("mq_out_dir_symlink");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+    std::fs::create_dir_all(dir.join("outside")).unwrap();
+    std::fs::create_dir_all(dir.join("site")).unwrap();
+    std::os::unix::fs::symlink("../outside", dir.join("site/docs")).unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--out-dir", "site", ".", "docs/a.md"])
+        .assert()
+        .failure();
+
+    assert!(!dir.join("outside/a.md").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_out_dir_rejects_symlinked_output_file() {
+    let dir = out_dir_workspace("mq_out_dir_symlink_file");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+    std::fs::create_dir_all(dir.join("site/docs")).unwrap();
+    std::fs::write(dir.join("outside.txt"), "KEEP").unwrap();
+    std::os::unix::fs::symlink("../../outside.txt", dir.join("site/docs/a.md")).unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--out-dir", "site", ".", "docs/a.md"])
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(dir.join("outside.txt")).unwrap(), "KEEP");
+}
+
+#[test]
+fn test_out_dir_rejects_stream() {
+    let dir = out_dir_workspace("mq_out_dir_stream");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--stream", "--out-dir", "site", ".", "docs/a.md"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_out_dir_rejects_colliding_outputs() {
+    let dir = out_dir_workspace("mq_out_dir_collision");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+    std::fs::write(dir.join("docs/a.mdx"), "# X").unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["-F", "html", "--out-dir", "site", ".", "docs/a.md", "docs/a.mdx"])
+        .assert()
+        .failure();
+
+    assert!(!dir.join("site").exists());
+}
+
+#[test]
+fn test_out_dir_inside_input_dir_is_not_reingested() {
+    let dir = out_dir_workspace("mq_out_dir_reingest");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    for _ in 0..2 {
+        cargo::cargo_bin_cmd!("mq")
+            .current_dir(&dir)
+            .args(["--out-dir", "docs/site", ".", "docs"])
+            .assert()
+            .success();
+    }
+
+    assert!(dir.join("docs/site/docs/a.md").exists());
+    assert!(!dir.join("docs/site/docs/site").exists());
+}
+
+#[test]
+fn test_out_dir_keeps_explicit_input_inside_out_dir() {
+    let dir = out_dir_workspace("mq_out_dir_explicit_inside");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--out-dir", "docs", ".", "docs/a.md"])
+        .assert()
+        .success();
+
+    assert!(dir.join("docs/docs/a.md").exists());
+}
+
+#[rstest]
+#[case::denied_by_default(&["--sandbox", "strict"], false)]
+#[case::allowed_path(&["--sandbox", "strict", "--allow-write=site"], true)]
+#[case::path_outside_scope(&["--sandbox", "strict", "--allow-write=other"], false)]
+fn test_out_dir_sandbox_write_gate(#[case] flags: &[&str], #[case] expect_written: bool) {
+    let dir = out_dir_workspace(&format!("mq_out_dir_sandbox_{expect_written}_{}", flags.len()));
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    let assert = cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(flags)
+        .args(["--out-dir", "site", ".", "docs/a.md"])
+        .assert();
+
+    if expect_written {
+        assert.success();
+    } else {
+        assert.failure();
+    }
+    assert_eq!(dir.join("site/docs/a.md").exists(), expect_written);
+}

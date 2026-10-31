@@ -51,6 +51,8 @@ mq -U --diff 'if (is_h2()): to_h(3) else: self' README.md
 
 Redirect to a file or pass `-o FILE` to save the result. `-o` writes atomically (temp file and rename) by default, and `--no-clobber` and `--append` change what happens to an existing file.
 
+To write one file per input, keeping each input path, use `--out-dir DIR`: `mq -F html --out-dir site/ . docs/**/*.md` writes `site/docs/a.html` for `docs/a.md`. Inputs must be relative paths without `..`, and under `--sandbox` the directory needs `--allow-write`.
+
 ### Input and output formats
 
 Markdown is the default for both. `-I` sets the input and `-F` the output, and `-T` sets both at once.
