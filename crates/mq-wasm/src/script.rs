@@ -996,7 +996,7 @@ fn format_hover_content(
 #[wasm_bindgen(js_name=hover, skip_typescript)]
 pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
     let mut hir = mq_hir::Hir::default();
-    let (source_id, _) = hir.add_code(None, code);
+    let (source_id, _, _) = hir.add_code(None, code);
 
     let mut checker = mq_check::TypeChecker::default();
     let _ = checker.check(&hir);

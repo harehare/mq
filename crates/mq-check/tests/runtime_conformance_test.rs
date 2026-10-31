@@ -127,7 +127,7 @@ impl SourceModel {
             hir.declare_global(global);
         }
         let url = Url::parse(&format!("file:///{name}.mq")).unwrap();
-        let (source_id, _) = hir.add_code(Some(url), code);
+        let (source_id, _, _) = hir.add_code(Some(url), code);
         let mut checker = TypeChecker::new();
         let _ = checker.check(&hir);
 

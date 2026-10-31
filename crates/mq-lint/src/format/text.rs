@@ -201,7 +201,7 @@ mod tests {
         let code = r#".checked == true"#;
         let config = LintConfig::default();
         let linter = Linter::with_default_rules();
-        let diagnostics = crate::collect_diagnostics(code, &linter, &config, Severity::Style);
+        let diagnostics = crate::collect_diagnostics(code, &linter, &config, Severity::Style).unwrap();
 
         let mut buf = Vec::new();
         let had_diagnostics = write_text_report(&mut buf, "test.mq", code, &diagnostics).unwrap();
@@ -219,7 +219,7 @@ mod tests {
         let code = ".checked == true";
         let config = LintConfig::default();
         let linter = Linter::with_default_rules();
-        let diagnostics = crate::collect_diagnostics(code, &linter, &config, Severity::Style);
+        let diagnostics = crate::collect_diagnostics(code, &linter, &config, Severity::Style).unwrap();
 
         let mut buf = Vec::new();
         write_text_report(&mut buf, "test.mq", code, &diagnostics).unwrap();

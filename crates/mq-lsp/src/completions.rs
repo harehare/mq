@@ -192,7 +192,7 @@ mod tests {
         let mut hir = Hir::default();
         let mut source_map = BiMap::new();
         let url = Url::parse("file:///unknown.mql").unwrap();
-        let (source_id, _) = hir.add_code(Some(url.clone()), "def func1(): 1;");
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), "def func1(): 1;");
 
         source_map.insert(url.to_string(), source_id);
 
@@ -209,7 +209,7 @@ mod tests {
         let mut hir = Hir::default();
         let mut source_map = BiMap::new();
         let url = Url::parse("file:///unknown.mql").unwrap();
-        let (source_id, _) = hir.add_code(Some(url.clone()), "module mod1: def func1(): 1; end");
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), "module mod1: def func1(): 1; end");
 
         source_map.insert(url.to_string(), source_id);
 
@@ -232,7 +232,7 @@ mod tests {
             let mut hir = Hir::default();
             let mut source_map = BiMap::new();
             let url = Url::parse("file:///module.mq").unwrap();
-            let (source_id, _) = hir.add_code(Some(url.clone()), code);
+            let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
             source_map.insert(url.to_string(), source_id);
 
             let Some(CompletionResponse::Array(items)) =
@@ -258,7 +258,7 @@ mod tests {
 
         // Create a module with functions
         let code = "module math: def add(a, b): a + b; def sub(a, b): a - b; end | math::";
-        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
 
         source_map.insert(url.to_string(), source_id);
 
@@ -298,7 +298,7 @@ mod tests {
 
         // Create a module with functions
         let code = "module utils: def helper(): 1; end | utils::";
-        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
 
         source_map.insert(url.to_string(), source_id);
 
@@ -328,7 +328,7 @@ mod tests {
         // Create a function with deprecated marker in doc
         let code = r#"# deprecated: This function is no longer supported
 def old_func(x): x + 1;"#;
-        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
 
         source_map.insert(url.to_string(), source_id);
 
@@ -352,7 +352,7 @@ def old_func(x): x + 1;"#;
             let mut hir = Hir::default();
             let mut source_map = BiMap::new();
             let url = Url::parse("file:///test.mq").unwrap();
-            let (source_id, _) = hir.add_code(Some(url.clone()), code);
+            let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
             source_map.insert(url.to_string(), source_id);
 
             let Some(CompletionResponse::Array(items)) =

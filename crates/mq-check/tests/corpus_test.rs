@@ -73,7 +73,7 @@ fn check_file(path: &Path) -> FileReport {
     for name in mq_check::TEST_RUNNER_GLOBALS {
         hir.declare_global(name);
     }
-    let (source_id, _) = hir.add_code(Url::from_file_path(path).ok(), &code);
+    let (source_id, _, _) = hir.add_code(Url::from_file_path(path).ok(), &code);
 
     let mut report = FileReport::default();
     for error in hir.errors() {

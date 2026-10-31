@@ -126,11 +126,20 @@ impl Hir {
         });
     }
 
-    /// Parses `code` and adds it as a source, returning its ids.
-    pub fn add_code(&mut self, url: Option<Url>, code: &str) -> (SourceId, ScopeId) {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+    /// Parses `code` and adds it as a source, returning its ids and the syntax errors.
+    ///
+    /// The HIR is built from the recovered tree even when there are errors. Empty and
+    /// comment-only code reports none.
+    pub fn add_code(&mut self, url: Option<Url>, code: &str) -> (SourceId, ScopeId, Vec<mq_lang::Diagnostic>) {
+        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (source_id, scope_id) = self.add_nodes(url.unwrap_or(Url::parse("file:///").unwrap()), &nodes);
+        let errors = if is_expression_free(code) {
+            Vec::new()
+        } else {
+            errors.diagnostics(code)
+        };
 
-        self.add_nodes(url.unwrap_or(Url::parse("file:///").unwrap()), &nodes)
+        (source_id, scope_id, errors)
     }
 
     /// Declares a value the host defines at runtime (like `Engine::define_string_value` or
@@ -389,6 +398,14 @@ impl Hir {
     fn add_source(&mut self, source: Source) -> SourceId {
         self.sources.insert(source)
     }
+}
+
+/// Whether `code` holds only blank lines and comments.
+fn is_expression_free(code: &str) -> bool {
+    code.lines().all(|line| {
+        let line = line.trim_start_matches([' ', '\t', '\r']);
+        line.is_empty() || line.starts_with('#')
+    })
 }
 
 #[cfg(test)]
@@ -653,7 +670,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         #[case] expected_kind: SymbolKind,
     ) {
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, code);
+        let (source_id, _, _) = hir.add_code(None, code);
 
         let (_, symbol) = hir.find_symbol_in_position(source_id, pos).unwrap();
         assert_eq!(symbol.value, Some(expected_name.into()));
@@ -675,7 +692,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
 | def test_csv():
   csv_parse("a,b,c\na,b,c", true)
 end"#;
-        let (_, _) = hir.add_code(None, code);
+        let (_, _, _) = hir.add_code(None, code);
 
         // Find the symbol for "csv_parse"
         let symbol = hir
@@ -752,7 +769,7 @@ end"#;
 
         let code = "def used_function(): 1; def unused_function(): 2; def another_unused(): 3; | used_function()";
 
-        let (source_id, _) = hir.add_code(None, code);
+        let (source_id, _, _) = hir.add_code(None, code);
         let unused = hir.unused_functions(source_id);
 
         // Should find 2 unused functions
@@ -775,7 +792,7 @@ end"#;
 
         let code = "def func1(): 1; def func2(): 2; | func1() | func2()";
 
-        let (source_id, _) = hir.add_code(None, code);
+        let (source_id, _, _) = hir.add_code(None, code);
         let unused = hir.unused_functions(source_id);
 
         assert_eq!(unused.len(), 0);
@@ -1312,7 +1329,7 @@ end"#;
     fn test_url_by_source() {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
-        let (source_id, _) = hir.add_code(Some(url.clone()), "let x = 1");
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), "let x = 1");
 
         assert_eq!(hir.url_by_source(&source_id), Some(&url));
     }

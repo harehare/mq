@@ -52,7 +52,7 @@ mod tests {
 
     fn check_with_max(code: &str, max: usize) -> Vec<Diagnostic> {
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, code);
+        let (source_id, _, _) = hir.add_code(None, code);
         let mut config = LintConfig::default();
         config.complexity.function_max_lines = max;
         let ctx = LintContext::new(&hir, source_id, &config);

@@ -10,7 +10,7 @@
 //! use mq_hir::Hir;
 //!
 //! let mut hir = Hir::default();
-//! let (source_id, _) = hir.add_code(None, "let x = .h1;");
+//! let (source_id, _, _) = hir.add_code(None, "let x = .h1;");
 //!
 //! let config = LintConfig::default();
 //! let ctx = LintContext::new(&hir, source_id, &config);

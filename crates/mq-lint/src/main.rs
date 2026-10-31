@@ -101,18 +101,24 @@ fn run() -> io::Result<bool> {
         io::stdin().read_to_string(&mut code)?;
 
         if cli.fix {
-            let (fixed, _) = fix_source(&code, &linter, &config);
+            let Ok((fixed, _)) = report_on_err("<stdin>", fix_source(&code, &linter, &config)) else {
+                return Ok(true);
+            };
             write!(w, "{fixed}")?;
             return Ok(false);
         }
 
-        let diagnostics = collect_diagnostics(&code, &linter, &config, min_severity);
+        let Ok(diagnostics) = report_on_err("<stdin>", collect_diagnostics(&code, &linter, &config, min_severity))
+        else {
+            return Ok(true);
+        };
         let had_diagnostics = !diagnostics.is_empty();
         format::write_report(&mut w, cli.format, &[("<stdin>".to_string(), code, diagnostics)])?;
         return Ok(had_diagnostics);
     }
 
     let mut results: Vec<(String, String, Vec<Diagnostic>)> = Vec::with_capacity(cli.files.len());
+    let mut had_syntax_errors = false;
 
     for path in &cli.files {
         let code = std::fs::read_to_string(path)
@@ -120,7 +126,10 @@ fn run() -> io::Result<bool> {
         let label = path.display().to_string();
 
         let code = if cli.fix {
-            let (fixed, fix_count) = fix_source(&code, &linter, &config);
+            let Ok((fixed, fix_count)) = report_on_err(&label, fix_source(&code, &linter, &config)) else {
+                had_syntax_errors = true;
+                continue;
+            };
             if fixed != code {
                 std::fs::write(path, &fixed)
                     .map_err(|e| io::Error::other(format!("writing file {}: {}", path.display(), e)))?;
@@ -140,21 +149,43 @@ fn run() -> io::Result<bool> {
             code
         };
 
-        let diagnostics = collect_diagnostics(&code, &linter, &config, min_severity);
+        let Ok(diagnostics) = report_on_err(&label, collect_diagnostics(&code, &linter, &config, min_severity)) else {
+            had_syntax_errors = true;
+            continue;
+        };
         results.push((label, code, diagnostics));
     }
 
     let had_diagnostics = results.iter().any(|(_, _code, diagnostics)| !diagnostics.is_empty());
     format::write_report(&mut w, cli.format, &results)?;
 
-    Ok(had_diagnostics)
+    Ok(had_diagnostics || had_syntax_errors)
+}
+
+/// Prints the syntax errors of a failed lint to stderr.
+///
+/// Linting a program that does not parse would report findings on a partial tree, so such
+/// sources are skipped.
+fn report_on_err<T>(label: &str, result: Result<T, Vec<mq_lang::Diagnostic>>) -> Result<T, ()> {
+    result.map_err(|errors| {
+        for error in errors {
+            let position = error
+                .range
+                .map(|range| format!(":{}:{}", range.start.line, range.start.column))
+                .unwrap_or_default();
+            eprintln!("{} {label}{position}: {}", "error:".bright_red().bold(), error.message);
+        }
+    })
 }
 
 /// Applies every diagnostic with a fix to `code`, returning the rewritten source and how many
-/// fixes were applied.
-fn fix_source(code: &str, linter: &Linter, config: &LintConfig) -> (String, usize) {
+/// fixes were applied, or the syntax errors if `code` does not parse.
+fn fix_source(code: &str, linter: &Linter, config: &LintConfig) -> Result<(String, usize), Vec<mq_lang::Diagnostic>> {
     let mut hir = Hir::default();
-    let (source_id, _) = hir.add_code(None, code);
+    let (source_id, _, errors) = hir.add_code(None, code);
+    if !errors.is_empty() {
+        return Err(errors);
+    }
     let ctx = LintContext::new(&hir, source_id, config);
 
     let edits: Vec<(mq_lang::Range, String)> = linter
@@ -164,7 +195,7 @@ fn fix_source(code: &str, linter: &Linter, config: &LintConfig) -> (String, usiz
         .collect();
 
     let fix_count = edits.len();
-    (mq_lint::fix::apply_edits(code, &edits), fix_count)
+    Ok((mq_lint::fix::apply_edits(code, &edits), fix_count))
 }
 
 fn list_rules(w: &mut impl Write) -> io::Result<()> {
@@ -177,15 +208,18 @@ fn list_rules(w: &mut impl Write) -> io::Result<()> {
 }
 
 /// Runs the linter over a single source, returning diagnostics at or above `min_severity`
-/// sorted by source position.
+/// sorted by source position, or the syntax errors if `code` does not parse.
 pub(crate) fn collect_diagnostics(
     code: &str,
     linter: &Linter,
     config: &LintConfig,
     min_severity: Severity,
-) -> Vec<Diagnostic> {
+) -> Result<Vec<Diagnostic>, Vec<mq_lang::Diagnostic>> {
     let mut hir = Hir::default();
-    let (source_id, _) = hir.add_code(None, code);
+    let (source_id, _, errors) = hir.add_code(None, code);
+    if !errors.is_empty() {
+        return Err(errors);
+    }
     let ctx = LintContext::new(&hir, source_id, config);
 
     let mut diagnostics: Vec<_> = linter
@@ -194,7 +228,7 @@ pub(crate) fn collect_diagnostics(
         .filter(|d| d.severity >= min_severity)
         .collect();
     diagnostics.sort_by_key(|d| d.range.map(|r| (r.start.line, r.start.column)));
-    diagnostics
+    Ok(diagnostics)
 }
 
 #[cfg(test)]
@@ -273,7 +307,7 @@ mod tests {
     fn test_fix_source_applies_known_fixable_rules(#[case] code: &str, #[case] expected: &str) {
         let config = LintConfig::default();
         let linter = Linter::with_default_rules();
-        let (fixed, fix_count) = fix_source(code, &linter, &config);
+        let (fixed, fix_count) = fix_source(code, &linter, &config).unwrap();
         assert_eq!(fixed, expected);
         assert_eq!(fix_count, 1);
     }
@@ -282,8 +316,28 @@ mod tests {
     fn test_fix_source_is_a_noop_when_nothing_is_fixable() {
         let config = LintConfig::default();
         let linter = Linter::with_default_rules();
-        let (fixed, fix_count) = fix_source(".h1", &linter, &config);
+        let (fixed, fix_count) = fix_source(".h1", &linter, &config).unwrap();
         assert_eq!(fixed, ".h1");
         assert_eq!(fix_count, 0);
+    }
+
+    #[rstest]
+    #[case("[1, 2", true)]
+    #[case("1 || | 2", true)]
+    #[case("if (true): 1 else", true)]
+    #[case("{\"a\": 1,, \"b\": 2}", true)]
+    #[case("match (1): | 1: 2", true)]
+    #[case("foreach (x [1]): x;", true)]
+    #[case("let x = 1 | x", false)]
+    #[case("", false)]
+    #[case("# only a comment\n", false)]
+    fn test_syntax_errors_fail_lint_and_fix(#[case] code: &str, #[case] expected: bool) {
+        let config = LintConfig::default();
+        let linter = Linter::with_default_rules();
+        assert_eq!(
+            collect_diagnostics(code, &linter, &config, Severity::Style).is_err(),
+            expected
+        );
+        assert_eq!(fix_source(code, &linter, &config).is_err(), expected);
     }
 }

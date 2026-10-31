@@ -64,7 +64,7 @@ mod tests {
 
     fn check(code: &str) -> Vec<Diagnostic> {
         let mut hir = Hir::default();
-        let (source_id, _) = hir.add_code(None, code);
+        let (source_id, _, _) = hir.add_code(None, code);
         let config = LintConfig::default();
         let ctx = LintContext::new(&hir, source_id, &config);
         ConstantStringConcat.check(&ctx)
@@ -108,7 +108,7 @@ mod tests {
 
         // The escaped literal must itself lex back to the original concatenated value.
         let mut hir = mq_hir::Hir::default();
-        let (source_id, _) = hir.add_code(None, &fixed);
+        let (source_id, _, _) = hir.add_code(None, &fixed);
         let sym = hir
             .symbols()
             .find(|(_, s)| s.source.source_id == Some(source_id) && matches!(s.kind, SymbolKind::String))

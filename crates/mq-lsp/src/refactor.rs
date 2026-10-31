@@ -595,7 +595,7 @@ mod tests {
     fn setup(code: &str) -> (Hir, SourceId, ls_types::Uri) {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
-        let (source_id, _) = hir.add_code(Some(url.clone()), code);
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
         let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
         (hir, source_id, uri)
     }
