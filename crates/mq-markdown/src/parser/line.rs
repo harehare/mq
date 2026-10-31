@@ -286,3 +286,40 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
 
     lines
 }
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// A well-formed UTF-8 buffer with two character boundaries `at <= offset`, as `Tree::extra_before` sees them.
+    fn text_with_boundaries(bytes: &[u8; 6]) -> (usize, usize) {
+        let text = std::str::from_utf8(bytes);
+        kani::assume(text.is_ok());
+        let text = text.unwrap_or_default();
+        let at: usize = kani::any_where(|at: &usize| *at <= bytes.len() && text.is_char_boundary(*at));
+        let offset: usize = kani::any_where(|o: &usize| *o >= at && *o <= bytes.len() && text.is_char_boundary(*o));
+        (at, offset)
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn extra_bytes_does_not_underflow_on_whole_characters() {
+        let bytes: [u8; 6] = kani::any();
+        let (at, offset) = text_with_boundaries(&bytes);
+        let _ = extra_bytes(&bytes[at..offset]);
+    }
+
+    /// The cursor in `Tree::extra_before` stores `extra_bytes(text[..at])`, so moving it back by
+    /// `extra_bytes(text[offset..at])` never underflows.
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn extra_bytes_is_additive_over_a_split() {
+        let bytes: [u8; 6] = kani::any();
+        let (at, offset) = text_with_boundaries(&bytes);
+        kani::cover!(at > 0 && offset > at && extra_bytes(&bytes[at..offset]) > 0);
+        assert_eq!(
+            extra_bytes(&bytes[..offset]),
+            extra_bytes(&bytes[..at]) + extra_bytes(&bytes[at..offset])
+        );
+    }
+}

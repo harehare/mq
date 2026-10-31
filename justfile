@@ -176,6 +176,10 @@ test-fuzz target="interpreter":
 kani *args:
     cargo kani -p mq-lang --features mqc {{args}}
 
+# Prove mq-markdown properties with Kani.
+kani-markdown *args:
+    cargo kani -p mq-markdown {{args}}
+
 # Run WebAssembly tests in Chrome (main thread and dedicated worker)
 [working-directory: 'crates/mq-wasm']
 test-wasm:
