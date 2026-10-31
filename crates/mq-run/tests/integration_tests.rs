@@ -2832,6 +2832,20 @@ fn test_out_dir_inside_input_dir_is_not_reingested() {
     assert!(!dir.join("docs/site/docs/site").exists());
 }
 
+#[test]
+fn test_out_dir_keeps_explicit_input_inside_out_dir() {
+    let dir = out_dir_workspace("mq_out_dir_explicit_inside");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--out-dir", "docs", ".", "docs/a.md"])
+        .assert()
+        .success();
+
+    assert!(dir.join("docs/docs/a.md").exists());
+}
+
 #[rstest]
 #[case::denied_by_default(&["--sandbox", "strict"], false)]
 #[case::allowed_path(&["--sandbox", "strict", "--allow-write=site"], true)]

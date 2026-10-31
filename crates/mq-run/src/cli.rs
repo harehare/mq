@@ -1985,7 +1985,7 @@ impl Cli {
         let engine = self.create_engine()?;
         let input = match files {
             Some(files) if !files.is_empty() => {
-                let files = Self::expand_glob_patterns(files)?;
+                let files = Self::expand_glob_patterns(files, None)?;
                 if files.iter().any(|f| Self::is_stdin_path(f)) {
                     return Err(miette!("`-` (stdin) is not supported by the repl command"));
                 }
@@ -3156,14 +3156,15 @@ impl Cli {
 
     /// Expands glob patterns (`*`, `?`, `[`) that don't exist as literal paths, so `mq`
     /// behaves the same on shells that don't expand globs themselves (e.g. Windows `cmd.exe`).
-    fn expand_glob_patterns(files: &[PathBuf]) -> miette::Result<Vec<PathBuf>> {
+    /// Files discovered by walking directories skip the `exclude` subtree; explicit paths are kept.
+    fn expand_glob_patterns(files: &[PathBuf], exclude: Option<&Path>) -> miette::Result<Vec<PathBuf>> {
         let mut expanded = Vec::with_capacity(files.len());
 
         for file in files {
             let pattern = file.to_string_lossy();
 
             if file.is_dir() {
-                expanded.extend(Self::collect_markdown_files(file)?);
+                expanded.extend(Self::collect_markdown_files(file, exclude)?);
                 continue;
             }
 
@@ -3187,7 +3188,7 @@ impl Cli {
 
             for matched in matches {
                 let paths = if matched.is_dir() {
-                    Self::walk_markdown_files(&matched)?
+                    Self::walk_markdown_files(&matched, exclude)?
                 } else {
                     vec![matched]
                 };
@@ -3207,8 +3208,8 @@ impl Cli {
 
     /// Recursively collects Markdown files under `dir`, sorted by path. Hidden and gitignored
     /// entries are skipped.
-    fn collect_markdown_files(dir: &Path) -> miette::Result<Vec<PathBuf>> {
-        let found = Self::walk_markdown_files(dir)?;
+    fn collect_markdown_files(dir: &Path, exclude: Option<&Path>) -> miette::Result<Vec<PathBuf>> {
+        let found = Self::walk_markdown_files(dir, exclude)?;
 
         if found.is_empty() {
             return Err(miette!("no Markdown files found in `{}`", dir.display()));
@@ -3217,10 +3218,18 @@ impl Cli {
         Ok(found)
     }
 
-    fn walk_markdown_files(dir: &Path) -> miette::Result<Vec<PathBuf>> {
+    fn walk_markdown_files(dir: &Path, exclude: Option<&Path>) -> miette::Result<Vec<PathBuf>> {
         let mut found = Vec::new();
+        let exclude = exclude.map(Path::to_path_buf);
+        let walker = ignore::WalkBuilder::new(dir)
+            .filter_entry(move |e| {
+                exclude
+                    .as_ref()
+                    .is_none_or(|x| !e.path().canonicalize().is_ok_and(|p| p.starts_with(x)))
+            })
+            .build();
 
-        for entry in ignore::WalkBuilder::new(dir).build() {
+        for entry in walker {
             let entry = entry.into_diagnostic()?;
             let path = entry.path();
             let is_markdown = path.is_file()
@@ -3239,23 +3248,19 @@ impl Cli {
     }
 
     fn resolved_files(&self) -> miette::Result<Option<Vec<PathBuf>>> {
-        let files = self.files.as_deref().map(Self::expand_glob_patterns).transpose()?;
+        // Skip earlier outputs when `--out-dir` sits inside an input directory.
+        let out = self.output.out_dir.as_ref().and_then(|d| d.canonicalize().ok());
+        let files = self
+            .files
+            .as_deref()
+            .map(|f| Self::expand_glob_patterns(f, out.as_deref()))
+            .transpose()?;
         if files
             .as_ref()
             .is_some_and(|f| f.iter().filter(|p| Self::is_stdin_path(p)).count() > 1)
         {
             return Err(miette!("`-` (stdin) can be specified only once"));
         }
-        // Skip earlier outputs when `--out-dir` sits inside an input directory.
-        let files = match (files, self.output.out_dir.as_ref().and_then(|d| d.canonicalize().ok())) {
-            (Some(files), Some(out)) => Some(
-                files
-                    .into_iter()
-                    .filter(|f| f.canonicalize().map_or(true, |f| !f.starts_with(&out)))
-                    .collect(),
-            ),
-            (files, _) => files,
-        };
         Ok(files)
     }
 
