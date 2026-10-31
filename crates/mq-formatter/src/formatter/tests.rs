@@ -1439,6 +1439,14 @@ def b(): test;"#,
     "let a = 2\n| let z = 1\n| foo()\n| let b = 4\n| let y = 3\n"
 )]
 #[case::blank_line_stays_with_slot("def z(): 1;\n\ndef a(): 2;", "def a(): 2;\n\ndef z(): 1;\n")]
+#[case::comment_before_pipe_follows_binding(
+    "let z = 1\n# a is the second binding\n| let a = 2",
+    "# a is the second binding\nlet a = 2\n| let z = 1\n"
+)]
+#[case::comment_before_pipe_follows_def(
+    "def z(): 1;\n# about a\n| def a(): 2;\n| def m(): 3;",
+    "# about a\ndef a(): 2;\n| def m(): 3;\n| def z(): 1;\n"
+)]
 #[case::pipeline_untouched("add() | sub()\n| mul()", "add() | sub()\n| mul()\n")]
 fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
     let config = FormatterConfig {
@@ -1448,8 +1456,10 @@ fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
         sort_fields: true,
         max_width: None,
     };
-    let result = Formatter::new(Some(config)).format(code);
-    assert_eq!(result.unwrap(), expected);
+    let result = Formatter::new(Some(config)).format(code).unwrap();
+    assert_eq!(result, expected);
+    let (_, errors) = mq_lang::parse_recovery(&result);
+    assert!(!errors.has_errors(), "{result:?} does not parse");
 }
 
 #[rstest]

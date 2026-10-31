@@ -206,25 +206,46 @@ impl Formatter {
     }
 
     /// Reorders the nodes at `slots` by name. Each slot keeps its own leading blank lines.
+    /// Comments before the `|` that precedes a node move with that node.
     fn sort_run(nodes: &mut [mq_lang::Shared<mq_lang::CstNode>], slots: &[usize]) {
         if slots.len() < 2 {
             return;
         }
 
-        let leading_new_lines = |node: &mq_lang::CstNode| {
-            node.leading_trivia
+        let leading_new_lines = |trivia: &[mq_lang::CstTrivia]| {
+            trivia
                 .iter()
                 .take_while(|t| matches!(t, mq_lang::CstTrivia::NewLine))
                 .count()
         };
+        let pipe_before = |nodes: &[mq_lang::Shared<mq_lang::CstNode>], slot: usize| {
+            slot.checked_sub(1).filter(|&p| nodes[p].is_pipe())
+        };
+        // Replaces everything after the leading blank lines, keeping the blank lines.
+        let with_trivia_tail = |node: &mq_lang::CstNode, tail: &[mq_lang::CstTrivia]| {
+            let mut node = node.clone();
+            let n = leading_new_lines(&node.leading_trivia);
+            node.leading_trivia.truncate(n);
+            node.leading_trivia.extend(tail.iter().cloned());
+            mq_lang::Shared::new(node)
+        };
 
-        let mut sorted: Vec<_> = slots.iter().map(|&i| mq_lang::Shared::clone(&nodes[i])).collect();
-        sorted.sort_by_key(|n| ident(n));
+        let mut units: Vec<_> = slots
+            .iter()
+            .map(|&i| {
+                let pipe_tail = pipe_before(nodes, i).map(|p| {
+                    let trivia = &nodes[p].leading_trivia;
+                    trivia[leading_new_lines(trivia)..].to_vec()
+                });
+                (mq_lang::Shared::clone(&nodes[i]), pipe_tail)
+            })
+            .collect();
+        units.sort_by_key(|(n, _)| ident(n));
 
-        for (&slot, node) in slots.iter().zip(sorted) {
-            let slot_new_lines = leading_new_lines(&nodes[slot]);
-            let node_new_lines = leading_new_lines(&node);
-            nodes[slot] = if slot_new_lines == node_new_lines {
+        for (&slot, (node, pipe_tail)) in slots.iter().zip(units) {
+            let slot_new_lines = leading_new_lines(&nodes[slot].leading_trivia);
+            let node_new_lines = leading_new_lines(&node.leading_trivia);
+            let mut moved = if slot_new_lines == node_new_lines {
                 node
             } else {
                 let mut node = (*node).clone();
@@ -234,6 +255,16 @@ impl Formatter {
                     .extend(std::iter::repeat_n(mq_lang::CstTrivia::NewLine, slot_new_lines).chain(rest));
                 mq_lang::Shared::new(node)
             };
+
+            let tail = pipe_tail.unwrap_or_default();
+            if let Some(p) = pipe_before(nodes, slot) {
+                nodes[p] = with_trivia_tail(&nodes[p], &tail);
+            } else if !tail.is_empty() {
+                let mut all = tail;
+                all.extend_from_slice(&moved.leading_trivia[leading_new_lines(&moved.leading_trivia)..]);
+                moved = with_trivia_tail(&moved, &all);
+            }
+            nodes[slot] = moved;
         }
     }
 
