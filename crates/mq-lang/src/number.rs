@@ -215,8 +215,33 @@ mod proofs {
     fn rem_never_panics() {
         let (a, b): (f64, f64) = (kani::any(), kani::any());
         // Kani flags the NaN that `inf - inf` yields in `is_int`, which is not a panic.
-        kani::assume(a.is_finite() && b.is_finite());
+        kani::assume(!a.is_infinite() && !b.is_infinite());
         let _ = Number::new(a) % Number::new(b);
+    }
+
+    /// `Display` takes the `as i64` branch only when the cast is exact up to the `is_int` epsilon.
+    #[kani::proof]
+    fn display_i64_cast_is_in_range() {
+        let value: f64 = kani::any();
+        // `is_int` yields a NaN from `inf - inf`, which Kani flags.
+        kani::assume(!value.is_infinite());
+        let n = Number::new(value);
+        if n.is_int() && n.0 >= I64_MIN_F64 && n.0 < I64_MAX_BOUND_F64 {
+            assert!(((n.0 as i64) as f64 - n.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[kani::proof]
+    fn to_int_saturates_and_maps_nan_to_zero() {
+        let value: f64 = kani::any();
+        let int = Number::new(value).to_int();
+        if value.is_nan() {
+            assert_eq!(int, 0);
+        } else if value >= I64_MAX_BOUND_F64 {
+            assert_eq!(int, i64::MAX);
+        } else if value < I64_MIN_F64 {
+            assert_eq!(int, i64::MIN);
+        }
     }
 
     #[kani::proof]

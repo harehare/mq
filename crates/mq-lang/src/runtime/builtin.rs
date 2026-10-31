@@ -6694,5 +6694,36 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
     }
 }
 
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn slice_bounds_is_a_valid_range() {
+        // `len` is the length of a collection, which cannot exceed `isize::MAX`.
+        let len: usize = kani::any_where(|len: &usize| *len <= isize::MAX as usize);
+        let range = slice_bounds(number::Number::new(kani::any()), number::Number::new(kani::any()), len);
+        assert!(range.start <= range.end && range.end <= len);
+    }
+
+    /// Only a negative index is bounded by `len`; callers range-check a non-negative one with `get`.
+    #[kani::proof]
+    fn resolve_index_rejects_non_integers_and_bounds_negative_indexes() {
+        let len: usize = kani::any_where(|len: &usize| *len <= isize::MAX as usize);
+        let value: f64 = kani::any();
+        // `is_int` yields a NaN from `inf - inf`, which Kani flags.
+        kani::assume(!value.is_infinite());
+        let index = number::Number::new(value);
+        let resolved = resolve_index(index, len);
+        if !index.is_int() {
+            assert!(resolved.is_none());
+        } else if (value as isize) < 0
+            && let Some(i) = resolved
+        {
+            assert!(i < len);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

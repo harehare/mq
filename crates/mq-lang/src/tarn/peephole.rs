@@ -87,7 +87,7 @@ fn thread_jumps(chunk: &mut Chunk) {
         if matches!(chunk.code[pc], OpCode::Jump(_)) && matches!(chunk.code.get(target), Some(OpCode::Return)) {
             chunk.code[pc] = OpCode::Return;
         } else if let Some(offset) = branch_offset_mut(&mut chunk.code[pc]) {
-            *offset = target as i32 - pc as i32 - 1;
+            *offset = offset_to(target, pc);
         }
     }
 }
@@ -555,6 +555,11 @@ fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
     targets
 }
 
+/// Relative offset of a jump at `pc` that lands on `target`, the inverse of `jump_target`.
+fn offset_to(target: usize, pc: usize) -> i32 {
+    target as i32 - pc as i32 - 1
+}
+
 fn old_to_new_pc_map(keep: &[bool]) -> Vec<usize> {
     let mut map = vec![0; keep.len() + 1];
     let mut next = keep.iter().filter(|keep| **keep).count();
@@ -579,7 +584,7 @@ fn token_at(lines: &[LineEntry], pc: usize) -> TokenId {
 fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> OpCode {
     let rewrite = |offset: i32| {
         let old_target = jump_target(old_pc, offset).expect("compiler-generated jump must not underflow");
-        (map[old_target] as i32) - (new_pc as i32) - 1
+        offset_to(map[old_target], new_pc)
     };
     match op {
         OpCode::Jump(offset) => OpCode::Jump(rewrite(offset)),
@@ -661,6 +666,34 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
             ..*info
         })),
         other => other,
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn pc_map_counts_kept_instructions() {
+        let keep: [bool; 6] = kani::any();
+        let map = old_to_new_pc_map(&keep);
+        assert_eq!(map.len(), keep.len() + 1);
+        assert_eq!(map[keep.len()], keep.iter().filter(|k| **k).count());
+        for pc in 0..keep.len() {
+            let before = keep[..pc].iter().filter(|k| **k).count();
+            assert_eq!(map[pc], before);
+            assert!(map[pc] <= map[pc + 1]);
+        }
+    }
+
+    /// Code length is below `i32::MAX`: `verify_chunks` caps chunks at `u32::MAX`, and the
+    /// `i32` offsets in the bytecode cannot address more.
+    #[kani::proof]
+    fn offset_to_inverts_jump_target() {
+        let pc: usize = kani::any_where(|pc: &usize| *pc < i32::MAX as usize);
+        let target: usize = kani::any_where(|t: &usize| *t < i32::MAX as usize);
+        assert_eq!(jump_target(pc, offset_to(target, pc)), Some(target));
     }
 }
 

@@ -321,6 +321,122 @@ mod proofs {
             assert_eq!(reader.remaining_items, items_before - len);
         }
     }
+
+    #[kani::proof]
+    fn u8_round_trips() {
+        let value: u8 = kani::any();
+        let mut writer = Writer::default();
+        writer.u8(value);
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(ok_value(reader.u8()), Some(value));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    /// Concrete values: the decode error path formats the byte, which a symbolic `bool` cannot afford.
+    #[kani::proof]
+    fn bool_round_trips() {
+        for value in [false, true] {
+            let mut writer = Writer::default();
+            writer.bool(value);
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes);
+            assert_eq!(ok_value(reader.bool()), Some(value));
+            assert_eq!(reader.remaining(), 0);
+        }
+    }
+
+    #[kani::proof]
+    fn u16_round_trips() {
+        let value: u16 = kani::any();
+        let mut writer = Writer::default();
+        writer.u16(value);
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(ok_value(reader.u16()), Some(value));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[kani::proof]
+    fn u32_round_trips() {
+        let value: u32 = kani::any();
+        let mut writer = Writer::default();
+        writer.u32(value);
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(ok_value(reader.u32()), Some(value));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[kani::proof]
+    fn u64_round_trips() {
+        let value: u64 = kani::any();
+        let mut writer = Writer::default();
+        writer.u64(value);
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(ok_value(reader.u64()), Some(value));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[kani::proof]
+    fn f64_round_trips_bitwise() {
+        let bits: u64 = kani::any();
+        let mut writer = Writer::default();
+        writer.f64(f64::from_bits(bits));
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(ok_value(reader.f64()).map(f64::to_bits), Some(bits));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn var_u16_and_var_u32_round_trip() {
+        let (a, b): (u16, u32) = kani::any();
+        let mut writer = Writer::default();
+        writer.var_u16(a);
+        writer.var_u32(b);
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(ok_value(reader.var_u16()), Some(a));
+        assert_eq!(ok_value(reader.var_u32()), Some(b));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn bytes_round_trip() {
+        let data: [u8; 3] = kani::any();
+        let size: usize = kani::any_where(|n: &usize| *n <= data.len());
+        let mut writer = Writer::default();
+        assert!(ok_value(writer.bytes(&data[..size])).is_some());
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(ok_value(reader.bytes()), Some(&data[..size]));
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    /// A length the writer accepts is never rejected by the reader's item budget.
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn writer_len_is_accepted_by_reader() {
+        let budget: usize = kani::any();
+        let len: usize = kani::any_where(|n: &usize| *n <= 4);
+        let mut writer = Writer::with_remaining_items(budget);
+        if ok_value(writer.len(len)).is_some() {
+            assert_eq!(writer.remaining_items(), budget - len);
+            // A length of at most 4 encodes as one byte; the rest is one byte per element.
+            let written = writer.into_bytes();
+            assert_eq!(written.len(), 1);
+            let mut bytes = [0u8; 5];
+            bytes[0] = written[0];
+            let mut reader = Reader::new(&bytes);
+            reader.remaining_items = budget;
+            assert_eq!(ok_value(reader.len(1)), Some(len));
+            assert_eq!(reader.remaining_items, budget - len);
+        }
+    }
 }
 
 #[cfg(test)]
