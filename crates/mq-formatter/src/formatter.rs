@@ -256,8 +256,14 @@ impl Formatter {
                 mq_lang::Shared::new(node)
             };
 
-            let tail = pipe_tail.unwrap_or_default();
+            let mut tail = pipe_tail.unwrap_or_default();
             if let Some(p) = pipe_before(nodes, slot) {
+                // A comment moved onto an inline pipe needs its own line.
+                if leading_new_lines(&nodes[p].leading_trivia) == 0
+                    && tail.iter().any(|t| matches!(t, mq_lang::CstTrivia::Comment(_)))
+                {
+                    tail.insert(0, mq_lang::CstTrivia::NewLine);
+                }
                 nodes[p] = with_trivia_tail(&nodes[p], &tail);
             } else if !tail.is_empty() {
                 let mut all = tail;

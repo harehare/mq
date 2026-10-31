@@ -1447,6 +1447,10 @@ def b(): test;"#,
     "def z(): 1;\n# about a\n| def a(): 2;\n| def m(): 3;",
     "# about a\ndef a(): 2;\n| def m(): 3;\n| def z(): 1;\n"
 )]
+#[case::comment_moves_onto_inline_pipe(
+    "let z = 1 | let b = 2\n# about m\n| let m = 3",
+    "let b = 2\n# about m\n| let m = 3\n| let z = 1\n"
+)]
 #[case::pipeline_untouched("add() | sub()\n| mul()", "add() | sub()\n| mul()\n")]
 fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
     let config = FormatterConfig {
