@@ -7,7 +7,7 @@ use mq_lang::DefaultEngine;
 use mq_lang::DictMap;
 use mq_lang::Shared;
 use rayon::prelude::*;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
@@ -1974,6 +1974,10 @@ impl Cli {
             return Err(miette!("--out-dir cannot be combined with --eval-all"));
         }
 
+        if self.output.out_dir.is_some() && self.input.stream {
+            return Err(miette!("--out-dir cannot be combined with --stream"));
+        }
+
         self.check_output_permitted()
     }
 
@@ -2324,6 +2328,9 @@ impl Cli {
             if escapes {
                 return Err(miette!("output path {} is outside --out-dir", path.display()));
             }
+        }
+        if fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(miette!("output path {} is a symlink", path.display()));
         }
         // Each input owns its file, so no-clobber is checked per file.
         OutputSink::open(
@@ -2843,6 +2850,8 @@ impl Cli {
             return self.execute_eval_all(&query, &files);
         }
 
+        self.check_out_dir_collisions(&files)?;
+
         // Keep writes to one output file sequential: parallel files racing the same
         // read-then-rename append could clobber each other.
         if files.len() > self.parallel_threshold && self.output.output_file.is_none() {
@@ -2866,6 +2875,28 @@ impl Cli {
             }
         }
 
+        Ok(())
+    }
+
+    /// Rejects inputs that map to the same `--out-dir` file, which would silently overwrite each other.
+    fn check_out_dir_collisions(&self, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
+        let Some(dir) = &self.output.out_dir else {
+            return Ok(());
+        };
+        let mut seen = HashMap::new();
+        for (file, _) in files {
+            let target = self.out_dir_target(dir, file)?;
+            if let Some(prev) = seen.insert(target.clone(), file.clone().unwrap_or_default())
+                && let Some(file) = file
+            {
+                return Err(miette!(
+                    "{} and {} both write to {}",
+                    prev.display(),
+                    file.display(),
+                    target.display()
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -3215,6 +3246,16 @@ impl Cli {
         {
             return Err(miette!("`-` (stdin) can be specified only once"));
         }
+        // Skip earlier outputs when `--out-dir` sits inside an input directory.
+        let files = match (files, self.output.out_dir.as_ref().and_then(|d| d.canonicalize().ok())) {
+            (Some(files), Some(out)) => Some(
+                files
+                    .into_iter()
+                    .filter(|f| f.canonicalize().map_or(true, |f| !f.starts_with(&out)))
+                    .collect(),
+            ),
+            (files, _) => files,
+        };
         Ok(files)
     }
 

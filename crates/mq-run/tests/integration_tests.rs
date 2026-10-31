@@ -2770,6 +2770,68 @@ fn test_out_dir_rejects_symlink_escape() {
     assert!(!dir.join("outside/a.md").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn test_out_dir_rejects_symlinked_output_file() {
+    let dir = out_dir_workspace("mq_out_dir_symlink_file");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+    std::fs::create_dir_all(dir.join("site/docs")).unwrap();
+    std::fs::write(dir.join("outside.txt"), "KEEP").unwrap();
+    std::os::unix::fs::symlink("../../outside.txt", dir.join("site/docs/a.md")).unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--out-dir", "site", ".", "docs/a.md"])
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(dir.join("outside.txt")).unwrap(), "KEEP");
+}
+
+#[test]
+fn test_out_dir_rejects_stream() {
+    let dir = out_dir_workspace("mq_out_dir_stream");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["--stream", "--out-dir", "site", ".", "docs/a.md"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_out_dir_rejects_colliding_outputs() {
+    let dir = out_dir_workspace("mq_out_dir_collision");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+    std::fs::write(dir.join("docs/a.mdx"), "# X").unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(&dir)
+        .args(["-F", "html", "--out-dir", "site", ".", "docs/a.md", "docs/a.mdx"])
+        .assert()
+        .failure();
+
+    assert!(!dir.join("site").exists());
+}
+
+#[test]
+fn test_out_dir_inside_input_dir_is_not_reingested() {
+    let dir = out_dir_workspace("mq_out_dir_reingest");
+    defer! { let _ = std::fs::remove_dir_all(&dir); }
+
+    for _ in 0..2 {
+        cargo::cargo_bin_cmd!("mq")
+            .current_dir(&dir)
+            .args(["--out-dir", "docs/site", ".", "docs"])
+            .assert()
+            .success();
+    }
+
+    assert!(dir.join("docs/site/docs/a.md").exists());
+    assert!(!dir.join("docs/site/docs/site").exists());
+}
+
 #[rstest]
 #[case::denied_by_default(&["--sandbox", "strict"], false)]
 #[case::allowed_path(&["--sandbox", "strict", "--allow-write=site"], true)]
