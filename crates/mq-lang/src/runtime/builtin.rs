@@ -2253,10 +2253,10 @@ fn len_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Resul
         [a @ (RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_))] => {
             Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()]))
         }
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.chars().count().into())),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(char_index::count_chars(s).into())),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
-            .map(|md| Ok(RuntimeValue::Number(md.value().chars().count().into())))
+            .map(|md| Ok(RuntimeValue::Number(char_index::count_chars(&md.value()).into())))
             .unwrap_or_else(|| Ok(RuntimeValue::Number(0.into()))),
         [a] => Ok(RuntimeValue::Number(a.len().into())),
         _ => Err(invalid_arity(ident, 1, args.len())),
