@@ -4923,3 +4923,29 @@ fn module_rejects_binding_the_same_name_twice() {
         "{result:?}"
     );
 }
+
+#[test]
+fn pooled_frames_do_not_keep_arguments_alive() {
+    let array = Shared::new(vec![RuntimeValue::Number(1.into())]);
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def f(a, b): len(a) + len(b); | f(.) + f(., .)",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    let (result, pools) = interpreter::run_with_globals_and_pools(
+        &compiled,
+        RuntimeValue::Array(Shared::clone(&array)),
+        &HostFunctions::default(),
+        None,
+        1000,
+        &[],
+        ExecutionPools::default(),
+    );
+
+    drop(result);
+    assert!(pools.pooled_local_frame_count() > 0);
+    assert_eq!(Shared::strong_count(&array), 1);
+}

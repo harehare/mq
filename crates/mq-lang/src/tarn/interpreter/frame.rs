@@ -338,37 +338,27 @@ impl ExecutionLimits {
     }
 
     pub(super) fn take_locals(&mut self, count: u16, captured_slots: &[u16]) -> Locals {
-        self.take_locals_with_initialized_prefix(count, 0, captured_slots)
-    }
-
-    pub(super) fn take_locals_with_initialized_prefix(
-        &mut self,
-        count: u16,
-        initialized: usize,
-        captured_slots: &[u16],
-    ) -> Locals {
-        let locals = if !captured_slots.is_empty() {
-            None
-        } else {
+        let pooled = if captured_slots.is_empty() {
             self.pools
                 .local_pool
                 .get_mut(count as usize)
                 .and_then(|bucket| bucket.pop())
+        } else {
+            None
         };
-        if locals.is_some() {
+        if pooled.is_some() {
             self.pools.pooled_local_slots = self.pools.pooled_local_slots.saturating_sub(count as usize);
         }
-        let mut locals = locals.unwrap_or_else(|| fresh_locals(count as usize, captured_slots));
-        locals.reset_from(initialized.min(count as usize));
-        locals
+        pooled.unwrap_or_else(|| fresh_locals(count as usize, captured_slots))
     }
 
-    pub(super) fn recycle_locals(&mut self, locals: Locals) {
+    pub(super) fn recycle_locals(&mut self, mut locals: Locals) {
         const MAX_RETAINED_PER_LENGTH: usize = 8;
         let count = locals.len();
         if count >= MAX_POOLED_LOCAL_COUNT {
             return;
         }
+        locals.reset_from(0);
         if count >= self.pools.local_pool.len() {
             self.pools.local_pool.resize_with(count + 1, Vec::new);
         }

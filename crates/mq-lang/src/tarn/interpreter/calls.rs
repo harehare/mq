@@ -305,11 +305,9 @@ pub(super) fn call_fixed_closure_from_local(
             },
         ));
     }
-    let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        callee_chunk.local_count,
-        SELF_SLOT as usize + 1 + arity,
-        callee_chunk.captured_local_slots(),
-    );
+    let mut callee_locals = execution
+        .limits
+        .take_locals(callee_chunk.local_count, callee_chunk.captured_local_slots());
     let self_value = call_site.locals.get(SELF_SLOT);
     callee_locals.set(SELF_SLOT, self_value.clone());
     if arity == 2 {
@@ -447,13 +445,9 @@ pub(super) fn call_known_fixed_chunk_from_stack(
         ));
     }
 
-    let arity = argc + usize::from(call.uses_implicit_self);
-    let initialized_slots = SELF_SLOT as usize + 1 + arity;
-    let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        callee_chunk.local_count,
-        initialized_slots,
-        callee_chunk.captured_local_slots(),
-    );
+    let mut callee_locals = execution
+        .limits
+        .take_locals(callee_chunk.local_count, callee_chunk.captured_local_slots());
     let self_value = call_site.locals.get(SELF_SLOT);
     let first_arg_slot = if call.uses_implicit_self {
         callee_locals.set(SELF_SLOT, self_value.clone());
@@ -500,11 +494,9 @@ pub(super) fn call_exact_fixed_chunk_0(
     call_site: CallSite<'_>,
     execution: &mut ExecutionContext<'_>,
 ) -> Frame {
-    let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        target.local_count,
-        SELF_SLOT as usize + 1,
-        target.captured_local_slots,
-    );
+    let mut callee_locals = execution
+        .limits
+        .take_locals(target.local_count, target.captured_local_slots);
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
     exact_fixed_frame(target, call_site.frame_chunks, callee_locals, upvalues)
 }
@@ -524,11 +516,9 @@ pub(super) fn call_exact_fixed_chunk_1(
             VmError::Corrupt("stack underflow in one-argument exact fixed call"),
         ));
     };
-    let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        target.local_count,
-        SELF_SLOT as usize + 2,
-        target.captured_local_slots,
-    );
+    let mut callee_locals = execution
+        .limits
+        .take_locals(target.local_count, target.captured_local_slots);
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
     callee_locals.set(SELF_SLOT + 1, argument);
     Ok(exact_fixed_frame(
@@ -562,11 +552,9 @@ pub(super) fn call_exact_fixed_chunk_2(
             VmError::Corrupt("stack underflow in two-argument exact fixed call"),
         ));
     };
-    let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        target.local_count,
-        SELF_SLOT as usize + 3,
-        target.captured_local_slots,
-    );
+    let mut callee_locals = execution
+        .limits
+        .take_locals(target.local_count, target.captured_local_slots);
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
     callee_locals.set(SELF_SLOT + 1, first_argument);
     callee_locals.set(SELF_SLOT + 2, second_argument);
