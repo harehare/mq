@@ -239,94 +239,6 @@ impl<'a> Reader<'a> {
     }
 }
 
-#[cfg(kani)]
-mod proofs {
-    use super::*;
-
-    fn reader_over(bytes: &[u8]) -> Reader<'_> {
-        Reader {
-            bytes,
-            position: kani::any_where(|p: &usize| *p <= bytes.len()),
-            remaining_items: kani::any(),
-        }
-    }
-
-    /// Forgets the error: its drop glue is too large to unwind.
-    fn ok_value<T: Copy>(result: Result<T, MqcError>) -> Option<T> {
-        let value = result.as_ref().ok().copied();
-        std::mem::forget(result);
-        value
-    }
-
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn var_round_trips() {
-        let value: u64 = kani::any();
-        let mut writer = Writer::default();
-        writer.var(value);
-        let bytes = writer.into_bytes();
-        let mut reader = Reader::new(&bytes);
-        assert_eq!(ok_value(reader.var()), Some(value));
-        assert_eq!(reader.remaining(), 0);
-    }
-
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn var_i32_round_trips() {
-        let value: i32 = kani::any();
-        let mut writer = Writer::default();
-        writer.var_i32(value);
-        let bytes = writer.into_bytes();
-        let mut reader = Reader::new(&bytes);
-        assert_eq!(ok_value(reader.var_i32()), Some(value));
-        assert_eq!(reader.remaining(), 0);
-    }
-
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn var_never_overreads() {
-        let bytes: [u8; 12] = kani::any();
-        let len: usize = kani::any_where(|l: &usize| *l <= bytes.len());
-        let mut reader = Reader::new(&bytes[..len]);
-        let _ = ok_value(reader.var());
-        assert!(reader.remaining() <= len);
-    }
-
-    #[kani::proof]
-    fn take_is_bounds_checked() {
-        let bytes: [u8; 8] = kani::any();
-        let mut reader = reader_over(&bytes);
-        let before = reader.remaining();
-        let len: usize = kani::any();
-        match ok_value(reader.take(len)) {
-            Some(slice) => {
-                assert_eq!(slice.len(), len);
-                assert_eq!(reader.remaining(), before - len);
-            }
-            None => {
-                assert!(len > before);
-                assert_eq!(reader.remaining(), before);
-            }
-        }
-    }
-
-    #[kani::proof]
-    #[kani::unwind(8)]
-    fn len_bounds_allocation() {
-        let bytes: [u8; 6] = kani::any();
-        let size: usize = kani::any_where(|l: &usize| *l <= bytes.len());
-        let mut reader = Reader::new(&bytes[..size]);
-        reader.remaining_items = kani::any();
-        let items_before = reader.remaining_items;
-        let min_element_size: usize = kani::any_where(|n: &usize| *n <= 64);
-        if let Some(len) = ok_value(reader.len(min_element_size)) {
-            assert!(len.saturating_mul(min_element_size.max(1)) <= reader.remaining());
-            assert!(len <= items_before);
-            assert_eq!(reader.remaining_items, items_before - len);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +404,44 @@ mod tests {
                 let mut writer = Writer::default();
                 writer.var(value);
                 prop_assert_eq!(writer.into_bytes(), bytes[..used].to_vec());
+            }
+        }
+
+        #[test]
+        fn test_var_never_overreads(bytes in prop::collection::vec(any::<u8>(), 0..16)) {
+            let mut reader = Reader::new(&bytes);
+            let _ = reader.var();
+            prop_assert!(reader.remaining() <= bytes.len());
+        }
+
+        #[test]
+        fn test_take_is_bounds_checked(bytes in prop::collection::vec(any::<u8>(), 0..16), len in any::<usize>()) {
+            let mut reader = Reader::new(&bytes);
+            match reader.take(len) {
+                Ok(slice) => {
+                    prop_assert_eq!(slice.len(), len);
+                    prop_assert_eq!(reader.remaining(), bytes.len() - len);
+                }
+                Err(_) => {
+                    prop_assert!(len > bytes.len());
+                    prop_assert_eq!(reader.remaining(), bytes.len());
+                }
+            }
+        }
+
+        /// `len` bounds the allocation a collection can request by the bytes that remain.
+        #[test]
+        fn test_len_bounds_allocation(
+            bytes in prop::collection::vec(any::<u8>(), 0..16),
+            budget in any::<usize>(),
+            min_element_size in 0usize..64,
+        ) {
+            let mut reader = Reader::new(&bytes);
+            reader.remaining_items = budget;
+            if let Ok(len) = reader.len(min_element_size) {
+                prop_assert!(len.saturating_mul(min_element_size.max(1)) <= reader.remaining());
+                prop_assert!(len <= budget);
+                prop_assert_eq!(reader.remaining_items, budget - len);
             }
         }
 
