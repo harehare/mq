@@ -1,4 +1,5 @@
 pub(super) mod bytes;
+mod char_index;
 mod compress;
 pub(super) mod convert;
 #[cfg(feature = "css-selector")]
@@ -1849,6 +1850,18 @@ fn slice_bounds(start: number::Number, end: number::Number, len: usize) -> std::
     if end <= start { start..start } else { start..end }
 }
 
+/// Slices `s` by char positions with `slice_bounds` semantics.
+fn slice_str(s: &Shared<String>, start: number::Number, end: number::Number) -> &str {
+    let range = slice_bounds(start, end, char_index::char_len(s));
+    &s[char_index::char_to_byte(s, range.start)..char_index::char_to_byte(s, range.end)]
+}
+
+/// Returns the char of `s` at a possibly negative `index`, or `None` when out of range.
+pub(crate) fn char_at(s: &Shared<String>, index: number::Number) -> Option<char> {
+    let i = resolve_index(index, char_index::char_len(s))?;
+    s[char_index::char_to_byte(s, i)..].chars().next()
+}
+
 #[mq_macros::mq_fn(name = "slice", params = Fixed(3))]
 fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     // Like `get`, a non-integer bound yields none.
@@ -1867,11 +1880,7 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::String(s),
             RuntimeValue::Number(start),
             RuntimeValue::Number(end),
-        ] => {
-            let chars: Vec<char> = s.chars().collect();
-            let range = slice_bounds(*start, *end, chars.len());
-            Ok(chars[range].iter().collect::<String>().into())
-        }
+        ] => Ok(slice_str(s, *start, *end).into()),
         [
             RuntimeValue::Array(arrays),
             RuntimeValue::Number(start),
@@ -1886,12 +1895,7 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::Number(end),
         ] => node
             .markdown_node()
-            .map(|md| {
-                let chars: Vec<char> = md.value().chars().collect();
-                let range = slice_bounds(*start, *end, chars.len());
-                let sub: String = chars[range].iter().collect();
-                Ok(node.update_markdown_value(&sub))
-            })
+            .map(|md| Ok(node.update_markdown_value(slice_str(&Shared::new(md.value().to_string()), *start, *end))))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [
             RuntimeValue::Bytes(b),
@@ -3819,12 +3823,10 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             .and_then(|i| array.get(i))
             .cloned()
             .unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
-            match resolve_index(*n, s.chars().count()).and_then(|i| s.chars().nth(i)) {
-                Some(o) => Ok(o.to_string().into()),
-                None => Ok(RuntimeValue::NONE),
-            }
-        }
+        [RuntimeValue::String(s), RuntimeValue::Number(n)] => match char_at(s, *n) {
+            Some(o) => Ok(o.to_string().into()),
+            None => Ok(RuntimeValue::NONE),
+        },
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
             let len = node.value().chars().count();
             match resolve_index(*i, len).and_then(runtime_value::Selector::index) {
