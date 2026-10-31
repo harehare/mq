@@ -1419,39 +1419,27 @@ def m(): test;
 )]
 #[case::sort_mixed(
     r#"let z = 1
-| import "b.mq"
-def y(): test;
 | let a = 2
+| import "b.mq"
 | import "a.mq"
+def y(): test;
 def b(): test;"#,
-    "import \"a.mq\"\n| import \"b.mq\"\n| let a = 2\n| let z = 1\n|\ndef b(): test;\ndef y(): test;\n"
+    "let a = 2\n| let z = 1\n| import \"a.mq\"\n| import \"b.mq\"\ndef b(): test;\ndef y(): test;\n"
 )]
-#[case::sort_with_other(
-    r#"def z(): test;
-| let x = 1
-| nodes
-| def a(): test;"#,
-    "let x = 1\n|\ndef a(): test;\ndef z(): test;\n| nodes\n"
+#[case::definitions_stay_before_pipeline(
+    "def z(): 1;\n# doc for a\ndef a(): z();\nlet v = a()\n| v",
+    "# doc for a\ndef a(): z();\ndef z(): 1;\nlet v = a()\n| v\n"
 )]
-#[case::sort_with_piped_calls(
-    r#"def z(): test;
-| let x = 1
-| add() | mul() | sub()
-| def a(): test;
-| let y = 2"#,
-    "let x = 1\n| let y = 2\n|\ndef a(): test;\ndef z(): test;\n| add()\n| mul()\n| sub()\n"
+#[case::runs_split_by_other_statement(
+    "def z(): 1;\ndef a(): 2;\n| x\n| def y(): 3;\ndef b(): 4;",
+    "def a(): 2;\ndef z(): 1;\n| x\n| def b(): 4;\ndef y(): 3;\n"
 )]
-#[case::sort_all_types(
-    r#"add() | sub()
-| def func_b(): test;
-| let var_z = 1
-| import "z.mq"
-| let var_a = 2
-| def func_a(): test;
-| mul() | div()
-| import "a.mq""#,
-    "import \"a.mq\"\n| import \"z.mq\"\n| let var_a = 2\n| let var_z = 1\n|\ndef func_a(): test;\ndef func_b(): test;\n| add()\n| sub()\n| mul()\n| div()\n"
+#[case::lets_stay_around_other_statement(
+    "let z = 1\n| let a = 2\n| foo()\n| let y = 3\n| let b = 4",
+    "let a = 2\n| let z = 1\n| foo()\n| let b = 4\n| let y = 3\n"
 )]
+#[case::blank_line_stays_with_slot("def z(): 1;\n\ndef a(): 2;", "def a(): 2;\n\ndef z(): 1;\n")]
+#[case::pipeline_untouched("add() | sub()\n| mul()", "add() | sub()\n| mul()\n")]
 fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
     let config = FormatterConfig {
         indent_width: 2,

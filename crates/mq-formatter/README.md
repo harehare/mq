@@ -80,9 +80,11 @@ mq fmt --check file.mq
 | `--indent-width`   | `-i`  | Number of spaces for indentation         | `2`     |
 | `--max-width`      | `-w`  | Wrap `\|`-chained pipelines that exceed this line width | unset (no wrapping) |
 | `--check`          | `-c`  | Check formatting without modifying files | `false` |
-| `--sort-imports`   |       | Sort import statements                   | `false` |
-| `--sort-functions` |       | Sort function definitions                | `false` |
-| `--sort-fields`    |       | Sort record fields                       | `false` |
+| `--sort-imports`   |       | Sort consecutive `import` statements     | `false` |
+| `--sort-functions` |       | Sort consecutive `def` statements        | `false` |
+| `--sort-fields`    |       | Sort consecutive `let`/`var` statements  | `false` |
+
+The sort options only reorder a run of consecutive top-level statements of the same kind, by name. Other statements, such as `let v = a() | v`, keep their position and split runs. `--sort-fields` sorts top-level `let`/`var` statements, not dictionary keys. It can change the result when one `let` uses another, so enable it only for independent bindings.
 
 ## Exit Codes
 

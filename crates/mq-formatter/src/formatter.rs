@@ -43,7 +43,7 @@ impl Source {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum SortPriority {
     Import = 0,
     Include = 1,
@@ -57,11 +57,11 @@ enum SortPriority {
 pub struct FormatterConfig {
     /// Number of spaces per indent level.
     pub indent_width: usize,
-    /// Sort `import`/`include` statements.
+    /// Sort consecutive `import` statements.
     pub sort_imports: bool,
-    /// Sort top-level function definitions.
+    /// Sort consecutive top-level `def` statements.
     pub sort_functions: bool,
-    /// Sort dict fields.
+    /// Sort consecutive top-level `let`/`var` statements.
     pub sort_fields: bool,
     /// Maximum line width before wrapping, if any.
     pub max_width: Option<usize>,
@@ -85,7 +85,7 @@ impl From<&CstNode> for SortPriority {
             CstNodeKind::Import { .. } => SortPriority::Import,
             CstNodeKind::Include { .. } => SortPriority::Include,
             CstNodeKind::Let { .. } | CstNodeKind::Var { .. } => SortPriority::Let,
-            CstNodeKind::Def { .. } | CstNodeKind::Fn { .. } => SortPriority::Def,
+            CstNodeKind::Def { .. } => SortPriority::Def,
             _ => SortPriority::Other,
         }
     }
@@ -104,10 +104,6 @@ pub(crate) fn ident(node: &CstNode) -> Option<String> {
         }
         _ => None,
     }
-}
-
-pub fn needs_pipe(node: &CstNode) -> bool {
-    !matches!(node.kind, CstNodeKind::Def { .. } | CstNodeKind::Eof)
 }
 
 impl Formatter {
@@ -170,85 +166,75 @@ impl Formatter {
         Ok(result)
     }
 
-    #[inline(always)]
-    fn should_insert_pipe_before(
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        index: usize,
-        prev_node: &Option<mq_lang::Shared<mq_lang::CstNode>>,
-    ) -> bool {
-        (needs_pipe(node) && index != 0) || (!node.is_eof() && prev_node.as_ref().is_some_and(|p| needs_pipe(p)))
-    }
+    /// Sorts each run of consecutive top-level `import`s, `let`/`var`s or `def`s by name.
+    /// Runs are never merged across other statements, so relative positions are kept.
+    fn sort_nodes(&self, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> Vec<mq_lang::Shared<mq_lang::CstNode>> {
+        let mut result = nodes.to_vec();
+        let mut run: Vec<usize> = Vec::new();
+        let mut run_kind: Option<SortPriority> = None;
 
-    fn sort_nodes(
-        &mut self,
-        nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
-    ) -> Vec<mq_lang::Shared<mq_lang::CstNode>> {
-        nodes.retain(|node| !node.is_pipe());
-        nodes.sort_by(|a, b| {
-            let priority_a: SortPriority = (&**a).into();
-            let priority_b: SortPriority = (&**b).into();
-
-            if priority_a != priority_b {
-                return priority_a.cmp(&priority_b);
+        for i in 0..=nodes.len() {
+            let node = nodes.get(i).filter(|n| !n.is_eof());
+            if node.is_some_and(|n| n.is_pipe()) {
+                continue;
             }
 
-            match priority_a {
-                SortPriority::Import if self.config.sort_imports => {
-                    let ident_a = ident(a);
-                    let ident_b = ident(b);
-                    ident_a.cmp(&ident_b)
-                }
-                SortPriority::Let if self.config.sort_fields => {
-                    let ident_a = ident(a);
-                    let ident_b = ident(b);
-                    ident_a.cmp(&ident_b)
-                }
-                SortPriority::Def if self.config.sort_functions => {
-                    let ident_a = ident(a);
-                    let ident_b = ident(b);
-                    ident_a.cmp(&ident_b)
-                }
-                _ => std::cmp::Ordering::Equal,
-            }
-        });
-
-        let mut sorted_nodes = Vec::new();
-        let mut prev_node: Option<mq_lang::Shared<mq_lang::CstNode>> = None;
-
-        for (i, node) in nodes.iter_mut().enumerate() {
-            if Self::should_insert_pipe_before(node, i, &prev_node) {
-                let pipe_node = mq_lang::CstNode::new_pipe(i != 0);
-                sorted_nodes.push(mq_lang::Shared::new(pipe_node));
+            let kind = node.map(|n| SortPriority::from(&**n)).filter(|k| self.is_sortable(*k));
+            if kind.is_some() && kind == run_kind {
+                run.push(i);
+                continue;
             }
 
-            let node = if i == 0 && node.has_new_line() {
-                let mut node = (**node).clone();
-
-                if node.has_new_line() {
-                    while matches!(node.leading_trivia.first(), Some(mq_lang::CstTrivia::NewLine)) {
-                        node.leading_trivia.remove(0);
-                    }
-                }
-
-                &mq_lang::Shared::new(node)
-            } else if !needs_pipe(node)
-                && !node
-                    .leading_trivia
-                    .first()
-                    .is_some_and(|t| matches!(t, mq_lang::CstTrivia::NewLine))
-            {
-                let mut node = (**node).clone();
-                node.leading_trivia.insert(0, mq_lang::CstTrivia::NewLine);
-                &mq_lang::Shared::new(node)
-            } else {
-                node
-            };
-
-            sorted_nodes.push(mq_lang::Shared::clone(node));
-            prev_node = Some(mq_lang::Shared::clone(node));
+            Self::sort_run(&mut result, &run);
+            run.clear();
+            run_kind = kind;
+            if kind.is_some() {
+                run.push(i);
+            }
         }
 
-        sorted_nodes
+        result
+    }
+
+    fn is_sortable(&self, kind: SortPriority) -> bool {
+        match kind {
+            SortPriority::Import => self.config.sort_imports,
+            SortPriority::Let => self.config.sort_fields,
+            SortPriority::Def => self.config.sort_functions,
+            SortPriority::Include | SortPriority::Other => false,
+        }
+    }
+
+    /// Reorders the nodes at `slots` by name. Each slot keeps its own leading blank lines.
+    fn sort_run(nodes: &mut [mq_lang::Shared<mq_lang::CstNode>], slots: &[usize]) {
+        if slots.len() < 2 {
+            return;
+        }
+
+        let leading_new_lines = |node: &mq_lang::CstNode| {
+            node.leading_trivia
+                .iter()
+                .take_while(|t| matches!(t, mq_lang::CstTrivia::NewLine))
+                .count()
+        };
+
+        let mut sorted: Vec<_> = slots.iter().map(|&i| mq_lang::Shared::clone(&nodes[i])).collect();
+        sorted.sort_by_key(|n| ident(n));
+
+        for (&slot, node) in slots.iter().zip(sorted) {
+            let slot_new_lines = leading_new_lines(&nodes[slot]);
+            let node_new_lines = leading_new_lines(&node);
+            nodes[slot] = if slot_new_lines == node_new_lines {
+                node
+            } else {
+                let mut node = (*node).clone();
+                let rest: Vec<_> = node.leading_trivia.drain(node_new_lines..).collect();
+                node.leading_trivia.clear();
+                node.leading_trivia
+                    .extend(std::iter::repeat_n(mq_lang::CstTrivia::NewLine, slot_new_lines).chain(rest));
+                mq_lang::Shared::new(node)
+            };
+        }
     }
 
     fn format_node(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
