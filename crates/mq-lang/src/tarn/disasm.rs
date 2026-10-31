@@ -209,6 +209,7 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::Const(index) => format!("Const {index}"),
         bytecode::OpCode::PushNone => "PushNone".to_string(),
         bytecode::OpCode::GetLocal(slot) => format!("GetLocal {}", local(*slot)),
+        bytecode::OpCode::TakeLocal(slot) => format!("TakeLocal {}", local(*slot)),
         bytecode::OpCode::SetLocal(slot) => format!("SetLocal {}", local(*slot)),
         bytecode::OpCode::SetIndexLocal(slot) => format!("SetIndexLocal {}", local(*slot)),
         bytecode::OpCode::AddAssignLocal(slot) => format!("AddAssignLocal {}", local(*slot)),
@@ -229,6 +230,9 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
             format!("SetLocalConst {} {constant}", local(*slot))
         }
         bytecode::OpCode::TeeLocal(slot) => format!("TeeLocal {}", local(*slot)),
+        bytecode::OpCode::MoveLocal { source, destination } => {
+            format!("MoveLocal {} -> {}", local(*source), local(*destination))
+        }
         bytecode::OpCode::CopyLocal { source, destination } => {
             format!("CopyLocal {} -> {}", local(*source), local(*destination))
         }

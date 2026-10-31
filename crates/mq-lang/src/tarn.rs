@@ -17,6 +17,7 @@ mod debugger;
 #[cfg(feature = "debug-trace")]
 mod disasm;
 pub(crate) mod interpreter;
+mod last_use;
 mod nodes_split;
 mod peephole;
 mod resolver;

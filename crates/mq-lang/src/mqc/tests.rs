@@ -85,6 +85,15 @@ fn replace_meta(bytes: &[u8], edit: impl FnOnce(&mut Meta)) -> Vec<u8> {
     "def f(a): [!a, !!a, !(a == 1), -(3 + 4)]; | def g(a): -a; | [f(true), f(None), g(3)]",
     "x\n"
 )]
+#[case::moved_argument("def touch(a, i): set(a, 0, i); | var a = [1, 2, 3] | a = touch(a, 9) | a[0]", "x\n")]
+#[case::moved_copy(
+    "def f(h, x): var a = h | a += [x] | a; | var h = [1] | h = f(h, 2) | h = f(h, 3) | len(h)",
+    "x\n"
+)]
+#[case::read_again_in_loop(
+    "def get(a, i): a[i]; | var a = [1, 2, 3] | var s = 0 | var i = 0 | let _ = while (i < 3): do s = s + get(a, i) | i = i + 1 end end | s",
+    "x\n"
+)]
 #[case::unused_defs("def unused(x): x; | def used(x): x + 1; | used(1)", "x\n")]
 #[case::defs_around_nodes("def f(x): x + 1; | def g(x): x; | .h | nodes | f(len())", "# a\n\n## b\n")]
 fn test_mqc_round_trip_matches_eval(#[case] query: &str, #[case] input: &str) {

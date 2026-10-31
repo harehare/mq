@@ -1092,6 +1092,9 @@ fn compile_program_impl<R: ModuleResolver>(
         chunk.refresh_captured_local_slots();
     }
     super::peephole::specialize_static_exact_calls(&mut compiler.chunks);
+    if options.locals_unobserved {
+        crate::tarn::last_use::move_last_uses(&mut compiler.chunks);
+    }
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;
     #[cfg(feature = "debugger")]
     {

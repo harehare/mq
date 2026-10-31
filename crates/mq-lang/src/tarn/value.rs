@@ -357,6 +357,41 @@ impl Locals {
         }
     }
 
+    /// Moves a local out of its slot, leaving `None`.
+    ///
+    /// Only for slots no closure captures. The compiler guarantees that, so a captured cell
+    /// is read instead of cleared.
+    #[inline(always)]
+    pub(crate) fn take(&mut self, slot: u16) -> StackValue {
+        let none = || StackValue::Value(RuntimeValue::None);
+        let taken = match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => std::mem::replace(&mut slots[slot as usize], none()),
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &mut **hybrid;
+                match &captured[slot as usize] {
+                    Some(cell) => return read_cell(cell),
+                    None => std::mem::replace(&mut slots[slot as usize], none()),
+                }
+            }
+            Locals::Boxed(slots) => {
+                #[cfg(not(feature = "sync"))]
+                {
+                    std::mem::replace(&mut *slots[slot as usize].borrow_mut(), none())
+                }
+                #[cfg(feature = "sync")]
+                {
+                    std::mem::replace(&mut *slots[slot as usize].write().unwrap(), none())
+                }
+            }
+        };
+        match taken {
+            StackValue::Value(_) => taken,
+            other => other.upgraded(),
+        }
+    }
+
     /// Reads a local slot when it is in range.
     pub(crate) fn get_checked(&self, slot: u16) -> Option<StackValue> {
         ((slot as usize) < self.len()).then(|| self.get(slot))

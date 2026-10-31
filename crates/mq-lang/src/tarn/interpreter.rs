@@ -1314,6 +1314,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::GetLocal(slot) => {
                 stack.push(locals.get(*slot));
             }
+            OpCode::TakeLocal(slot) => {
+                stack.push(locals.take(*slot));
+            }
             OpCode::SetLocal(slot) => {
                 let v = pop!();
                 locals.set(*slot, v);
@@ -1373,6 +1376,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::CopyLocal { source, destination } => {
                 let value = locals.get(*source);
+                locals.set(*destination, value);
+            }
+            OpCode::MoveLocal { source, destination } => {
+                let value = locals.take(*source);
                 locals.set(*destination, value);
             }
             OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),

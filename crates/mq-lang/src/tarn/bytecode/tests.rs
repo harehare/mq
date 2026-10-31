@@ -222,6 +222,7 @@ fn verifier_uses_the_lowest_height_at_a_stack_polymorphic_join() {
 
 #[rstest]
 #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
+#[case::take_local(vec![OpCode::TakeLocal(0), OpCode::Pop, OpCode::Return])]
 #[case::return_local(vec![OpCode::ReturnLocal(0)])]
 #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
 #[case::set_index_local(vec![
@@ -240,6 +241,13 @@ fn verifier_uses_the_lowest_height_at_a_stack_polymorphic_join() {
 #[case::tee_local(vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Return])]
 #[case::copy_local(vec![
         OpCode::CopyLocal {
+            source: 0,
+            destination: 0,
+        },
+        OpCode::Return,
+    ])]
+#[case::move_local(vec![
+        OpCode::MoveLocal {
             source: 0,
             destination: 0,
         },
@@ -328,6 +336,11 @@ fn verifier_uses_the_lowest_height_at_a_stack_polymorphic_join() {
     ])]
 #[case::foreach_next(vec![
         OpCode::ForeachNext { array_slot: 0, index_slot: 0, value_slot: 0, exit_offset: 1 },
+        OpCode::Return,
+    ])]
+#[case::take_local(vec![OpCode::TakeLocal(0), OpCode::Pop, OpCode::Return])]
+#[case::move_local_source(vec![
+        OpCode::MoveLocal { source: 0, destination: 0 },
         OpCode::Return,
     ])]
 #[case::call_builtin_local(vec![
