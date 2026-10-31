@@ -86,6 +86,13 @@ This is equivalent to calling `is_regex_match(string, pattern)`.
 # Complex patterns
 "2024-01-15" =~ "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
 # => true
+
+# Unicode classes: general categories and scripts
+"café" =~ "^\\p{L}+$"
+# => true
+
+"漢字" =~ "^\\p{Han}+$"
+# => true
 ```
 
 ### Not Regex Match Operator

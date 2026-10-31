@@ -856,6 +856,21 @@ def test_regex_escape(value, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   ["café", "^\\p{L}+$", true],
+#   ["abc1", "^\\p{L}+$", false],
+#   ["漢字", "^\\p{Han}+$", true],
+#   ["かな", "^\\p{Hiragana}+$", true],
+#   ["かな", "^\\p{Han}+$", false],
+# ])
+def test_regex_unicode_class(value, pattern, expected):
+  assert_eq(is_regex_match(value, pattern), expected)
+end
+
+def test_regex_split_unicode_letters():
+  assert_eq(split("Hello, 世界! café 123", "[^\\p{L}]+"), ["Hello", "世界", "café", ""])
+end
+
 def test_regex_escape_matches_literal_input():
   let pattern = regex_escape("1.2")
   | assert_eq(is_regex_match("1.2", pattern), true)
