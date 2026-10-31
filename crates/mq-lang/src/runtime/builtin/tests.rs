@@ -5489,6 +5489,25 @@ fn test_contains_dict(#[case] key: RuntimeValue, #[case] expected: bool) {
 }
 
 proptest::proptest! {
+    /// Long enough to cross `MIN_INDEXED_LEN`, with multi-byte chars to exercise the sparse index.
+    #[test]
+    fn test_char_at_and_slice_str_match_a_char_vector(
+        text in "[aあ😀b]{0,1500}",
+        start in -1600i64..1600,
+        end in -1600i64..1600,
+    ) {
+        let s = Shared::new(text);
+        let chars: Vec<char> = s.chars().collect();
+        let (start, end) = (number::Number::from(start), number::Number::from(end));
+
+        let expected: String = chars[slice_bounds(start, end, chars.len())].iter().collect();
+        proptest::prop_assert_eq!(slice_str(&s, start, end), expected);
+        proptest::prop_assert_eq!(
+            char_at(&s, start),
+            resolve_index(start, chars.len()).and_then(|i| chars.get(i).copied())
+        );
+    }
+
     #[test]
     fn test_slice_bounds_is_a_valid_range(
         start in proptest::num::f64::ANY,
@@ -5513,4 +5532,14 @@ proptest::proptest! {
             proptest::prop_assert!(i < len);
         }
     }
+}
+
+#[test]
+fn test_char_at_sees_mutation_of_an_indexed_string() {
+    let mut s = Shared::new("a".repeat(2000));
+    assert_eq!(char_at(&s, number::Number::from(-1)), Some('a'));
+
+    Shared::make_mut(&mut s).push('あ');
+    assert_eq!(char_at(&s, number::Number::from(-1)), Some('あ'));
+    assert_eq!(char_at(&s, number::Number::from(2000)), Some('あ'));
 }

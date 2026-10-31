@@ -146,10 +146,8 @@ fn eval_index_expr(value: &RuntimeValue, index: &RuntimeValue) -> Option<Runtime
     }
 }
 
-fn string_char_at(s: &str, index: Number) -> RuntimeValue {
-    builtin::resolve_index(index, s.chars().count())
-        .and_then(|i| s.chars().nth(i))
-        .map_or(RuntimeValue::None, |c| c.to_string().into())
+fn string_char_at(s: &Shared<String>, index: Number) -> RuntimeValue {
+    builtin::char_at(s, index).map_or(RuntimeValue::None, |c| c.to_string().into())
 }
 
 /// True for `none` and for arrays/dicts that contain nothing but blank values.
