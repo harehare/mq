@@ -13,7 +13,7 @@ use std::fmt::Write as _;
 use std::io::BufRead;
 use std::io::IsTerminal;
 use std::io::{self, BufWriter, Read, Write};
-use std::path::Path;
+use std::path::{Component, Path};
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
@@ -383,6 +383,23 @@ impl OutputFormat {
         }
     }
 
+    /// File extension for `--out-dir`; `None` keeps the input's own extension.
+    fn extension(&self) -> Option<&'static str> {
+        match self {
+            Self::Html => Some("html"),
+            Self::Json => Some("json"),
+            Self::Jsonl => Some("jsonl"),
+            Self::Csv => Some("csv"),
+            Self::Toml => Some("toml"),
+            Self::Toon => Some("toon"),
+            Self::Xml => Some("xml"),
+            Self::Yaml => Some("yaml"),
+            Self::Gron => Some("gron"),
+            Self::Text | Self::Raw => Some("txt"),
+            Self::Markdown | Self::Table | Self::Grep | Self::Shell | Self::None => None,
+        }
+    }
+
     fn from_path(path: &Path) -> Self {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
         Self::from_extension(ext)
@@ -582,9 +599,9 @@ struct ProgramArgs {
     allow_read: Option<Vec<PathBuf>>,
 
     /// Allow the `write_file`/`mkdir`/`extract_images` functions to write to the filesystem.
-    /// Under `--sandbox`, this also gates `-o`/`--output` (and `--append`, `--no-clobber`,
+    /// Under `--sandbox`, this also gates `-o`/`--output` and `--out-dir` (and `--append`, `--no-clobber`,
     /// `--atomic-output`), which are rejected unless the target is allowed. Without
-    /// `--sandbox`, `-o` is not restricted. Disabled by default. Pass with no value to allow writing anywhere, or
+    /// `--sandbox`, `-o` and `--out-dir` are not restricted. Disabled by default. Pass with no value to allow writing anywhere, or
     /// `--allow-write=PATH` (files or directories; repeat the flag, or comma-separate, to
     /// add more) to restrict writes to just those paths and their descendants. The `=` is
     /// required so a bare path after the flag isn't swallowed as a query/file positional
@@ -621,8 +638,8 @@ struct ProgramArgs {
     allow_all: bool,
 
     /// Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags,
-    /// except --allow-write, which adds write access (including `-o`/`--output`) on top of
-    /// the preset. Under a preset, `-o`/`--output` is denied unless write access is granted.
+    /// except --allow-write, which adds write access (including `-o`/`--output` and `--out-dir`) on top of
+    /// the preset. Under a preset, they are denied unless write access is granted.
     #[arg(
         long = "sandbox",
         value_enum,
@@ -770,16 +787,33 @@ struct OutputArgs {
     separator: Option<String>,
 
     /// Output to the specified file. With several inputs, results are written one after another
-    #[clap(short = 'o', long = "output", value_name = "FILE", conflicts_with = "quiet")]
+    #[clap(
+        short = 'o',
+        long = "output",
+        value_name = "FILE",
+        group = "output_target",
+        conflicts_with = "quiet"
+    )]
     output_file: Option<PathBuf>,
 
-    /// Write `-o`/`--output` atomically via a same-directory temp file + fsync
+    /// Write one file per input under DIR, keeping the input path (`docs/a.md` becomes
+    /// `DIR/docs/a.html` with `-F html`). Inputs must be relative paths inside the
+    /// current directory; stdin is not supported.
+    #[clap(
+        long = "out-dir",
+        value_name = "DIR",
+        group = "output_target",
+        conflicts_with_all = ["quiet", "count", "diff", "separator", "append"]
+    )]
+    out_dir: Option<PathBuf>,
+
+    /// Write `-o`/`--output` and `--out-dir` files atomically via a same-directory temp file + fsync
     /// + rename, so a crash or full disk mid-write can't truncate the target.
-    #[clap(long, value_enum, default_value_t = AtomicOutput::Auto, requires = "output_file", conflicts_with = "quiet")]
+    #[clap(long, value_enum, default_value_t = AtomicOutput::Auto, requires = "output_target", conflicts_with = "quiet")]
     atomic_output: AtomicOutput,
 
-    /// Fail instead of overwriting `-o`/`--output` if the target already exists.
-    #[clap(long, default_value_t = false, requires = "output_file", conflicts_with_all = ["append", "quiet"])]
+    /// Fail instead of overwriting `-o`/`--output` or an `--out-dir` file if the target already exists.
+    #[clap(long, default_value_t = false, requires = "output_target", conflicts_with_all = ["append", "quiet"])]
     no_clobber: bool,
 
     /// Add to `-o`/`--output` instead of replacing it, creating it if missing.
@@ -1936,6 +1970,10 @@ impl Cli {
             return Err(miette!("--indent/--tab are only valid with -F json or -F xml"));
         }
 
+        if self.output.out_dir.is_some() && self.input.eval_all {
+            return Err(miette!("--out-dir cannot be combined with --eval-all"));
+        }
+
         self.check_output_permitted()
     }
 
@@ -2251,7 +2289,10 @@ impl Cli {
     /// Under `--sandbox`, rejects `-o`/`--output` (and so `--append`/`--no-clobber`) unless
     /// `--allow-write` permits the target. Without `--sandbox`, output is unrestricted.
     fn check_output_permitted(&self) -> miette::Result<()> {
-        let (Some(_), Some(path)) = (&self.input.program.sandbox, &self.output.output_file) else {
+        let (Some(_), Some(path)) = (
+            &self.input.program.sandbox,
+            self.output.output_file.as_ref().or(self.output.out_dir.as_ref()),
+        ) else {
             return Ok(());
         };
         self.input
@@ -2259,6 +2300,66 @@ impl Cli {
             .build_sandboxed_io()
             .check_write(path)
             .map_err(|e| miette!("cannot write output file: {e} (use --allow-write to permit it)"))
+    }
+
+    /// Opens the sink for `file`'s results: its `--out-dir` path, `-o`, or stdout.
+    fn open_sink(&self, file: &Option<PathBuf>) -> miette::Result<OutputSink> {
+        let Some(dir) = &self.output.out_dir else {
+            return OutputSink::open(
+                &self.output.output_file,
+                self.output.atomic_output,
+                self.output.unbuffered,
+                self.clobber_mode(),
+                &self.output.output_claimed,
+            );
+        };
+        let path = self.out_dir_target(dir, file)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| miette!("cannot create output directory {}: {e}", parent.display()))?;
+            let escapes = match (parent.canonicalize(), dir.canonicalize()) {
+                (Ok(parent), Ok(dir)) => !parent.starts_with(dir),
+                _ => true,
+            };
+            if escapes {
+                return Err(miette!("output path {} is outside --out-dir", path.display()));
+            }
+        }
+        // Each input owns its file, so no-clobber is checked per file.
+        OutputSink::open(
+            &Some(path),
+            self.output.atomic_output,
+            self.output.unbuffered,
+            self.clobber_mode(),
+            &AtomicBool::new(false),
+        )
+    }
+
+    /// Maps an input path to its place under `dir`, swapping the extension to match `-F`.
+    fn out_dir_target(&self, dir: &Path, file: &Option<PathBuf>) -> miette::Result<PathBuf> {
+        let rel = match file {
+            Some(f) if !Self::is_stdin_path(f) => f,
+            _ => return Err(miette!("--out-dir needs file inputs; stdin has no path to keep")),
+        };
+        let rel: PathBuf = rel.components().filter(|c| !matches!(c, Component::CurDir)).collect();
+        if rel.is_absolute() || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
+            return Err(miette!(
+                "--out-dir input {} must be a relative path without `..`",
+                rel.display()
+            ));
+        }
+        let mut path = dir.join(rel);
+        if let Some(ext) = self.resolved_output_format().extension() {
+            path.set_extension(ext);
+        }
+        if self.input.program.sandbox.is_some() {
+            self.input
+                .program
+                .build_sandboxed_io()
+                .check_write(&path)
+                .map_err(|e| miette!("cannot write output file: {e} (use --allow-write to permit it)"))?;
+        }
+        Ok(path)
     }
 
     fn clobber_mode(&self) -> ClobberMode {
@@ -2399,22 +2500,16 @@ impl Cli {
         };
 
         if self.quiet {
-            return self.print(runtime_values, self.is_mdx_input(file));
+            return self.print(runtime_values, self.is_mdx_input(file), file);
         }
 
         if let Some(input) = grep_input {
             self.record_exit_status(runtime_values.values());
             let (before, after) = self.output.context_counts();
-            let handle = OutputSink::open(
-                &self.output.output_file,
-                self.output.atomic_output,
-                self.output.unbuffered,
-                self.clobber_mode(),
-                &self.output.output_claimed,
-            )?;
+            let handle = self.open_sink(file)?;
             grep::print_grep(runtime_values, &input, file, handle, before, after)
         } else {
-            self.print(runtime_values, self.is_mdx_input(file))
+            self.print(runtime_values, self.is_mdx_input(file), file)
         }
     }
 
@@ -2846,7 +2941,7 @@ impl Cli {
                     vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
                 )
                 .map_err(|e| *e)?;
-            self.print(separator, false)?;
+            self.print(separator, false, &None)?;
         }
 
         self.emit_results(runtime_values, grep_input, file)
@@ -3211,6 +3306,7 @@ impl Cli {
             ColorChoice::Always => true,
             ColorChoice::Auto => {
                 self.output.output_file.is_none()
+                    && self.output.out_dir.is_none()
                     && io::stdout().is_terminal()
                     && std::env::var("TERM").map_or(true, |t| t != "dumb")
             }
@@ -3459,7 +3555,7 @@ impl Cli {
         }
     }
 
-    fn print(&self, runtime_values: mq_lang::RuntimeValues, mdx: bool) -> miette::Result<()> {
+    fn print(&self, runtime_values: mq_lang::RuntimeValues, mdx: bool, file: &Option<PathBuf>) -> miette::Result<()> {
         let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
             runtime_values
                 .values()
@@ -3476,13 +3572,7 @@ impl Cli {
             return Ok(());
         }
 
-        let mut handle = OutputSink::open(
-            &self.output.output_file,
-            self.output.atomic_output,
-            self.output.unbuffered,
-            self.clobber_mode(),
-            &self.output.output_claimed,
-        )?;
+        let mut handle = self.open_sink(file)?;
 
         let colorize = self.use_color();
         let buf = self.render(runtime_values, colorize, mdx)?;
