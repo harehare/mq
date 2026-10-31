@@ -29,12 +29,18 @@ pub(super) fn generate_numeric_range(start: isize, end: isize, step: isize) -> R
     if step > 0 {
         while current <= end {
             result.push(RuntimeValue::Number(current.into()));
-            current += step;
+            let Some(next) = current.checked_add(step) else {
+                break;
+            };
+            current = next;
         }
     } else {
         while current >= end {
             result.push(RuntimeValue::Number(current.into()));
-            current += step;
+            let Some(next) = current.checked_add(step) else {
+                break;
+            };
+            current = next;
         }
     }
 
@@ -76,14 +82,20 @@ pub(super) fn generate_char_range(
             if let Some(ch) = char::from_u32(current as u32) {
                 result.push(RuntimeValue::String(Shared::new(ch.to_string())));
             }
-            current += step;
+            let Some(next) = current.checked_add(step) else {
+                break;
+            };
+            current = next;
         }
     } else {
         while current >= end {
             if let Some(ch) = char::from_u32(current as u32) {
                 result.push(RuntimeValue::String(Shared::new(ch.to_string())));
             }
-            current += step;
+            let Some(next) = current.checked_add(step) else {
+                break;
+            };
+            current = next;
         }
     }
 
