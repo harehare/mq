@@ -1900,6 +1900,52 @@ def test_assert_matches():
   | assert_eq(result4["error"], true)
 end
 
+def _status_of(body):
+  run_tests_data([test_case("t", body)])[0]["status"]
+end
+
+def _loop_foreach_failing():
+  foreach (x, [1, 2, 3]):
+    assert_eq(x, 2)
+  end
+end
+
+def _loop_map_failing():
+  map([1, 2, 3], fn(x): assert_eq(x, 99););
+
+def _loop_nested_failing():
+  map([[1], [2]], fn(xs): map(xs, fn(x): assert_eq(x, 2);););
+
+def _loop_passing():
+  foreach (x, [1, 2]):
+    assert_eq(x, x)
+  end
+end
+
+def _data_with_error_field():
+  [{"error": "not a failure"}, {"error": None}];
+
+# Assertions failing inside a loop body are collected in the result array, not returned directly.
+def test_run_tests_detects_assertion_failure_in_foreach():
+  assert_eq(_status_of(_loop_foreach_failing), "failed")
+end
+
+def test_run_tests_detects_assertion_failure_in_map():
+  assert_eq(_status_of(_loop_map_failing), "failed")
+end
+
+def test_run_tests_detects_assertion_failure_in_nested_loop():
+  assert_eq(_status_of(_loop_nested_failing), "failed")
+end
+
+def test_run_tests_passes_when_loop_assertions_hold():
+  assert_eq(_status_of(_loop_passing), "passed")
+end
+
+def test_run_tests_ignores_error_field_in_data_array():
+  assert_eq(_status_of(_data_with_error_field), "passed")
+end
+
 # -- redact Tests --
 
 def test_redact_key_rule_masks_value():

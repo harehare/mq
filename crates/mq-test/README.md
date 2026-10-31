@@ -291,6 +291,8 @@ The runner automatically generates a `run_tests(flatten([...]))` call (or,
 under `--format json`, a `run_tests_data(flatten([...]))` call) from all
 discovered test functions, so test files do not need to maintain a manual list.
 
+A failed assertion is returned as a value, not raised. Assertions inside loops such as `foreach`, `map` and `while` are still detected, because the runner looks through the (nested) result array for a failure.
+
 ### Snapshot Testing
 
 `assert_snapshot(name, actual)` compares `actual` against a golden file, for outputs too large to usefully inline in an `assert_eq` diff (e.g. a rendered document):
