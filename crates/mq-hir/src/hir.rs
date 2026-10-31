@@ -352,7 +352,17 @@ impl Hir {
         self.symbols[symbol_id].insertion_order = self.symbol_insertion_counter;
         self.symbol_insertion_counter += 1;
         let symbol = &self.symbols[symbol_id];
-        if let Some(name) = symbol.value.as_ref().filter(|_| Self::is_resolvable_target(symbol)) {
+        // The raw text of a `${...}` embed is not a declaration; its parsed children are the references.
+        let is_embed = symbol.is_variable()
+            && symbol
+                .parent
+                .and_then(|id| self.symbols.get(id))
+                .is_some_and(|p| matches!(p.kind, SymbolKind::InterpolatedString));
+        if let Some(name) = symbol
+            .value
+            .as_ref()
+            .filter(|_| Self::is_resolvable_target(symbol) && !is_embed)
+        {
             self.name_index.entry(name.clone()).or_default().push(symbol_id);
             self.scope_name_index
                 .entry(symbol.scope)
@@ -397,6 +407,17 @@ mod tests {
     use crate::HirError;
     use itertools::Itertools;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::undefined(r#"s"${missing}""#, 1)]
+    #[case::later_use_not_shadowed(r#"let x = 1 | s"${x}" | missing"#, 1)]
+    #[case::defined("let x = 1\n| s\"${x}\"", 0)]
+    fn test_interpolation_embed_is_not_a_declaration(#[case] code: &str, #[case] expected: usize) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, code);
+        assert_eq!(hir.errors().len(), expected, "{:?}", hir.errors());
+    }
 
     #[rstest]
     #[case::none("first(xs)", 0)]
