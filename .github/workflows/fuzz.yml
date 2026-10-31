@@ -1,0 +1,37 @@
+name: Fuzz
+
+on:
+  schedule:
+    - cron: '0 6 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [interpreter, mqc, markdown]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
+        with:
+          toolchain: nightly
+          cache: false
+      - uses: extractions/setup-just@v4.0.0
+        with:
+          just-version: 1.58.0
+      - uses: taiki-e/install-action@v2.87.31
+        with:
+          tool: cargo-fuzz
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: fuzz
+      - name: Fuzz ${{ matrix.target }}
+        run: just test-fuzz ${{ matrix.target }} -- -max_total_time=900

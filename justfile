@@ -157,16 +157,16 @@ test-all: fmt lint test-mq test-doc test-all-features test
 test-cov:
     cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|bench|wasm|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
-# Run fuzzing tests against the Tarn bytecode VM (targets: interpreter, mqc)
-test-fuzz target="interpreter":
+# Run fuzzing tests (targets: interpreter, mqc, markdown, markdown_scaling). Extra args go to cargo-fuzz, e.g. `-- -max_total_time=60`
+test-fuzz target="interpreter" *args:
     #!/usr/bin/env sh
     set -eu
     if cargo +nightly -V >/dev/null 2>&1; then
-        cargo +nightly fuzz run {{target}}
+        cargo +nightly fuzz run {{target}} {{args}}
     elif [ -n "${FUZZ_RUSTUP_TOOLCHAIN_BIN:-}" ]; then
-        PATH="$FUZZ_RUSTUP_TOOLCHAIN_BIN:$PATH" cargo-fuzz run {{target}}
+        PATH="$FUZZ_RUSTUP_TOOLCHAIN_BIN:$PATH" cargo-fuzz run {{target}} {{args}}
     elif command -v rustup >/dev/null 2>&1; then
-        PATH="$(dirname "$(rustup which --toolchain nightly cargo)"):$PATH" cargo-fuzz run {{target}}
+        PATH="$(dirname "$(rustup which --toolchain nightly cargo)"):$PATH" cargo-fuzz run {{target}} {{args}}
     else
         echo "error: a nightly Rust toolchain is required to fuzz; run 'rustup toolchain install nightly'" >&2
         exit 1
