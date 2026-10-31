@@ -427,8 +427,9 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::CallSelfImplicitSelf(argc) => format!("CallSelfImplicitSelf argc={argc}"),
         bytecode::OpCode::CallLocal(slot, argc) => format!("CallLocal {}, argc={argc}", local(*slot)),
         bytecode::OpCode::CallUpvalue(slot, argc) => format!("CallUpvalue {}, argc={argc}", upvalue(*slot)),
-        bytecode::OpCode::CallUpvalueLocal { index, local } => {
-            format!("CallUpvalueLocal {}, local={local}", upvalue(*index))
+        bytecode::OpCode::CallUpvalueLocal { index, local, take } => {
+            let take = if *take { ", take" } else { "" };
+            format!("CallUpvalueLocal {}, local={local}{take}", upvalue(*index))
         }
         bytecode::OpCode::CallValue(argc) => format!("CallValue argc={argc}"),
         bytecode::OpCode::MaybeAutoCall => "MaybeAutoCall".to_string(),

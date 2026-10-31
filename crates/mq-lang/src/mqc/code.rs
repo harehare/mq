@@ -819,10 +819,11 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             writer.var_u16(*index);
             writer.var_u16(*argc);
         }
-        OpCode::CallUpvalueLocal { index, local } => {
+        OpCode::CallUpvalueLocal { index, local, take } => {
             writer.u8(tags::opcode::CALL_UPVALUE_LOCAL);
             writer.var_u16(*index);
             writer.var_u16(*local);
+            writer.bool(*take);
         }
         OpCode::CallValue(argc) => {
             writer.u8(tags::opcode::CALL_VALUE);
@@ -1407,6 +1408,7 @@ impl Decoder<'_> {
             tags::opcode::CALL_UPVALUE_LOCAL => OpCode::CallUpvalueLocal {
                 index: r.var_u16()?,
                 local: r.var_u16()?,
+                take: r.bool()?,
             },
             tags::opcode::CALL_VALUE => OpCode::CallValue(r.var_u16()?),
             tags::opcode::MAYBE_AUTO_CALL => OpCode::MaybeAutoCall,

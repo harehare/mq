@@ -94,6 +94,10 @@ fn replace_meta(bytes: &[u8], edit: impl FnOnce(&mut Meta)) -> Vec<u8> {
     "def get(a, i): a[i]; | var a = [1, 2, 3] | var s = 0 | var i = 0 | let _ = while (i < 3): do s = s + get(a, i) | i = i + 1 end end | s",
     "x\n"
 )]
+#[case::moved_single_argument(
+    "def bump(a): set(a, 0, a[0] + 1); | def run(a): var i = 0 | let _ = while (i < 5): do a = bump(a) | i = i + 1 end end | a[0]; | run([0])",
+    "x\n"
+)]
 #[case::unused_defs("def unused(x): x; | def used(x): x + 1; | used(1)", "x\n")]
 #[case::defs_around_nodes("def f(x): x + 1; | def g(x): x; | .h | nodes | f(len())", "# a\n\n## b\n")]
 fn test_mqc_round_trip_matches_eval(#[case] query: &str, #[case] input: &str) {

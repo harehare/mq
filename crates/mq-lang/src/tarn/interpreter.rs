@@ -2030,8 +2030,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::CallUpvalue(index, argc) => {
                 call_upvalue!('dispatch, *index, *argc);
             }
-            OpCode::CallUpvalueLocal { index, local } => {
-                let argument = locals.get(*local);
+            OpCode::CallUpvalueLocal { index, local, take } => {
+                let argument = if *take { locals.take(*local) } else { locals.get(*local) };
                 let callee = read_cell(&upvalues[*index as usize]);
                 if let StackValue::Closure(closure) = &callee
                     && chunks[closure.chunk_index as usize]

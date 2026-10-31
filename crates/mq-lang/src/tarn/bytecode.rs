@@ -453,6 +453,8 @@ pub(crate) enum OpCode {
     CallUpvalueLocal {
         index: u16,
         local: u16,
+        /// Moves the argument out of `local` (its last use) instead of cloning it.
+        take: bool,
     },
     CallValue(u16),
     /// Invokes a pipeline value only when it is callable without explicit arguments.
@@ -1524,7 +1526,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
-                OpCode::CallUpvalueLocal { index, local } => {
+                OpCode::CallUpvalueLocal { index, local, .. } => {
                     if *index as usize >= chunk.upvalue_names.len() {
                         return Err(BytecodeError::UpvalueOutOfBounds {
                             chunk: chunk_index,

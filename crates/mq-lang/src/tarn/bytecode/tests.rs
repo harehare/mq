@@ -638,7 +638,14 @@ fn verifier_rejects_out_of_bounds_call_upvalue_local(
     #[case] expected: BytecodeError,
 ) {
     let chunk = Chunk {
-        code: vec![OpCode::CallUpvalueLocal { index: 0, local: 0 }, OpCode::Return],
+        code: vec![
+            OpCode::CallUpvalueLocal {
+                index: 0,
+                local: 0,
+                take: false,
+            },
+            OpCode::Return,
+        ],
         upvalue_names: vec![Ident::new("f"); upvalue_count],
         local_count,
         ..Default::default()

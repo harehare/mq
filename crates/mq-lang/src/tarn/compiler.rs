@@ -2971,7 +2971,11 @@ impl<R: ModuleResolver> Compiler<R> {
                 if args.len() == 1
                     && let Some(local) = self.current_local_slot(&args[0])
                 {
-                    self.emit(OpCode::CallUpvalueLocal { index, local });
+                    self.emit(OpCode::CallUpvalueLocal {
+                        index,
+                        local,
+                        take: false,
+                    });
                     return Ok(());
                 }
                 for arg in args {

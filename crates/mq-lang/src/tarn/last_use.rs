@@ -3,8 +3,8 @@
 //! A `GetLocal` clones the value, so a callee that receives an array through a local keeps
 //! the caller's copy alive and every in-place update copies the whole array. When no later
 //! instruction can read the slot before it is overwritten, the read becomes a move that hands
-//! the value over and leaves `None` behind: `GetLocal` becomes `TakeLocal` and `CopyLocal`
-//! becomes `MoveLocal`.
+//! the value over and leaves `None` behind: `GetLocal` becomes `TakeLocal`, `CopyLocal` becomes
+//! `MoveLocal`, and a fused `CallUpvalueLocal` argument is flagged `take`.
 
 use crate::tarn::bytecode::{Chunk, OpCode, SELF_SLOT, jump_target};
 
@@ -30,6 +30,18 @@ fn move_last_uses_in(chunk: &mut Chunk) {
             OpCode::CopyLocal { source, destination } if source != destination => {
                 (source, OpCode::MoveLocal { source, destination })
             }
+            OpCode::CallUpvalueLocal {
+                index,
+                local,
+                take: false,
+            } => (
+                local,
+                OpCode::CallUpvalueLocal {
+                    index,
+                    local,
+                    take: true,
+                },
+            ),
             _ => continue,
         };
         if let Ok(bit) = candidates.binary_search(&slot)
@@ -47,11 +59,13 @@ fn candidate_slots(chunk: &Chunk) -> Vec<u16> {
         .code
         .iter()
         .filter_map(|op| match op {
-            OpCode::GetLocal(slot) | OpCode::CopyLocal { source: slot, .. }
-                if *slot != SELF_SLOT && !chunk.captured_local_slots().contains(slot) =>
-            {
-                Some(*slot)
-            }
+            OpCode::GetLocal(slot)
+            | OpCode::CopyLocal { source: slot, .. }
+            | OpCode::CallUpvalueLocal {
+                local: slot,
+                take: false,
+                ..
+            } if *slot != SELF_SLOT && !chunk.captured_local_slots().contains(slot) => Some(*slot),
             _ => None,
         })
         .collect();
@@ -268,10 +282,15 @@ mod tests {
         compiled.chunks.iter().flat_map(|chunk| chunk.code.iter())
     }
 
+    fn is_move(op: &OpCode) -> bool {
+        matches!(
+            op,
+            OpCode::TakeLocal(_) | OpCode::MoveLocal { .. } | OpCode::CallUpvalueLocal { take: true, .. }
+        )
+    }
+
     fn count_moves(compiled: &CompiledProgram) -> usize {
-        all_ops(compiled)
-            .filter(|op| matches!(op, OpCode::TakeLocal(_) | OpCode::MoveLocal { .. }))
-            .count()
+        all_ops(compiled).filter(|op| is_move(op)).count()
     }
 
     /// Moves of the local named `name` in the chunk that declares it.
@@ -288,6 +307,7 @@ mod tests {
                         .filter(|op| match op {
                             OpCode::TakeLocal(taken) => *taken == slot,
                             OpCode::MoveLocal { source, .. } => *source == slot,
+                            OpCode::CallUpvalueLocal { local, take: true, .. } => *local == slot,
                             _ => false,
                         })
                         .count(),
@@ -380,6 +400,28 @@ mod tests {
     #[case::string_values("def f(s): s + \"x\"; | var s = \"a\" | s = f(s) | s = f(s) | len(s)", "3")]
     #[case::dict_values("def f(d): set(d, \"k\", 1); | var d = {} | d = f(d) | d[\"k\"]", "1")]
     #[case::number_values("def f(n): n + 1; | var n = 0 | n = f(n) | n = f(n) | n", "2")]
+    // A one-argument call to a captured function is a fused CallUpvalueLocal.
+    #[case::single_argument_update("def bump(a): set(a, 0, a[0] + 1); | def run(a): bump(a); | run([4])[0]", "5")]
+    #[case::single_argument_keeps_original(
+        "def bump(a): set(a, 0, a[0] + 1); | def run(a): let b = bump(a) | a[0] * 10 + b[0]; | run([4])",
+        "45"
+    )]
+    #[case::single_argument_in_loop(
+        "def bump(a): set(a, 0, a[0] + 1); | def run(a): var i = 0 | let _ = while (i < 5): do a = bump(a) | i = i + 1 end end | a[0]; | run([0])",
+        "5"
+    )]
+    #[case::single_argument_read_each_iteration(
+        "def first(a): a[0]; | def run(a): var s = 0 | var i = 0 | let _ = while (i < 3): do s = s + first(a) | i = i + 1 end end | s; | run([2])",
+        "6"
+    )]
+    #[case::single_argument_called_twice(
+        "def total(a): a[0] + len(a); | def run(a): total(a) + total(a); | run([5, 6])",
+        "14"
+    )]
+    #[case::single_argument_with_captured_local(
+        "def id(p): p; | def run(a): let f = fn(): a[0]; | let b = id(a) | f() + b[0]; | run([3])",
+        "6"
+    )]
     #[case::many_moves_in_a_row(
         "def f(a): set(a, 0, a[0] + 1); | var a = [0] | a = f(a) | a = f(a) | a = f(a) | a = f(a) | a[0]",
         "4"
@@ -393,6 +435,7 @@ mod tests {
     #[rstest]
     #[case::parameter_passed_on("def touch(a, i): set(a, 0, i); | touch([1], 2)")]
     #[case::copy_of_parameter("def f(h): var a = h | a; | f([1])")]
+    #[case::single_argument_call("def bump(a): set(a, 0, 1); | def run(p): bump(p); | run([1])")]
     fn last_use_becomes_a_move(#[case] source: &str) {
         assert_eq!(count_moves(&compile_without_moves(source)), 0);
         assert!(count_moves(&compile_with_moves(source)) > 0);
@@ -404,6 +447,7 @@ mod tests {
     )]
     #[case::read_after_call("def id(p): p; | let a = [1] | let b = id(a) | len(a)")]
     #[case::captured_by_closure("def id(p): p; | var a = [1] | let f = fn(): a; | id(a)")]
+    #[case::single_argument_call_then_read("def id(p): p; | def run(a): let b = id(a) | len(a); | run([1])")]
     #[case::used_by_default_parameter("def f(a, b = len(a)): a; | f([1])")]
     fn a_still_needed_local_is_not_moved(#[case] source: &str) {
         assert_eq!(moves_of_named_local(&compile_with_moves(source), "a"), 0);
@@ -428,7 +472,7 @@ mod tests {
             .code
             .iter()
             .enumerate()
-            .filter(|(_, op)| matches!(op, OpCode::TakeLocal(_) | OpCode::MoveLocal { .. }))
+            .filter(|(_, op)| is_move(op))
             .map(|(pc, _)| pc)
             .collect()
     }
@@ -479,6 +523,18 @@ mod tests {
             OpCode::GetLocal(1), OpCode::Return,
         ],
         vec![5]
+    )]
+    #[case::fused_call_argument(
+        vec![OpCode::CallUpvalueLocal { index: 0, local: 1, take: false }, OpCode::Return],
+        vec![0]
+    )]
+    #[case::fused_call_argument_read_later(
+        vec![OpCode::CallUpvalueLocal { index: 0, local: 1, take: false }, OpCode::Pop, OpCode::GetLocal(1), OpCode::Return],
+        vec![2]
+    )]
+    #[case::fused_call_argument_read_by_loop(
+        vec![OpCode::CallUpvalueLocal { index: 0, local: 1, take: false }, OpCode::Pop, OpCode::Jump(-3)],
+        vec![]
     )]
     #[case::copy_into_other_slot(
         vec![OpCode::CopyLocal { source: 1, destination: 2 }, OpCode::GetLocal(2), OpCode::Return],
