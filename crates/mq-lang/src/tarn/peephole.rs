@@ -87,7 +87,7 @@ fn thread_jumps(chunk: &mut Chunk) {
         if matches!(chunk.code[pc], OpCode::Jump(_)) && matches!(chunk.code.get(target), Some(OpCode::Return)) {
             chunk.code[pc] = OpCode::Return;
         } else if let Some(offset) = branch_offset_mut(&mut chunk.code[pc]) {
-            *offset = target as i32 - pc as i32 - 1;
+            *offset = offset_to(target, pc);
         }
     }
 }
@@ -555,6 +555,11 @@ fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
     targets
 }
 
+/// Relative offset of a jump at `pc` that lands on `target`, the inverse of `jump_target`.
+fn offset_to(target: usize, pc: usize) -> i32 {
+    target as i32 - pc as i32 - 1
+}
+
 fn old_to_new_pc_map(keep: &[bool]) -> Vec<usize> {
     let mut map = vec![0; keep.len() + 1];
     let mut next = keep.iter().filter(|keep| **keep).count();
@@ -579,7 +584,7 @@ fn token_at(lines: &[LineEntry], pc: usize) -> TokenId {
 fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> OpCode {
     let rewrite = |offset: i32| {
         let old_target = jump_target(old_pc, offset).expect("compiler-generated jump must not underflow");
-        (map[old_target] as i32) - (new_pc as i32) - 1
+        offset_to(map[old_target], new_pc)
     };
     match op {
         OpCode::Jump(offset) => OpCode::Jump(rewrite(offset)),
@@ -669,6 +674,7 @@ mod tests {
     use super::super::bytecode::{BinaryOp, ParamShape, verify_chunks};
     use super::*;
     use crate::runtime::runtime_value::RuntimeValue;
+    use proptest::prelude::*;
 
     #[test]
     fn peephole_removes_unused_constants_local_moves_and_empty_jumps() {
@@ -1356,5 +1362,18 @@ mod tests {
             chunks[0].lines.as_slice(),
             [LineEntry { pc_start: 0, token_id }] if *token_id == token(2)
         ));
+    }
+
+    proptest! {
+        #[test]
+        fn old_to_new_pc_map_counts_kept_instructions(keep in prop::collection::vec(any::<bool>(), 0..64)) {
+            let map = old_to_new_pc_map(&keep);
+            prop_assert_eq!(map.len(), keep.len() + 1);
+            prop_assert_eq!(map[keep.len()], keep.iter().filter(|k| **k).count());
+            for pc in 0..keep.len() {
+                prop_assert_eq!(map[pc], keep[..pc].iter().filter(|k| **k).count());
+                prop_assert!(map[pc] <= map[pc + 1]);
+            }
+        }
     }
 }

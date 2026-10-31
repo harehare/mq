@@ -5482,3 +5482,30 @@ fn test_contains_dict(#[case] key: RuntimeValue, #[case] expected: bool) {
         Ok(expected.into())
     );
 }
+
+proptest::proptest! {
+    #[test]
+    fn test_slice_bounds_is_a_valid_range(
+        start in proptest::num::f64::ANY,
+        end in proptest::num::f64::ANY,
+        len in 0usize..=isize::MAX as usize,
+    ) {
+        let range = slice_bounds(number::Number::new(start), number::Number::new(end), len);
+        proptest::prop_assert!(range.start <= range.end && range.end <= len);
+    }
+
+    /// Only a negative index is bounded by `len`; callers range-check a non-negative one with `get`.
+    #[test]
+    fn test_resolve_index_rejects_non_integers_and_bounds_negative_indexes(
+        value in proptest::num::f64::ANY,
+        len in 0usize..=isize::MAX as usize,
+    ) {
+        let index = number::Number::new(value);
+        let resolved = resolve_index(index, len);
+        if !index.is_int() {
+            proptest::prop_assert!(resolved.is_none());
+        } else if (value as isize) < 0 && let Some(i) = resolved {
+            proptest::prop_assert!(i < len);
+        }
+    }
+}

@@ -67,12 +67,7 @@ impl<'a> Line<'a> {
 
     /// The zero-based visual column of the byte at `offset` in the line.
     fn visual_column(&self, offset: usize) -> usize {
-        let at = self.base + offset;
-        let passed = self.stops.partition_point(|stop| stop.at < at);
-        match passed.checked_sub(1).map(|index| self.stops[index]) {
-            Some(stop) => stop.after + (at - stop.at - 1),
-            None => offset,
-        }
+        tab_adjusted_column(self.stops, self.base + offset, offset)
     }
 
     /// The leading whitespace.
@@ -163,6 +158,16 @@ impl<'a> Line<'a> {
 pub(super) struct TabStop {
     at: usize,
     after: usize,
+}
+
+/// The column of the byte at `at` in the document: counted from the last tab before it, or `offset` if none.
+/// `stops` is sorted by `at`.
+fn tab_adjusted_column(stops: &[TabStop], at: usize, offset: usize) -> usize {
+    let passed = stops.partition_point(|stop| stop.at < at);
+    match passed.checked_sub(1).map(|index| stops[index]) {
+        Some(stop) => stop.after + (at - stop.at - 1),
+        None => offset,
+    }
 }
 
 /// Every tab in `src` in order. A byte order mark at the start has no width.
@@ -285,4 +290,104 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
     }
 
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// The byte offset of the `n`-th character boundary of `text`, counting from zero and wrapping.
+    fn boundary(text: &str, n: usize) -> usize {
+        let boundaries: Vec<usize> = text
+            .char_indices()
+            .map(|(index, _)| index)
+            .chain([text.len()])
+            .collect();
+        boundaries[n % boundaries.len()]
+    }
+
+    proptest! {
+        /// `Tree::extra_before` moves a cursor by `extra_bytes` of the text between two offsets.
+        #[test]
+        fn extra_bytes_is_additive_over_a_split(text in any::<String>(), a in any::<usize>(), b in any::<usize>()) {
+            let (a, b) = (boundary(&text, a), boundary(&text, b));
+            let (at, offset) = (a.min(b), a.max(b));
+            let bytes = text.as_bytes();
+            prop_assert_eq!(extra_bytes(&bytes[..offset]), extra_bytes(&bytes[..at]) + extra_bytes(&bytes[at..offset]));
+        }
+
+        #[test]
+        fn tab_adjusted_column_counts_from_the_last_tab(src in "[a\t\u{e9}\u{1f600}]{0,24}", at in 0usize..32) {
+            let stops = tab_stops(&src);
+            let at = at.min(src.len());
+            let column = tab_adjusted_column(&stops, at, at);
+            match src.as_bytes()[..at].iter().rposition(|byte| *byte == b'\t') {
+                Some(tab) => {
+                    let stop = stops.iter().find(|stop| stop.at == tab).unwrap();
+                    prop_assert_eq!(column, stop.after + (at - tab - 1));
+                }
+                None => prop_assert_eq!(column, at),
+            }
+        }
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// A well-formed UTF-8 buffer with two character boundaries `at <= offset`, as `Tree::extra_before` sees them.
+    fn text_with_boundaries(bytes: &[u8; 6]) -> (usize, usize) {
+        let text = std::str::from_utf8(bytes);
+        kani::assume(text.is_ok());
+        let text = text.unwrap_or_default();
+        let at: usize = kani::any_where(|at: &usize| *at <= bytes.len() && text.is_char_boundary(*at));
+        let offset: usize = kani::any_where(|o: &usize| *o >= at && *o <= bytes.len() && text.is_char_boundary(*o));
+        (at, offset)
+    }
+
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn extra_bytes_does_not_underflow_on_whole_characters() {
+        let bytes: [u8; 6] = kani::any();
+        let (at, offset) = text_with_boundaries(&bytes);
+        let _ = extra_bytes(&bytes[at..offset]);
+    }
+
+    /// The cursor in `Tree::extra_before` stores `extra_bytes(text[..at])`, so moving it back by
+    /// `extra_bytes(text[offset..at])` never underflows.
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn extra_bytes_is_additive_over_a_split() {
+        let bytes: [u8; 6] = kani::any();
+        let (at, offset) = text_with_boundaries(&bytes);
+        kani::cover!(at > 0 && offset > at && extra_bytes(&bytes[at..offset]) > 0);
+        assert_eq!(
+            extra_bytes(&bytes[..offset]),
+            extra_bytes(&bytes[..at]) + extra_bytes(&bytes[at..offset])
+        );
+    }
+
+    /// `partition_point` finds the tabs before `at` only if `stops` is sorted, which `tab_stops` gives by
+    /// walking `src` in order.
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn tab_column_does_not_underflow() {
+        let stops: [TabStop; 3] = [0, 1, 2].map(|_| TabStop {
+            at: kani::any(),
+            after: kani::any(),
+        });
+        kani::assume(stops[0].at < stops[1].at && stops[1].at < stops[2].at);
+        // Bounded so that `after + (at - stop.at - 1)` stays within a document's size.
+        kani::assume(stops.iter().all(|stop| stop.at < 1 << 32 && stop.after < 1 << 32));
+        let (at, offset): (usize, usize) = (kani::any(), kani::any());
+        kani::assume(at < 1 << 32 && offset < 1 << 32);
+        let column = tab_adjusted_column(&stops, at, offset);
+        if let Some(stop) = stops.iter().rev().find(|stop| stop.at < at) {
+            assert_eq!(column, stop.after + (at - stop.at - 1));
+        } else {
+            assert_eq!(column, offset);
+        }
+    }
 }

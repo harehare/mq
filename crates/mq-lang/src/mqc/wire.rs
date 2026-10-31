@@ -187,10 +187,14 @@ impl<'a> Reader<'a> {
             }
             value |= part << shift;
             if byte & 0x80 == 0 {
+                // A trailing zero group is padding: the writer never emits it.
+                if byte == 0 && shift > 0 {
+                    break;
+                }
                 return Ok(value);
             }
         }
-        Err(MqcError::Malformed("varint is too long".into()))
+        Err(MqcError::Malformed("varint is too long or not minimal".into()))
     }
 
     pub(crate) fn var_u16(&mut self) -> Result<u16, MqcError> {
@@ -235,97 +239,10 @@ impl<'a> Reader<'a> {
     }
 }
 
-#[cfg(kani)]
-mod proofs {
-    use super::*;
-
-    fn reader_over(bytes: &[u8]) -> Reader<'_> {
-        Reader {
-            bytes,
-            position: kani::any_where(|p: &usize| *p <= bytes.len()),
-            remaining_items: kani::any(),
-        }
-    }
-
-    /// Forgets the error: its drop glue is too large to unwind.
-    fn ok_value<T: Copy>(result: Result<T, MqcError>) -> Option<T> {
-        let value = result.as_ref().ok().copied();
-        std::mem::forget(result);
-        value
-    }
-
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn var_round_trips() {
-        let value: u64 = kani::any();
-        let mut writer = Writer::default();
-        writer.var(value);
-        let bytes = writer.into_bytes();
-        let mut reader = Reader::new(&bytes);
-        assert_eq!(ok_value(reader.var()), Some(value));
-        assert_eq!(reader.remaining(), 0);
-    }
-
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn var_i32_round_trips() {
-        let value: i32 = kani::any();
-        let mut writer = Writer::default();
-        writer.var_i32(value);
-        let bytes = writer.into_bytes();
-        let mut reader = Reader::new(&bytes);
-        assert_eq!(ok_value(reader.var_i32()), Some(value));
-        assert_eq!(reader.remaining(), 0);
-    }
-
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn var_never_overreads() {
-        let bytes: [u8; 12] = kani::any();
-        let len: usize = kani::any_where(|l: &usize| *l <= bytes.len());
-        let mut reader = Reader::new(&bytes[..len]);
-        let _ = ok_value(reader.var());
-        assert!(reader.remaining() <= len);
-    }
-
-    #[kani::proof]
-    fn take_is_bounds_checked() {
-        let bytes: [u8; 8] = kani::any();
-        let mut reader = reader_over(&bytes);
-        let before = reader.remaining();
-        let len: usize = kani::any();
-        match ok_value(reader.take(len)) {
-            Some(slice) => {
-                assert_eq!(slice.len(), len);
-                assert_eq!(reader.remaining(), before - len);
-            }
-            None => {
-                assert!(len > before);
-                assert_eq!(reader.remaining(), before);
-            }
-        }
-    }
-
-    #[kani::proof]
-    #[kani::unwind(8)]
-    fn len_bounds_allocation() {
-        let bytes: [u8; 6] = kani::any();
-        let size: usize = kani::any_where(|l: &usize| *l <= bytes.len());
-        let mut reader = Reader::new(&bytes[..size]);
-        reader.remaining_items = kani::any();
-        let items_before = reader.remaining_items;
-        let min_element_size: usize = kani::any_where(|n: &usize| *n <= 64);
-        if let Some(len) = ok_value(reader.len(min_element_size)) {
-            assert!(len.saturating_mul(min_element_size.max(1)) <= reader.remaining());
-            assert!(len <= items_before);
-            assert_eq!(reader.remaining_items, items_before - len);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     #[test]
@@ -379,6 +296,8 @@ mod tests {
     #[case::overflow(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02])]
     #[case::too_long(&[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00])]
     #[case::truncated(&[0x80])]
+    #[case::padded_zero(&[0x80, 0x00])]
+    #[case::padded_value(&[0x81, 0x80, 0x00])]
     fn test_varint_rejects_malformed_input(#[case] bytes: &[u8]) {
         assert!(matches!(Reader::new(bytes).var(), Err(MqcError::Malformed(_))));
     }
@@ -429,5 +348,116 @@ mod tests {
         let bytes = writer.into_bytes();
         assert!(matches!(Reader::new(&bytes).string(), Err(MqcError::Malformed(_))));
         assert!(matches!(Reader::new(&[2]).bool(), Err(MqcError::Malformed(_))));
+    }
+
+    proptest! {
+        #[test]
+        fn test_var_round_trips(value in any::<u64>(), signed in any::<i32>(), narrow in any::<u16>()) {
+            let mut writer = Writer::default();
+            writer.var(value);
+            writer.var_i32(signed);
+            writer.var_u16(narrow);
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes);
+            prop_assert_eq!(reader.var().unwrap(), value);
+            prop_assert_eq!(reader.var_i32().unwrap(), signed);
+            prop_assert_eq!(reader.var_u16().unwrap(), narrow);
+            prop_assert_eq!(reader.remaining(), 0);
+        }
+
+        #[test]
+        fn test_fixed_width_and_bytes_round_trip(
+            a in any::<u8>(),
+            b in any::<bool>(),
+            c in any::<u16>(),
+            d in any::<u32>(),
+            e in any::<u64>(),
+            bits in any::<u64>(),
+            data in prop::collection::vec(any::<u8>(), 0..64),
+        ) {
+            let mut writer = Writer::default();
+            writer.u8(a);
+            writer.bool(b);
+            writer.u16(c);
+            writer.u32(d);
+            writer.u64(e);
+            writer.f64(f64::from_bits(bits));
+            writer.bytes(&data).unwrap();
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes);
+            prop_assert_eq!(reader.u8().unwrap(), a);
+            prop_assert_eq!(reader.bool().unwrap(), b);
+            prop_assert_eq!(reader.u16().unwrap(), c);
+            prop_assert_eq!(reader.u32().unwrap(), d);
+            prop_assert_eq!(reader.u64().unwrap(), e);
+            prop_assert_eq!(reader.f64().unwrap().to_bits(), bits);
+            prop_assert_eq!(reader.bytes().unwrap(), data.as_slice());
+            prop_assert_eq!(reader.remaining(), 0);
+        }
+
+        /// An accepted varint is the one the writer emits.
+        #[test]
+        fn test_accepted_varint_is_canonical(bytes in prop::collection::vec(prop::sample::select(vec![0x00u8, 0x01, 0x7f, 0x80, 0x81, 0xff]), 0..12)) {
+            let mut reader = Reader::new(&bytes);
+            if let Ok(value) = reader.var() {
+                let used = bytes.len() - reader.remaining();
+                let mut writer = Writer::default();
+                writer.var(value);
+                prop_assert_eq!(writer.into_bytes(), bytes[..used].to_vec());
+            }
+        }
+
+        #[test]
+        fn test_var_never_overreads(bytes in prop::collection::vec(any::<u8>(), 0..16)) {
+            let mut reader = Reader::new(&bytes);
+            let _ = reader.var();
+            prop_assert!(reader.remaining() <= bytes.len());
+        }
+
+        #[test]
+        fn test_take_is_bounds_checked(bytes in prop::collection::vec(any::<u8>(), 0..16), len in any::<usize>()) {
+            let mut reader = Reader::new(&bytes);
+            match reader.take(len) {
+                Ok(slice) => {
+                    prop_assert_eq!(slice.len(), len);
+                    prop_assert_eq!(reader.remaining(), bytes.len() - len);
+                }
+                Err(_) => {
+                    prop_assert!(len > bytes.len());
+                    prop_assert_eq!(reader.remaining(), bytes.len());
+                }
+            }
+        }
+
+        /// `len` bounds the allocation a collection can request by the bytes that remain.
+        #[test]
+        fn test_len_bounds_allocation(
+            bytes in prop::collection::vec(any::<u8>(), 0..16),
+            budget in any::<usize>(),
+            min_element_size in 0usize..64,
+        ) {
+            let mut reader = Reader::new(&bytes);
+            reader.remaining_items = budget;
+            if let Ok(len) = reader.len(min_element_size) {
+                prop_assert!(len.saturating_mul(min_element_size.max(1)) <= reader.remaining());
+                prop_assert!(len <= budget);
+                prop_assert_eq!(reader.remaining_items, budget - len);
+            }
+        }
+
+        /// A length the writer accepts is never rejected by the reader's item budget.
+        #[test]
+        fn test_writer_len_is_accepted_by_reader(budget in 0usize..2048, len in 0usize..2048) {
+            let mut writer = Writer::with_remaining_items(budget);
+            if writer.len(len).is_ok() {
+                prop_assert_eq!(writer.remaining_items(), budget - len);
+                let mut bytes = writer.into_bytes();
+                bytes.resize(bytes.len() + len, 0);
+                let mut reader = Reader::new(&bytes);
+                reader.remaining_items = budget;
+                prop_assert_eq!(reader.len(1).unwrap(), len);
+                prop_assert_eq!(reader.remaining_items, budget - len);
+            }
+        }
     }
 }

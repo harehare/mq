@@ -215,7 +215,7 @@ mod proofs {
     fn rem_never_panics() {
         let (a, b): (f64, f64) = (kani::any(), kani::any());
         // Kani flags the NaN that `inf - inf` yields in `is_int`, which is not a panic.
-        kani::assume(a.is_finite() && b.is_finite());
+        kani::assume(!a.is_infinite() && !b.is_infinite());
         let _ = Number::new(a) % Number::new(b);
     }
 

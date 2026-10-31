@@ -1,0 +1,31 @@
+name: Kani proofs
+
+on:
+  schedule:
+    - cron: '0 6 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kani:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
+      - uses: extractions/setup-just@v4.0.0
+        with:
+          just-version: 1.58.0
+      - uses: Swatinem/rust-cache@v2.9.3
+      - name: Install Kani
+        run: |
+          cargo install --locked kani-verifier --version 0.68.0
+          cargo kani setup
+      - name: Prove mq-lang
+        run: just kani
+      - name: Prove mq-markdown
+        run: just kani-markdown
