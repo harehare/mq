@@ -2284,8 +2284,16 @@ fn generate_call_constraints(
                             if is_parameter || hir.bracket_group_count(symbol_id) == 0 {
                                 let ret_ty = Type::Var(ctx.fresh_var());
                                 let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
+                                // A variable keeps its own type so that calling a non-function
+                                // value conflicts with its definition. A parameter's type is
+                                // instantiated per call because the caller decides it.
+                                let callee_ty = if is_parameter {
+                                    func_ty
+                                } else {
+                                    original_func_ty.clone()
+                                };
                                 ctx.add_constraint(Constraint::Equal(
-                                    func_ty,
+                                    callee_ty,
                                     expected_func_ty,
                                     range,
                                     ConstraintOrigin::General,

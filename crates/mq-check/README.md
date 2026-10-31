@@ -210,6 +210,10 @@ A call of a function defined in the program is exact when it is given every para
 
 Library users get the same split from `TypeChecker::check_classified`, which returns each error with its `Certainty`.
 
+### Stricter than the runtime
+
+The checker is stricter than the runtime on purpose. It accepts a program only when the types it infers fit the signature of every builtin and operator, so `len(1)` and `1 < "a"` are rejected even though they evaluate without an error. Calling a value that is no function (`let x = 1 | x(2)`) is rejected too.
+
 ### User-defined functions
 
 A function is checked in two ways, so that a mistake is found whether or not the function is called.

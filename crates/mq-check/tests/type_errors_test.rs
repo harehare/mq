@@ -1044,3 +1044,22 @@ fn test_no_overload_message_keeps_an_explicit_dynamic_argument() {
         "{errors:?}"
     );
 }
+
+#[rstest]
+#[case::call_number("let x = 1 | x(2)", false)]
+#[case::call_number_no_arguments("let x = 1 | do x() end", false)]
+#[case::call_string("let s = \"a\" | s(1)", false)]
+#[case::call_lambda("let f = fn(a): a; | f(1)", true)]
+#[case::call_parameter("def g(a): a(1); | g(fn(x): x)", true)]
+#[case::keys_dict("keys({\"a\": 1})", true)]
+#[case::keys_none("keys(None)", true)]
+#[case::keys_array("keys([1])", false)]
+#[case::keys_number("keys(1)", false)]
+#[case::range_number("range(3)", true)]
+#[case::range_strings("range(\"a\", \"c\")", true)]
+#[case::range_string_piped_two_args("\"c\" | range(\"a\", \"e\")", true)]
+#[case::range_one_string("range(\"a\")", false)]
+fn test_non_callable_keys_and_range(#[case] code: &str, #[case] should_succeed: bool) {
+    let result = check_types_with_builtins(code);
+    assert_eq!(result.is_empty(), should_succeed, "{code}: {result:?}");
+}

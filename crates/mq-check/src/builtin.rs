@@ -950,11 +950,6 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::array(Type::Var(k)),
     );
 
-    // Generic fallback: keys/values/entries accept any type (for dynamically typed code
-    // where the argument type is determined by runtime guards like `is_dict`)
-    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
-    register_unary(ctx, "keys", Type::Var(a), Type::array(Type::Var(b)));
-
     // values: {k: v} -> [v]
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_unary(
