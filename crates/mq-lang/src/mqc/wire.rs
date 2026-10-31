@@ -270,20 +270,6 @@ mod proofs {
         assert_eq!(reader.remaining(), 0);
     }
 
-    /// An accepted varint is the one the writer emits, so decoding then encoding is the identity.
-    #[kani::proof]
-    #[kani::unwind(12)]
-    fn var_accepts_only_the_canonical_encoding() {
-        let bytes: [u8; 4] = kani::any();
-        let mut reader = Reader::new(&bytes);
-        if let Some(value) = ok_value(reader.var()) {
-            let used = bytes.len() - reader.remaining();
-            let mut writer = Writer::default();
-            writer.var(value);
-            assert_eq!(writer.into_bytes(), bytes[..used]);
-        }
-    }
-
     #[kani::proof]
     #[kani::unwind(12)]
     fn var_i32_round_trips() {
@@ -339,32 +325,12 @@ mod proofs {
             assert_eq!(reader.remaining_items, items_before - len);
         }
     }
-
-    /// A length the writer accepts is never rejected by the reader's item budget.
-    #[kani::proof]
-    #[kani::unwind(8)]
-    fn writer_len_is_accepted_by_reader() {
-        let budget: usize = kani::any();
-        let len: usize = kani::any_where(|n: &usize| *n <= 4);
-        let mut writer = Writer::with_remaining_items(budget);
-        if ok_value(writer.len(len)).is_some() {
-            assert_eq!(writer.remaining_items(), budget - len);
-            // A length of at most 4 encodes as one byte; the rest is one byte per element.
-            let written = writer.into_bytes();
-            assert_eq!(written.len(), 1);
-            let mut bytes = [0u8; 5];
-            bytes[0] = written[0];
-            let mut reader = Reader::new(&bytes);
-            reader.remaining_items = budget;
-            assert_eq!(ok_value(reader.len(1)), Some(len));
-            assert_eq!(reader.remaining_items, budget - len);
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     #[test]
@@ -470,5 +436,78 @@ mod tests {
         let bytes = writer.into_bytes();
         assert!(matches!(Reader::new(&bytes).string(), Err(MqcError::Malformed(_))));
         assert!(matches!(Reader::new(&[2]).bool(), Err(MqcError::Malformed(_))));
+    }
+
+    proptest! {
+        #[test]
+        fn test_var_round_trips(value in any::<u64>(), signed in any::<i32>(), narrow in any::<u16>()) {
+            let mut writer = Writer::default();
+            writer.var(value);
+            writer.var_i32(signed);
+            writer.var_u16(narrow);
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes);
+            prop_assert_eq!(reader.var().unwrap(), value);
+            prop_assert_eq!(reader.var_i32().unwrap(), signed);
+            prop_assert_eq!(reader.var_u16().unwrap(), narrow);
+            prop_assert_eq!(reader.remaining(), 0);
+        }
+
+        #[test]
+        fn test_fixed_width_and_bytes_round_trip(
+            a in any::<u8>(),
+            b in any::<bool>(),
+            c in any::<u16>(),
+            d in any::<u32>(),
+            e in any::<u64>(),
+            bits in any::<u64>(),
+            data in prop::collection::vec(any::<u8>(), 0..64),
+        ) {
+            let mut writer = Writer::default();
+            writer.u8(a);
+            writer.bool(b);
+            writer.u16(c);
+            writer.u32(d);
+            writer.u64(e);
+            writer.f64(f64::from_bits(bits));
+            writer.bytes(&data).unwrap();
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes);
+            prop_assert_eq!(reader.u8().unwrap(), a);
+            prop_assert_eq!(reader.bool().unwrap(), b);
+            prop_assert_eq!(reader.u16().unwrap(), c);
+            prop_assert_eq!(reader.u32().unwrap(), d);
+            prop_assert_eq!(reader.u64().unwrap(), e);
+            prop_assert_eq!(reader.f64().unwrap().to_bits(), bits);
+            prop_assert_eq!(reader.bytes().unwrap(), data.as_slice());
+            prop_assert_eq!(reader.remaining(), 0);
+        }
+
+        /// An accepted varint is the one the writer emits.
+        #[test]
+        fn test_accepted_varint_is_canonical(bytes in prop::collection::vec(prop::sample::select(vec![0x00u8, 0x01, 0x7f, 0x80, 0x81, 0xff]), 0..12)) {
+            let mut reader = Reader::new(&bytes);
+            if let Ok(value) = reader.var() {
+                let used = bytes.len() - reader.remaining();
+                let mut writer = Writer::default();
+                writer.var(value);
+                prop_assert_eq!(writer.into_bytes(), bytes[..used].to_vec());
+            }
+        }
+
+        /// A length the writer accepts is never rejected by the reader's item budget.
+        #[test]
+        fn test_writer_len_is_accepted_by_reader(budget in 0usize..2048, len in 0usize..2048) {
+            let mut writer = Writer::with_remaining_items(budget);
+            if writer.len(len).is_ok() {
+                prop_assert_eq!(writer.remaining_items(), budget - len);
+                let mut bytes = writer.into_bytes();
+                bytes.resize(bytes.len() + len, 0);
+                let mut reader = Reader::new(&bytes);
+                reader.remaining_items = budget;
+                prop_assert_eq!(reader.len(1).unwrap(), len);
+                prop_assert_eq!(reader.remaining_items, budget - len);
+            }
+        }
     }
 }

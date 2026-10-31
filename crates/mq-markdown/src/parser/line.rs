@@ -292,6 +292,47 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
     lines
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// The byte offset of the `n`-th character boundary of `text`, counting from zero and wrapping.
+    fn boundary(text: &str, n: usize) -> usize {
+        let boundaries: Vec<usize> = text
+            .char_indices()
+            .map(|(index, _)| index)
+            .chain([text.len()])
+            .collect();
+        boundaries[n % boundaries.len()]
+    }
+
+    proptest! {
+        /// `Tree::extra_before` moves a cursor by `extra_bytes` of the text between two offsets.
+        #[test]
+        fn extra_bytes_is_additive_over_a_split(text in any::<String>(), a in any::<usize>(), b in any::<usize>()) {
+            let (a, b) = (boundary(&text, a), boundary(&text, b));
+            let (at, offset) = (a.min(b), a.max(b));
+            let bytes = text.as_bytes();
+            prop_assert_eq!(extra_bytes(&bytes[..offset]), extra_bytes(&bytes[..at]) + extra_bytes(&bytes[at..offset]));
+        }
+
+        #[test]
+        fn tab_adjusted_column_counts_from_the_last_tab(src in "[a\t\u{e9}\u{1f600}]{0,24}", at in 0usize..32) {
+            let stops = tab_stops(&src);
+            let at = at.min(src.len());
+            let column = tab_adjusted_column(&stops, at, at);
+            match src.as_bytes()[..at].iter().rposition(|byte| *byte == b'\t') {
+                Some(tab) => {
+                    let stop = stops.iter().find(|stop| stop.at == tab).unwrap();
+                    prop_assert_eq!(column, stop.after + (at - tab - 1));
+                }
+                None => prop_assert_eq!(column, at),
+            }
+        }
+    }
+}
+
 #[cfg(kani)]
 mod proofs {
     use super::*;
