@@ -1377,3 +1377,36 @@ mod tests {
         }
     }
 }
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// `verify_chunks` caps a chunk at `i32::MAX` instructions, so every pc and target is below that.
+    const MAX_PC: usize = i32::MAX as usize;
+
+    #[kani::proof]
+    fn offset_to_inverts_jump_target() {
+        let pc: usize = kani::any_where(|pc: &usize| *pc <= MAX_PC);
+        let target: usize = kani::any_where(|target: &usize| *target <= MAX_PC);
+        assert_eq!(jump_target(pc, offset_to(target, pc)), Some(target));
+    }
+
+    /// A rewritten jump lands on the new position of the old target, whichever instructions were removed.
+    #[kani::proof]
+    fn rewrite_targets_lands_on_mapped_target() {
+        let map: [usize; 4] = kani::any();
+        kani::assume(map.iter().all(|new| *new <= MAX_PC));
+        kani::assume(map.windows(2).all(|w| w[0] <= w[1]));
+        let old_pc: usize = kani::any_where(|pc: &usize| *pc < map.len());
+        let new_pc: usize = kani::any_where(|pc: &usize| *pc <= MAX_PC);
+        let offset: i32 = kani::any();
+        let old_target = jump_target(old_pc, offset);
+        kani::assume(old_target.is_some_and(|target| target < map.len()));
+
+        let OpCode::Jump(rewritten) = rewrite_targets(OpCode::Jump(offset), old_pc, new_pc, &map) else {
+            panic!("a Jump stays a Jump");
+        };
+        assert_eq!(jump_target(new_pc, rewritten), Some(map[old_target.unwrap()]));
+    }
+}

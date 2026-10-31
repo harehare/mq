@@ -82,6 +82,16 @@ pub struct Arena<T> {
 /// Marks ids allocated in a layered arena, keeping them apart from its parent's.
 const LAYER_BIT: u32 = 1 << 31;
 
+/// The id of the element at `index`, tagged when it lives in a layered arena.
+fn encode_id(index: u32, layered: bool) -> u32 {
+    if layered { index | LAYER_BIT } else { index }
+}
+
+/// The layer tag and element index packed in `id`, the inverse of `encode_id`.
+fn decode_id(id: u32) -> (bool, usize) {
+    (id & LAYER_BIT != 0, (id & !LAYER_BIT) as usize)
+}
+
 impl<T: Clone + PartialEq> Arena<T> {
     /// Creates a new arena with the specified initial capacity.
     pub fn new(size: usize) -> Self {
@@ -115,10 +125,7 @@ impl<T: Clone + PartialEq> Arena<T> {
     pub fn alloc(&mut self, value: T) -> ArenaId<T> {
         let index = self.len() as u32;
         self.items.push(value);
-        match self.parent {
-            Some(_) => ArenaId::new(index | LAYER_BIT),
-            None => ArenaId::new(index),
-        }
+        ArenaId::new(encode_id(index, self.parent.is_some()))
     }
 
     /// Applies `f` to the element at `id`, looking through to the parent arena, or to `None` if
@@ -175,11 +182,10 @@ impl<T> Arena<T> {
     /// Returns a reference to the element this arena itself holds at `id`, or `None` if out of
     /// bounds or held by a parent arena.
     pub fn get(&self, id: ArenaId<T>) -> Option<&T> {
-        let layered = id.id & LAYER_BIT != 0;
+        let (layered, index) = decode_id(id.id);
         if layered != self.parent.is_some() {
             return None;
         }
-        let index = (id.id & !LAYER_BIT) as usize;
         match &self.base {
             Some(base) if index < base.len() => base.get(index),
             Some(base) => self.items.get(index - base.len()),
@@ -195,6 +201,19 @@ impl<T> Arena<T> {
 
     fn base_len(&self) -> usize {
         self.base.as_ref().map_or(0, |base| base.len())
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// Ids of either kind unpack to the index they were allocated at.
+    #[kani::proof]
+    fn decode_id_inverts_encode_id() {
+        let index: u32 = kani::any_where(|index: &u32| *index < LAYER_BIT);
+        let layered: bool = kani::any();
+        assert_eq!(decode_id(encode_id(index, layered)), (layered, index as usize));
     }
 }
 
