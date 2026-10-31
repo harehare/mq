@@ -22,6 +22,9 @@ impl Node {
             Expr::Self_ => {
                 buf.push_str("self");
             }
+            Expr::Env(name) => {
+                write!(buf, "${}", name).unwrap();
+            }
             Expr::Nodes => {
                 buf.push_str("nodes");
             }

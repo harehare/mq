@@ -1,4 +1,3 @@
-use smol_str::SmolStr;
 use thiserror::Error;
 
 use crate::{Token, module::ModuleId, selector};
@@ -7,12 +6,6 @@ use crate::{Token, module::ModuleId, selector};
 #[derive(Error, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum SyntaxError {
-    /// An environment variable was not found.
-    #[error("Undefined environment variable `{1}`")]
-    EnvNotFound(Token, SmolStr),
-    /// An environment variable exists but isn't permitted by `--allow-env`.
-    #[error("Access to environment variable `{1}` is not allowed")]
-    EnvNotAllowed(Token, SmolStr),
     /// An unexpected token was encountered during parsing.
     #[error("{}", if .0.is_eof() { "Invalid or unsupported input".to_string() } else { format!("Unexpected token `{}`", .0) })]
     UnexpectedToken(Token),
@@ -68,8 +61,6 @@ impl SyntaxError {
     #[cold]
     pub fn token(&self) -> Option<&Token> {
         match self {
-            SyntaxError::EnvNotFound(token, _) => Some(token),
-            SyntaxError::EnvNotAllowed(token, _) => Some(token),
             SyntaxError::UnexpectedToken(token) => Some(token),
             SyntaxError::UnexpectedEOFDetected(_) => None,
             SyntaxError::InsufficientTokens(token) => Some(token),
@@ -103,8 +94,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SyntaxError::EnvNotFound(eof_token(), "VAR".into()), true)]
-    #[case(SyntaxError::EnvNotAllowed(eof_token(), "VAR".into()), true)]
     #[case(SyntaxError::UnexpectedToken(eof_token()), true)]
     #[case(SyntaxError::UnexpectedEOFDetected(ArenaId::new(0)), false)]
     #[case(SyntaxError::InsufficientTokens(eof_token()), true)]

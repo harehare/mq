@@ -5730,11 +5730,6 @@ fn test_parse_as_binding() {
 
 #[test]
 fn test_parse_env() {
-    unsafe { std::env::set_var("MQ_TEST_VAR", "test_value") };
-    let _guard = io_context::scoped(Shared::new(
-        crate::io::SandboxedIo::new(crate::io::NativeIo::default()).allow_env(true),
-    ));
-
     let mut arena = Arena::new(10);
     let tokens = [
         Token {
@@ -5754,53 +5749,14 @@ fn test_parse_env() {
     match result {
         Ok(program) => {
             assert_eq!(program.len(), 1);
-            if let Expr::Literal(Literal::String(value)) = &program[0].expr {
-                assert_eq!(value, "test_value");
-            } else {
-                panic!("Expected String literal, got {:?}", program[0].expr);
-            }
+            assert_eq!(program[0].expr, Expr::Env("MQ_TEST_VAR".into()));
         }
         Err(err) => panic!("Parse error: {:?}", err),
     }
 }
 
 #[test]
-fn test_parse_env_not_found() {
-    let _guard = io_context::scoped(Shared::new(
-        crate::io::SandboxedIo::new(crate::io::NativeIo::default()).allow_env(true),
-    ));
-
-    let mut arena = Arena::new(10);
-    let token = Token {
-        range: Range::default(),
-        kind: TokenKind::Env("MQ_NONEXISTENT_VAR".into()),
-        module_id: 1.into(),
-    };
-
-    let tokens = [
-        token.clone(),
-        Token {
-            range: Range::default(),
-            kind: TokenKind::Eof,
-            module_id: 1.into(),
-        },
-    ];
-
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
-
-    assert!(matches!(
-        result,
-        Err(SyntaxError::EnvNotFound(_, var)) if var == "MQ_NONEXISTENT_VAR"
-    ));
-}
-
-#[test]
 fn test_parse_env_in_arguments() {
-    unsafe { std::env::set_var("MQ_ARG_TEST", "env_arg_value") };
-    let _guard = io_context::scoped(Shared::new(
-        crate::io::SandboxedIo::new(crate::io::NativeIo::default()).allow_env(true),
-    ));
-
     let mut arena = Arena::new(10);
     let tokens = [
         Token {
@@ -5838,11 +5794,7 @@ fn test_parse_env_in_arguments() {
             if let Expr::Call(ident, args) = &program[0].expr {
                 assert_eq!(ident.name, "function".into());
                 assert_eq!(args.len(), 1);
-                if let Expr::Literal(Literal::String(value)) = &args[0].expr {
-                    assert_eq!(value, "env_arg_value");
-                } else {
-                    panic!("Expected String literal in argument, got {:?}", args[0].expr);
-                }
+                assert_eq!(args[0].expr, Expr::Env("MQ_ARG_TEST".into()));
             } else {
                 panic!("Expected Call expression, got {:?}", program[0].expr);
             }

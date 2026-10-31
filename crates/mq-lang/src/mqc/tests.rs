@@ -379,7 +379,7 @@ fn test_load_mqc_rejects_missing_source_of_unbundled_module() {
 }
 
 #[rstest]
-#[case::bare_env("$MQC_TEST_ENV")]
+#[case::module_let_bare_env("module m: let v = $MQC_TEST_ENV end | m::v")]
 #[case::module_let(r#"module m: let v = s"${$MQC_TEST_ENV}" end | m::v"#)]
 #[case::caught_in_module_let(r#"module m: let v = try: s"${$MQC_TEST_ENV}" catch: "fallback" end | m::v"#)]
 fn test_precompile_rejects_compile_time_env_reads(#[case] query: &str) {
@@ -388,6 +388,11 @@ fn test_precompile_rejects_compile_time_env_reads(#[case] query: &str) {
         matches!(&error, MqcError::EnvironmentAtCompileTime(name) if name == "MQC_TEST_ENV"),
         "{error:?}"
     );
+}
+
+#[test]
+fn test_precompile_keeps_top_level_env_read_for_runtime() {
+    assert!(engine().precompile("$MQC_TEST_ENV", &[]).is_ok());
 }
 
 #[rstest]

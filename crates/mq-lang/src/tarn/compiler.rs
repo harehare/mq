@@ -645,6 +645,7 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
         | Expr::Import(_, _)
         | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
         | Expr::Self_
+        | Expr::Env(_)
         | Expr::Nodes
         | Expr::Continue
         | Expr::Ident(_) => {}
@@ -819,6 +820,7 @@ impl NestedFunctionNames {
             | Expr::Import(_, _)
             | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
             | Expr::Self_
+            | Expr::Env(_)
             | Expr::Nodes
             | Expr::Continue => {}
         }
@@ -945,6 +947,7 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
         | Expr::Include(_)
         | Expr::Import(_, _)
         | Expr::Self_
+        | Expr::Env(_)
         | Expr::Nodes
         | Expr::Continue => {}
     }
@@ -1006,6 +1009,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         | Expr::Import(_, _)
         | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
         | Expr::Self_
+        | Expr::Env(_)
         | Expr::Nodes
         | Expr::Continue
         | Expr::Ident(_) => false,
@@ -2799,6 +2803,11 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::QualifiedAccess(path, target) => self.compile_qualified_access(path, target),
             Expr::Self_ | Expr::Nodes => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));
+                Ok(())
+            }
+            Expr::Env(name) => {
+                let idx = self.push_const(RuntimeValue::String(Shared::new(name.to_string())));
+                self.emit(OpCode::GetEnvVar(idx));
                 Ok(())
             }
             Expr::Selector(selector) => {

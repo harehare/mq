@@ -197,6 +197,7 @@ impl Node {
             }
             Expr::Literal(_)
             | Expr::Ident(_)
+            | Expr::Env(_)
             | Expr::Selector(_)
             | Expr::Include(_)
             | Expr::Import(_, _)
@@ -471,6 +472,8 @@ pub enum Expr {
     Literal(Literal),
     /// A variable or function reference.
     Ident(IdentWithToken),
+    /// An environment variable reference (`$NAME`), read when the program runs.
+    Env(SmolStr),
     /// A string with `${...}` segments.
     InterpolatedString(Vec<StringSegment>),
     /// A Markdown selector such as `.h1`.
@@ -544,6 +547,7 @@ impl Display for Expr {
             Expr::Literal(literal) => write!(f, "{}", literal),
             Expr::Ident(ident) => write!(f, "{}", ident),
             Expr::Self_ => write!(f, "self"),
+            Expr::Env(name) => write!(f, "${}", name),
             _ => write!(f, ""),
         }
     }

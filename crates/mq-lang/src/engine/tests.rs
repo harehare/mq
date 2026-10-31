@@ -3020,3 +3020,35 @@ fn test_module_reached_twice_is_not_circular() {
         vec![RuntimeValue::from(crate::number::Number::from(2_i64))].into()
     );
 }
+
+#[rstest]
+#[case::set("MQ_ENV_SET", true, true, Some("value"))]
+#[case::not_found("MQ_ENV_UNSET", true, false, None)]
+#[case::not_allowed("MQ_ENV_SET", false, true, None)]
+fn test_bare_env_is_read_when_the_program_runs(
+    #[case] name: &str,
+    #[case] allow_env: bool,
+    #[case] defined: bool,
+    #[case] expected: Option<&str>,
+) {
+    let mut io = crate::io::MemIo::default();
+    if defined {
+        io = io.with_env(name, "value");
+    }
+    let mut engine = Engine::with_default_io(Shared::new(SandboxedIo::new(io).allow_env(allow_env)));
+    engine.load_builtin_module();
+
+    let result = engine.eval(&format!("${name}"), null_input().into_iter());
+    match expected {
+        Some(value) => assert_eq!(result.unwrap(), vec![value.to_string().into()].into()),
+        None => {
+            let error = result.unwrap_err();
+            let is_expected = if allow_env {
+                error.to_string().contains("not found")
+            } else {
+                error.to_string().contains("not allowed")
+            };
+            assert!(is_expected, "{error}");
+        }
+    }
+}

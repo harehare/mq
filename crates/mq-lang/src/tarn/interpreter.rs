@@ -2324,9 +2324,17 @@ fn get_env_var(name_idx: u16, chunk: &Chunk, ip: usize) -> VmResult<RuntimeValue
             VmError::Corrupt("GetEnvVar constant is not a string"),
         ));
     };
-    let value = builtin::io_context::current()
-        .env_var(name)
-        .map_err(|_| locate(chunk, ip, VmError::EnvNotFound(name.to_string())))?;
+    let value = builtin::io_context::current().env_var(name).map_err(|e| {
+        let name = name.to_string();
+        locate(
+            chunk,
+            ip,
+            match e {
+                crate::io::IoError::PermissionDenied(_) => VmError::EnvNotAllowed(name),
+                _ => VmError::EnvNotFound(name),
+            },
+        )
+    })?;
     Ok(RuntimeValue::String(value.into()))
 }
 

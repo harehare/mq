@@ -32,6 +32,7 @@ pub(crate) enum VmError {
         actual: Box<str>,
     },
     EnvNotFound(String),
+    EnvNotAllowed(String),
     UndefinedGlobal(String),
     #[cfg(feature = "debugger")]
     Debugger(String),
@@ -72,6 +73,7 @@ impl fmt::Display for VmError {
                 write!(f, "invalid types for \"{}\", got {actual}", resume_name(*send))
             }
             VmError::EnvNotFound(name) => write!(f, "environment variable not found: {name}"),
+            VmError::EnvNotAllowed(name) => write!(f, "environment variable not allowed: {name}"),
             VmError::UndefinedGlobal(name) => write!(f, "undefined identifier `{name}`"),
             #[cfg(feature = "debugger")]
             VmError::Debugger(message) => write!(f, "debugger expression failed: {message}"),
@@ -149,6 +151,7 @@ impl VmError {
                 args: vec![actual.to_string().into()],
             },
             VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
+            VmError::EnvNotAllowed(name) => RuntimeError::EnvNotAllowed(token, name.clone().into()),
             VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
             #[cfg(feature = "debugger")]
             VmError::Debugger(message) => RuntimeError::Runtime(token, message.clone()),
@@ -387,6 +390,10 @@ mod tests {
         "Invalid types for \"next\", got number"
     )]
     #[case::env_not_found(VmError::EnvNotFound("HOME".to_string()), "Environment variable `HOME` not found")]
+    #[case::env_not_allowed(
+        VmError::EnvNotAllowed("HOME".to_string()),
+        "Access to environment variable `HOME` is not allowed"
+    )]
     #[case::undefined_global(VmError::UndefinedGlobal("x".to_string()), "\"x\" is not defined")]
     #[cfg_attr(
         feature = "debugger",
@@ -436,6 +443,7 @@ mod tests {
             | VmError::NotCallable(_)
             | VmError::InvalidResumeTarget { .. }
             | VmError::EnvNotFound(_)
+            | VmError::EnvNotAllowed(_)
             | VmError::UndefinedGlobal(_)
             | VmError::Corrupt(_)
             | VmError::ArityMismatch { .. }
