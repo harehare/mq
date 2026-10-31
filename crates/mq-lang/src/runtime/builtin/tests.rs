@@ -1602,6 +1602,9 @@ fn test_range_size_limit_exceeds(#[case] start: isize, #[case] end: isize, #[cas
 #[rstest]
 #[case::reasonable_range(0, 100, 1, 101)]
 #[case::exactly_at_limit(0, 999_999, 1, 1_000_000)]
+#[case::ends_at_isize_max(isize::MAX - 1, isize::MAX, 1, 2)]
+#[case::ends_at_isize_min(isize::MIN + 1, isize::MIN, -1, 2)]
+#[case::step_past_isize_max(isize::MAX - 1, isize::MAX, isize::MAX, 1)]
 fn test_range_size_limit_success(
     #[case] start: isize,
     #[case] end: isize,
@@ -1629,6 +1632,8 @@ fn test_char_range_size_limit_exceeds(#[case] start: char, #[case] end: char, #[
 
 #[rstest]
 #[case::reasonable_char_range('a', 'z', None, 26)]
+#[case::step_past_i32_max('a', 'z', Some(i32::MAX), 1)]
+#[case::negative_step_past_i32_min('z', 'a', Some(i32::MIN), 1)]
 fn test_char_range_size_limit_success(
     #[case] start: char,
     #[case] end: char,
