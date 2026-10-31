@@ -26,3 +26,11 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
     rules.extend(security::all());
     rules
 }
+
+/// True if `sym` is the raw text of a `${...}` interpolation embed rather than a declaration
+/// (both use `SymbolKind::Variable`; the embedded expression is lowered as child symbols).
+pub(crate) fn is_interpolation_embed(ctx: &crate::LintContext<'_>, sym: &mq_hir::Symbol) -> bool {
+    sym.parent
+        .and_then(|id| ctx.hir.symbol(id))
+        .is_some_and(|p| matches!(p.kind, mq_hir::SymbolKind::InterpolatedString))
+}

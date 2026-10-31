@@ -17,14 +17,6 @@ fn is_in_scope_subtree(ctx: &LintContext<'_>, scope_id: ScopeId, target_scope_id
     false
 }
 
-/// True if `sym` is a `${name}` interpolation embed (which reuses `SymbolKind::Variable` for the
-/// embedded text) rather than an actual reference symbol.
-fn is_interpolation_embed(ctx: &LintContext<'_>, sym: &mq_hir::Symbol) -> bool {
-    sym.parent
-        .and_then(|id| ctx.hir.symbol(id))
-        .is_some_and(|p| matches!(p.kind, SymbolKind::InterpolatedString))
-}
-
 impl LintRule for UnusedParameter {
     fn id(&self) -> RuleId {
         RuleId::UnusedParameter
@@ -50,10 +42,7 @@ impl LintRule for UnusedParameter {
 
             let used_names: FxHashSet<&str> = ctx
                 .all_symbols()
-                .filter(|(_, s)| {
-                    matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call)
-                        || is_interpolation_embed(ctx, s)
-                })
+                .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call))
                 .filter(|(_, s)| is_in_scope_subtree(ctx, s.scope, fn_scope_id))
                 .filter_map(|(_, s)| s.value.as_deref())
                 .collect();
@@ -113,6 +102,8 @@ mod tests {
     #[case("def f(a): a")]
     #[case("def f(): .h1")]
     #[case(r#"def f(name): s"Hello ${name}""#)]
+    #[case(r#"def f(*args): s"DEBUG: ${args[0]}";"#)]
+    #[case(r#"def f(a, b): s"${a + b}";"#)]
     fn no_diagnostic_when_all_params_used(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);

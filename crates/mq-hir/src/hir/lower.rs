@@ -439,7 +439,7 @@ impl Hir {
                     });
                 }
                 mq_lang::StringSegment::Expr(expr, range) => {
-                    self.insert_symbol(Symbol {
+                    let embed_id = self.insert_symbol(Symbol {
                         value: Some(expr.clone()),
                         kind: SymbolKind::Variable,
                         source: SourceInfo::new(Some(source_id), Some(*range)),
@@ -447,6 +447,20 @@ impl Hir {
                         doc: node.comments(),
                         parent: Some(interp_id),
                         insertion_order: 0,
+                    });
+
+                    // `${self}` and `${$ENV}` are not ordinary expressions.
+                    let trimmed = expr.trim();
+                    if trimmed == "self" || trimmed.starts_with('$') {
+                        return;
+                    }
+
+                    // Pad so the parsed symbols keep their positions in the source.
+                    let padding =
+                        "\n".repeat(range.start.line.saturating_sub(1) as usize) + &" ".repeat(range.start.column + 1);
+                    let (nodes, _) = mq_lang::parse_recovery(&format!("{padding}{expr}"));
+                    nodes.iter().for_each(|n| {
+                        self.add_expr(n, source_id, scope_id, Some(embed_id));
                     });
                 }
             });

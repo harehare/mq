@@ -1,3 +1,4 @@
+use crate::rules::is_interpolation_embed;
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
@@ -20,6 +21,9 @@ impl LintRule for NamingConvention {
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_) | SymbolKind::Variable))
             .filter_map(|(_, sym)| {
                 let name = sym.value.as_deref()?;
+                if is_interpolation_embed(ctx, sym) {
+                    return None;
+                }
                 if name.starts_with('_') {
                     return None;
                 }
@@ -88,6 +92,13 @@ mod tests {
         let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains(name));
+    }
+
+    #[rstest]
+    #[case(r#"def f(args): s"DEBUG: ${args[0]}";"#)]
+    #[case(r#"def f(a): s"${len(a)}";"#)]
+    fn ignores_interpolated_expressions(#[case] code: &str) {
+        assert!(check(code).is_empty());
     }
 
     #[rstest]

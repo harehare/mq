@@ -1,18 +1,11 @@
 use rustc_hash::FxHashSet;
 
+use crate::rules::is_interpolation_embed;
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolKind;
 
 /// Reports variables that are never used.
 pub struct UnusedVariable;
-
-/// True if `sym` is a `${name}` interpolation embed rather than an actual `let`/`var` declaration
-/// (both reuse `SymbolKind::Variable`; see `Hir::add_interpolated_string`).
-fn is_interpolation_embed(ctx: &LintContext<'_>, sym: &mq_hir::Symbol) -> bool {
-    sym.parent
-        .and_then(|id| ctx.hir.symbol(id))
-        .is_some_and(|p| matches!(p.kind, SymbolKind::InterpolatedString))
-}
 
 impl LintRule for UnusedVariable {
     fn id(&self) -> RuleId {
@@ -24,14 +17,10 @@ impl LintRule for UnusedVariable {
     }
 
     fn check(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
-        // Build a set of all names referenced by Ref/Ident/Call symbols, plus bare `${name}`
-        // interpolation embeds (which reuse `SymbolKind::Variable` for the embedded text).
+        // Build a set of all names referenced by Ref/Ident/Call symbols.
         let used_names: FxHashSet<&str> = ctx
             .all_symbols()
-            .filter(|(_, s)| {
-                matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call)
-                    || is_interpolation_embed(ctx, s)
-            })
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call))
             .filter_map(|(_, s)| s.value.as_deref())
             .collect();
 
