@@ -187,10 +187,14 @@ impl<'a> Reader<'a> {
             }
             value |= part << shift;
             if byte & 0x80 == 0 {
+                // A trailing zero group is padding: the writer never emits it.
+                if byte == 0 && shift > 0 {
+                    break;
+                }
                 return Ok(value);
             }
         }
-        Err(MqcError::Malformed("varint is too long".into()))
+        Err(MqcError::Malformed("varint is too long or not minimal".into()))
     }
 
     pub(crate) fn var_u16(&mut self) -> Result<u16, MqcError> {
@@ -264,6 +268,20 @@ mod proofs {
         let mut reader = Reader::new(&bytes);
         assert_eq!(ok_value(reader.var()), Some(value));
         assert_eq!(reader.remaining(), 0);
+    }
+
+    /// An accepted varint is the one the writer emits, so decoding then encoding is the identity.
+    #[kani::proof]
+    #[kani::unwind(12)]
+    fn var_accepts_only_the_canonical_encoding() {
+        let bytes: [u8; 4] = kani::any();
+        let mut reader = Reader::new(&bytes);
+        if let Some(value) = ok_value(reader.var()) {
+            let used = bytes.len() - reader.remaining();
+            let mut writer = Writer::default();
+            writer.var(value);
+            assert_eq!(writer.into_bytes(), bytes[..used]);
+        }
     }
 
     #[kani::proof]
@@ -438,6 +456,8 @@ mod tests {
     #[case::overflow(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02])]
     #[case::too_long(&[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00])]
     #[case::truncated(&[0x80])]
+    #[case::padded_zero(&[0x80, 0x00])]
+    #[case::padded_value(&[0x81, 0x80, 0x00])]
     fn test_varint_rejects_malformed_input(#[case] bytes: &[u8]) {
         assert!(matches!(Reader::new(bytes).var(), Err(MqcError::Malformed(_))));
     }
