@@ -34,15 +34,15 @@ struct Cli {
     #[arg(short, long)]
     check: bool,
 
-    /// Sort imports
+    /// Sort consecutive top-level imports
     #[arg(long, default_value_t = false)]
     sort_imports: bool,
 
-    /// Sort functions
+    /// Sort consecutive top-level function definitions
     #[arg(long, default_value_t = false)]
     sort_functions: bool,
 
-    /// Sort fields
+    /// Sort consecutive top-level `let`/`var` statements
     #[arg(long, default_value_t = false)]
     sort_fields: bool,
 
