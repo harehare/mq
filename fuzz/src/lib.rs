@@ -84,7 +84,7 @@ const MQC_PROGRAMS: &[&str] = &[
     "def fact(n): if (n <= 1): 1 else: n * fact(n - 1); | fact(5)",
     "var s = 0 | foreach(x, range(1, 10)): s += x; | s",
     r#"try: error("boom") catch(e): s"caught ${e}""#,
-    "def gen(): yield 1 | yield 2; | let g = gen() | [next(g), next(g)]",
+    "def gen(): yield: 1 | yield: 2; | let g = gen() | [next(g), next(g)]",
     r#"def greet(name, greeting = "hi"): s"${greeting} ${name}"; | greet("mq")"#,
     r#"{"a": 1, "b": [1, 2, {"c": true}]}"#,
     ".h | let last = to_text() | nodes | last",
