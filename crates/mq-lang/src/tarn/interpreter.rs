@@ -578,6 +578,26 @@ fn pop_path_operands(
     (operand, keys)
 }
 
+/// Runs `CheckPathLocal`: reads `local[k1]...[kn]` for its error only.
+#[inline(never)]
+fn check_path_local(
+    stack: &[StackValue],
+    locals: &Locals,
+    slot: u16,
+    depth: u8,
+    chunks: &Shared<Vec<Chunk>>,
+) -> VmResult<()> {
+    let keys: smallvec::SmallVec<[RuntimeValue; 4]> = stack[stack.len() - usize::from(depth)..]
+        .iter()
+        .map(|key| into_runtime_value(key.clone(), chunks))
+        .collect();
+    let target = match locals.direct_runtime_value(slot) {
+        Some(target) => std::borrow::Cow::Borrowed(target),
+        None => std::borrow::Cow::Owned(local_runtime_value(locals, slot, chunks)?),
+    };
+    builtin::get_path(&target, &keys).map(drop).map_err(VmError::Builtin)
+}
+
 #[inline(never)]
 fn set_path_from_stack(
     stack: &mut Vec<StackValue>,
@@ -1417,6 +1437,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let value = pop_value!();
                 let key = pop_value!();
                 set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+            }
+            OpCode::CheckPathLocal { slot, depth } => {
+                check_path_local(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::SetPathLocal { slot, depth } => {
                 set_path_from_stack(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;

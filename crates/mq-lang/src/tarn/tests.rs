@@ -688,6 +688,27 @@ fn nested_updates_change_only_the_target_path(#[case] code: &str) {
 }
 
 #[rstest]
+#[case::set_operand_not_run_after_failed_read("var m = 1 | m[0][0] = error(\"rhs\")", "cannot index")]
+#[case::add_operand_not_run_after_failed_read("var m = 1 | m[0] += error(\"rhs\")", "cannot index")]
+#[case::nested_add_operand_not_run_after_failed_read(
+    "var m = {\"a\": 1} | m[\"a\"][0] += error(\"rhs\")",
+    "cannot index"
+)]
+#[case::operand_error_surfaces_on_a_valid_path("var m = [[1]] | m[0][0] = error(\"rhs\")", "rhs")]
+fn failed_path_read_comes_before_the_operand(#[case] code: &str, #[case] message: &str) {
+    let error = format!("{:?}", run_result(code).unwrap_err());
+    assert!(error.contains(message), "{code}: {error}");
+}
+
+#[test]
+fn failed_path_read_does_not_run_the_operand() {
+    assert_eq!(
+        run("var log = [] | var m = 1 | def f(): log += [1] | 0; | (try: m[0][0] = f() catch: None) | log"),
+        RuntimeValue::Array(Shared::new(Vec::new())),
+    );
+}
+
+#[rstest]
 #[case::missing_row("var m = [[1]] | m[5][0] = 1")]
 #[case::missing_key("var d = {} | d[\"a\"][\"b\"] = 1")]
 #[case::scalar_in_path("var d = {\"a\": 1} | d[\"a\"][\"b\"] = 2")]
@@ -719,6 +740,8 @@ fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
 }
 
 #[rstest]
+#[case::nested_set_simple_operand_unchecked("var a = [[1]] | var i = 0 | a[0][0] = i", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { .. }))]
+#[case::path_add_simple_operand_unchecked("var d = {\"k\": []} | var i = 0 | d[\"k\"] += [i]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { .. }))]
 #[case::nested_set_impure_key("var a = [[1]] | def k(): 0; | a[k()][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
 #[case::nested_set_captured("var a = [[1]] | def f(): a; | a[0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
 #[case::index_set_captured("var a = [1] | def f(): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
@@ -746,6 +769,8 @@ fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected:
 #[rstest]
 #[case::index_set("var a = [1] | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::nested_set("var a = [[1]] | a[0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 2, .. }))]
+#[case::nested_set_checked("var a = [[1]] | var f = fn(): 1; | a[0][0] = f()", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { depth: 1, .. }))]
+#[case::path_add_checked("var d = {\"k\": []} | var f = fn(): 1; | d[\"k\"] += [f()]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { depth: 1, .. }))]
 #[case::nested_set_three("var a = {\"k\": [[1]]} | a[\"k\"][0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 3, .. }))]
 #[case::path_add_dict_array("var d = {\"k\": []} | d[\"k\"] = d[\"k\"] + [1]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignPathLocal { depth: 1, .. }))]
 #[case::path_add_compound("var d = {\"k\": []} | d[\"k\"] += [1]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignPathLocal { depth: 1, .. }))]

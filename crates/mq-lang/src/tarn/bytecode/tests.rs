@@ -232,6 +232,12 @@ fn verifier_uses_the_lowest_height_at_a_stack_polymorphic_join() {
         OpCode::Return,
     ])]
 #[case::add_assign_local(vec![OpCode::PushNone, OpCode::AddAssignLocal(0), OpCode::Return])]
+#[case::check_path_local(vec![
+        OpCode::PushNone,
+        OpCode::CheckPathLocal { slot: 0, depth: 1 },
+        OpCode::Pop,
+        OpCode::Return,
+    ])]
 #[case::set_path_local(vec![
         OpCode::PushNone,
         OpCode::PushNone,

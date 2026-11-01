@@ -678,6 +678,15 @@ fn is_path_key(node: &Shared<Node>, target: Ident) -> bool {
     }
 }
 
+/// Whether evaluating `node` can neither fail nor have effects.
+fn is_effect_free(node: &Shared<Node>) -> bool {
+    match &node.expr {
+        Expr::Literal(_) | Expr::Ident(_) => true,
+        Expr::Array(items) => items.iter().all(is_effect_free),
+        _ => false,
+    }
+}
+
 /// Whether two path keys are the same literal or identifier.
 fn same_path_key(a: &Shared<Node>, b: &Shared<Node>) -> bool {
     match (&a.expr, &b.expr) {
@@ -3247,8 +3256,29 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit(OpCode::SetLocal(slot));
                 } else if let Some((keys, leaf)) = self.nested_assign_path(name, index, value) {
                     let depth = keys.len() as u8;
-                    for key in keys {
+                    // The old chained form read the path before evaluating the operand, so an
+                    // operand that can fail or have effects must not run if that read fails.
+                    let (operand, checked) = match leaf {
+                        PathLeaf::Set(operand) => (operand, keys.len() - 1),
+                        PathLeaf::Add(operand) => (operand, keys.len()),
+                    };
+                    let check = checked > 0 && !is_effect_free(operand);
+                    for (position, key) in keys.into_iter().enumerate() {
+                        if check && position == checked {
+                            self.set_call_token_id(token_id);
+                            self.emit(OpCode::CheckPathLocal {
+                                slot,
+                                depth: checked as u8,
+                            });
+                        }
                         self.compile_expr(key)?;
+                    }
+                    if check && checked == usize::from(depth) {
+                        self.set_call_token_id(token_id);
+                        self.emit(OpCode::CheckPathLocal {
+                            slot,
+                            depth: checked as u8,
+                        });
                     }
                     self.set_call_token_id(token_id);
                     match leaf {

@@ -212,6 +212,7 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::TakeLocal(slot) => format!("TakeLocal {}", local(*slot)),
         bytecode::OpCode::SetLocal(slot) => format!("SetLocal {}", local(*slot)),
         bytecode::OpCode::SetIndexLocal(slot) => format!("SetIndexLocal {}", local(*slot)),
+        bytecode::OpCode::CheckPathLocal { slot, depth } => format!("CheckPathLocal {} depth={depth}", local(*slot)),
         bytecode::OpCode::SetPathLocal { slot, depth } => format!("SetPathLocal {} depth={depth}", local(*slot)),
         bytecode::OpCode::AddAssignPathLocal { slot, depth } => {
             format!("AddAssignPathLocal {} depth={depth}", local(*slot))
