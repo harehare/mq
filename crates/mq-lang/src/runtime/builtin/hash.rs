@@ -69,7 +69,7 @@ mod tests {
     fn test_hash53_depends_on_the_seed_and_the_bytes() {
         assert_ne!(hash53(b"a", 0), hash53(b"a", 1));
         assert_ne!(hash53(b"a", 0), hash53(b"b", 0));
-        assert_ne!(hash53(b"ab", 0), hash53(b"ba", 0));
+        assert_ne!(hash53(b"12", 0), hash53(b"21", 0));
         assert_ne!(hash53(b"", 0), hash53(b"\0", 0));
     }
 
