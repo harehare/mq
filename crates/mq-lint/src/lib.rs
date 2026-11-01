@@ -27,9 +27,10 @@ pub use config::LintConfig;
 pub use fix::Fix;
 pub use message::{LintMessage, RuleId};
 
-use std::{collections::HashMap, sync::OnceLock};
+use std::sync::OnceLock;
 
 use mq_hir::{Hir, SourceId};
+use rustc_hash::FxHashMap;
 
 /// Severity level for a lint diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -121,7 +122,7 @@ pub struct LintContext<'a> {
 /// This source's symbols and their children, built once so rules need not rescan the HIR.
 struct SymbolIndex {
     symbols: Vec<mq_hir::SymbolId>,
-    children: HashMap<Option<mq_hir::SymbolId>, Vec<mq_hir::SymbolId>>,
+    children: FxHashMap<Option<mq_hir::SymbolId>, Vec<mq_hir::SymbolId>>,
 }
 
 impl<'a> LintContext<'a> {
@@ -138,7 +139,7 @@ impl<'a> LintContext<'a> {
     fn index(&self) -> &SymbolIndex {
         self.index.get_or_init(|| {
             let mut symbols = Vec::new();
-            let mut children: HashMap<_, Vec<_>> = HashMap::new();
+            let mut children: FxHashMap<_, Vec<_>> = FxHashMap::default();
             for (id, symbol) in self.hir.symbols() {
                 if symbol.source.source_id != Some(self.source_id) {
                     continue;
