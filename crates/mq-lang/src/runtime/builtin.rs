@@ -3812,7 +3812,6 @@ pub(crate) fn resolve_index(index: number::Number, len: usize) -> Option<usize> 
 }
 
 /// `get(target, key)`: the element at `key`, or `None` when it is absent.
-#[inline(always)]
 fn get_value(target: &mut RuntimeValue, key: &RuntimeValue) -> Result<RuntimeValue, Error> {
     match (target, key) {
         // Read-only: avoid `dict_mut`/`array_mut`'s `make_mut` deep clone of a shared map.
