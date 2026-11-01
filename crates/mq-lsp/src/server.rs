@@ -264,12 +264,20 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
+        let line_prefix = self
+            .documents
+            .get(&uri.to_string())
+            .map(|snapshot| completions::line_prefix(&snapshot.text, position))
+            .unwrap_or_default();
+
         let source_map_guard = self.source_map.read().unwrap();
         Ok(completions::response(
             Arc::clone(&self.hir),
             to_url(&uri),
             position,
             &source_map_guard,
+            &line_prefix,
+            &self.config.module_paths,
         ))
     }
 
