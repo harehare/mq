@@ -1,31 +1,28 @@
 use std::sync::{Arc, RwLock};
 
-use tower_lsp_server::ls_types::{DocumentHighlight, Position, Range};
+use tower_lsp_server::ls_types::{DocumentHighlight, Position};
 use url::Url;
 
-fn to_range(range: mq_lang::Range) -> Range {
-    Range::new(
-        Position::new(range.start.line - 1, (range.start.column - 1) as u32),
-        Position::new(range.end.line - 1, (range.end.column - 1) as u32),
-    )
-}
+use crate::position::LineIndex;
 
 /// Highlights the declaration and every reference of the symbol under the cursor within the
 /// same document.
-pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<Vec<DocumentHighlight>> {
+pub(crate) fn response(
+    hir: Arc<RwLock<mq_hir::Hir>>,
+    url: Url,
+    lines: &LineIndex,
+    position: Position,
+) -> Option<Vec<DocumentHighlight>> {
     let hir = hir.read().unwrap();
     let source = hir.source_by_url(&url)?;
-    let (symbol_id, symbol) = hir.find_symbol_in_position(
-        source,
-        mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
-    )?;
+    let (symbol_id, symbol) = hir.find_symbol_in_position(source, lines.to_mq(position))?;
 
     let highlights = std::iter::once(&symbol)
         .chain(hir.references(symbol_id).iter().map(|(_, reference)| reference))
         .filter(|symbol| symbol.source.source_id == Some(source))
         .filter_map(|symbol| symbol.source.text_range)
         .map(|range| DocumentHighlight {
-            range: to_range(range),
+            range: lines.to_lsp_range(range),
             kind: None,
         })
         .collect::<Vec<_>>();
@@ -36,6 +33,7 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Positi
 #[cfg(test)]
 mod tests {
     use mq_hir::Hir;
+    use tower_lsp_server::ls_types::Range;
 
     use super::*;
 
@@ -43,7 +41,8 @@ mod tests {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
         hir.add_code(Some(url.clone()), code);
-        let highlights = response(Arc::new(RwLock::new(hir)), url, position)?;
+        let lines = LineIndex::new(Arc::new(code.to_string()));
+        let highlights = response(Arc::new(RwLock::new(hir)), url, &lines, position)?;
         Some(highlights.into_iter().map(|h| h.range).collect())
     }
 
@@ -52,6 +51,13 @@ mod tests {
         let ranges = highlight("def f(): 1; | f() | f()", Position::new(0, 4)).expect("highlights");
         assert!(ranges.len() >= 3, "{ranges:?}");
         assert!(ranges.iter().all(|r| r.start.line == 0));
+    }
+
+    #[test]
+    fn test_highlights_use_utf16_columns_after_non_bmp_characters() {
+        // `😀` is two UTF-16 units: the call `f` is at 0-based UTF-16 column 21, not 20.
+        let ranges = highlight("def f(): 1; | \"😀\" | f()", Position::new(0, 21)).expect("highlights");
+        assert!(ranges.iter().any(|r| r.start == Position::new(0, 21)), "{ranges:?}");
     }
 
     #[test]

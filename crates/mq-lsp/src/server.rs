@@ -9,6 +9,7 @@ use tower_lsp_server::ls_types::DocumentRangeFormattingParams;
 use url::Url;
 
 use crate::error::LspError;
+use crate::position::LineIndex;
 use crate::{
     capabilities, code_action, completions, document_highlight, document_link, document_symbol, execute_command,
     folding_range, goto_definition, hover, inlay_hints, references, rename, selection_range, semantic_tokens,
@@ -38,8 +39,19 @@ fn document_end_position(text: &str) -> ls_types::Position {
 #[derive(Debug)]
 struct DocumentSnapshot {
     text: Arc<String>,
+    lines: LineIndex,
     /// `None` when the document has never been parsed (only set directly in tests).
     nodes: Option<Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>,
+}
+
+impl DocumentSnapshot {
+    fn new(text: Arc<String>, nodes: Option<Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>) -> Self {
+        Self {
+            lines: LineIndex::new(Arc::clone(&text)),
+            text,
+            nodes,
+        }
+    }
 }
 
 /// Text and CST of each open document, keyed by URI string, published atomically per change.
@@ -163,9 +175,14 @@ impl LanguageServer for Backend {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
+        let Some(snapshot) = self.documents.get(&url.to_string()).map(|s| Arc::clone(s.value())) else {
+            return Ok(None);
+        };
+
         Ok(document_highlight::response(
             Arc::clone(&self.hir),
             to_url(&url),
+            &snapshot.lines,
             position,
         ))
     }
@@ -174,9 +191,18 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::DocumentLinkParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::DocumentLink>>> {
+        let Some(snapshot) = self
+            .documents
+            .get(&params.text_document.uri.to_string())
+            .map(|s| Arc::clone(s.value()))
+        else {
+            return Ok(None);
+        };
+
         Ok(document_link::response(
             Arc::clone(&self.hir),
             to_url(&params.text_document.uri),
+            &snapshot.lines,
         ))
     }
 
@@ -185,9 +211,12 @@ impl LanguageServer for Backend {
         params: ls_types::SelectionRangeParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::SelectionRange>>> {
         let uri = params.text_document.uri.to_string();
-        let nodes = self.documents.get(&uri).and_then(|snapshot| snapshot.nodes.clone());
+        let snapshot = self.documents.get(&uri).map(|s| Arc::clone(s.value()));
 
-        Ok(nodes.map(|nodes| selection_range::response(&nodes, &params.positions)))
+        Ok(snapshot.and_then(|snapshot| {
+            let nodes = snapshot.nodes.as_ref()?;
+            Some(selection_range::response(nodes, &snapshot.lines, &params.positions))
+        }))
     }
 
     async fn document_symbol(
@@ -592,10 +621,7 @@ impl Backend {
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
         self.documents.insert(
             uri_string.clone(),
-            Arc::new(DocumentSnapshot {
-                text: Arc::new(text),
-                nodes: Some(nodes),
-            }),
+            Arc::new(DocumentSnapshot::new(Arc::new(text), Some(nodes))),
         );
         self.error_map.insert(uri_string, errors);
     }

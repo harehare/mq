@@ -1,41 +1,36 @@
 use mq_lang::{CstNode, Shared};
 use tower_lsp_server::ls_types::{Position, Range, SelectionRange};
 
-fn to_range(range: mq_lang::Range) -> Range {
-    Range::new(
-        Position::new(range.start.line - 1, (range.start.column - 1) as u32),
-        Position::new(range.end.line - 1, (range.end.column - 1) as u32),
-    )
-}
+use crate::position::LineIndex;
 
 fn contains(range: &Range, position: Position) -> bool {
     range.start <= position && position <= range.end
 }
 
 /// Collects the ranges of the nodes containing `position`, outermost first.
-fn enclosing(nodes: &[Shared<CstNode>], position: Position, out: &mut Vec<Range>) {
+fn enclosing(nodes: &[Shared<CstNode>], lines: &LineIndex, position: Position, out: &mut Vec<Range>) {
     let Some(node) = nodes
         .iter()
-        .find(|node| contains(&to_range(node.node_range()), position))
+        .find(|node| contains(&lines.to_lsp_range(node.node_range()), position))
     else {
         return;
     };
 
-    let range = to_range(node.node_range());
+    let range = lines.to_lsp_range(node.node_range());
     if out.last() != Some(&range) {
         out.push(range);
     }
     let children = node.children().cloned().collect::<Vec<_>>();
-    enclosing(&children, position, out);
+    enclosing(&children, lines, position, out);
 }
 
 /// Returns, for each position, the nested ranges of the syntax nodes around it.
-pub(crate) fn response(nodes: &[Shared<CstNode>], positions: &[Position]) -> Vec<SelectionRange> {
+pub(crate) fn response(nodes: &[Shared<CstNode>], lines: &LineIndex, positions: &[Position]) -> Vec<SelectionRange> {
     positions
         .iter()
         .map(|&position| {
             let mut ranges = Vec::new();
-            enclosing(nodes, position, &mut ranges);
+            enclosing(nodes, lines, position, &mut ranges);
             // Keep strictly growing ranges, innermost first.
             ranges.dedup();
             ranges
@@ -56,11 +51,14 @@ pub(crate) fn response(nodes: &[Shared<CstNode>], positions: &[Position]) -> Vec
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     fn chain(code: &str, position: Position) -> Vec<Range> {
         let (nodes, _) = mq_lang::parse_recovery(code);
-        let mut selection = Some(response(&nodes, &[position]).remove(0));
+        let lines = LineIndex::new(Arc::new(code.to_string()));
+        let mut selection = Some(response(&nodes, &lines, &[position]).remove(0));
         let mut out = Vec::new();
         while let Some(current) = selection {
             out.push(current.range);
@@ -80,6 +78,14 @@ mod tests {
             );
         }
         assert!(ranges[0].start.character <= 14 && 14 <= ranges[0].end.character);
+    }
+
+    #[test]
+    fn test_ranges_use_utf16_columns_after_non_bmp_characters() {
+        // `😀` is two UTF-16 units, so the call `add(1, 2)` spans columns 7 to 16.
+        let ranges = chain("\"😀\" | add(1, 2)", Position::new(0, 8));
+        let call = Range::new(Position::new(0, 7), Position::new(0, 16));
+        assert!(ranges.contains(&call), "{ranges:?}");
     }
 
     #[test]

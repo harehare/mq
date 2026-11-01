@@ -181,10 +181,7 @@ async fn test_formatting() {
     let (_, errors) = mq_lang::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1098,10 +1095,7 @@ async fn test_did_save() {
     let (_, errors) = mq_lang::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1222,10 +1216,7 @@ async fn test_diagnostics_with_errors() {
     let (_, errors) = mq_lang::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1261,10 +1252,7 @@ async fn test_pull_diagnostics_returns_syntax_errors() {
     let (_, errors) = mq_lang::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1317,10 +1305,7 @@ async fn test_pull_diagnostics_syntax_error_includes_did_you_mean_hint() {
     let (_, errors) = mq_lang::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1416,10 +1401,7 @@ async fn test_unused_function_warnings() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1472,10 +1454,7 @@ async fn test_lint_diagnostics_enabled() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1525,10 +1504,7 @@ async fn test_lint_diagnostics_disabled_by_default() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1562,10 +1538,7 @@ async fn test_formatting_with_errors() {
     let _ = mq_lang::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1617,10 +1590,7 @@ async fn test_unreachable_code_warnings() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1665,10 +1635,7 @@ async fn test_range_formatting_single_line() {
     let backend = service.inner();
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
 
     let params = DocumentRangeFormattingParams {
@@ -1712,10 +1679,7 @@ async fn test_range_formatting_multi_line() {
     let backend = service.inner();
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
 
     let params = DocumentRangeFormattingParams {
@@ -1758,10 +1722,7 @@ async fn test_range_formatting_with_errors() {
     let backend = service.inner();
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1869,10 +1830,7 @@ async fn test_diagnostics_with_type_checking_disabled() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -1917,10 +1875,7 @@ async fn test_diagnostics_with_type_checking_enabled_no_errors() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -2007,10 +1962,7 @@ async fn test_diagnostics_type_checking_skipped_when_parse_errors_exist() {
     let text = "def add(x, y): x + y;\n| add(1)";
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(text.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -2063,10 +2015,7 @@ async fn test_diagnostics_with_strict_array_option() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),
@@ -2114,10 +2063,7 @@ async fn test_diagnostics_with_tuple_option() {
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
-        Arc::new(DocumentSnapshot {
-            text: Arc::new(code.to_string()),
-            nodes: None,
-        }),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
     );
     backend.error_map.insert(
         uri.to_string(),

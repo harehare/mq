@@ -3,10 +3,10 @@ use std::sync::{Arc, RwLock};
 use tower_lsp_server::ls_types::{DocumentLink, Position, Range};
 use url::Url;
 
-use crate::virtual_document;
+use crate::{position::LineIndex, virtual_document};
 
 /// Links the path string of each `import` / `include` to the module it loads.
-pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Option<Vec<DocumentLink>> {
+pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, lines: &LineIndex) -> Option<Vec<DocumentLink>> {
     let hir = hir.read().unwrap();
     let source = hir.source_by_url(&url)?;
 
@@ -20,7 +20,7 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Option<Vec<Do
             // The symbol ends with the quoted path.
             let end = symbol.source.text_range?.end;
             let width = symbol.value.as_ref()?.encode_utf16().count() + 2;
-            let end = Position::new(end.line - 1, (end.column - 1) as u32);
+            let end = lines.to_lsp(end);
             let start = Position::new(end.line, end.character.checked_sub(width as u32)?);
             Some(DocumentLink {
                 range: Range::new(start, end),
@@ -45,7 +45,8 @@ mod tests {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();
         hir.add_code(Some(url.clone()), code);
-        response(Arc::new(RwLock::new(hir)), url).unwrap()
+        let lines = LineIndex::new(Arc::new(code.to_string()));
+        response(Arc::new(RwLock::new(hir)), url, &lines).unwrap()
     }
 
     #[test]
@@ -55,6 +56,12 @@ mod tests {
         assert_eq!(links[0].range, Range::new(Position::new(0, 7), Position::new(0, 16)));
         assert_eq!(links[0].target.as_ref().map(|u| u.as_str()), Some("mq-std:/section.mq"));
         assert_eq!(links[1].range, Range::new(Position::new(1, 10), Position::new(1, 15)));
+    }
+
+    #[test]
+    fn test_links_use_utf16_columns_after_non_bmp_characters() {
+        let links = links("\"😀\" | import \"csv\"");
+        assert_eq!(links[0].range, Range::new(Position::new(0, 14), Position::new(0, 19)));
     }
 
     #[test]
