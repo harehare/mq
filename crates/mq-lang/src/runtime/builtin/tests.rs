@@ -2628,6 +2628,23 @@ fn test_array_slice(#[case] start: i64, #[case] end: i64, #[case] expected: &[i6
     assert_eq!(slice_array(source, start, end), RuntimeValue::Array(numbers(expected)));
 }
 
+#[rstest]
+#[case::empty(0, 0, 0)]
+#[case::one(0, 1, 1)]
+#[case::small_suffix(990, 1000, 10)]
+fn test_array_slice_releases_unused_capacity_of_unshared_array(
+    #[case] start: i64,
+    #[case] end: i64,
+    #[case] len: usize,
+) {
+    let items: Vec<i64> = (0..1000).collect();
+    let RuntimeValue::Array(result) = slice_array(numbers(&items), start, end) else {
+        panic!("expected an array");
+    };
+    assert_eq!(result.len(), len);
+    assert!(result.capacity() < 100);
+}
+
 proptest::proptest! {
     #[test]
     fn test_array_slice_matches_a_vec_slice_whether_or_not_it_is_shared(

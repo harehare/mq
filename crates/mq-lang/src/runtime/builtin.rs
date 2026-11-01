@@ -1957,6 +1957,10 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
                 Some(items) => {
                     items.truncate(range.end);
                     items.drain(..range.start);
+                    // Do not let a small result keep a much larger buffer alive.
+                    if items.capacity() > items.len().saturating_mul(2).max(16) {
+                        items.shrink_to_fit();
+                    }
                     Ok(RuntimeValue::Array(owned))
                 }
                 None => Ok(RuntimeValue::Array(Shared::new(owned[range].to_vec()))),
