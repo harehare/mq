@@ -659,6 +659,43 @@ fn add_assignment_respects_array_size_limit(#[case] code: &str) {
     assert!(run_result(code).is_err(), "{code}");
 }
 
+#[rstest]
+#[case::array_row("var m = [[1, 2], [3, 4]] | m[1][0] = 9 | m == [[1, 2], [9, 4]]")]
+#[case::three_levels("var m = {\"a\": [[1]]} | m[\"a\"][0][0] = 2 | m == {\"a\": [[2]]}")]
+#[case::dict_in_array("var m = [{\"k\": 1}] | m[0][\"k\"] = 2 | m[0][\"j\"] = 3 | m == [{\"k\": 2, \"j\": 3}]")]
+#[case::variable_keys("var m = [[1, 2]] | var i = 0 | var j = 1 | m[i][j] = 5 | m == [[1, 5]]")]
+#[case::negative_outer_index_follows_chained_set("var m = [[1, 2], [3, 4]] | m[-1][0] = 9 | m == [[9, 4], [3, 4]]")]
+#[case::grows_inner_array("var m = [[1]] | m[0][2] = 5 | len(m[0]) == 3")]
+#[case::append_to_dict_array(
+    "var d = {\"a\": []} | d[\"a\"] = d[\"a\"] + [1] | d[\"a\"] += [2, 3] | d == {\"a\": [1, 2, 3]}"
+)]
+#[case::append_to_nested_array("var m = [[1]] | m[0][0] = [1] | m[0][0] += [2] | m == [[[1, 2]]]")]
+#[case::append_string("var d = {\"s\": \"a\"} | d[\"s\"] += \"b\" | d == {\"s\": \"ab\"}")]
+#[case::add_number("var d = {\"n\": 1} | d[\"n\"] = d[\"n\"] + 2 | d == {\"n\": 3}")]
+#[case::add_to_missing_key("var d = {} | d[\"n\"] += 2 | d == {\"n\": 2}")]
+#[case::add_nested_number("var m = [[1]] | m[0][0] += 4 | m == [[5]]")]
+#[case::shared_copy_is_not_changed("var a = [[1]] | var b = a | a[0][0] = 7 | b == [[1]] && a == [[7]]")]
+#[case::shared_element_is_not_changed(
+    "var d = {\"k\": [1]} | var e = d[\"k\"] | d[\"k\"] += [2] | e == [1] && d == {\"k\": [1, 2]}"
+)]
+#[case::value_reads_target("var m = [[1, 2]] | m[0][0] = len(m[0]) | m == [[2, 2]]")]
+#[case::rhs_is_the_element("var d = {\"k\": [1]} | d[\"k\"] += d[\"k\"] | d == {\"k\": [1, 1]}")]
+#[case::in_function(
+    "def f(n): var d = {\"a\": []} | var i = 0 | while (i < n): d[\"a\"] += [i] | i = i + 1 end | d; | f(3) == {\"a\": [0, 1, 2]}"
+)]
+fn nested_updates_change_only_the_target_path(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::missing_row("var m = [[1]] | m[5][0] = 1")]
+#[case::missing_key("var d = {} | d[\"a\"][\"b\"] = 1")]
+#[case::scalar_in_path("var d = {\"a\": 1} | d[\"a\"][\"b\"] = 2")]
+#[case::missing_key_add("var d = {} | d[\"a\"][\"b\"] += 1")]
+fn nested_updates_through_missing_or_scalar_entries_fail(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code}");
+}
+
 #[test]
 fn failed_add_assignment_keeps_local_intact() {
     assert_eq!(
@@ -682,6 +719,8 @@ fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
 }
 
 #[rstest]
+#[case::nested_set_impure_key("var a = [[1]] | def k(): 0; | a[k()][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
+#[case::nested_set_captured("var a = [[1]] | def f(): a; | a[0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
 #[case::index_set_captured("var a = [1] | def f(): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::index_set_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::add_array_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
@@ -706,6 +745,11 @@ fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected:
 
 #[rstest]
 #[case::index_set("var a = [1] | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::nested_set("var a = [[1]] | a[0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 2, .. }))]
+#[case::nested_set_three("var a = {\"k\": [[1]]} | a[\"k\"][0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 3, .. }))]
+#[case::path_add_dict_array("var d = {\"k\": []} | d[\"k\"] = d[\"k\"] + [1]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignPathLocal { depth: 1, .. }))]
+#[case::path_add_compound("var d = {\"k\": []} | d[\"k\"] += [1]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignPathLocal { depth: 1, .. }))]
+#[case::path_add_nested("var d = {\"k\": [[1]]} | d[\"k\"][0] += [1]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignPathLocal { depth: 2, .. }))]
 #[case::add_array("var a = [1] | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 #[case::set_assign_dict("var d = {} | d = set(d, \"a\", 1)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::set_assign_array("var a = [1] | a = set(a, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]

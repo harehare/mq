@@ -564,6 +564,59 @@ fn set_index_local(
     Ok(())
 }
 
+/// Runs `SetPathLocal`: `local[k1]...[kn] = value`, in place when the local is stored directly.
+#[inline(never)]
+fn set_path_local(
+    locals: &mut Locals,
+    slot: u16,
+    keys: &[RuntimeValue],
+    mut value: RuntimeValue,
+    chunks: &Shared<Vec<Chunk>>,
+) -> VmResult<()> {
+    if let Some(target) = locals.direct_runtime_value_mut(slot) {
+        return builtin::set_path_in_place(target, keys, &mut value).map_err(VmError::Builtin);
+    }
+    let mut target = local_runtime_value(locals, slot, chunks)?;
+    builtin::set_path_in_place(&mut target, keys, &mut value).map_err(VmError::Builtin)?;
+    locals.set(slot, StackValue::Value(target));
+    Ok(())
+}
+
+/// Runs `AddAssignPathLocal`: `local[k1]...[kn] = local[k1]...[kn] + rhs`, appending to the
+/// element in place when it is a string or array reached through existing entries.
+#[inline(never)]
+fn add_assign_path_local(
+    locals: &mut Locals,
+    slot: u16,
+    keys: &[RuntimeValue],
+    rhs: RuntimeValue,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<()> {
+    let lhs = match locals.direct_runtime_value_mut(slot) {
+        Some(target) => {
+            if let Some(element) = builtin::path_element_mut(target, keys)
+                && builtin::add_in_place(element, &rhs).map_err(VmError::Builtin)?
+            {
+                return Ok(());
+            }
+            builtin::get_path(target, keys)
+        }
+        None => builtin::get_path(&local_runtime_value(locals, slot, chunks)?, keys),
+    }
+    .map_err(VmError::Builtin)?;
+    let result = eval_binary_op(
+        BinaryOp::Add,
+        lhs,
+        rhs,
+        locals,
+        chunks,
+        execution.env,
+        execution.host_functions,
+    )?;
+    set_path_local(locals, slot, keys, result, chunks)
+}
+
 /// Runs `AddAssignLocal` for everything but a number added to a directly stored number:
 /// `local = local + rhs`, in place when the local is a directly stored string or array.
 #[inline(never)]
@@ -1325,6 +1378,17 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let value = pop_value!();
                 let key = pop_value!();
                 set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+            }
+            OpCode::SetPathLocal { slot, depth } => {
+                let value = pop_value!();
+                let keys = pop_call_args!(*depth);
+                set_path_local(locals, *slot, &keys, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+            }
+            OpCode::AddAssignPathLocal { slot, depth } => {
+                let rhs = pop_value!();
+                let keys = pop_call_args!(*depth);
+                add_assign_path_local(locals, *slot, &keys, rhs, chunks, execution)
+                    .map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::AddAssignLocal(slot) => {
                 let rhs = pop_value!();
