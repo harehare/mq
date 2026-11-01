@@ -523,6 +523,12 @@ fn register_string(ctx: &mut InferenceContext) {
     // String properties
     register_unary(ctx, "utf8bytelen", text(), Type::Number);
 
+    // hash: (string) -> number and (string, number) -> number. The seed gives an independent hash.
+    register_unary(ctx, "hash", Type::String, Type::Number);
+    register_binary(ctx, "hash", Type::String, Type::Number, Type::Number);
+    // bit_length: (number) -> number
+    register_unary(ctx, "bit_length", Type::Number, Type::Number);
+
     // Regular expressions
     register_binary(ctx, "test", text(), Type::String, Type::Bool);
     register_binary(ctx, "regex_match", text(), Type::String, Type::array(Type::String));

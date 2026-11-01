@@ -2641,6 +2641,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "similar",
+ "siphasher",
  "smallvec",
  "smol_str",
  "string-interner",

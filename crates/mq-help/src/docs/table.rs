@@ -1460,6 +1460,26 @@ key: 1
         kind: DocKind::Function,
     },
     BuiltinDoc {
+        name: "bit_length",
+        aliases: &[],
+        description: "Returns the number of bits needed to write a non-negative integer in binary, 0 for 0.",
+        params: &["n"],
+        param_types: &["number"],
+        returns: "number",
+        examples: &[
+            BuiltinExample {
+                code: r#"bit_length(255)"#,
+                expected: r#"8"#,
+            },
+            BuiltinExample {
+                code: r#"bit_length(256)"#,
+                expected: r#"9"#,
+            },
+        ],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "bnot",
         aliases: &[],
         description: "Computes the bitwise NOT (complement) of a byte array.",
@@ -2188,6 +2208,26 @@ key: 1
             code: r#"has({"a": 1}, "a")"#,
             expected: "true",
         }],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
+        name: "hash",
+        aliases: &[],
+        description: "Hashes a string to an integer below 2^53, which a number holds exactly. `seed` is optional; each seed gives an independent hash of the same string. The result is the same on every run and platform, so it can be stored. It is not a cryptographic hash.",
+        params: &["string", "seed?"],
+        param_types: &["string", "number"],
+        returns: "number",
+        examples: &[
+            BuiltinExample {
+                code: r#"hash("hello")"#,
+                expected: r#"4952387935952618"#,
+            },
+            BuiltinExample {
+                code: r#"hash("hello", 1) != hash("hello", 2)"#,
+                expected: r#"true"#,
+            },
+        ],
         capability: None,
         kind: DocKind::Function,
     },
