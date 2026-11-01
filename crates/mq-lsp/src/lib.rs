@@ -25,6 +25,8 @@ pub mod capabilities;
 pub mod code_action;
 /// Completion items.
 pub mod completions;
+mod document_highlight;
+mod document_link;
 /// Document symbols.
 pub mod document_symbol;
 /// Error types.
@@ -44,6 +46,7 @@ pub mod refactor;
 pub mod references;
 /// Rename symbols.
 pub mod rename;
+mod selection_range;
 /// Semantic token highlighting.
 pub mod semantic_tokens;
 /// The LSP server.

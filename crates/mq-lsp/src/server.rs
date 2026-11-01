@@ -10,8 +10,9 @@ use url::Url;
 
 use crate::error::LspError;
 use crate::{
-    capabilities, code_action, completions, document_symbol, execute_command, folding_range, goto_definition, hover,
-    inlay_hints, references, rename, semantic_tokens, signature_help, virtual_document, workspace_symbol,
+    capabilities, code_action, completions, document_highlight, document_link, document_symbol, execute_command,
+    folding_range, goto_definition, hover, inlay_hints, references, rename, selection_range, semantic_tokens,
+    signature_help, virtual_document, workspace_symbol,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
@@ -153,6 +154,40 @@ impl LanguageServer for Backend {
             position,
             &source_map_guard,
         ))
+    }
+
+    async fn document_highlight(
+        &self,
+        params: ls_types::DocumentHighlightParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::DocumentHighlight>>> {
+        let url = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        Ok(document_highlight::response(
+            Arc::clone(&self.hir),
+            to_url(&url),
+            position,
+        ))
+    }
+
+    async fn document_link(
+        &self,
+        params: ls_types::DocumentLinkParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::DocumentLink>>> {
+        Ok(document_link::response(
+            Arc::clone(&self.hir),
+            to_url(&params.text_document.uri),
+        ))
+    }
+
+    async fn selection_range(
+        &self,
+        params: ls_types::SelectionRangeParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::SelectionRange>>> {
+        let uri = params.text_document.uri.to_string();
+        let nodes = self.documents.get(&uri).and_then(|snapshot| snapshot.nodes.clone());
+
+        Ok(nodes.map(|nodes| selection_range::response(&nodes, &params.positions)))
     }
 
     async fn document_symbol(
