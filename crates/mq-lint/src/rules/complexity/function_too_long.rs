@@ -16,7 +16,7 @@ impl LintRule for FunctionTooLong {
         let max_lines = ctx.config.complexity.function_max_lines;
 
         ctx.hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter_map(|(_, sym)| {
                 if !sym.is_function() {
                     return None;

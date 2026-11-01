@@ -20,15 +20,14 @@ impl LintRule for AlwaysTrueCondition {
 
         let if_ids: Vec<_> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::If))
             .collect();
 
         for (if_id, if_sym) in if_ids {
             // Sort children by source position and take the first one (the condition).
             let mut children: Vec<_> = ctx
-                .all_symbols()
-                .filter(|(_, s)| s.parent == Some(if_id))
+                .children(if_id)
                 .filter_map(|(id, s)| s.source.text_range.map(|r| (id, r, s)))
                 .collect();
             children.sort_by_key(|(_, r, _)| (r.start.line, r.start.column));

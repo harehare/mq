@@ -1,21 +1,10 @@
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, ScopeKind, SymbolId, SymbolKind};
 
 /// Reports function parameters that are never used.
 pub struct UnusedParameter;
-
-fn is_in_scope_subtree(ctx: &LintContext<'_>, scope_id: ScopeId, target_scope_id: ScopeId) -> bool {
-    let mut current = Some(scope_id);
-    while let Some(sid) = current {
-        if sid == target_scope_id {
-            return true;
-        }
-        current = ctx.hir.scope(sid).and_then(|s| s.parent_id);
-    }
-    false
-}
 
 impl LintRule for UnusedParameter {
     fn id(&self) -> RuleId {
@@ -31,32 +20,49 @@ impl LintRule for UnusedParameter {
 
         let functions: Vec<(SymbolId, _)> = ctx.all_symbols().filter(|(_, s)| s.is_function()).collect();
 
-        for (fn_id, _) in functions {
-            let Some((fn_scope_id, _)) = ctx
-                .hir
-                .scopes()
-                .find(|(_, scope)| matches!(&scope.kind, ScopeKind::Function(id) if *id == fn_id))
-            else {
+        // The scope of each function, keeping the first when a function has several.
+        let mut fn_scopes: FxHashMap<SymbolId, ScopeId> = FxHashMap::default();
+        for (scope_id, scope) in ctx.hir.scopes() {
+            if let ScopeKind::Function(id) = &scope.kind {
+                fn_scopes.entry(*id).or_insert(scope_id);
+            }
+        }
+        let fn_scope_ids: FxHashSet<ScopeId> = fn_scopes.values().copied().collect();
+
+        // Names used in each function scope, including its nested scopes.
+        let mut used_names: FxHashMap<ScopeId, FxHashSet<&str>> = FxHashMap::default();
+        for (_, s) in ctx
+            .all_symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call))
+        {
+            let Some(name) = s.value.as_deref() else {
                 continue;
             };
+            let mut current = Some(s.scope);
+            while let Some(scope_id) = current {
+                if fn_scope_ids.contains(&scope_id) {
+                    used_names.entry(scope_id).or_default().insert(name);
+                }
+                current = ctx.hir.scope(scope_id).and_then(|scope| scope.parent_id);
+            }
+        }
 
-            let used_names: FxHashSet<&str> = ctx
-                .all_symbols()
-                .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call))
-                .filter(|(_, s)| is_in_scope_subtree(ctx, s.scope, fn_scope_id))
-                .filter_map(|(_, s)| s.value.as_deref())
-                .collect();
+        for (fn_id, _) in functions {
+            let Some(fn_scope_id) = fn_scopes.get(&fn_id) else {
+                continue;
+            };
+            let used_names = used_names.get(fn_scope_id);
 
             for (_, param_sym) in ctx
-                .all_symbols()
-                .filter(|(_, s)| s.parent == Some(fn_id) && matches!(s.kind, SymbolKind::Parameter))
+                .children(fn_id)
+                .filter(|(_, s)| matches!(s.kind, SymbolKind::Parameter))
             {
                 let name = match param_sym.value.as_deref() {
                     Some(n) => n,
                     None => continue,
                 };
 
-                if name.starts_with('_') || used_names.contains(name) {
+                if name.starts_with('_') || used_names.is_some_and(|names| names.contains(name)) {
                     continue;
                 }
 

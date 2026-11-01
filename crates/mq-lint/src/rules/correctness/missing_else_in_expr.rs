@@ -21,7 +21,7 @@ impl LintRule for MissingElseInExpr {
         // Both If and Else use add_symbol, so symbols_for_source covers them.
         let if_ids_with_else: std::collections::HashSet<mq_hir::SymbolId> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Else))
             .filter_map(|(_, s)| s.parent)
             .collect();
@@ -38,17 +38,16 @@ impl LintRule for MissingElseInExpr {
                     .is_some_and(|p| matches!(p.kind, SymbolKind::Function(_) | SymbolKind::Block)),
             };
             in_pipeline
-                && !ctx.all_symbols().any(|(_, other)| {
-                    other.parent == sym.parent
-                        && other
-                            .source
-                            .text_range
-                            .is_some_and(|r| (r.start.line, r.start.column) > (range.start.line, range.start.column))
+                && !ctx.siblings(sym.parent).any(|(_, other)| {
+                    other
+                        .source
+                        .text_range
+                        .is_some_and(|r| (r.start.line, r.start.column) > (range.start.line, range.start.column))
                 })
         };
 
         ctx.hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(id, s)| {
                 matches!(s.kind, SymbolKind::If) && !if_ids_with_else.contains(id) && !is_pipeline_tail(s)
             })

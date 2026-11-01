@@ -17,13 +17,13 @@ impl LintRule for ComplexInterpolation {
         let max_exprs = ctx.config.complexity.max_interpolation_exprs;
 
         ctx.hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::InterpolatedString))
             .filter_map(|(interp_id, sym)| {
                 // Variable children represent `${...}` interpolated expressions.
                 let expr_count = ctx
-                    .all_symbols()
-                    .filter(|(_, s)| s.parent == Some(interp_id) && matches!(s.kind, SymbolKind::Variable))
+                    .children(interp_id)
+                    .filter(|(_, s)| matches!(s.kind, SymbolKind::Variable))
                     .count();
 
                 if expr_count <= max_exprs {

@@ -19,7 +19,7 @@ impl LintRule for TooManyMatchArms {
         // Match and MatchArm both use add_symbol
         let match_ids: Vec<_> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Match))
             .collect();
 
@@ -27,9 +27,8 @@ impl LintRule for TooManyMatchArms {
             .into_iter()
             .filter_map(|(match_id, match_sym)| {
                 let arm_count = ctx
-                    .hir
-                    .symbols_for_source(ctx.source_id)
-                    .filter(|(_, s)| s.parent == Some(match_id) && matches!(s.kind, SymbolKind::MatchArm { .. }))
+                    .children(match_id)
+                    .filter(|(_, s)| matches!(s.kind, SymbolKind::MatchArm { .. }))
                     .count();
 
                 if arm_count <= max_arms {

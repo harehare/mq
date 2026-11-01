@@ -1,3 +1,5 @@
+use rustc_hash::FxHashSet;
+
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, SymbolKind};
 
@@ -16,6 +18,12 @@ impl LintRule for ShadowVariable {
     fn check(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
 
+        let declared: FxHashSet<(ScopeId, &str)> = ctx
+            .all_symbols()
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Variable | SymbolKind::Parameter))
+            .filter_map(|(_, s)| Some((s.scope, s.value.as_deref()?)))
+            .collect();
+
         // Variable symbols use insert_symbol, so use all_symbols
         for (_, sym) in ctx.all_symbols() {
             if !matches!(sym.kind, SymbolKind::Variable) {
@@ -26,7 +34,7 @@ impl LintRule for ShadowVariable {
                 None => continue,
             };
 
-            if shadows_outer_variable(ctx, sym.scope, name) {
+            if shadows_outer_variable(ctx, &declared, sym.scope, name) {
                 let mut d = Diagnostic::new(LintMessage::ShadowVariable { name: name.to_string() }, self.severity());
                 if let Some(range) = sym.source.text_range {
                     d = d.with_range(range);
@@ -41,17 +49,16 @@ impl LintRule for ShadowVariable {
 
 /// Returns true if any ancestor scope (excluding `current_scope`) contains
 /// a Variable or Parameter with the given name defined in this same source.
-fn shadows_outer_variable(ctx: &LintContext<'_>, current_scope: ScopeId, name: &str) -> bool {
+fn shadows_outer_variable(
+    ctx: &LintContext<'_>,
+    declared: &FxHashSet<(ScopeId, &str)>,
+    current_scope: ScopeId,
+    name: &str,
+) -> bool {
     let mut scope_id = ctx.hir.scope(current_scope).and_then(|s| s.parent_id);
 
     while let Some(sid) = scope_id {
-        let has_same_name = ctx.all_symbols().any(|(_, s)| {
-            s.scope == sid
-                && matches!(s.kind, SymbolKind::Variable | SymbolKind::Parameter)
-                && s.value.as_deref() == Some(name)
-        });
-
-        if has_same_name {
+        if declared.contains(&(sid, name)) {
             return true;
         }
 

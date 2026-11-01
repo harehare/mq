@@ -19,7 +19,7 @@ impl LintRule for PreferPipeStyle {
         ctx.all_symbols()
             .filter(|(_, sym)| matches!(sym.kind, SymbolKind::Call | SymbolKind::CallDynamic))
             .filter_map(|(outer_id, outer_sym)| {
-                let mut args = ctx.all_symbols().filter(|(_, s)| s.parent == Some(outer_id));
+                let mut args = ctx.children(outer_id);
                 let (_, arg) = args.next()?;
                 if args.next().is_some() {
                     return None;

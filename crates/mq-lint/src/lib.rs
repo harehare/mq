@@ -27,7 +27,10 @@ pub use config::LintConfig;
 pub use fix::Fix;
 pub use message::{LintMessage, RuleId};
 
+use std::sync::OnceLock;
+
 use mq_hir::{Hir, SourceId};
+use rustc_hash::FxHashMap;
 
 /// Severity level for a lint diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -109,16 +112,65 @@ impl Diagnostic {
 pub struct LintContext<'a> {
     /// The HIR of the analyzed program.
     pub hir: &'a Hir,
-    /// The source being linted.
-    pub source_id: SourceId,
+    source_id: SourceId,
     /// Linter configuration.
     pub config: &'a LintConfig,
+    index: OnceLock<SymbolIndex>,
+}
+
+/// This source's symbols and their children, built once so rules need not rescan the HIR.
+struct SymbolIndex {
+    symbols: Vec<mq_hir::SymbolId>,
+    children: FxHashMap<Option<mq_hir::SymbolId>, Vec<mq_hir::SymbolId>>,
 }
 
 impl<'a> LintContext<'a> {
     /// Creates a context for linting `source_id`.
     pub fn new(hir: &'a Hir, source_id: SourceId, config: &'a LintConfig) -> Self {
-        Self { hir, source_id, config }
+        Self {
+            hir,
+            source_id,
+            config,
+            index: OnceLock::new(),
+        }
+    }
+
+    /// The source being linted.
+    pub fn source_id(&self) -> SourceId {
+        self.source_id
+    }
+
+    fn index(&self) -> &SymbolIndex {
+        self.index.get_or_init(|| {
+            let mut symbols = Vec::new();
+            let mut children: FxHashMap<_, Vec<_>> = FxHashMap::default();
+            for (id, symbol) in self.hir.symbols() {
+                if symbol.source.source_id != Some(self.source_id) {
+                    continue;
+                }
+                symbols.push(id);
+                children.entry(symbol.parent).or_default().push(id);
+            }
+            SymbolIndex { symbols, children }
+        })
+    }
+
+    /// Returns the direct children of `parent` in this source, in insertion order.
+    pub fn children(&self, parent: mq_hir::SymbolId) -> impl Iterator<Item = (mq_hir::SymbolId, &mq_hir::Symbol)> + '_ {
+        self.siblings(Some(parent))
+    }
+
+    /// Returns the symbols of this source that share `parent`, which is `None` for top-level ones.
+    pub fn siblings(
+        &self,
+        parent: Option<mq_hir::SymbolId>,
+    ) -> impl Iterator<Item = (mq_hir::SymbolId, &mq_hir::Symbol)> + '_ {
+        self.index()
+            .children
+            .get(&parent)
+            .into_iter()
+            .flatten()
+            .filter_map(|&id| self.hir.symbol(id).map(|symbol| (id, symbol)))
     }
 
     /// Returns all symbols that belong to this source, including those added
@@ -128,10 +180,10 @@ impl<'a> LintContext<'a> {
     /// symbols registered with `add_symbol` (structured constructs like
     /// Function, Match, Block, etc.).
     pub fn all_symbols(&self) -> impl Iterator<Item = (mq_hir::SymbolId, &mq_hir::Symbol)> + '_ {
-        let source_id = self.source_id;
-        self.hir
-            .symbols()
-            .filter(move |(_, s)| s.source.source_id == Some(source_id))
+        self.index()
+            .symbols
+            .iter()
+            .filter_map(|&id| self.hir.symbol(id).map(|symbol| (id, symbol)))
     }
 
     /// The full source range spanned by a symbol and all of its descendants.
@@ -143,7 +195,7 @@ impl<'a> LintContext<'a> {
         let symbol = self.hir.symbol(symbol_id)?;
         let mut range = symbol.source.text_range;
 
-        for (child_id, _) in self.all_symbols().filter(|(_, s)| s.parent == Some(symbol_id)) {
+        for (child_id, _) in self.children(symbol_id) {
             if let Some(child_range) = self.full_range(child_id) {
                 range = Some(match range {
                     Some(r) => fix::union(r, child_range),

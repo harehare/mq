@@ -20,7 +20,7 @@ impl LintRule for InfiniteLoop {
         // Loop symbols are tracked via add_symbol
         let loops: Vec<_> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Loop))
             .collect();
 

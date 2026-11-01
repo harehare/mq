@@ -24,7 +24,7 @@ impl LintRule for UnusedImport {
 
         // Find Import symbols in this source whose module name is never accessed.
         ctx.hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Import(_)))
             .filter_map(|(_, sym)| {
                 let name = sym.value.as_deref()?;
