@@ -564,6 +564,45 @@ fn set_index_local(
     Ok(())
 }
 
+/// Pops the operand and the `depth` keys pushed before it.
+fn pop_path_operands(
+    stack: &mut Vec<StackValue>,
+    depth: u8,
+    chunks: &Shared<Vec<Chunk>>,
+) -> (RuntimeValue, smallvec::SmallVec<[RuntimeValue; 4]>) {
+    let operand = into_runtime_value(stack.pop().expect("verified bytecode keeps an operand"), chunks);
+    let keys = stack
+        .drain(stack.len() - usize::from(depth)..)
+        .map(|key| into_runtime_value(key, chunks))
+        .collect();
+    (operand, keys)
+}
+
+#[inline(never)]
+fn set_path_from_stack(
+    stack: &mut Vec<StackValue>,
+    locals: &mut Locals,
+    slot: u16,
+    depth: u8,
+    chunks: &Shared<Vec<Chunk>>,
+) -> VmResult<()> {
+    let (value, keys) = pop_path_operands(stack, depth, chunks);
+    set_path_local(locals, slot, &keys, value, chunks)
+}
+
+#[inline(never)]
+fn add_assign_path_from_stack(
+    stack: &mut Vec<StackValue>,
+    locals: &mut Locals,
+    slot: u16,
+    depth: u8,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<()> {
+    let (rhs, keys) = pop_path_operands(stack, depth, chunks);
+    add_assign_path_local(locals, slot, &keys, rhs, chunks, execution)
+}
+
 /// Runs `SetPathLocal`: `local[k1]...[kn] = value`, in place when the local is stored directly.
 #[inline(never)]
 fn set_path_local(
@@ -1380,14 +1419,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::SetPathLocal { slot, depth } => {
-                let value = pop_value!();
-                let keys = pop_call_args!(*depth);
-                set_path_local(locals, *slot, &keys, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+                set_path_from_stack(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::AddAssignPathLocal { slot, depth } => {
-                let rhs = pop_value!();
-                let keys = pop_call_args!(*depth);
-                add_assign_path_local(locals, *slot, &keys, rhs, chunks, execution)
+                add_assign_path_from_stack(stack, locals, *slot, *depth, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::AddAssignLocal(slot) => {
