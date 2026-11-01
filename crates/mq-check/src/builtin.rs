@@ -523,6 +523,12 @@ fn register_string(ctx: &mut InferenceContext) {
     // String properties
     register_unary(ctx, "utf8bytelen", text(), Type::Number);
 
+    // hash: (string) -> number and (string, number) -> number. The seed gives an independent hash.
+    register_unary(ctx, "hash", Type::String, Type::Number);
+    register_binary(ctx, "hash", Type::String, Type::Number, Type::Number);
+    // bit_length: (number) -> number
+    register_unary(ctx, "bit_length", Type::Number, Type::Number);
+
     // Regular expressions
     register_binary(ctx, "test", text(), Type::String, Type::Bool);
     register_binary(ctx, "regex_match", text(), Type::String, Type::array(Type::String));
@@ -2004,14 +2010,11 @@ fn register_bytes(ctx: &mut InferenceContext) {
     // encode: (string, string) -> bytes
     register_binary(ctx, "encode", Type::String, Type::String, Type::Bytes);
 
-    // xor: (bytes, bytes) -> bytes
-    register_binary(ctx, "xor", Type::Bytes, Type::Bytes, Type::Bytes);
-
-    // band: (bytes, bytes) -> bytes
-    register_binary(ctx, "band", Type::Bytes, Type::Bytes, Type::Bytes);
-
-    // bor: (bytes, bytes) -> bytes
-    register_binary(ctx, "bor", Type::Bytes, Type::Bytes, Type::Bytes);
+    // xor, band, bor: (bytes, bytes) -> bytes and (number, number) -> number
+    for name in ["xor", "band", "bor"] {
+        register_binary(ctx, name, Type::Bytes, Type::Bytes, Type::Bytes);
+        register_binary(ctx, name, Type::Number, Type::Number, Type::Number);
+    }
 
     // bnot: (bytes) -> bytes
     register_unary(ctx, "bnot", Type::Bytes, Type::Bytes);

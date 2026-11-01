@@ -6,6 +6,7 @@ pub(super) mod convert;
 mod css;
 pub(super) mod date;
 mod gron;
+mod hash;
 #[cfg(feature = "http")]
 mod http;
 pub(crate) mod io_context;
@@ -695,6 +696,48 @@ fn sha512_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+/// Hashes a string to an integer below `2^53`. A `seed` gives an independent hash of the same string.
+/// The seed is an integer from 0 to `2^53 - 1`. The result is the same on every run and platform, so it can be stored.
+#[mq_macros::mq_fn(name = "hash", params = Range(1, 2))]
+fn hash_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(hash::hash53(s.as_bytes(), 0).into())),
+        [RuntimeValue::String(s), RuntimeValue::Number(seed)] if seed.is_int() => {
+            if seed.value() < 0.0 || seed.value() >= hash::INT_LIMIT {
+                return Err(Error::Runtime(format!(
+                    "hash: the seed must be an integer from 0 to 2^53 - 1, got {}",
+                    seed.value()
+                )));
+            }
+            Ok(RuntimeValue::Number(
+                hash::hash53(s.as_bytes(), seed.to_int() as u64).into(),
+            ))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => Err(invalid_arity(ident, 1, args.len())),
+    }
+}
+
+/// Returns the number of bits needed to write a non-negative integer in binary, 0 for 0.
+#[mq_macros::mq_fn(name = "bit_length", params = Fixed(1))]
+fn bit_length_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] if n.is_int() && n.value() >= 0.0 && n.value().is_finite() => {
+            Ok(RuntimeValue::Number(hash::bit_length(n.value()).into()))
+        }
+        [RuntimeValue::Number(n)] => Err(Error::Runtime(format!(
+            "bit_length: expected a non-negative integer, got {}",
+            n.value()
+        ))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => Err(invalid_arity(ident, 1, args.len())),
+    }
+}
+
 #[mq_macros::mq_fn(name = "uuid", params = None)]
 fn uuid_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(Shared::new(uuid::Uuid::new_v4().to_string())))
@@ -932,6 +975,24 @@ fn encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+/// Combines two integers from 0 to `2^53 - 1` bit by bit.
+fn bitwise_numbers(
+    ident: &Ident,
+    a: &number::Number,
+    b: &number::Number,
+    op: fn(u64, u64) -> u64,
+) -> Result<RuntimeValue, Error> {
+    for n in [a, b] {
+        if !n.is_int() || n.value() < 0.0 || n.value() >= hash::INT_LIMIT {
+            return Err(Error::Runtime(format!(
+                "{ident}: expected an integer from 0 to 2^53 - 1, got {}",
+                n.value()
+            )));
+        }
+    }
+    Ok(RuntimeValue::Number(op(a.to_int() as u64, b.to_int() as u64).into()))
+}
+
 #[mq_macros::mq_fn(name = "xor", params = Fixed(2))]
 fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -947,6 +1008,7 @@ fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 b1.iter().zip(b2.iter()).map(|(a, b)| a ^ b).collect(),
             )))
         }
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => bitwise_numbers(ident, a, b, |a, b| a ^ b),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -970,6 +1032,7 @@ fn band_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                 b1.iter().zip(b2.iter()).map(|(a, b)| a & b).collect(),
             )))
         }
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => bitwise_numbers(ident, a, b, |a, b| a & b),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -993,6 +1056,7 @@ fn bor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 b1.iter().zip(b2.iter()).map(|(a, b)| a | b).collect(),
             )))
         }
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => bitwise_numbers(ident, a, b, |a, b| a | b),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -5831,6 +5895,7 @@ mq_macros::builtin_dispatch! {
     MD5,
     SHA256,
     SHA512,
+    HASH,
     UUID,
     UUID_V4,
     UUID_V7,
@@ -6022,6 +6087,7 @@ mq_macros::builtin_dispatch! {
     ENV,
     SHIFT_LEFT,
     SHIFT_RIGHT,
+    BIT_LENGTH,
     _DIFF,
     BASENAME,
     DIRNAME,

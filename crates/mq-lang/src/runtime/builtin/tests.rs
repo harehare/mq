@@ -14,6 +14,19 @@ use super::*;
 #[rstest]
 #[case("type", vec![RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::String(Shared::new("string".into()))))]
 #[case("len", vec![RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::Number(4.into())))]
+// Pinned by the hash module, so a stored summary keeps its meaning.
+#[case("hash", vec![RuntimeValue::String(Shared::new("hello".into()))].into(), Ok(RuntimeValue::Number(4_952_387_935_952_618i64.into())))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("hello".into())), RuntimeValue::Number(1.into())].into(), Ok(RuntimeValue::Number(3_919_086_197_784_246i64.into())))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("hello".into())), RuntimeValue::Number(0.into())].into(), Ok(RuntimeValue::Number(4_952_387_935_952_618i64.into())))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("hello".into())), RuntimeValue::Number(9_007_199_254_740_991i64.into())].into(), Ok(RuntimeValue::Number(502_717_636_668_730i64.into())))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("".into()))].into(), Ok(RuntimeValue::Number(1_075_637_845_389_024i64.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(0.into())].into(), Ok(RuntimeValue::Number(0.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(255.into())].into(), Ok(RuntimeValue::Number(8.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(256.into())].into(), Ok(RuntimeValue::Number(9.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(3.0.into())].into(), Ok(RuntimeValue::Number(2.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(9_007_199_254_740_991i64.into())].into(), Ok(RuntimeValue::Number(53.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(9_223_372_036_854_775_808.0.into())].into(), Ok(RuntimeValue::Number(64.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(1e30.into())].into(), Ok(RuntimeValue::Number(100.into())))]
 // German sharp s: full case folding expands ß -> ss, unlike downcase.
 #[case("casefold", vec![RuntimeValue::String(Shared::new("Straße".into()))].into(), Ok(RuntimeValue::String(Shared::new("strasse".into()))))]
 // Turkish dotted capital İ: default (non-Turkish) fold is i + combining dot above, not plain "i".
@@ -102,6 +115,19 @@ fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expect
 #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())].into(), Error::ZeroDivision)]
 #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())].into(), Error::NotDefined("unknown_func".to_string(), vec![]))]
 #[case("add", vec![].into(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
+#[case("hash", vec![RuntimeValue::Number(1.into())].into(), Error::InvalidTypes("hash".to_string(), vec![RuntimeValue::Number(1.into())]))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::String(Shared::new("b".into()))].into(),
+        Error::InvalidTypes("hash".to_string(), vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::String(Shared::new("b".into()))]))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number(1.5.into())].into(),
+        Error::InvalidTypes("hash".to_string(), vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number(1.5.into())]))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number(9007199254740992i64.into())].into(),
+        Error::Runtime("hash: the seed must be an integer from 0 to 2^53 - 1, got 9007199254740992".to_string()))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number((-1i64).into())].into(),
+        Error::Runtime("hash: the seed must be an integer from 0 to 2^53 - 1, got -1".to_string()))]
+#[case("bit_length", vec![RuntimeValue::Number((-1).into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got -1".to_string()))]
+#[case("bit_length", vec![RuntimeValue::Number(1.5.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got 1.5".to_string()))]
+#[case("bit_length", vec![RuntimeValue::Number(f64::INFINITY.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got inf".to_string()))]
+#[case("bit_length", vec![RuntimeValue::String(Shared::new("a".into()))].into(), Error::InvalidTypes("bit_length".to_string(), vec![RuntimeValue::String(Shared::new("a".into()))]))]
 #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())].into(),
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
 #[case("unicode_normalize", vec![RuntimeValue::String(Shared::new("abc".into())), RuntimeValue::String(Shared::new("bogus".into()))].into(),
@@ -5594,4 +5620,58 @@ fn test_char_at_sees_mutation_of_an_indexed_string() {
     Shared::make_mut(&mut s).push('あ');
     assert_eq!(char_at(&s, number::Number::from(-1)), Some('あ'));
     assert_eq!(char_at(&s, number::Number::from(2000)), Some('あ'));
+}
+
+// =========================================================================
+// band, bor, xor on numbers
+// =========================================================================
+
+#[rstest]
+#[case::band("band", 12, 10, 8)]
+#[case::bor("bor", 12, 10, 14)]
+#[case::xor("xor", 12, 10, 6)]
+#[case::band_with_zero("band", 9_007_199_254_740_991, 0, 0)]
+#[case::band_keeps_the_low_bits("band", 9_007_199_254_740_991, 12, 12)]
+#[case::bor_above_32_bits("bor", 4_503_599_627_370_496, 1, 4_503_599_627_370_497)]
+#[case::xor_clears_the_same_bits("xor", 9_007_199_254_740_991, 9_007_199_254_740_991, 0)]
+#[case::xor_flips_the_low_bit("xor", 9_007_199_254_740_991, 1, 9_007_199_254_740_990)]
+fn test_bitwise_numbers(#[case] name: &str, #[case] a: i64, #[case] b: i64, #[case] expected: i64) {
+    assert_eq!(
+        call(
+            name,
+            vec![RuntimeValue::Number(a.into()), RuntimeValue::Number(b.into())]
+        ),
+        Ok(RuntimeValue::Number(expected.into()))
+    );
+}
+
+#[rstest]
+#[case::negative("band", (-1).into(), "-1")]
+#[case::too_large("bor", 9_007_199_254_740_992i64.into(), "9007199254740992")]
+#[case::fraction("xor", 1.5.into(), "1.5")]
+fn test_bitwise_numbers_reject_what_they_cannot_hold(
+    #[case] name: &str,
+    #[case] bad: crate::number::Number,
+    #[case] shown: &str,
+) {
+    assert_eq!(
+        call(name, vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(bad)]),
+        Err(Error::Runtime(format!(
+            "{name}: expected an integer from 0 to 2^53 - 1, got {shown}"
+        )))
+    );
+}
+
+#[test]
+fn test_bitwise_numbers_do_not_mix_with_bytes() {
+    assert!(
+        call(
+            "band",
+            vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Bytes(Shared::new(vec![1]))
+            ]
+        )
+        .is_err()
+    );
 }
