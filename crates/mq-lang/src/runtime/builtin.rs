@@ -697,14 +697,22 @@ fn sha512_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 }
 
 /// Hashes a string to an integer below `2^53`. A `seed` gives an independent hash of the same string.
-/// The result is the same on every run and platform, so it can be stored.
+/// The seed is an integer from 0 to `2^53 - 1`. The result is the same on every run and platform, so it can be stored.
 #[mq_macros::mq_fn(name = "hash", params = Range(1, 2))]
 fn hash_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(hash::hash53(s.as_bytes(), 0).into())),
-        [RuntimeValue::String(s), RuntimeValue::Number(seed)] if seed.is_int() => Ok(RuntimeValue::Number(
-            hash::hash53(s.as_bytes(), seed.to_int() as u64).into(),
-        )),
+        [RuntimeValue::String(s), RuntimeValue::Number(seed)] if seed.is_int() => {
+            if seed.value() < 0.0 || seed.value() >= hash::SEED_LIMIT {
+                return Err(Error::Runtime(format!(
+                    "hash: the seed must be an integer from 0 to 2^53 - 1, got {}",
+                    seed.value()
+                )));
+            }
+            Ok(RuntimeValue::Number(
+                hash::hash53(s.as_bytes(), seed.to_int() as u64).into(),
+            ))
+        }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),

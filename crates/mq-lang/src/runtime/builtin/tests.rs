@@ -18,6 +18,7 @@ use super::*;
 #[case("hash", vec![RuntimeValue::String(Shared::new("hello".into()))].into(), Ok(RuntimeValue::Number(4_952_387_935_952_618i64.into())))]
 #[case("hash", vec![RuntimeValue::String(Shared::new("hello".into())), RuntimeValue::Number(1.into())].into(), Ok(RuntimeValue::Number(3_919_086_197_784_246i64.into())))]
 #[case("hash", vec![RuntimeValue::String(Shared::new("hello".into())), RuntimeValue::Number(0.into())].into(), Ok(RuntimeValue::Number(4_952_387_935_952_618i64.into())))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("hello".into())), RuntimeValue::Number(9_007_199_254_740_991i64.into())].into(), Ok(RuntimeValue::Number(502_717_636_668_730i64.into())))]
 #[case("hash", vec![RuntimeValue::String(Shared::new("".into()))].into(), Ok(RuntimeValue::Number(1_075_637_845_389_024i64.into())))]
 #[case("bit_length", vec![RuntimeValue::Number(0.into())].into(), Ok(RuntimeValue::Number(0.into())))]
 #[case("bit_length", vec![RuntimeValue::Number(255.into())].into(), Ok(RuntimeValue::Number(8.into())))]
@@ -119,6 +120,10 @@ fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expect
         Error::InvalidTypes("hash".to_string(), vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::String(Shared::new("b".into()))]))]
 #[case("hash", vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number(1.5.into())].into(),
         Error::InvalidTypes("hash".to_string(), vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number(1.5.into())]))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number(9007199254740992i64.into())].into(),
+        Error::Runtime("hash: the seed must be an integer from 0 to 2^53 - 1, got 9007199254740992".to_string()))]
+#[case("hash", vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number((-1i64).into())].into(),
+        Error::Runtime("hash: the seed must be an integer from 0 to 2^53 - 1, got -1".to_string()))]
 #[case("bit_length", vec![RuntimeValue::Number((-1).into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got -1".to_string()))]
 #[case("bit_length", vec![RuntimeValue::Number(1.5.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got 1.5".to_string()))]
 #[case("bit_length", vec![RuntimeValue::Number(f64::INFINITY.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got inf".to_string()))]

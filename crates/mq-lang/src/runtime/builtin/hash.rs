@@ -11,6 +11,9 @@ use std::hash::Hasher;
 /// Bits of a hash. An `f64` holds every integer below `2^53` exactly.
 pub(super) const HASH_BITS: u32 = 53;
 
+/// Seeds are the integers below this bound, so every seed is a distinct, exactly held `f64`.
+pub(super) const SEED_LIMIT: f64 = (1u64 << HASH_BITS) as f64;
+
 /// Hashes `bytes` to an integer below `2^53`. The seed is the first word of the SipHash key, so
 /// each seed gives an independent hash of the same bytes.
 pub(super) fn hash53(bytes: &[u8], seed: u64) -> u64 {
