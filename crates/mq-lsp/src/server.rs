@@ -221,7 +221,25 @@ impl LanguageServer for Backend {
             None
         };
 
-        Ok(hover::response(Arc::clone(&self.hir), to_url(&url), type_env, position))
+        let line = self
+            .documents
+            .get(&url.to_string())
+            .and_then(|snapshot| {
+                snapshot
+                    .text
+                    .split('\n')
+                    .nth(position.line as usize)
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
+
+        Ok(hover::response(
+            Arc::clone(&self.hir),
+            to_url(&url),
+            type_env,
+            position,
+            &line,
+        ))
     }
 
     async fn signature_help(
