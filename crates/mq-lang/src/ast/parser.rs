@@ -10,7 +10,6 @@ use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
-use std::sync::LazyLock;
 
 use super::constants;
 use super::node::{AccessTarget, Args, BinaryOp, Branches, Expr, Literal, Node, Param, Params, UnaryOp};
@@ -20,8 +19,6 @@ type IfExpr = (Option<Shared<Node>>, Shared<Node>);
 
 /// Maximum expression nesting depth accepted by the parser.
 pub(crate) const MAX_PARSE_DEPTH: usize = 512;
-
-static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::builtins::GET));
 
 /// How a program ends.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -331,7 +328,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Creates an assignment node, handling both simple identifiers and indexed targets.
     ///
     /// - `x = rhs` → `Assign(x, rhs)`
-    /// - `arr[idx] = rhs` (lhs is `Call("get", [arr, idx])`) → `IndexAssign(arr, idx, rhs)`
+    /// - `arr[idx] = rhs` (lhs is `Index(arr, idx)` or `get(arr, idx)`) → `IndexAssign(arr, idx, rhs)`
     /// - `arr[i][j] = rhs` → `arr[i] = set(arr[i], j, rhs)`, applied recursively
     fn create_assign(
         &mut self,
@@ -345,30 +342,47 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token_id: operator_token_id,
                 expr: Expr::Assign(ident.clone(), rhs),
             })),
-            Expr::Call(func_ident, args) if func_ident.name == *GET_IDENT && args.len() == 2 => match &args[0].expr {
-                Expr::Ident(var_ident) => Ok(Shared::new(Node {
-                    token_id: operator_token_id,
-                    expr: Expr::IndexAssign(var_ident.clone(), Shared::clone(&args[1]), rhs),
-                })),
-                Expr::Call(..) => {
-                    let set_call = Shared::new(Node {
-                        token_id: operator_token_id,
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(
-                                constants::builtins::SET,
-                                Some(self.alloc_ident_token(operator_token)),
-                            ),
-                            smallvec![Shared::clone(&args[0]), Shared::clone(&args[1]), rhs],
-                        ),
-                    });
-                    self.create_assign(&args[0], set_call, operator_token_id, operator_token)
-                }
-                _ => Err(SyntaxError::InvalidAssignmentTarget(
-                    self.token_arena[args[0].token_id].clone(),
-                )),
-            },
+            Expr::Index(target, index) => {
+                self.create_index_assign(target, index, rhs, operator_token_id, operator_token)
+            }
+            Expr::Call(func_ident, args) if func_ident.name == constants::builtins::GET.into() && args.len() == 2 => {
+                self.create_index_assign(&args[0], &args[1], rhs, operator_token_id, operator_token)
+            }
             _ => Err(SyntaxError::InvalidAssignmentTarget(
                 self.token_arena[lhs.token_id].clone(),
+            )),
+        }
+    }
+
+    /// `target[index] = rhs`, written either as brackets or as an explicit `get(target, index)`.
+    fn create_index_assign(
+        &mut self,
+        target: &Shared<Node>,
+        index: &Shared<Node>,
+        rhs: Shared<Node>,
+        operator_token_id: TokenId,
+        operator_token: &Token,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        match &target.expr {
+            Expr::Ident(var_ident) => Ok(Shared::new(Node {
+                token_id: operator_token_id,
+                expr: Expr::IndexAssign(var_ident.clone(), Shared::clone(index), rhs),
+            })),
+            Expr::Call(..) | Expr::Index(..) | Expr::Slice(..) => {
+                let set_call = Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Expr::Call(
+                        IdentWithToken::new_with_token(
+                            constants::builtins::SET,
+                            Some(self.alloc_ident_token(operator_token)),
+                        ),
+                        smallvec![Shared::clone(target), Shared::clone(index), rhs],
+                    ),
+                });
+                self.create_assign(target, set_call, operator_token_id, operator_token)
+            }
+            _ => Err(SyntaxError::InvalidAssignmentTarget(
+                self.token_arena[target.token_id].clone(),
             )),
         }
     }
@@ -1444,23 +1458,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // [:] = slice(arr, 0, len(arr))
                     Shared::new(Node {
                         token_id: self.alloc_token(original_token),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(
-                                constants::builtins::SLICE,
-                                Some(self.alloc_ident_token(original_token)),
-                            ),
-                            smallvec![
-                                Shared::clone(&target_node),
-                                start_node,
-                                Shared::new(Node {
-                                    token_id: self.alloc_token(original_token),
-                                    expr: Expr::Call(
-                                        IdentWithToken::new_with_token(constants::builtins::LEN, None,),
-                                        smallvec![target_node],
-                                    ),
-                                })
-                            ],
-                        ),
+                        expr: Expr::Slice(target_node, start_node, None),
                     })
                 }
                 Some(t) => {
@@ -1488,13 +1486,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }
                     Shared::new(Node {
                         token_id: self.alloc_token(original_token),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(
-                                constants::builtins::SLICE,
-                                Some(self.alloc_ident_token(original_token)),
-                            ),
-                            smallvec![target_node, start_node, end_node],
-                        ),
+                        expr: Expr::Slice(target_node, start_node, Some(end_node)),
                     })
                 }
                 None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
@@ -1526,23 +1518,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             match self.tokens.next() {
                 Some(t) if t.kind == TokenKind::RBracket => Shared::new(Node {
                     token_id: self.alloc_token(original_token),
-                    expr: Expr::Call(
-                        IdentWithToken::new_with_token(
-                            constants::builtins::SLICE,
-                            Some(self.alloc_ident_token(original_token)),
-                        ),
-                        smallvec![
-                            Shared::clone(&target_node),
-                            first_node,
-                            Shared::new(Node {
-                                token_id: self.alloc_token(original_token),
-                                expr: Expr::Call(
-                                    IdentWithToken::new_with_token(constants::builtins::LEN, None),
-                                    smallvec![target_node],
-                                ),
-                            })
-                        ],
-                    ),
+                    expr: Expr::Slice(target_node, first_node, None),
                 }),
                 Some(t) => {
                     let second_node = self.parse_expr(t)?;
@@ -1572,13 +1548,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                     Shared::new(Node {
                         token_id: self.alloc_token(original_token),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(
-                                constants::builtins::SLICE,
-                                Some(self.alloc_ident_token(original_token)),
-                            ),
-                            smallvec![target_node, first_node, second_node],
-                        ),
+                        expr: Expr::Slice(target_node, first_node, Some(second_node)),
                     })
                 }
                 None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
@@ -1609,13 +1579,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             Shared::new(Node {
                 token_id: self.alloc_token(original_token),
-                expr: Expr::Call(
-                    IdentWithToken::new_with_token(
-                        constants::builtins::GET,
-                        Some(self.alloc_ident_token(original_token)),
-                    ),
-                    smallvec![target_node, first_node],
-                ),
+                expr: Expr::Index(target_node, first_node),
             })
         };
 

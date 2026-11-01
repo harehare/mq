@@ -174,6 +174,14 @@ impl Node {
                     arena[self.token_id].range
                 }
             }
+            Expr::Index(target, index) => Range {
+                start: target.range(Shared::clone(&arena)).start,
+                end: index.range(Shared::clone(&arena)).end,
+            },
+            Expr::Slice(target, start, end) => Range {
+                start: target.range(Shared::clone(&arena)).start,
+                end: end.as_ref().unwrap_or(start).range(Shared::clone(&arena)).end,
+            },
             Expr::BinaryOp(_, lhs, rhs) => Range {
                 start: lhs.range(Shared::clone(&arena)).start,
                 end: rhs.range(Shared::clone(&arena)).end,
@@ -438,6 +446,11 @@ pub enum Expr {
     /// `lhs op rhs`. Never desugared into `Call`, so it compiles to a direct VM opcode
     /// regardless of name resolution/shadowing.
     BinaryOp(BinaryOp, Shared<Node>, Shared<Node>),
+    /// `target[index]`. Never desugared into `Call`, so a user `def get` cannot capture it.
+    Index(Shared<Node>, Shared<Node>),
+    /// `target[start:end]`; `end` is `None` for an open-ended `target[start:]`. Never desugared
+    /// into `Call`, so a user `def slice` cannot capture it.
+    Slice(Shared<Node>, Shared<Node>, Option<Shared<Node>>),
     /// `!operand` / `-operand`. Never desugared into `Call`, so it compiles to a direct VM
     /// opcode regardless of name resolution/shadowing.
     UnaryOp(UnaryOp, Shared<Node>),

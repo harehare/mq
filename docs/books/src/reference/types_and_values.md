@@ -116,6 +116,15 @@ arr | get(2)   # Same as arr[2]
 # => 3
 ```
 
+`arr[i]` and `arr[a:b]` always use the builtin `get` and `slice`. Defining your own `get` or `slice` changes only the explicit calls `get(arr, i)` and `slice(arr, a, b)`.
+
+```mq
+def get(a, i): "custom" end |
+let arr = [1, 2, 3] |
+[arr[0], get(arr, 0)]
+# => [1, "custom"]
+```
+
 ### Index Access with `.[...]`
 
 On arrays, strings and dicts, `.[expr]` reads the same as `self[expr]`: negative indices count from the end, and an out-of-range or non-integer index returns `None`.
