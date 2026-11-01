@@ -46,16 +46,6 @@ pub enum Command {
     Version,
 }
 
-/// List of language keywords used for REPL completions.
-///
-/// This list must be kept in sync with the keyword definitions in
-/// `crates/mq-lang/src/lexer.rs` (see the lexer keyword table in `ident_or_keyword`).
-const KEYWORDS: &[&str; 29] = &[
-    "def", "let", "if", "unless", "elif", "else", "end", "while", "until", "loop", "foreach", "self", "nodes", "fn",
-    "break", "continue", "include", "true", "false", "None", "match", "try", "catch", "import", "module", "do", "var",
-    "as", "yield",
-];
-
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -342,7 +332,7 @@ impl CommandContext {
             let seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut seen_names = seen_names;
 
-            for keyword in KEYWORDS {
+            for keyword in mq_lang::KEYWORDS.iter().chain(mq_lang::BOOLEAN_LITERALS) {
                 if keyword.starts_with(word) {
                     matches.push(CompletionItem {
                         name: keyword.to_string(),
