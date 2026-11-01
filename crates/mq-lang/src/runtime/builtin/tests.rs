@@ -128,6 +128,12 @@ fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expect
 #[case("bit_length", vec![RuntimeValue::Number(1.5.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got 1.5".to_string()))]
 #[case("bit_length", vec![RuntimeValue::Number(f64::INFINITY.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got inf".to_string()))]
 #[case("bit_length", vec![RuntimeValue::String(Shared::new("a".into()))].into(), Error::InvalidTypes("bit_length".to_string(), vec![RuntimeValue::String(Shared::new("a".into()))]))]
+#[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(65.5.into())]))].into(),
+        Error::Runtime("implode: expected an integer code point, got 65.5".to_string()))]
+#[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(f64::NAN.into())]))].into(),
+        Error::Runtime("implode: expected an integer code point, got NaN".to_string()))]
+#[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".into()))]))].into(),
+        Error::InvalidTypes("implode".to_string(), vec![RuntimeValue::String(Shared::new("a".into()))]))]
 #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())].into(),
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
 #[case("unicode_normalize", vec![RuntimeValue::String(Shared::new("abc".into())), RuntimeValue::String(Shared::new("bogus".into()))].into(),
