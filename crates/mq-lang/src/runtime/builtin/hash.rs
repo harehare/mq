@@ -1,9 +1,8 @@
 //! A seeded hash that returns an integer a number holds exactly, and the bit length of an integer.
 //!
 //! The hash is SipHash-2-4, whose output is fixed by its specification, so a value hashed today
-//! gives the same result on any platform and in any later release. Summaries built on it, such as a
-//! Bloom filter or a HyperLogLog counter, can be stored and merged later. SipHash is a keyed hash
-//! with strong mixing of every output bit; it is not meant to resist an attacker who picks the input.
+//! gives the same result on any platform and in any later release. SipHash is a keyed hash with
+//! strong mixing of every output bit; it is not meant to resist an attacker who picks the input.
 
 use siphasher::sip::SipHasher24;
 use std::hash::Hasher;
@@ -54,8 +53,8 @@ mod tests {
         assert_eq!(reference_siphash(bytes), expected);
     }
 
-    /// Pinned results, computed with an independent SipHash-2-4. A change here breaks every stored
-    /// summary built on the hash.
+    /// Pinned results, computed with an independent SipHash-2-4. A change here changes every stored
+    /// hash value.
     #[rstest]
     #[case::empty("", 0, 1_075_637_845_389_024)]
     #[case::short("a", 0, 5_304_323_468_276_340)]
