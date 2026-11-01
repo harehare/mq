@@ -2692,6 +2692,7 @@ dependencies = [
  "mq-markdown",
  "rstest",
  "rustc-hash",
+ "serde",
  "serde_json",
  "smol_str",
  "tokio",

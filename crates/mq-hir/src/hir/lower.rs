@@ -479,6 +479,17 @@ impl Hir {
         (self.add_module_code(url, &code.unwrap_or_default()), false)
     }
 
+    /// The range from the directive keyword through its path string.
+    fn directive_range(
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        path: &mq_lang::Shared<mq_lang::CstNode>,
+    ) -> mq_lang::Range {
+        mq_lang::Range {
+            start: node.range().start,
+            end: path.range().end,
+        }
+    }
+
     fn add_include_expr(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -498,7 +509,7 @@ impl Hir {
                     let symbol_id = self.add_symbol(Symbol {
                         value: Some(module_name.clone()),
                         kind: SymbolKind::Include(module_source_id),
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        source: SourceInfo::new(Some(source_id), Some(Self::directive_range(node, path))),
                         scope: scope_id,
                         doc: node.comments(),
                         parent,
@@ -531,7 +542,7 @@ impl Hir {
                     let symbol_id = self.add_symbol(Symbol {
                         value: Some(module_name.clone()),
                         kind: SymbolKind::Import(module_source_id),
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
+                        source: SourceInfo::new(Some(source_id), Some(Self::directive_range(node, path))),
                         scope: scope_id,
                         doc: node.comments(),
                         parent,

@@ -11,7 +11,7 @@ use url::Url;
 use crate::error::LspError;
 use crate::{
     capabilities, code_action, completions, document_symbol, execute_command, folding_range, goto_definition, hover,
-    inlay_hints, references, rename, semantic_tokens, signature_help, workspace_symbol,
+    inlay_hints, references, rename, semantic_tokens, signature_help, virtual_document, workspace_symbol,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
@@ -704,6 +704,20 @@ impl LspConfig {
     }
 }
 
+/// Parameters of the `mq/virtualDocument` request.
+#[derive(Debug, serde::Deserialize)]
+pub struct VirtualDocumentParams {
+    /// URI of a document returned by go-to-definition, e.g. `mq-std:/builtin.mq`.
+    pub uri: String,
+}
+
+impl Backend {
+    /// Handles `mq/virtualDocument`: the text of `builtin.mq` or a standard module.
+    async fn virtual_document(&self, params: VirtualDocumentParams) -> jsonrpc::Result<Option<String>> {
+        Ok(virtual_document::content(&params.uri))
+    }
+}
+
 /// Runs the language server on stdio.
 pub async fn start(config: LspConfig) {
     let stdin = tokio::io::stdin();
@@ -712,7 +726,7 @@ pub async fn start(config: LspConfig) {
     let resolver = mq_lang::DefaultModuleResolver::new(config.module_paths.clone());
     let module_loader = mq_lang::ModuleLoader::new(resolver);
 
-    let (service, socket) = LspService::new(|client| Backend {
+    let (service, socket) = LspService::build(|client| Backend {
         client,
         hir: Arc::new(RwLock::new(mq_hir::Hir::new(module_loader))),
         source_map: RwLock::new(BiMap::new()),
@@ -720,7 +734,9 @@ pub async fn start(config: LspConfig) {
         error_map: DashMap::new(),
         documents: DashMap::new(),
         config,
-    });
+    })
+    .custom_method("mq/virtualDocument", Backend::virtual_document)
+    .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
 }

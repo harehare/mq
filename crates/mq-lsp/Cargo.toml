@@ -26,6 +26,7 @@ mq-help = {workspace = true, features = ["catalog"]}
 mq-lang = {workspace = true, features = ["ast-json", "sync", "file-io", "http", "css-selector"]}
 mq-lint = {workspace = true}
 mq-markdown = {workspace = true}
+serde = {workspace = true, features = ["derive"]}
 serde_json = {workspace = true}
 smol_str = {workspace = true}
 tokio = {workspace = true, features = ["macros", "io-std", "rt-multi-thread"]}

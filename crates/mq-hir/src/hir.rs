@@ -771,6 +771,10 @@ end"#;
 
         hir.add_code(None, &format!("{directive} \"nope\"{suffix}"));
         assert!(matches!(&hir.errors()[..], [HirError::ModuleNotFound { module_name, .. }] if module_name == "nope"));
+
+        // The diagnostic covers the path string, not only the keyword.
+        let end = hir.error_ranges()[0].1.end.column;
+        assert_eq!(end, directive.len() + " \"nope\"".len() + 1);
     }
 
     #[test]
