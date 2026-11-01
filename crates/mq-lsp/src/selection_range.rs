@@ -89,6 +89,14 @@ mod tests {
     }
 
     #[test]
+    fn test_ranges_after_leading_bom() {
+        // The call `add(1, 2)` spans columns 1 to 10 once the BOM unit is counted.
+        let ranges = chain("\u{FEFF}add(1, 2)", Position::new(0, 2));
+        let call = Range::new(Position::new(0, 1), Position::new(0, 10));
+        assert!(ranges.contains(&call), "{ranges:?}");
+    }
+
+    #[test]
     fn test_position_outside_any_node_is_an_empty_range() {
         let ranges = chain("1", Position::new(5, 0));
         assert_eq!(ranges, vec![Range::new(Position::new(5, 0), Position::new(5, 0))]);

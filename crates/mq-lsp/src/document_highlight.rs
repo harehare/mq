@@ -61,6 +61,13 @@ mod tests {
     }
 
     #[test]
+    fn test_highlights_after_leading_bom() {
+        let ranges = highlight("\u{FEFF}def f(): 1; | f()", Position::new(0, 5)).expect("highlights");
+        assert!(ranges.iter().any(|r| r.start == Position::new(0, 5)), "{ranges:?}");
+        assert!(ranges.iter().any(|r| r.start == Position::new(0, 15)), "{ranges:?}");
+    }
+
+    #[test]
     fn test_no_highlight_on_whitespace() {
         assert!(highlight("def f(): 1;", Position::new(5, 0)).is_none());
     }

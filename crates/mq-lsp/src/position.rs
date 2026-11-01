@@ -5,12 +5,16 @@ use std::sync::Arc;
 
 use tower_lsp_server::ls_types::{Position, Range};
 
+const BOM: char = '\u{FEFF}';
+
 #[derive(Debug, Clone, Copy)]
 struct Line {
     start: usize,
     end: usize,
     /// Scalar and UTF-16 columns coincide.
     ascii: bool,
+    /// UTF-16 units the lexer does not count before the first column (a leading BOM).
+    lead: usize,
 }
 
 /// Line boundaries of a document, built once per text.
@@ -27,10 +31,14 @@ impl LineIndex {
             .split('\n')
             .map(|raw| {
                 let line = raw.strip_suffix('\r').unwrap_or(raw);
+                let bom = start == 0 && line.starts_with(BOM);
+                let skip = if bom { BOM.len_utf8() } else { 0 };
+                let content = &line[skip..];
                 let entry = Line {
-                    start,
+                    start: start + skip,
                     end: start + line.len(),
-                    ascii: line.is_ascii(),
+                    ascii: content.is_ascii(),
+                    lead: if bom { BOM.len_utf16() } else { 0 },
                 };
                 start += raw.len() + 1;
                 entry
@@ -39,9 +47,10 @@ impl LineIndex {
         Self { text, lines }
     }
 
-    fn line_text(&self, line: u32) -> Option<(&str, bool)> {
+    /// Line text without the BOM, whether it is ASCII, and the UTF-16 units of the BOM.
+    fn line_text(&self, line: u32) -> Option<(&str, bool, usize)> {
         let line = self.lines.get(line as usize)?;
-        Some((&self.text[line.start..line.end], line.ascii))
+        Some((&self.text[line.start..line.end], line.ascii, line.lead))
     }
 
     /// Converts an mq position. Columns past the end of the line clamp to its end.
@@ -49,8 +58,8 @@ impl LineIndex {
         let line = position.line.saturating_sub(1);
         let column = position.column.saturating_sub(1);
         let character = match self.line_text(line) {
-            Some((text, true)) => column.min(text.len()),
-            Some((text, false)) => text.chars().take(column).map(char::len_utf16).sum(),
+            Some((text, true, lead)) => column.min(text.len()) + lead,
+            Some((text, false, lead)) => text.chars().take(column).map(char::len_utf16).sum::<usize>() + lead,
             None => column,
         };
         Position::new(line, character as u32)
@@ -63,12 +72,14 @@ impl LineIndex {
     /// Converts an LSP position. A position inside a surrogate pair rounds up to the next character.
     pub(crate) fn to_mq(&self, position: Position) -> mq_lang::Position {
         let column = match self.line_text(position.line) {
-            Some((_, true)) | None => position.character as usize,
-            Some((text, false)) => {
+            None => position.character as usize,
+            Some((_, true, lead)) => (position.character as usize).saturating_sub(lead),
+            Some((text, false, lead)) => {
                 let mut units = 0;
+                let target = (position.character as usize).saturating_sub(lead) as u32;
                 text.chars()
                     .take_while(|c| {
-                        let keep = units < position.character;
+                        let keep = units < target;
                         units += c.len_utf16() as u32;
                         keep
                     })
@@ -99,6 +110,9 @@ mod tests {
     #[case::crlf("a\r\n😀b", mq(2, 2), Position::new(1, 2))]
     #[case::past_line_end("😀", mq(1, 9), Position::new(0, 2))]
     #[case::past_last_line("a", mq(4, 2), Position::new(3, 1))]
+    #[case::bom("\u{FEFF}def f()", mq(1, 5), Position::new(0, 5))]
+    #[case::bom_non_ascii("\u{FEFF}😀|x", mq(1, 3), Position::new(0, 4))]
+    #[case::bom_second_line("\u{FEFF}a\nb", mq(2, 2), Position::new(1, 1))]
     fn test_to_lsp(#[case] text: &str, #[case] position: mq_lang::Position, #[case] expected: Position) {
         assert_eq!(index(text).to_lsp(position), expected);
     }
@@ -109,6 +123,10 @@ mod tests {
     #[case::inside_pair("😀|x", Position::new(0, 1), mq(1, 2))]
     #[case::second_line("a\n😀b", Position::new(1, 2), mq(2, 2))]
     #[case::unknown_line("a", Position::new(3, 1), mq(4, 2))]
+    #[case::bom("\u{FEFF}def f()", Position::new(0, 5), mq(1, 5))]
+    #[case::bom_before_text("\u{FEFF}def f()", Position::new(0, 0), mq(1, 1))]
+    #[case::bom_non_ascii("\u{FEFF}😀|x", Position::new(0, 4), mq(1, 3))]
+    #[case::bom_second_line("\u{FEFF}a\nb", Position::new(1, 1), mq(2, 2))]
     fn test_to_mq(#[case] text: &str, #[case] position: Position, #[case] expected: mq_lang::Position) {
         assert_eq!(index(text).to_mq(position), expected);
     }

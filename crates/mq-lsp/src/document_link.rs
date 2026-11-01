@@ -65,6 +65,12 @@ mod tests {
     }
 
     #[test]
+    fn test_links_after_leading_bom() {
+        let links = links("\u{FEFF}import \"csv\"");
+        assert_eq!(links[0].range, Range::new(Position::new(0, 8), Position::new(0, 13)));
+    }
+
+    #[test]
     fn test_missing_module_has_no_link() {
         assert!(links("import \"nope\"").is_empty());
     }
