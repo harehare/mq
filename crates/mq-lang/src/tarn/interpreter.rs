@@ -2879,7 +2879,7 @@ fn number_arithmetic(op: BinaryOp, left: Number, right: Number) -> Option<Number
         BinaryOp::Sub => Some(left - right),
         BinaryOp::Mul => Some(left * right),
         BinaryOp::Div if !right.is_zero() => Some(left / right),
-        BinaryOp::Mod => Some(left % right),
+        BinaryOp::Mod if !right.is_zero() => Some(left % right),
         _ => None,
     }
 }
@@ -2910,7 +2910,12 @@ fn eval_number_binary_op(op: BinaryOp, left: Number, right: Number) -> VmResult<
             }
             RuntimeValue::Number(left / right)
         }
-        BinaryOp::Mod => RuntimeValue::Number(left % right),
+        BinaryOp::Mod => {
+            if right.is_zero() {
+                return Err(VmError::ZeroDivision);
+            }
+            RuntimeValue::Number(left % right)
+        }
         BinaryOp::Eq => RuntimeValue::Boolean(left == right),
         BinaryOp::Ne => RuntimeValue::Boolean(left != right),
         BinaryOp::Lt => RuntimeValue::Boolean(left < right),
