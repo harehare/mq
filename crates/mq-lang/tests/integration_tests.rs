@@ -2286,6 +2286,15 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::not_regex_in_if(r#""foo bar" | if (. !~ "baz"): "not matched" else: "match""#,
     vec![RuntimeValue::None],
     Ok(vec!["not matched".into()].into()))]
+#[case::slice_array_leaves_a_let_bound_source(r#"let a = [1, 2, 3, 4] | let b = slice(a, 0, 2) | join(a, ",") + "|" + join(b, ",")"#, vec![RuntimeValue::None], Ok(vec!["1,2,3,4|1,2".into()].into()),)]
+#[case::slice_array_leaves_a_copy_held_by_a_dict(r#"let a = [1, 2, 3, 4] | let d = {"k": a} | let b = slice(a, 0, 1) | join(d["k"], ",")"#, vec![RuntimeValue::None], Ok(vec!["1,2,3,4".into()].into()),)]
+#[case::slice_array_leaves_an_array_a_closure_holds(r#"let a = [1, 2, 3] | let f = fn(): a; | let b = slice(f(), 0, 1) | join(f(), ",")"#, vec![RuntimeValue::None], Ok(vec!["1,2,3".into()].into()),)]
+#[case::slice_array_leaves_the_callers_argument(r#"def f(x): slice(x, 0, 2); | let a = [5, 6, 7] | let r = f(a) | join(r, ",") + "|" + join(a, ",")"#, vec![RuntimeValue::None], Ok(vec!["5,6|5,6,7".into()].into()),)]
+#[case::slice_array_leaves_a_second_variable(r#"var a = [1, 2, 3, 4] | let b = a | a = slice(a, 0, 2) | join(b, ",") + "|" + join(a, ",")"#, vec![RuntimeValue::None], Ok(vec!["1,2,3,4|1,2".into()].into()),)]
+#[case::slice_array_written_back_to_its_variable(r#"var a = [1, 2, 3, 4] | let m = len(a) - 1 | a = slice(a, 0, m) | join(a, ",")"#, vec![RuntimeValue::None], Ok(vec!["1,2,3".into()].into()),)]
+#[case::take_written_back_to_its_variable(r#"var a = [1, 2, 3, 4] | a = take(a, 2) | join(a, ",")"#, vec![RuntimeValue::None], Ok(vec!["1,2".into()].into()),)]
+#[case::slice_array_drops_the_front_in_place(r#"var a = [1, 2, 3, 4] | a = slice(a, 1, 4) | join(a, ",")"#, vec![RuntimeValue::None], Ok(vec!["2,3,4".into()].into()),)]
+#[case::slice_array_drains_one_item_at_a_time(r#"var a = range(0, 4) | var c = 0 | let _ = while (len(a) > 0): let m = len(a) - 1 | a = slice(a, 0, m) | c = c + 1 end | c"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()),)]
 #[case::shift_left_number("shift_left(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
 #[case::shift_left_number_operator("1 << 2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
 #[case::shift_right_number("shift_right(4, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]

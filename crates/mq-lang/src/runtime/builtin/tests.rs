@@ -2588,6 +2588,93 @@ fn test_bytes_slice() {
     assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![20, 30, 40]))));
 }
 
+fn numbers(items: &[i64]) -> Shared<Vec<RuntimeValue>> {
+    Shared::new(items.iter().map(|&n| RuntimeValue::Number(n.into())).collect())
+}
+
+fn slice_array(array: Shared<Vec<RuntimeValue>>, start: i64, end: i64) -> RuntimeValue {
+    eval_builtin(
+        &RuntimeValue::None,
+        &Ident::new("slice"),
+        vec![
+            RuntimeValue::Array(array),
+            RuntimeValue::Number(start.into()),
+            RuntimeValue::Number(end.into()),
+        ]
+        .into(),
+        &VmEnv::default(),
+    )
+    .unwrap()
+}
+
+#[rstest]
+#[case::prefix(0, 3, &[1, 2, 3])]
+#[case::middle(1, 4, &[2, 3, 4])]
+#[case::suffix(2, 5, &[3, 4, 5])]
+#[case::all(0, 5, &[1, 2, 3, 4, 5])]
+#[case::empty(2, 2, &[])]
+#[case::inverted(4, 1, &[])]
+#[case::negative_end(0, -1, &[1, 2, 3, 4])]
+#[case::negative_start(-2, 5, &[4, 5])]
+#[case::past_the_end(3, 99, &[4, 5])]
+fn test_array_slice(#[case] start: i64, #[case] end: i64, #[case] expected: &[i64]) {
+    let source = numbers(&[1, 2, 3, 4, 5]);
+    assert_eq!(
+        slice_array(Shared::clone(&source), start, end),
+        RuntimeValue::Array(numbers(expected))
+    );
+    // A second holder keeps the array, so the slice must be a copy and leave it whole.
+    assert_eq!(source, numbers(&[1, 2, 3, 4, 5]));
+    assert_eq!(slice_array(source, start, end), RuntimeValue::Array(numbers(expected)));
+}
+
+#[rstest]
+#[case::empty(0, 0, 0)]
+#[case::one(0, 1, 1)]
+#[case::small_suffix(990, 1000, 10)]
+fn test_array_slice_releases_unused_capacity_of_unshared_array(
+    #[case] start: i64,
+    #[case] end: i64,
+    #[case] len: usize,
+) {
+    let items: Vec<i64> = (0..1000).collect();
+    let RuntimeValue::Array(result) = slice_array(numbers(&items), start, end) else {
+        panic!("expected an array");
+    };
+    assert_eq!(result.len(), len);
+    assert!(result.capacity() < 100);
+}
+
+proptest::proptest! {
+    #[test]
+    fn test_array_slice_matches_a_vec_slice_whether_or_not_it_is_shared(
+        items in proptest::collection::vec(-50i64..50, 0..20),
+        start in -30i64..30,
+        end in -30i64..30,
+        shared in proptest::bool::ANY,
+    ) {
+        let source = numbers(&items);
+        let keeper = shared.then(|| Shared::clone(&source));
+        let range = slice_bounds(number::Number::new(start as f64), number::Number::new(end as f64), items.len());
+        let result = slice_array(source, start, end);
+        proptest::prop_assert_eq!(result, RuntimeValue::Array(numbers(&items[range])));
+        if let Some(keeper) = keeper {
+            proptest::prop_assert_eq!(keeper, numbers(&items));
+        }
+    }
+}
+
+#[test]
+fn test_array_slice_cuts_an_unshared_array_in_place() {
+    let source = numbers(&[1, 2, 3, 4, 5]);
+    let address = Shared::as_ptr(&source);
+    let RuntimeValue::Array(result) = slice_array(source, 0, 4) else {
+        panic!("expected an array");
+    };
+    assert_eq!(Shared::as_ptr(&result), address);
+    assert_eq!(result, numbers(&[1, 2, 3, 4]));
+}
+
 #[test]
 fn test_md5_bytes_input() {
     let ident = Ident::new("md5");

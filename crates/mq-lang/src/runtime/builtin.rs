@@ -1951,7 +1951,20 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             RuntimeValue::Number(end),
         ] => {
             let range = slice_bounds(*start, *end, arrays.len());
-            Ok(RuntimeValue::Array(Shared::new(arrays[range].to_vec())))
+            let mut owned = std::mem::take(arrays);
+            // An array nothing else refers to is cut where it is, so dropping the end is O(1).
+            match Shared::get_mut(&mut owned) {
+                Some(items) => {
+                    items.truncate(range.end);
+                    items.drain(..range.start);
+                    // Do not let a small result keep a much larger buffer alive.
+                    if items.capacity() > items.len().saturating_mul(2).max(16) {
+                        items.shrink_to_fit();
+                    }
+                    Ok(RuntimeValue::Array(owned))
+                }
+                None => Ok(RuntimeValue::Array(Shared::new(owned[range].to_vec()))),
+            }
         }
         [
             node @ RuntimeValue::Markdown(_, _),
