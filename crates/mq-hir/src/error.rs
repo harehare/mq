@@ -20,10 +20,10 @@ pub enum HirError {
         /// A similarly spelled declared name, if any.
         similar_name: Option<SmolStr>,
     },
-    /// An `include` of a module that cannot be loaded.
-    #[error("Included module not found: {module_name}")]
+    /// An `include` or `import` of a module that cannot be loaded.
+    #[error("Module not found: {module_name}")]
     ModuleNotFound {
-        /// The `include` symbol.
+        /// The `include` or `import` symbol.
         symbol: Symbol,
         /// The module name that failed to resolve.
         module_name: SmolStr,
@@ -85,7 +85,7 @@ impl Hir {
                         module_name: symbol.value.clone().unwrap_or(SmolStr::new("unknown")),
                     })
                 }
-                SymbolKind::Include(_) => {
+                SymbolKind::Include(_) | SymbolKind::Import(_) => {
                     let module_name = symbol.clone().value.unwrap_or(SmolStr::new("unknown")).clone();
                     match self.module_loader.resolve(&module_name) {
                         Ok(_) => None,
