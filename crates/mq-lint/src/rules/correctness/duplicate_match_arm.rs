@@ -21,7 +21,7 @@ impl LintRule for DuplicateMatchArm {
         // Match symbols are tracked via add_symbol
         let match_ids: Vec<_> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Match))
             .map(|(id, _)| id)
             .collect();

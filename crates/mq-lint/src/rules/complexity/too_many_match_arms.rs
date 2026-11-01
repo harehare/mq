@@ -19,7 +19,7 @@ impl LintRule for TooManyMatchArms {
         // Match and MatchArm both use add_symbol
         let match_ids: Vec<_> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Match))
             .collect();
 

@@ -17,7 +17,7 @@ impl LintRule for ComplexInterpolation {
         let max_exprs = ctx.config.complexity.max_interpolation_exprs;
 
         ctx.hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::InterpolatedString))
             .filter_map(|(interp_id, sym)| {
                 // Variable children represent `${...}` interpolated expressions.

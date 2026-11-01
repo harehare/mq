@@ -19,7 +19,7 @@ impl LintRule for RedundantBooleanLiteral {
         // Find If symbols that have an Else child.
         let if_ids: Vec<_> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::If))
             .collect();
 

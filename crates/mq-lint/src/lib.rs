@@ -112,8 +112,7 @@ impl Diagnostic {
 pub struct LintContext<'a> {
     /// The HIR of the analyzed program.
     pub hir: &'a Hir,
-    /// The source being linted.
-    pub source_id: SourceId,
+    source_id: SourceId,
     /// Linter configuration.
     pub config: &'a LintConfig,
     index: OnceLock<SymbolIndex>,
@@ -134,6 +133,11 @@ impl<'a> LintContext<'a> {
             config,
             index: OnceLock::new(),
         }
+    }
+
+    /// The source being linted.
+    pub fn source_id(&self) -> SourceId {
+        self.source_id
     }
 
     fn index(&self) -> &SymbolIndex {

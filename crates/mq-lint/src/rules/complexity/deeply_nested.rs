@@ -19,7 +19,7 @@ impl LintRule for DeeplyNested {
 
         for (scope_id, scope) in ctx.hir.scopes() {
             // Only consider scopes belonging to this source
-            if scope.source.source_id != Some(ctx.source_id) {
+            if scope.source.source_id != Some(ctx.source_id()) {
                 continue;
             }
             // Module scopes are depth 0; skip them

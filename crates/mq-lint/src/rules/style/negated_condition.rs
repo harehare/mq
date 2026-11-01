@@ -20,14 +20,14 @@ impl LintRule for NegatedCondition {
 
         let if_ids_with_else: HashSet<SymbolId> = ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Else))
             .filter_map(|(_, s)| s.parent)
             .collect();
 
         for (if_id, if_sym) in ctx
             .hir
-            .symbols_for_source(ctx.source_id)
+            .symbols_for_source(ctx.source_id())
             .filter(|(id, s)| matches!(s.kind, SymbolKind::If) && if_ids_with_else.contains(id))
         {
             let mut children: Vec<_> = ctx
