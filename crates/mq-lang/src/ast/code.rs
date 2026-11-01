@@ -86,6 +86,22 @@ impl Node {
                 write!(buf, " {} ", op.as_str()).unwrap();
                 format_binary_operand(rhs, *op, buf, indent, true);
             }
+            Expr::Index(target, index) => {
+                format_index_target(target, buf, indent);
+                buf.push('[');
+                index.format_to_code(buf, indent);
+                buf.push(']');
+            }
+            Expr::Slice(target, start, end) => {
+                format_index_target(target, buf, indent);
+                buf.push('[');
+                start.format_to_code(buf, indent);
+                buf.push(':');
+                if let Some(end) = end {
+                    end.format_to_code(buf, indent);
+                }
+                buf.push(']');
+            }
             Expr::UnaryOp(op, operand) => {
                 buf.push_str(op.as_str());
                 let needs_parens = match &operand.expr {
@@ -378,6 +394,20 @@ pub(super) fn binary_op_precedence(op: BinaryOp) -> u8 {
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => 0,
         BinaryOp::Add | BinaryOp::Sub => 1,
         BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => 2,
+    }
+}
+
+/// Parenthesizes an indexed target that would otherwise re-parse with the index binding tighter.
+fn format_index_target(target: &Node, buf: &mut String, indent: usize) {
+    if matches!(
+        &target.expr,
+        Expr::BinaryOp(..) | Expr::UnaryOp(..) | Expr::And(_) | Expr::Or(_)
+    ) {
+        buf.push('(');
+        target.format_to_code(buf, indent);
+        buf.push(')');
+    } else {
+        target.format_to_code(buf, indent);
     }
 }
 

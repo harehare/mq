@@ -1190,7 +1190,7 @@ fn local_array_accesses_use_compact_bytecode() {
 
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(
-        "let values = [1, 2] | let index = 0 | len(values) + get(values, index)",
+        "let values = [1, 2] | let index = 0 | len(values) + values[index]",
         Shared::clone(&token_arena),
     )
     .unwrap();
@@ -1209,7 +1209,7 @@ fn local_array_accesses_use_compact_bytecode() {
             .any(|op| matches!(op, OpCode::ArrayGetLocalAt { .. }))
     );
     assert_eq!(
-        run("let values = [1] | let index = 0 | get(values, index) | get(values, index)"),
+        run("let values = [1] | let index = 0 | values[index] | values[index]"),
         RuntimeValue::Number(1.into())
     );
 }

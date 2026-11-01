@@ -16,6 +16,23 @@ fn io_reader_is_nameable_from_external_crates() {
     assert_eq!(std::io::read_to_string(reader).unwrap(), "abc");
 }
 
+/// `x[i]` and `x[a:b]` run the builtins even when the program defines `get`/`slice`/`len`.
+#[rstest]
+#[case::index_dict(r#"def get(a, b): "HIJACK" end | {"k": 1}["k"]"#, "1")]
+#[case::index_array(r#"def get(a, b): "HIJACK" end | [7, 8, 9][1]"#, "8")]
+#[case::index_local(r#"def get(a, b): "HIJACK" end | let a = [7, 8] | let i = 1 | a[i]"#, "8")]
+#[case::slice_range(r#"def slice(a, b, c): "HIJACK" end | "hello"[1:3]"#, "el")]
+#[case::slice_open_end(r#"def len(a): 0 end | "hello"[1:]"#, "ello")]
+#[case::slice_all(r#"def len(a): 0 end | "hello"[:]"#, "hello")]
+#[case::index_assign_nested(
+    r#"def get(a, b): "HIJACK" end | var a = [[1, 2], [3, 4]] | a[1][0] = 9 | a[1][0]"#,
+    "9"
+)]
+fn index_and_slice_ignore_user_definitions(mut engine: DefaultEngine, #[case] program: &str, #[case] expected: &str) {
+    let result = engine.eval(program, vec![RuntimeValue::None].into_iter()).unwrap();
+    assert_eq!(result.values()[0].to_string(), expected);
+}
+
 #[rstest]
 #[case::compound_assign_mul_of_lower_precedence_rhs("var i = 4 | i *= 2 + 3 | i")]
 #[case::compound_assign_sub_of_same_precedence_rhs("var i = 20 | i -= 2 - 3 | i")]

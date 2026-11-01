@@ -582,6 +582,17 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
             collect_soft_builtin_names(rhs, shadowed, names);
         }
         Expr::UnaryOp(_, operand) => collect_soft_builtin_names(operand, shadowed, names),
+        Expr::Index(target, index) => {
+            collect_soft_builtin_names(target, shadowed, names);
+            collect_soft_builtin_names(index, shadowed, names);
+        }
+        Expr::Slice(target, start, end) => {
+            collect_soft_builtin_names(target, shadowed, names);
+            collect_soft_builtin_names(start, shadowed, names);
+            if let Some(end) = end {
+                collect_soft_builtin_names(end, shadowed, names);
+            }
+        }
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -755,6 +766,17 @@ impl NestedFunctionNames {
                 self.node(value, nested);
             }
             Expr::UnaryOp(_, operand) => self.node(operand, nested),
+            Expr::Index(target, index) => {
+                self.node(target, nested);
+                self.node(index, nested);
+            }
+            Expr::Slice(target, start, end) => {
+                self.node(target, nested);
+                self.node(start, nested);
+                if let Some(end) = end {
+                    self.node(end, nested);
+                }
+            }
             Expr::BinaryOp(_, lhs, rhs) => {
                 self.node(lhs, nested);
                 self.node(rhs, nested);
@@ -881,6 +903,17 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
             collect_referenced_names(rhs, names);
         }
         Expr::UnaryOp(_, operand) => collect_referenced_names(operand, names),
+        Expr::Index(target, index) => {
+            collect_referenced_names(target, names);
+            collect_referenced_names(index, names);
+        }
+        Expr::Slice(target, start, end) => {
+            collect_referenced_names(target, names);
+            collect_referenced_names(start, names);
+            if let Some(end) = end {
+                collect_referenced_names(end, names);
+            }
+        }
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -981,6 +1014,12 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         Expr::And(operands) | Expr::Or(operands) => operands.iter().any(node_contains_direct_yield),
         Expr::BinaryOp(_, lhs, rhs) => node_contains_direct_yield(lhs) || node_contains_direct_yield(rhs),
         Expr::UnaryOp(_, operand) => node_contains_direct_yield(operand),
+        Expr::Index(target, index) => node_contains_direct_yield(target) || node_contains_direct_yield(index),
+        Expr::Slice(target, start, end) => {
+            node_contains_direct_yield(target)
+                || node_contains_direct_yield(start)
+                || end.as_ref().is_some_and(node_contains_direct_yield)
+        }
         Expr::InterpolatedString(segments) => segments
             .iter()
             .any(|segment| matches!(segment, StringSegment::Expr(expr) if node_contains_direct_yield(expr))),
@@ -2833,6 +2872,8 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Or(operands) => self.compile_or(operands),
             Expr::BinaryOp(op, lhs, rhs) => self.compile_binary_op(*op, lhs, rhs),
             Expr::UnaryOp(op, operand) => self.compile_unary_op(*op, operand),
+            Expr::Index(target, index) => self.compile_index(target, index),
+            Expr::Slice(target, start, end) => self.compile_slice(target, start, end.as_ref()),
         }
     }
 
@@ -3031,14 +3072,6 @@ impl<R: ModuleResolver> Compiler<R> {
             && let Some(slot) = self.current_local_slot(&args[0])
         {
             self.emit(OpCode::ArrayLenLocal(slot));
-            return Ok(());
-        }
-        if ident == builtins::GET.into()
-            && args.len() == 2
-            && let (Some(array_slot), Some(index_slot)) =
-                (self.current_local_slot(&args[0]), self.current_local_slot(&args[1]))
-        {
-            self.emit(OpCode::ArrayGetLocalAt { array_slot, index_slot });
             return Ok(());
         }
         if args.len() == 1
@@ -3296,6 +3329,44 @@ impl<R: ModuleResolver> Compiler<R> {
         self.compile_expr(rhs)?;
         self.set_call_token_id(token_id);
         self.emit(binary_op_opcode(op));
+        Ok(())
+    }
+
+    /// `target[index]` always runs the builtin `get`, whatever the program defines under that name.
+    fn compile_index(&mut self, target: &Shared<Node>, index: &Shared<Node>) -> CompileResult<()> {
+        let token_id = self.current_token_id;
+        if let (Some(array_slot), Some(index_slot)) = (self.current_local_slot(target), self.current_local_slot(index))
+        {
+            self.emit(OpCode::ArrayGetLocalAt { array_slot, index_slot });
+            return Ok(());
+        }
+        self.compile_expr(target)?;
+        self.compile_expr(index)?;
+        self.set_call_token_id(token_id);
+        self.emit_call_builtin(builtins::GET.into(), 2);
+        Ok(())
+    }
+
+    /// `target[start:end]` always runs the builtin `slice`; an open end uses the builtin `len`.
+    fn compile_slice(
+        &mut self,
+        target: &Shared<Node>,
+        start: &Shared<Node>,
+        end: Option<&Shared<Node>>,
+    ) -> CompileResult<()> {
+        let token_id = self.current_token_id;
+        self.compile_expr(target)?;
+        self.compile_expr(start)?;
+        match end {
+            Some(end) => self.compile_expr(end)?,
+            None => {
+                self.compile_expr(target)?;
+                self.set_call_token_id(token_id);
+                self.emit_call_builtin(builtins::LEN.into(), 1);
+            }
+        }
+        self.set_call_token_id(token_id);
+        self.emit_call_builtin(builtins::SLICE.into(), 3);
         Ok(())
     }
 
