@@ -19,9 +19,14 @@ pub(super) fn hash53(bytes: &[u8], seed: u64) -> u64 {
     hasher.finish() >> (u64::BITS - HASH_BITS)
 }
 
-/// Number of bits needed to write `n` in binary, 0 for 0.
-pub(super) fn bit_length(n: u64) -> u32 {
-    u64::BITS - n.leading_zeros()
+/// Number of bits needed to write the non-negative integer `n` in binary, 0 for 0. Read from the
+/// binary exponent, so it is exact for every finite `f64`, however large.
+pub(super) fn bit_length(n: f64) -> u32 {
+    if n < 1.0 {
+        0
+    } else {
+        ((n.to_bits() >> 52) & 0x7ff) as u32 - 1022
+    }
 }
 
 #[cfg(test)]
@@ -89,15 +94,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case::zero(0, 0)]
-    #[case::one(1, 1)]
-    #[case::two(2, 2)]
-    #[case::three(3, 2)]
-    #[case::byte_max(255, 8)]
-    #[case::just_over_a_byte(256, 9)]
-    #[case::largest_exact_float((1 << 53) - 1, 53)]
-    #[case::largest(u64::MAX, 64)]
-    fn test_bit_length(#[case] n: u64, #[case] expected: u32) {
+    #[case::zero(0.0, 0)]
+    #[case::one(1.0, 1)]
+    #[case::two(2.0, 2)]
+    #[case::three(3.0, 2)]
+    #[case::byte_max(255.0, 8)]
+    #[case::just_over_a_byte(256.0, 9)]
+    #[case::largest_exact_float(9_007_199_254_740_991.0, 53)]
+    #[case::two_to_the_53(9_007_199_254_740_992.0, 54)]
+    #[case::two_to_the_63(9_223_372_036_854_775_808.0, 64)]
+    #[case::two_to_the_64(18_446_744_073_709_551_616.0, 65)]
+    #[case::huge(1e30, 100)]
+    #[case::two_to_the_1000(1.0715086071862673e301, 1001)]
+    #[case::largest_float(f64::MAX, 1024)]
+    fn test_bit_length(#[case] n: f64, #[case] expected: u32) {
         assert_eq!(bit_length(n), expected);
     }
 
@@ -118,7 +128,7 @@ mod tests {
 
         #[test]
         fn test_bit_length_matches_the_binary_text(n in proptest::num::u64::ANY) {
-            proptest::prop_assert_eq!(bit_length(n) as usize, if n == 0 { 0 } else { format!("{n:b}").len() });
+            proptest::prop_assert_eq!(bit_length(n as f64) as usize, format!("{:b}", n as f64 as u128).trim_start_matches('0').len());
         }
     }
 }

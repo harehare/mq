@@ -24,6 +24,8 @@ use super::*;
 #[case("bit_length", vec![RuntimeValue::Number(256.into())].into(), Ok(RuntimeValue::Number(9.into())))]
 #[case("bit_length", vec![RuntimeValue::Number(3.0.into())].into(), Ok(RuntimeValue::Number(2.into())))]
 #[case("bit_length", vec![RuntimeValue::Number(9_007_199_254_740_991i64.into())].into(), Ok(RuntimeValue::Number(53.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(9_223_372_036_854_775_808.0.into())].into(), Ok(RuntimeValue::Number(64.into())))]
+#[case("bit_length", vec![RuntimeValue::Number(1e30.into())].into(), Ok(RuntimeValue::Number(100.into())))]
 // German sharp s: full case folding expands ß -> ss, unlike downcase.
 #[case("casefold", vec![RuntimeValue::String(Shared::new("Straße".into()))].into(), Ok(RuntimeValue::String(Shared::new("strasse".into()))))]
 // Turkish dotted capital İ: default (non-Turkish) fold is i + combining dot above, not plain "i".
@@ -119,6 +121,7 @@ fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expect
         Error::InvalidTypes("hash".to_string(), vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::Number(1.5.into())]))]
 #[case("bit_length", vec![RuntimeValue::Number((-1).into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got -1".to_string()))]
 #[case("bit_length", vec![RuntimeValue::Number(1.5.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got 1.5".to_string()))]
+#[case("bit_length", vec![RuntimeValue::Number(f64::INFINITY.into())].into(), Error::Runtime("bit_length: expected a non-negative integer, got inf".to_string()))]
 #[case("bit_length", vec![RuntimeValue::String(Shared::new("a".into()))].into(), Error::InvalidTypes("bit_length".to_string(), vec![RuntimeValue::String(Shared::new("a".into()))]))]
 #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())].into(),
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]

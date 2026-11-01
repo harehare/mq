@@ -718,8 +718,8 @@ fn hash_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
 #[mq_macros::mq_fn(name = "bit_length", params = Fixed(1))]
 fn bit_length_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Number(n)] if n.is_int() && n.value() >= 0.0 => {
-            Ok(RuntimeValue::Number(hash::bit_length(n.to_int() as u64).into()))
+        [RuntimeValue::Number(n)] if n.is_int() && n.value() >= 0.0 && n.value().is_finite() => {
+            Ok(RuntimeValue::Number(hash::bit_length(n.value()).into()))
         }
         [RuntimeValue::Number(n)] => Err(Error::Runtime(format!(
             "bit_length: expected a non-negative integer, got {}",
