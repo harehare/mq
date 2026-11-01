@@ -36,6 +36,7 @@ rustc-hash = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
+tempfile = {workspace = true}
 
 [[bin]]
 name = "mq-lsp"

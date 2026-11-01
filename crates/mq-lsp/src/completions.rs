@@ -28,15 +28,25 @@ fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// The typed part of an unclosed `import "..."` / `include "..."` path ending the prefix.
+fn module_path(line_prefix: &str) -> Option<&str> {
+    let quote = line_prefix.rfind('"')?;
+    let before = &line_prefix[..quote];
+    // An odd number of quotes before means this one closes a string.
+    if !before.matches('"').count().is_multiple_of(2) {
+        return None;
+    }
+    let directive = before.trim_end();
+    let keyword_start = ["import", "include"]
+        .iter()
+        .find_map(|keyword| directive.strip_suffix(keyword).map(str::len))?;
+    let is_separated = !directive[..keyword_start].ends_with(is_ident_char);
+    (is_separated && directive.len() < before.len()).then_some(&line_prefix[quote + 1..])
+}
+
 fn context(line_prefix: &str) -> Context<'_> {
-    for keyword in ["import", "include"] {
-        if let Some(rest) = line_prefix.trim_start().strip_prefix(keyword)
-            && let Some(path) = rest.trim_start().strip_prefix('"')
-            && rest.starts_with(char::is_whitespace)
-            && !path.contains('"')
-        {
-            return Context::ModulePath { prefix: path };
-        }
+    if let Some(prefix) = module_path(line_prefix) {
+        return Context::ModulePath { prefix };
     }
 
     let word_start = line_prefix.trim_end_matches(is_ident_char).len();
@@ -71,25 +81,6 @@ pub(crate) fn line_prefix(text: &str, position: Position) -> String {
         .collect()
 }
 
-fn module_names(module_paths: &[PathBuf]) -> Vec<String> {
-    let mut names = mq_lang::STANDARD_MODULES
-        .keys()
-        .map(|name| name.to_string())
-        .collect::<Vec<_>>();
-    for path in module_paths {
-        let Ok(entries) = std::fs::read_dir(path) else {
-            continue;
-        };
-        names.extend(entries.flatten().filter_map(|entry| {
-            let path = entry.path();
-            (path.extension()? == "mq").then(|| path.file_stem()?.to_str().map(str::to_string))?
-        }));
-    }
-    names.sort();
-    names.dedup();
-    names
-}
-
 /// Internal helpers start with `_` and are offered only when the user types `_` first.
 fn is_visible(label: &str, prefix: &str) -> bool {
     label.starts_with(prefix) && (prefix.starts_with('_') || !label.starts_with('_'))
@@ -108,7 +99,8 @@ pub(crate) fn response(
 
     if let Context::ModulePath { prefix } = ctx {
         return Some(CompletionResponse::Array(
-            module_names(module_paths)
+            mq_lang::DefaultModuleResolver::new(module_paths.to_vec())
+                .module_names()
                 .into_iter()
                 .filter(|name| is_visible(name, prefix))
                 .map(|name| CompletionItem {
@@ -129,17 +121,9 @@ pub(crate) fn response(
         .unwrap_or_else(|| hir_guard.find_scope_by_source(source_id));
 
     let module_symbols = match ctx {
-        Context::Qualified { module, .. } => hir_guard.symbols().find_map(|(_, symbol)| {
-            if symbol.value.as_deref() != Some(module) {
-                return None;
-            }
-            match symbol.kind {
-                mq_hir::SymbolKind::Module(id) | mq_hir::SymbolKind::Import(id) => {
-                    Some(hir_guard.find_symbols_in_module(id))
-                }
-                _ => None,
-            }
-        }),
+        Context::Qualified { module, .. } => hir_guard
+            .find_module_source_by_name(scope_id, module)
+            .map(|id| hir_guard.find_symbols_in_module(id)),
         _ => None,
     };
 
@@ -306,6 +290,10 @@ mod tests {
     #[case("f(1).", Context::Identifier { prefix: "" })]
     #[case("import \"se", Context::ModulePath { prefix: "se" })]
     #[case("  include \"", Context::ModulePath { prefix: "" })]
+    #[case("1 | import \"se", Context::ModulePath { prefix: "se" })]
+    #[case("import \"csv\" as c | include \"", Context::ModulePath { prefix: "" })]
+    #[case("\"import \"", Context::Identifier { prefix: "" })]
+    #[case("reimport \"se", Context::Identifier { prefix: "se" })]
     #[case("import \"section\" | sec", Context::Identifier { prefix: "sec" })]
     #[case("section::ti", Context::Qualified { module: "section", prefix: "ti" })]
     #[case("| section::", Context::Qualified { module: "section", prefix: "" })]
@@ -362,6 +350,81 @@ mod tests {
         let items = complete(code, Position::new(0, code.len() as u32));
         assert!(labels(&items).contains(&"pub_fn"));
         assert!(!labels(&items).contains(&"_helper"));
+    }
+
+    fn complete_in(sources: &[(&str, &str)], target: usize, position: Position) -> Vec<CompletionItem> {
+        let mut hir = Hir::default();
+        let mut source_map = BiMap::new();
+        let mut urls = Vec::new();
+        for (name, code) in sources {
+            let url = Url::parse(&format!("file:///{name}")).unwrap();
+            let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
+            source_map.insert(url.to_string(), source_id);
+            urls.push(url);
+        }
+        let prefix = line_prefix(sources[target].1, position);
+        match response(
+            Arc::new(RwLock::new(hir)),
+            urls.remove(target),
+            position,
+            &source_map,
+            &prefix,
+            &[],
+        ) {
+            Some(CompletionResponse::Array(items)) => items,
+            _ => panic!("expected completion items"),
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::unaliased("import \"csv\" | csv::")]
+    #[case::aliased("import \"csv\" as c | c::")]
+    fn test_qualified_import_offers_module_members(#[case] code: &str) {
+        let items = complete(code, Position::new(0, code.len() as u32));
+        assert!(labels(&items).contains(&"csv_parse"), "{:?}", labels(&items));
+        assert!(!labels(&items).contains(&"upcase"));
+    }
+
+    #[test]
+    fn test_qualified_completion_ignores_modules_of_other_files() {
+        let sources = [
+            ("a.mq", "module m: def alpha(): 1; end"),
+            ("b.mq", "module m: def beta(): 1; end | m::"),
+        ];
+        let items = complete_in(&sources, 1, Position::new(0, sources[1].1.len() as u32));
+        assert!(labels(&items).contains(&"beta"));
+        assert!(!labels(&items).contains(&"alpha"));
+    }
+
+    #[test]
+    fn test_qualified_completion_prefers_the_nearest_module() {
+        let code = "module m: def outer(): 1; end\n| module n:\n  module m: def inner(): 1; end\n  | m::\nend";
+        let items = complete(code, Position::new(3, 6));
+        assert!(labels(&items).contains(&"inner"));
+        assert!(!labels(&items).contains(&"outer"));
+    }
+
+    #[test]
+    fn test_module_path_lists_modules_in_given_directories() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("custom.mq"), "").unwrap();
+        let mut hir = Hir::default();
+        let mut source_map = BiMap::new();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), "");
+        source_map.insert(url.to_string(), source_id);
+
+        let Some(CompletionResponse::Array(items)) = response(
+            Arc::new(RwLock::new(hir)),
+            url,
+            Position::new(0, 10),
+            &source_map,
+            "import \"cu",
+            &[dir.path().to_path_buf()],
+        ) else {
+            panic!("expected completion items");
+        };
+        assert_eq!(labels(&items), vec!["custom"]);
     }
 
     #[test]

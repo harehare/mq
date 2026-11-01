@@ -69,7 +69,8 @@ impl LocalFsModuleResolver {
         format!("{}.mq", name)
     }
 
-    fn search(&self, name: &str) -> Result<PathBuf, ModuleError> {
+    /// The search directories with `$HOME` and `$ORIGIN` expanded.
+    fn directories(&self) -> Result<Vec<PathBuf>, ModuleError> {
         let home = self
             .io
             .home_dir()
@@ -79,7 +80,8 @@ impl LocalFsModuleResolver {
             )))?;
         let origin = self.io.current_dir();
 
-        self.paths
+        Ok(self
+            .paths
             .as_ref()
             .map(|p| {
                 p.iter()
@@ -97,10 +99,31 @@ impl LocalFsModuleResolver {
                     })
                     .unwrap_or_else(|| home.clone());
 
-                PathBuf::from(path).join(Self::module_file_name(name))
+                PathBuf::from(path)
             })
+            .collect())
+    }
+
+    fn search(&self, name: &str) -> Result<PathBuf, ModuleError> {
+        self.directories()?
+            .into_iter()
+            .map(|dir| dir.join(Self::module_file_name(name)))
             .find(|p| self.io.exists(p).unwrap_or(false))
             .ok_or_else(|| ModuleError::NotFound(Cow::Owned(Self::module_file_name(name))))
+    }
+
+    /// Names of the `.mq` modules found in the search directories.
+    pub(crate) fn module_names(&self) -> Vec<String> {
+        self.directories()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|dir| self.io.read_dir(dir).ok())
+            .flatten()
+            .filter(|(_, is_dir)| !is_dir)
+            .filter_map(|(path, _)| {
+                (path.extension()? == "mq").then(|| path.file_stem()?.to_str().map(str::to_string))?
+            })
+            .collect()
     }
 }
 
@@ -169,6 +192,16 @@ mod tests {
         let resolver = LocalFsModuleResolver::new(None);
         let paths = resolver.search_paths();
         assert_eq!(paths.len(), DEFAULT_PATHS.len());
+    }
+
+    #[test]
+    fn test_module_names_lists_mq_files_only() {
+        let dir = TempDir::new().unwrap();
+        write_module(&dir, "alpha", "");
+        std::fs::write(dir.path().join("notes.txt"), "").unwrap();
+
+        let resolver = LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
+        assert_eq!(resolver.module_names(), vec!["alpha".to_string()]);
     }
 
     #[test]

@@ -2695,6 +2695,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smol_str",
+ "tempfile",
  "tokio",
  "tower-lsp-server",
  "url",
