@@ -719,3 +719,50 @@ proptest! {
         }
     }
 }
+
+mod nested_assignment {
+    use super::*;
+
+    fn operation() -> impl Strategy<Value = String> {
+        let row = -2i64..4;
+        let col = -2i64..5;
+        let value = -5i64..5;
+        prop_oneof![
+            (row.clone(), col.clone(), value.clone()).prop_map(|(i, j, v)| format!("m[\"a\"][{i}][{j}] = {v}")),
+            (row.clone(), col, value.clone()).prop_map(|(i, j, v)| format!("m[\"a\"][{i}][{j}] += {v}")),
+            (row, value.clone()).prop_map(|(i, v)| format!("m[\"a\"][{i}] = [{v}]")),
+            value.clone().prop_map(|v| format!("m[\"d\"][\"k\"] += [{v}]")),
+            value
+                .clone()
+                .prop_map(|v| format!("m[\"d\"][\"k\"] = m[\"d\"][\"k\"] + [{v}]")),
+            value.clone().prop_map(|v| format!("m[\"d\"][\"k\"][0] = {v}")),
+            value.clone().prop_map(|v| format!("m[\"n\"] += {v}")),
+            value.clone().prop_map(|v| format!("m[\"d\"][\"x\"] += {v}")),
+            value.prop_map(|v| format!("m[\"n\"][\"z\"] = {v}")),
+        ]
+    }
+
+    /// Runs the operations on a local, with and without a closure capturing it. A captured local
+    /// is updated through the plain `set` calls, so both runs must agree.
+    fn program(ops: &[String], captured: bool) -> String {
+        let capture = if captured { "def g(): m end | " } else { "" };
+        let body = ops
+            .iter()
+            .map(|op| format!("(try: {op} catch: None)"))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        format!("var m = {{\"a\": [[0, 1, 2], [3, 4]], \"d\": {{\"k\": [1]}}, \"n\": 0}} | {capture}{body} | m")
+    }
+
+    proptest! {
+        #[test]
+        fn in_place_updates_match_the_copying_form(ops in prop::collection::vec(operation(), 1..8)) {
+            let fast = eval_code(&program(&ops, false)).map(|v| format!("{v:?}"));
+            let slow = eval_code(&program(&ops, true)).map(|v| format!("{v:?}"));
+            prop_assert_eq!(fast.is_ok(), slow.is_ok());
+            if let (Ok(fast), Ok(slow)) = (fast, slow) {
+                prop_assert_eq!(fast, slow);
+            }
+        }
+    }
+}
