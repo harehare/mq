@@ -37,8 +37,8 @@ impl LintRule for UnnecessaryInterpolation {
                 // value, so use it directly rather than slicing `${...}`'s span (which includes
                 // the delimiters).
                 let expr_text = ctx
-                    .all_symbols()
-                    .find(|(_, s)| s.parent == Some(sym_id) && matches!(s.kind, SymbolKind::Variable))
+                    .children(sym_id)
+                    .find(|(_, s)| matches!(s.kind, SymbolKind::Variable))
                     .and_then(|(_, s)| s.value.clone());
                 if let Some(expr_text) = expr_text {
                     d = d.with_fix(Fix::literal(range, expr_text));

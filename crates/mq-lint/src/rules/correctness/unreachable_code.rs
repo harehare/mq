@@ -38,10 +38,9 @@ impl LintRule for UnreachableCode {
             // `elif`/`else` share the `if` parent with the then-branch body but are
             // alternative branches, so they stay reachable.
             let unreachable: Vec<_> = ctx
-                .all_symbols()
+                .siblings(parent_id)
                 .filter(|(_, s)| {
-                    s.parent == parent_id
-                        && s.source.text_range.is_some_and(|r| r.start > break_end)
+                    s.source.text_range.is_some_and(|r| r.start > break_end)
                         && !matches!(s.kind, SymbolKind::Keyword | SymbolKind::Elif | SymbolKind::Else)
                 })
                 .collect();

@@ -22,8 +22,8 @@ impl LintRule for ComplexInterpolation {
             .filter_map(|(interp_id, sym)| {
                 // Variable children represent `${...}` interpolated expressions.
                 let expr_count = ctx
-                    .all_symbols()
-                    .filter(|(_, s)| s.parent == Some(interp_id) && matches!(s.kind, SymbolKind::Variable))
+                    .children(interp_id)
+                    .filter(|(_, s)| matches!(s.kind, SymbolKind::Variable))
                     .count();
 
                 if expr_count <= max_exprs {

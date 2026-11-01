@@ -29,9 +29,8 @@ impl LintRule for DuplicateMatchArm {
         for match_id in match_ids {
             // MatchArm children are also tracked via add_symbol
             let arms: Vec<_> = ctx
-                .hir
-                .symbols_for_source(ctx.source_id)
-                .filter(|(_, s)| s.parent == Some(match_id) && matches!(s.kind, SymbolKind::MatchArm { .. }))
+                .children(match_id)
+                .filter(|(_, s)| matches!(s.kind, SymbolKind::MatchArm { .. }))
                 .collect();
 
             let mut seen_patterns: FxHashSet<String> = FxHashSet::default();
@@ -39,8 +38,8 @@ impl LintRule for DuplicateMatchArm {
             for (arm_id, arm_sym) in arms {
                 // Pattern children of MatchArm use insert_symbol → use all_symbols
                 let pattern = ctx
-                    .all_symbols()
-                    .find(|(_, s)| s.parent == Some(arm_id) && matches!(s.kind, SymbolKind::Pattern { .. }));
+                    .children(arm_id)
+                    .find(|(_, s)| matches!(s.kind, SymbolKind::Pattern { .. }));
 
                 let pattern_repr = pattern.and_then(|(_, p)| p.value.clone()).map(|v| v.to_string());
 

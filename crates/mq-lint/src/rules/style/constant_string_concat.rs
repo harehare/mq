@@ -17,7 +17,7 @@ impl LintRule for ConstantStringConcat {
         ctx.all_symbols()
             .filter(|(_, sym)| matches!(sym.kind, SymbolKind::BinaryOp) && sym.value.as_deref() == Some("+"))
             .filter_map(|(op_id, _)| {
-                let mut children: Vec<_> = ctx.all_symbols().filter(|(_, s)| s.parent == Some(op_id)).collect();
+                let mut children: Vec<_> = ctx.children(op_id).collect();
 
                 if children.len() < 2 || !children.iter().all(|(_, s)| matches!(s.kind, SymbolKind::String)) {
                     return None;

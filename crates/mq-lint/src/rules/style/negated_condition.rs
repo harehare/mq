@@ -31,8 +31,7 @@ impl LintRule for NegatedCondition {
             .filter(|(id, s)| matches!(s.kind, SymbolKind::If) && if_ids_with_else.contains(id))
         {
             let mut children: Vec<_> = ctx
-                .all_symbols()
-                .filter(|(_, s)| s.parent == Some(if_id))
+                .children(if_id)
                 .filter_map(|(_, s)| s.source.text_range.map(|r| (r, s)))
                 .collect();
             children.sort_by_key(|(r, _)| (r.start.line, r.start.column));

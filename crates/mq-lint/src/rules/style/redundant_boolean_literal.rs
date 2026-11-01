@@ -79,9 +79,8 @@ impl LintRule for RedundantBooleanLiteral {
 }
 
 fn find_else_child(ctx: &LintContext<'_>, if_id: SymbolId) -> Option<SymbolId> {
-    ctx.hir
-        .symbols_for_source(ctx.source_id)
-        .find(|(_, s)| s.parent == Some(if_id) && matches!(s.kind, SymbolKind::Else))
+    ctx.children(if_id)
+        .find(|(_, s)| matches!(s.kind, SymbolKind::Else))
         .map(|(id, _)| id)
 }
 
@@ -100,10 +99,9 @@ fn sorted_children<'a>(
     exclude_branches: bool,
 ) -> Vec<(SymbolId, &'a mq_hir::Symbol)> {
     let mut children: Vec<_> = ctx
-        .all_symbols()
+        .children(parent_id)
         .filter(|(_, s)| {
-            s.parent == Some(parent_id)
-                && s.source.text_range.is_some()
+            s.source.text_range.is_some()
                 && !(exclude_branches && matches!(s.kind, SymbolKind::Else | SymbolKind::Elif))
         })
         .collect();

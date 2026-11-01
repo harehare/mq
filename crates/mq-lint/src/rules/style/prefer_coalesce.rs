@@ -8,7 +8,7 @@ pub struct PreferCoalesce;
 
 /// True if `id` has no children (e.g. a bare `Ref`/`Selector`, not a call).
 fn is_leaf(ctx: &LintContext<'_>, id: SymbolId) -> bool {
-    !ctx.all_symbols().any(|(_, s)| s.parent == Some(id))
+    !ctx.children(id).next().is_some()
 }
 
 fn is_none_literal(sym: &Symbol) -> bool {
@@ -16,7 +16,7 @@ fn is_none_literal(sym: &Symbol) -> bool {
 }
 
 fn children_sorted_by_position<'a>(ctx: &'a LintContext<'_>, parent: SymbolId) -> Vec<(SymbolId, &'a Symbol)> {
-    let mut children: Vec<_> = ctx.all_symbols().filter(|(_, s)| s.parent == Some(parent)).collect();
+    let mut children: Vec<_> = ctx.children(parent).collect();
     children.sort_by_key(|(_, s)| s.source.text_range.map(|r| (r.start.line, r.start.column)));
     children
 }

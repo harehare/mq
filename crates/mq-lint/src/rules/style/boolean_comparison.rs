@@ -28,8 +28,8 @@ impl LintRule for BooleanComparison {
             }
 
             let bool_child = ctx
-                .all_symbols()
-                .find(|(_, s)| s.parent == Some(bop_id) && matches!(s.kind, SymbolKind::Boolean));
+                .children(bop_id)
+                .find(|(_, s)| matches!(s.kind, SymbolKind::Boolean));
 
             let Some((bool_id, bool_sym)) = bool_child else {
                 continue;
@@ -48,10 +48,7 @@ impl LintRule for BooleanComparison {
             // end by the operator's own start when it precedes the operator, since a compound
             // operand's trailing `)` isn't tracked by any HIR symbol; `Fix::resolve` trims the
             // resulting whitespace.
-            let operand_id = ctx
-                .all_symbols()
-                .find(|(id, s)| s.parent == Some(bop_id) && *id != bool_id)
-                .map(|(id, _)| id);
+            let operand_id = ctx.children(bop_id).find(|(id, _)| *id != bool_id).map(|(id, _)| id);
             let operand_range = operand_id
                 .and_then(|id| ctx.full_range(id))
                 .map(|r| match bop_sym.source.text_range {

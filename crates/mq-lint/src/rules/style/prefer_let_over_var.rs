@@ -22,10 +22,8 @@ impl LintRule for PreferLetOverVar {
             .all_symbols()
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Assign))
             .flat_map(|(assign_id, _)| {
-                ctx.all_symbols()
-                    .filter(move |(_, s)| {
-                        s.parent == Some(assign_id) && matches!(s.kind, SymbolKind::Ident | SymbolKind::Ref)
-                    })
+                ctx.children(assign_id)
+                    .filter(|(_, s)| matches!(s.kind, SymbolKind::Ident | SymbolKind::Ref))
                     .filter_map(|(_, s)| s.value.as_deref())
                     .collect::<Vec<_>>()
             })

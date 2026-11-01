@@ -20,13 +20,13 @@ impl LintRule for RedundantTry {
             .filter(|(_, sym)| matches!(sym.kind, SymbolKind::Try))
             .filter_map(|(try_id, try_sym)| {
                 let (catch_id, catch_sym) = ctx
-                    .all_symbols()
-                    .find(|(_, s)| s.parent == Some(try_id) && matches!(s.kind, SymbolKind::Catch))?;
-                let (catch_expr_id, catch_expr) = ctx.all_symbols().find(|(_, s)| s.parent == Some(catch_id))?;
+                    .children(try_id)
+                    .find(|(_, s)| matches!(s.kind, SymbolKind::Catch))?;
+                let (catch_expr_id, catch_expr) = ctx.children(catch_id).next()?;
 
                 let is_none_literal =
                     matches!(catch_expr.kind, SymbolKind::None) || catch_expr.value.as_deref() == Some("none");
-                let has_no_children = !ctx.all_symbols().any(|(_, s)| s.parent == Some(catch_expr_id));
+                let has_no_children = !ctx.children(catch_expr_id).next().is_some();
 
                 if !is_none_literal || !has_no_children {
                     return None;
@@ -38,8 +38,8 @@ impl LintRule for RedundantTry {
                 // where `catch` starts, since a compound body's trailing `)` isn't tracked by any
                 // HIR symbol.
                 let body_start = ctx
-                    .all_symbols()
-                    .find(|(id, s)| s.parent == Some(try_id) && *id != catch_id)
+                    .children(try_id)
+                    .find(|(id, _)| *id != catch_id)
                     .and_then(|(id, _)| ctx.full_range(id))
                     .map(|r| r.start);
 
