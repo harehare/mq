@@ -1718,17 +1718,30 @@ fn explode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     }
 }
 
+/// Maps an integral value to a `char`, or U+FFFD if it is not a Unicode scalar value.
+fn code_point_to_char(value: f64) -> char {
+    if (0.0..=u32::MAX as f64).contains(&value) {
+        char::from_u32(value as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
+    } else {
+        char::REPLACEMENT_CHARACTER
+    }
+}
+
 #[mq_macros::mq_fn(name = "implode", params = Fixed(1))]
 fn implode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(array)] => {
-            let result: String = array
+            let result = array
                 .iter()
                 .map(|o| match o {
-                    RuntimeValue::Number(n) => std::char::from_u32(n.value() as u32).unwrap_or_default().to_string(),
-                    _ => "".to_string(),
+                    RuntimeValue::Number(n) if n.is_int() => Ok(code_point_to_char(n.value())),
+                    RuntimeValue::Number(n) => Err(Error::Runtime(format!(
+                        "{ident}: expected an integer code point, got {}",
+                        n.value()
+                    ))),
+                    other => Err(Error::InvalidTypes(ident.to_string(), vec![other.clone()])),
                 })
-                .collect();
+                .collect::<Result<String, Error>>()?;
             Ok(result.into())
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),

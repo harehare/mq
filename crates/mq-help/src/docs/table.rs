@@ -2318,7 +2318,7 @@ key: 1
     BuiltinDoc {
         name: "implode",
         aliases: &[],
-        description: "Joins an array of characters into a string.",
+        description: "Joins an array of code points into a string. Values that are not Unicode scalar values become U+FFFD; non-integers and non-numbers are errors.",
         params: &["array"],
         param_types: &["array"],
         returns: "string",
