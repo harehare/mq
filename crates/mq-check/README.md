@@ -273,18 +273,6 @@ Exits with a non-zero status if any error-severity diagnostic was found, regardl
 just test-all
 ```
 
-### Runtime conformance
-
-`just test-conformance` steps through the `.mq` test suite and checks that the value of every `let` binding fits the type the checker inferred for it (`var` bindings, whose type changes as they are assigned, and bindings seen as `none`, which may just not have run yet, are left out). A mismatch is a sign of an unsound inference. The result is pinned in `crates/mq-check/tests/runtime_conformance.snap`; regenerate it with `UPDATE_CORPUS=1`.
-
-### Differential fuzzing
-
-`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`, which should report none), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
-
-### Builtin signature audit
-
-`just audit-builtins` calls every native builtin and every public function of `builtin.mq` with a value of each type and lists the calls that compute a value (neither `none` nor one of the arguments, which is how a builtin shrugs off a value it has no use for) but are rejected by the checker. Each finding is a signature that is narrower than the function, or an argument coercion that is left unmodelled on purpose (`TOLERATED` in the test). Every builtin the audit covers has no finding, so a call to it can make an error definite. The builtins it does not cover (they do I/O, take more than three arguments, or never ran with the values tried) are listed in `UNAUDITED_BUILTINS` (`src/certainty.rs`); an error on a call to one is uncertain. The audit fails when that list is out of date and prints the list to put there. `AUDIT_FUNCTION` limits the run to one builtin.
-
 ### Building
 
 ```bash

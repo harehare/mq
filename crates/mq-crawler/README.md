@@ -10,7 +10,6 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 - **Ethical Crawling**: Built-in robots.txt compliance to crawl responsibly
 - **mq Integration**: Process crawled content with powerful mq queries for filtering and transformation
 - **JavaScript Support**: Browser-based crawling with WebDriver for dynamic content
-- **High Performance**: Parallel processing with configurable concurrency for faster crawling
 - **Flexible Output**: Save to files or stream to stdout
 
 ## Features
@@ -19,7 +18,7 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 - **HTML to Markdown**: Automatic conversion with customizable options
 - **Robots.txt Compliance**: Respects robots.txt rules for ethical crawling
 - **mq Query Integration**: Filter and transform crawled content on-the-fly
-- **Parallel Processing**: Concurrent workers for faster crawling
+- **Parallel Processing**: Configurable number of concurrent workers
 - **Depth Control**: Limit crawl depth to control scope
 - **Rate Limiting**: Configurable delays to avoid overloading servers
 - **Statistics**: Track crawling progress and results
