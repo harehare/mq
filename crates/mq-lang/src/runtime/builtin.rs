@@ -3811,35 +3811,42 @@ pub(crate) fn resolve_index(index: number::Number, len: usize) -> Option<usize> 
     usize::try_from(resolved).ok()
 }
 
-#[mq_macros::mq_fn(name = "get", params = Fixed(2))]
-fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
+/// `get(target, key)`: the element at `key`, or `None` when it is absent.
+fn get_value(target: &mut RuntimeValue, key: &RuntimeValue) -> Result<RuntimeValue, Error> {
+    match (target, key) {
         // Read-only: avoid `dict_mut`/`array_mut`'s `make_mut` deep clone of a shared map.
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+        (RuntimeValue::Dict(map), RuntimeValue::String(key)) => {
             Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
         }
-        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => Ok(resolve_index(*index, array.len())
+        (RuntimeValue::Dict(map), RuntimeValue::Symbol(key)) => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
+        (RuntimeValue::Array(array), RuntimeValue::Number(index)) => Ok(resolve_index(*index, array.len())
             .and_then(|i| array.get(i))
             .cloned()
             .unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::String(s), RuntimeValue::Number(n)] => match char_at(s, *n) {
+        (RuntimeValue::String(s), RuntimeValue::Number(n)) => match char_at(s, *n) {
             Some(o) => Ok(o.to_string().into()),
             None => Ok(RuntimeValue::NONE),
         },
-        [RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)] => {
+        (RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)) => {
             let len = node.value().chars().count();
             match resolve_index(*i, len).and_then(runtime_value::Selector::index) {
                 Some(sel) => Ok(RuntimeValue::Markdown(std::mem::take(node), Some(sel))),
                 None => Ok(RuntimeValue::NONE),
             }
         }
-        [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
-        [a, b] => Err(Error::Runtime(format!(
+        (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
+        (a, b) => Err(Error::Runtime(format!(
             "cannot index {} with {} (arrays, strings and markdown take a number, dicts take a string or symbol)",
             a.name(),
             b.name()
         ))),
+    }
+}
+
+#[mq_macros::mq_fn(name = "get", params = Fixed(2))]
+fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [target, key] => get_value(target, key),
         _ => Err(invalid_arity(ident, 2, args.len())),
     }
 }
@@ -3887,6 +3894,91 @@ pub(crate) fn set_in_place(
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+/// The element of a dict or array at `key`, borrowed for in-place update.
+///
+/// Returns `None` unless `key` names an existing entry (a non-negative in-range index for an
+/// array), so callers can fall back to the general `get`/`set` path.
+fn element_mut<'a>(target: &'a mut RuntimeValue, key: &RuntimeValue) -> Option<&'a mut RuntimeValue> {
+    match (target, key) {
+        (RuntimeValue::Dict(map), RuntimeValue::String(key)) => {
+            if map.contains_key(key.as_str()) {
+                runtime_value::dict_mut(map).get_mut(key.as_str())
+            } else {
+                None
+            }
+        }
+        (RuntimeValue::Dict(map), RuntimeValue::Symbol(key)) => {
+            if map.contains_key(key) {
+                runtime_value::dict_mut(map).get_mut(key)
+            } else {
+                None
+            }
+        }
+        (RuntimeValue::Array(array), RuntimeValue::Number(index)) => {
+            let raw = index.value();
+            if index.is_int() && raw >= 0.0 && (raw as usize) < array.len() {
+                runtime_value::array_mut(array).get_mut(raw as usize)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The element reached by following `keys` through nested dicts and arrays, borrowed for
+/// in-place update. `None` when any step is not an existing entry.
+pub(crate) fn path_element_mut<'a>(
+    target: &'a mut RuntimeValue,
+    keys: &[RuntimeValue],
+) -> Option<&'a mut RuntimeValue> {
+    keys.iter().try_fold(target, |current, key| element_mut(current, key))
+}
+
+/// Applies `target[k1]...[kn] = value` in place, as `target[k1]...[k(n-1)] = set(target[k1]...[k(n-1)], kn, value)`
+/// would, without copying the containers along the path.
+///
+/// A step that is not an existing entry takes the general `get` then `set` route, so its
+/// results and errors are the same as the chained form.
+pub(crate) fn set_path_in_place(
+    target: &mut RuntimeValue,
+    keys: &[RuntimeValue],
+    value: &mut RuntimeValue,
+) -> Result<(), Error> {
+    let [key, rest @ ..] = keys else {
+        return Ok(());
+    };
+    if rest.is_empty() {
+        return if set_in_place(target, key, value)? {
+            Ok(())
+        } else {
+            Err(Error::InvalidTypes(
+                constants::builtins::SET.to_string(),
+                vec![target.clone(), key.clone(), std::mem::take(value)],
+            ))
+        };
+    }
+    if let Some(child) = element_mut(target, key) {
+        return set_path_in_place(child, rest, value);
+    }
+    let mut child = get_value(&mut target.clone(), key)?;
+    set_path_in_place(&mut child, rest, value)?;
+    if set_in_place(target, key, &mut child)? {
+        Ok(())
+    } else {
+        Err(Error::InvalidTypes(
+            constants::builtins::SET.to_string(),
+            vec![target.clone(), key.clone(), child],
+        ))
+    }
+}
+
+/// `target[k1]...[kn]`, as the chained `get` calls would read it.
+pub(crate) fn get_path(target: &RuntimeValue, keys: &[RuntimeValue]) -> Result<RuntimeValue, Error> {
+    keys.iter()
+        .try_fold(target.clone(), |mut current, key| get_value(&mut current, key))
 }
 
 #[mq_macros::mq_fn(name = "set", params = Fixed(3))]

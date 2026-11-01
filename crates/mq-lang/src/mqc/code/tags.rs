@@ -220,4 +220,7 @@ pub(super) mod opcode {
     pub(crate) const ADD_ASSIGN_LOCAL: u8 = 98;
     pub(crate) const TAKE_LOCAL: u8 = 99;
     pub(crate) const MOVE_LOCAL: u8 = 100;
+    pub(crate) const SET_PATH_LOCAL: u8 = 101;
+    pub(crate) const ADD_ASSIGN_PATH_LOCAL: u8 = 102;
+    pub(crate) const CHECK_PATH_LOCAL: u8 = 103;
 }

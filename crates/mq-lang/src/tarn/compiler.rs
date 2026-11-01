@@ -660,6 +660,58 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
     }
 }
 
+/// What a nested index assignment stores at the end of its path.
+enum PathLeaf<'a> {
+    /// `path = value`.
+    Set(&'a Shared<Node>),
+    /// `path = path + rhs`.
+    Add(&'a Shared<Node>),
+}
+
+/// Whether `node` is a literal or an identifier other than `target`, so reading it twice or
+/// once is the same.
+fn is_path_key(node: &Shared<Node>, target: Ident) -> bool {
+    match &node.expr {
+        Expr::Literal(_) => true,
+        Expr::Ident(ident) => ident.name != target,
+        _ => false,
+    }
+}
+
+/// Whether evaluating `node` can neither fail nor have effects.
+fn is_effect_free(node: &Shared<Node>) -> bool {
+    match &node.expr {
+        Expr::Literal(_) | Expr::Ident(_) => true,
+        Expr::Array(items) => items.iter().all(is_effect_free),
+        _ => false,
+    }
+}
+
+/// Whether two path keys are the same literal or identifier.
+fn same_path_key(a: &Shared<Node>, b: &Shared<Node>) -> bool {
+    match (&a.expr, &b.expr) {
+        (Expr::Literal(a), Expr::Literal(b)) => a == b,
+        (Expr::Ident(a), Expr::Ident(b)) => a.name == b.name,
+        _ => false,
+    }
+}
+
+/// Whether `node` is `name[keys[0]]...[keys[n-1]]`.
+fn reads_path(node: &Shared<Node>, name: Ident, keys: &[&Shared<Node>]) -> bool {
+    let Expr::Index(target, index) = &node.expr else {
+        return false;
+    };
+    let Some((last, rest)) = keys.split_last() else {
+        return false;
+    };
+    same_path_key(index, last)
+        && if rest.is_empty() {
+            matches!(&target.expr, Expr::Ident(ident) if ident.name == name)
+        } else {
+            reads_path(target, name, rest)
+        }
+}
+
 /// Collects the names used inside functions nested in `program`, which can read or write the
 /// enclosing function's locals. `try` and `catch` bodies compile to nested functions too.
 ///
@@ -3202,6 +3254,45 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.set_call_token_id(token_id);
                     self.emit_call_builtin(builtins::SET.into(), 3);
                     self.emit(OpCode::SetLocal(slot));
+                } else if let Some((keys, leaf)) = self.nested_assign_path(name, index, value) {
+                    let depth = keys.len() as u8;
+                    // The old chained form read the path before evaluating the operand, so an
+                    // operand that can fail or have effects must not run if that read fails.
+                    let (operand, checked) = match leaf {
+                        PathLeaf::Set(operand) => (operand, keys.len() - 1),
+                        PathLeaf::Add(operand) => (operand, keys.len()),
+                    };
+                    let check = checked > 0 && !is_effect_free(operand);
+                    for (position, key) in keys.into_iter().enumerate() {
+                        if check && position == checked {
+                            self.set_call_token_id(token_id);
+                            self.emit(OpCode::CheckPathLocal {
+                                slot,
+                                depth: checked as u8,
+                            });
+                        }
+                        self.compile_expr(key)?;
+                    }
+                    if check && checked == usize::from(depth) {
+                        self.set_call_token_id(token_id);
+                        self.emit(OpCode::CheckPathLocal {
+                            slot,
+                            depth: checked as u8,
+                        });
+                    }
+                    self.set_call_token_id(token_id);
+                    match leaf {
+                        PathLeaf::Set(value) => {
+                            self.compile_expr(value)?;
+                            self.set_call_token_id(token_id);
+                            self.emit(OpCode::SetPathLocal { slot, depth });
+                        }
+                        PathLeaf::Add(rhs) => {
+                            self.compile_expr(rhs)?;
+                            self.set_call_token_id(token_id);
+                            self.emit(OpCode::AddAssignPathLocal { slot, depth });
+                        }
+                    }
                 } else {
                     self.compile_expr(index)?;
                     self.compile_expr(value)?;
@@ -3227,6 +3318,42 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         self.emit(OpCode::GetLocal(SELF_SLOT));
         Ok(())
+    }
+
+    /// Recognizes `name[k1]...[kn] = leaf` after the parser's `name[k1] = set(name[k1], k2, ...)`
+    /// expansion, so the containers along the path can be updated in place instead of each level
+    /// being read out (and thereby copied) and written back.
+    ///
+    /// Keys must be literals or identifiers, which is what lets them be evaluated once.
+    /// `leaf` is an `+ rhs` update of the same path when it has that form (any depth), and
+    /// otherwise the value to store (only for `n >= 2`, as `SetIndexLocal` covers one key).
+    fn nested_assign_path<'a>(
+        &mut self,
+        name: Ident,
+        index: &'a Shared<Node>,
+        value: &'a Shared<Node>,
+    ) -> Option<(Vec<&'a Shared<Node>>, PathLeaf<'a>)> {
+        if !is_path_key(index, name) {
+            return None;
+        }
+        let mut keys = vec![index];
+        let mut leaf = value;
+        while keys.len() < usize::from(u8::MAX) {
+            let Some(args) = self.unshadowed_builtin_args(leaf, builtins::SET.into(), 3) else {
+                break;
+            };
+            if !is_path_key(&args[1], name) || !reads_path(&args[0], name, &keys) {
+                break;
+            }
+            keys.push(&args[1]);
+            leaf = &args[2];
+        }
+        if let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &leaf.expr
+            && reads_path(lhs, name, &keys)
+        {
+            return Some((keys, PathLeaf::Add(rhs)));
+        }
+        (keys.len() >= 2).then_some((keys, PathLeaf::Set(leaf)))
     }
 
     /// Whether a function nested in the current one uses `name`. The in-place update opcodes
