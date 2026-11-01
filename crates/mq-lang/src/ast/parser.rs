@@ -328,7 +328,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Creates an assignment node, handling both simple identifiers and indexed targets.
     ///
     /// - `x = rhs` → `Assign(x, rhs)`
-    /// - `arr[idx] = rhs` (lhs is `Index(arr, idx)`) → `IndexAssign(arr, idx, rhs)`
+    /// - `arr[idx] = rhs` (lhs is `Index(arr, idx)` or `get(arr, idx)`) → `IndexAssign(arr, idx, rhs)`
     /// - `arr[i][j] = rhs` → `arr[i] = set(arr[i], j, rhs)`, applied recursively
     fn create_assign(
         &mut self,
@@ -342,30 +342,47 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 token_id: operator_token_id,
                 expr: Expr::Assign(ident.clone(), rhs),
             })),
-            Expr::Index(target, index) => match &target.expr {
-                Expr::Ident(var_ident) => Ok(Shared::new(Node {
-                    token_id: operator_token_id,
-                    expr: Expr::IndexAssign(var_ident.clone(), Shared::clone(index), rhs),
-                })),
-                Expr::Call(..) | Expr::Index(..) | Expr::Slice(..) => {
-                    let set_call = Shared::new(Node {
-                        token_id: operator_token_id,
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(
-                                constants::builtins::SET,
-                                Some(self.alloc_ident_token(operator_token)),
-                            ),
-                            smallvec![Shared::clone(target), Shared::clone(index), rhs],
-                        ),
-                    });
-                    self.create_assign(target, set_call, operator_token_id, operator_token)
-                }
-                _ => Err(SyntaxError::InvalidAssignmentTarget(
-                    self.token_arena[target.token_id].clone(),
-                )),
-            },
+            Expr::Index(target, index) => {
+                self.create_index_assign(target, index, rhs, operator_token_id, operator_token)
+            }
+            Expr::Call(func_ident, args) if func_ident.name == constants::builtins::GET.into() && args.len() == 2 => {
+                self.create_index_assign(&args[0], &args[1], rhs, operator_token_id, operator_token)
+            }
             _ => Err(SyntaxError::InvalidAssignmentTarget(
                 self.token_arena[lhs.token_id].clone(),
+            )),
+        }
+    }
+
+    /// `target[index] = rhs`, written either as brackets or as an explicit `get(target, index)`.
+    fn create_index_assign(
+        &mut self,
+        target: &Shared<Node>,
+        index: &Shared<Node>,
+        rhs: Shared<Node>,
+        operator_token_id: TokenId,
+        operator_token: &Token,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        match &target.expr {
+            Expr::Ident(var_ident) => Ok(Shared::new(Node {
+                token_id: operator_token_id,
+                expr: Expr::IndexAssign(var_ident.clone(), Shared::clone(index), rhs),
+            })),
+            Expr::Call(..) | Expr::Index(..) | Expr::Slice(..) => {
+                let set_call = Shared::new(Node {
+                    token_id: operator_token_id,
+                    expr: Expr::Call(
+                        IdentWithToken::new_with_token(
+                            constants::builtins::SET,
+                            Some(self.alloc_ident_token(operator_token)),
+                        ),
+                        smallvec![Shared::clone(target), Shared::clone(index), rhs],
+                    ),
+                });
+                self.create_assign(target, set_call, operator_token_id, operator_token)
+            }
+            _ => Err(SyntaxError::InvalidAssignmentTarget(
+                self.token_arena[target.token_id].clone(),
             )),
         }
     }

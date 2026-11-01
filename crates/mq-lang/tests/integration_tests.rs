@@ -17,6 +17,7 @@ fn io_reader_is_nameable_from_external_crates() {
 }
 
 /// `x[i]` and `x[a:b]` run the builtins even when the program defines `get`/`slice`/`len`.
+/// Explicit `get(a, i) = v` stays a valid assignment target.
 #[rstest]
 #[case::index_dict(r#"def get(a, b): "HIJACK" end | {"k": 1}["k"]"#, "1")]
 #[case::index_array(r#"def get(a, b): "HIJACK" end | [7, 8, 9][1]"#, "8")]
@@ -28,6 +29,9 @@ fn io_reader_is_nameable_from_external_crates() {
     r#"def get(a, b): "HIJACK" end | var a = [[1, 2], [3, 4]] | a[1][0] = 9 | a[1][0]"#,
     "9"
 )]
+#[case::explicit_get_assign("var a = [1] | get(a, 0) = 2 | a[0]", "2")]
+#[case::explicit_get_assign_nested("var a = [[1, 2], [3, 4]] | get(get(a, 1), 0) = 9 | a[1][0]", "9")]
+#[case::explicit_get_assign_mixed("var a = [[1, 2], [3, 4]] | get(a[1], 0) = 9 | a[1][0]", "9")]
 fn index_and_slice_ignore_user_definitions(mut engine: DefaultEngine, #[case] program: &str, #[case] expected: &str) {
     let result = engine.eval(program, vec![RuntimeValue::None].into_iter()).unwrap();
     assert_eq!(result.values()[0].to_string(), expected);
