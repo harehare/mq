@@ -231,6 +231,24 @@ function getActiveEditorValidation(): vscode.TextEditor | null {
   return editor;
 }
 
+// Serves builtin.mq and the standard modules that go-to-definition opens as `mq-std:` documents.
+function registerVirtualDocumentProvider(context: vscode.ExtensionContext) {
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider("mq-std", {
+      async provideTextDocumentContent(uri: vscode.Uri) {
+        if (!client) {
+          return undefined;
+        }
+        const text = await client.sendRequest<string | null>(
+          "mq/virtualDocument",
+          { uri: uri.toString() },
+        );
+        return text ?? undefined;
+      },
+    }),
+  );
+}
+
 // Command registration functions
 function registerNewCommand(context: vscode.ExtensionContext) {
   context.subscriptions.push(
@@ -593,6 +611,7 @@ export async function activate(context: vscode.ExtensionContext) {
   statusBarManager.updateVisibility(vscode.window.activeTextEditor);
 
   registerNewCommand(context);
+  registerVirtualDocumentProvider(context);
   registerLspCommands(context);
   registerDebugCommands(context);
   registerMqExecutionCommands(context);

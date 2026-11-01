@@ -760,6 +760,23 @@ end"#;
         assert!(matches!(&errors[0], HirError::CircularModule { module_name, .. } if module_name == "a"));
     }
 
+    #[rstest]
+    #[case::include("include", "")]
+    #[case::import("import", "")]
+    #[case::import_as("import", " as m")]
+    fn test_missing_module_is_an_error(#[case] directive: &str, #[case] suffix: &str) {
+        let mut hir = hir_with_modules("missing", &[("present", "def f(): 1;")]);
+        hir.add_code(None, &format!("{directive} \"present\"{suffix}"));
+        assert!(hir.errors().is_empty(), "{:?}", hir.errors());
+
+        hir.add_code(None, &format!("{directive} \"nope\"{suffix}"));
+        assert!(matches!(&hir.errors()[..], [HirError::ModuleNotFound { module_name, .. }] if module_name == "nope"));
+
+        // The diagnostic covers the path string, not only the keyword.
+        let end = hir.error_ranges()[0].1.end.column;
+        assert_eq!(end, directive.len() + " \"nope\"".len() + 1);
+    }
+
     #[test]
     fn test_self_including_module_is_an_error() {
         let mut hir = hir_with_modules("self-include", &[("loop", "include \"loop\"\ndef fl(): 1;")]);

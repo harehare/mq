@@ -9,9 +9,11 @@ use tower_lsp_server::ls_types::DocumentRangeFormattingParams;
 use url::Url;
 
 use crate::error::LspError;
+use crate::position::LineIndex;
 use crate::{
-    capabilities, code_action, completions, document_symbol, execute_command, folding_range, goto_definition, hover,
-    inlay_hints, references, rename, semantic_tokens, signature_help, workspace_symbol,
+    capabilities, code_action, completions, document_highlight, document_link, document_symbol, execute_command,
+    folding_range, goto_definition, hover, inlay_hints, references, rename, selection_range, semantic_tokens,
+    signature_help, virtual_document, workspace_symbol,
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
@@ -37,8 +39,19 @@ fn document_end_position(text: &str) -> ls_types::Position {
 #[derive(Debug)]
 struct DocumentSnapshot {
     text: Arc<String>,
+    lines: LineIndex,
     /// `None` when the document has never been parsed (only set directly in tests).
     nodes: Option<Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>,
+}
+
+impl DocumentSnapshot {
+    fn new(text: Arc<String>, nodes: Option<Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>) -> Self {
+        Self {
+            lines: LineIndex::new(Arc::clone(&text)),
+            text,
+            nodes,
+        }
+    }
 }
 
 /// Text and CST of each open document, keyed by URI string, published atomically per change.
@@ -155,6 +168,57 @@ impl LanguageServer for Backend {
         ))
     }
 
+    async fn document_highlight(
+        &self,
+        params: ls_types::DocumentHighlightParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::DocumentHighlight>>> {
+        let url = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+
+        let Some(snapshot) = self.documents.get(&url.to_string()).map(|s| Arc::clone(s.value())) else {
+            return Ok(None);
+        };
+
+        Ok(document_highlight::response(
+            Arc::clone(&self.hir),
+            to_url(&url),
+            &snapshot.lines,
+            position,
+        ))
+    }
+
+    async fn document_link(
+        &self,
+        params: ls_types::DocumentLinkParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::DocumentLink>>> {
+        let Some(snapshot) = self
+            .documents
+            .get(&params.text_document.uri.to_string())
+            .map(|s| Arc::clone(s.value()))
+        else {
+            return Ok(None);
+        };
+
+        Ok(document_link::response(
+            Arc::clone(&self.hir),
+            to_url(&params.text_document.uri),
+            &snapshot.lines,
+        ))
+    }
+
+    async fn selection_range(
+        &self,
+        params: ls_types::SelectionRangeParams,
+    ) -> jsonrpc::Result<Option<Vec<ls_types::SelectionRange>>> {
+        let uri = params.text_document.uri.to_string();
+        let snapshot = self.documents.get(&uri).map(|s| Arc::clone(s.value()));
+
+        Ok(snapshot.and_then(|snapshot| {
+            let nodes = snapshot.nodes.as_ref()?;
+            Some(selection_range::response(nodes, &snapshot.lines, &params.positions))
+        }))
+    }
+
     async fn document_symbol(
         &self,
         params: ls_types::DocumentSymbolParams,
@@ -221,7 +285,25 @@ impl LanguageServer for Backend {
             None
         };
 
-        Ok(hover::response(Arc::clone(&self.hir), to_url(&url), type_env, position))
+        let line = self
+            .documents
+            .get(&url.to_string())
+            .and_then(|snapshot| {
+                snapshot
+                    .text
+                    .split('\n')
+                    .nth(position.line as usize)
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
+
+        Ok(hover::response(
+            Arc::clone(&self.hir),
+            to_url(&url),
+            type_env,
+            position,
+            &line,
+        ))
     }
 
     async fn signature_help(
@@ -264,12 +346,20 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
+        let line_prefix = self
+            .documents
+            .get(&uri.to_string())
+            .map(|snapshot| completions::line_prefix(&snapshot.text, position))
+            .unwrap_or_default();
+
         let source_map_guard = self.source_map.read().unwrap();
         Ok(completions::response(
             Arc::clone(&self.hir),
             to_url(&uri),
             position,
             &source_map_guard,
+            &line_prefix,
+            &self.config.module_paths,
         ))
     }
 
@@ -531,10 +621,7 @@ impl Backend {
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
         self.documents.insert(
             uri_string.clone(),
-            Arc::new(DocumentSnapshot {
-                text: Arc::new(text),
-                nodes: Some(nodes),
-            }),
+            Arc::new(DocumentSnapshot::new(Arc::new(text), Some(nodes))),
         );
         self.error_map.insert(uri_string, errors);
     }
@@ -678,6 +765,20 @@ impl LspConfig {
     }
 }
 
+/// Parameters of the `mq/virtualDocument` request.
+#[derive(Debug, serde::Deserialize)]
+pub struct VirtualDocumentParams {
+    /// URI of a document returned by go-to-definition, e.g. `mq-std:/builtin.mq`.
+    pub uri: String,
+}
+
+impl Backend {
+    /// Handles `mq/virtualDocument`: the text of `builtin.mq` or a standard module.
+    async fn virtual_document(&self, params: VirtualDocumentParams) -> jsonrpc::Result<Option<String>> {
+        Ok(virtual_document::content(&params.uri))
+    }
+}
+
 /// Runs the language server on stdio.
 pub async fn start(config: LspConfig) {
     let stdin = tokio::io::stdin();
@@ -686,7 +787,7 @@ pub async fn start(config: LspConfig) {
     let resolver = mq_lang::DefaultModuleResolver::new(config.module_paths.clone());
     let module_loader = mq_lang::ModuleLoader::new(resolver);
 
-    let (service, socket) = LspService::new(|client| Backend {
+    let (service, socket) = LspService::build(|client| Backend {
         client,
         hir: Arc::new(RwLock::new(mq_hir::Hir::new(module_loader))),
         source_map: RwLock::new(BiMap::new()),
@@ -694,7 +795,9 @@ pub async fn start(config: LspConfig) {
         error_map: DashMap::new(),
         documents: DashMap::new(),
         config,
-    });
+    })
+    .custom_method("mq/virtualDocument", Backend::virtual_document)
+    .finish();
 
     Server::new(stdin, stdout, socket).serve(service).await;
 }

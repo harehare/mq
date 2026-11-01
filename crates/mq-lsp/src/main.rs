@@ -12,6 +12,8 @@ pub mod capabilities;
 pub mod code_action;
 /// Completion items.
 pub mod completions;
+mod document_highlight;
+mod document_link;
 /// Document symbols.
 pub mod document_symbol;
 /// Error types.
@@ -26,17 +28,20 @@ pub mod goto_definition;
 pub mod hover;
 /// Inlay hints.
 pub mod inlay_hints;
+mod position;
 pub mod refactor;
 /// Find references.
 pub mod references;
 /// Rename symbols.
 pub mod rename;
+mod selection_range;
 /// Semantic token highlighting.
 pub mod semantic_tokens;
 /// The LSP server.
 pub mod server;
 /// Signature help.
 pub mod signature_help;
+mod virtual_document;
 /// Workspace symbols.
 pub mod workspace_symbol;
 

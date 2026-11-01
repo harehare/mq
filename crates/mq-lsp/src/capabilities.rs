@@ -1,10 +1,10 @@
 use tower_lsp_server::ls_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions, DiagnosticOptions,
-    DiagnosticServerCapabilities, DocumentFormattingOptions, DocumentRangeFormattingOptions, ExecuteCommandOptions,
-    FoldingRangeProviderCapability, HoverProviderCapability, InlayHintOptions, InlayHintServerCapabilities, OneOf,
-    RenameOptions, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-    SemanticTokensServerCapabilities, ServerCapabilities, SignatureHelpOptions, TextDocumentSyncCapability,
-    TextDocumentSyncKind,
+    DiagnosticServerCapabilities, DocumentFormattingOptions, DocumentLinkOptions, DocumentRangeFormattingOptions,
+    ExecuteCommandOptions, FoldingRangeProviderCapability, HoverProviderCapability, InlayHintOptions,
+    InlayHintServerCapabilities, OneOf, RenameOptions, SelectionRangeProviderCapability, SemanticTokensFullOptions,
+    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities,
+    SignatureHelpOptions, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 use crate::semantic_tokens;
@@ -52,6 +52,12 @@ pub(crate) fn server_capabilities() -> ServerCapabilities {
         })),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
+        selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
+        document_link_provider: Some(DocumentLinkOptions {
+            resolve_provider: Some(false),
+            work_done_progress_options: Default::default(),
+        }),
         code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
             code_action_kinds: Some(vec![
                 CodeActionKind::QUICKFIX,

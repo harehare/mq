@@ -10,7 +10,8 @@ Language Server Protocol (LSP) implementation for the [mq](https://mqlang.org/) 
 - 💡 **Code Completion**: Intelligent suggestions for selectors, functions, and variables
 - 📖 **Hover Information**: Inline documentation and type information
 - ✍️ **Signature Help**: Inline parameter hints while typing a function call
-- 🎯 **Go To Definition**: Navigate to symbol definitions with a single click
+- 🎯 **Go To Definition**: Navigate to symbol definitions with a single click. `builtin.mq` and standard modules open as read-only `mq-std:` documents served by the `mq/virtualDocument` request (the VS Code extension handles it)
+- 🔦 **Document Highlight, Selection Range, Document Links**: Highlight a symbol's occurrences, expand the selection by syntax node, and open `import`/`include` paths as links
 - 🔗 **Find References**: Locate all usages of a symbol across your workspace
 - 🗂️ **Document Symbols**: Outline view of all symbols in the current file
 - 🗃️ **Workspace Symbols**: Search for symbols by name across all loaded files/modules

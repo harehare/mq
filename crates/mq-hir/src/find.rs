@@ -119,6 +119,46 @@ impl Hir {
         symbol_ids
     }
 
+    /// Resolves `name` to the module it denotes from `scope_id`: an inline `module`, an
+    /// `import`, or the alias of `import "path" as alias`. The innermost, latest declaration wins.
+    pub fn find_module_source_by_name(&self, scope_id: ScopeId, name: &str) -> Option<SourceId> {
+        let mut scope_id = Some(scope_id);
+
+        while let Some(id) = scope_id {
+            let found = self
+                .symbols
+                .iter()
+                .filter(|(_, symbol)| symbol.scope == id && symbol.value.as_deref() == Some(name))
+                .filter_map(|(_, symbol)| match symbol.kind {
+                    SymbolKind::Module(source) | SymbolKind::Import(source) => Some((symbol.insertion_order, source)),
+                    SymbolKind::Ident => self
+                        .import_before(symbol)
+                        .map(|source| (symbol.insertion_order, source)),
+                    _ => None,
+                })
+                .max_by_key(|(order, _)| *order);
+            if let Some((_, source)) = found {
+                return Some(source);
+            }
+            scope_id = self.scopes[id].parent_id;
+        }
+
+        None
+    }
+
+    /// The module of the `import` that `alias` was registered right after.
+    fn import_before(&self, alias: &Symbol) -> Option<SourceId> {
+        let (_, import) = self.symbols.iter().find(|(_, symbol)| {
+            symbol.scope == alias.scope
+                && symbol.insertion_order + 1 == alias.insertion_order
+                && matches!(symbol.kind, SymbolKind::Import(_))
+        })?;
+        match import.kind {
+            SymbolKind::Import(source) => Some(source),
+            _ => None,
+        }
+    }
+
     /// Returns all symbols that belong to the given source.
     pub fn find_symbols_in_source(&self, source_id: SourceId) -> Vec<Arc<Symbol>> {
         self.symbols
@@ -236,5 +276,26 @@ mod tests {
 
         hir.source_scopes.insert(source_id, scope_id);
         assert_eq!(hir.find_scope_by_source(&source_id), scope_id);
+    }
+
+    #[rstest::rstest]
+    #[case::import("import \"csv\" | x", "csv", true)]
+    #[case::alias("import \"csv\" as c | x", "c", true)]
+    #[case::inline_module("module m: def f(): 1; end | x", "m", true)]
+    #[case::unknown("import \"csv\" as c | x", "d", false)]
+    fn test_find_module_source_by_name(#[case] code: &str, #[case] name: &str, #[case] found: bool) {
+        let mut hir = Hir::default();
+        let (source_id, _, _) = hir.add_code(None, code);
+        let scope_id = hir.find_scope_by_source(&source_id);
+        assert_eq!(hir.find_module_source_by_name(scope_id, name).is_some(), found);
+    }
+
+    #[test]
+    fn test_find_module_source_by_name_is_scoped_to_the_source() {
+        let mut hir = Hir::default();
+        let (_, _, _) = hir.add_code(None, "module m: def alpha(): 1; end");
+        let (source_id, _, _) = hir.add_code(None, "x");
+        let scope_id = hir.find_scope_by_source(&source_id);
+        assert!(hir.find_module_source_by_name(scope_id, "m").is_none());
     }
 }

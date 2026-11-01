@@ -156,6 +156,19 @@ impl DefaultModuleResolver {
         }
     }
 
+    /// Names of the standard modules and the `.mq` files in the local search directories,
+    /// sorted and without duplicates. Default search directories are used when none were given.
+    pub fn module_names(&self) -> Vec<String> {
+        let mut names = STANDARD_MODULES
+            .keys()
+            .map(|name| name.to_string())
+            .chain(self.local_fs_resolver.module_names())
+            .collect::<Vec<_>>();
+        names.sort();
+        names.dedup();
+        names
+    }
+
     /// Configures the HTTP resolver with a domain allowlist and request timeout.
     ///
     /// An empty `allowed_domains` list restricts access to the built-in default domain
