@@ -4672,16 +4672,25 @@ fn env_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
+/// Returns the shift amount as a non-negative integer, or an error for negative values.
+fn shift_amount(n: &number::Number) -> Result<i64, Error> {
+    if n.value() < 0.0 {
+        Err(Error::Runtime("Shift amount must be non-negative".to_string()))
+    } else {
+        Ok(n.to_int())
+    }
+}
+
 #[mq_macros::mq_fn(name = "shift_left", params = Fixed(2))]
 fn shift_left_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => v
-            .to_int()
-            .checked_shl(n.value() as u32)
+        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => u32::try_from(shift_amount(n)?)
+            .ok()
+            .and_then(|amount| v.to_int().checked_shl(amount))
             .map(|result| RuntimeValue::Number(result.into()))
             .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
         [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
-            let shift_amount = n.to_int().max(0) as usize;
+            let shift_amount = shift_amount(n)? as usize;
             let shifted: String = v.chars().skip(shift_amount).collect();
             Ok(RuntimeValue::String(shifted.into()))
         }
@@ -4691,7 +4700,7 @@ fn shift_left_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
             if let mq_markdown::Node::Heading(heading) = runtime_value::markdown_mut(node) {
-                let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
+                let shift_amount = shift_amount(n)?.min(u8::MAX as i64) as u8;
 
                 heading.depth = heading.depth.saturating_sub(shift_amount);
                 Ok(mq_markdown::Node::Heading(std::mem::take(heading)).into())
@@ -4711,13 +4720,13 @@ fn shift_left_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 #[mq_macros::mq_fn(name = "shift_right", params = Fixed(2))]
 fn shift_right_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => v
-            .to_int()
-            .checked_shr(n.value() as u32)
+        [RuntimeValue::Number(v), RuntimeValue::Number(n)] => u32::try_from(shift_amount(n)?)
+            .ok()
+            .and_then(|amount| v.to_int().checked_shr(amount))
             .map(|result| RuntimeValue::Number(result.into()))
             .ok_or_else(|| Error::Runtime("Shift amount is too large".to_string())),
         [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
-            let shift_amount = n.value() as usize;
+            let shift_amount = shift_amount(n)? as usize;
             let char_len = v.chars().count();
             if shift_amount >= char_len {
                 Ok(RuntimeValue::String(Shared::new(String::new())))
@@ -4733,7 +4742,7 @@ fn shift_right_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
             if let mq_markdown::Node::Heading(heading) = runtime_value::markdown_mut(node) {
-                let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
+                let shift_amount = shift_amount(n)?.min(u8::MAX as i64) as u8;
 
                 if let Some(depth) = heading.depth.checked_add(shift_amount) {
                     heading.depth = depth;
