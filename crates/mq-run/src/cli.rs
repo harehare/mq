@@ -31,6 +31,7 @@ use mq_help as help;
 mod bytecode;
 mod exit_status;
 mod mqc;
+mod text_input;
 
 /// A file's query prefix and, for a `.mqc` program, its input format.
 type ProgramKey = (Option<String>, Option<String>);
@@ -3134,9 +3135,9 @@ impl Cli {
             io::stdin().read_to_end(&mut buf).into_diagnostic()?;
             Ok(buf.into())
         } else {
-            let mut input = String::new();
-            io::stdin().read_to_string(&mut input).into_diagnostic()?;
-            Ok(input.into())
+            let mut buf = Vec::new();
+            io::stdin().read_to_end(&mut buf).into_diagnostic()?;
+            Ok(text_input::decode_text(buf)?.into())
         }
     }
 
@@ -3150,12 +3151,16 @@ impl Cli {
                 let content = if InputFormat::is_gzip_path(file) {
                     self.read_gzip_file(file)?
                 } else {
-                    let read = if self.needs_binary_read_for_file(file) {
-                        fs::read(file).map(ContentData::from)
+                    let bytes = fs::read(file)
+                        .into_diagnostic()
+                        .wrap_err_with(|| ReadFailure(file.clone()))?;
+                    if self.needs_binary_read_for_file(file) {
+                        ContentData::Bytes(bytes)
                     } else {
-                        fs::read_to_string(file).map(ContentData::from)
-                    };
-                    read.into_diagnostic().wrap_err_with(|| ReadFailure(file.clone()))?
+                        text_input::decode_text(bytes)
+                            .map(ContentData::Text)
+                            .wrap_err_with(|| ReadFailure(file.clone()))?
+                    }
                 };
                 Ok((Some(file.clone()), content))
             })
@@ -3177,13 +3182,9 @@ impl Cli {
         if fmt.needs_binary_read() {
             Ok(ContentData::Bytes(decompressed))
         } else {
-            String::from_utf8(decompressed).map(ContentData::Text).map_err(|e| {
-                miette!(
-                    "{} does not contain valid UTF-8 after decompression: {}",
-                    file.display(),
-                    e
-                )
-            })
+            text_input::decode_text(decompressed)
+                .map(ContentData::Text)
+                .wrap_err_with(|| ReadFailure(file.to_path_buf()))
         }
     }
 

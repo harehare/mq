@@ -12,6 +12,16 @@ mq '.h1' docs/
 
 For other file types or custom filtering, use a shell glob or `walk_files`.
 
+## Text encoding
+
+Text input (files and stdin) is read as UTF-8. A UTF-8 BOM is removed, and UTF-16 (LE or BE) is decoded when the input starts with a BOM, such as a file written by Windows PowerShell's `>`. Output is always UTF-8.
+
+Other encodings are an error that suggests converting first:
+
+```sh
+iconv -f SHIFT_JIS -t UTF-8 file.md | mq '.h1'
+```
+
 ## Output formats
 
 `-F` / `--output-format` selects how results are written. The default is `markdown`. Each result is a Markdown node, a string, a number, a boolean, `None`, an array or a dict. The examples use `-I null` to show non-Markdown values.
