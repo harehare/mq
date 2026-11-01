@@ -2053,6 +2053,44 @@ fn test_gzip_csv_auto_detected_by_extension() {
 }
 
 #[test]
+fn test_utf16_bom_file_is_decoded() {
+    let path = std::env::temp_dir().join("utf16_bom_input.md");
+    let bytes: Vec<u8> = [0xFF, 0xFE]
+        .into_iter()
+        .chain("# あ\n".encode_utf16().flat_map(u16::to_le_bytes))
+        .collect();
+    std::fs::write(&path, bytes).expect("Failed to write temp file");
+    defer! { std::fs::remove_file(&path).ok(); }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg(".h1").arg(&path).assert().success().stdout("# あ\n");
+}
+
+#[test]
+fn test_utf16_bom_stdin_is_decoded() {
+    let bytes: Vec<u8> = [0xFE, 0xFF]
+        .into_iter()
+        .chain("# あ\n".encode_utf16().flat_map(u16::to_be_bytes))
+        .collect();
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg(".h1").write_stdin(bytes).assert().success().stdout("# あ\n");
+}
+
+#[test]
+fn test_non_utf8_input_reports_encoding_hint() {
+    let path = std::env::temp_dir().join("non_utf8_input.md");
+    std::fs::write(&path, b"# a\x83\x41\n").expect("Failed to write temp file");
+    defer! { std::fs::remove_file(&path).ok(); }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let result = cmd.arg(".h1").arg(&path).assert().failure().code(2);
+    let stderr = String::from_utf8_lossy(&result.get_output().stderr);
+    assert!(stderr.contains("not valid UTF-8"));
+    assert!(stderr.contains("iconv"));
+}
+
+#[test]
 fn test_gzip_with_explicit_input_format() {
     let (_, file_path) = create_gzip_file("gzip_explicit_format.gz", r#"{"key": "value"}"#);
     let file_path_clone = file_path.clone();

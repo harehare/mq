@@ -36,6 +36,8 @@ A directory argument reads every `.md`, `.markdown` and `.mdx` file under it, re
 mq '.h1' docs/                                  # level-1 headings of every Markdown file under docs/
 ```
 
+Text input is UTF-8. A UTF-8 BOM is removed and UTF-16 with a BOM is decoded. For any other encoding, convert first with `iconv -f <encoding> -t UTF-8`.
+
 ### Update a document in place
 
 `-U` / `--update` runs the query on every node and writes the whole document back, with the nodes the query changed. Unmatched nodes pass through as they are. Use `self` for "leave this node alone". `--diff` prints a unified diff instead and exits 1 when something would change, which suits CI.
