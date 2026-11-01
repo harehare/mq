@@ -2010,14 +2010,11 @@ fn register_bytes(ctx: &mut InferenceContext) {
     // encode: (string, string) -> bytes
     register_binary(ctx, "encode", Type::String, Type::String, Type::Bytes);
 
-    // xor: (bytes, bytes) -> bytes
-    register_binary(ctx, "xor", Type::Bytes, Type::Bytes, Type::Bytes);
-
-    // band: (bytes, bytes) -> bytes
-    register_binary(ctx, "band", Type::Bytes, Type::Bytes, Type::Bytes);
-
-    // bor: (bytes, bytes) -> bytes
-    register_binary(ctx, "bor", Type::Bytes, Type::Bytes, Type::Bytes);
+    // xor, band, bor: (bytes, bytes) -> bytes and (number, number) -> number
+    for name in ["xor", "band", "bor"] {
+        register_binary(ctx, name, Type::Bytes, Type::Bytes, Type::Bytes);
+        register_binary(ctx, name, Type::Number, Type::Number, Type::Number);
+    }
 
     // bnot: (bytes) -> bytes
     register_unary(ctx, "bnot", Type::Bytes, Type::Bytes);

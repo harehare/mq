@@ -5621,3 +5621,57 @@ fn test_char_at_sees_mutation_of_an_indexed_string() {
     assert_eq!(char_at(&s, number::Number::from(-1)), Some('あ'));
     assert_eq!(char_at(&s, number::Number::from(2000)), Some('あ'));
 }
+
+// =========================================================================
+// band, bor, xor on numbers
+// =========================================================================
+
+#[rstest]
+#[case::band("band", 12, 10, 8)]
+#[case::bor("bor", 12, 10, 14)]
+#[case::xor("xor", 12, 10, 6)]
+#[case::band_with_zero("band", 9_007_199_254_740_991, 0, 0)]
+#[case::band_keeps_the_low_bits("band", 9_007_199_254_740_991, 12, 12)]
+#[case::bor_above_32_bits("bor", 4_503_599_627_370_496, 1, 4_503_599_627_370_497)]
+#[case::xor_clears_the_same_bits("xor", 9_007_199_254_740_991, 9_007_199_254_740_991, 0)]
+#[case::xor_flips_the_low_bit("xor", 9_007_199_254_740_991, 1, 9_007_199_254_740_990)]
+fn test_bitwise_numbers(#[case] name: &str, #[case] a: i64, #[case] b: i64, #[case] expected: i64) {
+    assert_eq!(
+        call(
+            name,
+            vec![RuntimeValue::Number(a.into()), RuntimeValue::Number(b.into())]
+        ),
+        Ok(RuntimeValue::Number(expected.into()))
+    );
+}
+
+#[rstest]
+#[case::negative("band", (-1).into(), "-1")]
+#[case::too_large("bor", 9_007_199_254_740_992i64.into(), "9007199254740992")]
+#[case::fraction("xor", 1.5.into(), "1.5")]
+fn test_bitwise_numbers_reject_what_they_cannot_hold(
+    #[case] name: &str,
+    #[case] bad: crate::number::Number,
+    #[case] shown: &str,
+) {
+    assert_eq!(
+        call(name, vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(bad)]),
+        Err(Error::Runtime(format!(
+            "{name}: expected an integer from 0 to 2^53 - 1, got {shown}"
+        )))
+    );
+}
+
+#[test]
+fn test_bitwise_numbers_do_not_mix_with_bytes() {
+    assert!(
+        call(
+            "band",
+            vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Bytes(Shared::new(vec![1]))
+            ]
+        )
+        .is_err()
+    );
+}

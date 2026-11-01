@@ -703,7 +703,7 @@ fn hash_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(hash::hash53(s.as_bytes(), 0).into())),
         [RuntimeValue::String(s), RuntimeValue::Number(seed)] if seed.is_int() => {
-            if seed.value() < 0.0 || seed.value() >= hash::SEED_LIMIT {
+            if seed.value() < 0.0 || seed.value() >= hash::INT_LIMIT {
                 return Err(Error::Runtime(format!(
                     "hash: the seed must be an integer from 0 to 2^53 - 1, got {}",
                     seed.value()
@@ -975,6 +975,24 @@ fn encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+/// Combines two integers from 0 to `2^53 - 1` bit by bit.
+fn bitwise_numbers(
+    ident: &Ident,
+    a: &number::Number,
+    b: &number::Number,
+    op: fn(u64, u64) -> u64,
+) -> Result<RuntimeValue, Error> {
+    for n in [a, b] {
+        if !n.is_int() || n.value() < 0.0 || n.value() >= hash::INT_LIMIT {
+            return Err(Error::Runtime(format!(
+                "{ident}: expected an integer from 0 to 2^53 - 1, got {}",
+                n.value()
+            )));
+        }
+    }
+    Ok(RuntimeValue::Number(op(a.to_int() as u64, b.to_int() as u64).into()))
+}
+
 #[mq_macros::mq_fn(name = "xor", params = Fixed(2))]
 fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -990,6 +1008,7 @@ fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 b1.iter().zip(b2.iter()).map(|(a, b)| a ^ b).collect(),
             )))
         }
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => bitwise_numbers(ident, a, b, |a, b| a ^ b),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -1013,6 +1032,7 @@ fn band_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                 b1.iter().zip(b2.iter()).map(|(a, b)| a & b).collect(),
             )))
         }
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => bitwise_numbers(ident, a, b, |a, b| a & b),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
@@ -1036,6 +1056,7 @@ fn bor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 b1.iter().zip(b2.iter()).map(|(a, b)| a | b).collect(),
             )))
         }
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => bitwise_numbers(ident, a, b, |a, b| a | b),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
