@@ -3024,6 +3024,7 @@ fn div_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             }
         }
         [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
+            (RuntimeValue::Number(_), RuntimeValue::Number(n2)) if n2.is_zero() => Err(Error::ZeroDivision),
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 / n2).into()),
             (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
             _ => Err(Error::InvalidTypes(
@@ -3061,8 +3062,15 @@ fn mul_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 #[mq_macros::mq_fn(name = "mod", params = Fixed(2))]
 fn mod_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 % *n2).into()),
+        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => {
+            if n2.is_zero() {
+                Err(Error::ZeroDivision)
+            } else {
+                Ok((*n1 % *n2).into())
+            }
+        }
         [a, b] => match (convert::to_number(a)?, convert::to_number(b)?) {
+            (RuntimeValue::Number(_), RuntimeValue::Number(n2)) if n2.is_zero() => Err(Error::ZeroDivision),
             (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) => Ok((n1 % n2).into()),
             _ => Err(Error::InvalidTypes(
                 ident.to_string(),
