@@ -16,11 +16,7 @@ For other file types or custom filtering, use a shell glob or `walk_files`.
 
 Text input (files and stdin) is read as UTF-8. A UTF-8 BOM is removed, and UTF-16 (LE or BE) is decoded when the input starts with a BOM, such as a file written by Windows PowerShell's `>`. Output is always UTF-8.
 
-Other encodings are an error that suggests converting first:
-
-```sh
-iconv -f SHIFT_JIS -t UTF-8 file.md | mq '.h1'
-```
+Any other encoding, including UTF-32, is an error that asks you to re-save the input as UTF-8.
 
 ## Output formats
 

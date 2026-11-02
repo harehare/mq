@@ -2136,7 +2136,7 @@ fn test_non_utf8_input_reports_encoding_hint() {
     let result = cmd.arg(".h1").arg(&path).assert().failure().code(2);
     let stderr = String::from_utf8_lossy(&result.get_output().stderr);
     assert!(stderr.contains("not valid UTF-8"));
-    assert!(stderr.contains("iconv"));
+    assert!(stderr.contains("Re-save the input as UTF-8"));
 }
 
 #[test]

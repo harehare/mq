@@ -18,14 +18,16 @@ const MAX_BOM_LEN: u64 = 4;
 type ToUnit = fn([u8; 2]) -> u16;
 
 enum Encoding {
-    Utf8 { bom_len: usize },
+    Utf8,
+    Utf8Bom,
     Utf16(ToUnit),
 }
 
 impl Encoding {
     fn bom_len(&self) -> usize {
         match self {
-            Self::Utf8 { bom_len } => *bom_len,
+            Self::Utf8 => 0,
+            Self::Utf8Bom => UTF8_BOM.len(),
             Self::Utf16(_) => UTF16LE_BOM.len(),
         }
     }
@@ -36,7 +38,7 @@ fn detect(head: &[u8]) -> miette::Result<Encoding> {
     // UTF-32 BOMs are checked first because `FF FE 00 00` also starts with the UTF-16LE BOM.
     if head.starts_with(&UTF32LE_BOM) || head.starts_with(&UTF32BE_BOM) {
         return Err(miette!(
-            help = "convert it first, e.g. `iconv -f UTF-32 -t UTF-8 file | mq ...`",
+            help = "re-save the input as UTF-8, or as UTF-16 with a BOM",
             "UTF-32 input is not supported"
         ));
     }
@@ -45,11 +47,9 @@ fn detect(head: &[u8]) -> miette::Result<Encoding> {
     } else if head.starts_with(&UTF16BE_BOM) {
         Encoding::Utf16(u16::from_be_bytes)
     } else if head.starts_with(&UTF8_BOM) {
-        Encoding::Utf8 {
-            bom_len: UTF8_BOM.len(),
-        }
+        Encoding::Utf8Bom
     } else {
-        Encoding::Utf8 { bom_len: 0 }
+        Encoding::Utf8
     })
 }
 
@@ -59,7 +59,7 @@ pub(super) fn decode_text(mut bytes: Vec<u8>) -> miette::Result<String> {
     let bom_len = encoding.bom_len();
     match encoding {
         Encoding::Utf16(to_unit) => decode_utf16(&bytes[bom_len..], to_unit),
-        Encoding::Utf8 { bom_len } => {
+        Encoding::Utf8 | Encoding::Utf8Bom => {
             bytes.drain(..bom_len);
             String::from_utf8(bytes).map_err(|e| invalid_utf8(e.as_bytes(), bom_len + e.utf8_error().valid_up_to()))
         }
@@ -79,7 +79,7 @@ pub(super) fn lines<'a, R: BufRead + 'a>(
     let body = head.split_off(encoding.bom_len());
     let reader = io::Cursor::new(body).chain(reader);
     Ok(match encoding {
-        Encoding::Utf8 { .. } => Box::new(reader.lines().map(|line| line.into_diagnostic())),
+        Encoding::Utf8 | Encoding::Utf8Bom => Box::new(reader.lines().map(|line| line.into_diagnostic())),
         Encoding::Utf16(to_unit) => Box::new(Utf16Lines {
             reader,
             to_unit,
@@ -187,9 +187,9 @@ fn decode_utf16(bytes: &[u8], to_unit: ToUnit) -> miette::Result<String> {
 fn invalid_utf8(bytes: &[u8], offset: usize) -> miette::Report {
     let sample = &bytes[..bytes.len().min(SNIFF_LEN)];
     let help = if sample.iter().filter(|&&b| b == 0).count() * 4 >= sample.len().max(1) {
-        "this looks like UTF-16 without a BOM. Convert it first, e.g. `iconv -f UTF-16LE -t UTF-8 file | mq ...` (UTF-16BE for big endian)"
+        "this looks like UTF-16 without a BOM. Re-save the input as UTF-8, or as UTF-16 with a BOM"
     } else {
-        "this may be UTF-16 or another encoding. Convert it first, e.g. `iconv -f <encoding> -t UTF-8 file | mq ...`"
+        "this may be UTF-16 or another encoding. Re-save the input as UTF-8"
     };
     miette!(
         help = help,
