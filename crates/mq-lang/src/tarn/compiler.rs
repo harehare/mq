@@ -401,18 +401,13 @@ fn compile_engine_program<R: ModuleResolver>(
     .map(|(compiled, _)| compiled)
 }
 
-/// Module var values the caller already computed once. See
-/// `super::resolve_module_prelude_globals`. `by_path` covers `include`/`import`; `by_token`
-/// covers inline `module { .. }` blocks' own `let`s, keyed by each `let`'s token id since an
-/// inline block has no path.
 #[derive(Clone, Default)]
 pub(crate) struct ResolvedModuleVars {
     pub(super) by_path: FxHashMap<String, Vec<(Ident, RuntimeValue)>>,
     pub(super) by_token: FxHashMap<TokenId, RuntimeValue>,
 }
 
-/// Bundles `compile_program_impl`'s predeclared-binding inputs so it takes one argument
-/// instead of four.
+/// Bundles `compile_program_impl`'s predeclared-binding inputs so it takes one argument instead of four.
 #[derive(Clone, Copy)]
 pub(crate) struct CompileSeeds<'a> {
     pub(super) seed_bindings: &'a [Ident],
@@ -2755,6 +2750,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::IndexAssign(ident, index, value) => self.compile_index_assign(ident.name, index, value),
             Expr::Assign(ident, value) => {
                 if self.compile_add_assign_local(ident.name, value)?
+                    || self.compile_add_assign_upvalue(ident.name, value)?
                     || self.compile_set_assign_local(ident.name, value)?
                 {
                     return Ok(());
@@ -3356,18 +3352,11 @@ impl<R: ModuleResolver> Compiler<R> {
         (keys.len() >= 2).then_some((keys, PathLeaf::Set(leaf)))
     }
 
-    /// Whether a function nested in the current one uses `name`. The in-place update opcodes
-    /// read the local after their operands run, so a call in an operand could change what they
-    /// start from; the generic read-first sequence is used for such locals.
     fn is_used_by_nested_function(&mut self, name: Ident) -> bool {
         self.scope_mut()
             .is_used_by_nested_function(name, names_used_in_nested_functions)
     }
 
-    /// Compiles `x = x + rhs` on a mutable local `x` into an opcode that appends to the local in
-    /// place; reading `x` first would leave a second reference alive and copy it on every append.
-    ///
-    /// Returns `false`, emitting nothing, for any other assignment.
     fn compile_add_assign_local(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
         let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
             return Ok(false);
@@ -3380,7 +3369,7 @@ impl<R: ModuleResolver> Compiler<R> {
             || !matches!(&lhs.expr, Expr::Ident(ident) if ident.name == name)
             || matches!(rhs.expr, Expr::Literal(_))
             || self.current_local_slot(rhs).is_some()
-            || self.is_used_by_nested_function(name)
+            || (self.is_used_by_nested_function(name) && !self.cannot_run_user_code(rhs))
         {
             return Ok(false);
         }
@@ -3393,10 +3382,48 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(true)
     }
 
-    /// Compiles `x = set(x, key, value)` on a mutable local `x` as `x[key] = value`; reading `x`
-    /// first would leave a second reference alive and copy the collection on every update.
-    ///
-    /// Returns `false`, emitting nothing, for any other assignment.
+    fn compile_add_assign_upvalue(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
+        let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
+            return Ok(false);
+        };
+        let Some(Resolved::Upvalue {
+            index,
+            immutable: false,
+        }) = self.resolve(name)
+        else {
+            return Ok(false);
+        };
+        if !matches!(&lhs.expr, Expr::Ident(ident) if ident.name == name) || !self.cannot_run_user_code(rhs) {
+            return Ok(false);
+        }
+
+        let token_id = self.current_token_id;
+        self.compile_expr(rhs)?;
+        self.set_call_token_id(token_id);
+        self.emit(OpCode::AddAssignUpvalue(index));
+        self.emit(OpCode::GetLocal(SELF_SLOT));
+        Ok(true)
+    }
+
+    fn cannot_run_user_code(&mut self, node: &Shared<Node>) -> bool {
+        match &node.expr {
+            Expr::Literal(_) | Expr::Ident(_) | Expr::Env(_) => true,
+            Expr::BinaryOp(_, a, b) | Expr::Index(a, b) => self.cannot_run_user_code(a) && self.cannot_run_user_code(b),
+            Expr::UnaryOp(_, operand) => self.cannot_run_user_code(operand),
+            Expr::Array(args) | Expr::Dict(args) => args.iter().all(|arg| self.cannot_run_user_code(arg)),
+            Expr::And(operands) | Expr::Or(operands) => {
+                operands.iter().all(|operand| self.cannot_run_user_code(operand))
+            }
+            Expr::Call(ident, args) => {
+                self.resolve(ident.name).is_none()
+                    && self.scope_mut().shadowed_builtin != Some(ident.name)
+                    && builtin::get_builtin_functions(&ident.name).is_some()
+                    && args.iter().all(|arg| self.cannot_run_user_code(arg))
+            }
+            _ => false,
+        }
+    }
+
     fn compile_set_assign_local(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
         let Some(args) = self.unshadowed_builtin_args(value, builtins::SET.into(), 3) else {
             return Ok(false);
@@ -3676,11 +3703,6 @@ impl<R: ModuleResolver> Compiler<R> {
             .map(|args| &args[0])
     }
 
-    /// Compiles `node` as a branch on its truthiness, without building a value.
-    ///
-    /// Returns the jumps taken when the truthiness equals `jump_when`, for the caller to patch;
-    /// otherwise execution falls through. `&&`, `||` and `!` become jumps, so there is no
-    /// `Dup`/`Pop`, no intermediate boolean and no builtin call.
     fn compile_branch(&mut self, node: &Shared<Node>, jump_when: bool) -> CompileResult<Vec<usize>> {
         if let Some(operand) = self.negated_operand(node) {
             self.begin_node(node);

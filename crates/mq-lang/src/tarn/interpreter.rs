@@ -22,10 +22,10 @@ use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selec
 use super::bytecode::stack_effect;
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
 use super::compiler::CompiledProgram;
-#[cfg(feature = "debugger")]
-use super::value::Cell;
 use super::value::ClosureValue;
-use super::value::{Closure, Locals, StackValue, read_cell, resolve_weak_coroutines, write_cell};
+use super::value::{
+    Cell, Closure, Locals, StackValue, add_to_cell_in_place, read_cell, resolve_weak_coroutines, write_cell,
+};
 #[cfg(feature = "debugger")]
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
@@ -527,6 +527,9 @@ fn append_to_string_local(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -
 /// paths decline.
 #[inline(never)]
 fn add_to_local_in_place(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -> VmResult<bool> {
+    if let Some(cell) = locals.captured_cell(local) {
+        return add_to_cell_in_place(cell, rhs).map_err(VmError::Builtin);
+    }
     match locals.direct_runtime_value_mut(local) {
         Some(target @ (RuntimeValue::String(_) | RuntimeValue::Array(_))) => {
             builtin::add_in_place(target, rhs).map_err(VmError::Builtin)
@@ -698,6 +701,32 @@ fn add_assign_local(
             execution.host_functions,
         )?;
         locals.set(slot, StackValue::Value(result));
+    }
+    Ok(())
+}
+
+/// Runs `AddAssignUpvalue`: `upvalue = upvalue + rhs`, in place when the variable is a string or
+/// array.
+#[inline(never)]
+fn add_assign_upvalue(
+    cell: &Cell,
+    rhs: RuntimeValue,
+    locals: &mut Locals,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<()> {
+    if !add_to_cell_in_place(cell, &rhs).map_err(VmError::Builtin)? {
+        let lhs = into_runtime_value(read_cell(cell), chunks);
+        let result = eval_binary_op(
+            BinaryOp::Add,
+            lhs,
+            rhs,
+            locals,
+            chunks,
+            execution.env,
+            execution.host_functions,
+        )?;
+        write_cell(cell, StackValue::Value(result));
     }
     Ok(())
 }
@@ -1505,6 +1534,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 locals.set(*destination, value);
             }
             OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
+            OpCode::AddAssignUpvalue(idx) => {
+                let rhs = pop_value!();
+                add_assign_upvalue(&upvalues[*idx as usize], rhs, locals, chunks, execution)
+                    .map_err(|e| locate(chunk, ip, e))?;
+            }
             OpCode::SetUpvalue(idx) => {
                 let v = pop!();
                 write_cell(&upvalues[*idx as usize], v);

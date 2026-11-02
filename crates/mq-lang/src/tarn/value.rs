@@ -504,6 +504,18 @@ impl Locals {
         }
     }
 
+    /// The cell behind a local that a closure captures, or `None` for a directly stored slot.
+    #[inline(always)]
+    pub(crate) fn captured_cell(&self, _slot: u16) -> Option<&Cell> {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(_) => None,
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid(hybrid) => hybrid.captured[_slot as usize].as_ref(),
+            Locals::Boxed(slots) => Some(&slots[_slot as usize]),
+        }
+    }
+
     /// Breaks self-reference cycles in every captured cell this frame's locals hold, returning
     /// `(replacement_cell, weak_original)` pairs for `resume` to resync on next entry (see
     /// [`sanitize_nested_self_reference`] and [`weak_coroutine_cell`]).
@@ -754,6 +766,22 @@ pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Opti
         let value = cell.read().unwrap();
         matches!(&*value, StackValue::Value(RuntimeValue::Coroutine(value)) if same_handle(value, handle))
             .then(|| new_cell(StackValue::WeakCoroutine(downgrade_handle(handle))))
+    }
+}
+
+/// Applies `cell + rhs` to a string or array held directly in `cell`, without copying it when
+/// the cell is its only owner. Returns `false`, leaving the cell untouched, for any other
+/// combination.
+pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bool, crate::runtime::builtin::Error> {
+    #[cfg(not(feature = "sync"))]
+    let mut guard = cell.borrow_mut();
+    #[cfg(feature = "sync")]
+    let mut guard = cell.write().unwrap();
+    match &mut *guard {
+        StackValue::Value(target @ (RuntimeValue::String(_) | RuntimeValue::Array(_))) => {
+            crate::runtime::builtin::add_in_place(target, rhs)
+        }
+        _ => Ok(false),
     }
 }
 

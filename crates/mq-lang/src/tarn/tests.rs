@@ -653,6 +653,87 @@ fn add_assignment_appends_to_local_in_place_preserving_value_semantics(#[case] c
 }
 
 #[rstest]
+#[case::array("var a = [] | def f(x): a += [x]; | f(1) | f(2) | a == [1, 2]")]
+#[case::string(r#"var s = "a" | def f(x): s += x; | f("b") | f("c") | s == "abc""#)]
+#[case::number("var n = 1 | def f(x): n += x; | f(2) | f(3) | n == 6")]
+#[case::fn_literal("var a = [] | var f = fn(x): a += [x]; | f(1) | f(2) | a == [1, 2]")]
+#[case::self_append("var a = [1, 2] | def f(): a += a; | f() | a == [1, 2, 1, 2]")]
+#[case::rhs_reads_variable("var a = [1] | def f(): a += [len(a)]; | f() | f() | a == [1, 1, 2]")]
+#[case::alias_keeps_original("var a = [1] | var b = a | def f(): a += [2]; | f() | b == [1] && a == [1, 2]")]
+#[case::alias_taken_inside(
+    "var a = [1] | var seen = [] | def f(): seen += [a] | a += [2]; | f() | f() | seen == [[1], [1, 2]]"
+)]
+#[case::unsupported_operands_fall_back("var n = None | def f(): n += 1; | f() | n == 1")]
+#[case::two_levels("var a = [] | def f(): def g(x): a += [x]; | g(1) | g(2); | f() | a == [1, 2]")]
+#[case::try_body("var a = [] | (try: do a += [1] | error(\"x\") end catch: a += [2]) | a == [1, 2]")]
+#[case::loop_in_closure(
+    "var a = [] | def f(n): var i = 0 | while (i < n): a += [i] | i += 1 end; | f(3) | a == [0, 1, 2]"
+)]
+fn add_assignment_appends_to_captured_variable_preserving_value_semantics(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::array_array("var a = range(0, 999999) | def f(): a += [1, 2]; | f()")]
+#[case::array_element("var a = range(0, 999999) | def f(): a += 1; | f()")]
+fn add_assignment_to_captured_variable_respects_array_size_limit(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code}");
+}
+
+#[test]
+fn failed_add_assignment_keeps_captured_variable_intact() {
+    assert_eq!(
+        run("var a = range(0, 999999) | def f(): a += [1, 2]; | (try: f() catch: None) | len(a)"),
+        RuntimeValue::from(1_000_000)
+    );
+}
+
+#[rstest]
+#[case::add_assign_array("var a = [1] | def g(): a = [9] | [0]; | def f(): a = a + g(); | f() | a == [1, 0]")]
+#[case::compound_array("var a = [1] | def g(): a = [9] | [0]; | def f(): a += g(); | f() | a == [1, 0]")]
+#[case::number("var x = 1 | def g(): x = 10 | 0; | def f(): x += g(); | f() | x == 1")]
+#[case::through_builtin_argument("var a = [1] | def g(): a = [9] | 0; | def f(): a += [g()]; | f() | a == [1, 0]")]
+#[case::through_fn_literal("var a = [1] | var g = fn(): a = [9] | [0]; | def f(): a += g(); | f() | a == [1, 0]")]
+fn captured_variable_is_read_before_operands_that_call_user_code_run(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::array("var a = [] | def f(x): a += [x]; | f(1)", true)]
+#[case::compound_with_builtin_call(r#"var s = "" | def f(x): s += upcase(x); | f("a")"#, true)]
+#[case::user_function_in_operand("var a = [] | def g(): [1]; | def f(): a += g(); | f()", false)]
+#[case::closure_call_in_operand("var a = [] | def f(g): a += g(); | f(fn(): [1];)", false)]
+#[case::immutable_binding_untouched("let a = [] | def f(): a; | f()", false)]
+fn add_assignment_to_captured_variable_compiles_to_in_place_opcode(#[case] code: &str, #[case] expected: bool) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert_eq!(
+        compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(|op| matches!(op, super::bytecode::OpCode::AddAssignUpvalue(_))),
+        expected,
+        "{:?}",
+        compiled.chunks
+    );
+}
+
+#[rstest]
+#[case::closure_sees_appended_value("var a = [] | def n(): len(a); | a += [1] | a += [2] | n() == 2")]
+#[case::closure_appends_too("var a = [] | def f(x): a += [x]; | a += [1] | f(2) | a += [3] | a == [1, 2, 3]")]
+#[case::alias_keeps_original("var a = [1] | var b = a | def n(): len(a); | a += [2] | b == [1] && n() == 2")]
+#[case::string(r#"var s = "a" | def n(): len(s); | s += "b" | s += "c" | n() == 3"#)]
+#[case::self_append("var a = [1] | def n(): len(a); | a += a | n() == 2")]
+#[case::unsupported_operands_fall_back("var x = None | def n(): x; | x += 1 | n() == 1")]
+#[case::while_loop("var a = [] | var i = 0 | def n(): len(a); | while (i < 3): a += [i] | i += 1 end | n() == 3")]
+fn add_assignment_appends_to_local_captured_by_a_closure_preserving_value_semantics(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
 #[case::array_array("var a = range(0, 999999) | a += [1, 2]")]
 #[case::array_element("var a = range(0, 999999) | a += 1")]
 fn add_assignment_respects_array_size_limit(#[case] code: &str) {
@@ -746,8 +827,7 @@ fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
 #[case::nested_set_captured("var a = [[1]] | def f(): a; | a[0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
 #[case::index_set_captured("var a = [1] | def f(): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::index_set_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
-#[case::add_array_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
-#[case::add_array_captured("var a = [1] | def f(): a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::add_array_operand_calls_user_code("var a = [1] | def f(): a; | a += f()", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 #[case::set_assign_captured("var a = [1] | def f(): a; | a = set(a, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::set_assign_other_target("var a = [1] | var b = [2] | a = set(b, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected: fn(&super::bytecode::OpCode) -> bool) {
@@ -776,6 +856,8 @@ fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected:
 #[case::path_add_compound("var d = {\"k\": []} | d[\"k\"] += [1]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignPathLocal { depth: 1, .. }))]
 #[case::path_add_nested("var d = {\"k\": [[1]]} | d[\"k\"][0] += [1]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignPathLocal { depth: 2, .. }))]
 #[case::add_array("var a = [1] | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::add_array_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::add_array_captured_by_closure("var a = [1] | def f(): a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 #[case::set_assign_dict("var d = {} | d = set(d, \"a\", 1)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::set_assign_array("var a = [1] | a = set(a, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::index_set_other_function_param("var a = [1] | def f(a): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]

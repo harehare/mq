@@ -256,6 +256,9 @@ pub(crate) enum OpCode {
     },
     /// Pops an operand and applies `local + operand` to the local in place where possible.
     AddAssignLocal(u16),
+    /// Pops an operand and applies `upvalue + operand` to the captured variable in place where
+    /// possible, so appending to a variable of an enclosing function does not copy it.
+    AddAssignUpvalue(u16),
     /// Clones the top operand into one local, then pops it into another local.
     SetLocalAndCopy {
         source: u16,
@@ -606,6 +609,7 @@ impl OpCode {
             | Self::PushNone
             | Self::GetUpvalue(_)
             | Self::SetUpvalue(_)
+            | Self::AddAssignUpvalue(_)
             | Self::MakeStaticClosure(_)
             | Self::Pop
             | Self::Dup
@@ -691,6 +695,7 @@ impl OpCode {
             Self::SetPathLocal { .. } => "SetPathLocal",
             Self::AddAssignPathLocal { .. } => "AddAssignPathLocal",
             Self::AddAssignLocal(_) => "AddAssignLocal",
+            Self::AddAssignUpvalue(_) => "AddAssignUpvalue",
             Self::SetLocalAndCopy { .. } => "SetLocalAndCopy",
             Self::SetLocalAndCopyAndJump { .. } => "SetLocalAndCopyAndJump",
             Self::SetLocalConst { .. } => "SetLocalConst",
@@ -1536,7 +1541,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                     verify_jump_target(chunk.code.len(), chunk_index, pc, *exit_offset)?;
                 }
-                OpCode::GetUpvalue(index) | OpCode::SetUpvalue(index) => {
+                OpCode::GetUpvalue(index) | OpCode::SetUpvalue(index) | OpCode::AddAssignUpvalue(index) => {
                     if *index as usize >= chunk.upvalue_names.len() {
                         return Err(BytecodeError::UpvalueOutOfBounds {
                             chunk: chunk_index,
@@ -1926,6 +1931,7 @@ pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::SetLocalAndCopy { .. }
         | OpCode::SetLocalAndCopyAndJump { .. }
         | OpCode::SetUpvalue(_)
+        | OpCode::AddAssignUpvalue(_)
         | OpCode::Pop
         | OpCode::ForeachCollect(_)
         | OpCode::ForeachCollectAndJump { .. } => (1, 0),
