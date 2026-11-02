@@ -31,6 +31,7 @@ use mq_help as help;
 mod bytecode;
 mod exit_status;
 mod mqc;
+mod text_input;
 
 /// A file's query prefix and, for a `.mqc` program, its input format.
 type ProgramKey = (Option<String>, Option<String>);
@@ -2982,32 +2983,34 @@ impl Cli {
     where
         F: FnMut(Option<&PathBuf>, usize, String) -> miette::Result<()>,
     {
-        // If files are specified, process each file line by line
         if let Some(files) = self.resolved_files()? {
             for file in &files {
                 if Self::is_stdin_path(file) {
-                    for (i, line_result) in io::BufReader::new(io::stdin().lock()).lines().enumerate() {
-                        process(None, i + 1, line_result.into_diagnostic()?)?;
-                    }
+                    Self::process_reader_lines(io::stdin().lock(), None, &mut process)?;
                     continue;
                 }
                 let file_handle = fs::File::open(file)
                     .into_diagnostic()
                     .wrap_err_with(|| ReadFailure(file.clone()))?;
-                let reader = io::BufReader::new(file_handle);
-                for (i, line_result) in reader.lines().enumerate() {
-                    let line = line_result.into_diagnostic()?;
-                    process(Some(file), i + 1, line)?;
-                }
+                Self::process_reader_lines(io::BufReader::new(file_handle), Some(file), &mut process)?;
             }
         } else {
-            // Otherwise, process stdin line by line
-            let stdin = io::stdin();
-            let reader = io::BufReader::new(stdin.lock());
-            for (i, line_result) in reader.lines().enumerate() {
-                let line = line_result.into_diagnostic()?;
-                process(None, i + 1, line)?;
-            }
+            Self::process_reader_lines(io::stdin().lock(), None, &mut process)?;
+        }
+        Ok(())
+    }
+
+    fn process_reader_lines<R, F>(reader: R, file: Option<&PathBuf>, process: &mut F) -> miette::Result<()>
+    where
+        R: BufRead,
+        F: FnMut(Option<&PathBuf>, usize, String) -> miette::Result<()>,
+    {
+        let wrap = |e: miette::Report| match file {
+            Some(f) => e.wrap_err(ReadFailure(f.clone())),
+            None => e,
+        };
+        for (i, line) in text_input::lines(reader).map_err(wrap)?.enumerate() {
+            process(file, i + 1, line.map_err(wrap)?)?;
         }
         Ok(())
     }
@@ -3134,9 +3137,9 @@ impl Cli {
             io::stdin().read_to_end(&mut buf).into_diagnostic()?;
             Ok(buf.into())
         } else {
-            let mut input = String::new();
-            io::stdin().read_to_string(&mut input).into_diagnostic()?;
-            Ok(input.into())
+            let mut buf = Vec::new();
+            io::stdin().read_to_end(&mut buf).into_diagnostic()?;
+            Ok(text_input::decode_text(buf)?.into())
         }
     }
 
@@ -3150,12 +3153,16 @@ impl Cli {
                 let content = if InputFormat::is_gzip_path(file) {
                     self.read_gzip_file(file)?
                 } else {
-                    let read = if self.needs_binary_read_for_file(file) {
-                        fs::read(file).map(ContentData::from)
+                    let bytes = fs::read(file)
+                        .into_diagnostic()
+                        .wrap_err_with(|| ReadFailure(file.clone()))?;
+                    if self.needs_binary_read_for_file(file) {
+                        ContentData::Bytes(bytes)
                     } else {
-                        fs::read_to_string(file).map(ContentData::from)
-                    };
-                    read.into_diagnostic().wrap_err_with(|| ReadFailure(file.clone()))?
+                        text_input::decode_text(bytes)
+                            .map(ContentData::Text)
+                            .wrap_err_with(|| ReadFailure(file.clone()))?
+                    }
                 };
                 Ok((Some(file.clone()), content))
             })
@@ -3177,13 +3184,9 @@ impl Cli {
         if fmt.needs_binary_read() {
             Ok(ContentData::Bytes(decompressed))
         } else {
-            String::from_utf8(decompressed).map(ContentData::Text).map_err(|e| {
-                miette!(
-                    "{} does not contain valid UTF-8 after decompression: {}",
-                    file.display(),
-                    e
-                )
-            })
+            text_input::decode_text(decompressed)
+                .map(ContentData::Text)
+                .wrap_err_with(|| ReadFailure(file.to_path_buf()))
         }
     }
 
