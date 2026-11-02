@@ -34,11 +34,12 @@ impl Number {
         self.0 as i64
     }
 
-    /// Returns `true` if the number represents an integer value.
+    /// Returns `true` if the number is exactly an integer.
     ///
-    /// Uses epsilon comparison to account for floating-point precision.
+    /// A tiny non-zero value such as `1e-17` is not an integer. NaN and the infinities are not
+    /// either.
     pub fn is_int(&self) -> bool {
-        (self.0 - self.0.trunc()).abs() < f64::EPSILON
+        self.0.fract() == 0.0
     }
 
     /// Returns the absolute value of this number.
@@ -121,16 +122,23 @@ impl From<f64> for Number {
     }
 }
 
+/// Magnitudes from here up, and non-zero magnitudes below `EXPONENT_BELOW`, are written in
+/// exponent notation (`1e21`, `1.5e-7`), the same cut-offs as JavaScript's `Number#toString`.
+const EXPONENT_FROM: f64 = 1e21;
+const EXPONENT_BELOW: f64 = 1e-6;
+
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // `as i64` saturates beyond i64's range, so guard against it here.
-        if self.is_int() && self.0 >= I64_MIN_F64 && self.0 < I64_MAX_BOUND_F64 {
-            write!(f, "{}", self.0 as i64)
-        } else if self.is_int() {
-            write!(f, "{}", self.0)
-        } else {
+        let value = self.0;
+        let magnitude = value.abs();
+        if (magnitude >= EXPONENT_FROM && magnitude.is_finite()) || (magnitude > 0.0 && magnitude < EXPONENT_BELOW) {
             // Shortest representation that round-trips, so no precision is lost.
-            write!(f, "{}", self.0)
+            write!(f, "{value:e}")
+        } else if value.fract() == 0.0 && (I64_MIN_F64..I64_MAX_BOUND_F64).contains(&value) {
+            // `as i64` saturates beyond i64's range, so guard against it here.
+            write!(f, "{}", value as i64)
+        } else {
+            write!(f, "{value}")
         }
     }
 }
@@ -243,7 +251,24 @@ mod tests {
     #[case(42.100, "42.1")]
     #[case(42.0000001, "42.0000001")]
     #[case(0.1234567, "0.1234567")]
-    #[case(1.0e-7, "0.0000001")]
+    #[case(0.000001, "0.000001")]
+    #[case(1.0e-7, "1e-7")]
+    #[case(-1.5e-10, "-1.5e-10")]
+    #[case(1.0e-17, "1e-17")]
+    #[case(5e-324, "5e-324")]
+    #[case(f64::MIN_POSITIVE, "2.2250738585072014e-308")]
+    #[case(123456789.12345679, "123456789.12345679")]
+    #[case(100000000000000000.0, "100000000000000000")]
+    #[case(9007199254740993.0, "9007199254740992")]
+    #[case(999999999999999900000.0, "999999999999999900000")]
+    #[case(1.0e21, "1e21")]
+    #[case(-1.0e21, "-1e21")]
+    #[case(1.5e300, "1.5e300")]
+    #[case(f64::MAX, "1.7976931348623157e308")]
+    #[case(f64::INFINITY, "inf")]
+    #[case(f64::NEG_INFINITY, "-inf")]
+    #[case(f64::NAN, "NaN")]
+    #[case(-0.0, "0")]
     #[case(-42.0, "-42")]
     #[case(-42.123, "-42.123")]
     #[case(0.0, "0")]
@@ -256,10 +281,27 @@ mod tests {
     #[test]
     fn test_display_beyond_i64_range_does_not_saturate() {
         let big = Number::new(2f64.powf(100.0));
-        assert_eq!(format!("{}", big), "1267650600228229400000000000000");
+        assert_eq!(format!("{}", big), "1.2676506002282294e30");
 
         let small = Number::new(-(2f64.powf(100.0)));
-        assert_eq!(format!("{}", small), "-1267650600228229400000000000000");
+        assert_eq!(format!("{}", small), "-1.2676506002282294e30");
+
+        let between = Number::new(2f64.powf(66.0));
+        assert_eq!(format!("{}", between), "73786976294838210000");
+    }
+
+    #[rstest]
+    #[case(1.0e-7)]
+    #[case(1.0e-17)]
+    #[case(5e-324)]
+    #[case(1.0e21)]
+    #[case(1.5e300)]
+    #[case(f64::MAX)]
+    #[case(-f64::MIN_POSITIVE)]
+    #[case(0.1 + 0.2 - 0.3)]
+    fn test_display_round_trips_through_parsing(#[case] input: f64) {
+        let text = Number::new(input).to_string();
+        assert_eq!(text.parse::<f64>().unwrap(), input, "{text}");
     }
 
     #[rstest]
@@ -305,6 +347,32 @@ mod tests {
     #[test]
     fn test_nan_sorts_last_in_total_order() {
         assert_eq!(Number::new(f64::NAN).cmp(&Number::new(0.0)), Ordering::Greater);
+    }
+
+    #[rstest]
+    #[case(5.0, 1e-17)]
+    #[case(5.0, 3e-17)]
+    #[case(-5.0, 1e-300)]
+    #[case(1e-17, 3.0)]
+    #[case(1e-17, 1e-18)]
+    fn test_rem_with_tiny_operands_matches_fmod(#[case] a: f64, #[case] b: f64) {
+        assert_eq!((Number::new(a) % Number::new(b)).value(), a % b);
+    }
+
+    #[rstest]
+    #[case(0.0, true)]
+    #[case(-0.0, true)]
+    #[case(3.0, true)]
+    #[case(-3.0, true)]
+    #[case(1e300, true)]
+    #[case(0.5, false)]
+    #[case(1e-17, false)]
+    #[case(5e-324, false)]
+    #[case(f64::NAN, false)]
+    #[case(f64::INFINITY, false)]
+    #[case(f64::NEG_INFINITY, false)]
+    fn test_is_int(#[case] value: f64, #[case] expected: bool) {
+        assert_eq!(Number::new(value).is_int(), expected);
     }
 
     #[test]

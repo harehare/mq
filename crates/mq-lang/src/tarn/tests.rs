@@ -756,6 +756,40 @@ fn dividing_by_a_tiny_non_zero_number_is_not_a_zero_division(#[case] code: &str)
 }
 
 #[rstest]
+#[case::huge("to_string(1e300) == \"1e300\"")]
+#[case::huge_fraction("to_string(1.5e22) == \"1.5e22\"")]
+#[case::just_below_the_cut_off("to_string(1e20) == \"100000000000000000000\"")]
+#[case::at_the_cut_off("to_string(1e21) == \"1e21\"")]
+#[case::computed("to_string(2 * 1e21) == \"2e21\"")]
+#[case::tiny("to_string(1e-7) == \"1e-7\"")]
+#[case::tiny_is_not_zero("to_string(1e-17) == \"1e-17\"")]
+#[case::smallest("to_string(5e-324) == \"5e-324\"")]
+#[case::just_above_the_cut_off("to_string(0.000001) == \"0.000001\"")]
+#[case::negative("to_string(-1.5e-10) == \"-1.5e-10\"")]
+#[case::interpolated_in_a_string("\"v=\" + to_string(1.5e22) == \"v=1.5e22\"")]
+#[case::tiny_remainder_is_kept("5 % 3e-17 > 0")]
+#[case::tiny_remainder_matches_fmod("5 % 1e-17 < 1e-17 && 5 % 1e-17 > 0")]
+fn numbers_with_a_large_or_small_exponent_print_in_exponent_notation(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::huge("1e300")]
+#[case::huge_fraction("1.7976931348623157e308")]
+#[case::tiny("1e-7")]
+#[case::tiny_fraction("1.5e-10")]
+#[case::smallest("5e-324")]
+#[case::rounding_error("0.1 + 0.2 - 0.3")]
+#[case::negative("-2.5e-12")]
+fn printed_numbers_parse_back_to_the_same_value(#[case] code: &str) {
+    assert_eq!(
+        run(&format!("let x = {code} | to_number(to_string(x)) == x")),
+        RuntimeValue::from(true),
+        "{code}"
+    );
+}
+
+#[rstest]
 #[case::array_array("var a = range(0, 999999) | a += [1, 2]")]
 #[case::array_element("var a = range(0, 999999) | a += 1")]
 fn add_assignment_respects_array_size_limit(#[case] code: &str) {
