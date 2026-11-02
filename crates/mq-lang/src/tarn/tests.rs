@@ -735,6 +735,27 @@ fn add_assignment_appends_to_local_captured_by_a_closure_preserving_value_semant
 }
 
 #[rstest]
+#[case::div_literal("1 / 1e-17 == 1e17")]
+#[case::div_decimal_literal("1 / 0.000000000000000001 > 9.9e17")]
+#[case::div_locals("let a = 1 | let b = 1e-17 | a / b == 1e17")]
+#[case::div_local_const("let a = 1 | a / 1e-17 == 1e17")]
+#[case::div_const_local("let b = 1e-17 | 1 / b == 1e17")]
+#[case::div_assign("var a = 1 | a /= 1e-17 | a == 1e17")]
+#[case::div_builtin("div(1, 1e-17) == 1e17")]
+#[case::div_numeric_strings(r#"div("1", "0.00000000000000001") == 1e17"#)]
+#[case::div_by_rounding_error("1 / (0.1 + 0.2 - 0.3) > 1e15")]
+#[case::div_negative("1 / -1e-17 == -1e17")]
+#[case::div_smallest_normal("1 / 2.2250738585072014e-308 > 1e307")]
+#[case::div_overflows_to_infinity("1e300 / 1e-300 == infinite()")]
+#[case::mod_literal("5 % 1e-17 < 1e-17")]
+#[case::mod_locals("let a = 5 | let b = 1e-17 | a % b < 1e-17")]
+#[case::mod_assign("var a = 5 | a %= 1e-17 | a < 1e-17")]
+#[case::mod_builtin("mod(5, 1e-17) < 1e-17")]
+fn dividing_by_a_tiny_non_zero_number_is_not_a_zero_division(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
 #[case::array_array("var a = range(0, 999999) | a += [1, 2]")]
 #[case::array_element("var a = range(0, 999999) | a += 1")]
 fn add_assignment_respects_array_size_limit(#[case] code: &str) {
@@ -1748,6 +1769,10 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 #[case::try_catches_mod_builtin_by_zero("try: mod(10, 0) catch: 99;", 99.0)]
 #[case::try_catches_mod_string_by_zero("try: mod(\"10\", \"0\") catch: 99;", 99.0)]
 #[case::try_catches_div_string_by_zero("try: div(\"10\", \"0\") catch: 99;", 99.0)]
+#[case::try_catches_div_by_negative_zero("try: 1 / -0.0 catch: 99;", 99.0)]
+#[case::try_catches_div_by_float_zero("try: 1 / 0.0 catch: 99;", 99.0)]
+#[case::try_catches_mod_by_float_zero("try: 1 % 0.0 catch: 99;", 99.0)]
+#[case::try_catches_div_assign_by_zero("var a = 1 | try: a /= 0 catch: 99;", 99.0)]
 #[case::try_catch_binder_sees_message("try: 1 / 0 catch(e): len(get(e, \"message\"));", 16.0)]
 #[case::match_ident_binding_with_guard("match (5) do | x if (x > 3): x * 10 | _: 0 end", 50.0)]
 #[case::match_wildcard_fallback("match (99) do | 1: 100 | _: 0 end", 0.0)]

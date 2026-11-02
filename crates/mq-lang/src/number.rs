@@ -46,11 +46,11 @@ impl Number {
         Number(self.0.abs())
     }
 
-    /// Returns `true` if the number is zero or very close to zero.
+    /// Returns `true` if the number is exactly zero (`0.0` or `-0.0`).
     ///
-    /// Uses epsilon comparison to account for floating-point precision.
+    /// A tiny non-zero value such as `1e-17` is not zero, so dividing by it is valid.
     pub fn is_zero(&self) -> bool {
-        self.0.abs() < f64::EPSILON
+        self.0 == 0.0
     }
 
     /// Returns `true` if the number is NaN (Not-a-Number).
@@ -395,7 +395,10 @@ mod tests {
     #[case(0.0, true)]
     #[case(0.1, false)]
     #[case(-0.0, true)]
-    #[case(1e-16, true)]
+    #[case(1e-16, false)]
+    #[case(1e-300, false)]
+    #[case(f64::MIN_POSITIVE, false)]
+    #[case(f64::NAN, false)]
     fn test_is_zero(#[case] value: f64, #[case] expected: bool) {
         let num = Number::new(value);
         assert_eq!(num.is_zero(), expected);
