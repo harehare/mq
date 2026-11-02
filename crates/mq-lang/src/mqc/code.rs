@@ -503,6 +503,10 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             writer.u8(tags::opcode::ADD_ASSIGN_LOCAL);
             writer.var_u16(*slot);
         }
+        OpCode::AddAssignUpvalue(index) => {
+            writer.u8(tags::opcode::ADD_ASSIGN_UPVALUE);
+            writer.var_u16(*index);
+        }
         OpCode::CheckPathLocal { slot, depth } => {
             writer.u8(tags::opcode::CHECK_PATH_LOCAL);
             writer.var_u16(*slot);
@@ -1237,6 +1241,7 @@ impl Decoder<'_> {
             tags::opcode::SET_LOCAL => OpCode::SetLocal(r.var_u16()?),
             tags::opcode::SET_INDEX_LOCAL => OpCode::SetIndexLocal(r.var_u16()?),
             tags::opcode::ADD_ASSIGN_LOCAL => OpCode::AddAssignLocal(r.var_u16()?),
+            tags::opcode::ADD_ASSIGN_UPVALUE => OpCode::AddAssignUpvalue(r.var_u16()?),
             tags::opcode::CHECK_PATH_LOCAL => OpCode::CheckPathLocal {
                 slot: r.var_u16()?,
                 depth: r.u8()?,

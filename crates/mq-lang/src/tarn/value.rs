@@ -1,5 +1,6 @@
 use super::bytecode::Chunk;
 use crate::number::Number;
+use crate::runtime::builtin;
 use crate::runtime::runtime_value::{RuntimeValue, array_mut, dict_mut};
 use crate::tarn::interpreter::coroutine::{
     CoroutineHandle, CoroutineWeakHandle, downgrade_handle, downgrade_self_references_before_resume, same_handle,
@@ -504,6 +505,18 @@ impl Locals {
         }
     }
 
+    /// The cell behind a local that a closure captures, or `None` for a directly stored slot.
+    #[inline(always)]
+    pub(crate) fn captured_cell(&self, _slot: u16) -> Option<&Cell> {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(_) => None,
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid(hybrid) => hybrid.captured[_slot as usize].as_ref(),
+            Locals::Boxed(slots) => Some(&slots[_slot as usize]),
+        }
+    }
+
     /// Breaks self-reference cycles in every captured cell this frame's locals hold, returning
     /// `(replacement_cell, weak_original)` pairs for `resume` to resync on next entry (see
     /// [`sanitize_nested_self_reference`] and [`weak_coroutine_cell`]).
@@ -755,6 +768,31 @@ pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Opti
         matches!(&*value, StackValue::Value(RuntimeValue::Coroutine(value)) if same_handle(value, handle))
             .then(|| new_cell(StackValue::WeakCoroutine(downgrade_handle(handle))))
     }
+}
+
+/// Applies `cell + rhs` to a string or array held directly in `cell`, without copying it when
+/// the cell is its only owner. Returns `false`, leaving the cell untouched, for any other
+/// combination.
+pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bool, builtin::Error> {
+    let mut appended_handles = Vec::new();
+    collect_coroutine_handles(rhs, &mut appended_handles);
+    let appended = {
+        #[cfg(not(feature = "sync"))]
+        let mut guard = cell.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut guard = cell.write().unwrap();
+        match &mut *guard {
+            StackValue::Value(target @ (RuntimeValue::String(_) | RuntimeValue::Array(_))) => {
+                builtin::add_in_place(target, rhs)?
+            }
+            _ => false,
+        }
+    };
+    // The cell guard is released first; only the appended operand is scanned.
+    if appended {
+        downgrade_coroutine_handles(appended_handles);
+    }
+    Ok(appended)
 }
 
 /// Writes a VM cell and cleans up nested coroutine cycles.

@@ -546,6 +546,36 @@ fn verifier_rejects_invalid_optional_parameter_default_references() {
 }
 
 #[test]
+fn verifier_checks_the_upvalue_index_of_add_assign_upvalue() {
+    let chunks = |upvalue_names: Vec<Ident>, sources: Vec<UpvalueSource>| {
+        [
+            Chunk {
+                code: vec![OpCode::MakeClosure(Box::new((1, sources))), OpCode::Return],
+                local_count: 1,
+                ..Default::default()
+            },
+            Chunk {
+                code: vec![
+                    OpCode::PushNone,
+                    OpCode::AddAssignUpvalue(0),
+                    OpCode::PushNone,
+                    OpCode::Return,
+                ],
+                upvalue_names,
+                local_count: 1,
+                ..Default::default()
+            },
+        ]
+    };
+    let valid = verify_chunks(&chunks(vec![Ident::default()], vec![UpvalueSource::Local(0)]));
+    assert!(valid.is_ok(), "{valid:?}");
+    assert!(matches!(
+        verify_chunks(&chunks(Vec::new(), Vec::new())),
+        Err(BytecodeError::UpvalueOutOfBounds { index: 0, .. })
+    ));
+}
+
+#[test]
 fn verifier_rejects_closure_capture_count_mismatches() {
     fn target_wants_one_upvalue() -> Chunk {
         Chunk {
