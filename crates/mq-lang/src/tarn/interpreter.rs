@@ -44,6 +44,8 @@ use errors::StackTraceFrame;
 pub(crate) use errors::VmError;
 use errors::{VmResult, error_dict, flow_break_value, flow_continue, is_uncatchable, locate};
 pub(crate) use frame::ExecutionPools;
+#[cfg(test)]
+pub(crate) use frame::MAX_NESTED_RESUMES;
 use frame::{Continuation, DeferredContinuation, ExecutionContext, ExecutionLimits, Frame, TryBody};
 use std::sync::LazyLock;
 use std::time::Duration;

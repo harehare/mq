@@ -188,12 +188,15 @@ impl VmError {
     }
 }
 
+/// Frames shown at each end of a stack trace. A runaway recursion can be a million frames deep,
+/// so the middle of a longer trace is replaced by a count.
+const STACK_TRACE_EDGE_FRAMES: usize = 25;
+
 #[cold]
 fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena) -> String {
     use std::fmt::Write;
 
-    let mut trace = String::from("stack trace:");
-    for frame in frames {
+    let write_frame = |trace: &mut String, frame: &StackTraceFrame| {
         let name = frame
             .function_name
             .map(|name| name.to_string())
@@ -207,6 +210,18 @@ fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena
                 let _ = write!(trace, "\n  at {name}");
             }
         }
+    };
+
+    let mut trace = String::from("stack trace:");
+    if frames.len() <= 2 * STACK_TRACE_EDGE_FRAMES {
+        frames.iter().for_each(|frame| write_frame(&mut trace, frame));
+    } else {
+        let (head, rest) = frames.split_at(STACK_TRACE_EDGE_FRAMES);
+        let (omitted, tail) = rest.split_at(rest.len() - STACK_TRACE_EDGE_FRAMES);
+        head.iter().for_each(|frame| write_frame(&mut trace, frame));
+        let plural = if omitted.len() == 1 { "" } else { "s" };
+        let _ = write!(trace, "\n  ... {} more frame{plural} ...", omitted.len());
+        tail.iter().for_each(|frame| write_frame(&mut trace, frame));
     }
     trace
 }
@@ -530,6 +545,60 @@ mod tests {
             run_query("try: error([1, 2]) catch(e): get(e, \"message\");"),
             RuntimeValue::String(Shared::new("[1, 2]".to_string()))
         );
+    }
+
+    fn trace_of(frame_count: usize) -> String {
+        let frames: Vec<StackTraceFrame> = (0..frame_count)
+            .map(|index| StackTraceFrame {
+                function_name: Some(Ident::new(&format!("f{index}"))),
+                token_id: None,
+            })
+            .collect();
+        format_stack_trace(
+            &frames,
+            Shared::new(crate::SharedCell::new(crate::arena::Arena::new(1))),
+        )
+    }
+
+    #[rstest::rstest]
+    #[case::empty(0)]
+    #[case::one(1)]
+    #[case::exactly_the_edges(2 * STACK_TRACE_EDGE_FRAMES)]
+    fn a_short_stack_trace_lists_every_frame(#[case] frame_count: usize) {
+        let trace = trace_of(frame_count);
+        assert_eq!(trace.lines().count(), frame_count + 1);
+        assert!(!trace.contains("more frames"));
+    }
+
+    #[test]
+    fn a_long_stack_trace_keeps_both_ends_and_counts_the_rest() {
+        let total = 1_000_000;
+        let trace = trace_of(total);
+        let lines: Vec<&str> = trace.lines().collect();
+
+        assert_eq!(lines.len(), 1 + 2 * STACK_TRACE_EDGE_FRAMES + 1);
+        assert_eq!(lines[0], "stack trace:");
+        assert_eq!(lines[1], "  at f0");
+        assert_eq!(
+            lines[STACK_TRACE_EDGE_FRAMES],
+            format!("  at f{}", STACK_TRACE_EDGE_FRAMES - 1)
+        );
+        assert_eq!(
+            lines[STACK_TRACE_EDGE_FRAMES + 1],
+            format!("  ... {} more frames ...", total - 2 * STACK_TRACE_EDGE_FRAMES)
+        );
+        assert_eq!(
+            lines[STACK_TRACE_EDGE_FRAMES + 2],
+            format!("  at f{}", total - STACK_TRACE_EDGE_FRAMES)
+        );
+        assert_eq!(lines.last().copied(), Some(format!("  at f{}", total - 1).as_str()));
+    }
+
+    #[test]
+    fn a_stack_trace_one_frame_over_the_edges_omits_exactly_one() {
+        let trace = trace_of(2 * STACK_TRACE_EDGE_FRAMES + 1);
+        assert!(trace.contains("... 1 more frame ..."), "{trace}");
+        assert_eq!(trace.lines().count(), 1 + 2 * STACK_TRACE_EDGE_FRAMES + 1);
     }
 
     /// A coroutine's failure must resolve against its own (carried) arena, not whichever

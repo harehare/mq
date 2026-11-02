@@ -95,7 +95,121 @@ fn selector_with_arguments_matches_the_requested_heading_depth() {
 fn default_call_stack_depth_matches_the_build_profile() {
     assert_eq!(
         Options::default().max_call_stack_depth,
-        if cfg!(debug_assertions) { 256 } else { 10_000 }
+        if cfg!(debug_assertions) { 256 } else { 100_000 }
+    );
+}
+
+/// Runs `code` on an engine (so `builtin.mq` is available) with the given call depth limit.
+fn run_with_call_depth_limit(code: &str, limit: u32) -> Result<RuntimeValue, Box<crate::Error>> {
+    let mut engine = crate::DefaultEngine::default();
+    engine.set_max_call_stack_depth(limit);
+    let values = engine.eval(code, crate::null_input().into_iter())?;
+    Ok(values.values().first().cloned().unwrap_or(RuntimeValue::None))
+}
+
+/// Calls live on the heap, so recursion deeper than the debug default needs only the limit.
+///
+/// The depths stay small because the `debugger` feature makes each call cost time proportional
+/// to the depth; the scale of the release default is covered by the next tests.
+#[rstest]
+#[case::linear("def f(n): if (n == 0): 0 else: 1 + f(n - 1); | f(3000)")]
+#[case::mutual("def a(n): if (n == 0): 0 else: 1 + b(n - 1); | def b(n): if (n == 0): 0 else: 1 + a(n - 1); | a(3000)")]
+#[case::try_body("def f(n): if (n == 0): 0 else: try: 1 + f(n - 1) catch: 0; | f(3000)")]
+#[case::closure("def f(n): if (n == 0): 0 else: do let g = fn(): f(n - 1); | 1 + g() end; | f(3000)")]
+#[case::builtin_callback("def f(n): if (n == 0): 0 else: len(map([1], fn(x): f(n - 1);)) + n; | f(1500)")]
+fn deep_recursion_runs_within_a_large_limit(#[case] code: &str) {
+    let result = run_with_call_depth_limit(code, 1_000_000);
+    assert!(result.is_ok(), "{code}: {result:?}");
+}
+
+#[test]
+fn deep_recursion_returns_the_right_value() {
+    assert_eq!(
+        run_with_call_depth_limit("def f(n): if (n == 0): 0 else: 1 + f(n - 1); | f(3000)", 1_000_000).unwrap(),
+        RuntimeValue::from(3000)
+    );
+}
+
+#[test]
+fn deep_tail_recursion_runs_within_a_large_limit() {
+    assert_eq!(
+        run_with_call_depth_limit(
+            "def f(n, acc): if (n == 0): acc else: f(n - 1, acc + 1); | f(3000, 0)",
+            1_000_000
+        )
+        .unwrap(),
+        RuntimeValue::from(3000)
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[rstest]
+#[case::non_tail("def f(n): if (n == 0): 0 else: 1 + f(n - 1); | f(200000)", 200_000)]
+#[case::tail("def f(n, acc): if (n == 0): acc else: f(n - 1, acc + 1); | f(300000, 0)", 300_000)]
+fn recursion_hundreds_of_thousands_deep_returns_the_right_value(#[case] code: &str, #[case] expected: usize) {
+    assert_eq!(
+        run_with_call_depth_limit(code, 1_000_000).unwrap(),
+        RuntimeValue::from(expected)
+    );
+}
+
+#[rstest]
+#[case::linear("def f(): 1 + f(); | f()")]
+#[case::closure("def f(): do let g = fn(): f(); | 1 + g() end; | f()")]
+#[case::builtin_callback("def f(): len(map([1], fn(x): f();)); | f()")]
+#[case::tail("def f(n): f(n + 1); | f(0)")]
+fn runaway_recursion_stops_at_the_limit(#[case] code: &str) {
+    let error = format!("{:?}", run_with_call_depth_limit(code, 2_000).unwrap_err());
+    assert!(error.contains("RecursionError(2000)"), "{code}: {error}");
+}
+
+/// A `try` inside the recursion catches the limit error at the deepest level, so the program
+/// finishes with a value instead of failing.
+#[test]
+fn runaway_recursion_inside_try_ends_at_the_limit() {
+    assert!(run_with_call_depth_limit("def f(): try: 1 + f() catch: 0; | f()", 2_000).is_ok());
+}
+
+/// A chain in which every generator resumes the next one from inside its own body, so every
+/// level adds a native resume on top of the previous.
+fn nested_resume_chain(depth: u32) -> String {
+    format!(
+        "def g(n): if (n == 0): yield: 0 else: do let c = g(n - 1) | yield: get(next(c), \"value\") + 1 end; | get(next(g({depth})), \"value\")"
+    )
+}
+
+#[test]
+fn nested_coroutine_resumes_work_up_to_the_limit() {
+    let depth = interpreter::MAX_NESTED_RESUMES - 2;
+    assert_eq!(
+        run_with_call_depth_limit(&nested_resume_chain(depth), 1_000_000).unwrap(),
+        RuntimeValue::Number(i64::from(depth).into())
+    );
+}
+
+/// The native stack, not the call-depth limit, bounds nested resumes, so exceeding them has to
+/// be an error rather than a stack overflow.
+#[test]
+fn nested_coroutine_resumes_beyond_the_limit_are_an_error() {
+    let max = interpreter::MAX_NESTED_RESUMES;
+    let error = format!(
+        "{:?}",
+        run_with_call_depth_limit(&nested_resume_chain(max + 5), 1_000_000).unwrap_err()
+    );
+    assert!(error.contains(&format!("RecursionError({max})")), "{error}");
+}
+
+#[test]
+fn nested_coroutine_resume_error_can_be_caught_and_the_engine_keeps_working() {
+    let max = interpreter::MAX_NESTED_RESUMES;
+    let code = format!("try: do {} end catch: -1", nested_resume_chain(max + 5));
+    assert_eq!(
+        run_with_call_depth_limit(&code, 1_000_000).unwrap(),
+        RuntimeValue::Number((-1_i64).into())
+    );
+    assert_eq!(
+        run_with_call_depth_limit(&nested_resume_chain(3), 1_000_000).unwrap(),
+        RuntimeValue::Number(3.into())
     );
 }
 
