@@ -4501,6 +4501,24 @@ fn unstarted_generator_nested_in_a_captured_container_is_released(#[case] contai
 }
 
 #[rstest]
+#[case::upvalue("var a = [] | def g(): yield: a; | let s = g() | def f(): a += [s]; | f() | s")]
+#[case::captured_local("var a = [] | def g(): yield: a; | let s = g() | a += [s] | s")]
+fn unstarted_generator_appended_to_a_captured_array_is_released(#[case] code: &str) {
+    let stream = run(code);
+    let RuntimeValue::Coroutine(handle) = &stream else {
+        panic!("expected the program to return its coroutine");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(stream);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "the unstarted coroutine must not retain itself through an in-place append"
+    );
+}
+
+#[rstest]
 #[case::array("[s]", "holder[0]")]
 #[case::dict(r#"{"stream": s}"#, r#"holder["stream"]"#)]
 fn generator_reads_its_own_coroutine_back_through_a_captured_container(

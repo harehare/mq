@@ -773,16 +773,25 @@ pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Opti
 /// the cell is its only owner. Returns `false`, leaving the cell untouched, for any other
 /// combination.
 pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bool, crate::runtime::builtin::Error> {
-    #[cfg(not(feature = "sync"))]
-    let mut guard = cell.borrow_mut();
-    #[cfg(feature = "sync")]
-    let mut guard = cell.write().unwrap();
-    match &mut *guard {
-        StackValue::Value(target @ (RuntimeValue::String(_) | RuntimeValue::Array(_))) => {
-            crate::runtime::builtin::add_in_place(target, rhs)
+    let mut appended_handles = Vec::new();
+    collect_coroutine_handles(rhs, &mut appended_handles);
+    let appended = {
+        #[cfg(not(feature = "sync"))]
+        let mut guard = cell.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut guard = cell.write().unwrap();
+        match &mut *guard {
+            StackValue::Value(target @ (RuntimeValue::String(_) | RuntimeValue::Array(_))) => {
+                crate::runtime::builtin::add_in_place(target, rhs)?
+            }
+            _ => false,
         }
-        _ => Ok(false),
+    };
+    // The cell guard is released first; only the appended operand is scanned.
+    if appended {
+        downgrade_coroutine_handles(appended_handles);
     }
+    Ok(appended)
 }
 
 /// Writes a VM cell and cleans up nested coroutine cycles.
