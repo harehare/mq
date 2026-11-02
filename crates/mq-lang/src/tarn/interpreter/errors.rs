@@ -320,6 +320,7 @@ pub(super) fn flow_continue(e: &VmError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse;
 
     // One case per `builtin::Error` variant; see `all_builtin_error_variants_are_covered`.
     #[rstest::rstest]
@@ -477,7 +478,7 @@ mod tests {
     /// `Display`, while the user-facing `RuntimeError` reports "Division by zero".
     fn run_query(query: &str) -> RuntimeValue {
         let token_arena = Shared::new(crate::SharedCell::new(crate::arena::Arena::new(100)));
-        let program = crate::parse(query, Shared::clone(&token_arena)).unwrap();
+        let program = parse(query, Shared::clone(&token_arena)).unwrap();
         let compiled = super::super::super::compiler::compile_program(
             &program,
             token_arena,

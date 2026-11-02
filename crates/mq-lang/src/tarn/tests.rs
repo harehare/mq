@@ -1,6 +1,7 @@
 use super::interpreter::ExecutionPools;
 use super::*;
 use crate::module::resolver::std_resolver::StdModuleResolver;
+use crate::parse;
 use crate::range::Range;
 use crate::{DictMap, Shared, SharedCell};
 use crate::{Token, TokenKind, arena::Arena, token_alloc};
@@ -706,7 +707,7 @@ fn captured_variable_is_read_before_operands_that_call_user_code_run(#[case] cod
 #[case::immutable_binding_untouched("let a = [] | def f(): a; | f()", false)]
 fn add_assignment_to_captured_variable_compiles_to_in_place_opcode(#[case] code: &str, #[case] expected: bool) {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
-    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let program = parse(code, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
     assert_eq!(

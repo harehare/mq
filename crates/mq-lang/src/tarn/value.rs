@@ -1,5 +1,6 @@
 use super::bytecode::Chunk;
 use crate::number::Number;
+use crate::runtime::builtin;
 use crate::runtime::runtime_value::{RuntimeValue, array_mut, dict_mut};
 use crate::tarn::interpreter::coroutine::{
     CoroutineHandle, CoroutineWeakHandle, downgrade_handle, downgrade_self_references_before_resume, same_handle,
@@ -772,7 +773,7 @@ pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Opti
 /// Applies `cell + rhs` to a string or array held directly in `cell`, without copying it when
 /// the cell is its only owner. Returns `false`, leaving the cell untouched, for any other
 /// combination.
-pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bool, crate::runtime::builtin::Error> {
+pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bool, builtin::Error> {
     let mut appended_handles = Vec::new();
     collect_coroutine_handles(rhs, &mut appended_handles);
     let appended = {
@@ -782,7 +783,7 @@ pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bo
         let mut guard = cell.write().unwrap();
         match &mut *guard {
             StackValue::Value(target @ (RuntimeValue::String(_) | RuntimeValue::Array(_))) => {
-                crate::runtime::builtin::add_in_place(target, rhs)?
+                builtin::add_in_place(target, rhs)?
             }
             _ => false,
         }
