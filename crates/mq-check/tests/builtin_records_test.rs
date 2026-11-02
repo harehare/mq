@@ -86,6 +86,7 @@ fn test_http_all_request_may_omit_optional_fields(#[case] code: &str) {
 #[rstest]
 #[case::wrong_url_type(r#"http_all([{url: 1}])"#)]
 #[case::unknown_key(r#"http_all([{url: "a", bogus: 1}])"#)]
+#[case::missing_required(r#"http_all([{method: "get"}])"#)]
 fn test_http_all_request_rejects_bad_fields(#[case] code: &str) {
     let mut hir = Hir::default();
     hir.add_code(None, code);
