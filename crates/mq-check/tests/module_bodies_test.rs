@@ -2,6 +2,7 @@
 //! Their diagnostics are never reported.
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use mq_check::{TypeChecker, TypeError};
 use mq_hir::Hir;
@@ -16,10 +17,14 @@ def broken_operator(x): x + true;
 "#;
 
 fn module_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("mq_check_module_bodies_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mymod.mq"), MODULE).unwrap();
-    dir
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("mq_check_module_bodies_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("mymod.mq"), MODULE).unwrap();
+        dir
+    })
+    .clone()
 }
 
 fn check(code: &str) -> Vec<TypeError> {
