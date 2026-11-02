@@ -22,7 +22,7 @@ workflows:
         - 'extractions/setup-just@v4.0.0'
         - 'harehare/setup-mq@v1.1.6'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.87.31'
+        - 'taiki-e/install-action@v2.87.32'
     '.github/workflows/codeql.yml':
         - 'actions/checkout@v7.0.1'
         - 'github/codeql-action@v4.39.1'
@@ -35,7 +35,7 @@ workflows:
         - 'actions/checkout@v7.0.1'
         - 'extractions/setup-just@v4.0.0'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.87.31'
+        - 'taiki-e/install-action@v2.87.32'
     '.github/workflows/gfm-spec.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.0'
         - 'actions/checkout@v7.0.1'
@@ -59,14 +59,14 @@ workflows:
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.0'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.87.31'
+        - 'taiki-e/install-action@v2.87.32'
     '.github/workflows/npm-publish.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.0'
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-node@v7.1.0'
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.0'
-        - 'taiki-e/install-action@v2.87.31'
+        - 'taiki-e/install-action@v2.87.32'
     '.github/workflows/pages.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.0'
         - 'actions/checkout@v7.0.1'
@@ -74,7 +74,7 @@ workflows:
         - 'cloudflare/wrangler-action@v4.1.3'
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.0'
-        - 'taiki-e/install-action@v2.87.31'
+        - 'taiki-e/install-action@v2.87.32'
     '.github/workflows/release.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.0'
         - 'actions/checkout@v7.0.1'
@@ -85,10 +85,10 @@ workflows:
         - 'docker/metadata-action@v6.2.0'
         - 'docker/setup-buildx-action@v4.4.1'
         - 'extractions/setup-just@v4.0.0'
-        - 'taiki-e/install-action@v2.87.31'
+        - 'taiki-e/install-action@v2.87.32'
     '.github/workflows/typos.yml':
         - 'actions/checkout@v7.0.1'
-        - 'taiki-e/install-action@v2.87.31'
+        - 'taiki-e/install-action@v2.87.32'
     '.github/workflows/unused-deps.yml':
         - 'actions/checkout@v7.0.1'
         - 'bnjbvr/cargo-machete@main'
@@ -243,9 +243,9 @@ dependencies:
         commit: 'sha1-d1527c8f67ef9af357290475d4af4b0fab8f12e0'
         owner_id: 580492
         repo_id: 298565987
-    'taiki-e/install-action@v2.87.31':
-        ref: 'v2.87.31'
-        commit: 'sha1-1e29709c0ec63babbe8f266397a465f29a825f91'
+    'taiki-e/install-action@v2.87.32':
+        ref: 'v2.87.32'
+        commit: 'sha1-5488ac5a951645ce95062214902ac4b6bc1a1037'
         owner_id: 43724913
         repo_id: 442947557
     'zizmorcore/zizmor-action@v0.8.0':
