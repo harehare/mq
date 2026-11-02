@@ -82,6 +82,7 @@ pub use io::MemIo;
 pub use io::{EnvAccess, Io, IoError, IoReader, NativeIo, NetAccess, PathAccess, SandboxedIo};
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
+pub use lexer::{BOOLEAN_LITERALS, KEYWORDS};
 #[cfg(feature = "http-import")]
 pub use module::resolver::http_import;
 #[cfg(feature = "http-import")]

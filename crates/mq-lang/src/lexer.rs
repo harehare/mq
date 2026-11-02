@@ -114,38 +114,53 @@ enum NumberScan {
     Fatal,
 }
 
-fn keyword_kind(word: &str) -> Option<TokenKind> {
-    Some(match word {
-        "as" => TokenKind::As,
-        "break" => TokenKind::Break,
-        "catch" => TokenKind::Catch,
-        "continue" => TokenKind::Continue,
-        "def" => TokenKind::Def,
-        "do" => TokenKind::Do,
-        "elif" => TokenKind::Elif,
-        "else" => TokenKind::Else,
-        "end" => TokenKind::End,
-        "fn" => TokenKind::Fn,
-        "foreach" => TokenKind::Foreach,
-        "if" => TokenKind::If,
-        "import" => TokenKind::Import,
-        "include" => TokenKind::Include,
-        "let" => TokenKind::Let,
-        "loop" => TokenKind::Loop,
-        "match" => TokenKind::Match,
-        "module" => TokenKind::Module,
-        "nodes" => TokenKind::Nodes,
-        "None" => TokenKind::None,
-        "self" => TokenKind::Self_,
-        "try" => TokenKind::Try,
-        "unless" => TokenKind::Unless,
-        "until" => TokenKind::Until,
-        "var" => TokenKind::Var,
-        "while" => TokenKind::While,
-        "yield" => TokenKind::Yield,
-        _ => return None,
-    })
+/// Defines [`KEYWORDS`] and `keyword_kind` from one table so they cannot drift apart.
+macro_rules! keywords {
+    ($($word:literal => $kind:ident),+ $(,)?) => {
+        /// Reserved words of the language, which never lex as identifiers.
+        pub const KEYWORDS: &[&str] = &[$($word),+];
+
+        fn keyword_kind(word: &str) -> Option<TokenKind> {
+            Some(match word {
+                $($word => TokenKind::$kind,)+
+                _ => return None,
+            })
+        }
+    };
 }
+
+keywords! {
+    "as" => As,
+    "break" => Break,
+    "catch" => Catch,
+    "continue" => Continue,
+    "def" => Def,
+    "do" => Do,
+    "elif" => Elif,
+    "else" => Else,
+    "end" => End,
+    "fn" => Fn,
+    "foreach" => Foreach,
+    "if" => If,
+    "import" => Import,
+    "include" => Include,
+    "let" => Let,
+    "loop" => Loop,
+    "match" => Match,
+    "module" => Module,
+    "nodes" => Nodes,
+    "None" => None,
+    "self" => Self_,
+    "try" => Try,
+    "unless" => Unless,
+    "until" => Until,
+    "var" => Var,
+    "while" => While,
+    "yield" => Yield,
+}
+
+/// Words that lex as boolean literals rather than identifiers.
+pub const BOOLEAN_LITERALS: &[&str] = &["true", "false"];
 
 fn ident_kind(word: &str) -> TokenKind {
     match word {
@@ -912,6 +927,26 @@ mod tests {
     use super::*;
     use proptest::proptest;
     use rstest::rstest;
+
+    #[test]
+    fn keywords_never_lex_as_identifiers() {
+        for word in KEYWORDS {
+            let tokens = Lexer::new(Options::default()).tokenize(word, 1.into()).unwrap();
+            assert!(
+                !matches!(tokens[0].kind, TokenKind::Ident(_) | TokenKind::BoolLiteral(_)),
+                "{word} lexed as {:?}",
+                tokens[0].kind
+            );
+        }
+    }
+
+    #[test]
+    fn boolean_literals_lex_as_bool_literals() {
+        for word in BOOLEAN_LITERALS {
+            let tokens = Lexer::new(Options::default()).tokenize(word, 1.into()).unwrap();
+            assert!(matches!(tokens[0].kind, TokenKind::BoolLiteral(_)), "{word}");
+        }
+    }
 
     #[test]
     fn tokenize_from_offsets_first_line_only() {
