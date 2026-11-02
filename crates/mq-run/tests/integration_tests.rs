@@ -2077,6 +2077,55 @@ fn test_utf16_bom_stdin_is_decoded() {
     cmd.arg(".h1").write_stdin(bytes).assert().success().stdout("# あ\n");
 }
 
+#[rstest]
+#[case::le(&[0xFF, 0xFE], u16::to_le_bytes)]
+#[case::be(&[0xFE, 0xFF], u16::to_be_bytes)]
+fn test_stream_utf16_bom_is_decoded(#[case] bom: &[u8], #[case] to_bytes: fn(u16) -> [u8; 2]) {
+    let bytes: Vec<u8> = bom
+        .iter()
+        .copied()
+        .chain("# あ\r\ntext\n# い\n".encode_utf16().flat_map(to_bytes))
+        .collect();
+    let path = std::env::temp_dir().join(format!("stream_utf16_bom_{}.md", bom[0]));
+    std::fs::write(&path, &bytes).expect("Failed to write temp file");
+    defer! { std::fs::remove_file(&path).ok(); }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["--stream", ".h1"])
+        .arg(&path)
+        .assert()
+        .success()
+        .stdout("# あ\n# い\n");
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["--stream", ".h1"])
+        .write_stdin(bytes)
+        .assert()
+        .success()
+        .stdout("# あ\n# い\n");
+}
+
+#[test]
+fn test_stream_utf8_bom_is_removed() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["--stream", "-I", "text", "starts_with(\"# \")"])
+        .write_stdin(b"\xEF\xBB\xBF# a\nb\n".to_vec())
+        .assert()
+        .success()
+        .stdout("true\nfalse\n");
+}
+
+#[test]
+fn test_stream_utf32_bom_is_rejected() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let result = cmd
+        .args(["--stream", ".h1"])
+        .write_stdin(vec![0x00, 0x00, 0xFE, 0xFF, 0x00, 0x00, 0x00, 0x23])
+        .assert()
+        .failure();
+    assert!(String::from_utf8_lossy(&result.get_output().stderr).contains("UTF-32"));
+}
+
 #[test]
 fn test_non_utf8_input_reports_encoding_hint() {
     let path = std::env::temp_dir().join("non_utf8_input.md");

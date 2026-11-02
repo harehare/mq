@@ -2983,32 +2983,34 @@ impl Cli {
     where
         F: FnMut(Option<&PathBuf>, usize, String) -> miette::Result<()>,
     {
-        // If files are specified, process each file line by line
         if let Some(files) = self.resolved_files()? {
             for file in &files {
                 if Self::is_stdin_path(file) {
-                    for (i, line_result) in io::BufReader::new(io::stdin().lock()).lines().enumerate() {
-                        process(None, i + 1, line_result.into_diagnostic()?)?;
-                    }
+                    Self::process_reader_lines(io::stdin().lock(), None, &mut process)?;
                     continue;
                 }
                 let file_handle = fs::File::open(file)
                     .into_diagnostic()
                     .wrap_err_with(|| ReadFailure(file.clone()))?;
-                let reader = io::BufReader::new(file_handle);
-                for (i, line_result) in reader.lines().enumerate() {
-                    let line = line_result.into_diagnostic()?;
-                    process(Some(file), i + 1, line)?;
-                }
+                Self::process_reader_lines(io::BufReader::new(file_handle), Some(file), &mut process)?;
             }
         } else {
-            // Otherwise, process stdin line by line
-            let stdin = io::stdin();
-            let reader = io::BufReader::new(stdin.lock());
-            for (i, line_result) in reader.lines().enumerate() {
-                let line = line_result.into_diagnostic()?;
-                process(None, i + 1, line)?;
-            }
+            Self::process_reader_lines(io::stdin().lock(), None, &mut process)?;
+        }
+        Ok(())
+    }
+
+    fn process_reader_lines<R, F>(reader: R, file: Option<&PathBuf>, process: &mut F) -> miette::Result<()>
+    where
+        R: BufRead,
+        F: FnMut(Option<&PathBuf>, usize, String) -> miette::Result<()>,
+    {
+        let wrap = |e: miette::Report| match file {
+            Some(f) => e.wrap_err(ReadFailure(f.clone())),
+            None => e,
+        };
+        for (i, line) in text_input::lines(reader).map_err(wrap)?.enumerate() {
+            process(file, i + 1, line.map_err(wrap)?)?;
         }
         Ok(())
     }
