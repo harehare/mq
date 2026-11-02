@@ -3035,7 +3035,12 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 // try/catch(e): the full error dict is accessible when bound directly
 #[case::try_catch_binder_dict(r#"try: error("boom") catch(e): e"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("message"), RuntimeValue::String(Shared::new("boom".to_string()))),
+    (Ident::new("value"), RuntimeValue::String(Shared::new("boom".to_string()))),
 ])))].into()))]
+// try/catch(e): error with a non-string value exposes it unchanged as `value`
+#[case::try_catch_binder_value(r#"try: error({"code": 7}) catch(e): e["value"]["code"]"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(7.into())].into()))]
+// try/catch(e): the message of a non-string error is its string form
+#[case::try_catch_binder_value_message(r#"try: error([1, 2]) catch(e): e["message"]"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("[1, 2]".to_string()))].into()))]
 // try/catch(e): the binder is unused when the try expression succeeds
 #[case::try_catch_binder_unused_on_success("try: 42 catch(e): 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // try/catch(e): binder name does not leak outside the catch expression

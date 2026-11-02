@@ -215,7 +215,7 @@ fn halt_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
 fn error_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(message)] => Err(Error::UserDefined(message.to_string())),
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        [a] => Err(Error::Thrown(std::mem::take(a))),
         _ => Err(invalid_arity(ident, 1, args.len())),
     }
 }
@@ -6206,6 +6206,9 @@ pub enum Error {
     ZeroDivision,
     #[error("")]
     UserDefined(String),
+    /// `error` called with a non-string value, delivered unchanged to `catch(e)` as `e["value"]`.
+    #[error("")]
+    Thrown(RuntimeValue),
     #[error("")]
     InvalidConvert(String),
     #[error("")]
@@ -6218,6 +6221,10 @@ impl Error {
         match self {
             Error::UserDefined(message) => RuntimeError::UserDefined {
                 message: message.to_owned(),
+                token: get_token(&token_arena, token_id),
+            },
+            Error::Thrown(value) => RuntimeError::UserDefined {
+                message: value.to_string(),
                 token: get_token(&token_arena, token_id),
             },
             Error::InvalidBase64String(e) => {

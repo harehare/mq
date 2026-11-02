@@ -247,11 +247,11 @@ impl From<builtin::Error> for VmError {
 pub(super) type VmResult<T> = Result<T, VmError>;
 
 pub(super) fn error_dict(e: &VmError) -> RuntimeValue {
+    let message = error_message(e);
+    let value = thrown_value(e).unwrap_or_else(|| RuntimeValue::String(Shared::new(message.clone())));
     let mut map = DictMap::default();
-    map.insert(
-        Ident::new("message"),
-        RuntimeValue::String(Shared::new(error_message(e))),
-    );
+    map.insert(Ident::new("message"), RuntimeValue::String(Shared::new(message)));
+    map.insert(Ident::new("value"), value);
     RuntimeValue::Dict(Shared::new(map))
 }
 
@@ -277,6 +277,16 @@ pub(super) fn error_message(e: &VmError) -> String {
             let (token, token_id, token_arena) = placeholder_token_context();
             other.to_runtime_error(token, token_id, token_arena).to_string()
         }
+    }
+}
+
+/// The value passed to `error` when it was not a string.
+fn thrown_value(e: &VmError) -> Option<RuntimeValue> {
+    match e {
+        VmError::Builtin(builtin::Error::Thrown(value)) => Some(value.clone()),
+        VmError::Located(inner, _) | VmError::StackTrace(inner, _) => thrown_value(inner),
+        VmError::CoroutineFailed(inner, _) => thrown_value(inner),
+        _ => None,
     }
 }
 
@@ -314,6 +324,7 @@ mod tests {
     // One case per `builtin::Error` variant; see `all_builtin_error_variants_are_covered`.
     #[rstest::rstest]
     #[case::user_defined(builtin::Error::UserDefined("boom".to_string()), "boom")]
+    #[case::thrown(builtin::Error::Thrown(RuntimeValue::Number(1.into())), "1")]
     #[case::invalid_base64_string(
         builtin::Error::InvalidBase64String({
             use base64::Engine;
@@ -367,6 +378,7 @@ mod tests {
     fn all_builtin_error_variants_are_covered(e: builtin::Error) {
         match e {
             builtin::Error::UserDefined(_)
+            | builtin::Error::Thrown(_)
             | builtin::Error::InvalidBase64String(_)
             | builtin::Error::NotDefined(_, _)
             | builtin::Error::InvalidDateTimeFormat(_)
@@ -463,17 +475,16 @@ mod tests {
     /// Guards against the two error-message paths drifting apart again: the VM's own
     /// `1 / 0` fast path used to report "division by zero" (lowercase) via `VmError`'s own
     /// `Display`, while the user-facing `RuntimeError` reports "Division by zero".
-    #[test]
-    fn zero_division_message_matches_through_a_real_try_catch() {
+    fn run_query(query: &str) -> RuntimeValue {
         let token_arena = Shared::new(crate::SharedCell::new(crate::arena::Arena::new(100)));
-        let program = crate::parse("try: 1 / 0 catch(e): get(e, \"message\");", Shared::clone(&token_arena)).unwrap();
+        let program = crate::parse(query, Shared::clone(&token_arena)).unwrap();
         let compiled = super::super::super::compiler::compile_program(
             &program,
             token_arena,
             crate::ModuleLoader::new(crate::module::resolver::std_resolver::StdModuleResolver),
         )
         .unwrap();
-        let result = super::super::run_with_globals(
+        super::super::run_with_globals(
             &compiled,
             RuntimeValue::None,
             &crate::runtime::host::HostFunctions::default(),
@@ -481,10 +492,42 @@ mod tests {
             super::super::super::Options::default().max_call_stack_depth,
             &[],
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn zero_division_message_matches_through_a_real_try_catch() {
         assert_eq!(
-            result,
+            run_query("try: 1 / 0 catch(e): get(e, \"message\");"),
             RuntimeValue::String(Shared::new("Division by zero".to_string()))
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::string("error(\"boom\")", "\"boom\"")]
+    #[case::number("error(42)", "42")]
+    #[case::none("error(None)", "None")]
+    #[case::array("error([1, \"a\"])", "[1, \"a\"]")]
+    #[case::dict("error({\"code\": 7})", "{\"code\": 7}")]
+    #[case::nested_in_function("(fn(x): error({\"x\": x});)(3)", "{\"x\": 3}")]
+    fn catch_binder_exposes_the_value_passed_to_error(#[case] raise: &str, #[case] expected: &str) {
+        let caught = run_query(&format!("try: {raise} catch(e): get(e, \"value\");"));
+        assert_eq!(caught, run_query(expected));
+    }
+
+    #[test]
+    fn catch_binder_value_of_a_non_user_error_is_its_message() {
+        assert_eq!(
+            run_query("try: 1 / 0 catch(e): get(e, \"value\");"),
+            RuntimeValue::String(Shared::new("Division by zero".to_string()))
+        );
+    }
+
+    #[test]
+    fn thrown_value_message_is_its_display_form() {
+        assert_eq!(
+            run_query("try: error([1, 2]) catch(e): get(e, \"message\");"),
+            RuntimeValue::String(Shared::new("[1, 2]".to_string()))
         );
     }
 
