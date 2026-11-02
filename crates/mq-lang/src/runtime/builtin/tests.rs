@@ -5768,3 +5768,17 @@ fn test_bitwise_numbers_do_not_mix_with_bytes() {
         .is_err()
     );
 }
+
+#[cfg(feature = "http")]
+#[test]
+fn test_parse_http_request_treats_none_options_as_omitted() {
+    let mut request = DictMap::default();
+    request.insert(Ident::new("url"), RuntimeValue::String(Shared::new("http://a".into())));
+    for key in ["method", "body", "headers"] {
+        request.insert(Ident::new(key), RuntimeValue::NONE);
+    }
+    let spec = parse_http_request(&RuntimeValue::Dict(Shared::new(request))).unwrap();
+    assert_eq!(spec.method, "GET");
+    assert_eq!(spec.body, None);
+    assert!(spec.headers.is_empty());
+}

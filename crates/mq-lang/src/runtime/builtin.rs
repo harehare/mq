@@ -5438,6 +5438,8 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
             "http_all: each request must be a dict with `url` (and optional `method`, `body`, `headers`)".to_string(),
         ));
     };
+    // An option set to `none` counts as omitted.
+    let option = |key: &str| fields.get(&Ident::from(key)).filter(|value| !value.is_none());
     let url = fields
         .get(&Ident::from("url"))
         .ok_or_else(|| Error::Runtime("http_all: each request dict needs a `url` string".to_string()))
@@ -5445,7 +5447,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
             RuntimeValue::String(url) => Ok(url.to_string()),
             other => Err(Error::Runtime(format!("http_all: `url` must be a string, got {other}"))),
         })?;
-    let method = match fields.get(&Ident::from("method")) {
+    let method = match option("method") {
         Some(RuntimeValue::Symbol(method)) => method.to_string(),
         Some(RuntimeValue::String(method)) => method.to_string(),
         Some(other) => {
@@ -5459,7 +5461,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         .parse::<ureq::http::Method>()
         .map_err(|_| Error::Runtime(format!("http_all: invalid HTTP method {method:?}")))?
         .to_string();
-    let body = match fields.get(&Ident::from("body")) {
+    let body = match option("body") {
         Some(RuntimeValue::String(body)) => Some(body.to_string()),
         Some(other) => {
             return Err(Error::Runtime(format!(
@@ -5468,7 +5470,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         }
         None => None,
     };
-    let headers = match fields.get(&Ident::from("headers")) {
+    let headers = match option("headers") {
         Some(RuntimeValue::Dict(headers)) => headers
             .iter()
             .map(|(name, value)| match value {

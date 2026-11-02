@@ -77,6 +77,7 @@ fn test_new_record_results(#[case] code: &str, #[case] expected: &str) {
 #[rstest]
 #[case::omitted(r#"http_all([{url: "http://a"}])"#)]
 #[case::all_fields(r#"http_all([{url: "http://a", method: :post, body: "x", headers: {"a": "b"}}])"#)]
+#[case::explicit_none(r#"http_all([{url: "http://a", method: None, body: None, headers: None}])"#)]
 fn test_http_all_request_may_omit_optional_fields(#[case] code: &str) {
     let mut hir = Hir::default();
     hir.add_code(None, code);
@@ -87,6 +88,7 @@ fn test_http_all_request_may_omit_optional_fields(#[case] code: &str) {
 #[case::wrong_url_type(r#"http_all([{url: 1}])"#)]
 #[case::unknown_key(r#"http_all([{url: "a", bogus: 1}])"#)]
 #[case::missing_required(r#"http_all([{method: "get"}])"#)]
+#[case::non_string_header(r#"http_all([{url: "a", headers: {"X-Test": 1}}])"#)]
 fn test_http_all_request_rejects_bad_fields(#[case] code: &str) {
     let mut hir = Hir::default();
     hir.add_code(None, code);

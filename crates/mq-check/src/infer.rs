@@ -426,6 +426,16 @@ impl InferenceContext {
         self.errors.push(error);
     }
 
+    /// Number of errors collected so far.
+    pub fn error_count(&self) -> usize {
+        self.errors.len()
+    }
+
+    /// Drops the errors collected after the first `len`.
+    pub fn truncate_errors(&mut self, len: usize) {
+        self.errors.truncate(len);
+    }
+
     /// Takes all collected errors (consumes them)
     pub fn take_errors(&mut self) -> Vec<TypeError> {
         std::mem::take(&mut self.errors)

@@ -229,16 +229,29 @@ pub fn unify(
 
         // Union types: a union can unify with a non-union type if any of its members can.
         (Type::Union(types), other) | (other, Type::Union(types)) => {
-            // Check if the other type matches any member of the union
-            let matches_any = types.iter().any(|t| {
-                // Try to check if types can match without adding errors
+            // A record and a dict are compared by their contents, so the member is tried with
+            // the errors it would report discarded.
+            let mut matches_any = false;
+            let mut container_members = Vec::new();
+            for t in types {
                 match (t, other) {
-                    (t1, t2) if std::mem::discriminant(t1) == std::mem::discriminant(t2) => true,
-                    (Type::Var(_), _) | (_, Type::Var(_)) => true,
-                    (Type::Record(..), Type::Dict(..)) | (Type::Dict(..), Type::Record(..)) => true,
-                    _ => false,
+                    (t1, t2) if std::mem::discriminant(t1) == std::mem::discriminant(t2) => matches_any = true,
+                    (Type::Var(_), _) | (_, Type::Var(_)) => matches_any = true,
+                    (Type::Record(..), Type::Dict(..)) | (Type::Dict(..), Type::Record(..)) => {
+                        container_members.push(t);
+                    }
+                    _ => {}
                 }
-            });
+            }
+            if !matches_any {
+                let errors = ctx.error_count();
+                matches_any = container_members.iter().any(|member| {
+                    unify(ctx, member, other, range, origin);
+                    let fits = ctx.error_count() == errors;
+                    ctx.truncate_errors(errors);
+                    fits
+                });
+            }
 
             if !matches_any {
                 // No member of the union can unify with the other type - report error
