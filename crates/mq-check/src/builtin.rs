@@ -1470,7 +1470,8 @@ fn register_io(ctx: &mut InferenceContext) {
     register_binary(ctx, "stderr", Type::Var(a), Type::Var(b), Type::Var(a));
 
     // error/halt never return, so their result is the bottom type, which any branch absorbs
-    register_unary(ctx, "error", Type::String, Type::Never);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "error", Type::Var(a), Type::Never);
     register_unary(ctx, "halt", Type::Number, Type::Never);
     register_nullary(ctx, "input", Type::String);
     register_nullary(ctx, "env", Type::dict(Type::String, Type::String));

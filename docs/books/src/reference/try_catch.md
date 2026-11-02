@@ -14,7 +14,7 @@ try <expr> catch(<binder>) <expr>
 - If the `try` expression succeeds, its result is returned
 - If the `try` expression fails (produces an error), the `catch` expression is evaluated instead
 - The `catch` expression receives the same input as the `try` expression
-- With `catch(<binder>)`, `<binder>` is bound to a dict describing the failure (currently `{"message": <string>}`) for the duration of the `catch` expression
+- With `catch(<binder>)`, `<binder>` is bound to a dict describing the failure (`{"message": <string>, "value": <any>}`) for the duration of the `catch` expression
 - `break`/`continue` inside the `try` expression are not treated as errors; they propagate to the enclosing loop instead of triggering `catch`
 
 ## Examples
@@ -61,6 +61,15 @@ try: get("primary") catch: try: get("secondary") catch: "default"
 # Bind the failure to `e` and inspect its message
 try: error("boom") catch(e): e["message"]
 # => "boom"
+```
+
+### Raising Any Value
+
+`error` accepts a value of any type. `e["value"]` returns it unchanged, while `e["message"]` holds its string form. For errors that were not raised with `error`, and for `error` called with a string, `e["value"]` is the message.
+
+```mq
+try: error({"code": 404, "path": "/a"}) catch(e): e["value"]["code"]
+# => 404
 ```
 
 ## Error Suppression (`?`)
