@@ -64,3 +64,30 @@ fn test_a_none_input_is_accepted(#[case] code: &str) {
     let errors = TypeChecker::new().check(&hir);
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
 }
+
+#[rstest]
+#[case::file_info(
+    r#"let r = file_info("a") | r"#,
+    "{kind: string, modified: (number | none), path: string, size: number}"
+)]
+fn test_new_record_results(#[case] code: &str, #[case] expected: &str) {
+    assert_eq!(variable_type(code, "r"), expected);
+}
+
+#[rstest]
+#[case::omitted(r#"http_all([{url: "http://a"}])"#)]
+#[case::all_fields(r#"http_all([{url: "http://a", method: :post, body: "x", headers: {"a": "b"}}])"#)]
+fn test_http_all_request_may_omit_optional_fields(#[case] code: &str) {
+    let mut hir = Hir::default();
+    hir.add_code(None, code);
+    assert!(TypeChecker::new().check(&hir).is_empty());
+}
+
+#[rstest]
+#[case::wrong_url_type(r#"http_all([{url: 1}])"#)]
+#[case::unknown_key(r#"http_all([{url: "a", bogus: 1}])"#)]
+fn test_http_all_request_rejects_bad_fields(#[case] code: &str) {
+    let mut hir = Hir::default();
+    hir.add_code(None, code);
+    assert!(!TypeChecker::new().check(&hir).is_empty());
+}

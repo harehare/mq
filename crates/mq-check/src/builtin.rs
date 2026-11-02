@@ -532,13 +532,12 @@ fn register_string(ctx: &mut InferenceContext) {
     // Regular expressions
     register_binary(ctx, "test", text(), Type::String, Type::Bool);
     register_binary(ctx, "regex_match", text(), Type::String, Type::array(Type::String));
-    // Each match is a dict mixing strings, numbers, `None` and an array of groups.
     register_binary(
         ctx,
         "regex_match_info",
         text(),
         Type::String,
-        Type::array(Type::dict(Type::String, Type::Dynamic)),
+        Type::array(regex_match_info_entry()),
     );
     register_binary(ctx, "is_regex_match", text(), Type::String, Type::Bool);
     register_binary(ctx, "is_not_regex_match", text(), Type::String, Type::Bool);
@@ -553,7 +552,7 @@ fn register_string(ctx: &mut InferenceContext) {
         "regex_match_info",
         Type::None,
         Type::String,
-        Type::array(Type::dict(Type::String, Type::Dynamic)),
+        Type::array(regex_match_info_entry()),
     );
 
     // Encoding functions
@@ -744,6 +743,50 @@ fn step_result(yielded: crate::types::TypeVarId) -> Type {
         .collect(),
         Type::RowEmpty,
     )
+}
+
+fn method_or_symbol() -> Type {
+    Type::union(vec![Type::String, Type::Symbol])
+}
+
+/// A closed record type with the given fields.
+fn record_of(fields: &[(&str, Type)]) -> Type {
+    Type::record(
+        fields.iter().map(|(k, t)| (k.to_string(), t.clone())).collect(),
+        Type::RowEmpty,
+    )
+}
+
+/// One `regex_match_info` match: positions of the whole match plus its capture groups.
+fn regex_match_info_entry() -> Type {
+    let optional = |t: Type| Type::union(vec![t, Type::None]);
+    let group = record_of(&[
+        ("name", optional(Type::String)),
+        ("match", optional(Type::String)),
+        ("start", optional(Type::Number)),
+        ("end", optional(Type::Number)),
+        ("char_start", optional(Type::Number)),
+        ("char_end", optional(Type::Number)),
+    ]);
+    record_of(&[
+        ("match", Type::String),
+        ("start", Type::Number),
+        ("end", Type::Number),
+        ("char_start", Type::Number),
+        ("char_end", Type::Number),
+        ("groups", Type::array(group)),
+    ])
+}
+
+/// One `collection` entry. The frontmatter is whatever the file's YAML or TOML holds.
+fn collection_entry(ctx: &mut InferenceContext) -> Type {
+    let frontmatter = ctx.fresh_var();
+    record_of(&[
+        ("path", Type::String),
+        ("title", Type::union(vec![Type::String, Type::None])),
+        ("frontmatter", Type::Var(frontmatter)),
+        ("content", Type::array(Type::markdown())),
+    ])
 }
 
 /// A node of exactly one kind.
@@ -1720,7 +1763,15 @@ fn register_markdown(ctx: &mut InferenceContext) {
         ctx,
         "get_location",
         Type::Var(value),
-        Type::union(vec![Type::dict(Type::String, Type::Number), Type::None]),
+        Type::union(vec![
+            record_of(&[
+                ("start_line", Type::Number),
+                ("start_column", Type::Number),
+                ("end_line", Type::Number),
+                ("end_column", Type::Number),
+            ]),
+            Type::None,
+        ]),
     );
 
     // Other markdown functions
@@ -1850,27 +1901,25 @@ fn register_file_io(ctx: &mut InferenceContext) {
     register_unary(ctx, "file_size", Type::String, Type::Number);
 
     // file_info: string (path) -> {path, kind, size, modified}
-    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
-    register_unary(ctx, "file_info", Type::String, Type::dict(Type::Var(k), Type::Var(v)));
-
-    // collection: string (dir path) -> [{path, title, frontmatter, content}]
-    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_unary(
         ctx,
-        "collection",
+        "file_info",
         Type::String,
-        Type::array(Type::dict(Type::Var(k), Type::Var(v))),
+        record_of(&[
+            ("path", Type::String),
+            ("kind", Type::String),
+            ("size", Type::Number),
+            ("modified", Type::union(vec![Type::Number, Type::None])),
+        ]),
     );
 
+    // collection: string (dir path) -> [{path, title, frontmatter, content}]
+    let entry = collection_entry(ctx);
+    register_unary(ctx, "collection", Type::String, Type::array(entry));
+
     // collection: (string, bool) (dir path, respect_gitignore) -> [{path, title, frontmatter, content}]
-    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
-    register_binary(
-        ctx,
-        "collection",
-        Type::String,
-        Type::Bool,
-        Type::array(Type::dict(Type::Var(k), Type::Var(v))),
-    );
+    let entry = collection_entry(ctx);
+    register_binary(ctx, "collection", Type::String, Type::Bool, Type::array(entry));
 
     // walk_files: string (root) -> [string] (root-relative paths)
     register_unary(ctx, "walk_files", Type::String, Type::array(Type::String));
@@ -1958,15 +2007,15 @@ fn register_net(ctx: &mut InferenceContext) {
         );
     }
 
-    // http_all: ([request]) -> [string], where each request is a dict with `url` and optional
-    // `method`, `body` and `headers`. The values differ in type, so the element stays open.
-    let request = ctx.fresh_var();
-    register_unary(
-        ctx,
-        "http_all",
-        Type::array(Type::Var(request)),
-        Type::array(Type::String),
-    );
+    // http_all: ([request]) -> [string]. `method`, `body` and `headers` may be omitted.
+    let optional = |t: Type| Type::union(vec![t, Type::None]);
+    let request = record_of(&[
+        ("url", Type::String),
+        ("method", optional(method_or_symbol())),
+        ("body", optional(Type::String)),
+        ("headers", optional(headers.clone())),
+    ]);
+    register_unary(ctx, "http_all", Type::array(request), Type::array(Type::String));
 
     // mock_fetch: (url, body) -> none
     register_binary(ctx, "mock_fetch", Type::String, Type::String, Type::None);

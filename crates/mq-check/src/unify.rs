@@ -235,6 +235,7 @@ pub fn unify(
                 match (t, other) {
                     (t1, t2) if std::mem::discriminant(t1) == std::mem::discriminant(t2) => true,
                     (Type::Var(_), _) | (_, Type::Var(_)) => true,
+                    (Type::Record(..), Type::Dict(..)) | (Type::Dict(..), Type::Record(..)) => true,
                     _ => false,
                 }
             });
@@ -276,14 +277,18 @@ fn unify_records(
         }
     }
 
+    // A missing key reads as `none`, so a closed record may omit a field that accepts `none`.
+    let omittable = |ctx: &InferenceContext, ty: &Type, other_rest: &Type| {
+        ty.is_nullable() && matches!(ctx.resolve_type(other_rest), Type::RowEmpty)
+    };
     let only1: BTreeMap<String, Type> = f1
         .iter()
-        .filter(|(k, _)| !f2.contains_key(k.as_str()))
+        .filter(|(k, v)| !f2.contains_key(k.as_str()) && !omittable(ctx, v, r2))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let only2: BTreeMap<String, Type> = f2
         .iter()
-        .filter(|(k, _)| !f1.contains_key(k.as_str()))
+        .filter(|(k, v)| !f1.contains_key(k.as_str()) && !omittable(ctx, v, r1))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
