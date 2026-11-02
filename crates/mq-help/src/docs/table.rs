@@ -3964,7 +3964,7 @@ $$"#,
     BuiltinDoc {
         name: "to_number",
         aliases: &[],
-        description: "Converts the given value to a number.",
+        description: "Converts the given value to a number. Strings must be a plain decimal literal (sign and exponent allowed, no surrounding whitespace or separators); `inf`, `nan` and out-of-range values are errors. `true`/`false` become 1/0, and other non-string values become 0.",
         params: &["value"],
         param_types: &["dynamic"],
         returns: "number",

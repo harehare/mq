@@ -285,9 +285,16 @@ pub(super) fn to_string(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 }
 
 fn parse_number(s: &str) -> Result<RuntimeValue, Error> {
-    s.parse::<f64>()
-        .map(|n| RuntimeValue::Number(n.into()))
-        .map_err(|e| Error::Runtime(format!("to_number: cannot convert {:?} to a number ({})", s, e)))
+    let n = s
+        .parse::<f64>()
+        .map_err(|e| Error::Runtime(format!("to_number: cannot convert {:?} to a number ({})", s, e)))?;
+
+    // Rejects `inf`, `nan` and values that overflow to infinity.
+    if n.is_finite() {
+        Ok(RuntimeValue::Number(n.into()))
+    } else {
+        Err(Error::Runtime(format!("to_number: {:?} is not a finite number", s)))
+    }
 }
 
 /// convert to number
