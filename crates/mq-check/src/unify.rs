@@ -244,13 +244,9 @@ pub fn unify(
                 }
             }
             if !matches_any {
-                let errors = ctx.error_count();
-                matches_any = container_members.iter().any(|member| {
-                    unify(ctx, member, other, range, origin);
-                    let fits = ctx.error_count() == errors;
-                    ctx.truncate_errors(errors);
-                    fits
-                });
+                matches_any = container_members
+                    .iter()
+                    .any(|member| ctx.speculate(|ctx| unify(ctx, member, other, range, origin)));
             }
 
             if !matches_any {
@@ -599,6 +595,26 @@ mod tests {
         let dict2 = Type::dict(Type::String, Type::String);
         unify(&mut ctx, &record, &dict2, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_union_dict_candidates_do_not_leak_bindings() {
+        let mut ctx = InferenceContext::new();
+        let var = Type::Var(ctx.fresh_var());
+        let record = Type::record(
+            [("a".to_string(), var.clone()), ("b".to_string(), Type::String)]
+                .into_iter()
+                .collect(),
+            Type::RowEmpty,
+        );
+        let union = Type::union(vec![
+            Type::dict(Type::String, Type::Number),
+            Type::dict(Type::String, Type::String),
+        ]);
+
+        unify(&mut ctx, &union, &record, None, &ConstraintOrigin::General);
+        assert!(ctx.take_errors().is_empty());
+        assert_eq!(ctx.resolve_type(&var), Type::String);
     }
 
     #[test]
