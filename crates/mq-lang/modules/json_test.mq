@@ -278,7 +278,7 @@ end
 
 # JSON has no inf/NaN, so they are written as null.
 def test_json_stringify_non_finite_numbers_are_null():
-  assert_eq(json::json_stringify([to_number("inf"), to_number("-inf"), 1]), "[null, null, 1]")
+  assert_eq(json::json_stringify([pow(10, 400), sub(0, pow(10, 400)), 1]), "[null, null, 1]")
 end
 
 # @parametrize([

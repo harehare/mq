@@ -432,6 +432,32 @@ fn test_to_number_invalid_string() {
     assert!(result.is_err());
 }
 
+#[rstest]
+#[case::inf("inf")]
+#[case::negative_inf("-inf")]
+#[case::infinity("Infinity")]
+#[case::nan("NaN")]
+#[case::overflow("1e400")]
+#[case::negative_overflow("-1e400")]
+fn test_to_number_non_finite(#[case] s: &str) {
+    let mut input = RuntimeValue::String(Shared::new(s.to_string()));
+    assert!(to_number(&mut input).is_err());
+
+    let mut input = RuntimeValue::Array(crate::Shared::new(vec![RuntimeValue::String(Shared::new(
+        s.to_string(),
+    ))]));
+    assert!(to_number(&mut input).is_err());
+}
+
+#[rstest]
+#[case::padded(" 12 ")]
+#[case::underscore("1_000")]
+#[case::empty("")]
+fn test_to_number_rejects_malformed(#[case] s: &str) {
+    let mut input = RuntimeValue::String(Shared::new(s.to_string()));
+    assert!(to_number(&mut input).is_err());
+}
+
 #[test]
 fn test_to_number_array() {
     let mut input = RuntimeValue::Array(crate::Shared::new(vec![
