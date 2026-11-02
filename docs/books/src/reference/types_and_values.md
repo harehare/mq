@@ -24,6 +24,15 @@
 | **Dict**     | Represents key-value mappings (dictionaries).                                                                     | `{"a": 1, "b": 2}`, `dict(["a", 1], ["b", 2])`  |
 | **Function** | Represents executable code.                                                                                       | `def foo(): 42; let name = def foo(): 42;`      |
 
+## Number Formatting
+
+Numbers are 64-bit floating point values. They print as the shortest text that parses back to the same value. Magnitudes of `1e21` and above, and non-zero magnitudes below `1e-6`, use exponent notation; everything else prints in plain decimal form.
+
+```mq
+[1e20, 1e21, 0.000001, 1e-7, 1.5e300]
+# => [100000000000000000000, 1e21, 0.000001, 1e-7, 1.5e300]
+```
+
 ## Byte String Literals
 
 Byte string literals use the `b"..."` syntax and represent raw sequences of bytes (`u8` values).

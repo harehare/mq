@@ -735,6 +735,61 @@ fn add_assignment_appends_to_local_captured_by_a_closure_preserving_value_semant
 }
 
 #[rstest]
+#[case::div_literal("1 / 1e-17 == 1e17")]
+#[case::div_decimal_literal("1 / 0.000000000000000001 > 9.9e17")]
+#[case::div_locals("let a = 1 | let b = 1e-17 | a / b == 1e17")]
+#[case::div_local_const("let a = 1 | a / 1e-17 == 1e17")]
+#[case::div_const_local("let b = 1e-17 | 1 / b == 1e17")]
+#[case::div_assign("var a = 1 | a /= 1e-17 | a == 1e17")]
+#[case::div_builtin("div(1, 1e-17) == 1e17")]
+#[case::div_numeric_strings(r#"div("1", "0.00000000000000001") == 1e17"#)]
+#[case::div_by_rounding_error("1 / (0.1 + 0.2 - 0.3) > 1e15")]
+#[case::div_negative("1 / -1e-17 == -1e17")]
+#[case::div_smallest_normal("1 / 2.2250738585072014e-308 > 1e307")]
+#[case::div_overflows_to_infinity("1e300 / 1e-300 == infinite()")]
+#[case::mod_literal("5 % 1e-17 < 1e-17")]
+#[case::mod_locals("let a = 5 | let b = 1e-17 | a % b < 1e-17")]
+#[case::mod_assign("var a = 5 | a %= 1e-17 | a < 1e-17")]
+#[case::mod_builtin("mod(5, 1e-17) < 1e-17")]
+fn dividing_by_a_tiny_non_zero_number_is_not_a_zero_division(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::huge("to_string(1e300) == \"1e300\"")]
+#[case::huge_fraction("to_string(1.5e22) == \"1.5e22\"")]
+#[case::just_below_the_cut_off("to_string(1e20) == \"100000000000000000000\"")]
+#[case::at_the_cut_off("to_string(1e21) == \"1e21\"")]
+#[case::computed("to_string(2 * 1e21) == \"2e21\"")]
+#[case::tiny("to_string(1e-7) == \"1e-7\"")]
+#[case::tiny_is_not_zero("to_string(1e-17) == \"1e-17\"")]
+#[case::smallest("to_string(5e-324) == \"5e-324\"")]
+#[case::just_above_the_cut_off("to_string(0.000001) == \"0.000001\"")]
+#[case::negative("to_string(-1.5e-10) == \"-1.5e-10\"")]
+#[case::interpolated_in_a_string("\"v=\" + to_string(1.5e22) == \"v=1.5e22\"")]
+#[case::tiny_remainder_is_kept("5 % 3e-17 > 0")]
+#[case::tiny_remainder_matches_fmod("5 % 1e-17 < 1e-17 && 5 % 1e-17 > 0")]
+fn numbers_with_a_large_or_small_exponent_print_in_exponent_notation(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::huge("1e300")]
+#[case::huge_fraction("1.7976931348623157e308")]
+#[case::tiny("1e-7")]
+#[case::tiny_fraction("1.5e-10")]
+#[case::smallest("5e-324")]
+#[case::rounding_error("0.1 + 0.2 - 0.3")]
+#[case::negative("-2.5e-12")]
+fn printed_numbers_parse_back_to_the_same_value(#[case] code: &str) {
+    assert_eq!(
+        run(&format!("let x = {code} | to_number(to_string(x)) == x")),
+        RuntimeValue::from(true),
+        "{code}"
+    );
+}
+
+#[rstest]
 #[case::array_array("var a = range(0, 999999) | a += [1, 2]")]
 #[case::array_element("var a = range(0, 999999) | a += 1")]
 fn add_assignment_respects_array_size_limit(#[case] code: &str) {
@@ -1748,6 +1803,10 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 #[case::try_catches_mod_builtin_by_zero("try: mod(10, 0) catch: 99;", 99.0)]
 #[case::try_catches_mod_string_by_zero("try: mod(\"10\", \"0\") catch: 99;", 99.0)]
 #[case::try_catches_div_string_by_zero("try: div(\"10\", \"0\") catch: 99;", 99.0)]
+#[case::try_catches_div_by_negative_zero("try: 1 / -0.0 catch: 99;", 99.0)]
+#[case::try_catches_div_by_float_zero("try: 1 / 0.0 catch: 99;", 99.0)]
+#[case::try_catches_mod_by_float_zero("try: 1 % 0.0 catch: 99;", 99.0)]
+#[case::try_catches_div_assign_by_zero("var a = 1 | try: a /= 0 catch: 99;", 99.0)]
 #[case::try_catch_binder_sees_message("try: 1 / 0 catch(e): len(get(e, \"message\"));", 16.0)]
 #[case::match_ident_binding_with_guard("match (5) do | x if (x > 3): x * 10 | _: 0 end", 50.0)]
 #[case::match_wildcard_fallback("match (99) do | 1: 100 | _: 0 end", 0.0)]
