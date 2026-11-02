@@ -333,6 +333,8 @@ fn test_string_codepoint_functions(#[case] code: &str, #[case] should_succeed: b
 
 #[rstest]
 #[case::regex_match("regex_match(\"hello123\", \"[0-9]+\")", true)]
+#[case::regex_match_info("regex_match_info(\"hello123\", \"([0-9])+\")", true)]
+#[case::regex_match_info_number("regex_match_info(42, \"x\")", false)] // Should fail: wrong type
 #[case::regex_escape("regex_escape(\"a.b*c?\")", true)]
 #[case::regex_escape_number("regex_escape(42)", false)] // Should fail: wrong type
 #[case::base64("base64(\"hello\")", true)]

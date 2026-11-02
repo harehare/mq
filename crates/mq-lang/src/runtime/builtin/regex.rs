@@ -178,6 +178,109 @@ fn match_info(re: &Regex, caps: &regex::Captures) -> RuntimeValue {
     RuntimeValue::Dict(Shared::new(fields))
 }
 
+/// Converts UTF-8 byte offsets of one string to code point offsets.
+enum CharOffsets {
+    /// ASCII text: both offsets are the same.
+    Ascii,
+    /// `table[byte]` is the number of code points before `byte`.
+    Table(Vec<usize>),
+}
+
+impl CharOffsets {
+    fn new(input: &str) -> Self {
+        if input.is_ascii() {
+            return CharOffsets::Ascii;
+        }
+        let mut table = vec![0; input.len() + 1];
+        let mut chars = 0;
+        for (index, c) in input.char_indices() {
+            // Offsets inside a multi-byte character are never looked up; they count it as done.
+            table[index] = chars;
+            chars += 1;
+            table[index + 1..index + c.len_utf8()].fill(chars);
+        }
+        table[input.len()] = chars;
+        CharOffsets::Table(table)
+    }
+
+    fn get(&self, byte: usize) -> usize {
+        match self {
+            CharOffsets::Ascii => byte,
+            CharOffsets::Table(table) => table[byte],
+        }
+    }
+}
+
+fn offset_number(offset: usize) -> RuntimeValue {
+    RuntimeValue::Number((offset as i64).into())
+}
+
+/// The fields describing where `m` sits in the input: byte and code point offsets.
+fn position_fields(fields: &mut DictMap, m: Option<regex::Match<'_>>, chars: &CharOffsets) {
+    let (text, start, end, char_start, char_end) = match m {
+        Some(m) => (
+            RuntimeValue::String(Shared::new(m.as_str().to_string())),
+            offset_number(m.start()),
+            offset_number(m.end()),
+            offset_number(chars.get(m.start())),
+            offset_number(chars.get(m.end())),
+        ),
+        None => (
+            RuntimeValue::NONE,
+            RuntimeValue::NONE,
+            RuntimeValue::NONE,
+            RuntimeValue::NONE,
+            RuntimeValue::NONE,
+        ),
+    };
+    fields.insert(Ident::new("match"), text);
+    fields.insert(Ident::new("start"), start);
+    fields.insert(Ident::new("end"), end);
+    fields.insert(Ident::new("char_start"), char_start);
+    fields.insert(Ident::new("char_end"), char_end);
+}
+
+fn match_details_inner(re: &Regex, input: &str) -> RuntimeValue {
+    let chars = CharOffsets::new(input);
+    let names: Vec<Option<&str>> = re.capture_names().collect();
+    let matches = re
+        .captures_iter(input)
+        .map(|caps| {
+            let mut fields = DictMap::default();
+            position_fields(&mut fields, caps.get(0), &chars);
+            let groups = names
+                .iter()
+                .enumerate()
+                .skip(1)
+                .map(|(index, name)| {
+                    let mut group = DictMap::default();
+                    group.insert(
+                        Ident::new("name"),
+                        name.map_or(RuntimeValue::NONE, |name| {
+                            RuntimeValue::String(Shared::new(name.to_string()))
+                        }),
+                    );
+                    position_fields(&mut group, caps.get(index), &chars);
+                    RuntimeValue::Dict(Shared::new(group))
+                })
+                .collect();
+            fields.insert(Ident::new("groups"), RuntimeValue::Array(Shared::new(groups)));
+            RuntimeValue::Dict(Shared::new(fields))
+        })
+        .collect();
+    RuntimeValue::Array(Shared::new(matches))
+}
+
+/// Every match of `pattern` in `input` with its position and capture groups.
+pub(super) fn match_details(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    if let Some(re) = regex_cache_read().get(pattern).cloned() {
+        return Ok(match_details_inner(&re, input));
+    }
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
+    Ok(match_details_inner(&re, input))
+}
+
 /// Splits `input` on every match of `re`. Yields `matches.len() + 1` segments, so the
 /// original text is `segments[0] + matches[0] + segments[1] + ... + segments[n]`.
 fn regex_replace_matches_inner(re: &Regex, input: &str) -> Result<RuntimeValue, Error> {
@@ -354,6 +457,21 @@ pub(super) fn extract_urls(input: &str) -> Result<RuntimeValue, Error> {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::ascii("hello", 3, 3)]
+    #[case::two_byte_char("aéb", 3, 2)]
+    #[case::three_byte_char("a日b", 4, 2)]
+    #[case::four_byte_char("a😀b", 5, 2)]
+    #[case::end_of_text("日本", 6, 2)]
+    #[case::start_of_text("日本", 0, 0)]
+    fn char_offsets_convert_byte_offsets_to_code_point_offsets(
+        #[case] input: &str,
+        #[case] byte: usize,
+        #[case] expected: usize,
+    ) {
+        assert_eq!(CharOffsets::new(input).get(byte), expected);
+    }
 
     fn strings(v: Vec<&str>) -> RuntimeValue {
         RuntimeValue::Array(Shared::new(
