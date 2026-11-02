@@ -3357,6 +3357,13 @@ impl<R: ModuleResolver> Compiler<R> {
             .is_used_by_nested_function(name, names_used_in_nested_functions)
     }
 
+    /// Compiles `x = x + rhs` on a mutable local `x` into an opcode that appends to the local in
+    /// place; reading `x` first would leave a second reference alive and copy it on every append.
+    ///
+    /// A local that a nested function uses is updated through its cell, and only when `rhs`
+    /// cannot run user code, because the opcode reads `x` after `rhs` has run.
+    ///
+    /// Returns `false`, emitting nothing, for any other assignment.
     fn compile_add_assign_local(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
         let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
             return Ok(false);
@@ -3382,6 +3389,12 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(true)
     }
 
+    /// Compiles `x = x + rhs` on a mutable variable `x` captured from an enclosing function into
+    /// an opcode that appends in place; reading `x` first would leave a second reference alive
+    /// and copy it on every append.
+    ///
+    /// The opcode reads `x` after `rhs` has run, so this applies only when `rhs` cannot run user
+    /// code that assigns `x`. Returns `false`, emitting nothing, for any other assignment.
     fn compile_add_assign_upvalue(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
         let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
             return Ok(false);
@@ -3405,6 +3418,11 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(true)
     }
 
+    /// Whether evaluating `node` cannot call a user-defined function or closure, so it cannot
+    /// assign a variable behind the back of the expression it is part of.
+    ///
+    /// Arguments of a builtin call are checked like any other expression; a builtin that is
+    /// handed a closure stored in a variable is not detected.
     fn cannot_run_user_code(&mut self, node: &Shared<Node>) -> bool {
         match &node.expr {
             Expr::Literal(_) | Expr::Ident(_) | Expr::Env(_) => true,
@@ -3424,6 +3442,10 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
+    /// Compiles `x = set(x, key, value)` on a mutable local `x` as `x[key] = value`; reading `x`
+    /// first would leave a second reference alive and copy the collection on every update.
+    ///
+    /// Returns `false`, emitting nothing, for any other assignment.
     fn compile_set_assign_local(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
         let Some(args) = self.unshadowed_builtin_args(value, builtins::SET.into(), 3) else {
             return Ok(false);
