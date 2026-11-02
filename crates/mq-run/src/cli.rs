@@ -2860,7 +2860,7 @@ impl Cli {
         self.check_backup_destinations(files, &seen)
     }
 
-    /// Backups must be permitted writes and must not land on an input or on each other.
+    /// Backups must be permitted writes and must not land on an input.
     fn check_backup_destinations(
         &self,
         files: &[(Option<PathBuf>, ContentData)],
@@ -2869,7 +2869,6 @@ impl Cli {
         let Some(suffix) = &self.output.backup else {
             return Ok(());
         };
-        let mut backups = std::collections::HashSet::new();
         for path in files.iter().filter_map(|(file, _)| file.as_deref()) {
             self.check_in_place_permitted(&OutputSink::backup_path(path, suffix)?)?;
             let backup = OutputSink::backup_destination(path, suffix)?;
@@ -2879,9 +2878,6 @@ impl Cli {
                     "--backup would overwrite another input file: {}",
                     backup.display()
                 ));
-            }
-            if !backups.insert(backup.clone()) {
-                return Err(miette!("--backup would write {} more than once", backup.display()));
             }
         }
         Ok(())

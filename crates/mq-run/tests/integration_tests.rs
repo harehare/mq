@@ -1974,6 +1974,122 @@ fn test_in_place_backup_rejects_overlap_with_another_input() -> Result<(), Box<d
     Ok(())
 }
 
+#[test]
+fn test_in_place_backup_rejects_overlap_regardless_of_input_order() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, first) = create_file("test_in_place_overlap_rev.md", "# A\n");
+    let (_, second) = create_file("test_in_place_overlap_rev.md.md", "# B\n");
+    let (first_clone, second_clone) = (first.clone(), second.clone());
+
+    defer! {
+        std::fs::remove_file(&first_clone).ok();
+        std::fs::remove_file(&second_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", "--backup=.md", ".h | upcase()"])
+        .arg(&second)
+        .arg(&first)
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(&first)?, "# A\n");
+    assert_eq!(std::fs::read_to_string(&second)?, "# B\n");
+    assert!(!first.with_file_name("test_in_place_overlap_rev.md.md.md").exists());
+
+    Ok(())
+}
+
+#[test]
+fn test_in_place_backup_allows_distinct_inputs() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, first) = create_file("test_in_place_distinct_a.md", "# a\n");
+    let (_, second) = create_file("test_in_place_distinct_b.md", "# b\n");
+    let backups = [
+        first.with_file_name("test_in_place_distinct_a.md.bak"),
+        second.with_file_name("test_in_place_distinct_b.md.bak"),
+    ];
+    let (first_clone, second_clone, backups_clone) = (first.clone(), second.clone(), backups.clone());
+
+    defer! {
+        std::fs::remove_file(&first_clone).ok();
+        std::fs::remove_file(&second_clone).ok();
+        for b in &backups_clone {
+            std::fs::remove_file(b).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", "--backup=.bak", ".h | upcase()"])
+        .arg(&first)
+        .arg(&second)
+        .assert()
+        .success();
+
+    assert_eq!(std::fs::read_to_string(&first)?, "# A\n");
+    assert_eq!(std::fs::read_to_string(&second)?, "# B\n");
+    assert_eq!(std::fs::read_to_string(&backups[0])?, "# a\n");
+    assert_eq!(std::fs::read_to_string(&backups[1])?, "# b\n");
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn test_in_place_backup_rejects_symlink_alias_of_another_input() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = std::env::temp_dir().join("test_in_place_backup_alias");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir)?;
+    let dir_clone = dir.clone();
+
+    defer! {
+        std::fs::remove_dir_all(&dir_clone).ok();
+    }
+    std::fs::write(dir.join("a.md"), "# A\n")?;
+    std::fs::write(dir.join("b.md"), "# B\n")?;
+    // a.md's backup destination is a symlink to the other input b.md.
+    std::os::unix::fs::symlink("b.md", dir.join("a.md.bak"))?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", "--backup=.bak", ".h | upcase()"])
+        .arg(dir.join("a.md"))
+        .arg(dir.join("b.md"))
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(dir.join("a.md"))?, "# A\n");
+    assert_eq!(std::fs::read_to_string(dir.join("b.md"))?, "# B\n");
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn test_in_place_backup_rejects_overlap_through_symlinked_directory() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = std::env::temp_dir().join("test_in_place_backup_dir_alias");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("real"))?;
+    std::os::unix::fs::symlink("real", dir.join("link"))?;
+    let dir_clone = dir.clone();
+
+    defer! {
+        std::fs::remove_dir_all(&dir_clone).ok();
+    }
+    std::fs::write(dir.join("real/a.md"), "# A\n")?;
+    std::fs::write(dir.join("real/a.md.md"), "# B\n")?;
+
+    // The second input is reached through a directory alias.
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args(["-U", "-i", "--backup=.md", ".h | upcase()"])
+        .arg(dir.join("real/a.md"))
+        .arg(dir.join("link/a.md.md"))
+        .assert()
+        .failure();
+
+    assert_eq!(std::fs::read_to_string(dir.join("real/a.md"))?, "# A\n");
+    assert_eq!(std::fs::read_to_string(dir.join("real/a.md.md"))?, "# B\n");
+
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn test_in_place_backup_is_named_after_symlink_input() -> Result<(), Box<dyn std::error::Error>> {
