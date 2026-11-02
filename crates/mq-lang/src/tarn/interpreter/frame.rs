@@ -135,8 +135,17 @@ pub(super) struct ExecutionLimits {
     step: u32,
     call_depth: u32,
     max_call_stack_depth: u32,
+    /// Coroutine resumes currently running inside one another. Each one re-enters the
+    /// interpreter on the native stack, unlike a call, which only adds a heap frame.
+    resume_depth: u32,
     pools: ExecutionPools,
 }
+
+/// Maximum nesting of coroutine resumes (`next`/`send` called from inside a resumed coroutine).
+///
+/// A resume uses about 7 KB of native stack in a release build, so 256 levels stay under 2 MiB,
+/// the default stack of a spawned thread. Debug builds use far more stack per level.
+pub(crate) const MAX_NESTED_RESUMES: u32 = if cfg!(debug_assertions) { 16 } else { 256 };
 
 /// Reusable non-capturing frame storage.
 #[derive(Default)]
@@ -164,6 +173,7 @@ impl ExecutionLimits {
             step: TIMEOUT_CHECK_INTERVAL - 1,
             call_depth: 0,
             max_call_stack_depth,
+            resume_depth: 0,
             pools,
         }
     }
@@ -199,6 +209,9 @@ impl ExecutionLimits {
     /// recursion limit while the coroutine is being resumed. Returns the caller depth needed to
     /// restore this execution after the coroutine yields, completes, or fails.
     pub(super) fn enter_suspended_call_depth(&mut self, suspended_depth: u32) -> VmResult<u32> {
+        if self.resume_depth >= MAX_NESTED_RESUMES {
+            return Err(VmError::RecursionError(MAX_NESTED_RESUMES));
+        }
         let caller_depth = self.call_depth;
         let Some(combined_depth) = caller_depth.checked_add(suspended_depth) else {
             return Err(VmError::RecursionError(self.max_call_stack_depth));
@@ -207,6 +220,7 @@ impl ExecutionLimits {
             return Err(VmError::RecursionError(self.max_call_stack_depth));
         }
         self.call_depth = combined_depth;
+        self.resume_depth += 1;
         Ok(caller_depth)
     }
 
@@ -217,6 +231,7 @@ impl ExecutionLimits {
             .checked_sub(caller_depth)
             .expect("coroutine call depth must include its caller depth");
         self.call_depth = caller_depth;
+        self.resume_depth -= 1;
         suspended_depth
     }
 
