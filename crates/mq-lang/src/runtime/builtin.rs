@@ -53,8 +53,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
 use self::regex::{
-    capture_re, extract_urls, is_match_re, match_re, regex_escape, regex_replace_matches, replace_re, scan_re,
-    split_re, split_records_re,
+    capture_re, extract_urls, is_match_re, match_details, match_re, regex_escape, regex_replace_matches, replace_re,
+    scan_re, split_re, split_records_re,
 };
 use super::json::parse_json_runtime_value;
 use super::runtime_value::{self, RuntimeValue};
@@ -1426,6 +1426,28 @@ fn regex_match_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
             .markdown_node()
             .map(|md| match_re(&md.value(), pattern))
+            .unwrap_or_else(|| Ok(RuntimeValue::empty_array())),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::empty_array()),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => Err(invalid_arity(ident, 2, args.len())),
+    }
+}
+
+#[mq_macros::mq_fn(name = "regex_match_info", params = Fixed(2))]
+fn regex_match_info_impl(
+    ident: &Ident,
+    _: &RuntimeValue,
+    mut args: Args,
+    _: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(pattern)] => match_details(s, pattern),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(pattern)] => node
+            .markdown_node()
+            .map(|md| match_details(&md.value(), pattern))
             .unwrap_or_else(|| Ok(RuntimeValue::empty_array())),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::empty_array()),
         [a, b] => Err(Error::InvalidTypes(
@@ -5981,6 +6003,7 @@ mq_macros::builtin_dispatch! {
     ENDS_WITH,
     STARTS_WITH,
     REGEX_MATCH,
+    REGEX_MATCH_INFO,
     IS_REGEX_MATCH,
     IS_NOT_REGEX_MATCH,
     CAPTURE,

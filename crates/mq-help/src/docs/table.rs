@@ -2984,6 +2984,20 @@ key: 1
         kind: DocKind::Function,
     },
     BuiltinDoc {
+        name: "regex_match_info",
+        aliases: &[],
+        description: "Finds all matches of the given pattern in the string and describes each one: `match` (the matched text), `start`/`end` (UTF-8 byte offsets), `char_start`/`char_end` (code point offsets) and `groups`. `groups` holds one dict per capture group in order, with the same fields plus the group's `name` (`None` if unnamed). A group that did not take part in the match has `None` for `match` and all offsets.",
+        params: &["string", "pattern"],
+        param_types: &["string", "string"],
+        returns: "array",
+        examples: &[BuiltinExample {
+            code: r#"let m = regex_match_info("aé12", "(?P<n>[0-9])([0-9])")[0] | [m["match"], m["char_start"], m["start"], m["groups"][0]["name"]]"#,
+            expected: r#"["12", 2, 3, "n"]"#,
+        }],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "repeat",
         aliases: &[],
         description: "Repeats the given string a specified number of times.",

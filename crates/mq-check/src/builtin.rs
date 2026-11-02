@@ -532,6 +532,14 @@ fn register_string(ctx: &mut InferenceContext) {
     // Regular expressions
     register_binary(ctx, "test", text(), Type::String, Type::Bool);
     register_binary(ctx, "regex_match", text(), Type::String, Type::array(Type::String));
+    // Each match is a dict mixing strings, numbers, `None` and an array of groups.
+    register_binary(
+        ctx,
+        "regex_match_info",
+        text(),
+        Type::String,
+        Type::array(Type::dict(Type::String, Type::Dynamic)),
+    );
     register_binary(ctx, "is_regex_match", text(), Type::String, Type::Bool);
     register_binary(ctx, "is_not_regex_match", text(), Type::String, Type::Bool);
     register_unary(ctx, "regex_escape", Type::String, Type::String);
@@ -540,6 +548,13 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(ctx, "is_regex_match", Type::None, Type::String, Type::Bool);
     register_binary(ctx, "is_not_regex_match", Type::None, Type::String, Type::Bool);
     register_binary(ctx, "regex_match", Type::None, Type::String, Type::array(Type::String));
+    register_binary(
+        ctx,
+        "regex_match_info",
+        Type::None,
+        Type::String,
+        Type::array(Type::dict(Type::String, Type::Dynamic)),
+    );
 
     // Encoding functions
     register_many(
