@@ -3838,7 +3838,8 @@ fn test_bytes_index_rindex_agree_single_occurrence() {
 
 #[rstest]
 #[case::string_multiple("hello world hello", "hello", vec![0, 12])]
-#[case::string_overlap_not_double_counted("aaaa", "aa", vec![0, 2])]
+#[case::string_overlapping("aaaa", "aa", vec![0, 1, 2])]
+#[case::string_overlapping_multibyte("ああa", "あ", vec![0, 1])]
 #[case::string_not_found("hello", "xyz", vec![])]
 #[case::string_empty_needle("hello", "", vec![])]
 fn test_string_indices(#[case] haystack: &str, #[case] needle: &str, #[case] expected: Vec<i64>) {
@@ -3860,6 +3861,7 @@ fn test_string_indices(#[case] haystack: &str, #[case] needle: &str, #[case] exp
 #[case(vec![0x01, 0x02, 0x03, 0x02], vec![0x02], vec![1, 3])]
 #[case(vec![0x01, 0x02, 0x03],       vec![0x04], vec![])]
 #[case(vec![0x01, 0x02, 0x01, 0x02], vec![0x01, 0x02], vec![0, 2])]
+#[case(vec![0x01, 0x01, 0x01],       vec![0x01, 0x01], vec![0, 1])]
 #[case(vec![],                      vec![0x01], vec![])]
 #[case(vec![0x01],                  vec![],     vec![])]
 fn test_bytes_indices(#[case] haystack: Vec<u8>, #[case] needle: Vec<u8>, #[case] expected: Vec<i64>) {

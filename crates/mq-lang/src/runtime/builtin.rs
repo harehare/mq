@@ -2297,22 +2297,20 @@ fn indices_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             return Vec::new();
         }
 
-        let ascii = haystack.is_ascii();
-        let (mut last_byte, mut last_char) = (0, 0);
+        let (mut char_pos, mut last_byte) = (0, 0);
+        let mut result = Vec::new();
+        let mut start = 0;
 
-        haystack
-            .match_indices(needle)
-            .map(|(i, _)| {
-                let pos = if ascii {
-                    i
-                } else {
-                    last_char += haystack[last_byte..i].chars().count();
-                    last_byte = i;
-                    last_char
-                };
-                RuntimeValue::Number((pos as i64).into())
-            })
-            .collect()
+        while let Some(found) = haystack[start..].find(needle) {
+            let i = start + found;
+            char_pos += haystack[last_byte..i].chars().count();
+            last_byte = i;
+            result.push(RuntimeValue::Number((char_pos as i64).into()));
+            // Advance by one character so overlapping matches are found.
+            start = i + haystack[i..].chars().next().map_or(1, char::len_utf8);
+        }
+
+        result
     }
 
     match args.as_mut_slice() {
@@ -2333,10 +2331,8 @@ fn indices_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                 while i + nlen <= haystack.len() {
                     if haystack[i..i + nlen] == needle.as_slice()[..] {
                         positions.push(RuntimeValue::Number((i as i64).into()));
-                        i += nlen;
-                    } else {
-                        i += 1;
                     }
+                    i += 1;
                 }
             }
 
