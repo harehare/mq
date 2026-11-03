@@ -2454,6 +2454,7 @@ dependencies = [
  "glob",
  "indicatif",
  "miette",
+ "mimalloc",
  "mq-lang",
  "rstest",
  "rustc-hash",
