@@ -189,6 +189,7 @@ fn missing_cases(ty: &Type, arms: &[ArmInfo], ctx: &mut InferenceContext) -> Opt
     let gap = || Some(ty.to_string());
 
     match ty {
+        Type::Lit(lit) => missing_cases(&lit.base(), arms, ctx),
         Type::Bool => {
             let has_true = pats.iter().any(|pat| matches!(pat, Pat::Bool(true)));
             let has_false = pats.iter().any(|pat| matches!(pat, Pat::Bool(false)));

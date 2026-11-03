@@ -109,6 +109,8 @@ pub struct DeferredRecordAccess {
     pub field_name: String,
     /// What the enclosing conditions say about the field
     pub guard: crate::field_guard::FieldGuard,
+    /// What the enclosing conditions say about the tag fields of the variable
+    pub tags: Vec<crate::field_guard::TagTest>,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
     /// Where the read starts, when it runs in source order with the writes to its variable

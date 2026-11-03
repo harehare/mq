@@ -11,7 +11,7 @@
 use mq_hir::{Hir, SymbolId};
 use rustc_hash::FxHashMap;
 
-use crate::field_guard::FieldGuard;
+use crate::field_guard::{FieldGuard, TagTest};
 use crate::{
     TypeError,
     builtin::PARTIAL,
@@ -28,13 +28,18 @@ use crate::{
 /// the row chain ends with `RowEmpty` or a still-free `Var` (no further extension
 /// was ever unified into this record, so the field is genuinely missing).
 fn find_record_field<'a>(ctx: &'a InferenceContext, ty: &'a types::Type, field: &str) -> Option<types::Type> {
+    find_record_field_raw(ctx, ty, field).map(|ty| ty.widen_lit())
+}
+
+/// Like `find_record_field`, keeping the literal of a tag field.
+fn find_record_field_raw(ctx: &InferenceContext, ty: &types::Type, field: &str) -> Option<types::Type> {
     match ty {
         types::Type::Record(fields, rest) => {
             if let Some(ft) = fields.get(field) {
                 return Some(ft.clone());
             }
             let resolved = ctx.resolve_type(rest);
-            find_record_field(ctx, &resolved, field)
+            find_record_field_raw(ctx, &resolved, field)
         }
         _ => None,
     }
@@ -53,6 +58,21 @@ fn record_row_is_closed(ctx: &InferenceContext, ty: &types::Type) -> bool {
     }
 }
 
+/// Whether a tag test rules out `member`: it holds a different literal in the tested field when
+/// the field equals the literal, or the same literal when it does not.
+fn excluded_by_tags(ctx: &InferenceContext, member: &types::Type, tags: &[TagTest]) -> bool {
+    tags.iter().any(|test| {
+        let Some(types::Type::Lit(tag)) = find_record_field_raw(ctx, member, &test.key) else {
+            return false;
+        };
+        if test.equal {
+            tag != test.lit && std::mem::discriminant(&tag) == std::mem::discriminant(&test.lit)
+        } else {
+            tag == test.lit
+        }
+    })
+}
+
 /// The type of `field` read from a union of records, where each member contributes its field type.
 ///
 /// A closed record without the field reads as `none`, as does `none` itself. `None` when a
@@ -63,10 +83,16 @@ fn union_field_type(
     members: &[types::Type],
     field: &str,
     guard: FieldGuard,
+    tags: &[TagTest],
 ) -> Option<types::Type> {
     let mut parts = Vec::with_capacity(members.len());
+    let mut excluded = 0;
     for member in members {
         let member = ctx.resolve_type(member);
+        if excluded_by_tags(ctx, &member, tags) {
+            excluded += 1;
+            continue;
+        }
         match &member {
             // Where the key is known to exist, a member without it cannot be the value.
             types::Type::None if !guard.present => parts.push(types::Type::None),
@@ -82,6 +108,10 @@ fn union_field_type(
             types::Type::None => {}
             _ => return None,
         }
+    }
+    // Every member ruled out means the branch cannot run; leave the access unresolved
+    if excluded == members.len() {
+        return None;
     }
     Some(without_none_if(guard.non_none, types::Type::join(parts)))
 }
@@ -173,7 +203,7 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
                 });
             }
         } else if let types::Type::Union(members) = &var_ty
-            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, access.guard)
+            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, access.guard, &access.tags)
         {
             let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
             ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
@@ -221,7 +251,7 @@ pub(crate) fn resolve_deferred_call_return_accesses(ctx: &mut InferenceContext) 
                 // Dict access: result is a fresh type variable (dynamic value type)
                 resolved_round = true;
             } else if let types::Type::Union(members) = &return_ty
-                && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, FieldGuard::default())
+                && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, FieldGuard::default(), &[])
             {
                 ctx.add_constraint(Constraint::Equal(
                     access.result_ty.clone(),

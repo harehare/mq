@@ -50,6 +50,10 @@ pub fn unify(
         // Dynamic unifies with anything without constraining either side
         (Type::Dynamic, _) | (_, Type::Dynamic) => {}
 
+        // A literal unifies as its base type
+        (Type::Lit(lit), other) => unify(ctx, &lit.base(), other, range, origin),
+        (other, Type::Lit(lit)) => unify(ctx, other, &lit.base(), range, origin),
+
         // Same concrete types unify trivially
         (Type::Int, Type::Int)
         | (Type::Float, Type::Float)

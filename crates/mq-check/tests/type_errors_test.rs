@@ -1063,3 +1063,43 @@ fn test_non_callable_keys_and_range(#[case] code: &str, #[case] should_succeed: 
     let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{code}: {result:?}");
 }
+
+const DIV: &str = r#"def div(a, b): if (b == 0): {ok: false, error: "zero"} else: {ok: true, value: a / b} end"#;
+const KINDS: &str = r#"def pick(b): if (b): {kind: "a", x: 1} else: {kind: "b", y: "s"} end"#;
+
+fn with_div(body: &str) -> String {
+    format!("{DIV} | let r = div(4, 2) | {body}")
+}
+
+fn with_kinds(body: &str) -> String {
+    format!("{KINDS} | let r = pick(true) | {body}")
+}
+
+#[rstest]
+#[case::truthy_tag(with_div(r#"if (r["ok"]): r["value"] + 1 else: r["error"] + "x""#), true)]
+#[case::negated_tag(with_div(r#"if (!r["ok"]): r["error"] + "x" else: r["value"] + 1"#), true)]
+#[case::equals_literal(with_div(r#"if (r["ok"] == true): r["value"] + 1 else: r["error"] + "x""#), true)]
+#[case::not_equals_literal(with_div(r#"if (r["ok"] != true): r["error"] + "x" else: r["value"] + 1"#), true)]
+#[case::and_condition(with_div(r#"if (r["ok"] && r["value"] > 0): r["value"] + 1 else: 0"#), true)]
+#[case::string_tag(with_kinds(r#"if (r["kind"] == "a"): r["x"] + 1 else: r["y"] + "s""#), true)]
+#[case::elif_string_tag(
+    with_kinds(r#"if (r["kind"] == "a"): r["x"] + 1 elif (r["kind"] == "b"): r["y"] + "s" else: 0"#),
+    true
+)]
+#[case::wrong_type_in_ok_branch(with_div(r#"if (r["ok"]): r["value"] - "s" else: 0"#), false)]
+#[case::wrong_type_in_error_branch(with_div(r#"if (r["ok"]): 0 else: r["error"] - 1"#), false)]
+#[case::wrong_type_string_tag(with_kinds(r#"if (r["kind"] == "b"): r["y"] - 1 else: 0"#), false)]
+fn test_tag_test_selects_the_member_of_a_union_of_records(#[case] code: String, #[case] ok: bool) {
+    let errors = check_types_with_builtins(&code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::widened_assignment(r#"var r = {ok: true} | r["ok"] = false | r["ok"]"#)]
+#[case::compared_with_other_literal(r#"let r = {ok: true} | if (r["ok"] == false): 1 else: 2"#)]
+#[case::passed_as_bool(r#"def f(b): if (b): 1 else: 2; | f({ok: true}["ok"])"#)]
+#[case::joined_in_array(r#"[{ok: true, v: 1}, {ok: false, v: 2}] | map(fn(r): r["ok"];)"#)]
+fn test_literal_tags_do_not_reject_valid_code(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "`{code}`: {errors:?}");
+}

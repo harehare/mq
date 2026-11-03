@@ -136,6 +136,8 @@ A function of one parameter whose body is a single condition on it, such as `def
 
 Reading a record field narrows with the tests around it: in `if (v["a"] != None): ...` (or `!is_none(v["a"])`, or the else-branch of `== None`) the read is not `none`, and `if (contains(keys(v), "a")): ...` selects the members of a union of records that have the key. Without such a test, a record that lacks the key reads as `none`.
 
+A dict literal keeps `true`, `false` and string literals as tags, so a union of records is narrowed by a tag test: `if (r["ok"]): ...`, `if (!r["ok"]): ...`, `r["kind"] == "a"` and `!=`, joined with `&&`, `||`, `not` or `elif`. A branch reads only the members the tag allows, so a user-defined result such as `{ok: true, value: v}` or `{ok: false, error: e}` is checked without a spurious `none`. Tags are widened to `bool` and `string` wherever they are read.
+
 `match` is checked for exhaustiveness against the type of the value. `:number`-style type patterns, `||` alternatives, `[]` with `[a, ..rest]`, `:array` and `:dict` cover what they match, and a match that cannot be decided (an unknown type, nested refutable patterns) is not reported.
 
 A function that contains `yield` returns a coroutine, typed `generator<T>` where `T` is the type of the yielded values. `first`, `map`, `filter`, `flat_map`, `fold`, `next`, `send`, `status` and `close` understand it (`next` gives `{value: T | none, done: bool}`), and `is_coroutine(x)` narrows to it.
