@@ -6,6 +6,10 @@ use clap::Parser;
 use runner::{BenchRunner, OutputFormat};
 use std::{path::PathBuf, process::ExitCode};
 
+// Same allocator as the `mq` binary, so timings match what users see.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[derive(Parser, Debug)]
 #[command(name = "mq-bench")]
 #[command(version = env!("CARGO_PKG_VERSION"))]

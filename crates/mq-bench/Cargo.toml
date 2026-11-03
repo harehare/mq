@@ -19,6 +19,7 @@ clap = {workspace = true, features = ["derive"]}
 glob = {workspace = true}
 indicatif = {workspace = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
+mimalloc = {workspace = true, features = ["v3"]}
 mq-lang = {workspace = true, features = ["cst", "file-io", "mock-io"]}
 rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive"]}

@@ -1383,10 +1383,11 @@ def fold(arr, init, f):
     init
   else:
     do
-      var acc = init
+      let n = len(arr)
+      | var acc = init
       | var i = 0
-      | while (i != len(arr)):
-          acc = f(acc, get(arr, i))
+      | while (i != n):
+          acc = f(acc, arr[i])
           | i += 1;
       | acc
     end
@@ -2293,7 +2294,7 @@ def juxt(*fns): fn(x): map(fns, fn(f): f(x););;
 # ```
 #
 # Returns: number
-def sum(arr): sum_by(arr, identity);
+def sum(arr): fold(arr, 0, fn(acc, x): acc + x;);
 
 # Returns an array of running (cumulative) sums of the given array of numbers.
 #
@@ -2607,13 +2608,10 @@ def zip(arr1, arr2):
     error("arguments must be arrays")
   else:
     do
-      var result = []
-      | var i = 0
-      | while (i < len(arr1) && i < len(arr2)):
-          result += [[arr1[i], arr2[i]]]
-          | i += 1
-        end
-      | result
+      let n1 = len(arr1)
+      | let n2 = len(arr2)
+      | let n = if (n1 < n2): n1 else: n2
+      | if (n == 0): [] else: foreach (i, range(0, n - 1)): [arr1[i], arr2[i]];
     end
 end
 
