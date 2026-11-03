@@ -229,15 +229,25 @@ pub fn unify(
 
         // Union types: a union can unify with a non-union type if any of its members can.
         (Type::Union(types), other) | (other, Type::Union(types)) => {
-            // Check if the other type matches any member of the union
-            let matches_any = types.iter().any(|t| {
-                // Try to check if types can match without adding errors
+            // A record and a dict are compared by their contents, so the member is tried with
+            // the errors it would report discarded.
+            let mut matches_any = false;
+            let mut container_members = Vec::new();
+            for t in types {
                 match (t, other) {
-                    (t1, t2) if std::mem::discriminant(t1) == std::mem::discriminant(t2) => true,
-                    (Type::Var(_), _) | (_, Type::Var(_)) => true,
-                    _ => false,
+                    (t1, t2) if std::mem::discriminant(t1) == std::mem::discriminant(t2) => matches_any = true,
+                    (Type::Var(_), _) | (_, Type::Var(_)) => matches_any = true,
+                    (Type::Record(..), Type::Dict(..)) | (Type::Dict(..), Type::Record(..)) => {
+                        container_members.push(t);
+                    }
+                    _ => {}
                 }
-            });
+            }
+            if !matches_any {
+                matches_any = container_members
+                    .iter()
+                    .any(|member| ctx.speculate(|ctx| unify(ctx, member, other, range, origin)));
+            }
 
             if !matches_any {
                 // No member of the union can unify with the other type - report error
@@ -276,14 +286,18 @@ fn unify_records(
         }
     }
 
+    // A missing key reads as `none`, so a closed record may omit a field that accepts `none`.
+    let omittable = |ctx: &InferenceContext, ty: &Type, other_rest: &Type| {
+        ty.is_nullable() && matches!(ctx.resolve_type(other_rest), Type::RowEmpty)
+    };
     let only1: BTreeMap<String, Type> = f1
         .iter()
-        .filter(|(k, _)| !f2.contains_key(k.as_str()))
+        .filter(|(k, v)| !f2.contains_key(k.as_str()) && !omittable(ctx, v, r2))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let only2: BTreeMap<String, Type> = f2
         .iter()
-        .filter(|(k, _)| !f1.contains_key(k.as_str()))
+        .filter(|(k, v)| !f1.contains_key(k.as_str()) && !omittable(ctx, v, r1))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
@@ -581,6 +595,26 @@ mod tests {
         let dict2 = Type::dict(Type::String, Type::String);
         unify(&mut ctx, &record, &dict2, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_union_dict_candidates_do_not_leak_bindings() {
+        let mut ctx = InferenceContext::new();
+        let var = Type::Var(ctx.fresh_var());
+        let record = Type::record(
+            [("a".to_string(), var.clone()), ("b".to_string(), Type::String)]
+                .into_iter()
+                .collect(),
+            Type::RowEmpty,
+        );
+        let union = Type::union(vec![
+            Type::dict(Type::String, Type::Number),
+            Type::dict(Type::String, Type::String),
+        ]);
+
+        unify(&mut ctx, &union, &record, None, &ConstraintOrigin::General);
+        assert!(ctx.take_errors().is_empty());
+        assert_eq!(ctx.resolve_type(&var), Type::String);
     }
 
     #[test]

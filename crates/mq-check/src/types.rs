@@ -651,6 +651,9 @@ impl Type {
                     if let Some(v2) = f2.get(k) {
                         total += v1.match_score(v2)?;
                         count += 1;
+                    } else if matches!(**r1, Type::RowEmpty) && !v1.is_nullable() {
+                        // A closed record needs every field that cannot be `none`.
+                        return None;
                     }
                 }
                 let field_score = total.checked_div(count).unwrap_or(10);

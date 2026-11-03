@@ -281,6 +281,9 @@ pub struct InferenceContext {
     constraints: Vec<Constraint>,
     /// Type variable substitutions (unified types)
     substitutions: FxHashMap<TypeVarId, Type>,
+    /// Bindings made during speculation, with the value they replaced, to undo a failed trial.
+    trail: Vec<(TypeVarId, Option<Type>)>,
+    speculating: usize,
     /// Builtin function/operator type signatures (can have multiple overloads)
     builtins: FxHashMap<SmolStr, Vec<Type>>,
     /// Collected type errors (for non-fatal error reporting)
@@ -357,6 +360,8 @@ impl InferenceContext {
             symbol_types: FxHashMap::default(),
             constraints: Vec::new(),
             substitutions: FxHashMap::default(),
+            trail: Vec::new(),
+            speculating: 0,
             builtins: FxHashMap::default(),
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
@@ -983,7 +988,34 @@ impl InferenceContext {
 
     /// Binds a type variable to a type
     pub fn bind_type_var(&mut self, var: TypeVarId, ty: Type) {
-        self.substitutions.insert(var, ty);
+        let previous = self.substitutions.insert(var, ty);
+        if self.speculating > 0 {
+            self.trail.push((var, previous));
+        }
+    }
+
+    /// Runs `trial` and keeps its bindings only if it reports no new error.
+    pub fn speculate(&mut self, trial: impl FnOnce(&mut Self)) -> bool {
+        let errors = self.errors.len();
+        let mark = self.trail.len();
+        self.speculating += 1;
+        trial(self);
+        self.speculating -= 1;
+        let fits = self.errors.len() == errors;
+        if !fits {
+            while self.trail.len() > mark {
+                let Some((var, previous)) = self.trail.pop() else { break };
+                match previous {
+                    Some(ty) => self.substitutions.insert(var, ty),
+                    None => self.substitutions.remove(&var),
+                };
+            }
+            self.errors.truncate(errors);
+        }
+        if self.speculating == 0 {
+            self.trail.clear();
+        }
+        fits
     }
 
     /// Gets the bound type for a type variable

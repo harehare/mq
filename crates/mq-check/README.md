@@ -89,6 +89,24 @@ let r = try: {"data": 1, "error": None} catch(e): {"data": None, "error": {"mess
 def f(x, index = None): if (is_none(index)): [1] else: index;
 ```
 
+### Record-Returning Builtins
+
+Builtins that return a dict are typed as records, so a misspelled key is an error and the field types are known.
+
+| Builtin | Result |
+| --- | --- |
+| `file_info(path)` | `{path: string, kind: string, size: number, modified: number \| none}` |
+| `collection(dir)` | `[{path: string, title: string \| none, frontmatter: any, content: [markdown]}]` |
+
+`http_all` takes `[{url: string, method?: string \| symbol, body?: string, headers?: {string: string}}]`. `url` is required, unknown keys are rejected, and the optional keys may be left out or set to `none`.
+
+```mq
+file_info("a.md")["modified"]                 // number | none
+file_info("a.md")["mtime"]                    // Error: record has no field `mtime`
+http_all([{url: "https://example.com"}])      // [string]
+http_all([{url: "u", headers: {"X": 1}}])     // Error: header values must be strings
+```
+
 ### Markdown Node Types
 
 A Markdown node has type `markdown`, or a narrower set of node kinds such as `h1 | h2`, `code` or `markdown - code`. `is_*` predicates, `:h1`-style patterns and selector conditions (`if (.h1): ...`) narrow a value to the kinds they test in the then-branch and remove them in the else-branch.
