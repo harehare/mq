@@ -664,6 +664,56 @@ fn loop_with_break_keeps_its_accumulator() {
     "3"
 )]
 #[case::first_body_sees_the_input("def f(): var n = 0 | 0 | let r = while (n < 3): n = n + 1 | . end | r; | f()", "0")]
+#[case::condition_declaring_a_binding(
+    "def f(): var i = 0 | let r = while (let x = i | x < 3): i = i + 1 | i end | r; | f()",
+    "3"
+)]
+#[case::nested_while(
+    "def f(): var i = 0 | var s = 0 | while (i < 3): var j = 0 | while (j < 3): s += 1 | j += 1 end | i += 1 end | s; | f()",
+    "9"
+)]
+#[case::condition_with_side_effect(
+    "def f(): var n = 0 | var i = 0 | def tick(): n += 1 | n; | while (tick() < 4): i += 1 end | [i, n]; | f()",
+    "[3, 4]"
+)]
+#[case::empty_range_result_is_input("def f(): var i = 10 | while (i < 3): i += 1 end | i; | f()", "10")]
+#[case::until_with_pipe_value("def f(): var i = 0 | until (i == 3): i += 1 | i * 2 end; | f()", "6")]
+#[case::condition_reads_self_and_a_variable(
+    "def f(): var i = 0 | 0 | let r = while (i < 3 && . < 100): i += 1 | . + 50 end | [i, r]; | f()",
+    "[2, 100]"
+)]
+#[case::condition_or_with_a_string_body(
+    "def f(): var i = 0 | 0 | let r = while (i < 3 || false): i += 1 | \"x\" end | [i, r]; | f()",
+    "[3, \"x\"]"
+)]
+#[case::condition_builds_an_array(
+    "def f(): var i = 0 | 0 | let r = while (len([i, .]) < 3 && i < 3): i += 1 | i end | [i, r]; | f()",
+    "[3, 3]"
+)]
+#[case::condition_is_an_if(
+    "def f(): var i = 0 | 0 | let r = while (if (. == 0): i < 3 else: i < 3): i += 1 | i + 1 end | [i, r]; | f()",
+    "[3, 4]"
+)]
+#[case::condition_calls_a_builtin(
+    "def f(): var i = 0 | 0 | let r = while (to_number(i) < 3): i += 1 | i end | [i, r]; | f()",
+    "[3, 3]"
+)]
+#[case::body_nests_the_previous_value(
+    "def f(): var i = 0 | 0 | let r = while (i < 3): i += 1 | [i, .] end | [i, r]; | f()",
+    "[3, [3, [2, [1, 0]]]]"
+)]
+#[case::condition_compares_self(
+    "def f(): var i = 0 | 0 | let r = while (. < 10): i += 1 | . + 3 end | [i, r]; | f()",
+    "[4, 12]"
+)]
+#[case::body_branches_on_self(
+    "def f(): var i = 0 | 0 | let r = while (i < 3 && . < 100): i += 1 | if (. == 0): 7 else: . * 2 end | [i, r]; | f()",
+    "[3, 28]"
+)]
+#[case::body_wraps_self_each_time(
+    "def f(): var i = 0 | 0 | let r = while (i < 4): i += 1 | [.] end | [i, r]; | f()",
+    "[4, [[[[0]]]]]"
+)]
 #[case::if_in_the_body(
     "def f(): var i = 0 | var s = 0 | let r = while (i < 5): (if (i % 2 == 0): s += i) | i = i + 1 | [s, i] end | r; | f()",
     "[6, 5]"
@@ -671,6 +721,29 @@ fn loop_with_break_keeps_its_accumulator() {
 fn loops_without_break_keep_their_value(#[case] code: &str, #[case] expected: &str) {
     let value = run_result(code).unwrap_or_else(|error| panic!("{code}: {error:?}"));
     assert_eq!(value.to_string(), expected, "{code}");
+}
+
+#[rstest]
+#[case::add("1 + 2", "3")]
+#[case::fraction("0.5 * 3", "1.5")]
+#[case::negative_mod("-7 % 3", "-1")]
+#[case::lt("1 < 2", "true")]
+#[case::ge_equal("2 >= 2", "true")]
+#[case::int_float_eq("1 == 1.0", "true")]
+#[case::nested_operands("(1 + 2) * (3 - 1)", "6")]
+#[case::number_plus_string("1 + \"a\"", "1a")]
+#[case::string_plus_number("\"a\" + 1", "a1")]
+#[case::none_operand("None < 1", "false")]
+fn number_operands_on_the_stack(#[case] code: &str, #[case] expected: &str) {
+    let value = run_result(code).unwrap_or_else(|error| panic!("{code}: {error:?}"));
+    assert_eq!(value.to_string(), expected, "{code}");
+}
+
+#[rstest]
+#[case::div("1 / (2 - 2)")]
+#[case::modulo("5 % (1 - 1)")]
+fn number_operands_on_the_stack_report_division_by_zero(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code}");
 }
 
 #[test]
@@ -996,6 +1069,14 @@ fn add_assignment_respects_array_size_limit(#[case] code: &str) {
 #[case::computed_index_number_plus_string("var a = [1] | var i = 0 | a[i + 0] += \"x\" | a == [\"1x\"]")]
 #[case::add_number_to_a_shared_copy_is_not_changed(
     "var a = [1, 2] | var b = a | var i = 0 | a[i + 1] += 1 | b == [1, 2] && a == [1, 3]"
+)]
+#[case::computed_negative_index("var a = [1, 2, 3] | var i = -1 | a[i + 0] += 1 | a == [4, 2, 3]")]
+#[case::computed_string_key("var d = {\"ab\": 1} | var s = \"a\" | d[s + \"b\"] += 2 | d == {\"ab\": 3}")]
+#[case::computed_missing_key_is_created(
+    "var d = {\"ab\": 1} | var s = \"a\" | d[s + \"z\"] += 2 | d == {\"ab\": 1, \"az\": 2}"
+)]
+#[case::computed_key_nested_dict(
+    "var d = {\"a\": {\"b\": 1}} | var k = \"a\" | d[k][\"b\"] += 1.5 | d == {\"a\": {\"b\": 2.5}}"
 )]
 #[case::in_function(
     "def f(n): var d = {\"a\": []} | var i = 0 | while (i < n): d[\"a\"] += [i] | i = i + 1 end | d; | f(3) == {\"a\": [0, 1, 2]}"

@@ -1038,25 +1038,27 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
 /// Whether `program` has no `break`, `continue`, `try`, nested loop or nested function, so a loop
 /// around it can only leave through its condition. Anything not listed is treated as not simple.
 fn program_is_straight_line(program: &Program) -> bool {
-    program.iter().all(node_is_straight_line)
+    program.iter().all(|node| node_is_straight_line(node, true))
 }
 
-fn node_is_straight_line(node: &Shared<Node>) -> bool {
+/// `bindings` is whether `let`/`var` may appear. A loop condition is compiled twice, so it must
+/// not declare any.
+fn node_is_straight_line(node: &Shared<Node>, bindings: bool) -> bool {
+    let simple = |node: &Shared<Node>| node_is_straight_line(node, bindings);
     match &node.expr {
         Expr::Literal(_) | Expr::Ident(_) | Expr::Self_ | Expr::Env(_) => true,
-        Expr::Let(_, value) | Expr::Var(_, value) | Expr::Assign(_, value) | Expr::Paren(value) => {
-            node_is_straight_line(value)
-        }
-        Expr::IndexAssign(_, index, value) => node_is_straight_line(index) && node_is_straight_line(value),
-        Expr::Call(_, args) | Expr::Array(args) => args.iter().all(node_is_straight_line),
-        Expr::BinaryOp(_, lhs, rhs) => node_is_straight_line(lhs) && node_is_straight_line(rhs),
-        Expr::UnaryOp(_, operand) => node_is_straight_line(operand),
-        Expr::And(operands) | Expr::Or(operands) => operands.iter().all(node_is_straight_line),
-        Expr::Index(target, index) => node_is_straight_line(target) && node_is_straight_line(index),
-        Expr::Block(body) => program_is_straight_line(body),
-        Expr::If(branches) | Expr::Unless(branches) => branches.iter().all(|(condition, body)| {
-            condition.as_ref().is_none_or(node_is_straight_line) && node_is_straight_line(body)
-        }),
+        Expr::Let(_, value) | Expr::Var(_, value) => bindings && simple(value),
+        Expr::Assign(_, value) | Expr::Paren(value) => simple(value),
+        Expr::IndexAssign(_, index, value) => simple(index) && simple(value),
+        Expr::Call(_, args) | Expr::Array(args) => args.iter().all(simple),
+        Expr::BinaryOp(_, lhs, rhs) => simple(lhs) && simple(rhs),
+        Expr::UnaryOp(_, operand) => simple(operand),
+        Expr::And(operands) | Expr::Or(operands) => operands.iter().all(simple),
+        Expr::Index(target, index) => simple(target) && simple(index),
+        Expr::Block(body) => bindings && program_is_straight_line(body),
+        Expr::If(branches) | Expr::Unless(branches) => branches
+            .iter()
+            .all(|(condition, body)| condition.as_ref().is_none_or(simple) && simple(body)),
         _ => false,
     }
 }
@@ -4013,7 +4015,7 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_conditional_loop(&mut self, cond: &Shared<Node>, body: &Program, invert: bool) -> CompileResult<()> {
-        if node_is_straight_line(cond) && program_is_straight_line(body) {
+        if node_is_straight_line(cond, false) && program_is_straight_line(body) {
             return self.compile_straight_line_loop(cond, body, invert);
         }
         let acc_slot = self.scope_mut().declare_synthetic();
