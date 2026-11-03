@@ -1485,7 +1485,7 @@ key: 1
     BuiltinDoc {
         name: "bnot",
         aliases: &[],
-        description: "Computes the bitwise NOT (complement) of a byte array.",
+        description: "Computes the bitwise NOT (complement) of a byte array. For integers, use xor(n, mask) with an explicit width.",
         params: &["bytes"],
         param_types: &["bytes"],
         returns: "bytes",
