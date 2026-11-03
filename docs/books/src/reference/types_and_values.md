@@ -33,6 +33,10 @@ Numbers are 64-bit floating point values. They print as the shortest text that p
 # => [100000000000000000000, 1e21, 0.000001, 1e-7, 1.5e300]
 ```
 
+### Non-finite Numbers
+
+`infinite()`, `-infinite()` and `nan()` follow jq when written as structured output (JSON, JSONL, YAML, TOML, TOON, XML, gron, `-F shell`): infinities become `1.7976931348623157e308` / `-1.7976931348623157e308` and `nan()` becomes `null`. `-F csv` and `-F text` write `inf`, `-inf` and `NaN`. YAML `.inf`, `-.inf` and `.nan` are read as the matching numbers.
+
 ## Byte String Literals
 
 Byte string literals use the `b"..."` syntax and represent raw sequences of bytes (`u8` values).

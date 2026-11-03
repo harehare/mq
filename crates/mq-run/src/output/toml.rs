@@ -8,7 +8,8 @@
 //!
 //! TOML has no null, so dict keys whose value is `None` are omitted. A `None` inside
 //! an array cannot be omitted without shifting indices, so it is an error naming its path.
-//! Values with no JSON form (`nan()`, `infinite()`, functions) are errors, not omissions.
+//! `infinite()` follows the JSON rule (clamped). `nan()` is null in JSON, which TOML cannot hold, so it
+//! is an error rather than a silent omission, like values with no JSON form (functions).
 
 use miette::miette;
 use mq_lang::RuntimeValue;
@@ -27,7 +28,7 @@ fn child_key_path(path: &str, key: &str) -> String {
 /// Returns whether a non-container value has a JSON (and so TOML) representation.
 fn is_representable(value: &RuntimeValue) -> bool {
     match value {
-        RuntimeValue::Number(n) => n.value().is_finite(),
+        RuntimeValue::Number(n) => !n.is_nan(),
         RuntimeValue::Boolean(_)
         | RuntimeValue::String(_)
         | RuntimeValue::Symbol(_)
@@ -173,17 +174,11 @@ mod tests {
     }
 
     #[test]
-    fn test_non_finite_numbers_error_instead_of_being_omitted() {
+    fn test_nan_errors_instead_of_being_omitted() {
         let nan = RuntimeValue::Number(f64::NAN.into());
-        let inf = RuntimeValue::Number(f64::INFINITY.into());
-        let nested = dict(vec![("inner", inf.clone())]);
+        let nested = dict(vec![("inner", nan.clone())]);
         let in_array = RuntimeValue::Array(Shared::new(vec![dict(vec![("limit", nan.clone())])]));
-        for (value, path) in [
-            (nan, "limit"),
-            (inf, "limit"),
-            (nested, "t.inner"),
-            (in_array, "t[0].limit"),
-        ] {
+        for (value, path) in [(nan, "limit"), (nested, "t.inner"), (in_array, "t[0].limit")] {
             let top = if path.starts_with("t") {
                 dict(vec![("t", value)])
             } else {
@@ -195,6 +190,18 @@ mod tests {
             let err = runtime_values_to_toml(&[top]).unwrap_err();
             assert!(err.to_string().contains(path), "{err}");
         }
+    }
+
+    #[test]
+    fn test_infinity_is_clamped() {
+        let top = dict(vec![
+            ("a", RuntimeValue::Number(f64::INFINITY.into())),
+            ("b", RuntimeValue::Number(f64::NEG_INFINITY.into())),
+        ]);
+        let result = runtime_values_to_toml(&[top]).unwrap();
+        let parsed: toml::Value = toml::from_str(&result).unwrap();
+        assert_eq!(parsed["a"].as_float(), Some(f64::MAX));
+        assert_eq!(parsed["b"].as_float(), Some(f64::MIN));
     }
 
     #[test]
