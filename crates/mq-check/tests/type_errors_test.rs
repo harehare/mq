@@ -1103,3 +1103,31 @@ fn test_literal_tags_do_not_reject_valid_code(#[case] code: &str) {
     let errors = check_types_with_builtins(code);
     assert!(errors.is_empty(), "`{code}`: {errors:?}");
 }
+
+#[rstest]
+#[case::predicate_on_tag(
+    with_div(r#"def is_ok(x): x["ok"]; | if (is_ok(r)): r["value"] + 1 else: r["error"] + "x""#),
+    true
+)]
+#[case::negated_predicate(
+    with_div(r#"def is_err(x): x["ok"] == false; | if (is_err(r)): r["error"] + "x" else: r["value"] + 1"#),
+    true
+)]
+#[case::predicate_through_predicate(
+    with_div(
+        r#"def is_ok(x): x["ok"]; | def good(x): is_ok(x); | if (good(r)): r["value"] + 1 else: r["error"] + "x""#
+    ),
+    true
+)]
+#[case::predicate_still_checks_branch(
+    with_div(r#"def is_ok(x): x["ok"]; | if (is_ok(r)): r["value"] - "s" else: 0"#),
+    false
+)]
+#[case::recursive_predicate_terminates(
+    with_div(r#"def loop_a(x): loop_b(x); | def loop_b(x): loop_a(x); | if (loop_a(r)): 1 else: 2"#),
+    true
+)]
+fn test_user_predicate_tests_a_tag(#[case] code: String, #[case] ok: bool) {
+    let errors = check_types_with_builtins(&code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}

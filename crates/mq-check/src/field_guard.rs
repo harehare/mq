@@ -6,7 +6,7 @@
 
 use mq_hir::{Hir, SymbolId, SymbolKind};
 
-use crate::constraint::{ChildrenIndex, get_children};
+use crate::constraint::{ChildrenIndex, get_children, get_non_keyword_children};
 use crate::types::Lit;
 use crate::walk_ancestors;
 
@@ -191,6 +191,7 @@ fn collect_tag_tests(
     truth: bool,
     def_id: SymbolId,
     children_index: &ChildrenIndex,
+    depth: u8,
     out: &mut Vec<TagTest>,
 ) {
     let Some(symbol) = hir.symbol(cond) else {
@@ -202,17 +203,17 @@ fn collect_tag_tests(
     match (&symbol.kind, symbol.value.as_deref()) {
         (SymbolKind::UnaryOp, Some("!")) => {
             if let Some(&inner) = children.first() {
-                collect_tag_tests(hir, inner, !truth, def_id, children_index, out);
+                collect_tag_tests(hir, inner, !truth, def_id, children_index, depth, out);
             }
         }
         (SymbolKind::BinaryOp, Some("&&")) if truth => {
             for &c in children {
-                collect_tag_tests(hir, c, true, def_id, children_index, out);
+                collect_tag_tests(hir, c, true, def_id, children_index, depth, out);
             }
         }
         (SymbolKind::BinaryOp, Some("||")) if !truth => {
             for &c in children {
-                collect_tag_tests(hir, c, false, def_id, children_index, out);
+                collect_tag_tests(hir, c, false, def_id, children_index, depth, out);
             }
         }
         (SymbolKind::BinaryOp, Some(op @ ("==" | "!="))) => {
@@ -239,18 +240,67 @@ fn collect_tag_tests(
                     equal: truth,
                 });
             } else if let (Some("not"), [arg]) = (call_name(hir, cond), children) {
-                collect_tag_tests(hir, *arg, !truth, def_id, children_index, out);
+                collect_tag_tests(hir, *arg, !truth, def_id, children_index, depth, out);
+            } else {
+                collect_predicate_tag_tests(hir, cond, truth, def_id, children_index, depth, out);
             }
         }
         _ => {}
     }
 }
 
+/// The tests a call `is_ok(r)` of a user-defined predicate makes on `r`: a function of one
+/// parameter whose body is a single condition tests the argument as the body tests the parameter.
+fn collect_predicate_tag_tests(
+    hir: &Hir,
+    call: SymbolId,
+    truth: bool,
+    def_id: SymbolId,
+    children_index: &ChildrenIndex,
+    depth: u8,
+    out: &mut Vec<TagTest>,
+) {
+    const MAX_PREDICATE_DEPTH: u8 = 4;
+    if depth >= MAX_PREDICATE_DEPTH {
+        return;
+    }
+    let Some(func_id) = hir.resolve_reference_symbol(call) else {
+        return;
+    };
+    let Some(func) = hir.symbol(func_id) else {
+        return;
+    };
+    if hir.is_builtin_symbol(func) || !matches!(func.kind, SymbolKind::Function(_)) {
+        return;
+    }
+    let is_parameter = |id: &SymbolId| hir.symbol(*id).is_some_and(|s| s.kind == SymbolKind::Parameter);
+    let members = get_non_keyword_children(hir, func_id, children_index);
+    let [param] = members.iter().copied().filter(is_parameter).collect::<Vec<_>>()[..] else {
+        return;
+    };
+    let [body] = members
+        .iter()
+        .copied()
+        .filter(|id| !is_parameter(id))
+        .collect::<Vec<_>>()[..]
+    else {
+        return;
+    };
+    let args = get_non_keyword_children(hir, call, children_index);
+    let [arg] = args[..] else {
+        return;
+    };
+    if hir.symbol(arg).is_none_or(|s| s.kind != SymbolKind::Ref) || hir.resolve_reference_symbol(arg) != Some(def_id) {
+        return;
+    }
+    collect_tag_tests(hir, body, truth, param, children_index, depth, out);
+}
+
 /// The tests of tag fields of `def_id` that the conditions enclosing `access` make.
 pub(crate) fn tag_tests(hir: &Hir, access: SymbolId, def_id: SymbolId, children_index: &ChildrenIndex) -> Vec<TagTest> {
     let mut tests = Vec::new();
     for (cond, truth) in enclosing_conditions(hir, access, children_index) {
-        collect_tag_tests(hir, cond, truth, def_id, children_index, &mut tests);
+        collect_tag_tests(hir, cond, truth, def_id, children_index, 0, &mut tests);
     }
     tests
 }
