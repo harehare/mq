@@ -3732,6 +3732,16 @@ fn test_bnot_double_negation() {
 }
 
 #[test]
+fn test_bnot_number_points_to_xor() {
+    assert_eq!(
+        call("bnot", vec![RuntimeValue::Number(5.into())]),
+        Err(Error::Runtime(
+            "bnot: expected bytes; for integers use xor(n, mask) with an explicit width".to_string()
+        ))
+    );
+}
+
+#[test]
 fn test_bnot_type_error() {
     assert!(call("bnot", vec![RuntimeValue::String(Shared::new("a".into()))]).is_err());
 }

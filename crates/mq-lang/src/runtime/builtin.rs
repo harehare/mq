@@ -1069,6 +1069,9 @@ fn bor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 fn bnot_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::Bytes(Shared::new(b.iter().map(|x| !x).collect()))),
+        [RuntimeValue::Number(_)] => Err(Error::Runtime(
+            "bnot: expected bytes; for integers use xor(n, mask) with an explicit width".to_string(),
+        )),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => Err(invalid_arity(ident, 1, args.len())),
     }
