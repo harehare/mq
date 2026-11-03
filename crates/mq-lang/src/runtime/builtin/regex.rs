@@ -329,6 +329,11 @@ pub(super) fn regex_escape(text: &str) -> RuntimeValue {
 
 #[inline(always)]
 pub(super) fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    if pattern.is_empty() {
+        return Ok(RuntimeValue::Array(Shared::new(
+            input.chars().map(|c| c.to_string().into()).collect::<Vec<_>>(),
+        )));
+    }
     if let Some(re) = regex_cache_read().get(pattern).cloned() {
         return Ok(RuntimeValue::Array(Shared::new(
             re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),

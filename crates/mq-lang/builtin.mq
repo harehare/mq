@@ -1811,14 +1811,11 @@ end
 # Returns: string
 def lpad(s, length, pad_str = " "):
   let pad_needed = length - len(s)
-  | if (pad_needed <= 0):
+  | if (pad_needed <= 0 || is_empty(pad_str)):
       s
     else: do
-        let full_repeats = floor(pad_needed / len(pad_str))
-        | let remainder = pad_needed % len(pad_str)
-        | let full_pad = do foreach (_, range(0, full_repeats - 1)): pad_str; | join("");
-        | let final_pad = full_pad + slice(pad_str, 0, remainder)
-        | final_pad + s
+        let pad = slice(repeat(pad_str, ceil(pad_needed / len(pad_str))), 0, pad_needed)
+        | pad + s
       end
 end
 
@@ -1833,14 +1830,11 @@ end
 # Returns: string
 def rpad(s, length, pad_str = " "):
   let pad_needed = length - len(s)
-  | if (pad_needed <= 0):
+  | if (pad_needed <= 0 || is_empty(pad_str)):
       s
     else: do
-        let full_repeats = floor(pad_needed / len(pad_str))
-        | let remainder = pad_needed % len(pad_str)
-        | let full_pad = do foreach (_, range(0, full_repeats - 1)): pad_str; | join("");
-        | let final_pad = full_pad + slice(pad_str, 0, remainder)
-        | s + final_pad
+        let pad = slice(repeat(pad_str, ceil(pad_needed / len(pad_str))), 0, pad_needed)
+        | s + pad
       end
 end
 
