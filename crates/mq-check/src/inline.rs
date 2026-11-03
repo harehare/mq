@@ -354,7 +354,7 @@ impl Inliner<'_> {
         let symbol = hir.symbol(id)?;
         let name = symbol.value.as_deref()?;
         if hir.bracket_group_count(id) > 0 {
-            return None;
+            return self.eval_field(id, scope);
         }
         let operands = self.eval_all(id, scope);
         let def = hir.symbol(hir.resolve_reference_symbol(id)?)?;
@@ -392,6 +392,31 @@ impl Inliner<'_> {
             self.failures.truncate(before);
         }
         value
+    }
+
+    /// The type of the field read by `r["key"]` from a record argument.
+    ///
+    /// A field the record lacks is unknown, not `none`: the type of a variable does not say
+    /// which keys are assigned to it later.
+    fn eval_field(&mut self, id: SymbolId, scope: &Scope) -> Option<Type> {
+        let hir = self.hir;
+        let [key] = get_children(self.children, id)[..] else {
+            return None;
+        };
+        let key = hir
+            .symbol(key)
+            .filter(|k| matches!(k.kind, SymbolKind::String | SymbolKind::Symbol))?
+            .value
+            .as_deref()?;
+        let def = hir.resolve_reference_symbol(id)?;
+        if self.assigned.contains(&def) {
+            return None;
+        }
+        let Type::Record(fields, _) = scope.get(&def)? else {
+            return None;
+        };
+        let field = fields.get(key)?.widen_lit();
+        (!field.has_pending_var() && !field.is_dynamic()).then_some(field)
     }
 
     /// Runs the lambda that a builtin calls on each element of a collection of known type.

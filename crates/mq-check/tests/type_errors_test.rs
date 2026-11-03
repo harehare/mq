@@ -1131,3 +1131,17 @@ fn test_user_predicate_tests_a_tag(#[case] code: String, #[case] ok: bool) {
     let errors = check_types_with_builtins(&code);
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }
+
+#[rstest]
+#[case::wrong_field_type(r#"def val(r): r["value"] - 1; | val({value: "s"})"#, false)]
+#[case::second_call_wrong(r#"def f(r): r["a"] - 1; | f({a: 1}) | f({a: "x"})"#, false)]
+#[case::symbol_key(r#"def val(r): r[:value] - 1; | val({value: "s"})"#, false)]
+#[case::right_field_type(r#"def val(r): r["value"] - 1; | val({value: 2})"#, true)]
+#[case::missing_field_is_unknown(r#"def val(r): r["value"] - 1; | val({other: 2})"#, true)]
+#[case::field_added_later(r#"def val(r): r["value"] - 1; | var d = {} | d["value"] = 2 | val(d)"#, true)]
+#[case::field_written_in_body(r#"def val(r): r["value"] = 1 | r["value"] - 1; | val({value: "s"})"#, true)]
+#[case::guarded_read(r#"def val(r): if (is_string(r["value"])): 0 else: r["value"] - 1; | val({value: "s"})"#, true)]
+fn test_call_checks_a_record_argument_against_the_fields_the_body_reads(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
