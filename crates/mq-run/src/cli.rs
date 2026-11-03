@@ -766,6 +766,10 @@ struct OutputArgs {
     #[clap(long, value_enum, default_value_t = LinkUrlStyle::None, conflicts_with = "quiet")]
     link_url_style: LinkUrlStyle,
 
+    /// Do not pad table cells to a common column width
+    #[clap(long, conflicts_with = "quiet")]
+    no_table_padding: bool,
+
     /// Specify a query to insert between files as a separator
     #[clap(short = 'S', long, value_name = "QUERY", conflicts_with = "quiet")]
     separator: Option<String>,
@@ -3347,6 +3351,7 @@ impl Cli {
                 LinkUrlStyle::Angle => mq_markdown::UrlSurroundStyle::Angle,
             },
             mdx,
+            table_padding: !self.output.no_table_padding,
         });
         markdown
     }

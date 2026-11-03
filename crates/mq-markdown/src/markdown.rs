@@ -174,7 +174,11 @@ impl Markdown {
                     buffer.push_str(" | ");
                 }
 
-                write_padded_cell(&mut buffer, &value, plain_width, width, &align);
+                if self.options.table_padding {
+                    write_padded_cell(&mut buffer, &value, plain_width, width, &align);
+                } else {
+                    buffer.push_str(&value);
+                }
 
                 let next_node = nodes.get(i + 1);
                 let next_is_different_row = next_node.is_none_or(
@@ -872,6 +876,25 @@ mod tests {
     fn test_display_format_lists() {
         let md = "- Item 1\n- Item 2\n- Item 3".parse::<Markdown>().unwrap();
         assert_eq!(md.to_string(), "- Item 1\n- Item 2\n- Item 3\n");
+    }
+
+    #[rstest]
+    #[case::none(
+        "| Name | Age |\n|---|---|\n| Alexander | 5 |\n",
+        "| Name | Age |\n| --- | --- |\n| Alexander | 5 |\n"
+    )]
+    #[case::aligned(
+        "| A | B | C |\n|:--|--:|:-:|\n| 1 | 2 | 3 |\n",
+        "| A | B | C |\n| :-- | --: | :-: |\n| 1 | 2 | 3 |\n"
+    )]
+    #[case::ragged_row("| A | B |\n|---|---|\n| 1 |\n", "| A | B |\n| --- | --- |\n| 1 |\n")]
+    fn test_table_without_padding(#[case] input: &str, #[case] expected: &str) {
+        let mut md = input.parse::<Markdown>().unwrap();
+        md.set_options(RenderOptions {
+            table_padding: false,
+            ..RenderOptions::default()
+        });
+        assert_eq!(md.to_string(), expected);
     }
 
     #[test]
