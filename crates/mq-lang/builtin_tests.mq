@@ -1269,13 +1269,13 @@ def test_each_coroutine():
   | assert_eq(next(result)["done"], true)
 end
 
-# @parametrize([["test", 6, "0", "00test"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "  abc"]])
+# @parametrize([["test", 6, "0", "00test"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "  abc"], ["ab", 3, "xyz", "xab"], ["ab", 4, "xyz", "xyab"], ["a", 3, "", "a"], ["é", 3, "ü", "üüé"]])
 def test_lpad(value, n, pad, expected):
   let result = lpad(value, n, pad)
   | assert_eq(result, expected)
 end
 
-# @parametrize([["test", 6, "0", "test00"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "abc  "]])
+# @parametrize([["test", 6, "0", "test00"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "abc  "], ["ab", 3, "xyz", "abx"], ["ab", 4, "xyz", "abxy"], ["a", 3, "", "a"], ["é", 3, "ü", "éüü"]])
 def test_rpad(value, n, pad, expected):
   let result = rpad(value, n, pad)
   | assert_eq(result, expected)
@@ -2374,4 +2374,9 @@ def test_load_markdown():
   write_file("doc.md", "# Title\n\ntext")
   | let doc = load_markdown("doc.md")
   | assert_eq(map(doc, to_md_name), ["h1", "text"])
+end
+
+# @parametrize([["abc", "", ["a", "b", "c"]], ["", "", []], ["héy", "", ["h", "é", "y"]], ["a,b", ",", ["a", "b"]]])
+def test_split_empty_separator(value, sep, expected):
+  assert_eq(split(value, sep), expected)
 end
