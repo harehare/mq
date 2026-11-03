@@ -9,7 +9,7 @@ const UTF16BE_BOM: [u8; 2] = [0xFE, 0xFF];
 const UTF32LE_BOM: [u8; 4] = [0xFF, 0xFE, 0x00, 0x00];
 const UTF32BE_BOM: [u8; 4] = [0x00, 0x00, 0xFE, 0xFF];
 
-/// Bytes sampled when guessing whether invalid input is UTF-16 without a BOM.
+/// Leading bytes scanned for NUL, which UTF-16 without a BOM produces for ASCII text.
 const SNIFF_LEN: usize = 256;
 
 /// Longest BOM, i.e. how many leading bytes are needed to detect the encoding.
@@ -61,7 +61,8 @@ pub(super) fn decode_text(mut bytes: Vec<u8>) -> miette::Result<String> {
         Encoding::Utf16(to_unit) => decode_utf16(&bytes[bom_len..], to_unit),
         Encoding::Utf8 | Encoding::Utf8Bom => {
             bytes.drain(..bom_len);
-            String::from_utf8(bytes).map_err(|e| invalid_utf8(e.as_bytes(), bom_len + e.utf8_error().valid_up_to()))
+            reject_nul(&bytes)?;
+            String::from_utf8(bytes).map_err(|e| invalid_utf8(bom_len + e.utf8_error().valid_up_to()))
         }
     }
 }
@@ -77,6 +78,10 @@ pub(super) fn lines<'a, R: BufRead + 'a>(
         .into_diagnostic()?;
     let encoding = detect(&head)?;
     let body = head.split_off(encoding.bom_len());
+    if !matches!(encoding, Encoding::Utf16(_)) {
+        let rest = reader.fill_buf().into_diagnostic()?;
+        reject_nul(&[body.as_slice(), rest].concat())?;
+    }
     let reader = io::Cursor::new(body).chain(reader);
     Ok(match encoding {
         Encoding::Utf8 | Encoding::Utf8Bom => Box::new(reader.lines().map(|line| line.into_diagnostic())),
@@ -184,15 +189,19 @@ fn decode_utf16(bytes: &[u8], to_unit: ToUnit) -> miette::Result<String> {
     Ok(out)
 }
 
-fn invalid_utf8(bytes: &[u8], offset: usize) -> miette::Report {
-    let sample = &bytes[..bytes.len().min(SNIFF_LEN)];
-    let help = if sample.iter().filter(|&&b| b == 0).count() * 4 >= sample.len().max(1) {
-        "this looks like UTF-16 without a BOM. Re-save the input as UTF-8, or as UTF-16 with a BOM"
-    } else {
-        "this may be UTF-16 or another encoding. Re-save the input as UTF-8"
-    };
+fn reject_nul(bytes: &[u8]) -> miette::Result<()> {
+    if bytes[..bytes.len().min(SNIFF_LEN)].contains(&0) {
+        return Err(miette!(
+            help = "this may be UTF-16 without a BOM or a binary file. Re-save the input as UTF-8, or as UTF-16 with a BOM",
+            "input contains NUL bytes"
+        ));
+    }
+    Ok(())
+}
+
+fn invalid_utf8(offset: usize) -> miette::Report {
     miette!(
-        help = help,
+        help = "this may be UTF-16 or another encoding. Re-save the input as UTF-8",
         "input is not valid UTF-8 (first invalid byte at offset {offset})"
     )
 }
@@ -223,13 +232,23 @@ mod tests {
         assert!(decode_text(bytes).unwrap_err().to_string().contains(expected));
     }
 
-    #[rstest]
-    #[case::no_bom_utf16(utf16("# é\n", u16::to_le_bytes), "UTF-16 without a BOM")]
-    #[case::other_encoding(vec![b'a', 0x83, 0x41], "another encoding")]
-    fn test_decode_text_invalid_utf8_hint(#[case] bytes: Vec<u8>, #[case] hint: &str) {
-        let err = decode_text(bytes).unwrap_err();
+    #[test]
+    fn test_decode_text_invalid_utf8_hint() {
+        let err = decode_text(vec![b'a', 0x83, 0x41]).unwrap_err();
         assert!(err.to_string().contains("not valid UTF-8"));
-        assert!(err.help().unwrap().to_string().contains(hint));
+        assert!(err.help().unwrap().to_string().contains("another encoding"));
+    }
+
+    #[rstest]
+    #[case::ascii_le(utf16("# h\n", u16::to_le_bytes))]
+    #[case::ascii_be(utf16("# h\n", u16::to_be_bytes))]
+    #[case::cjk_with_newline(utf16("あ\n", u16::to_le_bytes))]
+    #[case::after_utf8_bom([&UTF8_BOM[..], b"a\0"].concat())]
+    fn test_nul_is_rejected(#[case] bytes: Vec<u8>) {
+        let err = decode_text(bytes.clone()).unwrap_err();
+        assert!(err.to_string().contains("NUL"), "{err}");
+        assert!(err.help().unwrap().to_string().contains("UTF-16 without a BOM"));
+        assert!(collect_lines(bytes).unwrap_err().to_string().contains("NUL"));
     }
 
     #[rstest]
