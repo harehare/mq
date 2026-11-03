@@ -175,7 +175,7 @@ pub struct TagTest {
     pub equal: bool,
 }
 
-fn literal_of(hir: &Hir, id: SymbolId) -> Option<Lit> {
+pub(crate) fn literal_of(hir: &Hir, id: SymbolId) -> Option<Lit> {
     let symbol = hir.symbol(id)?;
     let value = symbol.value.as_deref()?;
     match symbol.kind {

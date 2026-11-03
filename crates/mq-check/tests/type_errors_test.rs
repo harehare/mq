@@ -1140,8 +1140,29 @@ fn test_user_predicate_tests_a_tag(#[case] code: String, #[case] ok: bool) {
 #[case::missing_field_is_unknown(r#"def val(r): r["value"] - 1; | val({other: 2})"#, true)]
 #[case::field_added_later(r#"def val(r): r["value"] - 1; | var d = {} | d["value"] = 2 | val(d)"#, true)]
 #[case::field_written_in_body(r#"def val(r): r["value"] = 1 | r["value"] - 1; | val({value: "s"})"#, true)]
-#[case::guarded_read(r#"def val(r): if (is_string(r["value"])): 0 else: r["value"] - 1; | val({value: "s"})"#, true)]
+#[case::guarded_read(
+    r#"def val(r): if (is_string(r["value"])): 0 else: r["value"] - 1; | val({value: "s"})"#,
+    true
+)]
 fn test_call_checks_a_record_argument_against_the_fields_the_body_reads(#[case] code: &str, #[case] ok: bool) {
     let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+const UNWRAP: &str = r#"def unwrap(r): if (r["ok"]): r["value"] - 1 else: r["error"] - 1 end"#;
+const KIND_OF: &str = r#"def k(r): if (r["kind"] == "a"): r["x"] - 1 elif (r["kind"] == "b"): r["y"] - 1 else: 0 end"#;
+
+#[rstest]
+#[case::ok_branch_wrong(format!(r#"{UNWRAP} | unwrap({{ok: true, value: "s"}})"#), false)]
+#[case::error_branch_wrong(format!(r#"{UNWRAP} | unwrap({{ok: false, error: "e"}})"#), false)]
+#[case::ok_branch_right(format!("{UNWRAP} | unwrap({{ok: true, value: 2}})"), true)]
+#[case::error_branch_right(format!("{UNWRAP} | unwrap({{ok: false, error: 3}})"), true)]
+#[case::other_branch_is_not_run(format!(r#"{UNWRAP} | unwrap({{ok: true, value: 2, error: "e"}})"#), true)]
+#[case::elif_branch_wrong(format!(r#"{KIND_OF} | k({{kind: "b", y: "s"}})"#), false)]
+#[case::elif_branch_right(format!(r#"{KIND_OF} | k({{kind: "b", y: 1}})"#), true)]
+#[case::else_branch(format!(r#"{KIND_OF} | k({{kind: "c"}})"#), true)]
+#[case::undecided_tag_is_skipped(format!(r#"{UNWRAP} | def f(x): unwrap({{ok: x, value: "s"}}); | f(true)"#), true)]
+fn test_call_runs_the_branch_a_record_tag_selects(#[case] code: String, #[case] ok: bool) {
+    let errors = check_types_with_builtins(&code);
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }

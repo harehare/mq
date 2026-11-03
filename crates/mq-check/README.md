@@ -138,7 +138,7 @@ Reading a record field narrows with the tests around it: in `if (v["a"] != None)
 
 A dict literal keeps `true`, `false` and string literals as tags, so a union of records is narrowed by a tag test: `if (r["ok"]): ...`, `if (!r["ok"]): ...`, `r["kind"] == "a"` and `!=`, joined with `&&`, `||`, `not` or `elif`, or wrapped in a one-parameter predicate such as `def is_ok(x): x["ok"];`. A branch reads only the members the tag allows, so a user-defined result such as `{ok: true, value: v}` or `{ok: false, error: e}` is checked without a spurious `none`. Tags are widened to `bool` and `string` wherever they are read.
 
-A call of a function with an unannotated parameter is checked against the fields its body reads: `def val(r): r["value"] - 1;` called as `val({value: "s"})` is an error at the call. A field the argument lacks is not checked, since a variable can gain keys later.
+A call of a function with an unannotated parameter is checked against the fields its body reads: `def val(r): r["value"] - 1;` called as `val({value: "s"})` is an error at the call. A field the argument lacks is not checked, since a variable can gain keys later. When the argument is a record whose tag decides an `if` in the body (`def unwrap(r): if (r["ok"]): ... else: ... end`), only the branch that tag selects is checked.
 
 `match` is checked for exhaustiveness against the type of the value. `:number`-style type patterns, `||` alternatives, `[]` with `[a, ..rest]`, `:array` and `:dict` cover what they match, and a match that cannot be decided (an unknown type, nested refutable patterns) is not reported.
 

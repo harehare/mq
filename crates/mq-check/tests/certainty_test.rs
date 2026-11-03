@@ -79,6 +79,12 @@ fn test_error_on_known_types_is_definite(#[case] code: &str) {
 #[case::narrowed_parameter(r#"def f(x): if (is_string(x)): x - 1 else: 0; | f("a")"#)]
 #[case::argument_that_changes_type(r#"def f(x): abs(x); | var s = 1 | s = "a" | f(s)"#)]
 #[case::argument_in_a_try_body(r#"def f(x): abs(x); | try: f("a") catch: 0"#)]
+#[case::record_argument_that_changes_field(
+    r#"def val(r): r["value"] - 1; | var d = {value: "s"} | d["value"] = 2 | val(d)"#
+)]
+#[case::record_argument_that_changes_tag(
+    r#"def u(r): if (r["ok"]): r["value"] - 1 else: 0 end | var d = {ok: true, value: "s"} | d["ok"] = false | u(d)"#
+)]
 #[case::unreachable(r#"let x = 1 | if (is_none(x)): 1 else: 2"#)]
 fn test_error_that_relies_on_an_approximation_is_uncertain(#[case] code: &str) {
     let found = certainties(code);
