@@ -609,8 +609,9 @@ fn loop_header_comparisons_use_a_compact_branch_opcode() {
             .iter()
             .any(|op| matches!(op, OpCode::JumpIfFalseLocalNumberConst { op: BinaryOp::Gt, .. }))
     );
+    // A loop that only ends through its condition keeps no accumulator slot.
     assert!(
-        compiled.chunks[0]
+        !compiled.chunks[0]
             .code
             .iter()
             .any(|op| matches!(op, OpCode::SetLocalAndCopyAndJump { .. }))
@@ -619,6 +620,57 @@ fn loop_header_comparisons_use_a_compact_branch_opcode() {
         run("var i = 3 | while(i > 0): i -= 1; | i"),
         RuntimeValue::Number(0.into())
     );
+}
+
+#[test]
+fn loop_with_break_keeps_its_accumulator() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "var i = 3 | while(i > 0): i -= 1 | if (i == 1): break else: None; | i",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::SetLocalAndCopyAndJump { .. }))
+    );
+}
+
+/// The expected values are what the loop evaluated to before loops without `break` or `continue`
+/// stopped keeping an accumulator.
+#[rstest]
+#[case::while_value_is_the_last_body_value(
+    "def f(): var i = 0 | let r = while (i < 3): i = i + 1 | i * 7 end | r; | f()",
+    "21"
+)]
+#[case::until_value_is_the_last_body_value(
+    "def f(): var i = 0 | let r = until (i > 2): i = i + 1 | i * 7 end | r; | f()",
+    "21"
+)]
+#[case::while_that_never_runs_is_none("var i = 5 | var r = while (i < 3): i = i + 1; | r == None", "true")]
+#[case::until_that_never_runs_is_none("var i = 9 | var r = until (i >= 3): i = i + 1; | r == None", "true")]
+#[case::body_sees_the_previous_value(
+    "def f(): var n = 0 | 1 | let r = while (n < 3): n = n + 1 | . + 1 end | r; | f()",
+    "4"
+)]
+#[case::condition_sees_the_previous_value(
+    "def f(): var n = 0 | 0 | let r = while (. < 3): n = n + 1 | n end | r; | f()",
+    "3"
+)]
+#[case::first_body_sees_the_input("def f(): var n = 0 | 0 | let r = while (n < 3): n = n + 1 | . end | r; | f()", "0")]
+#[case::if_in_the_body(
+    "def f(): var i = 0 | var s = 0 | let r = while (i < 5): (if (i % 2 == 0): s += i) | i = i + 1 | [s, i] end | r; | f()",
+    "[6, 5]"
+)]
+fn loops_without_break_keep_their_value(#[case] code: &str, #[case] expected: &str) {
+    let value = run_result(code).unwrap_or_else(|error| panic!("{code}: {error:?}"));
+    assert_eq!(value.to_string(), expected, "{code}");
 }
 
 #[test]
