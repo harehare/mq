@@ -669,6 +669,8 @@ fn is_path_key(node: &Shared<Node>, target: Ident) -> bool {
     match &node.expr {
         Expr::Literal(_) => true,
         Expr::Ident(ident) => ident.name != target,
+        // Arithmetic on keys is pure, so evaluating it once gives what evaluating it per read does.
+        Expr::BinaryOp(_, lhs, rhs) => is_path_key(lhs, target) && is_path_key(rhs, target),
         _ => false,
     }
 }
@@ -682,11 +684,14 @@ fn is_effect_free(node: &Shared<Node>) -> bool {
     }
 }
 
-/// Whether two path keys are the same literal or identifier.
+/// Whether two path keys are the same literal, identifier or arithmetic on them.
 fn same_path_key(a: &Shared<Node>, b: &Shared<Node>) -> bool {
     match (&a.expr, &b.expr) {
         (Expr::Literal(a), Expr::Literal(b)) => a == b,
         (Expr::Ident(a), Expr::Ident(b)) => a.name == b.name,
+        (Expr::BinaryOp(op_a, lhs_a, rhs_a), Expr::BinaryOp(op_b, lhs_b, rhs_b)) => {
+            op_a == op_b && same_path_key(lhs_a, lhs_b) && same_path_key(rhs_a, rhs_b)
+        }
         _ => false,
     }
 }
@@ -1027,6 +1032,34 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
         | Expr::Env(_)
         | Expr::Nodes
         | Expr::Continue => {}
+    }
+}
+
+/// Whether `program` has no `break`, `continue`, `try`, nested loop or nested function, so a loop
+/// around it can only leave through its condition. Anything not listed is treated as not simple.
+fn program_is_straight_line(program: &Program) -> bool {
+    program.iter().all(|node| node_is_straight_line(node, true))
+}
+
+/// `bindings` is whether `let`/`var` may appear. A loop condition is compiled twice, so it must
+/// not declare any.
+fn node_is_straight_line(node: &Shared<Node>, bindings: bool) -> bool {
+    let simple = |node: &Shared<Node>| node_is_straight_line(node, bindings);
+    match &node.expr {
+        Expr::Literal(_) | Expr::Ident(_) | Expr::Self_ | Expr::Env(_) => true,
+        Expr::Let(_, value) | Expr::Var(_, value) => bindings && simple(value),
+        Expr::Assign(_, value) | Expr::Paren(value) => simple(value),
+        Expr::IndexAssign(_, index, value) => simple(index) && simple(value),
+        Expr::Call(_, args) | Expr::Array(args) => args.iter().all(simple),
+        Expr::BinaryOp(_, lhs, rhs) => simple(lhs) && simple(rhs),
+        Expr::UnaryOp(_, operand) => simple(operand),
+        Expr::And(operands) | Expr::Or(operands) => operands.iter().all(simple),
+        Expr::Index(target, index) => simple(target) && simple(index),
+        Expr::Block(body) => bindings && program_is_straight_line(body),
+        Expr::If(branches) | Expr::Unless(branches) => branches
+            .iter()
+            .all(|(condition, body)| condition.as_ref().is_none_or(simple) && simple(body)),
+        _ => false,
     }
 }
 
@@ -3952,7 +3985,39 @@ impl<R: ModuleResolver> Compiler<R> {
         self.compile_conditional_loop(cond, body, true)
     }
 
+    /// Compiles a loop that can only end through its condition: the body's value stays in `self`
+    /// between iterations, so no separate accumulator or completed flag is kept. The condition is
+    /// tested once before the loop, so a loop that never runs evaluates to `None`, and again after
+    /// each iteration in place of a jump back to a shared test.
+    fn compile_straight_line_loop(&mut self, cond: &Shared<Node>, body: &Program, invert: bool) -> CompileResult<()> {
+        let skip_jumps = self.compile_branch(cond, invert)?;
+        let body_start = self.chunk_mut().code.len();
+        self.scope_mut().push_scope();
+        let body_result = self.compile_body(body);
+        self.scope_mut().pop_scope();
+        body_result?;
+        self.emit(OpCode::SetLocal(SELF_SLOT));
+        let exit_jumps = self.compile_branch(cond, invert)?;
+        let back = self.chunk_mut().backward_offset(body_start);
+        self.emit(OpCode::Jump(back));
+
+        for jump in exit_jumps {
+            self.chunk_mut().patch_jump(jump);
+        }
+        self.emit(OpCode::GetLocal(SELF_SLOT));
+        let done = self.emit(OpCode::Jump(0));
+        for jump in skip_jumps {
+            self.chunk_mut().patch_jump(jump);
+        }
+        self.emit(OpCode::PushNone);
+        self.chunk_mut().patch_jump(done);
+        Ok(())
+    }
+
     fn compile_conditional_loop(&mut self, cond: &Shared<Node>, body: &Program, invert: bool) -> CompileResult<()> {
+        if node_is_straight_line(cond, false) && program_is_straight_line(body) {
+            return self.compile_straight_line_loop(cond, body, invert);
+        }
         let acc_slot = self.scope_mut().declare_synthetic();
         self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));

@@ -600,6 +600,9 @@ fn check_path_local(
         Some(target) => std::borrow::Cow::Borrowed(target),
         None => std::borrow::Cow::Owned(local_runtime_value(locals, slot, chunks)?),
     };
+    if builtin::path_exists(&target, &keys) {
+        return Ok(());
+    }
     builtin::get_path(&target, &keys).map(drop).map_err(VmError::Builtin)
 }
 
@@ -659,10 +662,16 @@ fn add_assign_path_local(
 ) -> VmResult<()> {
     let lhs = match locals.direct_runtime_value_mut(slot) {
         Some(target) => {
-            if let Some(element) = builtin::path_element_mut(target, keys)
-                && builtin::add_in_place(element, &rhs).map_err(VmError::Builtin)?
-            {
-                return Ok(());
+            if let Some(element) = builtin::path_element_mut(target, keys) {
+                if let (RuntimeValue::Number(number), RuntimeValue::Number(n)) = (&mut *element, &rhs)
+                    && let Some(result) = number_arithmetic(BinaryOp::Add, *number, *n)
+                {
+                    *number = result;
+                    return Ok(());
+                }
+                if builtin::add_in_place(element, &rhs).map_err(VmError::Builtin)? {
+                    return Ok(());
+                }
             }
             builtin::get_path(target, keys)
         }
@@ -1587,6 +1596,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
             }
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod => {
+                if let Some(operation) = binary_op_from_opcode(op)
+                    && number_binop_on_stack(stack, operation)
+                {
+                    continue 'dispatch;
+                }
                 let b = pop_value!();
                 let a = pop_value!();
                 let Some(operation) = binary_op_from_opcode(op) else {
@@ -1598,6 +1612,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 ));
             }
             OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge => {
+                if let Some(operation) = binary_op_from_opcode(op)
+                    && number_binop_on_stack(stack, operation)
+                {
+                    continue 'dispatch;
+                }
                 let b = pop_value!();
                 let a = pop_value!();
                 let Some(operation) = binary_op_from_opcode(op) else {
@@ -2918,6 +2937,35 @@ fn number_arithmetic(op: BinaryOp, left: Number, right: Number) -> Option<Number
         BinaryOp::Mod if !right.is_zero() => Some(left % right),
         _ => None,
     }
+}
+
+/// Replaces the two numbers on top of the stack with the result of `op`, returning `false` and
+/// leaving the stack alone when they are not both numbers or the operation needs the general route
+/// (a division by zero reports its error there).
+///
+/// Numbers own no heap data, so the consumed slots are overwritten without running drop glue.
+#[inline(always)]
+fn number_binop_on_stack(stack: &mut Vec<StackValue>, op: BinaryOp) -> bool {
+    let [
+        ..,
+        StackValue::Value(RuntimeValue::Number(left)),
+        StackValue::Value(RuntimeValue::Number(right)),
+    ] = stack.as_slice()
+    else {
+        return false;
+    };
+    let result = match number_arithmetic(op, *left, *right) {
+        Some(number) => RuntimeValue::Number(number),
+        None => match compare_numbers(op, *left, *right) {
+            Some(truth) => RuntimeValue::Boolean(truth),
+            None => return false,
+        },
+    };
+    std::mem::forget(stack.pop());
+    if let Some(slot) = stack.last_mut() {
+        std::mem::forget(std::mem::replace(slot, StackValue::Value(result)));
+    }
+    true
 }
 
 /// `left op right` for a comparison `op`, or `None` for any other `op`.

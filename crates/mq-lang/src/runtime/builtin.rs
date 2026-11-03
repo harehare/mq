@@ -4044,6 +4044,32 @@ fn element_mut<'a>(target: &'a mut RuntimeValue, key: &RuntimeValue) -> Option<&
     }
 }
 
+/// Whether every step of `keys` names an existing entry of the nested dicts and arrays, so
+/// `get_path` would succeed without needing its general route.
+pub(crate) fn path_exists(target: &RuntimeValue, keys: &[RuntimeValue]) -> bool {
+    let mut current = target;
+    for key in keys {
+        let next = match (current, key) {
+            (RuntimeValue::Dict(map), RuntimeValue::String(key)) => map.get(key.as_str()),
+            (RuntimeValue::Dict(map), RuntimeValue::Symbol(key)) => map.get(key),
+            (RuntimeValue::Array(array), RuntimeValue::Number(index)) => {
+                let raw = index.value();
+                if index.is_int() && raw >= 0.0 {
+                    array.get(raw as usize)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        match next {
+            Some(value) => current = value,
+            None => return false,
+        }
+    }
+    true
+}
+
 /// The element reached by following `keys` through nested dicts and arrays, borrowed for
 /// in-place update. `None` when any step is not an existing entry.
 pub(crate) fn path_element_mut<'a>(
