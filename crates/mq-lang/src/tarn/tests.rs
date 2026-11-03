@@ -931,6 +931,20 @@ fn add_assignment_respects_array_size_limit(#[case] code: &str) {
 )]
 #[case::value_reads_target("var m = [[1, 2]] | m[0][0] = len(m[0]) | m == [[2, 2]]")]
 #[case::rhs_is_the_element("var d = {\"k\": [1]} | d[\"k\"] += d[\"k\"] | d == {\"k\": [1, 1]}")]
+#[case::add_number_at_computed_index("var a = [1, 2, 3] | var r = 1 | var c = 1 | a[r + c] += 5 | a == [1, 2, 8]")]
+#[case::add_fraction_at_computed_index("var a = [0.5, 1] | var i = 0 | a[i * 1] += 0.25 | a == [0.75, 1]")]
+#[case::computed_index_is_evaluated_once(
+    "var a = [0, 0, 0] | var k = 0 | a[k + 1] += 2 | a[k + 1] += 3 | a == [0, 5, 0]"
+)]
+#[case::computed_index_set_deep("var m = [[1, 2], [3, 4]] | var i = 1 | m[i - 1][i] = 9 | m == [[1, 9], [3, 4]]")]
+#[case::computed_index_with_effectful_operand(
+    "var a = [1, 1] | var b = [5, 6] | var i = 0 | a[i + 1] += b[i + 1] | a == [1, 7]"
+)]
+#[case::computed_index_past_the_end_extends("var a = [1] | var i = 0 | a[i + 2] += 1 | len(a) == 3 && a[2] == 1")]
+#[case::computed_index_number_plus_string("var a = [1] | var i = 0 | a[i + 0] += \"x\" | a == [\"1x\"]")]
+#[case::add_number_to_a_shared_copy_is_not_changed(
+    "var a = [1, 2] | var b = a | var i = 0 | a[i + 1] += 1 | b == [1, 2] && a == [1, 3]"
+)]
 #[case::in_function(
     "def f(n): var d = {\"a\": []} | var i = 0 | while (i < n): d[\"a\"] += [i] | i = i + 1 end | d; | f(3) == {\"a\": [0, 1, 2]}"
 )]

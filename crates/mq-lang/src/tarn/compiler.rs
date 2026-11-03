@@ -669,6 +669,8 @@ fn is_path_key(node: &Shared<Node>, target: Ident) -> bool {
     match &node.expr {
         Expr::Literal(_) => true,
         Expr::Ident(ident) => ident.name != target,
+        // Arithmetic on keys is pure, so evaluating it once gives what evaluating it per read does.
+        Expr::BinaryOp(_, lhs, rhs) => is_path_key(lhs, target) && is_path_key(rhs, target),
         _ => false,
     }
 }
@@ -682,11 +684,14 @@ fn is_effect_free(node: &Shared<Node>) -> bool {
     }
 }
 
-/// Whether two path keys are the same literal or identifier.
+/// Whether two path keys are the same literal, identifier or arithmetic on them.
 fn same_path_key(a: &Shared<Node>, b: &Shared<Node>) -> bool {
     match (&a.expr, &b.expr) {
         (Expr::Literal(a), Expr::Literal(b)) => a == b,
         (Expr::Ident(a), Expr::Ident(b)) => a.name == b.name,
+        (Expr::BinaryOp(op_a, lhs_a, rhs_a), Expr::BinaryOp(op_b, lhs_b, rhs_b)) => {
+            op_a == op_b && same_path_key(lhs_a, lhs_b) && same_path_key(rhs_a, rhs_b)
+        }
         _ => false,
     }
 }

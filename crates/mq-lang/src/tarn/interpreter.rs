@@ -600,6 +600,9 @@ fn check_path_local(
         Some(target) => std::borrow::Cow::Borrowed(target),
         None => std::borrow::Cow::Owned(local_runtime_value(locals, slot, chunks)?),
     };
+    if builtin::path_exists(&target, &keys) {
+        return Ok(());
+    }
     builtin::get_path(&target, &keys).map(drop).map_err(VmError::Builtin)
 }
 
@@ -659,10 +662,16 @@ fn add_assign_path_local(
 ) -> VmResult<()> {
     let lhs = match locals.direct_runtime_value_mut(slot) {
         Some(target) => {
-            if let Some(element) = builtin::path_element_mut(target, keys)
-                && builtin::add_in_place(element, &rhs).map_err(VmError::Builtin)?
-            {
-                return Ok(());
+            if let Some(element) = builtin::path_element_mut(target, keys) {
+                if let (RuntimeValue::Number(number), RuntimeValue::Number(n)) = (&mut *element, &rhs)
+                    && let Some(result) = number_arithmetic(BinaryOp::Add, *number, *n)
+                {
+                    *number = result;
+                    return Ok(());
+                }
+                if builtin::add_in_place(element, &rhs).map_err(VmError::Builtin)? {
+                    return Ok(());
+                }
             }
             builtin::get_path(target, keys)
         }
