@@ -832,6 +832,8 @@ impl RuntimeValue {
                 } else if n.is_int() && v >= 0.0 && v < u64::MAX as f64 {
                     serde_json::Value::Number(serde_json::Number::from(v as u64))
                 } else {
+                    // jq compatible: infinities clamp to the largest finite f64, NaN is null.
+                    let v = if v.is_infinite() { f64::MAX.copysign(v) } else { v };
                     serde_json::Number::from_f64(v)
                         .map(serde_json::Value::Number)
                         .unwrap_or(serde_json::Value::Null)
