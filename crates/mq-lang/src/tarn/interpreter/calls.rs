@@ -792,6 +792,21 @@ fn recycle_locals_if_possible(limits: &mut super::frame::ExecutionLimits, locals
     }
 }
 
+/// The slot of the first explicit argument of a fixed-arity function, or `None` on an arity mismatch.
+///
+/// With one argument fewer than `arity`, the implicit `self` fills the first parameter slot.
+/// `verify_frame_layout` puts parameter `p` in slot `SELF_SLOT + 1 + p`, so every slot written from
+/// here is below `local_count`.
+fn fixed_first_arg_slot(arity: usize, arg_count: usize) -> Option<usize> {
+    if arg_count == arity {
+        Some(SELF_SLOT as usize + 1)
+    } else if arity > 0 && arg_count + 1 == arity {
+        Some(SELF_SLOT as usize + 2)
+    } else {
+        None
+    }
+}
+
 fn bind_fixed_required_params(
     arity: usize,
     args: &mut Vec<StackValue>,
@@ -800,18 +815,16 @@ fn bind_fixed_required_params(
     name: Option<Ident>,
 ) -> VmResult<()> {
     let arg_count = args.len();
-    let first_arg_slot = if arg_count == arity {
-        SELF_SLOT as usize + 1
-    } else if arity > 0 && arg_count + 1 == arity {
-        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals, chunks)));
-        SELF_SLOT as usize + 2
-    } else {
+    let Some(first_arg_slot) = fixed_first_arg_slot(arity, arg_count) else {
         return Err(VmError::ArityMismatch {
             name,
             expected: arity,
             actual: arg_count,
         });
     };
+    if arg_count != arity {
+        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals, chunks)));
+    }
 
     // `drain` (rather than `into_iter`) leaves `args`'s allocation for the caller to recycle.
     for (offset, value) in args.drain(..).enumerate() {
@@ -822,25 +835,35 @@ fn bind_fixed_required_params(
 
 fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResult<bool> {
     let parameter_count = shape.bindings.len();
-    let accepts_explicit_args = arg_count >= shape.required && (shape.has_variadic || arg_count <= parameter_count);
-    if accepts_explicit_args {
-        return Ok(false);
-    }
-
-    let accepts_implicit_self = arg_count.saturating_add(1) >= shape.required && arg_count < parameter_count;
-    if accepts_implicit_self {
-        return Ok(true);
-    }
-
-    Err(VmError::ArityMismatch {
-        name: None,
-        expected: if shape.has_variadic {
-            shape.required
-        } else {
-            parameter_count
-        },
-        actual: arg_count,
+    implicit_self_decision(parameter_count, shape.required, shape.has_variadic, arg_count).ok_or_else(|| {
+        VmError::ArityMismatch {
+            name: None,
+            expected: if shape.has_variadic {
+                shape.required
+            } else {
+                parameter_count
+            },
+            actual: arg_count,
+        }
     })
+}
+
+/// Whether `arg_count` arguments bind with the implicit `self` as the first parameter (`Some(true)`),
+/// bind as given (`Some(false)`), or do not fit (`None`). `Some(true)` implies
+/// `arg_count < parameter_count`, so the parameter that `self` takes exists.
+fn implicit_self_decision(
+    parameter_count: usize,
+    required: usize,
+    has_variadic: bool,
+    arg_count: usize,
+) -> Option<bool> {
+    if arg_count >= required && (has_variadic || arg_count <= parameter_count) {
+        Some(false)
+    } else if arg_count.saturating_add(1) >= required && arg_count < parameter_count {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 // Keep out of the dispatch loop to avoid code bloat.
