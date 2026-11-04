@@ -2126,13 +2126,18 @@ mod proofs {
         }
     }
 
-    /// The interpreter takes jumps from the already incremented instruction pointer.
+    /// The interpreter takes jumps from the already incremented instruction pointer and stores the
+    /// result as a `u32`. `verify_chunks` caps a chunk at `i32::MAX` instructions and checks that
+    /// every jump target is inside it, so the cast keeps the target.
     #[kani::proof]
     fn interpreter_jump_agrees_with_verifier() {
-        let pc: usize = kani::any_where(|pc: &usize| *pc < 1 << 40);
+        let code_len: usize = kani::any_where(|len: &usize| *len <= i32::MAX as usize);
+        let pc: usize = kani::any_where(|pc: &usize| *pc < code_len);
         let offset: i32 = kani::any();
-        if let Some(target) = jump_target(pc, offset) {
-            let ip = pc + 1;
+        if is_ok(verify_jump_target(code_len, 0, pc, offset)) {
+            let target = jump_target(pc, offset).unwrap_or(0);
+            let ip = (pc + 1) as u32;
+            assert_eq!(((ip as i64 + offset as i64) as u32) as usize, target);
             assert_eq!((ip as i64 + offset as i64) as usize, target);
         }
     }
