@@ -1196,3 +1196,14 @@ fn test_chained_key_access_reads_the_field_of_each_step(#[case] code: &str, #[ca
     let errors = check_types_with_builtins(code);
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }
+
+#[rstest]
+#[case::dict_entries_as_pairs(r#"filter({"a": 4, "b": 1}, fn(kv): kv[1] > 1;)"#, true)]
+#[case::dict_with_mixed_values(r#"filter({"a": 4, "b": "bc"}, fn(kv): true;)"#, true)]
+#[case::dict_variable_then_keys(r#"let d = {"a": 4, "b": 1} | filter(d, fn(kv): kv[1] > 1;) | keys()"#, true)]
+#[case::dict_wrong_use_of_value(r#"let d = {"a": 4} | filter(d, fn(kv): kv[1] - "s";)"#, false)]
+#[case::dict_callback_with_two_parameters(r#"filter({"a": 4}, fn(k, v): v > 1;)"#, false)]
+fn test_filter_over_a_dict_gives_each_entry_as_a_pair(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}

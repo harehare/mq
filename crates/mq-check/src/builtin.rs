@@ -1393,6 +1393,15 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::function(vec![Type::String], Type::Bool),
         Type::array(Type::String),
     );
+    // filter: ({k: v}, ([k, v]) -> bool) -> {k: v}; the function gets each entry as a pair
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "filter",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::function(vec![Type::tuple(vec![Type::Var(k), Type::Var(v)])], Type::Bool),
+        Type::dict(Type::Var(k), Type::Var(v)),
+    );
     // None propagation: filter(none, (none) -> a) -> none
     // The lambda return type is irrelevant for None propagation since it's never called
     let a = ctx.fresh_var();
