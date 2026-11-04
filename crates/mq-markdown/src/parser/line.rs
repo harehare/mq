@@ -108,37 +108,7 @@ impl<'a> Line<'a> {
     /// The same line with `columns` columns of leading whitespace removed. What is left of a tab that
     /// is only consumed in part stays as padding.
     pub(super) fn skip_columns(self, columns: usize) -> Line<'a> {
-        let mut remaining = columns;
-        let consumed = remaining.min(self.pad);
-        let mut pad = self.pad - consumed;
-        remaining -= consumed;
-
-        let mut absolute = self.start_column();
-        let mut bytes = 0;
-        for byte in self.text.bytes() {
-            if remaining == 0 {
-                break;
-            }
-            match byte {
-                b' ' => {
-                    remaining -= 1;
-                    absolute += 1;
-                }
-                b'\t' => {
-                    let width = (absolute / 4 + 1) * 4 - absolute;
-                    absolute += width;
-                    if width > remaining {
-                        pad = width - remaining;
-                        remaining = 0;
-                    } else {
-                        remaining -= width;
-                    }
-                }
-                _ => break,
-            }
-            bytes += 1;
-        }
-
+        let (bytes, pad) = consume_columns(self.text.as_bytes(), self.start_column(), columns, self.pad);
         Line {
             column: self.column + bytes,
             text: &self.text[bytes..],
@@ -204,6 +174,44 @@ pub(super) fn extra_bytes(bytes: &[u8]) -> usize {
         astral += usize::from(byte >= 0xF0);
     }
     continuation - astral
+}
+
+/// Removes `columns` columns of leading whitespace from `text`, which starts at column `start`, after
+/// the `pad` columns left over from a tab. Returns the bytes consumed and the new padding.
+///
+/// Only leading spaces and tabs are consumed, so the bytes never exceed `Line::ws`.
+fn consume_columns(text: &[u8], start: usize, columns: usize, pad: usize) -> (usize, usize) {
+    let mut remaining = columns;
+    let consumed = remaining.min(pad);
+    let mut pad = pad - consumed;
+    remaining -= consumed;
+
+    let mut absolute = start;
+    let mut bytes = 0;
+    for &byte in text {
+        if remaining == 0 {
+            break;
+        }
+        match byte {
+            b' ' => {
+                remaining -= 1;
+                absolute += 1;
+            }
+            b'\t' => {
+                let width = (absolute / 4 + 1) * 4 - absolute;
+                absolute += width;
+                if width > remaining {
+                    pad = width - remaining;
+                    remaining = 0;
+                } else {
+                    remaining -= width;
+                }
+            }
+            _ => break,
+        }
+        bytes += 1;
+    }
+    (bytes, pad)
 }
 
 /// The number of leading spaces and tabs in `text`.
