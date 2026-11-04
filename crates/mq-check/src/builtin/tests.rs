@@ -1270,6 +1270,10 @@ fn test_pipe_wrong_type_comprehensive(#[case] code: &str, #[case] should_succeed
 #[case::xor(r#"to_bytes("ab") | xor(to_bytes("cd"))"#, true)]
 // sha512: string -> string
 #[case::sha512_string(r#"sha512("hello")"#, true)]
+// hmac: string/bytes key and message -> string
+#[case::hmac_sha256_string(r#"hmac_sha256("k", "m")"#, true)]
+#[case::hmac_sha512_bytes(r#"hmac_sha512(to_bytes("k"), to_bytes("m"))"#, true)]
+#[case::hmac_sha256_number_key(r#"hmac_sha256(1, "m")"#, false)]
 // sha512: bytes -> string
 #[case::sha512_bytes(r#"to_bytes("hello") | sha512"#, true)]
 // bytes comparisons

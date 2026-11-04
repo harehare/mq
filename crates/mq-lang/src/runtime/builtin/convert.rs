@@ -783,6 +783,26 @@ pub(super) fn sha512_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(Shared::new(bytes_to_hex(hash.as_slice()))))
 }
 
+/// Compute HMAC-SHA256 and return lowercase hex string.
+pub(super) fn hmac_sha256(key: &[u8], msg: &[u8]) -> Result<RuntimeValue, Error> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key).map_err(|e| Error::Runtime(e.to_string()))?;
+    mac.update(msg);
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(
+        mac.finalize().into_bytes().as_slice(),
+    ))))
+}
+
+/// Compute HMAC-SHA512 and return lowercase hex string.
+pub(super) fn hmac_sha512(key: &[u8], msg: &[u8]) -> Result<RuntimeValue, Error> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha512> as KeyInit>::new_from_slice(key).map_err(|e| Error::Runtime(e.to_string()))?;
+    mac.update(msg);
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(
+        mac.finalize().into_bytes().as_slice(),
+    ))))
+}
+
 /// Parse a lowercase or uppercase hex string into raw bytes.
 #[inline(always)]
 pub(super) fn from_hex(input: &str) -> Result<RuntimeValue, Error> {

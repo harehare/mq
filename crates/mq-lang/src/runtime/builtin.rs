@@ -696,6 +696,32 @@ fn sha512_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+fn hmac_bytes<'a>(ident: &Ident, v: &'a RuntimeValue) -> Result<&'a [u8], Error> {
+    match v {
+        RuntimeValue::String(s) => Ok(s.as_bytes()),
+        RuntimeValue::Bytes(b) => Ok(b.as_slice()),
+        a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+    }
+}
+
+#[mq_macros::mq_fn(name = "hmac_sha256", params = Fixed(2))]
+fn hmac_sha256_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [key, msg] => convert::hmac_sha256(hmac_bytes(ident, key)?, hmac_bytes(ident, msg)?),
+        _ => Err(invalid_arity(ident, 2, args.len())),
+    }
+}
+
+#[mq_macros::mq_fn(name = "hmac_sha512", params = Fixed(2))]
+fn hmac_sha512_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [key, msg] => convert::hmac_sha512(hmac_bytes(ident, key)?, hmac_bytes(ident, msg)?),
+        _ => Err(invalid_arity(ident, 2, args.len())),
+    }
+}
+
 /// Hashes a string to an integer below `2^53`. A `seed` gives an independent hash of the same string.
 /// The seed is an integer from 0 to `2^53 - 1`. The result is the same on every run and platform, so it can be stored.
 #[mq_macros::mq_fn(name = "hash", params = Range(1, 2))]
@@ -5987,6 +6013,8 @@ mq_macros::builtin_dispatch! {
     MD5,
     SHA256,
     SHA512,
+    HMAC_SHA256,
+    HMAC_SHA512,
     HASH,
     UUID,
     UUID_V4,
