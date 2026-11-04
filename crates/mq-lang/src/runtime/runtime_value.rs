@@ -1069,6 +1069,15 @@ mod tests {
     use rstest::rstest;
     use serde::Deserialize;
 
+    #[test]
+    fn runtime_value_is_16_bytes() {
+        assert!(
+            std::mem::size_of::<RuntimeValue>() <= 16,
+            "RuntimeValue grew to {} bytes; box the new payload instead of widening it",
+            std::mem::size_of::<RuntimeValue>()
+        );
+    }
+
     fn dict(entries: &[(&str, RuntimeValue)]) -> RuntimeValue {
         let mut map = DictMap::default();
         for (key, value) in entries {
