@@ -384,6 +384,105 @@ fn prefix_operators_evaluate(#[case] code: &str, #[case] expected: RuntimeValue)
     assert_eq!(run(code), expected);
 }
 
+fn main_chunk_ops(code: &str) -> Vec<bytecode::OpCode> {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    compiled.chunks[0].code.to_vec()
+}
+
+fn is_computation_or_branch(op: &bytecode::OpCode) -> bool {
+    use bytecode::OpCode;
+    matches!(
+        op,
+        OpCode::Add
+            | OpCode::Sub
+            | OpCode::Mul
+            | OpCode::Div
+            | OpCode::Mod
+            | OpCode::Eq
+            | OpCode::Ne
+            | OpCode::Lt
+            | OpCode::Le
+            | OpCode::Gt
+            | OpCode::Ge
+            | OpCode::Not
+            | OpCode::Neg
+            | OpCode::Jump(_)
+            | OpCode::JumpIfFalse(_)
+            | OpCode::JumpIfTrue(_)
+            | OpCode::BinaryLocalLocal { .. }
+            | OpCode::BinaryLocalConst { .. }
+            | OpCode::BinaryLocalNumberConst { .. }
+            | OpCode::ReturnBinaryLocalNumberConst { .. }
+            | OpCode::JumpIfFalseLocalLocal { .. }
+            | OpCode::JumpIfFalseLocalConst { .. }
+            | OpCode::JumpIfFalseLocalNumberConst { .. }
+    )
+}
+
+#[rstest]
+#[case::arithmetic("1 + 2 * 3", RuntimeValue::Number(7.into()))]
+#[case::group("(1 + 2) * 3", RuntimeValue::Number(9.into()))]
+#[case::negate("-(2 + 1)", RuntimeValue::Number((-3).into()))]
+#[case::not("!0", RuntimeValue::Boolean(true))]
+#[case::compare_numbers("1 < 2", RuntimeValue::Boolean(true))]
+#[case::compare_strings("\"a\" == \"b\"", RuntimeValue::Boolean(false))]
+#[case::concat("\"a\" + \"b\"", RuntimeValue::from("ab"))]
+#[case::and_falsy("1 && 0 && 2", RuntimeValue::Boolean(false))]
+#[case::and_truthy("1 && 2", RuntimeValue::Number(2.into()))]
+#[case::or_first_truthy("0 || 3 || 4", RuntimeValue::Number(3.into()))]
+#[case::or_none_truthy("0 || None", RuntimeValue::Boolean(false))]
+#[case::constant_if("if (1 < 2): 10 else: 20", RuntimeValue::Number(10.into()))]
+#[case::constant_if_else("if (1 > 2): 10 else: 20", RuntimeValue::Number(20.into()))]
+#[case::constant_elif("if (false): 1 elif (true): 2 else: 3", RuntimeValue::Number(2.into()))]
+#[case::constant_if_no_else("if (false): 1", RuntimeValue::None)]
+fn constant_expressions_fold_to_a_single_value(#[case] code: &str, #[case] expected: RuntimeValue) {
+    let ops = main_chunk_ops(code);
+    assert!(
+        !ops.iter().any(is_computation_or_branch),
+        "{code:?} should fold: {ops:?}"
+    );
+    assert_eq!(run(code), expected);
+}
+
+#[rstest]
+#[case::dead_branch_with_division("if (true): 1 else: 1 / 0", RuntimeValue::Number(1.into()))]
+#[case::dead_else_with_type_error("if (false): \"a\" - 1 else: 2", RuntimeValue::Number(2.into()))]
+fn dead_branches_are_not_compiled(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
+#[rstest]
+#[case::division_by_zero("1 / 0")]
+#[case::modulo_by_zero("1 % 0")]
+#[case::string_minus_number("\"a\" - 1")]
+#[case::negate_string("-\"a\"")]
+#[case::number_plus_string_runs_at_runtime("1 + \"a\" + 1")]
+fn unsafe_constant_expressions_are_not_folded(#[case] code: &str) {
+    let ops = main_chunk_ops(code);
+    assert!(
+        ops.iter().any(is_computation_or_branch),
+        "{code:?} must keep its operation: {ops:?}"
+    );
+}
+
+#[rstest]
+#[case::division_by_zero("1 / 0")]
+#[case::string_minus_number("\"a\" - 1")]
+#[case::folded_condition_with_failing_body("if (true): 1 / 0")]
+fn unfolded_constant_errors_surface_at_runtime(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code:?} should fail at runtime");
+}
+
+#[rstest]
+#[case::variable_operand("let a = 1 | let b = a + 2 | b")]
+#[case::variable_condition("let a = true | if (a): 1 else: 2")]
+fn non_constant_expressions_keep_their_operations(#[case] code: &str) {
+    let ops = main_chunk_ops(code);
+    assert!(ops.iter().any(is_computation_or_branch), "{code:?}: {ops:?}");
+}
+
 // The compiler walks the AST to prune unread defs, find prelude builtins and detect generators.
 // Each walk must look through a prefix operator.
 #[rstest]
@@ -1519,7 +1618,7 @@ fn defaulted_named_calls_keep_the_generic_local_form() {
 fn generator_calls_stay_on_the_coroutine_aware_generic_paths() {
     use super::bytecode::OpCode;
 
-    let source = "def g(value): yield: value | if (false): g() else: None; | let stream = g(42) | next(stream)";
+    let source = "def g(value): yield: value | if (!value): g() else: None; | let stream = g(42) | next(stream)";
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
@@ -1570,7 +1669,7 @@ fn fixed_arity_recursive_def_specializes_implicit_self_calls() {
 
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(
-        "def identity(x): if (true): x else: identity(); | 42 | identity()",
+        "def identity(x): if (x): x else: identity(); | 42 | identity()",
         Shared::clone(&token_arena),
     )
     .unwrap();
@@ -1583,7 +1682,7 @@ fn fixed_arity_recursive_def_specializes_implicit_self_calls() {
             .any(|op| matches!(op, OpCode::CallSelfImplicitSelf(0)))
     }));
     assert_eq!(
-        run("def identity(x): if (true): x else: identity(); | 42 | identity()"),
+        run("def identity(x): if (x): x else: identity(); | 42 | identity()"),
         RuntimeValue::Number(42.into())
     );
 }
