@@ -2054,6 +2054,15 @@ fn register_bytes(ctx: &mut InferenceContext) {
     register_unary(ctx, "sha512", Type::Var(a), Type::String);
     register_unary(ctx, "sha512", Type::None, Type::None);
 
+    // hmac_sha256/hmac_sha512: (key, message) -> string, each string or bytes
+    for name in ["hmac_sha256", "hmac_sha512"] {
+        for k in [Type::String, Type::Bytes] {
+            for m in [Type::String, Type::Bytes] {
+                register_binary(ctx, name, k.clone(), m, Type::String);
+            }
+        }
+    }
+
     // to_hex: (bytes) -> string
     register_unary(ctx, "to_hex", Type::Bytes, Type::String);
 

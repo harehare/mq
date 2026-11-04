@@ -5794,3 +5794,54 @@ fn test_parse_http_request_treats_none_options_as_omitted() {
     assert_eq!(spec.body, None);
     assert!(spec.headers.is_empty());
 }
+
+#[rstest]
+#[case::sha256("hmac_sha256", "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")]
+#[case::sha512(
+    "hmac_sha512",
+    "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737"
+)]
+fn test_hmac_string_and_bytes_keys(#[case] name: &str, #[case] expected: &str) {
+    let ident = Ident::new(name);
+    let msg = RuntimeValue::String(Shared::new("what do ya want for nothing?".to_string()));
+    for key in [
+        RuntimeValue::String(Shared::new("Jefe".to_string())),
+        RuntimeValue::Bytes(Shared::new(b"Jefe".to_vec())),
+    ] {
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![key, msg.clone()].into(),
+            &VmEnv::default(),
+        );
+        assert_eq!(result, Ok(RuntimeValue::String(Shared::new(expected.to_string()))));
+    }
+}
+
+#[rstest]
+#[case::none_key(vec![RuntimeValue::None, RuntimeValue::String(Shared::new("m".to_string()))])]
+#[case::none_msg(vec![RuntimeValue::String(Shared::new("k".to_string())), RuntimeValue::None])]
+fn test_hmac_none_propagates(#[case] args: Vec<RuntimeValue>) {
+    let result = eval_builtin(
+        &RuntimeValue::None,
+        &Ident::new("hmac_sha256"),
+        args.into(),
+        &VmEnv::default(),
+    );
+    assert_eq!(result, Ok(RuntimeValue::None));
+}
+
+#[test]
+fn test_hmac_rejects_non_string_key() {
+    let result = eval_builtin(
+        &RuntimeValue::None,
+        &Ident::new("hmac_sha256"),
+        vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::String(Shared::new("m".to_string())),
+        ]
+        .into(),
+        &VmEnv::default(),
+    );
+    assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
+}
