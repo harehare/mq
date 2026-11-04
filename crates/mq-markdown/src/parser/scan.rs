@@ -87,3 +87,65 @@ mod tests {
         assert_eq!(skip_whitespace(b" \n\r\n\ta", 0), 5);
     }
 }
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn eol_len_matches_the_bytes_at_index() {
+        let bytes: [u8; 4] = kani::any();
+        let index: usize = kani::any();
+        let len = eol_len(&bytes, index);
+        assert!(len <= 2);
+        if len == 2 {
+            assert_eq!(&bytes[index..index + 2], b"\r\n");
+        }
+        if index >= bytes.len() {
+            assert_eq!(len, 0);
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn skip_blanks_returns_the_end_of_a_blank_run() {
+        let bytes: [u8; 4] = kani::any();
+        let index: usize = kani::any();
+        let end = skip_blanks(&bytes, index);
+        assert!(end >= index);
+        if index <= bytes.len() {
+            assert!(end <= bytes.len());
+        }
+        assert!((index..end).all(|i| matches!(bytes[i], b' ' | b'\t')));
+    }
+
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn skip_whitespace_returns_the_end_of_a_whitespace_run() {
+        let bytes: [u8; 4] = kani::any();
+        let index: usize = kani::any();
+        let end = skip_whitespace(&bytes, index);
+        assert!(end >= index);
+        if index <= bytes.len() {
+            assert!(end <= bytes.len());
+        }
+        assert!((index..end).all(|i| is_whitespace(bytes[i])));
+    }
+
+    /// Past one line ending, only blanks are skipped, so at most one line ending is crossed.
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn skip_blanks_and_eol_crosses_at_most_one_line_ending() {
+        let bytes: [u8; 4] = kani::any();
+        let index: usize = kani::any();
+        let end = skip_blanks_and_eol(&bytes, index);
+        assert!(end >= index);
+        if index <= bytes.len() {
+            assert!(end <= bytes.len());
+        }
+        let crossed = (index..end)
+            .filter(|i| bytes[*i] == b'\n' || (bytes[*i] == b'\r' && !bytes[*i + 1..].starts_with(b"\n")))
+            .count();
+        assert!(crossed <= 1);
+    }
+}

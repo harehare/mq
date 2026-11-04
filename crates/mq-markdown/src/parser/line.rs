@@ -398,4 +398,34 @@ mod proofs {
             assert_eq!(column, offset);
         }
     }
+
+    /// Bytes consumed are leading blanks, so they never exceed the line's `ws` or length, and the
+    /// columns taken from the request and from the leftover tab add up to what was asked.
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn consume_columns_conserves_columns() {
+        let text: [u8; 4] = kani::any();
+        // Documents are far below 4 GiB, so columns and offsets stay below 1 << 32.
+        let start: usize = kani::any_where(|n: &usize| *n < 1 << 32);
+        let columns: usize = kani::any_where(|n: &usize| *n < 1 << 32);
+        let pad: usize = kani::any_where(|n: &usize| *n < 1 << 32);
+        let ws = text.iter().take_while(|byte| matches!(byte, b' ' | b'\t')).count();
+        let (bytes, new_pad) = consume_columns(&text, start, columns, pad);
+        assert!(bytes <= ws);
+        assert!(bytes <= text.len());
+        let mut absolute = start;
+        for &byte in &text[..bytes] {
+            absolute += if byte == b' ' {
+                1
+            } else {
+                (absolute / 4 + 1) * 4 - absolute
+            };
+        }
+        let width = absolute - start;
+        if columns <= pad + width {
+            assert_eq!(columns + new_pad, pad + width);
+        } else {
+            assert_eq!(new_pad, 0);
+        }
+    }
 }
