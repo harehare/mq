@@ -150,6 +150,9 @@ f({other: 1})"#.to_string())]
 var d = {ok: true, value: "s"}
 | d = {ok: true, value: 1}
 | f(d)"#.to_string())]
+#[case::member_without_tag(r#"def mk(b): if (b): {ok: true, value: 1} else: {value: "s"};
+let r = mk(true)
+| if (r["ok"]): r["value"] + 1 else: 0"#.to_string())]
 // shapes that use the same keys
 #[case::same_keys_same_type(r#"def mk(b): if (b): {ok: true, v: 1} else: {ok: false, v: 2};
 let r = mk(true)
@@ -188,6 +191,9 @@ let r = div(4, 2)
 f({ok: true, value: "s"})"#.to_string())]
 #[case::missing_field_in_literal(r#"def f(r): if (r["ok"]): r["value"] - 1 else: 0;
 f({ok: true})"#.to_string())]
+#[case::tag_reassigned_then_branch(r#"var r = if (true): {ok: true, value: 1} else: {ok: false, value: "s"}
+| r["ok"] = false
+| if (!r["ok"]): upcase(r["value"]) else: 0"#.to_string())]
 #[case::misspelled_field(format!(r#"{DIV}
 let r = div(4, 2)
 | if (r["ok"]): r["valeu"] + 1 else: 0"#))]

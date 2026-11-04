@@ -59,11 +59,17 @@ fn record_row_is_closed(ctx: &InferenceContext, ty: &types::Type) -> bool {
 }
 
 /// Whether a tag test rules out `member`: it holds a different literal in the tested field when
-/// the field equals the literal, or the same literal when it does not.
+/// the field equals the literal, or the same literal when it does not. A tag that is provably
+/// absent reads as `none`, which equals no literal.
 fn excluded_by_tags(ctx: &InferenceContext, member: &types::Type, tags: &[TagTest]) -> bool {
     tags.iter().any(|test| {
-        let Some(types::Type::Lit(tag)) = find_record_field_raw(ctx, member, &test.key) else {
-            return false;
+        let tag = match find_record_field_raw(ctx, member, &test.key) {
+            Some(types::Type::Lit(tag)) => tag,
+            None if test.equal && matches!(member, types::Type::Record(..)) && record_row_is_closed(ctx, member) => {
+                return true;
+            }
+            None if test.equal && matches!(member, types::Type::None) => return true,
+            _ => return false,
         };
         if test.equal {
             tag != test.lit && std::mem::discriminant(&tag) == std::mem::discriminant(&test.lit)
@@ -188,10 +194,17 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
             Some(ty) => ctx.resolve_type(&ty),
             None => continue,
         };
+        // A tag assigned before the read may no longer hold the literal the record was built with
+        let tags: Vec<TagTest> = access
+            .tags
+            .iter()
+            .filter(|test| !ctx.is_record_field_written(access.def_id, &test.key, access.read_start))
+            .cloned()
+            .collect();
 
         if let types::Type::Record(..) = &var_ty {
             // A tag test that the record fails makes the branch unreachable
-            if excluded_by_tags(ctx, &var_ty, &access.tags) {
+            if excluded_by_tags(ctx, &var_ty, &tags) {
                 continue;
             }
             if let Some(field_ty) = find_record_field(ctx, &var_ty, &access.field_name) {
@@ -209,7 +222,7 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
                 });
             }
         } else if let types::Type::Union(members) = &var_ty
-            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, access.guard, &access.tags)
+            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, access.guard, &tags)
         {
             if let Some(field_ty) = follow_keys(ctx, field_ty, access) {
                 let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
