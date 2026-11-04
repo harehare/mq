@@ -1179,3 +1179,20 @@ fn test_call_with_a_record_literal_lacking_a_field_the_body_reads(#[case] code: 
     let errors = check_types_with_builtins(code);
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }
+
+#[rstest]
+#[case::nested_field(r#"let r = {a: {n: 1}} | r["a"]["n"] + 1"#, true)]
+#[case::three_levels(r#"let r = {a: {b: {c: 1}}} | r["a"]["b"]["c"] + 1"#, true)]
+#[case::string_leaf(r#"let r = {a: {s: "x"}} | upcase(r["a"]["s"])"#, true)]
+#[case::through_union(
+    r#"def mk(b): if (b): {inner: {n: 1}} else: {inner: {n: 2}}; | mk(true)["inner"]["n"] + 1"#,
+    true
+)]
+#[case::index_after_key(r#"let r = {a: [1, 2]} | r["a"][0] + 1"#, true)]
+#[case::wrong_leaf_type(r#"let r = {a: {n: "s"}} | r["a"]["n"] - 1"#, false)]
+#[case::wrong_leaf_type_deep(r#"let r = {a: {b: {c: "s"}}} | r["a"]["b"]["c"] - 1"#, false)]
+#[case::missing_first_key(r#"let r = {a: {n: 1}} | r["z"]["n"]"#, false)]
+fn test_chained_key_access_reads_the_field_of_each_step(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}

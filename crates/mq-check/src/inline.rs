@@ -337,6 +337,14 @@ impl Inliner<'_> {
             }
             SymbolKind::Call => self.eval_call(id, piped, scope),
             SymbolKind::If | SymbolKind::Elif => self.eval_if(id, piped, scope),
+            SymbolKind::Block => {
+                let stages: Vec<SymbolId> = get_children(self.children, id)
+                    .iter()
+                    .copied()
+                    .filter(|&c| hir.symbol(c).is_some_and(|s| !matches!(s.kind, SymbolKind::Keyword)))
+                    .collect();
+                self.eval_stages(&stages, piped, scope)
+            }
             _ => None,
         }
     }
@@ -375,8 +383,21 @@ impl Inliner<'_> {
     }
 
     fn eval_stages(&mut self, stages: &[SymbolId], piped: Option<&Type>, scope: &mut Scope) -> Option<Type> {
+        let hir = self.hir;
         let mut value = piped.cloned();
         for &stage in stages {
+            if matches!(
+                hir.symbol(stage).map(|s| &s.kind),
+                Some(SymbolKind::Variable | SymbolKind::DestructuringBinding)
+            ) {
+                if let Some(init) = get_children(self.children, stage).last().copied()
+                    && !self.assigned.contains(&stage)
+                    && let Some(ty) = self.eval(init, None, scope)
+                {
+                    scope.insert(stage, ty);
+                }
+                continue;
+            }
             value = self.eval(stage, value.clone().as_ref(), scope);
         }
         value
@@ -414,6 +435,9 @@ impl Inliner<'_> {
                     return None;
                 }
                 Some((tag == lit) == (op == "=="))
+            }
+            (SymbolKind::Call, Some("not"), [inner]) if hir.bracket_group_count(cond) == 0 => {
+                self.decide(*inner, scope).map(|b| !b)
             }
             (SymbolKind::Call, _, _) => match self.record_field(cond, scope)? {
                 Type::Lit(Lit::Bool(b)) => Some(b),

@@ -16,7 +16,7 @@ use crate::{
     TypeError,
     builtin::PARTIAL,
     constraint::{ChildrenIndex, Constraint, ConstraintOrigin},
-    infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
+    infer::{DeferredOverload, DeferredParameterCall, DeferredRecordAccess, InferenceContext},
     node_attr::{SelectorOutput, node_attr_type, node_selector_output},
     types::{self, Substitution},
     unify, walk_ancestors,
@@ -190,10 +190,16 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
         };
 
         if let types::Type::Record(..) = &var_ty {
+            // A tag test that the record fails makes the branch unreachable
+            if excluded_by_tags(ctx, &var_ty, &access.tags) {
+                continue;
+            }
             if let Some(field_ty) = find_record_field(ctx, &var_ty, &access.field_name) {
                 let field_ty = without_none_if(access.guard.non_none, field_ty);
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+                if let Some(field_ty) = follow_keys(ctx, field_ty, access) {
+                    let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                    ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+                }
                 resolved_any = true;
             } else if record_row_is_closed(ctx, &var_ty) && !access.guard.present {
                 ctx.add_error(TypeError::UndefinedField {
@@ -205,12 +211,31 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
         } else if let types::Type::Union(members) = &var_ty
             && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, access.guard, &access.tags)
         {
-            let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-            ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+            if let Some(field_ty) = follow_keys(ctx, field_ty, access) {
+                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+            }
             resolved_any = true;
         }
     }
     resolved_any
+}
+
+/// The type a chain `v["a"]["b"]` reads, given the type of its first key. `None` when a later
+/// step is not a key of a record that is known well enough, which leaves the result unconstrained.
+fn follow_keys(ctx: &InferenceContext, first: types::Type, access: &DeferredRecordAccess) -> Option<types::Type> {
+    if access.opaque_rest {
+        return None;
+    }
+    let mut ty = first;
+    for key in &access.rest_keys {
+        ty = match ctx.resolve_type(&ty) {
+            record @ types::Type::Record(..) => find_record_field(ctx, &record, key)?,
+            types::Type::Union(members) => union_field_type(ctx, &members, key, FieldGuard::default(), &[])?,
+            _ => return None,
+        };
+    }
+    Some(ty)
 }
 
 /// Resolves deferred bracket accesses on function call return values.

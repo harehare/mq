@@ -109,6 +109,10 @@ pub struct DeferredRecordAccess {
     pub field_name: String,
     /// What the enclosing conditions say about the field
     pub guard: crate::field_guard::FieldGuard,
+    /// The keys of a chain `v["a"]["b"]` after the first, which read the result of the one before
+    pub rest_keys: Vec<String>,
+    /// Whether the chain goes on with something that is not a key, such as an index
+    pub opaque_rest: bool,
     /// What the enclosing conditions say about the tag fields of the variable
     pub tags: Vec<crate::field_guard::TagTest>,
     /// Source range for error reporting

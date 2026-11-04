@@ -2259,6 +2259,23 @@ fn generate_call_constraints(
                             }
                         });
 
+                        // `v["a"]["b"]` is lowered as `v("a", "b")`: the keys after the first read
+                        // the result of the one before
+                        let mut chain_keys = Vec::new();
+                        let mut opaque_rest = false;
+                        for &arg_id in children.iter().skip(1) {
+                            let key = hir.symbol(arg_id).filter(|s| {
+                                matches!(
+                                    s.kind,
+                                    SymbolKind::Symbol | SymbolKind::Selector(_) | SymbolKind::String
+                                )
+                            });
+                            match (opaque_rest, key.and_then(|s| s.value.as_ref())) {
+                                (false, Some(value)) => chain_keys.push(value.to_string()),
+                                _ => opaque_rest = true,
+                            }
+                        }
+
                         if let Some(name) = field_name
                             .clone()
                             .filter(|_| is_index_assign_target(symbol_id, hir, children_index))
@@ -2286,6 +2303,8 @@ fn generate_call_constraints(
                                 def_id,
                                 guard: field_guard(hir, symbol_id, def_id, &name, children_index),
                                 tags: tag_tests(hir, symbol_id, def_id, children_index),
+                                rest_keys: chain_keys.clone(),
+                                opaque_rest,
                                 field_name: name,
                                 range,
                                 read_start: range.map(|r| r.start).filter(|_| in_source_order),
