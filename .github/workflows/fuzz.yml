@@ -34,4 +34,4 @@ jobs:
         with:
           workspaces: fuzz
       - name: Fuzz ${{ matrix.target }}
-        run: just test-fuzz ${{ matrix.target }} -- -max_total_time=900
+        run: just test-fuzz ${{ matrix.target }} --target x86_64-unknown-linux-gnu -- -max_total_time=900
