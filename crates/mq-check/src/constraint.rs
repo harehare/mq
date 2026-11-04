@@ -28,8 +28,12 @@ use crate::infer::{
 };
 use crate::narrowing::{analyze_condition, selector_kinds};
 use crate::node_attr::{SelectorOutput, node_selector_output};
-use crate::types::Type;
-use crate::{TypeError, field_guard::field_guard, infer};
+use crate::types::{Lit, Type};
+use crate::{
+    TypeError,
+    field_guard::{field_guard, tag_tests},
+    infer,
+};
 use mq_hir::{Hir, SymbolId, SymbolKind};
 
 use smol_str::SmolStr;
@@ -1066,7 +1070,8 @@ pub(super) fn generate_symbol_constraints(
                         // Get value type from the key's children
                         let value_children = get_children(children_index, key_id);
                         let val_ty = if let Some(&val_id) = value_children.last() {
-                            ctx.get_or_create_symbol_type(val_id)
+                            let ty = ctx.get_or_create_symbol_type(val_id);
+                            tag_literal(hir, val_id).unwrap_or(ty)
                         } else {
                             Type::Var(ctx.fresh_var())
                         };
@@ -1919,6 +1924,18 @@ fn collect_function_yields(hir: &Hir) -> rustc_hash::FxHashMap<SymbolId, Vec<Sym
     yields
 }
 
+/// The literal type of a `true`, `false` or plain string value, which a record field keeps so
+/// that a tag can tell the members of a union of records apart.
+fn tag_literal(hir: &Hir, id: SymbolId) -> Option<Type> {
+    let symbol = hir.symbol(id)?;
+    let value = symbol.value.as_deref()?;
+    match symbol.kind {
+        SymbolKind::Boolean => Some(Type::Lit(Lit::Bool(value == "true"))),
+        SymbolKind::String => Some(Type::Lit(Lit::Str(value.to_string()))),
+        _ => None,
+    }
+}
+
 /// Records a call `attr(node, "name")` or `get(record, "name")` of the builtin whose name is a
 /// string literal, so that its result type can be taken from the attribute table (or the field
 /// of the record) once the type of the first argument is known.
@@ -2242,6 +2259,23 @@ fn generate_call_constraints(
                             }
                         });
 
+                        // `v["a"]["b"]` is lowered as `v("a", "b")`: the keys after the first read
+                        // the result of the one before
+                        let mut chain_keys = Vec::new();
+                        let mut opaque_rest = false;
+                        for &arg_id in children.iter().skip(1) {
+                            let key = hir.symbol(arg_id).filter(|s| {
+                                matches!(
+                                    s.kind,
+                                    SymbolKind::Symbol | SymbolKind::Selector(_) | SymbolKind::String
+                                )
+                            });
+                            match (opaque_rest, key.and_then(|s| s.value.as_ref())) {
+                                (false, Some(value)) => chain_keys.push(value.to_string()),
+                                _ => opaque_rest = true,
+                            }
+                        }
+
                         if let Some(name) = field_name
                             .clone()
                             .filter(|_| is_index_assign_target(symbol_id, hir, children_index))
@@ -2268,6 +2302,9 @@ fn generate_call_constraints(
                                 call_symbol_id: symbol_id,
                                 def_id,
                                 guard: field_guard(hir, symbol_id, def_id, &name, children_index),
+                                tags: tag_tests(hir, symbol_id, def_id, children_index),
+                                rest_keys: chain_keys.clone(),
+                                opaque_rest,
                                 field_name: name,
                                 range,
                                 read_start: range.map(|r| r.start).filter(|_| in_source_order),

@@ -16,6 +16,8 @@ reakpoint = "reakpoint"
 sction = "sction"
 # Intentional misspelling of `.value` in the unknown-selector hint test
 vlaue = "vlaue"
+# Intentional misspelling of `value` in the misspelled-field check test
+valeu = "valeu"
 
 [default.extend-identifiers]
 # bimap is a crate name (bijective map)

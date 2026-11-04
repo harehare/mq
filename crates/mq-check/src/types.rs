@@ -12,9 +12,32 @@ slotmap::new_key_type! {
     pub struct TypeVarId;
 }
 
+/// A literal value kept as a record field type, so a tag such as `ok: true` can tell the
+/// members of a union of records apart.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Lit {
+    /// `true` or `false`
+    Bool(bool),
+    /// A string literal
+    Str(String),
+}
+
+impl Lit {
+    /// The type every value of this literal also has.
+    pub fn base(&self) -> Type {
+        match self {
+            Lit::Bool(_) => Type::Bool,
+            Lit::Str(_) => Type::String,
+        }
+    }
+}
+
 /// Represents a type in the mq type system
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
+    /// The type of one literal value. Only record fields built from a literal carry it, and it
+    /// is widened to its base type wherever the value is read.
+    Lit(Lit),
     /// Integer type
     Int,
     /// Floating point type
@@ -201,6 +224,15 @@ impl Type {
         Type::union(joined)
     }
 
+    /// The type with every literal at the top (or in a union member) replaced by its base type.
+    pub fn widen_lit(&self) -> Type {
+        match self {
+            Type::Lit(lit) => lit.base(),
+            Type::Union(members) => Type::union(members.iter().map(Type::widen_lit).collect()),
+            other => other.clone(),
+        }
+    }
+
     /// Whether the type contains a type variable other than the row tail of a record.
     pub(crate) fn has_pending_var(&self) -> bool {
         match self {
@@ -232,6 +264,10 @@ impl Type {
             let b = &fields_b[key];
             let merged = if a == b {
                 a.clone()
+            } else if let (Type::Lit(la), Type::Lit(lb)) = (a, b)
+                && std::mem::discriminant(la) == std::mem::discriminant(lb)
+            {
+                la.base()
             } else if let Some(merged) = a.merge_records(b, keep_pending) {
                 merged
             } else if keep_pending || (!a.has_pending_var() && !b.has_pending_var()) {
@@ -319,6 +355,7 @@ impl Type {
             Type::Never => 17,
             Type::Dynamic => 18,
             Type::Generator(_) => 19,
+            Type::Lit(_) => 20,
         }
     }
 
@@ -419,6 +456,10 @@ impl Type {
             // Dynamic is always compatible with any type
             (Type::Dynamic, _) | (_, Type::Dynamic) => true,
 
+            // A literal behaves as its base type
+            (Type::Lit(lit), other) => lit.base().can_match(other),
+            (other, Type::Lit(lit)) => other.can_match(&lit.base()),
+
             // Type variables always match
             (Type::Var(_), _) | (_, Type::Var(_)) => true,
 
@@ -505,6 +546,10 @@ impl Type {
             // Dynamic is always compatible (gradual typing)
             (Type::Dynamic, _) | (_, Type::Dynamic) => true,
 
+            // A literal behaves as its base type
+            (Type::Lit(lit), other) => lit.base().can_branch_unify_with(other),
+            (other, Type::Lit(lit)) => other.can_branch_unify_with(&lit.base()),
+
             // Two type variables are compatible (unification will sort them out)
             (Type::Var(_), Type::Var(_)) => true,
 
@@ -575,6 +620,10 @@ impl Type {
         match (self, other) {
             // Never (bottom type) can match anything but with lowest score
             (Type::Never, _) | (_, Type::Never) => Some(1),
+
+            // A literal behaves as its base type
+            (Type::Lit(lit), other) => lit.base().match_score(other),
+            (other, Type::Lit(lit)) => other.match_score(&lit.base()),
 
             // Exact matches get highest score
             (Type::Int, Type::Int)
@@ -692,6 +741,7 @@ impl Type {
             Type::Number => "number".to_string(),
             Type::String => "string".to_string(),
             Type::Bool => "bool".to_string(),
+            Type::Lit(lit) => lit.base().display_resolved(),
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
             Type::Node(set) => set.display(),
@@ -780,6 +830,7 @@ impl Type {
             Type::Number => "number".to_string(),
             Type::String => "string".to_string(),
             Type::Bool => "bool".to_string(),
+            Type::Lit(lit) => lit.base().fmt_renumbered(var_map, counter),
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
             Type::Node(set) => set.display(),

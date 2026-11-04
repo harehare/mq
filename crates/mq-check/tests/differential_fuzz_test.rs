@@ -508,6 +508,14 @@ fn run(seed: u64, count: usize, noise: u64) -> Findings {
     findings
 }
 
+/// How many findings of a kind the report lists; `FUZZ_SHOW` lists that many of each kind.
+fn shown(title: &str) -> usize {
+    std::env::var("FUZZ_SHOW")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(if title.starts_with("MISSED") { 40 } else { 12 })
+}
+
 fn report(findings: &Findings) -> String {
     use std::fmt::Write as _;
 
@@ -541,7 +549,7 @@ fn report(findings: &Findings) -> String {
         ("FALSE POSITIVE", &findings.false_positives),
         ("FALSE NEGATIVE", &findings.false_negatives),
     ] {
-        for (code, detail) in items.iter().take(if title.starts_with("MISSED") { 40 } else { 12 }) {
+        for (code, detail) in items.iter().take(shown(title)) {
             writeln!(out, "--- {title}: {detail}\n{code}").unwrap();
         }
     }

@@ -6,7 +6,8 @@
 
 use mq_hir::{Hir, SymbolId, SymbolKind};
 
-use crate::constraint::{ChildrenIndex, get_children};
+use crate::constraint::{ChildrenIndex, get_children, get_non_keyword_children};
+use crate::types::Lit;
 use crate::walk_ancestors;
 
 /// What is known about one field where it is read.
@@ -127,6 +128,27 @@ fn guard_of_condition(
     }
 }
 
+/// The `if`/`elif` conditions enclosing `access`, with whether each held on the way to it.
+fn enclosing_conditions(hir: &Hir, access: SymbolId, children_index: &ChildrenIndex) -> Vec<(SymbolId, bool)> {
+    let mut conditions = Vec::new();
+    let mut child = access;
+    for (ancestor, symbol) in walk_ancestors(hir, access) {
+        if matches!(symbol.kind, SymbolKind::If | SymbolKind::Elif) {
+            let children = get_children(children_index, ancestor);
+            if let (Some(&cond), Some(position)) = (children.first(), children.iter().position(|&c| c == child)) {
+                match position {
+                    0 => {}
+                    1 => conditions.push((cond, true)),
+                    // another branch of an `if`: its condition did not hold
+                    _ => conditions.push((cond, false)),
+                }
+            }
+        }
+        child = ancestor;
+    }
+    conditions
+}
+
 /// What the `if`/`elif` conditions enclosing `access` say about the field it reads.
 pub(crate) fn field_guard(
     hir: &Hir,
@@ -135,24 +157,150 @@ pub(crate) fn field_guard(
     key: &str,
     children_index: &ChildrenIndex,
 ) -> FieldGuard {
-    let mut guard = FieldGuard::default();
-    let mut child = access;
-    for (ancestor, symbol) in walk_ancestors(hir, access) {
-        if matches!(symbol.kind, SymbolKind::If | SymbolKind::Elif) {
-            let children = get_children(children_index, ancestor);
-            if let (Some(&cond), Some(position)) = (children.first(), children.iter().position(|&c| c == child)) {
-                let truth = match position {
-                    0 => None,
-                    1 => Some(true),
-                    // another branch of an `if`: its condition did not hold
-                    _ => Some(false),
-                };
-                if let Some(truth) = truth {
-                    guard = guard.merge(guard_of_condition(hir, cond, truth, (def_id, key), children_index));
-                }
+    enclosing_conditions(hir, access, children_index)
+        .into_iter()
+        .fold(FieldGuard::default(), |guard, (cond, truth)| {
+            guard.merge(guard_of_condition(hir, cond, truth, (def_id, key), children_index))
+        })
+}
+
+/// A test of a tag field against a literal that an enclosing condition made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagTest {
+    /// The field that was tested
+    pub key: String,
+    /// The literal it was compared with
+    pub lit: Lit,
+    /// Whether the field equals the literal where the test is in force
+    pub equal: bool,
+}
+
+pub(crate) fn literal_of(hir: &Hir, id: SymbolId) -> Option<Lit> {
+    let symbol = hir.symbol(id)?;
+    let value = symbol.value.as_deref()?;
+    match symbol.kind {
+        SymbolKind::Boolean => Some(Lit::Bool(value == "true")),
+        SymbolKind::String => Some(Lit::Str(value.to_string())),
+        _ => None,
+    }
+}
+
+fn collect_tag_tests(
+    hir: &Hir,
+    cond: SymbolId,
+    truth: bool,
+    def_id: SymbolId,
+    children_index: &ChildrenIndex,
+    depth: u8,
+    out: &mut Vec<TagTest>,
+) {
+    let Some(symbol) = hir.symbol(cond) else {
+        return;
+    };
+    let children = get_children(children_index, cond);
+    let read = |id: SymbolId| accessed_field(hir, id, children_index).filter(|(def, _)| *def == def_id);
+
+    match (&symbol.kind, symbol.value.as_deref()) {
+        (SymbolKind::UnaryOp, Some("!")) => {
+            if let Some(&inner) = children.first() {
+                collect_tag_tests(hir, inner, !truth, def_id, children_index, depth, out);
             }
         }
-        child = ancestor;
+        (SymbolKind::BinaryOp, Some("&&")) if truth => {
+            for &c in children {
+                collect_tag_tests(hir, c, true, def_id, children_index, depth, out);
+            }
+        }
+        (SymbolKind::BinaryOp, Some("||")) if !truth => {
+            for &c in children {
+                collect_tag_tests(hir, c, false, def_id, children_index, depth, out);
+            }
+        }
+        (SymbolKind::BinaryOp, Some(op @ ("==" | "!="))) => {
+            let [lhs, rhs] = children else {
+                return;
+            };
+            let tested = read(*lhs)
+                .zip(literal_of(hir, *rhs))
+                .or_else(|| read(*rhs).zip(literal_of(hir, *lhs)));
+            if let Some(((_, key), lit)) = tested {
+                out.push(TagTest {
+                    key,
+                    lit,
+                    equal: truth == (op == "=="),
+                });
+            }
+        }
+        (SymbolKind::Call, _) => {
+            if let Some((_, key)) = read(cond) {
+                // `if (r["ok"])` holds when the tag is `true`
+                out.push(TagTest {
+                    key,
+                    lit: Lit::Bool(true),
+                    equal: truth,
+                });
+            } else if let (Some("not"), [arg]) = (call_name(hir, cond), children) {
+                collect_tag_tests(hir, *arg, !truth, def_id, children_index, depth, out);
+            } else {
+                collect_predicate_tag_tests(hir, cond, truth, def_id, children_index, depth, out);
+            }
+        }
+        _ => {}
     }
-    guard
+}
+
+/// The tests a call `is_ok(r)` of a user-defined predicate makes on `r`: a function of one
+/// parameter whose body is a single condition tests the argument as the body tests the parameter.
+fn collect_predicate_tag_tests(
+    hir: &Hir,
+    call: SymbolId,
+    truth: bool,
+    def_id: SymbolId,
+    children_index: &ChildrenIndex,
+    depth: u8,
+    out: &mut Vec<TagTest>,
+) {
+    const MAX_PREDICATE_DEPTH: u8 = 4;
+    if depth >= MAX_PREDICATE_DEPTH {
+        return;
+    }
+    let Some(func_id) = hir.resolve_reference_symbol(call) else {
+        return;
+    };
+    let Some(func) = hir.symbol(func_id) else {
+        return;
+    };
+    if hir.is_builtin_symbol(func) || !matches!(func.kind, SymbolKind::Function(_)) {
+        return;
+    }
+    let is_parameter = |id: &SymbolId| hir.symbol(*id).is_some_and(|s| s.kind == SymbolKind::Parameter);
+    let members = get_non_keyword_children(hir, func_id, children_index);
+    let [param] = members.iter().copied().filter(is_parameter).collect::<Vec<_>>()[..] else {
+        return;
+    };
+    let [body] = members
+        .iter()
+        .copied()
+        .filter(|id| !is_parameter(id))
+        .collect::<Vec<_>>()[..]
+    else {
+        return;
+    };
+    let args = get_non_keyword_children(hir, call, children_index);
+    let [arg] = args[..] else {
+        return;
+    };
+    if hir.symbol(arg).is_none_or(|s| s.kind != SymbolKind::Ref) || hir.resolve_reference_symbol(arg) != Some(def_id) {
+        return;
+    }
+    collect_tag_tests(hir, body, truth, param, children_index, depth, out);
+}
+
+/// The tests of tag fields of `def_id` that the conditions enclosing `access` make.
+pub(crate) fn tag_tests(hir: &Hir, access: SymbolId, def_id: SymbolId, children_index: &ChildrenIndex) -> Vec<TagTest> {
+    let mut tests = Vec::new();
+    for (cond, truth) in enclosing_conditions(hir, access, children_index) {
+        collect_tag_tests(hir, cond, truth, def_id, children_index, 0, &mut tests);
+    }
+    tests
 }

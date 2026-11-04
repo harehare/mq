@@ -1063,3 +1063,147 @@ fn test_non_callable_keys_and_range(#[case] code: &str, #[case] should_succeed: 
     let result = check_types_with_builtins(code);
     assert_eq!(result.is_empty(), should_succeed, "{code}: {result:?}");
 }
+
+const DIV: &str = r#"def div(a, b): if (b == 0): {ok: false, error: "zero"} else: {ok: true, value: a / b} end"#;
+const KINDS: &str = r#"def pick(b): if (b): {kind: "a", x: 1} else: {kind: "b", y: "s"} end"#;
+
+fn with_div(body: &str) -> String {
+    format!("{DIV} | let r = div(4, 2) | {body}")
+}
+
+fn with_kinds(body: &str) -> String {
+    format!("{KINDS} | let r = pick(true) | {body}")
+}
+
+#[rstest]
+#[case::truthy_tag(with_div(r#"if (r["ok"]): r["value"] + 1 else: r["error"] + "x""#), true)]
+#[case::negated_tag(with_div(r#"if (!r["ok"]): r["error"] + "x" else: r["value"] + 1"#), true)]
+#[case::equals_literal(with_div(r#"if (r["ok"] == true): r["value"] + 1 else: r["error"] + "x""#), true)]
+#[case::not_equals_literal(with_div(r#"if (r["ok"] != true): r["error"] + "x" else: r["value"] + 1"#), true)]
+#[case::and_condition(with_div(r#"if (r["ok"] && r["value"] > 0): r["value"] + 1 else: 0"#), true)]
+#[case::string_tag(with_kinds(r#"if (r["kind"] == "a"): r["x"] + 1 else: r["y"] + "s""#), true)]
+#[case::elif_string_tag(
+    with_kinds(r#"if (r["kind"] == "a"): r["x"] + 1 elif (r["kind"] == "b"): r["y"] + "s" else: 0"#),
+    true
+)]
+#[case::wrong_type_in_ok_branch(with_div(r#"if (r["ok"]): r["value"] - "s" else: 0"#), false)]
+#[case::wrong_type_in_error_branch(with_div(r#"if (r["ok"]): 0 else: r["error"] - 1"#), false)]
+#[case::wrong_type_string_tag(with_kinds(r#"if (r["kind"] == "b"): r["y"] - 1 else: 0"#), false)]
+fn test_tag_test_selects_the_member_of_a_union_of_records(#[case] code: String, #[case] ok: bool) {
+    let errors = check_types_with_builtins(&code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::widened_assignment(r#"var r = {ok: true} | r["ok"] = false | r["ok"]"#)]
+#[case::compared_with_other_literal(r#"let r = {ok: true} | if (r["ok"] == false): 1 else: 2"#)]
+#[case::passed_as_bool(r#"def f(b): if (b): 1 else: 2; | f({ok: true}["ok"])"#)]
+#[case::joined_in_array(r#"[{ok: true, v: 1}, {ok: false, v: 2}] | map(fn(r): r["ok"];)"#)]
+fn test_literal_tags_do_not_reject_valid_code(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::predicate_on_tag(
+    with_div(r#"def is_ok(x): x["ok"]; | if (is_ok(r)): r["value"] + 1 else: r["error"] + "x""#),
+    true
+)]
+#[case::negated_predicate(
+    with_div(r#"def is_err(x): x["ok"] == false; | if (is_err(r)): r["error"] + "x" else: r["value"] + 1"#),
+    true
+)]
+#[case::predicate_through_predicate(
+    with_div(
+        r#"def is_ok(x): x["ok"]; | def good(x): is_ok(x); | if (good(r)): r["value"] + 1 else: r["error"] + "x""#
+    ),
+    true
+)]
+#[case::predicate_still_checks_branch(
+    with_div(r#"def is_ok(x): x["ok"]; | if (is_ok(r)): r["value"] - "s" else: 0"#),
+    false
+)]
+#[case::recursive_predicate_terminates(
+    with_div(r#"def loop_a(x): loop_b(x); | def loop_b(x): loop_a(x); | if (loop_a(r)): 1 else: 2"#),
+    true
+)]
+fn test_user_predicate_tests_a_tag(#[case] code: String, #[case] ok: bool) {
+    let errors = check_types_with_builtins(&code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::wrong_field_type(r#"def val(r): r["value"] - 1; | val({value: "s"})"#, false)]
+#[case::second_call_wrong(r#"def f(r): r["a"] - 1; | f({a: 1}) | f({a: "x"})"#, false)]
+#[case::symbol_key(r#"def val(r): r[:value] - 1; | val({value: "s"})"#, false)]
+#[case::right_field_type(r#"def val(r): r["value"] - 1; | val({value: 2})"#, true)]
+#[case::field_added_later(r#"def val(r): r["value"] - 1; | var d = {} | d["value"] = 2 | val(d)"#, true)]
+#[case::field_written_in_body(r#"def val(r): r["value"] = 1 | r["value"] - 1; | val({value: "s"})"#, true)]
+#[case::guarded_read(
+    r#"def val(r): if (is_string(r["value"])): 0 else: r["value"] - 1; | val({value: "s"})"#,
+    true
+)]
+fn test_call_checks_a_record_argument_against_the_fields_the_body_reads(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+const UNWRAP: &str = r#"def unwrap(r): if (r["ok"]): r["value"] - 1 else: r["error"] - 1 end"#;
+const KIND_OF: &str = r#"def k(r): if (r["kind"] == "a"): r["x"] - 1 elif (r["kind"] == "b"): r["y"] - 1 else: 0 end"#;
+
+#[rstest]
+#[case::ok_branch_wrong(format!(r#"{UNWRAP} | unwrap({{ok: true, value: "s"}})"#), false)]
+#[case::error_branch_wrong(format!(r#"{UNWRAP} | unwrap({{ok: false, error: "e"}})"#), false)]
+#[case::ok_branch_right(format!("{UNWRAP} | unwrap({{ok: true, value: 2}})"), true)]
+#[case::error_branch_right(format!("{UNWRAP} | unwrap({{ok: false, error: 3}})"), true)]
+#[case::other_branch_is_not_run(format!(r#"{UNWRAP} | unwrap({{ok: true, value: 2, error: "e"}})"#), true)]
+#[case::elif_branch_wrong(format!(r#"{KIND_OF} | k({{kind: "b", y: "s"}})"#), false)]
+#[case::elif_branch_right(format!(r#"{KIND_OF} | k({{kind: "b", y: 1}})"#), true)]
+#[case::else_branch(format!(r#"{KIND_OF} | k({{kind: "c"}})"#), true)]
+#[case::undecided_tag_is_skipped(format!(r#"{UNWRAP} | def f(x): unwrap({{ok: x, value: "s"}}); | f(true)"#), true)]
+fn test_call_runs_the_branch_a_record_tag_selects(#[case] code: String, #[case] ok: bool) {
+    let errors = check_types_with_builtins(&code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::missing_field_in_literal(r#"def val(r): r["value"] - 1; | val({other: 2})"#, false)]
+#[case::missing_field_of_empty_literal(r#"def val(r): r["value"] - 1; | val({})"#, false)]
+#[case::field_present(r#"def val(r): r["value"] - 1; | val({value: 2, other: 1})"#, true)]
+#[case::missing_field_in_variable(r#"def val(r): r["value"] - 1; | let d = {other: 2} | val(d)"#, true)]
+#[case::missing_field_with_default(r#"def val(r): (r["value"] ?? 0) - 1; | val({other: 2})"#, true)]
+#[case::missing_tag_selects_else(format!(r#"{UNWRAP} | unwrap({{error: 3}})"#), true)]
+#[case::missing_tag_else_branch_checked(format!(r#"{UNWRAP} | unwrap({{error: "e"}})"#), false)]
+fn test_call_with_a_record_literal_lacking_a_field_the_body_reads(#[case] code: impl AsRef<str>, #[case] ok: bool) {
+    let code = code.as_ref();
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::nested_field(r#"let r = {a: {n: 1}} | r["a"]["n"] + 1"#, true)]
+#[case::three_levels(r#"let r = {a: {b: {c: 1}}} | r["a"]["b"]["c"] + 1"#, true)]
+#[case::string_leaf(r#"let r = {a: {s: "x"}} | upcase(r["a"]["s"])"#, true)]
+#[case::through_union(
+    r#"def mk(b): if (b): {inner: {n: 1}} else: {inner: {n: 2}}; | mk(true)["inner"]["n"] + 1"#,
+    true
+)]
+#[case::index_after_key(r#"let r = {a: [1, 2]} | r["a"][0] + 1"#, true)]
+#[case::wrong_leaf_type(r#"let r = {a: {n: "s"}} | r["a"]["n"] - 1"#, false)]
+#[case::wrong_leaf_type_deep(r#"let r = {a: {b: {c: "s"}}} | r["a"]["b"]["c"] - 1"#, false)]
+#[case::missing_first_key(r#"let r = {a: {n: 1}} | r["z"]["n"]"#, false)]
+fn test_chained_key_access_reads_the_field_of_each_step(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::dict_entries_as_pairs(r#"filter({"a": 4, "b": 1}, fn(kv): kv[1] > 1;)"#, true)]
+#[case::dict_with_mixed_values(r#"filter({"a": 4, "b": "bc"}, fn(kv): true;)"#, true)]
+#[case::dict_variable_then_keys(r#"let d = {"a": 4, "b": 1} | filter(d, fn(kv): kv[1] > 1;) | keys()"#, true)]
+#[case::dict_wrong_use_of_value(r#"let d = {"a": 4} | filter(d, fn(kv): kv[1] - "s";)"#, false)]
+#[case::dict_callback_with_two_parameters(r#"filter({"a": 4}, fn(k, v): v > 1;)"#, false)]
+fn test_filter_over_a_dict_gives_each_entry_as_a_pair(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}

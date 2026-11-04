@@ -12,9 +12,10 @@ use smol_str::SmolStr;
 use crate::builtin::PARTIAL;
 use crate::certainty::UNAUDITED_BUILTINS;
 use crate::constraint::{ChildrenIndex, get_children};
+use crate::field_guard::literal_of;
 use crate::infer::{DeferredUserCall, InferenceContext};
 use crate::probe::{ELEMENT_BUILTINS, combinations, representatives};
-use crate::types::Type;
+use crate::types::{Lit, Type};
 use crate::{is_module_range, symbol_range};
 
 /// How many functions deep a call is followed.
@@ -69,7 +70,15 @@ pub(crate) fn check_inlined_calls(
                         lambdas.push(Some(id));
                     }
                     None => {
-                        let ty = ctx.resolve_type(ty);
+                        let mut ty = ctx.resolve_type(ty);
+                        if call
+                            .arg_symbol_ids
+                            .get(index)
+                            .is_some_and(|&id| hir.symbol(id).is_some_and(|s| s.kind == SymbolKind::Dict))
+                            && let Type::Record(fields, _) = ty
+                        {
+                            ty = Type::Record(fields, Box::new(Type::RowEmpty));
+                        }
                         if !ctx.is_settled(&ty) {
                             return None;
                         }
@@ -327,6 +336,123 @@ impl Inliner<'_> {
                 self.apply(id, name, &operands, None)
             }
             SymbolKind::Call => self.eval_call(id, piped, scope),
+            SymbolKind::If | SymbolKind::Elif => self.eval_if(id, piped, scope),
+            SymbolKind::Block => {
+                let stages: Vec<SymbolId> = get_children(self.children, id)
+                    .iter()
+                    .copied()
+                    .filter(|&c| hir.symbol(c).is_some_and(|s| !matches!(s.kind, SymbolKind::Keyword)))
+                    .collect();
+                self.eval_stages(&stages, piped, scope)
+            }
+            _ => None,
+        }
+    }
+
+    /// Runs the branch of an `if` that the condition selects, when the tags of the record
+    /// arguments decide it. A condition that is not decided leaves the whole `if` unknown.
+    fn eval_if(&mut self, id: SymbolId, piped: Option<&Type>, scope: &mut Scope) -> Option<Type> {
+        let hir = self.hir;
+        let children: Vec<SymbolId> = get_children(self.children, id)
+            .iter()
+            .copied()
+            .filter(|&c| hir.symbol(c).is_some_and(|s| !matches!(s.kind, SymbolKind::Keyword)))
+            .collect();
+        let (&cond, rest) = children.split_first()?;
+        let is_branch = |c: &SymbolId| {
+            hir.symbol(*c)
+                .is_some_and(|s| matches!(s.kind, SymbolKind::Elif | SymbolKind::Else))
+        };
+        let split = rest.iter().position(is_branch).unwrap_or(rest.len());
+        let (then, others) = rest.split_at(split);
+        if self.decide(cond, scope)? {
+            return self.eval_stages(then, piped, scope);
+        }
+        let next = others.first()?;
+        match hir.symbol(*next)?.kind {
+            SymbolKind::Elif => self.eval_if(*next, piped, scope),
+            _ => {
+                let body: Vec<SymbolId> = get_children(self.children, *next)
+                    .iter()
+                    .copied()
+                    .filter(|&c| hir.symbol(c).is_some_and(|s| !matches!(s.kind, SymbolKind::Keyword)))
+                    .collect();
+                self.eval_stages(&body, piped, scope)
+            }
+        }
+    }
+
+    fn eval_stages(&mut self, stages: &[SymbolId], piped: Option<&Type>, scope: &mut Scope) -> Option<Type> {
+        let hir = self.hir;
+        let mut value = piped.cloned();
+        for &stage in stages {
+            if matches!(
+                hir.symbol(stage).map(|s| &s.kind),
+                Some(SymbolKind::Variable | SymbolKind::DestructuringBinding)
+            ) {
+                if let Some(init) = get_children(self.children, stage).last().copied()
+                    && !self.assigned.contains(&stage)
+                    && let Some(ty) = self.eval(init, None, scope)
+                {
+                    scope.insert(stage, ty);
+                }
+                continue;
+            }
+            value = self.eval(stage, value.clone().as_ref(), scope);
+        }
+        value
+    }
+
+    /// Whether a condition holds, when it only tests the tag of a record argument against a
+    /// literal.
+    fn decide(&mut self, cond: SymbolId, scope: &Scope) -> Option<bool> {
+        let hir = self.hir;
+        let symbol = hir.symbol(cond)?;
+        let children: Vec<SymbolId> = get_children(self.children, cond)
+            .iter()
+            .copied()
+            .filter(|&c| hir.symbol(c).is_some_and(|s| !matches!(s.kind, SymbolKind::Keyword)))
+            .collect();
+        match (&symbol.kind, symbol.value.as_deref(), &children[..]) {
+            (SymbolKind::UnaryOp, Some("!"), [inner]) => self.decide(*inner, scope).map(|b| !b),
+            (SymbolKind::BinaryOp, Some("&&"), [a, b]) => match (self.decide(*a, scope), self.decide(*b, scope)) {
+                (Some(false), _) | (_, Some(false)) => Some(false),
+                (Some(true), Some(true)) => Some(true),
+                _ => None,
+            },
+            (SymbolKind::BinaryOp, Some("||"), [a, b]) => match (self.decide(*a, scope), self.decide(*b, scope)) {
+                (Some(true), _) | (_, Some(true)) => Some(true),
+                (Some(false), Some(false)) => Some(false),
+                _ => None,
+            },
+            (SymbolKind::BinaryOp, Some(op @ ("==" | "!=")), [a, b]) => {
+                let (tag, lit) = match (self.tag_of(*a, scope), literal_of(hir, *b)) {
+                    (Some(tag), Some(lit)) => (tag, lit),
+                    _ => (self.tag_of(*b, scope)?, literal_of(hir, *a)?),
+                };
+                // Different kinds of literal are left to the runtime
+                if std::mem::discriminant(&tag) != std::mem::discriminant(&lit) {
+                    return None;
+                }
+                Some((tag == lit) == (op == "=="))
+            }
+            (SymbolKind::Call, Some("not"), [inner]) if hir.bracket_group_count(cond) == 0 => {
+                self.decide(*inner, scope).map(|b| !b)
+            }
+            (SymbolKind::Call, _, _) => match self.record_field(cond, scope)? {
+                Type::Lit(Lit::Bool(b)) => Some(b),
+                // A key the record lacks reads as `none`
+                Type::None => Some(false),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The literal a tag field of a record argument holds, for `r["key"]`.
+    fn tag_of(&self, id: SymbolId, scope: &Scope) -> Option<Lit> {
+        match self.record_field(id, scope)? {
+            Type::Lit(lit) => Some(lit),
             _ => None,
         }
     }
@@ -354,7 +480,7 @@ impl Inliner<'_> {
         let symbol = hir.symbol(id)?;
         let name = symbol.value.as_deref()?;
         if hir.bracket_group_count(id) > 0 {
-            return None;
+            return self.eval_field(id, scope);
         }
         let operands = self.eval_all(id, scope);
         let def = hir.symbol(hir.resolve_reference_symbol(id)?)?;
@@ -392,6 +518,44 @@ impl Inliner<'_> {
             self.failures.truncate(before);
         }
         value
+    }
+
+    /// The type of the field read by `r["key"]` from a record argument.
+    ///
+    /// A field the record lacks is unknown, not `none`: the type of a variable does not say
+    /// which keys are assigned to it later.
+    fn eval_field(&mut self, id: SymbolId, scope: &Scope) -> Option<Type> {
+        let field = self.record_field(id, scope)?.widen_lit();
+        (!field.has_pending_var() && !field.is_dynamic()).then_some(field)
+    }
+
+    /// The field type a bracket read `r["key"]` of a record in scope gives, with its literal.
+    fn record_field(&self, id: SymbolId, scope: &Scope) -> Option<Type> {
+        let hir = self.hir;
+        if hir.symbol(id)?.kind != SymbolKind::Call || hir.bracket_group_count(id) == 0 {
+            return None;
+        }
+        let [key] = get_children(self.children, id)[..] else {
+            return None;
+        };
+        let key = hir
+            .symbol(key)
+            .filter(|k| matches!(k.kind, SymbolKind::String | SymbolKind::Symbol))?
+            .value
+            .as_deref()?;
+        let def = hir.resolve_reference_symbol(id)?;
+        if self.assigned.contains(&def) {
+            return None;
+        }
+        let Type::Record(fields, rest) = scope.get(&def)? else {
+            return None;
+        };
+        // A record written out at the call has no other key; a variable may gain keys later
+        match fields.get(key) {
+            Some(field) => Some(field.clone()),
+            None if **rest == Type::RowEmpty => Some(Type::None),
+            None => None,
+        }
     }
 
     /// Runs the lambda that a builtin calls on each element of a collection of known type.

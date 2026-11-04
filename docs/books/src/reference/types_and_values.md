@@ -293,6 +293,22 @@ let d = {"x": 100, "y": 200}
 # => 100
 ```
 
+## Tagged Records
+
+A dict that holds `true`, `false` or a string in a field keeps it as a tag. The type checker (`mq check`) uses a test of the tag to read only the variants it allows:
+
+```mq
+def div(a, b):
+  if (b == 0): {ok: false, error: "zero"} else: {ok: true, value: a / b}
+end
+| let r = div(4, 2)
+| if (r["ok"]): r["value"] + 1 else: len(r["error"])
+```
+
+`r["ok"]`, `!r["ok"]`, `r["kind"] == "a"` and `!=` narrow the record, also when joined with `&&`, `||` or `not`. A variant without the tag reads it as `none`, so it is left out of a branch that needs the tag to equal a literal. Assigning to the tag (`r["ok"] = false`) turns the narrowing off for later reads.
+
+A call is checked against the fields the function reads: `def val(r): r["value"] - 1;` called as `val({value: "s"})` is an error at the call.
+
 ## Environment Variables
 
 A module handling environment-specific functionality.
