@@ -1080,7 +1080,7 @@ fn test_compile_empty_code(#[case] query: &str) {
 #[test]
 fn test_dump_bytecode_renders_vm_instructions() {
     let mut engine = DefaultEngine::default();
-    let compiled = engine.compile("1 + 2").unwrap();
+    let compiled = engine.compile(". + 1").unwrap();
 
     let dump = engine.dump_bytecode(&compiled).unwrap();
 
@@ -1096,9 +1096,9 @@ fn test_dump_bytecode_renders_vm_instructions() {
         .collect();
     assert_eq!(
         instructions,
-        [("Const", "0"), ("Const", "1"), ("Add", ""), ("Return", "")]
+        [("GetLocal", "0 (self)"), ("Const", "0"), ("Add", ""), ("Return", "")]
     );
-    assert_eq!(chunk.constants, ["1", "2"]);
+    assert_eq!(chunk.constants, ["1"]);
 }
 
 // --- builtin cache tests ---
