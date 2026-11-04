@@ -70,7 +70,15 @@ pub(crate) fn check_inlined_calls(
                         lambdas.push(Some(id));
                     }
                     None => {
-                        let ty = ctx.resolve_type(ty);
+                        let mut ty = ctx.resolve_type(ty);
+                        if call
+                            .arg_symbol_ids
+                            .get(index)
+                            .is_some_and(|&id| hir.symbol(id).is_some_and(|s| s.kind == SymbolKind::Dict))
+                            && let Type::Record(fields, _) = ty
+                        {
+                            ty = Type::Record(fields, Box::new(Type::RowEmpty));
+                        }
                         if !ctx.is_settled(&ty) {
                             return None;
                         }
@@ -407,9 +415,11 @@ impl Inliner<'_> {
                 }
                 Some((tag == lit) == (op == "=="))
             }
-            (SymbolKind::Call, _, _) => match self.tag_of(cond, scope)? {
-                Lit::Bool(b) => Some(b),
-                Lit::Str(_) => None,
+            (SymbolKind::Call, _, _) => match self.record_field(cond, scope)? {
+                Type::Lit(Lit::Bool(b)) => Some(b),
+                // A key the record lacks reads as `none`
+                Type::None => Some(false),
+                _ => None,
             },
             _ => None,
         }
@@ -513,10 +523,15 @@ impl Inliner<'_> {
         if self.assigned.contains(&def) {
             return None;
         }
-        let Type::Record(fields, _) = scope.get(&def)? else {
+        let Type::Record(fields, rest) = scope.get(&def)? else {
             return None;
         };
-        fields.get(key).cloned()
+        // A record written out at the call has no other key; a variable may gain keys later
+        match fields.get(key) {
+            Some(field) => Some(field.clone()),
+            None if **rest == Type::RowEmpty => Some(Type::None),
+            None => None,
+        }
     }
 
     /// Runs the lambda that a builtin calls on each element of a collection of known type.

@@ -1137,7 +1137,6 @@ fn test_user_predicate_tests_a_tag(#[case] code: String, #[case] ok: bool) {
 #[case::second_call_wrong(r#"def f(r): r["a"] - 1; | f({a: 1}) | f({a: "x"})"#, false)]
 #[case::symbol_key(r#"def val(r): r[:value] - 1; | val({value: "s"})"#, false)]
 #[case::right_field_type(r#"def val(r): r["value"] - 1; | val({value: 2})"#, true)]
-#[case::missing_field_is_unknown(r#"def val(r): r["value"] - 1; | val({other: 2})"#, true)]
 #[case::field_added_later(r#"def val(r): r["value"] - 1; | var d = {} | d["value"] = 2 | val(d)"#, true)]
 #[case::field_written_in_body(r#"def val(r): r["value"] = 1 | r["value"] - 1; | val({value: "s"})"#, true)]
 #[case::guarded_read(
@@ -1164,5 +1163,19 @@ const KIND_OF: &str = r#"def k(r): if (r["kind"] == "a"): r["x"] - 1 elif (r["ki
 #[case::undecided_tag_is_skipped(format!(r#"{UNWRAP} | def f(x): unwrap({{ok: x, value: "s"}}); | f(true)"#), true)]
 fn test_call_runs_the_branch_a_record_tag_selects(#[case] code: String, #[case] ok: bool) {
     let errors = check_types_with_builtins(&code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[rstest]
+#[case::missing_field_in_literal(r#"def val(r): r["value"] - 1; | val({other: 2})"#, false)]
+#[case::missing_field_of_empty_literal(r#"def val(r): r["value"] - 1; | val({})"#, false)]
+#[case::field_present(r#"def val(r): r["value"] - 1; | val({value: 2, other: 1})"#, true)]
+#[case::missing_field_in_variable(r#"def val(r): r["value"] - 1; | let d = {other: 2} | val(d)"#, true)]
+#[case::missing_field_with_default(r#"def val(r): (r["value"] ?? 0) - 1; | val({other: 2})"#, true)]
+#[case::missing_tag_selects_else(format!(r#"{UNWRAP} | unwrap({{error: 3}})"#), true)]
+#[case::missing_tag_else_branch_checked(format!(r#"{UNWRAP} | unwrap({{error: "e"}})"#), false)]
+fn test_call_with_a_record_literal_lacking_a_field_the_body_reads(#[case] code: impl AsRef<str>, #[case] ok: bool) {
+    let code = code.as_ref();
+    let errors = check_types_with_builtins(code);
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }
