@@ -61,18 +61,16 @@ struct Frames {
 }
 
 impl Frames {
-    fn push(&mut self, node: Node) {
+    /// The node list of the innermost open element, or the root.
+    fn target(&mut self) -> &mut Vec<Node> {
         match self.open.last_mut() {
-            Some((_, children)) => children.push(node),
-            None => self.root.push(node),
+            Some((_, children)) => children,
+            None => &mut self.root,
         }
     }
 
-    fn extend(&mut self, nodes: Vec<Node>) {
-        match self.open.last_mut() {
-            Some((_, children)) => children.extend(nodes),
-            None => self.root.extend(nodes),
-        }
+    fn push(&mut self, node: Node) {
+        self.target().push(node);
     }
 
     fn tag(&mut self, tag: JsxTag) -> Result<(), MdxError> {
@@ -125,24 +123,16 @@ fn element(tag: JsxTag, children: Vec<Node>, end: Option<crate::node::Point>) ->
 fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Result<(), MdxError> {
     let mut frames = Frames {
         open: Vec::new(),
-        root: Vec::new(),
+        root: Vec::with_capacity(blocks.len()),
     };
 
     for block in blocks {
         match block {
             Block::Node(node) => frames.push(node),
             Block::Fenced(fenced) => frames.push(fenced.node),
-            Block::Inline(block) => {
-                let mut out = Vec::new();
-                inline_block(block, doc, &mut out)?;
-                frames.extend(out);
-            }
+            Block::Inline(block) => inline_block(block, doc, frames.target())?,
             Block::Quote(quote) => frames.push(quote_node(quote, doc)?),
-            Block::List(list) => {
-                let mut out = Vec::new();
-                list_nodes(list, 0, doc, &mut out)?;
-                frames.extend(out);
-            }
+            Block::List(list) => list_nodes(list, 0, doc, frames.target())?,
             Block::Footnote(footnote) => {
                 let mut values = Vec::new();
                 flatten(footnote.children, doc, &mut values)?;
