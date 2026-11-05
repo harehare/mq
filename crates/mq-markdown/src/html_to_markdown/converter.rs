@@ -592,20 +592,22 @@ fn dedent(text: &str) -> String {
 }
 
 /// Reads a language hint from `class` (`language-x`, `lang-x`, `highlight-source-x`) or
-/// `data-language`/`data-lang`.
+/// `data-language`/`data-lang`. Hints that are not a single token without backticks or
+/// control characters are ignored so they cannot break out of the code fence.
 fn detect_code_language(element: &HtmlElement) -> Option<String> {
+    let is_valid = |l: &&str| !l.is_empty() && !l.chars().any(|c| c == '`' || c.is_whitespace() || c.is_control());
     let attr = |name: &str| element.attributes.get(name).and_then(|v| v.as_deref());
     let from_class = attr("class").and_then(|classes| {
         classes.split_whitespace().find_map(|c| {
             ["language-", "lang-", "highlight-source-"]
                 .iter()
                 .find_map(|p| c.strip_prefix(p))
-                .filter(|l| !l.is_empty())
+                .filter(is_valid)
         })
     });
     from_class
-        .or_else(|| attr("data-language").filter(|l| !l.is_empty()))
-        .or_else(|| attr("data-lang").filter(|l| !l.is_empty()))
+        .or_else(|| attr("data-language").filter(is_valid))
+        .or_else(|| attr("data-lang").filter(is_valid))
         .map(str::to_string)
 }
 
@@ -1773,6 +1775,30 @@ mod tests {
             })]
         },
         "```python\nx\n```"
+    )]
+    #[case(
+        {
+            let mut attrs = FxHashMap::default();
+            attrs.insert("data-language".to_string(), Some("js\n```\n<img src=x>".to_string()));
+            vec![HtmlNode::Element(HtmlElement {
+                tag_name: "pre".to_string(),
+                attributes: attrs,
+                children: vec![text_node("x")],
+            })]
+        },
+        "```\nx\n```"
+    )]
+    #[case(
+        {
+            let mut attrs = FxHashMap::default();
+            attrs.insert("class".to_string(), Some("language-a`b".to_string()));
+            vec![HtmlNode::Element(HtmlElement {
+                tag_name: "pre".to_string(),
+                attributes: attrs,
+                children: vec![text_node("x")],
+            })]
+        },
+        "```\nx\n```"
     )]
     fn test_convert_nodes_to_markdown_param(#[case] nodes: Vec<HtmlNode>, #[case] expected: &str) {
         let md = convert_nodes_to_markdown(&nodes, &ConversionOptions::default()).unwrap();
