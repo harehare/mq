@@ -743,6 +743,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
                     })
                     .unwrap_or_default(),
                 mdx: matches!(options.input_format, Some(InputFormat::Mdx)),
+                ..Default::default()
             });
             markdown.to_string()
         })

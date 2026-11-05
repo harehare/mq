@@ -100,7 +100,7 @@ A Markdown node is written as its Markdown source. For its plain text, use `-F t
 | `-c`, `--compact` | `json` |
 | `--indent`, `--tab` | `json`, `xml` |
 | `-C`, `--color-output` | `markdown`, `json`, `jsonl`, `table`, `csv` |
-| `--list-style`, `--link-title-style`, `--link-url-style` | `markdown`, `text`, `html`, `grep` |
+| `--list-style`, `--link-title-style`, `--link-url-style`, `--no-table-padding` | `markdown`, `text`, `html`, `grep` |
 | `-o`, `--output` | all formats |
 
 ## HTML output

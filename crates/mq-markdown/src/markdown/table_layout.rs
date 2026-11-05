@@ -38,7 +38,11 @@ impl TableLayout {
                     if *row == 0 {
                         header_columns = header_columns.max(*column + 1);
                     }
-                    let width = cell_display_width(values, options);
+                    let width = if options.table_padding {
+                        cell_display_width(values, options)
+                    } else {
+                        0
+                    };
                     cell_widths.insert((*row, *column), width);
                     if *column >= widths.len() {
                         widths.resize(*column + 1, 0);
@@ -60,7 +64,11 @@ impl TableLayout {
 
         for (idx, width) in widths.iter_mut().enumerate() {
             let a = align.get(idx).unwrap_or(&TableAlignKind::None);
-            *width = (*width).max(column_min_width(a));
+            *width = if options.table_padding {
+                (*width).max(column_min_width(a))
+            } else {
+                COMPACT_DELIMITER_WIDTH
+            };
         }
 
         Self {
@@ -115,6 +123,9 @@ impl TableLayout {
         format!("| {} |", segments)
     }
 }
+
+/// Delimiter width of every column when cells are not padded (`---`, `:--`, `--:`, `:-:`).
+const COMPACT_DELIMITER_WIDTH: usize = 3;
 
 /// Minimum width a column must have to render a valid alignment marker
 /// (e.g. `:-:` needs at least 3 characters for the two colons and a dash).

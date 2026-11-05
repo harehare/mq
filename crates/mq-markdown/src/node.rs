@@ -174,7 +174,7 @@ impl ColorTheme<'_> {
 pub(crate) type Level = u8;
 
 /// Options for writing nodes as Markdown.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RenderOptions {
     /// Bullet marker for lists. `None` keeps each list's original marker (`-` if unknown).
     pub list_style: Option<ListStyle>,
@@ -184,6 +184,21 @@ pub struct RenderOptions {
     pub link_title_style: TitleSurroundStyle,
     /// Write for MDX: text that MDX would read as an expression or as ESM is escaped.
     pub mdx: bool,
+    /// Pad table cells to a common column width. When `false`, cells are written as is
+    /// and the delimiter row uses the shortest valid markers.
+    pub table_padding: bool,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        Self {
+            list_style: None,
+            link_url_style: UrlSurroundStyle::default(),
+            link_title_style: TitleSurroundStyle::default(),
+            mdx: false,
+            table_padding: true,
+        }
+    }
 }
 
 /// Bullet marker used when writing lists.
