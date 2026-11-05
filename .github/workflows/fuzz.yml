@@ -34,4 +34,8 @@ jobs:
         with:
           workspaces: fuzz
       - name: Fuzz ${{ matrix.target }}
+        env:
+          # fat LTO breaks sancov symbols at link time under ASAN
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: just test-fuzz ${{ matrix.target }} --target x86_64-unknown-linux-gnu -- -max_total_time=900
