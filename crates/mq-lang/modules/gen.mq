@@ -196,6 +196,77 @@ def tuple(gens):
 end
 
 # ---------------------------------------------------------------------------
+# Markdown
+# ---------------------------------------------------------------------------
+#
+# Generators for Markdown source text. They produce strings, not parsed nodes, so
+# `shrink_value` can shrink a failing document by truncation. Parse the argument inside the
+# property with `to_markdown(source)`.
+
+# A short lowercase word of 1 to 6 characters.
+def _markdown_word():
+  fn(seed): (string("abcdefghij", rand_int(1, 6, _sub_seed(seed, 7))))(seed);
+end
+
+# A space-separated run of 1 to 3 words.
+def _markdown_words():
+  transform(array_of(_markdown_word(), 1, 3), fn(words): join(words, " ");)
+end
+
+# A generator producing an ATX heading line whose depth is in `[min_depth, max_depth]`
+# (each within 1 to 6).
+#
+# Example:
+# ```
+# import "gen" | starts_with((gen::markdown_heading(2, 2))(42), "## ")
+# #=> true
+# ```
+#
+# Returns: function
+def markdown_heading(min_depth, max_depth):
+  if (min_depth < 1 || max_depth > 6 || min_depth > max_depth):
+    error("gen::markdown_heading: depths must satisfy 1 <= min_depth <= max_depth <= 6, got " + to_string(min_depth) + ", " + to_string(max_depth))
+  else:
+    fn(seed):
+      repeat("#", rand_int(min_depth, max_depth, _sub_seed(seed, 11))) + " " + (_markdown_words())(seed);
+end
+
+# A generator producing one Markdown block as source text: a heading, a paragraph, a bullet
+# list, a fenced code block or a blockquote. Headings are at most `max_depth` deep.
+#
+# Example:
+# ```
+# import "gen" | is_string((gen::markdown_block())(42))
+# #=> true
+# ```
+#
+# Returns: function
+def markdown_block(max_depth = 6):
+  one_of([
+    markdown_heading(1, max_depth),
+    _markdown_words(),
+    transform(array_of(_markdown_words(), 1, 3), fn(items): join(map(items, fn(i): "- " + i;), "\n");),
+    transform(_markdown_words(), fn(w): "```\n" + w + "\n```";),
+    transform(_markdown_words(), fn(w): "> " + w;)
+  ])
+end
+
+# A generator producing a Markdown document of `min_blocks` to `max_blocks` blocks (see
+# `markdown_block`) separated by blank lines, with headings at most `max_depth` deep. Parse it
+# with `to_markdown(source)`.
+#
+# Example:
+# ```
+# import "gen" | len(to_markdown((gen::markdown(1, 3))(42))) >= 1
+# #=> true
+# ```
+#
+# Returns: function
+def markdown(min_blocks, max_blocks, max_depth = 6):
+  transform(array_of(markdown_block(max_depth), min_blocks, max_blocks), fn(blocks): join(blocks, "\n\n");)
+end
+
+# ---------------------------------------------------------------------------
 # Shrinking
 # ---------------------------------------------------------------------------
 #

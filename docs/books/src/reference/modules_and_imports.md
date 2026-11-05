@@ -370,6 +370,12 @@ import "gen"
 | `gen::array_of(gen, min_len, max_len)` | A variable-length array (`min_len` to `max_len`) of values from `gen` |
 | `gen::transform(gen, mapper)`      | Transforms the value `gen` produces through `mapper`                    |
 | `gen::tuple(gens)`                 | One value per generator in `gens`, independently seeded                 |
+| `gen::markdown_heading(min_depth, max_depth)` | An ATX heading line with a depth in `[min_depth, max_depth]` (1 to 6) |
+| `gen::markdown_block(max_depth = 6)` | One Markdown block: heading, paragraph, bullet list, fenced code block or blockquote |
+| `gen::markdown(min_blocks, max_blocks, max_depth = 6)` | A Markdown document of `min_blocks` to `max_blocks` blocks |
+
+The Markdown generators produce source text (a string), so a failing document shrinks by
+truncation. Parse it inside the property with `to_markdown(source)`.
 
 `gen::tuple` is what `# @property(...)` calls under the hood to turn an array of per-parameter
 generators into one argument list per iteration; a failing iteration's reported index doubles as

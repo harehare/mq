@@ -178,3 +178,31 @@ def test_shrink_is_bounded_when_the_predicate_stays_interesting_forever():
   let result = gen::shrink([0.9999], fn(a): true;)
   | assert_true(is_number(result[0]))
 end
+
+# @parametrize([[0], [1], [42], [1000]])
+def test_markdown_heading_depth_within_bounds(seed):
+  let h = (gen::markdown_heading(2, 4))(seed)
+  | let depth = len(split(h, " ")[0])
+  | assert_true(depth >= 2 && depth <= 4)
+end
+
+def test_markdown_heading_rejects_invalid_depths():
+  let r = try: gen::markdown_heading(0, 3) catch(e): "threw"
+  | assert_eq(r, "threw")
+end
+
+def test_markdown_is_deterministic_for_same_seed():
+  assert_eq((gen::markdown(1, 5))(42), (gen::markdown(1, 5))(42))
+end
+
+# @parametrize([[0], [1], [42], [1000]])
+def test_markdown_block_count_within_bounds(seed):
+  let blocks = split((gen::markdown(2, 4))(seed), "\n\n")
+  | assert_true(len(blocks) >= 2 && len(blocks) <= 4)
+end
+
+# @parametrize([[0], [1], [42], [1000]])
+def test_markdown_parses_and_respects_max_depth(seed):
+  let depths = map(to_markdown((gen::markdown(5, 8, 3))(seed)), fn(n): if (is_h(n)): n.depth else: 0;)
+  | assert_true(len(depths) >= 1 && is_empty(filter(depths, fn(d): d > 3;)))
+end
