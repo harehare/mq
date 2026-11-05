@@ -250,6 +250,17 @@ end
 def test_fact_never_fails_its_contract(n):
   fact(n)
 end
+
+# @requires(all(doc, fn(n): not(is_h(n)) || n.depth <= 5;))
+# @ensures(len(result) == len(doc))
+def demote_headings(doc):
+  map(doc, fn(n): if (is_h(n)): to_h(to_text(n), n.depth + 1) else: n;)
+end
+
+# @property(50, [gen::markdown(1, 6, 5)])
+def test_demote_headings_keeps_every_node(src):
+  demote_headings(to_markdown(src))
+end
 ```
 
 - `@requires(expr)` is evaluated with the arguments bound. A false result is reported as the
@@ -264,6 +275,8 @@ end
 - In a `@property` test, an `@ensures` violation is shrunk to a minimal counterexample. Shrink
   candidates that violate an `@requires` are skipped, so the counterexample stays in the function's
   valid domain.
+- Use `gen::markdown(min_blocks, max_blocks, max_depth)` to generate Markdown documents. It
+  produces source text, so parse it with `to_markdown(src)` inside the property.
 - Only top-level `def`s with plain parameters are supported (no defaults or variadics, and not
   inside a `module`). The contract expressions are not type-checked or checked for purity.
 

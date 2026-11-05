@@ -1587,3 +1587,32 @@ fn test_run_fails_the_file_when_a_contracted_def_is_unsupported() {
 
     fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn test_markdown_contract_with_a_generated_document_passes_and_shrinks_when_broken() {
+    let prelude = concat!("include \"test\"\n", "| import \"gen\"\n", "|\n");
+    let good = concat!(
+        "# @requires(all(doc, fn(n): not(is_h(n)) || n.depth <= 5;))\n",
+        "# @ensures(len(result) == len(doc))\n",
+        "def demote_headings(doc):\n",
+        "  map(doc, fn(n): if (is_h(n)): to_h(to_text(n), n.depth + 1) else: n;)\n",
+        "end\n",
+        "# @property(30, [gen::markdown(1, 6, 5)])\n",
+        "def prop_demote(src): demote_headings(to_markdown(src));\n",
+    );
+    assert_eq!(run_failures(&format!("{prelude}{good}")), vec![]);
+
+    // Dropping the last node breaks `@ensures`; the document shrinks to a short one.
+    let broken = good.replace(
+        "map(doc, fn(n): if (is_h(n)): to_h(to_text(n), n.depth + 1) else: n;)",
+        "slice(doc, 0, len(doc) - 1)",
+    );
+    let failures = run_failures(&format!("{prelude}{broken}"));
+    assert!(!failures.is_empty());
+    assert!(
+        failures
+            .iter()
+            .all(|(_, m)| m.contains("@ensures violated") && m.contains("Shrunk from")),
+        "{failures:?}"
+    );
+}
