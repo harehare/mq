@@ -88,3 +88,46 @@ fn render_medium(bencher: divan::Bencher) {
 fn parse_and_drop_large(bencher: divan::Bencher) {
     bencher.bench_local(|| drop(Markdown::from_markdown_str(&LARGE).unwrap()));
 }
+
+/// One construct repeated, to find which block or inline form costs the most per byte.
+const CONSTRUCTS: [&str; 9] = [
+    "emphasis",
+    "code_inline",
+    "links",
+    "heading",
+    "list",
+    "ordered",
+    "quote",
+    "fence",
+    "table",
+];
+
+fn construct(name: &str) -> String {
+    let (unit, times) = match name {
+        "emphasis" => ("Some *emphasis* and **strong** and ~~strike~~ words.\n\n", 4000),
+        "code_inline" => ("Some `code` and `more code` words here ok.\n\n", 4000),
+        "links" => ("A [link](https://example.com/a \"t\") and [other](b) here.\n\n", 4000),
+        "heading" => ("# Heading *with* emphasis\n\n", 4000),
+        "list" => (
+            "- item one\n- item **two**\n  - nested `x`\n  - nested\n- item three\n\n",
+            2000,
+        ),
+        "ordered" => ("1. first\n2. second\n3. third\n\n", 4000),
+        "quote" => ("> quoted *text* that spans\n> two lines\n\n", 4000),
+        "fence" => ("```rust\nfn main() {\n    println!(\"x\");\n}\n```\n\n", 3000),
+        "table" => (
+            "| id | name | value |\n|----|:----:|------:|\n| 1 | `a` | 1.5 |\n| 2 | b | **2** |\n\n",
+            2000,
+        ),
+        _ => unreachable!(),
+    };
+    unit.repeat(times)
+}
+
+#[divan::bench(args = CONSTRUCTS)]
+fn parse_construct(bencher: divan::Bencher, name: &str) {
+    let input = construct(name);
+    bencher
+        .counter(divan::counter::BytesCount::of_str(&input))
+        .bench_local(|| Markdown::from_markdown_str(&input).unwrap());
+}
