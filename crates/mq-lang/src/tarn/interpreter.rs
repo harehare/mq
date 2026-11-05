@@ -40,8 +40,8 @@ use crate::tarn::VmEnv;
 #[cfg(feature = "vm-profile")]
 use crate::vm_profile;
 use crate::{Ident, Shared};
-use errors::StackTraceFrame;
 pub(crate) use errors::VmError;
+use errors::{StackTraceFrame, TracedError};
 use errors::{VmResult, error_dict, flow_break_value, flow_continue, is_uncatchable, locate};
 pub(crate) use frame::ExecutionPools;
 #[cfg(test)]
@@ -530,11 +530,11 @@ fn append_to_string_local(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -
 #[inline(never)]
 fn add_to_local_in_place(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -> VmResult<bool> {
     if let Some(cell) = locals.captured_cell(local) {
-        return add_to_cell_in_place(cell, rhs).map_err(VmError::Builtin);
+        return add_to_cell_in_place(cell, rhs).map_err(VmError::from);
     }
     match locals.direct_runtime_value_mut(local) {
         Some(target @ (RuntimeValue::String(_) | RuntimeValue::Array(_))) => {
-            builtin::add_in_place(target, rhs).map_err(VmError::Builtin)
+            builtin::add_in_place(target, rhs).map_err(VmError::from)
         }
         _ => Ok(false),
     }
@@ -552,17 +552,14 @@ fn set_index_local(
     chunks: &Shared<Vec<Chunk>>,
 ) -> VmResult<()> {
     let updated = match locals.direct_runtime_value_mut(slot) {
-        Some(target) => builtin::set_in_place(target, &key, &mut value).map_err(VmError::Builtin)?,
+        Some(target) => builtin::set_in_place(target, &key, &mut value).map_err(VmError::from)?,
         None => false,
     };
     if !updated {
         // A captured local, or operands `set` does not accept.
         let mut target = local_runtime_value(locals, slot, chunks)?;
-        if !builtin::set_in_place(&mut target, &key, &mut value).map_err(VmError::Builtin)? {
-            return Err(VmError::Builtin(builtin::Error::InvalidTypes(
-                builtins::SET.to_string(),
-                vec![target, key, value],
-            )));
+        if !builtin::set_in_place(&mut target, &key, &mut value).map_err(VmError::from)? {
+            return Err(builtin::Error::InvalidTypes(builtins::SET.to_string(), vec![target, key, value]).into());
         }
         locals.set(slot, StackValue::Value(target));
     }
@@ -603,7 +600,7 @@ fn check_path_local(
     if builtin::path_exists(&target, &keys) {
         return Ok(());
     }
-    builtin::get_path(&target, &keys).map(drop).map_err(VmError::Builtin)
+    builtin::get_path(&target, &keys).map(drop).map_err(VmError::from)
 }
 
 #[inline(never)]
@@ -641,10 +638,10 @@ fn set_path_local(
     chunks: &Shared<Vec<Chunk>>,
 ) -> VmResult<()> {
     if let Some(target) = locals.direct_runtime_value_mut(slot) {
-        return builtin::set_path_in_place(target, keys, &mut value).map_err(VmError::Builtin);
+        return builtin::set_path_in_place(target, keys, &mut value).map_err(VmError::from);
     }
     let mut target = local_runtime_value(locals, slot, chunks)?;
-    builtin::set_path_in_place(&mut target, keys, &mut value).map_err(VmError::Builtin)?;
+    builtin::set_path_in_place(&mut target, keys, &mut value).map_err(VmError::from)?;
     locals.set(slot, StackValue::Value(target));
     Ok(())
 }
@@ -669,7 +666,7 @@ fn add_assign_path_local(
                     *number = result;
                     return Ok(());
                 }
-                if builtin::add_in_place(element, &rhs).map_err(VmError::Builtin)? {
+                if builtin::add_in_place(element, &rhs).map_err(VmError::from)? {
                     return Ok(());
                 }
             }
@@ -677,7 +674,7 @@ fn add_assign_path_local(
         }
         None => builtin::get_path(&local_runtime_value(locals, slot, chunks)?, keys),
     }
-    .map_err(VmError::Builtin)?;
+    .map_err(VmError::from)?;
     let result = eval_binary_op(
         BinaryOp::Add,
         lhs,
@@ -726,7 +723,7 @@ fn add_assign_upvalue(
     chunks: &Shared<Vec<Chunk>>,
     execution: &ExecutionContext<'_>,
 ) -> VmResult<()> {
-    if !add_to_cell_in_place(cell, &rhs).map_err(VmError::Builtin)? {
+    if !add_to_cell_in_place(cell, &rhs).map_err(VmError::from)? {
         let lhs = into_runtime_value(read_cell(cell), chunks);
         let result = eval_binary_op(
             BinaryOp::Add,
@@ -1119,7 +1116,10 @@ fn unwind_frames(
     loop {
         if frames.len() == 1 {
             if let Some(stack_trace) = stack_trace.take() {
-                e = VmError::StackTrace(Box::new(e), stack_trace);
+                e = VmError::StackTrace(Box::new(TracedError {
+                    error: e,
+                    frames: stack_trace,
+                }));
             }
             let finished = frames.pop().expect("just checked len() == 1");
             return Err((e, finished.locals));
@@ -1907,7 +1907,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 args.push(value);
                 let result =
                     builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), builtin, args, execution.env)
-                        .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?;
+                        .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
                 stack.push(StackValue::Value(result));
             }
             OpCode::GetEnvVar(name_idx) => {
@@ -1938,7 +1938,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let args = pop_call_args!(*argc);
                 let result =
                     builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), ident, args, execution.env)
-                        .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?;
+                        .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
                 stack.push(StackValue::Value(result));
             }
             OpCode::CallBuiltin(ident, argc) => {
@@ -2514,8 +2514,8 @@ fn get_env_var(name_idx: u16, chunk: &Chunk, ip: usize) -> VmResult<RuntimeValue
             chunk,
             ip,
             match e {
-                crate::io::IoError::PermissionDenied(_) => VmError::EnvNotAllowed(name),
-                _ => VmError::EnvNotFound(name),
+                crate::io::IoError::PermissionDenied(_) => VmError::EnvNotAllowed(name.into()),
+                _ => VmError::EnvNotFound(name.into()),
             },
         )
     })?;
@@ -2574,7 +2574,7 @@ fn array_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: 
             return Err(locate(
                 chunk,
                 ip,
-                VmError::Builtin(builtin::Error::InvalidTypes(builtins::ARRAY.to_string(), vec![other])),
+                builtin::Error::InvalidTypes(builtins::ARRAY.to_string(), vec![other]).into(),
             ));
         }
     }
@@ -2605,7 +2605,7 @@ fn dict_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: u
             return Err(locate(
                 chunk,
                 ip,
-                VmError::Builtin(builtin::Error::InvalidTypes(builtins::DICT.to_string(), vec![other])),
+                builtin::Error::InvalidTypes(builtins::DICT.to_string(), vec![other]).into(),
             ));
         }
     }
@@ -2691,7 +2691,13 @@ fn array_misc_op(
                         .map(|c| RuntimeValue::String(Shared::new(c.to_string())))
                         .collect(),
                 )),
-                other => return Err(locate(chunk, ip, VmError::InvalidForeachTarget(other.to_string()))),
+                other => {
+                    return Err(locate(
+                        chunk,
+                        ip,
+                        VmError::InvalidForeachTarget(other.to_string().into()),
+                    ));
+                }
             };
             stack.push(StackValue::Value(normalized));
         }
@@ -2770,7 +2776,7 @@ fn selector_op(
 #[inline(never)]
 fn get_external_global(ident: Ident, chunk: &Chunk, ip: usize, env: &VmEnv) -> VmResult<RuntimeValue> {
     env.get(ident)
-        .ok_or_else(|| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))
+        .ok_or_else(|| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string().into())))
 }
 
 fn interp_string(parts: &[StackValue], chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {

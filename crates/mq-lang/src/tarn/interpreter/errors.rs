@@ -17,11 +17,20 @@ pub(crate) struct StackTraceFrame {
     pub(crate) token_id: Option<TokenId>,
 }
 
+/// An uncaught error together with the call stack it unwound through.
+#[derive(Debug)]
+pub(crate) struct TracedError {
+    pub(crate) error: VmError,
+    pub(crate) frames: Box<[StackTraceFrame]>,
+}
+
+/// VM error. Payloads are boxed so that `VmResult<T>` stays small on the hot path;
+/// see `vm_error_stays_compact`.
 #[derive(Debug)]
 pub(crate) enum VmError {
-    StackTrace(Box<VmError>, Box<[StackTraceFrame]>),
-    Builtin(builtin::Error),
-    Host(Ident, String),
+    StackTrace(Box<TracedError>),
+    Builtin(Box<builtin::Error>),
+    Host(Ident, Box<str>),
     ZeroDivision,
     /// Carries the type name of the value that was called.
     NotCallable(Box<str>),
@@ -31,24 +40,24 @@ pub(crate) enum VmError {
         send: bool,
         actual: Box<str>,
     },
-    EnvNotFound(String),
-    EnvNotAllowed(String),
-    UndefinedGlobal(String),
+    EnvNotFound(Box<str>),
+    EnvNotAllowed(Box<str>),
+    UndefinedGlobal(Box<str>),
     #[cfg(feature = "debugger")]
-    Debugger(String),
+    Debugger(Box<str>),
     Corrupt(&'static str),
     ArityMismatch {
         /// Callee's source-level name, `None` for anonymous functions.
         name: Option<Ident>,
-        expected: usize,
-        actual: usize,
+        expected: u32,
+        actual: u32,
     },
     /// Internal control flow emitted by a `break` inside a nested `try` chunk.
     FlowBreak(Option<RuntimeValue>),
     /// Internal control flow emitted by a `continue` inside a nested `try` chunk.
     FlowContinue,
     DestructuringFailed,
-    InvalidForeachTarget(String),
+    InvalidForeachTarget(Box<str>),
     Timeout(Duration),
     RecursionError(u32),
     OperandStackLimit,
@@ -64,7 +73,7 @@ pub(crate) enum VmError {
 impl fmt::Display for VmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            VmError::StackTrace(inner, _) => write!(f, "{inner}"),
+            VmError::StackTrace(traced) => write!(f, "{}", traced.error),
             VmError::Builtin(e) => write!(f, "{e}"),
             VmError::Host(name, msg) => write!(f, "error in host function \"{name}\": {msg}"),
             VmError::ZeroDivision => write!(f, "division by zero"),
@@ -117,9 +126,18 @@ impl VmError {
         VmError::NotCallable(actual.name().into())
     }
 
+    /// Builds an arity error, saturating counts that do not fit `u32`.
+    pub(crate) fn arity_mismatch(name: Option<Ident>, expected: usize, actual: usize) -> Self {
+        VmError::ArityMismatch {
+            name,
+            expected: u32::try_from(expected).unwrap_or(u32::MAX),
+            actual: u32::try_from(actual).unwrap_or(u32::MAX),
+        }
+    }
+
     pub(crate) fn token_id(&self) -> Option<TokenId> {
         match self {
-            VmError::StackTrace(inner, _) => inner.token_id(),
+            VmError::StackTrace(traced) => traced.error.token_id(),
             VmError::Located(_, token_id) => Some(*token_id),
             _ => None,
         }
@@ -135,13 +153,17 @@ impl VmError {
     ) -> crate::error::runtime::RuntimeError {
         use crate::error::runtime::RuntimeError;
         match self {
-            VmError::StackTrace(inner, frames) => crate::error::runtime::RuntimeError::WithStackTrace {
-                source: Box::new(inner.to_runtime_error(token, token_id, Shared::clone(&token_arena))),
-                trace: format_stack_trace(frames, token_arena).into_boxed_str(),
+            VmError::StackTrace(traced) => crate::error::runtime::RuntimeError::WithStackTrace {
+                source: Box::new(
+                    traced
+                        .error
+                        .to_runtime_error(token, token_id, Shared::clone(&token_arena)),
+                ),
+                trace: format_stack_trace(&traced.frames, token_arena).into_boxed_str(),
             },
             VmError::Builtin(e) => e.to_runtime_error(token_id, token_arena),
             VmError::Host(name, msg) => {
-                RuntimeError::HostFunctionError(token, name.to_string().into_boxed_str(), msg.clone().into_boxed_str())
+                RuntimeError::HostFunctionError(token, name.to_string().into_boxed_str(), msg.clone())
             }
             VmError::ZeroDivision => RuntimeError::ZeroDivision(token),
             VmError::NotCallable(actual) => RuntimeError::NotCallable(token, actual.to_string()),
@@ -150,16 +172,16 @@ impl VmError {
                 name: resume_name(*send).to_string(),
                 args: vec![actual.to_string().into()],
             },
-            VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
-            VmError::EnvNotAllowed(name) => RuntimeError::EnvNotAllowed(token, name.clone().into()),
-            VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
+            VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.as_ref().into()),
+            VmError::EnvNotAllowed(name) => RuntimeError::EnvNotAllowed(token, name.as_ref().into()),
+            VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.to_string(), Box::new([])),
             #[cfg(feature = "debugger")]
-            VmError::Debugger(message) => RuntimeError::Runtime(token, message.clone()),
+            VmError::Debugger(message) => RuntimeError::Runtime(token, message.to_string()),
             VmError::ArityMismatch { name, expected, actual } => RuntimeError::InvalidNumberOfArguments {
                 token,
                 name: name.map_or_else(|| "<anonymous>".to_string(), |name| name.to_string()),
-                expected: *expected,
-                actual: *actual,
+                expected: *expected as usize,
+                actual: *actual as usize,
             },
             VmError::FlowBreak(_) => RuntimeError::Runtime(token, "break outside a loop".to_string()),
             VmError::FlowContinue => RuntimeError::Runtime(token, "continue outside a loop".to_string()),
@@ -167,7 +189,7 @@ impl VmError {
             VmError::InvalidForeachTarget(repr) => RuntimeError::InvalidTypes {
                 token,
                 name: crate::TokenKind::Foreach.to_string(),
-                args: vec![repr.clone().into()],
+                args: vec![repr.to_string().into()],
             },
             VmError::Timeout(d) => RuntimeError::Timeout(*d),
             VmError::RecursionError(max) => RuntimeError::RecursionError(*max),
@@ -255,7 +277,7 @@ impl std::error::Error for VmError {}
 
 impl From<builtin::Error> for VmError {
     fn from(e: builtin::Error) -> Self {
-        VmError::Builtin(e)
+        VmError::Builtin(Box::new(e))
     }
 }
 
@@ -298,8 +320,12 @@ pub(super) fn error_message(e: &VmError) -> String {
 /// The value passed to `error` when it was not a string.
 fn thrown_value(e: &VmError) -> Option<RuntimeValue> {
     match e {
-        VmError::Builtin(builtin::Error::Thrown(value)) => Some(value.clone()),
-        VmError::Located(inner, _) | VmError::StackTrace(inner, _) => thrown_value(inner),
+        VmError::Builtin(e) => match &**e {
+            builtin::Error::Thrown(value) => Some(value.clone()),
+            _ => None,
+        },
+        VmError::Located(inner, _) => thrown_value(inner),
+        VmError::StackTrace(traced) => thrown_value(&traced.error),
         VmError::CoroutineFailed(inner, _) => thrown_value(inner),
         _ => None,
     }
@@ -317,8 +343,10 @@ pub(super) fn flow_break_value(e: &VmError) -> Option<Option<RuntimeValue>> {
 /// would let a query keep running past its deadline.
 pub(super) fn is_uncatchable(e: &VmError) -> bool {
     match e {
-        VmError::Builtin(builtin::Error::Halt(_)) | VmError::Timeout(_) => true,
-        VmError::Located(inner, _) | VmError::StackTrace(inner, _) => is_uncatchable(inner),
+        VmError::Builtin(e) => matches!(**e, builtin::Error::Halt(_)),
+        VmError::Timeout(_) => true,
+        VmError::Located(inner, _) => is_uncatchable(inner),
+        VmError::StackTrace(traced) => is_uncatchable(&traced.error),
         VmError::CoroutineFailed(inner, _) => is_uncatchable(inner),
         _ => false,
     }
@@ -386,7 +414,7 @@ mod tests {
     )]
     #[case::halt(builtin::Error::Halt(2), "Halted with exit code 2")]
     fn builtin_error_message_matches_runtime_error_display(#[case] error: builtin::Error, #[case] expected: &str) {
-        assert_eq!(error_message(&VmError::Builtin(error)), expected);
+        assert_eq!(error_message(&VmError::from(error)), expected);
     }
 
     /// Forces a compile error if a `builtin::Error` variant is missing a case above.
@@ -410,22 +438,22 @@ mod tests {
 
     // One case per bare `VmError` variant; see `all_vm_error_variants_are_covered`.
     #[rstest::rstest]
-    #[case::host(VmError::Host(Ident::new("f"), "boom".to_string()), "Error in host function \"f\": boom")]
+    #[case::host(VmError::Host(Ident::new("f"), "boom".into()), "Error in host function \"f\": boom")]
     #[case::zero_division(VmError::ZeroDivision, "Division by zero")]
     #[case::not_callable(VmError::NotCallable("number".into()), "Cannot call a value of type number")]
     #[case::invalid_resume_target(
         VmError::InvalidResumeTarget { send: false, actual: "number".into() },
         "Invalid types for \"next\", got number"
     )]
-    #[case::env_not_found(VmError::EnvNotFound("HOME".to_string()), "Environment variable `HOME` not found")]
+    #[case::env_not_found(VmError::EnvNotFound("HOME".into()), "Environment variable `HOME` not found")]
     #[case::env_not_allowed(
-        VmError::EnvNotAllowed("HOME".to_string()),
+        VmError::EnvNotAllowed("HOME".into()),
         "Access to environment variable `HOME` is not allowed"
     )]
-    #[case::undefined_global(VmError::UndefinedGlobal("x".to_string()), "\"x\" is not defined")]
+    #[case::undefined_global(VmError::UndefinedGlobal("x".into()), "\"x\" is not defined")]
     #[cfg_attr(
         feature = "debugger",
-        case::debugger(VmError::Debugger("bad condition".to_string()), "Runtime error: bad condition")
+        case::debugger(VmError::Debugger("bad condition".into()), "Runtime error: bad condition")
     )]
     #[case::arity_mismatch(
         VmError::ArityMismatch { name: None, expected: 2, actual: 1 },
@@ -435,7 +463,7 @@ mod tests {
     #[case::flow_continue(VmError::FlowContinue, "Runtime error: continue outside a loop")]
     #[case::destructuring_failed(VmError::DestructuringFailed, "Destructuring pattern did not match value")]
     #[case::invalid_foreach_target(
-        VmError::InvalidForeachTarget("number".to_string()),
+        VmError::InvalidForeachTarget("number".into()),
         "Invalid types for \"foreach\", got number"
     )]
     #[case::timeout(VmError::Timeout(Duration::from_secs(1)), "Execution timed out after 1.000s")]
@@ -462,7 +490,7 @@ mod tests {
     #[allow(dead_code)]
     fn all_vm_error_variants_are_covered(e: VmError) {
         match e {
-            VmError::StackTrace(_, _) => {}
+            VmError::StackTrace(_) => {}
             #[cfg(feature = "debugger")]
             VmError::Debugger(_) => {}
             VmError::Builtin(_)
@@ -633,6 +661,16 @@ mod tests {
             result.token().unwrap().range.start.line,
             40,
             "must resolve against origin_arena"
+        );
+    }
+
+    #[test]
+    fn vm_error_stays_compact() {
+        // Every fallible VM function returns `VmResult<T>`; keep the error small.
+        assert!(
+            std::mem::size_of::<VmError>() <= 24,
+            "VmError grew to {} bytes; box the new variant's payload",
+            std::mem::size_of::<VmError>()
         );
     }
 }

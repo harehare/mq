@@ -2292,7 +2292,7 @@ fn parameter_binding_rejects_calls_with_more_than_one_required_gap(
 ) {
     let err = run_result(code).unwrap_err();
     assert!(
-        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual, .. } if got_expected == expected && got_actual == actual)),
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual, .. } if got_expected as usize == expected && got_actual as usize == actual)),
         "unexpected error for {code}"
     );
 }
@@ -3684,7 +3684,7 @@ fn invalid_function_arity_reports_the_declared_bounds(
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let err = compile_and_run(&program, token_arena).unwrap_err();
     assert!(
-        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual, .. } if got_expected == expected && got_actual == actual))
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual, .. } if got_expected as usize == expected && got_actual as usize == actual))
     );
 }
 
@@ -5129,7 +5129,10 @@ fn closing_a_running_coroutine_errors() {
         match e {
             interpreter::VmError::Located(inner, _) => close_error_message(inner),
             interpreter::VmError::CoroutineFailed(inner, _) => close_error_message(inner),
-            interpreter::VmError::Builtin(crate::runtime::builtin::Error::Runtime(msg)) => Some(msg.as_str()),
+            interpreter::VmError::Builtin(e) => match &**e {
+                crate::runtime::builtin::Error::Runtime(msg) => Some(msg.as_str()),
+                _ => None,
+            },
             _ => None,
         }
     }

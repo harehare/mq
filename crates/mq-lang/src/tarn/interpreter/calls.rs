@@ -250,11 +250,7 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
 }
 
 fn resume_arity_mismatch(name: &str, expected: u8, actual: usize) -> VmError {
-    VmError::Builtin(builtin::Error::InvalidNumberOfArguments(
-        name.to_string(),
-        expected,
-        actual.try_into().unwrap_or(u8::MAX),
-    ))
+    builtin::Error::InvalidNumberOfArguments(name.to_string(), expected, actual.try_into().unwrap_or(u8::MAX)).into()
 }
 
 pub(super) fn call_fixed_closure_from_stack(
@@ -298,11 +294,7 @@ pub(super) fn call_fixed_closure_from_local(
         return Err(locate(
             call_site.chunk,
             call_site.ip,
-            VmError::ArityMismatch {
-                name: callee_chunk.function_name,
-                expected: arity,
-                actual: 1,
-            },
+            VmError::arity_mismatch(callee_chunk.function_name, arity, 1),
         ));
     }
     let mut callee_locals = execution
@@ -396,11 +388,7 @@ fn call_fixed_chunk_from_stack(
         return Err(locate(
             call_site.chunk,
             call_site.ip,
-            VmError::ArityMismatch {
-                name: callee_chunk.function_name,
-                expected: arity,
-                actual: argc,
-            },
+            VmError::arity_mismatch(callee_chunk.function_name, arity, argc),
         ));
     }
     if stack.len() < argc + usize::from(call.remove_callee) {
@@ -715,11 +703,11 @@ fn resume_bind_params(
             }
             ParamBinding::Required(slot) => {
                 let Some(value) = remaining_args.pop_front() else {
-                    return Err(VmError::ArityMismatch {
-                        name: context.chunks[callee_chunk_index as usize].function_name,
-                        expected: param_count,
-                        actual: arg_count,
-                    });
+                    return Err(VmError::arity_mismatch(
+                        context.chunks[callee_chunk_index as usize].function_name,
+                        param_count,
+                        arg_count,
+                    ));
                 };
                 callee_locals.set(*slot, value);
             }
@@ -811,11 +799,7 @@ fn bind_fixed_required_params(
 ) -> VmResult<()> {
     let arg_count = args.len();
     let Some(first_arg_slot) = fixed_first_arg_slot(arity, arg_count) else {
-        return Err(VmError::ArityMismatch {
-            name,
-            expected: arity,
-            actual: arg_count,
-        });
+        return Err(VmError::arity_mismatch(name, arity, arg_count));
     };
     if arg_count != arity {
         callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals, chunks)));
@@ -831,15 +815,15 @@ fn bind_fixed_required_params(
 fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResult<bool> {
     let parameter_count = shape.bindings.len();
     implicit_self_decision(parameter_count, shape.required, shape.has_variadic, arg_count).ok_or_else(|| {
-        VmError::ArityMismatch {
-            name: None,
-            expected: if shape.has_variadic {
+        VmError::arity_mismatch(
+            None,
+            if shape.has_variadic {
                 shape.required
             } else {
                 parameter_count
             },
-            actual: arg_count,
-        }
+            arg_count,
+        )
     })
 }
 
@@ -882,15 +866,12 @@ pub(super) fn call_builtin_args(
         if let Some(host_fn) = host_functions.get(ident) {
             return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(&args)))
                 .unwrap_or_else(|payload| Err(HostFunctionError::new(format!("panic: {}", panic_message(&*payload)))))
-                .map_err(|e| VmError::Host(*ident, e.message().to_string()));
+                .map_err(|e| VmError::Host(*ident, e.message().into()));
         }
         // Keep the VM's existing error shape for unknown function names.
-        return Err(VmError::Builtin(builtin::Error::NotDefined(
-            ident.to_string(),
-            Vec::new(),
-        )));
+        return Err(builtin::Error::NotDefined(ident.to_string(), Vec::new()).into());
     };
-    builtin::eval_resolved_builtin(builtin_fn, self_value, ident, args, env).map_err(VmError::Builtin)
+    builtin::eval_resolved_builtin(builtin_fn, self_value, ident, args, env).map_err(VmError::from)
 }
 
 pub(super) fn negate_ident() -> &'static Ident {
