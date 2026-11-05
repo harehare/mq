@@ -60,7 +60,7 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
         bindings: &[(Ident, RuntimeValue)],
     ) -> Result<RuntimeValue, interpreter::VmError> {
         let program = crate::parse(code, Shared::clone(&self.token_arena)).map_err(|error| {
-            interpreter::VmError::Debugger(format!("Invalid breakpoint expression \"{code}\": {error}"))
+            interpreter::VmError::Debugger(format!("Invalid breakpoint expression \"{code}\": {error}").into())
         })?;
         let names = bindings.iter().map(|(name, _)| *name).collect::<Vec<_>>();
         let values = bindings.iter().map(|(_, value)| value.clone()).collect::<Vec<_>>();
@@ -71,11 +71,15 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
             &names,
         )
         .map_err(|error| {
-            interpreter::VmError::Debugger(format!("Failed to compile breakpoint expression \"{code}\": {error}"))
+            interpreter::VmError::Debugger(
+                format!("Failed to compile breakpoint expression \"{code}\": {error}").into(),
+            )
         })?;
         interpreter::run_debug_expression(&compiled, RuntimeValue::None, &values, &self.host_functions).map_err(
             |error| {
-                interpreter::VmError::Debugger(format!("Failed to evaluate breakpoint expression \"{code}\": {error}"))
+                interpreter::VmError::Debugger(
+                    format!("Failed to evaluate breakpoint expression \"{code}\": {error}").into(),
+                )
             },
         )
     }
