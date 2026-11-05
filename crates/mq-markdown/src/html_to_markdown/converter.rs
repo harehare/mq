@@ -227,15 +227,55 @@ fn convert_table_cell_content(nodes: &[HtmlNode]) -> miette::Result<String> {
     }
 }
 
+/// Renders a fenced code block whose fence is longer than any backtick run in `content`.
+fn fenced_block(lang: &str, content: &str) -> String {
+    let max_run = content.split(|c: char| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat(max_run.max(2) + 1);
+    format!("{fence}{lang}\n{content}\n{fence}")
+}
+
+/// Tracks whether lines of rendered markdown are inside a fenced code block, honoring the
+/// opening fence length so shorter backtick runs inside the block don't close it.
+#[derive(Default)]
+struct FenceTracker {
+    open_len: Option<usize>,
+}
+
+impl FenceTracker {
+    /// Feeds one line and returns true if it is a fence delimiter.
+    fn feed(&mut self, line: &str) -> bool {
+        let t = line.trim_start();
+        let run = t.chars().take_while(|&c| c == '`').count();
+        if run < 3 {
+            return false;
+        }
+        match self.open_len {
+            None => {
+                self.open_len = Some(run);
+                true
+            }
+            Some(n) if run >= n && t.len() == run => {
+                self.open_len = None;
+                true
+            }
+            Some(_) => false,
+        }
+    }
+
+    fn in_fence(&self) -> bool {
+        self.open_len.is_some()
+    }
+}
+
 /// Rewrites fenced code blocks as one code span per line, since table cells can't hold fences.
 /// Blank lines between blocks are dropped, but blank lines inside code are kept.
 fn fenced_blocks_to_code_spans(md: &str) -> String {
     let mut out: Vec<String> = Vec::new();
-    let mut in_fence = false;
+    let mut fence = FenceTracker::default();
     for line in md.lines() {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
-        } else if !in_fence {
+        if fence.feed(line) {
+            // delimiter line is dropped
+        } else if !fence.in_fence() {
             if !line.is_empty() {
                 out.push(line.to_string());
             }
@@ -551,8 +591,25 @@ fn dedent(text: &str) -> String {
         .join("\n")
 }
 
+/// Reads a language hint from `class` (`language-x`, `lang-x`, `highlight-source-x`) or
+/// `data-language`/`data-lang`.
+fn detect_code_language(element: &HtmlElement) -> Option<String> {
+    let attr = |name: &str| element.attributes.get(name).and_then(|v| v.as_deref());
+    let from_class = attr("class").and_then(|classes| {
+        classes.split_whitespace().find_map(|c| {
+            ["language-", "lang-", "highlight-source-"]
+                .iter()
+                .find_map(|p| c.strip_prefix(p))
+                .filter(|l| !l.is_empty())
+        })
+    });
+    from_class
+        .or_else(|| attr("data-language").filter(|l| !l.is_empty()))
+        .or_else(|| attr("data-lang").filter(|l| !l.is_empty()))
+        .map(str::to_string)
+}
+
 fn handle_pre_element(element: &HtmlElement, _options: &ConversionOptions) -> miette::Result<String> {
-    let mut lang_specifier = String::new();
     // Find <code> among children, skipping leading whitespace-only text nodes.
     let code_child = element.children.iter().find_map(|n| {
         if let HtmlNode::Element(el) = n
@@ -563,18 +620,11 @@ fn handle_pre_element(element: &HtmlElement, _options: &ConversionOptions) -> mi
             None
         }
     });
+    let lang_specifier = code_child
+        .and_then(detect_code_language)
+        .or_else(|| detect_code_language(element))
+        .unwrap_or_default();
     let text_content = if let Some(code_element) = code_child {
-        if let Some(Some(class_attr)) = code_element.attributes.get("class") {
-            for class_name in class_attr.split_whitespace() {
-                if let Some(lang) = class_name.strip_prefix("language-") {
-                    lang_specifier = lang.to_string();
-                    break;
-                } else if let Some(lang) = class_name.strip_prefix("lang-") {
-                    lang_specifier = lang.to_string();
-                    break;
-                }
-            }
-        }
         // Extract code content plus any sibling text nodes outside <code> (e.g. <pre><code>…</code>\nextra</pre>).
         let mut text = extract_text_from_pre_children(&code_element.children);
         let non_code: Vec<&HtmlNode> = element
@@ -592,7 +642,7 @@ fn handle_pre_element(element: &HtmlElement, _options: &ConversionOptions) -> mi
 
     let text_content = text_content.strip_prefix('\n').unwrap_or(&text_content);
     let text_content = dedent(text_content.trim_end_matches('\n'));
-    Ok(format!("```{}\n{}\n```", lang_specifier, text_content))
+    Ok(fenced_block(&lang_specifier, &text_content))
 }
 
 /// Returns true if `element` contains a nested `<table>`, which GFM tables can't represent.
@@ -750,7 +800,7 @@ fn handle_textarea_element(element: &HtmlElement) -> miette::Result<String> {
     if text_content.trim().is_empty() {
         return Ok(String::new());
     }
-    Ok(format!("```\n{}\n```", text_content))
+    Ok(fenced_block("", &text_content))
 }
 
 fn handle_script_element(element: &HtmlElement, options: &ConversionOptions) -> miette::Result<Option<String>> {
@@ -771,7 +821,7 @@ fn handle_script_element(element: &HtmlElement, options: &ConversionOptions) -> 
                 script_content.remove(0);
             }
             let final_content = script_content.trim_end_matches('\n');
-            Ok(Some(format!("```{}\n{}\n```", lang_specifier, final_content)))
+            Ok(Some(fenced_block(&lang_specifier, final_content)))
         } else {
             Ok(None)
         }
@@ -909,12 +959,11 @@ fn convert_html_list_to_markdown(
                 } else {
                     let continuation_indent = " ".repeat(marker_prefix.len());
                     let lines: Vec<&str> = li_content_markdown.lines().collect();
-                    let mut in_fence = false;
+                    let mut fence = FenceTracker::default();
                     let mut item_lines: Vec<String> = Vec::new();
                     for (i, line) in lines.iter().enumerate() {
-                        if line.trim_start().starts_with("```") {
-                            in_fence = !in_fence;
-                        }
+                        fence.feed(line);
+                        let in_fence = fence.in_fence();
                         if line.trim().is_empty() {
                             // Leading blank lines (e.g. from `<br>`) must not displace the marker.
                             if item_lines.is_empty() {
@@ -1050,7 +1099,7 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
                             }
                             parts.push(format!(
                                 "[{}]({}{})",
-                                link_text.replace("\n", "").trim(),
+                                link_text.split('\n').map(str::trim).filter(|l| !l.is_empty()).join(" "),
                                 processed_href,
                                 title_part
                             ));
@@ -1665,6 +1714,65 @@ mod tests {
             vec![img]
         },
         "![alt text](img.png)"
+    )]
+    #[case(
+        vec![element_node("pre", vec![text_node("a\n```\nb")])],
+        "````\na\n```\nb\n````"
+    )]
+    #[case(
+        vec![element_node(
+            "ul",
+            vec![element_node("li", vec![element_node("pre", vec![text_node("x\n```\n\ny")])])],
+        )],
+        "* ````\n  x\n  ```\n\n  y\n  ````"
+    )]
+    #[case(
+        {
+            let mut attrs = FxHashMap::default();
+            attrs.insert("href".to_string(), Some("https://example.com".to_string()));
+            vec![HtmlNode::Element(HtmlElement {
+                tag_name: "a".to_string(),
+                attributes: attrs,
+                children: vec![text_node("foo"), element_node("br", vec![]), text_node("bar")],
+            })]
+        },
+        "[foo bar](https://example.com)"
+    )]
+    #[case(
+        {
+            let mut attrs = FxHashMap::default();
+            attrs.insert("class".to_string(), Some("hljs language-rust".to_string()));
+            vec![element_node("pre", vec![HtmlNode::Element(HtmlElement {
+                tag_name: "code".to_string(),
+                attributes: attrs,
+                children: vec![text_node("let x = 1;")],
+            })])]
+        },
+        "```rust\nlet x = 1;\n```"
+    )]
+    #[case(
+        {
+            let mut attrs = FxHashMap::default();
+            attrs.insert("class".to_string(), Some("language-js".to_string()));
+            vec![HtmlNode::Element(HtmlElement {
+                tag_name: "pre".to_string(),
+                attributes: attrs,
+                children: vec![text_node("x")],
+            })]
+        },
+        "```js\nx\n```"
+    )]
+    #[case(
+        {
+            let mut attrs = FxHashMap::default();
+            attrs.insert("data-language".to_string(), Some("python".to_string()));
+            vec![HtmlNode::Element(HtmlElement {
+                tag_name: "pre".to_string(),
+                attributes: attrs,
+                children: vec![element_node("code", vec![text_node("x")])],
+            })]
+        },
+        "```python\nx\n```"
     )]
     fn test_convert_nodes_to_markdown_param(#[case] nodes: Vec<HtmlNode>, #[case] expected: &str) {
         let md = convert_nodes_to_markdown(&nodes, &ConversionOptions::default()).unwrap();
