@@ -108,37 +108,7 @@ impl<'a> Line<'a> {
     /// The same line with `columns` columns of leading whitespace removed. What is left of a tab that
     /// is only consumed in part stays as padding.
     pub(super) fn skip_columns(self, columns: usize) -> Line<'a> {
-        let mut remaining = columns;
-        let consumed = remaining.min(self.pad);
-        let mut pad = self.pad - consumed;
-        remaining -= consumed;
-
-        let mut absolute = self.start_column();
-        let mut bytes = 0;
-        for byte in self.text.bytes() {
-            if remaining == 0 {
-                break;
-            }
-            match byte {
-                b' ' => {
-                    remaining -= 1;
-                    absolute += 1;
-                }
-                b'\t' => {
-                    let width = (absolute / 4 + 1) * 4 - absolute;
-                    absolute += width;
-                    if width > remaining {
-                        pad = width - remaining;
-                        remaining = 0;
-                    } else {
-                        remaining -= width;
-                    }
-                }
-                _ => break,
-            }
-            bytes += 1;
-        }
-
+        let (bytes, pad) = consume_columns(self.text.as_bytes(), self.start_column(), columns, self.pad);
         Line {
             column: self.column + bytes,
             text: &self.text[bytes..],
@@ -204,6 +174,44 @@ pub(super) fn extra_bytes(bytes: &[u8]) -> usize {
         astral += usize::from(byte >= 0xF0);
     }
     continuation - astral
+}
+
+/// Removes `columns` columns of leading whitespace from `text`, which starts at column `start`, after
+/// the `pad` columns left over from a tab. Returns the bytes consumed and the new padding.
+///
+/// Only leading spaces and tabs are consumed, so the bytes never exceed `Line::ws`.
+fn consume_columns(text: &[u8], start: usize, columns: usize, pad: usize) -> (usize, usize) {
+    let mut remaining = columns;
+    let consumed = remaining.min(pad);
+    let mut pad = pad - consumed;
+    remaining -= consumed;
+
+    let mut absolute = start;
+    let mut bytes = 0;
+    for &byte in text {
+        if remaining == 0 {
+            break;
+        }
+        match byte {
+            b' ' => {
+                remaining -= 1;
+                absolute += 1;
+            }
+            b'\t' => {
+                let width = (absolute / 4 + 1) * 4 - absolute;
+                absolute += width;
+                if width > remaining {
+                    pad = width - remaining;
+                    remaining = 0;
+                } else {
+                    remaining -= width;
+                }
+            }
+            _ => break,
+        }
+        bytes += 1;
+    }
+    (bytes, pad)
 }
 
 /// The number of leading spaces and tabs in `text`.
@@ -388,6 +396,36 @@ mod proofs {
             assert_eq!(column, stop.after + (at - stop.at - 1));
         } else {
             assert_eq!(column, offset);
+        }
+    }
+
+    /// Bytes consumed are leading blanks, so they never exceed the line's `ws` or length, and the
+    /// columns taken from the request and from the leftover tab add up to what was asked.
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn consume_columns_conserves_columns() {
+        let text: [u8; 4] = kani::any();
+        // Documents are far below 4 GiB, so columns and offsets stay below 1 << 32.
+        let start: usize = kani::any_where(|n: &usize| *n < 1 << 32);
+        let columns: usize = kani::any_where(|n: &usize| *n < 1 << 32);
+        let pad: usize = kani::any_where(|n: &usize| *n < 1 << 32);
+        let ws = text.iter().take_while(|byte| matches!(byte, b' ' | b'\t')).count();
+        let (bytes, new_pad) = consume_columns(&text, start, columns, pad);
+        assert!(bytes <= ws);
+        assert!(bytes <= text.len());
+        let mut absolute = start;
+        for &byte in &text[..bytes] {
+            absolute += if byte == b' ' {
+                1
+            } else {
+                (absolute / 4 + 1) * 4 - absolute
+            };
+        }
+        let width = absolute - start;
+        if columns <= pad + width {
+            assert_eq!(columns + new_pad, pad + width);
+        } else {
+            assert_eq!(new_pad, 0);
         }
     }
 }

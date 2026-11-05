@@ -792,6 +792,16 @@ fn recycle_locals_if_possible(limits: &mut super::frame::ExecutionLimits, locals
     }
 }
 
+fn fixed_first_arg_slot(arity: usize, arg_count: usize) -> Option<usize> {
+    if arg_count == arity {
+        Some(SELF_SLOT as usize + 1)
+    } else if arity > 0 && arg_count == arity - 1 {
+        Some(SELF_SLOT as usize + 2)
+    } else {
+        None
+    }
+}
+
 fn bind_fixed_required_params(
     arity: usize,
     args: &mut Vec<StackValue>,
@@ -800,18 +810,16 @@ fn bind_fixed_required_params(
     name: Option<Ident>,
 ) -> VmResult<()> {
     let arg_count = args.len();
-    let first_arg_slot = if arg_count == arity {
-        SELF_SLOT as usize + 1
-    } else if arity > 0 && arg_count + 1 == arity {
-        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals, chunks)));
-        SELF_SLOT as usize + 2
-    } else {
+    let Some(first_arg_slot) = fixed_first_arg_slot(arity, arg_count) else {
         return Err(VmError::ArityMismatch {
             name,
             expected: arity,
             actual: arg_count,
         });
     };
+    if arg_count != arity {
+        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals, chunks)));
+    }
 
     // `drain` (rather than `into_iter`) leaves `args`'s allocation for the caller to recycle.
     for (offset, value) in args.drain(..).enumerate() {
@@ -822,25 +830,32 @@ fn bind_fixed_required_params(
 
 fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResult<bool> {
     let parameter_count = shape.bindings.len();
-    let accepts_explicit_args = arg_count >= shape.required && (shape.has_variadic || arg_count <= parameter_count);
-    if accepts_explicit_args {
-        return Ok(false);
-    }
-
-    let accepts_implicit_self = arg_count.saturating_add(1) >= shape.required && arg_count < parameter_count;
-    if accepts_implicit_self {
-        return Ok(true);
-    }
-
-    Err(VmError::ArityMismatch {
-        name: None,
-        expected: if shape.has_variadic {
-            shape.required
-        } else {
-            parameter_count
-        },
-        actual: arg_count,
+    implicit_self_decision(parameter_count, shape.required, shape.has_variadic, arg_count).ok_or_else(|| {
+        VmError::ArityMismatch {
+            name: None,
+            expected: if shape.has_variadic {
+                shape.required
+            } else {
+                parameter_count
+            },
+            actual: arg_count,
+        }
     })
+}
+
+fn implicit_self_decision(
+    parameter_count: usize,
+    required: usize,
+    has_variadic: bool,
+    arg_count: usize,
+) -> Option<bool> {
+    if arg_count >= required && (has_variadic || arg_count <= parameter_count) {
+        Some(false)
+    } else if arg_count.saturating_add(1) >= required && arg_count < parameter_count {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 // Keep out of the dispatch loop to avoid code bloat.
@@ -882,4 +897,56 @@ pub(super) fn negate_ident() -> &'static Ident {
     use std::sync::LazyLock;
     static NEGATE: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::NEGATE));
     &NEGATE
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    #[kani::proof]
+    fn implicit_self_needs_a_parameter_to_take() {
+        let (parameter_count, required, arg_count): (usize, usize, usize) = (kani::any(), kani::any(), kani::any());
+        let has_variadic: bool = kani::any();
+        if implicit_self_decision(parameter_count, required, has_variadic, arg_count) == Some(true) {
+            assert!(arg_count < parameter_count);
+            assert!(arg_count.saturating_add(1) >= required);
+            assert!(!(arg_count >= required && (has_variadic || arg_count <= parameter_count)));
+        }
+    }
+
+    /// For a fixed-arity shape, `bind_params` takes the fixed path, and both paths accept the same
+    /// argument counts and agree on whether `self` is implicit.
+    #[kani::proof]
+    fn fixed_binder_agrees_with_implicit_self_decision() {
+        let arity: usize = kani::any();
+        let arg_count: usize = kani::any();
+        let decision = implicit_self_decision(arity, arity, false, arg_count);
+        let slot = fixed_first_arg_slot(arity, arg_count);
+        assert_eq!(decision.is_some(), slot.is_some());
+        if let Some(uses_self) = decision {
+            assert_eq!(uses_self, arg_count != arity);
+        }
+    }
+
+    /// Every slot `bind_fixed_required_params` writes is below `local_count` and fits a `u16`.
+    #[kani::proof]
+    fn fixed_param_slots_stay_in_the_frame() {
+        let local_count: u16 = kani::any();
+        let arity: usize = kani::any();
+        let arg_count: usize = kani::any();
+        // `verify_frame_layout` puts the last parameter in slot `SELF_SLOT + arity`, and every binding
+        // slot is checked against `local_count`.
+        kani::assume(arity == 0 || usize::from(local_count) > usize::from(SELF_SLOT) + arity);
+        kani::assume(usize::from(local_count) > usize::from(SELF_SLOT));
+        let Some(first) = fixed_first_arg_slot(arity, arg_count) else {
+            return;
+        };
+        if arg_count != arity {
+            assert!(usize::from(SELF_SLOT) + 1 < usize::from(local_count));
+        }
+        let offset: usize = kani::any_where(|offset: &usize| *offset < arg_count);
+        let slot = first + offset;
+        assert!(slot < usize::from(local_count));
+        assert_eq!(slot as u16 as usize, slot);
+    }
 }
