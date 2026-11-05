@@ -792,11 +792,6 @@ fn recycle_locals_if_possible(limits: &mut super::frame::ExecutionLimits, locals
     }
 }
 
-/// The slot of the first explicit argument of a fixed-arity function, or `None` on an arity mismatch.
-///
-/// With one argument fewer than `arity`, the implicit `self` fills the first parameter slot.
-/// `verify_frame_layout` puts parameter `p` in slot `SELF_SLOT + 1 + p`, so every slot written from
-/// here is below `local_count`.
 fn fixed_first_arg_slot(arity: usize, arg_count: usize) -> Option<usize> {
     if arg_count == arity {
         Some(SELF_SLOT as usize + 1)
@@ -848,9 +843,6 @@ fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResul
     })
 }
 
-/// Whether `arg_count` arguments bind with the implicit `self` as the first parameter (`Some(true)`),
-/// bind as given (`Some(false)`), or do not fit (`None`). `Some(true)` implies
-/// `arg_count < parameter_count`, so the parameter that `self` takes exists.
 fn implicit_self_decision(
     parameter_count: usize,
     required: usize,
