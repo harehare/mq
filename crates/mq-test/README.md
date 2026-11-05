@@ -228,6 +228,48 @@ generic per-value shrinker it's built on). The failure message shows the shrunk 
 alongside the original ones; the case name still reports the original seed, so
 `gen::tuple(generators)(42)` remains the way to reproduce the *unshrunk* case exactly.
 
+### Function Contracts
+
+Attach a precondition and postcondition to any top-level `def` (it does not need to be a test)
+with `# @requires(expr)` and `# @ensures(expr)`. `mq-test` checks them on every call made while
+running tests; plain `mq` runs ignore them.
+
+```mq
+include "test"
+| import "gen"
+|
+
+# @requires(n >= 0)
+# @ensures(result >= n)
+def fact(n):
+  if (n <= 1): 1 else: n * fact(n - 1)
+end
+
+# Contract violations in generated cases fail the test and are shrunk like any other failure.
+# @property(50, [gen::int(0, 10)])
+def test_fact_never_fails_its_contract(n):
+  fact(n)
+end
+```
+
+- `@requires(expr)` is evaluated with the arguments bound. A false result is reported as the
+  caller's responsibility.
+- `@ensures(expr)` is evaluated with the arguments and `result` (the return value) bound. A false
+  result is reported as the function's responsibility. A parameter cannot be named `result`.
+- Several of each may be given, and an annotation may span multiple comment lines. All must hold.
+- A violation reports the function name, the contract expression and its line, the arguments and
+  (for `@ensures`) the return value. Recursive calls are checked too.
+- Write expressions with `all`, `any` and the other higher-order builtins, e.g.
+  `# @requires(all(headings(doc), fn(h): h.depth <= 5;))`. There is no `old(x)` or `forall`.
+- In a `@property` test, an `@ensures` violation is shrunk to a minimal counterexample. Shrink
+  candidates that violate an `@requires` are skipped, so the counterexample stays in the function's
+  valid domain.
+- Only top-level `def`s with plain parameters are supported (no defaults or variadics, and not
+  inside a `module`). The contract expressions are not type-checked or checked for purity.
+
+Internally the `def` is renamed to `__orig_<name>` and a checking wrapper with the original name
+is appended to the file, so original line numbers are unchanged.
+
 ### Tags
 
 Use `# @tags(a, b)` (or the singular `# @tag(a)`) immediately before a test

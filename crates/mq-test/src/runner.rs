@@ -29,6 +29,10 @@ enum TestAnnotation {
         generators_expr: String,
     },
     Tags(Vec<String>),
+    /// `# @requires(expr)`: precondition checked on entry, see `contract.rs`.
+    Requires(String),
+    /// `# @ensures(expr)`: postcondition checked on return, with `result` bound.
+    Ensures(String),
 }
 
 /// Output format for `--list` and for a normal test run.
@@ -299,6 +303,23 @@ impl TestRunner {
                 return;
             }
 
+            let content = match Self::apply_contracts(&content) {
+                Ok(content) => content,
+                Err(message) => {
+                    any_failed.store(true, Ordering::Relaxed);
+                    if self.format == OutputFormat::Json {
+                        json_results.lock().unwrap().push(serde_json::json!({
+                            "file": file.display().to_string(),
+                            "error": message,
+                        }));
+                    }
+                    file_errors
+                        .lock()
+                        .unwrap()
+                        .push((file.clone(), format!("# {}\n\n❌ {message}\n\n---\n", file.display())));
+                    return;
+                }
+            };
             let query = match self.format {
                 OutputFormat::Text => Self::build_test_query(&content, &tests),
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
@@ -733,6 +754,8 @@ impl TestRunner {
                     generators_expr,
                 })
             }
+            "requires" => Some(TestAnnotation::Requires(args)),
+            "ensures" => Some(TestAnnotation::Ensures(args)),
             "tags" | "tag" => Some(TestAnnotation::Tags(
                 args.split(',')
                     .map(|tag| tag.trim().to_string())
@@ -774,12 +797,17 @@ impl TestRunner {
     }
 
     /// Finds the first `@test`/`[test]`/`@parametrize(...)` annotation among `trivia`,
-    /// ignoring `@tags(...)` comments (collected separately via `collect_tags`).
+    /// ignoring `@tags(...)` (see `collect_tags`) and contract comments (see `contract.rs`).
     fn find_test_annotation(trivia: &[CstTrivia]) -> Option<TestAnnotation> {
         Self::merge_annotation_comments(trivia)
             .into_iter()
             .filter_map(|comment| Self::parse_annotation(&comment))
-            .find(|annotation| !matches!(annotation, TestAnnotation::Tags(_)))
+            .find(|annotation| {
+                !matches!(
+                    annotation,
+                    TestAnnotation::Tags(_) | TestAnnotation::Requires(_) | TestAnnotation::Ensures(_)
+                )
+            })
     }
 
     /// Collects and flattens every `@tags(...)`/`@tag(...)` comment among `trivia`.
@@ -795,10 +823,22 @@ impl TestRunner {
             .collect()
     }
 
-    /// Joins comment lines whose `name(...)` annotation doesn't close on the same line,
-    /// so e.g. `@parametrize(...)` can span multiple comment lines.
     fn merge_annotation_comments(trivia: &[CstTrivia]) -> Vec<String> {
-        let lines: Vec<&str> = trivia.iter().filter_map(|t| t.comment()).collect();
+        Self::merge_annotation_lines(trivia)
+            .into_iter()
+            .map(|(_, comment)| comment)
+            .collect()
+    }
+
+    /// Joins comment lines whose `name(...)` annotation doesn't close on the same line,
+    /// so e.g. `@parametrize(...)` can span multiple comment lines. Each entry carries the
+    /// one-based source line of its first comment line.
+    fn merge_annotation_lines(trivia: &[CstTrivia]) -> Vec<(u32, String)> {
+        let comments: Vec<(u32, &str)> = trivia
+            .iter()
+            .filter_map(|t| t.comment().map(|c| (t.range().start.line, c)))
+            .collect();
+        let lines: Vec<&str> = comments.iter().map(|(_, c)| *c).collect();
         let mut merged = Vec::new();
         let mut i = 0;
 
@@ -814,10 +854,10 @@ impl TestRunner {
                 if end < lines.len() {
                     end += 1;
                 }
-                merged.push(lines[i..end].join("\n"));
+                merged.push((comments[i].0, lines[i..end].join("\n")));
                 i = end;
             } else {
-                merged.push(lines[i].to_string());
+                merged.push((comments[i].0, lines[i].to_string()));
                 i += 1;
             }
         }
@@ -947,5 +987,6 @@ fn open_in_default_app(path: &Path) -> miette::Result<()> {
     Ok(())
 }
 
+mod contract;
 #[cfg(test)]
 mod tests;

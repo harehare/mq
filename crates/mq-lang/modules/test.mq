@@ -462,17 +462,22 @@ end
 
 # `gen::shrink`'s `is_interesting` predicate for a `# @property(...)` case: re-runs `adapter`
 # (see `_property_case_result`) on shrink candidate `a` and reports whether it still fails.
-# Treats a thrown error as "not interesting" instead of letting it propagate, so a shrink
-# candidate outside the generators' actual domain (e.g. a divisor shrunk down to `0`) can't
-# abort the whole shrink search.
+# A thrown error is "not interesting" instead of aborting the whole shrink search, so a candidate
+# outside the generators' actual domain (e.g. a divisor shrunk down to `0`, or one that violates
+# an `@requires` contract) is skipped. An `@ensures` violation is the exception: it is a real
+# failure of the function under test.
 def _property_case_still_fails(adapter, a):
   try:
     do
       let r = adapter(a)
       | not(is_none(_test_failure(r)))
     end
-  catch:
-    false;
+  catch(e):
+    starts_with(e["message"], "@ensures violated");
+
+# Runs `adapter` on `a`, recording a thrown error as a failure result like `_run_test` does.
+def _property_case_run(adapter, a):
+  try: adapter(a) catch(e): {"error": true, "message": "Error: " + e["message"]};
 
 # Runs a single `# @property(...)` case. `adapter` wraps the property function as a
 # `fn(args): result` taking one array argument instead of one per parameter (see
@@ -485,7 +490,7 @@ def _property_case_still_fails(adapter, a):
 #
 # Returns: dict
 def _property_case_result(args, adapter):
-  let result = adapter(args)
+  let result = _property_case_run(adapter, args)
   | let failure = _test_failure(result)
   | if (not(is_none(failure))):
       do
@@ -494,7 +499,7 @@ def _property_case_result(args, adapter):
             failure
           else:
             do
-              let shrunk_failure = _test_failure(adapter(shrunk))
+              let shrunk_failure = _test_failure(_property_case_run(adapter, shrunk))
               | {
                   "error": true,
                   "message": shrunk_failure["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)

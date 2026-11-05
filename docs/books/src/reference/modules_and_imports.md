@@ -397,6 +397,21 @@ import "gen"
 Both are also usable directly (not just through `# @property(...)`) by hand-written property
 tests.
 
+### Function contracts
+
+`mq-test` can check `# @requires(expr)` and `# @ensures(expr)` comments placed on a `def` while
+tests run. They compose with `# @property(...)`: a contract violation found on a generated case
+fails the test and is shrunk to a minimal counterexample. See the `mq-test` crate's README
+for the full semantics.
+
+```mq
+# @requires(n >= 0)
+# @ensures(result >= n)
+def fact(n):
+  if (n <= 1): 1 else: n * fact(n - 1)
+end
+```
+
 ## HTTP Imports
 
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
