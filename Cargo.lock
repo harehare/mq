@@ -2481,6 +2481,7 @@ dependencies = [
  "miette",
  "mimalloc",
  "mq-lang",
+ "proptest",
  "rstest",
  "rustc-hash",
  "serde",

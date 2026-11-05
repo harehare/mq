@@ -27,6 +27,7 @@ serde_json = {workspace = true}
 tabled = {workspace = true}
 
 [dev-dependencies]
+proptest = {workspace = true}
 rstest = {workspace = true}
 
 [[bin]]
