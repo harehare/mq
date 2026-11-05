@@ -2732,9 +2732,11 @@ dependencies = [
 name = "mq-markdown"
 version = "0.10.0"
 dependencies = [
+ "codspeed-divan-compat",
  "ego-tree",
  "itertools 0.15.0",
  "miette",
+ "mimalloc",
  "proptest",
  "rstest",
  "rustc-hash",
