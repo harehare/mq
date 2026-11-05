@@ -57,6 +57,7 @@ pub(crate) mod atomic_output;
 /// Command-line interface.
 pub mod cli;
 pub(crate) mod grep;
+pub(crate) mod ordered_output;
 pub(crate) mod output;
 
 #[cfg(feature = "debugger")]

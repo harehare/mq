@@ -18,7 +18,13 @@ Use `-P <n>` to change that threshold, e.g. force parallel mode even for a small
 $ mq -P 1 '.h1' docs/**/*.md
 ```
 
-Or raise it, to keep small-to-medium batches sequential (useful if the query has ordering side effects):
+Output stays in input order. Add `--unordered` to print each file's result as soon as it finishes:
+
+```bash
+$ mq -P 1 --unordered '.h1' docs/**/*.md
+```
+
+Or raise the threshold, to keep small-to-medium batches sequential (useful if the query has side effects):
 
 ```bash
 $ mq -P 50 '.h1' docs/**/*.md
@@ -27,4 +33,5 @@ $ mq -P 50 '.h1' docs/**/*.md
 ## Notes
 
 - `-P` is a *threshold* (files to process before switching to parallel), not a worker count. It doesn't limit how many files run concurrently.
-- Output order across files is not guaranteed once parallel processing kicks in. If order matters, raise the threshold above your file count, or sort downstream.
+- Parallel output is held back until earlier files have printed, so results match a sequential run. `--unordered` skips that wait, and output order then varies between runs.
+- Output a query writes itself (e.g. `stderr`) is not reordered.

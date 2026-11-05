@@ -168,3 +168,18 @@ fn test_invalid_query_fails_in_every_mode(
     let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
     assert!(stderr.contains("Unexpected token"), "{mode:?}: {stderr}");
 }
+
+#[test]
+fn parallel_output_keeps_input_order() {
+    let dir = TempDir::new().unwrap();
+    let names: Vec<String> = (0..40).map(|i| format!("f{i:02}.md")).collect();
+    for (i, name) in names.iter().enumerate() {
+        fs::write(dir.path().join(name), format!("# h{i:02}\n")).unwrap();
+    }
+    let files: Vec<&str> = names.iter().map(String::as_str).collect();
+    let expected: String = (0..40).map(|i| format!("# h{i:02}\n")).collect();
+
+    for _ in 0..5 {
+        assert_eq!(stdout(dir.path(), &["-P", "1", ".h"], &files), expected);
+    }
+}

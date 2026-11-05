@@ -9,6 +9,7 @@
 
 use miette::IntoDiagnostic;
 use miette::miette;
+use std::cell::RefCell;
 use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -37,8 +38,22 @@ pub(crate) enum ClobberMode {
     Append,
 }
 
+thread_local! {
+    static CAPTURE: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
+}
+
+/// Runs `f` with stdout sinks opened on this thread collected into a buffer instead.
+pub(crate) fn capture_stdout<T>(f: impl FnOnce() -> T) -> (T, Vec<u8>) {
+    CAPTURE.with(|c| *c.borrow_mut() = Some(Vec::new()));
+    let result = f();
+    let captured = CAPTURE.with(|c| c.borrow_mut().take()).unwrap_or_default();
+    (result, captured)
+}
+
 /// Call [`OutputSink::finish`] once done writing.
 pub(crate) enum OutputSink {
+    /// Stdout redirected by [`capture_stdout`].
+    Captured,
     Stdout(io::StdoutLock<'static>),
     BufferedStdout(BufWriter<io::StdoutLock<'static>>),
     Direct(BufWriter<fs::File>),
@@ -52,6 +67,7 @@ pub(crate) enum OutputSink {
 impl Write for OutputSink {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
+            OutputSink::Captured => Self::capture(buf).map(|()| buf.len()),
             OutputSink::Stdout(w) => w.write(buf),
             OutputSink::BufferedStdout(w) => w.write(buf),
             OutputSink::Direct(w) => w.write(buf),
@@ -61,6 +77,7 @@ impl Write for OutputSink {
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
         match self {
+            OutputSink::Captured => Self::capture(buf),
             OutputSink::Stdout(w) => w.write_all(buf),
             OutputSink::BufferedStdout(w) => w.write_all(buf),
             OutputSink::Direct(w) => w.write_all(buf),
@@ -70,6 +87,7 @@ impl Write for OutputSink {
 
     fn flush(&mut self) -> io::Result<()> {
         match self {
+            OutputSink::Captured => Ok(()),
             OutputSink::Stdout(w) => w.flush(),
             OutputSink::BufferedStdout(w) => w.flush(),
             OutputSink::Direct(w) => w.flush(),
@@ -90,9 +108,20 @@ impl OutputSink {
     ) -> miette::Result<Self> {
         match output_file {
             Some(path) => Self::open_file(path, atomic, clobber, claimed),
+            None if CAPTURE.with(|c| c.borrow().is_some()) => Ok(OutputSink::Captured),
             None if unbuffered => Ok(OutputSink::Stdout(io::stdout().lock())),
             None => Ok(OutputSink::BufferedStdout(BufWriter::new(io::stdout().lock()))),
         }
+    }
+
+    fn capture(buf: &[u8]) -> io::Result<()> {
+        CAPTURE.with(|c| match c.borrow_mut().as_mut() {
+            Some(out) => {
+                out.extend_from_slice(buf);
+                Ok(())
+            }
+            None => Err(io::Error::other("stdout capture ended while a sink was open")),
+        })
     }
 
     fn open_file(
@@ -242,7 +271,7 @@ impl OutputSink {
 
     pub(crate) fn finish(self) -> miette::Result<()> {
         match self {
-            OutputSink::Stdout(_) => Ok(()),
+            OutputSink::Captured | OutputSink::Stdout(_) => Ok(()),
             OutputSink::BufferedStdout(mut w) => Self::ignore_broken_pipe(w.flush()),
             OutputSink::Direct(mut w) => Self::ignore_broken_pipe(w.flush()),
             OutputSink::Atomic {

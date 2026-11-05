@@ -22,8 +22,9 @@ use std::time::Duration;
 use std::{fs, path::PathBuf};
 use which::which;
 
-use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
+use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink, capture_stdout};
 use crate::grep;
+use crate::ordered_output::{AbortOnPanic, OrderedGate};
 use exit_status::{ExitReason, HAD_RESULT, ReadFailure};
 use mq_help as help;
 
@@ -101,6 +102,10 @@ pub struct Cli {
     /// Number of files to process before switching to parallel processing
     #[arg(short = 'P', long, default_value_t = 10)]
     parallel_threshold: usize,
+
+    /// Print results of parallel processing as files finish, not in input order
+    #[arg(long)]
+    unordered: bool,
 
     #[arg(value_name = "QUERY OR FILE")]
     query: Option<String>,
@@ -2817,18 +2822,22 @@ impl Cli {
         // Keep writes to one output file sequential: parallel files racing the same
         // read-then-rename append could clobber each other.
         if files.len() > self.parallel_threshold && self.output.output_file.is_none() {
-            // `CompiledProgram` uses `Rc`, so each worker keeps its own engine and programs.
-            // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
-            let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);
-            files.par_iter().with_min_len(min_len).try_for_each_init(
-                || Ok::<_, miette::Error>((self.create_engine()?, ProgramCache::default())),
-                |worker, (file, content)| {
-                    let (engine, cache) = worker
-                        .as_mut()
-                        .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
-                    self.execute(engine, cache, &query, file, content)
-                },
-            )?;
+            if self.unordered {
+                // `CompiledProgram` uses `Rc`, so each worker keeps its own engine and programs.
+                // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
+                let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);
+                files.par_iter().with_min_len(min_len).try_for_each_init(
+                    || Ok::<_, miette::Error>((self.create_engine()?, ProgramCache::default())),
+                    |worker, (file, content)| {
+                        let (engine, cache) = worker
+                            .as_mut()
+                            .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
+                        self.execute(engine, cache, &query, file, content)
+                    },
+                )?;
+            } else {
+                self.process_ordered_parallel(&query, &files)?;
+            }
         } else {
             let mut engine = self.create_engine()?;
             let mut cache = ProgramCache::default();
@@ -2885,6 +2894,33 @@ impl Cli {
             }
         }
         Ok(())
+    }
+
+    /// Runs files on the rayon pool but prints their output in input order.
+    fn process_ordered_parallel(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
+        let gate = OrderedGate::new(files.len(), rayon::current_num_threads() * 2);
+        rayon::broadcast(|_| {
+            let _guard = AbortOnPanic(&gate);
+            // `CompiledProgram` uses `Rc`, so each worker keeps its own engine and programs.
+            let mut worker = match self.create_engine() {
+                Ok(engine) => (engine, ProgramCache::default()),
+                Err(error) => return gate.abort(Some(error)),
+            };
+            while let Some(index) = gate.claim() {
+                let (file, content) = &files[index];
+                let (result, output) =
+                    capture_stdout(|| self.execute(&mut worker.0, &mut worker.1, query, file, content));
+                match result {
+                    Ok(()) => gate.write_in_order(index, || {
+                        let mut stdout = io::stdout().lock();
+                        Self::write_ignore_pipe(&mut stdout, &output)?;
+                        Self::write_ignore_pipe_flush(&mut stdout)
+                    }),
+                    Err(error) => gate.fail(index, error),
+                }
+            }
+        });
+        gate.finish()
     }
 
     /// `__FILE__`-family vars aren't set here: no single file is "current" once combined.
@@ -3342,6 +3378,14 @@ impl Cli {
     }
 
     #[inline(always)]
+    fn write_ignore_pipe_flush<W: Write>(handle: &mut W) -> miette::Result<()> {
+        match handle.flush() {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+            Err(e) => Err(miette!(e)),
+        }
+    }
+
     fn write_ignore_pipe<W: Write>(handle: &mut W, data: &[u8]) -> miette::Result<()> {
         match handle.write_all(data) {
             Ok(()) => Ok(()),
