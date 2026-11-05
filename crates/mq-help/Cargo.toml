@@ -25,4 +25,4 @@ mq-lang = {workspace = true, features = ["cst", "http"], optional = true}
 serde = {workspace = true, features = ["derive"], optional = true}
 
 [dev-dependencies]
-mq-lang = {workspace = true, features = ["css-selector"]}
+mq-lang = {workspace = true, features = ["html-parse"]}

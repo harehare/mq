@@ -2,11 +2,11 @@ pub(super) mod bytes;
 mod char_index;
 mod compress;
 pub(super) mod convert;
-#[cfg(feature = "css-selector")]
-mod css;
 pub(super) mod date;
 mod gron;
 mod hash;
+#[cfg(feature = "html-parse")]
+mod html;
 #[cfg(feature = "http")]
 mod http;
 pub(crate) mod io_context;
@@ -4699,11 +4699,11 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
-#[cfg(feature = "css-selector")]
+#[cfg(feature = "html-parse")]
 #[mq_macros::mq_fn(name = "_html_parse", params = Fixed(1))]
 fn _html_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(html_str)] => Ok(css::parse_html(html_str)),
+        [RuntimeValue::String(html_str)] => Ok(html::parse_html(html_str)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => Err(invalid_arity(ident, 1, args.len())),
     }
@@ -5596,65 +5596,6 @@ fn system_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
-#[cfg(feature = "css-selector")]
-#[mq_macros::mq_fn(name = "css", params = Fixed(2))]
-fn css_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::String(html), RuntimeValue::String(selector)] => Ok(RuntimeValue::Array(Shared::new(
-            css::select_html(html, selector)?
-                .into_iter()
-                .map(RuntimeValue::from)
-                .collect(),
-        ))),
-        args => Err(Error::InvalidTypes(
-            ident.to_string(),
-            args.iter_mut().map(std::mem::take).collect(),
-        )),
-    }
-}
-
-/// Returns the text content of every element in `html` matching the CSS `selector`, as an array
-/// of strings.
-#[cfg(feature = "css-selector")]
-#[mq_macros::mq_fn(name = "css_text", params = Fixed(2))]
-fn css_text_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::String(html), RuntimeValue::String(selector)] => Ok(RuntimeValue::Array(Shared::new(
-            css::select_text(html, selector)?
-                .into_iter()
-                .map(RuntimeValue::from)
-                .collect(),
-        ))),
-        args => Err(Error::InvalidTypes(
-            ident.to_string(),
-            args.iter_mut().map(std::mem::take).collect(),
-        )),
-    }
-}
-
-/// Returns the value of attribute `name` for every element in `html` matching the CSS
-/// `selector`, as an array; elements without that attribute produce `None` in the array.
-#[cfg(feature = "css-selector")]
-#[mq_macros::mq_fn(name = "css_attr", params = Fixed(3))]
-fn css_attr_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [
-            RuntimeValue::String(html),
-            RuntimeValue::String(selector),
-            RuntimeValue::String(name),
-        ] => Ok(RuntimeValue::Array(Shared::new(
-            css::select_attr(html, selector, name)?
-                .into_iter()
-                .map(|attr| attr.map(RuntimeValue::from).unwrap_or(RuntimeValue::NONE))
-                .collect(),
-        ))),
-        args => Err(Error::InvalidTypes(
-            ident.to_string(),
-            args.iter_mut().map(std::mem::take).collect(),
-        )),
-    }
-}
-
 #[cfg(feature = "file-io")]
 fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
     let nodes = mq_markdown::Markdown::from_markdown_str(raw)
@@ -6254,13 +6195,7 @@ mq_macros::builtin_dispatch! {
     MOCK_FETCH,
     #[cfg(feature = "process-io")]
     SYSTEM,
-    #[cfg(feature = "css-selector")]
-    CSS,
-    #[cfg(feature = "css-selector")]
-    CSS_TEXT,
-    #[cfg(feature = "css-selector")]
-    CSS_ATTR,
-    #[cfg(feature = "css-selector")]
+    #[cfg(feature = "html-parse")]
     _HTML_PARSE,
 }
 

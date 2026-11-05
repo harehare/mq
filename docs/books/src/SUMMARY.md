@@ -69,6 +69,7 @@
   - [Compact JSON with TOON for LLM prompts](cookbook/compact-json-with-toon.md)
   - [Decode a CBOR payload](cookbook/decode-cbor-payload.md)
   - [Extract links from an HTML page](cookbook/extract-links-from-html.md)
+  - [Select HTML elements with CSS selectors](cookbook/select-html-with-css-selectors.md)
   - [Sort versions and find the latest release](cookbook/find-latest-version-with-semver.md)
   - [Find the closest heading to a misspelled name](cookbook/fuzzy-match-headings.md)
   - [Parse LTSV logs](cookbook/parse-ltsv-logs.md)

@@ -23,7 +23,7 @@ mq-check = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-help = {workspace = true, features = ["catalog"]}
-mq-lang = {workspace = true, features = ["ast-json", "sync", "file-io", "http", "css-selector"]}
+mq-lang = {workspace = true, features = ["ast-json", "sync", "file-io", "http", "html-parse"]}
 mq-lint = {workspace = true}
 mq-markdown = {workspace = true}
 serde = {workspace = true, features = ["derive"]}

@@ -124,6 +124,16 @@ assert_eq!(program.len(), 1);
 
 With the `cst` feature, `parse_recovery` and `CstParser` return a lossless tree that keeps comments and whitespace and recovers from syntax errors.
 
+### Select HTML elements
+
+With the `html-parse` feature, the `html` module's `html_select` finds elements by CSS selector. It accepts an HTML string or a `html_parse` tree and returns the matching `{tag, attributes, children, text}` dicts in document order.
+
+```mq
+import "html" | html::html_select(self, "div.item > a[href^=\"https://\"]") | map(html::html_text)
+```
+
+Supported: `tag`, `*`, `.class`, `#id`, `[attr]`, `[attr=v]`, `[attr~=v]`, `[attr^=v]`, `[attr$=v]`, `[attr*=v]`, the combinators ` `, `>`, `+`, `~`, comma-separated lists, and the pseudo-classes `:first-child`, `:last-child`, `:nth-child(...)` and `:not(...)`. Anything else raises an error.
+
 ## Documentation
 
 - [Embedding mq in Rust](https://mqlang.org/book/start/embedding-rust.html)

@@ -71,15 +71,15 @@ curl -s https://example.com | mq -I html 'select(.link) | .link.url'
 
 `-I html` converts to Markdown first; use Markdown selectors (`.link`, `.h`, `.text`), not HTML tags. Container elements (`div`/`span`/`section`) and their `class`/`id`/`data-*` attributes are discarded in that conversion.
 
-To query the raw HTML directly instead, e.g. `.price` divs, `a.download[href]`, attribute-driven card UIs, use the `css()`/`css_text()`/`css_attr()` builtins on the pre-conversion HTML string (needs the CLI built with the `css-selector` feature, on by default):
+To query the raw HTML directly instead, e.g. `.price` divs, `a.download[href]`, attribute-driven card UIs, use `html_select` from the `html` module on the pre-conversion HTML string (needs the CLI built with the `html-parse` feature, on by default):
 
 ```bash
-curl -s https://example.com | mq -I text 'css_text(self, ".price")'                 # text of every .price match
-curl -s https://example.com | mq -I text 'css_attr(self, "a.download", "href")'     # href of every a.download match
-curl -s https://example.com | mq -I text 'css(self, ".card") | map(self, fn(card): css_text(card, ".card-title") | get(0);)'  # filter by selector, then extract from each match
+curl -s https://example.com | mq -I text 'import "html" | html::html_select(self, ".price") | map(html::html_text)'                       # text of every .price match
+curl -s https://example.com | mq -I text 'import "html" | html::html_select(self, "a.download") | map(fn(a): html::html_attr(a, "href");)'  # href of every a.download match
+curl -s https://example.com | mq -I text 'import "html" | html::html_select(self, ".card") | map(fn(card): html::html_select(card, ".card-title") | map(html::html_text) | first;)'  # filter by selector, then extract from each match
 ```
 
-`css_attr` returns `null` for elements missing that attribute instead of dropping them, so array positions line up across parallel `css_*` calls.
+`html_attr` returns `None` for elements missing that attribute instead of dropping them, so array positions line up across parallel `map` calls.
 
 ## Limitations
 

@@ -1,5 +1,5 @@
 //! `_xml_parse` builtin: parses an XML string into nested `{tag, attributes, children, text}`
-//! dicts, the same shape [`super::css`] produces for HTML.
+//! dicts, the same shape `_html_parse` produces for HTML.
 
 use crate::DictMap;
 use crate::runtime::runtime_value::RuntimeValue;

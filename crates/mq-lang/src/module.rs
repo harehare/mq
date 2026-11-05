@@ -148,7 +148,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     // needs the raw-identifier escape even though its mq-facing module name is plain "gen".
     std_module!(r#gen, "gen");
     std_module!(gron);
-    #[cfg(feature = "css-selector")]
+    #[cfg(feature = "html-parse")]
     std_module!(html);
     std_module!(json);
     std_module!(md);

@@ -110,3 +110,116 @@ end
 def test_html_to_json_simple(data, expected):
   assert_eq(html::html_to_json(data), expected)
 end
+
+| let select_input = "<html><body><div id=\"main\" class=\"box big\" data-id=\"1\"><p class=\"price\" data-id=\"1\">$10</p><p class=\"price\" data-id=\"2\">$20</p><a href=\"https://example.com/x.pdf\" lang=\"en-US\">link</a><span class=\"empty\"></span><section><p class=\"deep\">d</p></section></div><div class=\"other\"><p>o</p></div></body></html>" |
+
+def _select_texts(selector):
+  map(html::html_select(html::html_parse(select_input), selector), html::html_text)
+end
+
+# @parametrize([
+#   ["p", ["$10", "$20", "d", "o"]],
+#   ["a", ["link"]],
+#   ["DIV > a", ["link"]],
+#   [".price", ["$10", "$20"]],
+#   ["p.price", ["$10", "$20"]],
+#   [".box.big .deep", ["d"]],
+#   ["#main > a", ["link"]],
+#   ["div#main", ["$10 $20 link d"]],
+#   ["*.deep", ["d"]],
+# ])
+def test_html_select_type_class_id(selector, expected):
+  assert_eq(_select_texts(selector), expected)
+end
+
+# @parametrize([
+#   ["[data-id]", ["$10 $20 link d", "$10", "$20"]],
+#   ["[data-id=\"2\"]", ["$20"]],
+#   ["[data-id=2]", ["$20"]],
+#   ["p[data-id='1']", ["$10"]],
+#   ["[ data-id = 2 ]", ["$20"]],
+#   ["[class~=big]", ["$10 $20 link d"]],
+#   ["[class~=ig]", []],
+#   ["a[href^=\"https://\"]", ["link"]],
+#   ["a[href$=\".pdf\"]", ["link"]],
+#   ["a[href*=example]", ["link"]],
+#   ["a[href$=\".png\"]", []],
+#   ["[lang^=\"\"]", []],
+# ])
+def test_html_select_attribute_operators(selector, expected):
+  assert_eq(_select_texts(selector), expected)
+end
+
+# @parametrize([
+#   ["div p", ["$10", "$20", "d", "o"]],
+#   ["div > p", ["$10", "$20", "o"]],
+#   ["#main p", ["$10", "$20", "d"]],
+#   ["#main > p", ["$10", "$20"]],
+#   [".price + a", ["link"]],
+#   [".price + .price", ["$20"]],
+#   ["p + span", []],
+#   [".price ~ span", [""]],
+#   [".price ~ section", ["d"]],
+#   ["a ~ .price", []],
+#   ["body > div > section > p", ["d"]],
+#   ["div>p.price+p", ["$20"]],
+# ])
+def test_html_select_combinators(selector, expected):
+  assert_eq(_select_texts(selector), expected)
+end
+
+def test_html_select_comma_list_is_document_order_without_duplicates():
+  assert_eq(_select_texts("a, .price, p.price, .deep"), ["$10", "$20", "link", "d"])
+end
+
+# @parametrize([
+#   ["p:first-child", ["$10", "d", "o"]],
+#   ["p:last-child", ["d", "o"]],
+#   ["p:nth-child(2)", ["$20"]],
+#   ["div > :nth-child(odd)", ["$10", "link", "d", "o"]],
+#   ["#main > :nth-child(even)", ["$20", ""]],
+#   ["#main > :nth-child(2n+1)", ["$10", "link", "d"]],
+#   ["#main > :nth-child(n+4)", ["", "d"]],
+#   ["#main > :nth-child(-n+2)", ["$10", "$20"]],
+#   ["p:not(.price)", ["d", "o"]],
+#   ["#main > :not(p, a)", ["", "d"]],
+#   ["div:not(#main):not(.nothing) > p", ["o"]],
+# ])
+def test_html_select_pseudo_classes(selector, expected):
+  assert_eq(_select_texts(selector), expected)
+end
+
+def test_html_select_no_match_is_empty_array():
+  assert_eq(html::html_select(html::html_parse(select_input), ".missing"), [])
+end
+
+def test_html_select_empty_element_has_empty_text():
+  assert_eq(_select_texts(".empty"), [""])
+end
+
+def test_html_select_matches_root_and_accepts_html_string():
+  assert_eq(map(html::html_select(select_input, "html"), fn(e): e["tag"];), ["html"])
+end
+
+def test_html_select_attr_values():
+  let matches = html::html_select(html::html_parse(select_input), ".price")
+  | assert_eq(map(matches, fn(e): html::html_attr(e, "data-id");), ["1", "2"])
+  | assert_eq(map(matches, fn(e): html::html_attr(e, "href");), [None, None])
+end
+
+# @parametrize([
+#   ["[[["],
+#   [""],
+#   ["div >"],
+#   ["> div"],
+#   ["div,"],
+#   ["p:hover"],
+#   ["p:nth-child"],
+#   ["p:nth-child(x)"],
+#   ["p:first-child(1)"],
+#   ["p[a=]"],
+#   ["a!b"],
+# ])
+def test_html_select_invalid_selector_is_error(selector):
+  assert_eq(try: html::html_select(html::html_parse(select_input), selector) catch: "error", "error")
+end

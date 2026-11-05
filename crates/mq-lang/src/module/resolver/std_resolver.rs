@@ -65,7 +65,7 @@ mod tests {
         assert!(matches!(resolver.resolve(name), Err(ModuleError::NotFound(_))));
     }
 
-    #[cfg(feature = "css-selector")]
+    #[cfg(feature = "html-parse")]
     #[test]
     fn test_resolve_html_module() {
         let resolver = StdModuleResolver;
@@ -74,7 +74,7 @@ mod tests {
         assert!(!result.unwrap().is_empty());
     }
 
-    #[cfg(not(feature = "css-selector"))]
+    #[cfg(not(feature = "html-parse"))]
     #[test]
     fn test_resolve_html_module_not_found_without_css_selector() {
         let resolver = StdModuleResolver;
