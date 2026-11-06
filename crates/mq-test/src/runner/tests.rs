@@ -827,11 +827,12 @@ fn test_a_property_with_too_few_generators_fails_the_run() {
 
 #[test]
 fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
-    // Calls `_property_case_result` (from `test.mq`) directly with args `[500]`, bypassing
+    // Calls `_property_case_result` (from `test_runner.mq`) directly with args `[500]`, bypassing
     // `gen::tuple` entirely so the starting point is deterministic: the smallest `n` for
     // which `n < 5` is false is `5`, so a working shrink search must report exactly that.
     let query = concat!(
         "include \"test\"\n",
+        "| include \"test_runner\"\n",
         "|\n",
         "def test_less_than_five(n):\n",
         "  assert_true(n < 5)\n",
@@ -839,7 +840,7 @@ fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
         "| _property_case_result([500], fn(__a): test_less_than_five(__a[0]);)",
     );
     let mut engine = mq_lang::Engine::with_io(
-        mq_lang::DefaultModuleResolver::default(),
+        crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
@@ -1056,7 +1057,7 @@ fn test_run_supports_importing_the_test_module() {
 #[test]
 fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_still_run() {
     let mut engine = mq_lang::Engine::with_io(
-        mq_lang::DefaultModuleResolver::default(),
+        crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
@@ -1164,7 +1165,7 @@ fn test_render_file_error_attaches_the_file_name_when_mq_lang_left_it_blank() {
     let query = TestRunner::build_test_query(content, &tests);
 
     let mut engine = mq_lang::Engine::with_io(
-        mq_lang::DefaultModuleResolver::default(),
+        crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
@@ -1439,12 +1440,18 @@ fn test_apply_contracts_rejects_unsupported_signatures(#[case] content: &str, #[
 
 /// Runs `content` like `mq-test --format json` and returns every test's result dict as JSON.
 fn run_results(content: &str) -> Vec<serde_json::Value> {
+    // Fixtures that use `enumerate::` get the import a real test file would start with.
+    let content = &if content.contains("enumerate::") {
+        format!("import \"enumerate\"\n|\n{content}")
+    } else {
+        content.to_string()
+    };
     let tests = TestRunner::discover_tests(content);
     let uses_exhaustive = tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. }));
     let content = TestRunner::apply_contracts(content, uses_exhaustive).unwrap();
     let query = TestRunner::build_test_query_with_fn(&content, &tests, "run_tests_data");
     let mut engine = mq_lang::Engine::with_io(
-        mq_lang::DefaultModuleResolver::default(),
+        crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();

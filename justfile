@@ -99,7 +99,7 @@ fmt:
 
 # Run bundled mq tests through the Tarn bytecode VM.
 test-mq:
-    cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
+    cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq crates/mq-test/modules/*_test.mq
 
 # Time bundled mq benches through the Tarn bytecode VM.
 bench-mq:

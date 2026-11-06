@@ -3,6 +3,7 @@
 mod coverage;
 mod highlight;
 mod html;
+mod resolver;
 mod runner;
 mod snapshot;
 

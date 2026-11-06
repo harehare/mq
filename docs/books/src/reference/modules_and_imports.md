@@ -345,7 +345,8 @@ into another file, which is exactly the case where a reference legitimately come
 
 ## Property-Based Test Generators (`gen`)
 
-The `gen` module provides generator combinators for `mq-test`'s
+The `gen` module is bundled with `mq-test` (it is not available to the plain `mq` command) and
+provides generator combinators for `mq-test`'s
 `# @property(count, generators)` annotation (see the `mq-test` crate's README for the annotation
 itself). A generator is a plain function `fn(seed): value;` built on top of the seeded `rand`/`rand_int`/
 `random_string` builtins, so the same seed always produces the same value. Combinators build

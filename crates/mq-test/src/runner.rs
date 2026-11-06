@@ -17,10 +17,6 @@ const DEFAULT_PROPERTY_CASES: &str = "100";
 /// Largest value size a `# @exhaustive(enumerators)` test enumerates when no size is given.
 const DEFAULT_EXHAUSTIVE_SIZE: &str = "3";
 
-/// Source of the `enumerate` module and the `@exhaustive` runner, added to files that use it.
-const ENUMERATE_MODULE: &str = include_str!("enumerate.mq");
-const EXHAUSTIVE_RUNNER: &str = include_str!("exhaustive.mq");
-
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
 enum TestAnnotation {
@@ -353,7 +349,7 @@ impl TestRunner {
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
             };
             let mut engine = mq_lang::Engine::with_io(
-                mq_lang::DefaultModuleResolver::default(),
+                crate::resolver::TestModuleResolver::default(),
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
             );
             engine.load_builtin_module();
@@ -1106,13 +1102,16 @@ impl TestRunner {
             .collect::<Vec<_>>()
             .join(",\n");
 
-        let exhaustive_support = if tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. })) {
-            format!("\nmodule enumerate:\n{ENUMERATE_MODULE}\nend\n{EXHAUSTIVE_RUNNER}\n")
+        let runner_include = if tests
+            .iter()
+            .any(|t| matches!(t, DiscoveredTest::Property { .. } | DiscoveredTest::Exhaustive { .. }))
+        {
+            "\n| include \"test_runner\""
         } else {
-            String::new()
+            ""
         };
 
-        format!("{content}\n{exhaustive_support}| include \"test\"\n| {report_fn}(flatten([\n{cases}\n]))")
+        format!("{content}\n| include \"test\"{runner_include}\n| {report_fn}(flatten([\n{cases}\n]))")
     }
 }
 
