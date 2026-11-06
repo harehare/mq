@@ -151,6 +151,7 @@ end
 # ```
 #
 # Returns: number
+# @ensures(result >= 0)
 def num_rows(table): len(table[:rows]);
 
 # Returns the number of columns in the table.
@@ -162,6 +163,7 @@ def num_rows(table): len(table[:rows]);
 # ```
 #
 # Returns: number
+# @ensures(result >= 0)
 def num_cols(table): len(table[:header]);
 
 # Returns the string value of the data cell at `row_index` and column `col`
@@ -195,6 +197,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]))
+# @ensures(len(result[:header]) == len(table[:header]))
 def set_cell(table, row_index, col, value):
   let col_index = _resolve_column(table, col)
   | if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
@@ -404,6 +408,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]) - 1)
+# @ensures(len(result[:header]) == len(table[:header]))
 def remove_row(table, row_index):
   set(table, :rows, _renumber_rows(del(table[:rows], row_index)))
 end
@@ -459,6 +465,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:header]) == len(table[:header]))
+# @ensures(len(result[:rows]) == len(table[:rows]))
 def rename_column(table, col, name):
   let index = _resolve_column(table, col)
   | set(table, :header, set(table[:header], index, to_md_table_cell(name, 0, index)))
@@ -473,6 +481,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:header]) == len(table[:header]) - 1)
+# @ensures(len(result[:rows]) == len(table[:rows]))
 def remove_column(table, col):
   let col_index = _resolve_column(table, col)
   | let indices = filter(range(0, len(table[:header]) - 1), fn(i): i != col_index;)
@@ -505,6 +515,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]))
+# @ensures(len(result[:header]) == len(table[:header]))
 def map_cells(table, f):
   let new_rows = map(table[:rows], fn(row):
     map(row, fn(cell): to_md_table_cell(f(to_string(cell)), cell.row, cell.column););
@@ -536,6 +548,7 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) <= len(table[:rows]))
 def filter_rows(table, f):
   set(table, :rows, _renumber_rows(filter(table[:rows], f)))
 end
@@ -621,6 +634,7 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) <= len(table[:rows]))
 def dedupe_rows(table):
   set(table, :rows, _renumber_rows(unique_by(table[:rows], fn(row): map(row, to_string);)))
 end

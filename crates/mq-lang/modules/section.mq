@@ -252,6 +252,7 @@ end
 # ```
 #
 # Returns: array
+# @ensures(len(result) <= len(sections))
 def title_contains(sections, text):
   if (is_empty(sections)):
     []
@@ -279,6 +280,7 @@ end
 # ```
 #
 # Returns: array
+# @ensures(len(result) <= len(sections))
 def title_is(sections, text):
   if (is_empty(sections)):
     []
@@ -305,6 +307,7 @@ end
 # ```
 #
 # Returns: array
+# @ensures(len(result) <= len(sections))
 def title_match(sections, pattern):
   if (is_empty(sections)):
     []
@@ -595,6 +598,7 @@ end
 # ```
 #
 # Returns: array
+# @ensures(len(result) <= len(sections))
 def by_level(sections, l):
   if (is_empty(sections)):
     []

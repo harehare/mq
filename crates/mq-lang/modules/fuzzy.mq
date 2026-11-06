@@ -17,6 +17,7 @@ end
 # ```
 #
 # Returns: number
+# @ensures(result >= 0)
 def levenshtein(s1, s2): _levenshtein_distance(s1, s2);
 
 # Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is exact match).
@@ -28,6 +29,7 @@ def levenshtein(s1, s2): _levenshtein_distance(s1, s2);
 # ```
 #
 # Returns: number
+# @ensures(result >= 0 && result <= 1)
 def jaro(s1, s2): _jaro_distance(s1, s2);
 
 # Calculates the Jaro-Winkler distance between two strings.
@@ -39,6 +41,7 @@ def jaro(s1, s2): _jaro_distance(s1, s2);
 # ```
 #
 # Returns: number
+# @ensures(result >= 0 && result <= 1)
 def jaro_winkler(s1, s2): _jaro_winkler_distance(s1, s2);
 
 # Performs fuzzy matching on an array of strings using Jaro-Winkler distance.
@@ -50,6 +53,7 @@ def jaro_winkler(s1, s2): _jaro_winkler_distance(s1, s2);
 # ```
 #
 # Returns: array
+# @ensures(len(result) <= len(candidates))
 def fuzzy_match(candidates, query):
   let candidates = if (is_array(candidates)):
     candidates
@@ -100,6 +104,7 @@ end
 # ```
 #
 # Returns: array
+# @ensures(len(result) <= len(candidates))
 def fuzzy_filter(candidates, query, threshold):
   let matches = fuzzy_match(candidates, query)
   | filter(matches, fn(m): m["score"] >= threshold;)
