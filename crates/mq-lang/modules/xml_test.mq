@@ -87,3 +87,16 @@ def test_xml_stringify_parse_round_trip(text, attr_value):
   | assert_eq(result["text"], text)
   | assert_eq(result["attributes"]["id"], attr_value)
 end
+
+def test_xml_stringify_keeps_newlines_and_tabs_in_attributes():
+  let doc = {"tag": "a", "attributes": {"x": "p\nq\tr"}, "children": [], "text": None}
+  | assert_eq(xml::xml_parse(xml::xml_stringify(doc))["attributes"]["x"], "p\nq\tr")
+end
+
+# Text starts and ends without whitespace, which the parser trims.
+# @small_scope(2, [enumerate::string("ab<>&\"'", 2), enumerate::string("ab <>&\"'\n\t", 2)])
+def test_xml_text_and_attribute_roundtrip(text, attribute):
+  let doc = {"tag": "a", "attributes": {"x": attribute}, "children": [{"tag": "b", "attributes": {}, "children": [], "text": text}], "text": None}
+  | let parsed = xml::xml_parse(xml::xml_stringify(doc))
+  | assert_eq([parsed["attributes"]["x"], parsed["children"][0]["text"]], [attribute, if (text == ""): None else: text])
+end

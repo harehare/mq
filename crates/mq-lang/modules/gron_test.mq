@@ -45,3 +45,9 @@ def test_gron_stringify_parse_round_trip(s, n, b):
   let value = {"s": s, "n": n, "b": b, "nested": {"arr": [n, b], "s2": s}}
   | assert_eq(gron::gron_parse(gron::gron_stringify(value)), value)
 end
+
+# Strings hold quotes, a backslash, a newline, dots, brackets and a non-ASCII character.
+# @small_scope(3, [enumerate::json({"max_depth": 1, "charset": "a\"\\\n é.[]"})])
+def test_gron_stringify_parse_roundtrip(value):
+  assert_eq(gron::gron_parse(gron::gron_stringify(value)), value)
+end
