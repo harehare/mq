@@ -13,6 +13,16 @@ def test_jaro_winkler_partial_match():
 end
 
 # @parametrize([["", "", 1], ["a", "", 0], ["", "a", 0], ["abc", "abc", 1]])
+def test_jaro(a, b, expected):
+  assert_eq(fuzzy::jaro(a, b), expected)
+end
+
+# @property(50, [gen::string("abcdefghijklmnopqrstuvwxyz", 6), gen::string("abcdefghijklmnopqrstuvwxyz", 6)])
+def test_jaro_is_symmetric(a, b):
+  assert_eq(fuzzy::jaro(a, b), fuzzy::jaro(b, a))
+end
+
+# @parametrize([["", "", 1], ["a", "", 0], ["", "a", 0], ["abc", "abc", 1]])
 def test_jaro_winkler(a, b, expected):
   let result = fuzzy::jaro_winkler(a, b)
   | assert_eq(result, expected)
