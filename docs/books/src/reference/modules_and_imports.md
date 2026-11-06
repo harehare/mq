@@ -422,8 +422,9 @@ end
 
 `mq-test --smt file.mq` prints the contracts as SMT-LIB so a solver can check them for all inputs,
 e.g. `mq-test --smt file.mq | z3 -in` (`unsat` means the `@ensures` always holds), or
-`mq-test --verify file.mq` to run z3 and get a verdict per contract. Only a small subset (integers,
-booleans, strings and arrays of integers) is translated; other functions are skipped with a comment.
+`mq-test --verify file.mq` to run z3 and get a verdict per contract. Only a small subset (numbers,
+booleans, strings and arrays) is translated, with sorts given by a `# @type((string) -> string)` comment;
+other functions are skipped with a comment.
 
 ### Small-scope tests (`enumerate`)
 

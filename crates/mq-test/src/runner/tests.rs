@@ -2005,6 +2005,7 @@ fn test_emit_smt_translates_contracts_and_skips_unsupported_bodies() {
 # @ensures(result >= lo && result <= hi)
 def clamp(x, lo, hi): min(max(x, lo), hi);
 
+# @type((bool, bool) -> bool)
 # @ensures(result == a)
 def pick(a, b): if (a): b else: false;
 
@@ -2087,16 +2088,20 @@ fn test_contract_stats_count_evaluations_and_unmet_requires() {
 #[test]
 fn test_emit_smt_translates_strings_and_arrays() {
     let content = "\
+# @type((string, string) -> string)
 # @ensures(len(result) == len(a) + len(b))
 def concat(a, b): a + b;
 
+# @type((string) -> string)
 # @ensures(starts_with(result, \"hi \"))
 def greet(name): \"hi \" + name;
 
+# @type(([number]) -> number)
 # @requires(len(xs) > 0)
 # @ensures(result == xs[0])
 def head(xs): xs[0];
 
+# @type(([number], number) -> [number])
 # @ensures(len(result) == len(xs) + 1)
 def push(xs, x): xs + [x];
 ";
@@ -2188,4 +2193,33 @@ fn test_smt_counterexamples_are_replayed_in_mq() {
         smt::replay(content, &obligations[0], &counterexample("0", "7")),
         smt::Replay::NotReproduced(why) if why.contains("mq returned 0")
     ));
+}
+
+#[rstest]
+#[case("(number, string) -> bool", true)]
+#[case("() -> [string]", true)]
+#[case("([[number]]) -> bool", true)]
+#[case("(number) -> dict", false)]
+#[case("(number)", false)]
+#[case("number -> number", false)]
+fn test_smt_type_annotations_are_parsed(#[case] text: &str, #[case] valid: bool) {
+    assert_eq!(smt::signature_is_valid(text), valid, "{text}");
+}
+
+#[test]
+fn test_smt_reports_a_missing_or_wrong_type_annotation() {
+    // Without `@type`, `name` is a number, so `+ "x"` mismatches and the hint says why.
+    let smt = TestRunner::emit_smt("# @ensures(true)\ndef f(name): \"x\" + name;\n").unwrap();
+    assert!(smt.contains("; skipped f:"), "{smt}");
+    assert!(smt.contains("@type"), "{smt}");
+
+    let smt = TestRunner::emit_smt("# @type((number, number) -> number)\n# @ensures(true)\ndef f(a): a;\n").unwrap();
+    assert!(smt.contains("lists 2 parameters but `f` has 1"), "{smt}");
+}
+
+#[test]
+fn test_smt_empty_array_takes_the_expected_item_sort() {
+    let content = "# @type(([string]) -> [string])\n# @ensures(len(result) == len(xs))\ndef f(xs): xs + [];\n";
+    let smt = TestRunner::emit_smt(content).unwrap();
+    assert!(smt.contains("(seq.++ xs (as seq.empty (Seq String)))"), "{smt}");
 }

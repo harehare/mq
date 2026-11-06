@@ -1,4 +1,5 @@
 # Contracts checked by `just smt` (`mq-test --verify`). Every @ensures here holds for all inputs.
+# `@type` gives the sorts; a function without one takes and returns numbers.
 
 # @requires(lo <= hi)
 # @ensures(result >= lo && result <= hi)
@@ -8,19 +9,24 @@ def clamp(x, lo, hi): min(max(x, lo), hi);
 # @ensures(result == x || result == -x)
 def distance_from_zero(x): abs(x);
 
+# @type((string, string) -> string)
 # @ensures(len(result) == len(a) + len(b))
 def concat(a, b): a + b;
 
+# @type((string) -> string)
 # @ensures(starts_with(result, "hello, "))
 # @ensures(len(result) >= 7)
 def greet(name): "hello, " + name;
 
+# @type(([number], number) -> [number])
 # @ensures(len(result) == len(xs) + 1)
 def push(xs, x): xs + [x];
 
+# @type(([number]) -> number)
 # @requires(len(xs) > 0)
 # @ensures(result == xs[0])
 def head(xs): xs[0];
 
+# @type((bool, bool) -> bool)
 # @ensures(result == (a && b))
 def both(a, b): if (a): b else: false;

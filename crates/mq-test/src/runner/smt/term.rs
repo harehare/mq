@@ -146,7 +146,12 @@ impl Typed {
     }
 
     /// Checks that this term has sort `expected`; `context` names the construct for the error.
-    pub(super) fn expect(self, expected: Sort, context: &str) -> Result<Self> {
+    pub(super) fn expect(mut self, expected: Sort, context: &str) -> Result<Self> {
+        // `[]` has no item sort of its own, so it takes the one expected here.
+        if let (Term::EmptySeq(_), Sort::Seq(elem)) = (&self.term, &expected) {
+            self.term = Term::EmptySeq((**elem).clone());
+            self.sort = expected.clone();
+        }
         if self.sort == expected {
             Ok(self)
         } else {

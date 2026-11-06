@@ -195,9 +195,16 @@ def clamp(x, lo, hi): min(max(x, lo), hi);
 For each function with `@ensures`, the script defines the function, assumes every `@requires` and
 asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` is a counterexample.
 
-- Supported sorts: Int, Bool, String and arrays of Int (SMT sequences). A parameter's sort is
-  inferred from how it is used (`&&`, `if` conditions: Bool; `+ "x"`, `starts_with`: String;
-  `+ [x]`, `xs[i]`: array; only `len(x)`: tried as a String, then an array; otherwise Int).
+- Sorts come from a `# @type(...)` comment on the `def`, written like `mq-check` types: `number`,
+  `bool`, `string`, `[T]` and `(A, B) -> R`. A function without one takes and returns numbers.
+  Nothing is inferred, so the sorts are always the ones you wrote.
+
+  ```mq
+  # @type((string, [number]) -> bool)
+  # @ensures(result == (len(s) > len(xs)))
+  def longer(s, xs): len(s) > len(xs);
+  ```
+
 - Supported expressions: integer, string (printable ASCII) and array literals, `+ - * %` (`+` also
   concatenates strings and arrays), comparisons, `==`/`!=`, `&&`, `||`, `!`, `not`, `if`/`elif`/
   `else` (the `else` is required), leading `let` bindings, `len`, `x[i]`, `starts_with`,

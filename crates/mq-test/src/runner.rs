@@ -46,6 +46,8 @@ enum TestAnnotation {
     Requires(String),
     /// `# @ensures(expr)`: postcondition checked on return, with `result` bound.
     Ensures(String),
+    /// `# @type((number, string) -> bool)`: the sorts `--smt` uses, see `smt/signature.rs`.
+    Type(String),
 }
 
 /// Output format for `--list` and for a normal test run.
@@ -910,6 +912,7 @@ impl TestRunner {
             }
             "requires" => Some(TestAnnotation::Requires(args)),
             "ensures" => Some(TestAnnotation::Ensures(args)),
+            "type" => Some(TestAnnotation::Type(args)),
             "tags" | "tag" => Some(TestAnnotation::Tags(
                 args.split(',')
                     .map(|tag| tag.trim().to_string())
@@ -978,7 +981,10 @@ impl TestRunner {
             .find(|annotation| {
                 !matches!(
                     annotation,
-                    TestAnnotation::Tags(_) | TestAnnotation::Requires(_) | TestAnnotation::Ensures(_)
+                    TestAnnotation::Tags(_)
+                        | TestAnnotation::Requires(_)
+                        | TestAnnotation::Ensures(_)
+                        | TestAnnotation::Type(_)
                 )
             })
     }

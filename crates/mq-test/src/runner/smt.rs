@@ -8,6 +8,7 @@
 //! subset is reported in a `; skipped` comment instead of being approximated.
 
 mod replay;
+mod signature;
 mod term;
 mod translate;
 mod verify;
@@ -17,7 +18,8 @@ use std::fmt::Write;
 
 use mq_lang::{Arena, AstExpr, CstNodeKind, Shared, SharedCell};
 
-use self::term::{Sort, Typed};
+use self::signature::parse_signature;
+use self::term::{Result as SmtResult, Signature, SmtError, Sort, Typed};
 use self::translate::{Func, Node, Translator};
 use super::TestRunner;
 use super::contract::Contract;
@@ -121,6 +123,7 @@ impl TestRunner {
         }
 
         let (cst, _) = mq_lang::parse_recovery(content);
+        let sigs = Self::signatures(&cst, &funcs);
         let mut entries = Vec::new();
         for node in &cst {
             let CstNodeKind::Def { name, .. } = &node.kind else {
@@ -133,7 +136,7 @@ impl TestRunner {
             if ensures.is_empty() {
                 continue;
             }
-            entries.push(match Self::smt_for(&name, &funcs, &requires, &ensures) {
+            entries.push(match Self::smt_for(&name, &funcs, &sigs, &requires, &ensures) {
                 Ok(obligations) => Entry::Checks(obligations),
                 Err(reason) => Entry::Skipped { function: name, reason },
             });
@@ -145,6 +148,7 @@ impl TestRunner {
     fn smt_for(
         name: &str,
         funcs: &HashMap<String, Func>,
+        sigs: &HashMap<String, SmtResult<Signature>>,
         requires: &[Contract],
         ensures: &[Contract],
     ) -> Result<Vec<Obligation>, String> {
@@ -153,10 +157,9 @@ impl TestRunner {
             .ok_or_else(|| "only top-level defs with plain parameters are supported".to_string())?;
         let requires_ast = Self::parse_contracts(requires)?;
         let ensures_ast = Self::parse_contracts(ensures)?;
-        let hints: Vec<Node> = requires_ast.iter().chain(&ensures_ast).cloned().collect();
 
-        let mut tr = Translator::new(funcs);
-        let sig = tr.define(name, &hints).map_err(|e| e.to_string())?;
+        let mut tr = Translator::new(funcs, sigs);
+        let sig = tr.define(name).map_err(|e| explain(&e))?;
 
         let mut env: translate::Env = target.params.iter().cloned().zip(sig.params.iter().cloned()).collect();
         let mut declarations = String::new();
@@ -168,7 +171,7 @@ impl TestRunner {
             let t = tr
                 .expr(ast, &env)
                 .and_then(|t| t.expect(Sort::Bool, &c.expr))
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| explain(&e))?;
             let _ = writeln!(assumptions, "(assert {})", t.term);
         }
 
@@ -179,14 +182,14 @@ impl TestRunner {
             .zip(&sig.params)
             .map(|(p, s)| Typed::var(p, s.clone()))
             .collect();
-        let call = Typed::call(name, &sig, args).map_err(|e| e.to_string())?;
+        let call = Typed::call(name, &sig, args).map_err(|e| explain(&e))?;
         env.insert("result".to_string(), sig.ret.clone());
         let mut violations = Vec::new();
         for (c, ast) in ensures.iter().zip(&ensures_ast) {
             let holds = tr
                 .expr(ast, &env)
                 .and_then(|t| t.expect(Sort::Bool, &c.expr))
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| explain(&e))?;
             let violated = Typed::not(holds).bind("result", call.clone());
             violations.push((c, format!("(assert {})", violated.term)));
         }
@@ -219,6 +222,50 @@ impl TestRunner {
             .collect())
     }
 
+    /// The `@type` of every top-level `def`; an unannotated one takes and returns numbers.
+    fn signatures(
+        cst: &[Shared<mq_lang::CstNode>],
+        funcs: &HashMap<String, Func>,
+    ) -> HashMap<String, SmtResult<Signature>> {
+        let mut sigs = HashMap::new();
+        for node in cst {
+            let CstNodeKind::Def { name, .. } = &node.kind else {
+                continue;
+            };
+            let Some(name) = name.name().map(|n| n.to_string()) else {
+                continue;
+            };
+            let Some(func) = funcs.get(&name) else {
+                continue;
+            };
+            let annotation = Self::merge_annotation_lines(&node.leading_trivia)
+                .into_iter()
+                .find_map(|(_, comment)| match Self::parse_annotation(&comment) {
+                    Some(super::TestAnnotation::Type(text)) => Some(text),
+                    _ => None,
+                });
+            let sig = match annotation {
+                None => Ok(Signature {
+                    params: vec![Sort::Int; func.params.len()],
+                    ret: Sort::Int,
+                }),
+                Some(text) => parse_signature(&text).and_then(|sig| {
+                    if sig.params.len() == func.params.len() {
+                        Ok(sig)
+                    } else {
+                        Err(SmtError::Invalid(format!(
+                            "@type lists {} parameters but `{name}` has {}",
+                            sig.params.len(),
+                            func.params.len()
+                        )))
+                    }
+                }),
+            };
+            sigs.insert(name, sig);
+        }
+        sigs
+    }
+
     fn parse_contracts(contracts: &[Contract]) -> Result<Vec<Node>, String> {
         contracts
             .iter()
@@ -232,4 +279,20 @@ impl TestRunner {
             })
             .collect()
     }
+}
+
+/// An error message, with a hint when a sort mismatch may come from a missing `@type`.
+fn explain(error: &SmtError) -> String {
+    match error {
+        SmtError::Mismatch { .. } => {
+            format!("{error} (parameters and results are numbers unless a `# @type(...)` comment says otherwise)")
+        }
+        _ => error.to_string(),
+    }
+}
+
+/// Whether `text` is a valid `@type` signature.
+#[cfg(test)]
+pub(super) fn signature_is_valid(text: &str) -> bool {
+    parse_signature(text).is_ok()
 }
