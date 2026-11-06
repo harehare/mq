@@ -24,6 +24,8 @@ jobs:
         with:
           toolchain: nightly
           cache: false
+          # nightly adds new lints; do not let them fail the fuzz build
+          rustflags: ""
       - uses: extractions/setup-just@v4.0.0
         with:
           just-version: 1.58.0
@@ -35,6 +37,7 @@ jobs:
           workspaces: fuzz
       - name: Fuzz ${{ matrix.target }}
         env:
+          CARGO_BUILD_WARNINGS: warn
           # fat LTO breaks sancov symbols at link time under ASAN
           CARGO_PROFILE_RELEASE_LTO: "off"
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
