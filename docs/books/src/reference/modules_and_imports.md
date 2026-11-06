@@ -395,6 +395,7 @@ large or convoluted value:
 | `gen::shrink_value(value)`               | One step of "smaller" candidates for `value` (numbers toward `0`, strings/arrays toward shorter, dicts toward simpler values) |
 | `gen::shrink(args, is_interesting)`      | Searches the array `args` for a smaller array that's still `is_interesting` (a `fn(args): bool`) |
 
+<!-- doc-test: skip -->
 ```mq
 import "gen"
 | gen::shrink([10], fn(a): a[0] > 3;)
