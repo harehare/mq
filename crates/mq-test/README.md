@@ -151,7 +151,7 @@ end
 
 After the run, a `## Contracts` table lists each contract with how often it was evaluated and how
 often it did not hold (`❌` a violated `@ensures`, `↷` an unmet `@requires`, i.e. an input outside the
-function's domain). A contract that never appears was never evaluated by the tests. `--format json`
+function's domain). A contract shown as `⚪` (0 evaluations) was never exercised by the tests. `--format json`
 carries the same data as a `contracts` array per file.
 
 The `def` is renamed to `__orig_<name>` and a checking wrapper is appended, so line numbers stay put.

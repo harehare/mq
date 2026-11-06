@@ -339,8 +339,9 @@ impl TestRunner {
                 return;
             }
 
+            let contract_stats = contract::ContractStats::default();
             let uses_small_scope = tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. }));
-            let content = match Self::apply_contracts(&content, uses_small_scope) {
+            let content = match Self::apply_contracts(&content, uses_small_scope, Some(&contract_stats)) {
                 Ok(content) => content,
                 Err(message) => {
                     any_failed.store(true, Ordering::Relaxed);
@@ -362,7 +363,9 @@ impl TestRunner {
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
             };
             let mut engine = mq_lang::Engine::with_io(
-                crate::resolver::TestModuleResolver::default().with_label_nested(uses_small_scope),
+                crate::resolver::TestModuleResolver::default()
+                    .with_label_nested(uses_small_scope)
+                    .with_contract_stats(contract_stats.clone()),
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
             );
             engine.load_builtin_module();
@@ -373,7 +376,6 @@ impl TestRunner {
             }
 
             Self::register_clock(&mut engine);
-            let contract_stats = contract::ContractStats::default();
             contract_stats.register(&mut engine);
 
             {
@@ -1192,6 +1194,7 @@ fn open_in_default_app(path: &Path) -> miette::Result<()> {
 }
 
 mod contract;
+pub(crate) use contract::ContractStats;
 mod smt;
 #[cfg(test)]
 mod tests;

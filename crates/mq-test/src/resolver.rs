@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use mq_lang::{DefaultModuleResolver, ModuleError, ModuleResolver};
 
-use crate::runner::TestRunner;
+use crate::runner::{ContractStats, TestRunner};
 
 /// Modules compiled into `mq-test`, by import name.
 const BUNDLED_MODULES: &[(&str, &str)] = &[
@@ -29,9 +29,16 @@ fn bundled(module_name: &str) -> Option<&'static str> {
 pub(crate) struct TestModuleResolver {
     fallback: DefaultModuleResolver,
     label_nested: bool,
+    stats: Option<ContractStats>,
 }
 
 impl TestModuleResolver {
+    /// Registers the contracts of every resolved module in `stats`.
+    pub(crate) fn with_contract_stats(mut self, stats: ContractStats) -> Self {
+        self.stats = Some(stats);
+        self
+    }
+
     /// Passes `label_nested` through to [`TestRunner::apply_contracts`].
     pub(crate) fn with_label_nested(mut self, label_nested: bool) -> Self {
         self.label_nested = label_nested;
@@ -48,7 +55,7 @@ impl ModuleResolver for TestModuleResolver {
         if !source.contains("@requires") && !source.contains("@ensures") {
             return Ok(source);
         }
-        TestRunner::apply_contracts(&source, self.label_nested)
+        TestRunner::apply_contracts(&source, self.label_nested, self.stats.as_ref())
             .map_err(|message| ModuleError::IOError(format!("{module_name}: {message}").into()))
     }
 

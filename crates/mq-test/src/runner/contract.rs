@@ -53,7 +53,14 @@ impl TestRunner {
     /// from a contracted function's body is re-labelled "in nested call", so `@small_scope`
     /// can tell it from a violation by the function the test called directly. A violation
     /// that passes through an uncontracted helper first is still seen as direct.
-    pub(crate) fn apply_contracts(content: &str, label_nested: bool) -> Result<String, String> {
+    ///
+    /// Every contract is also registered in `stats`, so the report can list those the tests
+    /// never evaluated.
+    pub(crate) fn apply_contracts(
+        content: &str,
+        label_nested: bool,
+        stats: Option<&ContractStats>,
+    ) -> Result<String, String> {
         let (nodes, _) = mq_lang::parse_recovery(content);
         let mut contracted = Vec::new();
 
@@ -117,6 +124,16 @@ impl TestRunner {
 
         if contracted.is_empty() {
             return Ok(content.to_string());
+        }
+        if let Some(stats) = stats {
+            for c in &contracted {
+                for r in &c.requires {
+                    stats.declare(&c.name, "requires", r);
+                }
+                for e in &c.ensures {
+                    stats.declare(&c.name, "ensures", e);
+                }
+            }
         }
 
         let mut taken = std::collections::HashSet::new();
@@ -259,12 +276,21 @@ fn escape_mq_string(s: &str) -> String {
 
 /// How often each contract was evaluated and how often it did not hold, keyed by
 /// (function, kind, line, expression). Fed by the [`CONTRACT_CHECK_FN`] host function.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub(crate) struct ContractStats(std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<ContractKey, (u64, u64)>>>);
 
 type ContractKey = (String, String, u32, String);
 
 impl ContractStats {
+    /// Records `contract` with zero evaluations unless it already has some.
+    fn declare(&self, name: &str, kind: &str, contract: &Contract) {
+        self.0
+            .lock()
+            .unwrap()
+            .entry((name.to_string(), kind.to_string(), contract.line, contract.expr.clone()))
+            .or_default();
+    }
+
     /// Registers [`CONTRACT_CHECK_FN`] on `engine`.
     pub(crate) fn register<IO: mq_lang::Io>(
         &self,
@@ -304,6 +330,7 @@ impl ContractStats {
         );
         for ((name, kind, line, expr), (evaluated, violated)) in map.iter() {
             let icon = match (*violated, kind.as_str()) {
+                (0, _) if *evaluated == 0 => "⚪",
                 (0, _) => "✅",
                 (_, "ensures") => "❌",
                 _ => "↷",
@@ -313,7 +340,11 @@ impl ContractStats {
                 expr.replace('|', "\\|")
             ));
         }
-        out.push_str("\n`↷`: precondition not met, so the input was outside the function's domain.\n");
+        out.push_str("\n`↷`: precondition not met, so the input was outside the function's domain.");
+        if map.values().any(|(evaluated, _)| *evaluated == 0) {
+            out.push_str(" `⚪`: never evaluated by these tests.");
+        }
+        out.push('\n');
         Some(out)
     }
 
