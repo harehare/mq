@@ -32,6 +32,9 @@ pub(crate) struct StaticExactCallTarget {
 pub(crate) enum UpvalueSource {
     Local(u16),
     Upvalue(u16),
+    /// A fresh cell holding the closure that is executing. A named function captures itself this
+    /// way instead of through its defining slot, which would form a reference cycle.
+    SelfClosure,
 }
 
 /// Binary operation.

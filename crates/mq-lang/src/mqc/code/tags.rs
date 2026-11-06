@@ -11,6 +11,7 @@ pub(super) mod parameter {
 pub(super) mod capture {
     pub(crate) const LOCAL: u8 = 0;
     pub(crate) const UPVALUE: u8 = 1;
+    pub(crate) const SELF_CLOSURE: u8 = 2;
 }
 
 /// Constant wire tags.

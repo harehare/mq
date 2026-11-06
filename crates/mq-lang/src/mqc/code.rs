@@ -212,6 +212,7 @@ fn encode_upvalue_sources(writer: &mut Writer, sources: &[UpvalueSource]) -> Res
                 writer.u8(tags::capture::UPVALUE);
                 writer.var_u16(*index);
             }
+            UpvalueSource::SelfClosure => writer.u8(tags::capture::SELF_CLOSURE),
         }
     }
     Ok(())
@@ -1088,6 +1089,7 @@ impl Decoder<'_> {
             .map(|_| match self.reader.u8()? {
                 tags::capture::LOCAL => Ok(UpvalueSource::Local(self.reader.var_u16()?)),
                 tags::capture::UPVALUE => Ok(UpvalueSource::Upvalue(self.reader.var_u16()?)),
+                tags::capture::SELF_CLOSURE => Ok(UpvalueSource::SelfClosure),
                 other => Err(invalid(format!("unknown capture kind {other}"))),
             })
             .collect()

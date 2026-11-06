@@ -2740,6 +2740,17 @@ impl<R: ModuleResolver> Compiler<R> {
         if depth == 0 {
             return None;
         }
+        // A closure nested in a named function reaches that function through a cell built when
+        // the closure is made. Capturing the defining slot instead would form a reference cycle.
+        if self.function_names[depth - 1].is_some_and(|(own, ..)| own == name)
+            && self.visible_local(depth - 1, name).is_none()
+        {
+            let idx = self.scopes[depth].add_upvalue(name, UpvalueSource::SelfClosure);
+            return Some(Resolved::Upvalue {
+                index: idx,
+                immutable: true,
+            });
+        }
         match self.resolve_at(depth - 1, name)? {
             Resolved::Local(slot) => {
                 let idx = self.scopes[depth].add_upvalue(name, UpvalueSource::Local(slot));

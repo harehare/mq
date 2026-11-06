@@ -554,6 +554,47 @@ fn run_with_prelude(code: &str) -> RuntimeValue {
     }
 }
 
+/// A named function reaches itself from a nested closure without capturing its own defining
+/// cell, which would be a reference cycle that is never freed.
+#[test]
+fn recursive_def_does_not_capture_its_own_cell() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("def f(n): fn(): f(n);; | 1", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert_eq!(compiled.chunks[0].static_closures.len(), 1);
+    assert!(compiled.chunks[0].static_closures[0].upvalues.is_none());
+    assert!(
+        compiled.chunks[2]
+            .upvalue_names
+            .iter()
+            .any(|name| *name == crate::Ident::new("f"))
+    );
+}
+
+#[rstest]
+#[case::nested("def f(n): if (n == 0): 0 else: do let g = fn(): f(n - 1); | 1 + g() end; | f(5)", 5)]
+#[case::two_levels(
+    "def f(n): if (n == 0): 0 else: do let g = fn(): fn(): f(n - 1);; | let h = g() | 1 + h() end; | f(4)",
+    4
+)]
+#[case::escaped("def f(n): fn(): n + 1;; | let g = f(1) | g()", 2)]
+#[case::escaped_recursion(
+    "def f(n): fn(): if (n == 0): 0 else: do let g = f(n - 1) | 1 + g() end;; | let g = f(3) | g()",
+    3
+)]
+#[case::in_default("def f(n, g = fn(): f;): if (n == 0): 0 else: 1 + f(n - 1); | f(3)", 3)]
+#[case::in_try(
+    "def f(n): if (n == 0): 0 else: try: do let g = fn(): f(n - 1); | 1 + g() end catch: -1; | f(3)",
+    3
+)]
+fn recursion_through_nested_closure(#[case] code: &str, #[case] expected: usize) {
+    assert_eq!(
+        run_with_call_depth_limit(code, 1_000).unwrap(),
+        RuntimeValue::from(expected)
+    );
+}
+
 #[test]
 fn non_capturing_closures_use_chunk_static_storage() {
     use super::bytecode::OpCode;

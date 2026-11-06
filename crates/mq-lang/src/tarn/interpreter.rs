@@ -11,8 +11,8 @@ mod frame;
 mod selectors;
 
 use self::calls::{
-    CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
-    call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
+    CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, SelfClosure, apply_pending,
+    call_builtin, call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
     call_fixed_closure_from_local, call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack,
     call_self_chunk_from_stack, call_stack_value, call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine,
     generator_coroutine, negate_ident,
@@ -1556,7 +1556,14 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::MakeClosure(payload) => {
                 let (target_chunk, sources) = payload.as_ref();
-                let captured = capture_upvalues(sources, locals, upvalues);
+                let captured = capture_upvalues(
+                    sources,
+                    locals,
+                    SelfClosure {
+                        chunk_index: frame.chunk_index,
+                        upvalues: &frame.upvalues,
+                    },
+                );
                 stack.push(StackValue::Closure(Shared::new(Closure {
                     chunk_index: *target_chunk,
                     upvalues: (!captured.is_empty()).then(|| Shared::new(captured)),

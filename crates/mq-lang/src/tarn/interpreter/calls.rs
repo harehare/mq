@@ -9,6 +9,7 @@ use crate::runtime::host::{HostFunctionError, HostFunctions, panic_message};
 use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
+use crate::tarn::value::new_cell;
 use crate::tarn::value::{Cell, Closure, Locals, StackValue};
 use crate::{Ident, Shared, TokenArena};
 use std::collections::VecDeque;
@@ -59,12 +60,23 @@ struct ParameterContext<'chunks, 'execution> {
     limits: &'execution mut super::frame::ExecutionLimits,
 }
 
-pub(super) fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upvalues: &[Cell]) -> Vec<Cell> {
+/// The closure a frame is executing: its chunk and captured cells.
+pub(super) struct SelfClosure<'a> {
+    pub(super) chunk_index: u16,
+    pub(super) upvalues: &'a Option<Shared<Vec<Cell>>>,
+}
+
+pub(super) fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, current: SelfClosure<'_>) -> Vec<Cell> {
+    let upvalues = current.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
     sources
         .iter()
         .map(|source| match source {
             UpvalueSource::Local(slot) => Shared::clone(locals.cell(*slot)),
             UpvalueSource::Upvalue(idx) => Shared::clone(&upvalues[*idx as usize]),
+            UpvalueSource::SelfClosure => new_cell(StackValue::Closure(Shared::new(Closure {
+                chunk_index: current.chunk_index,
+                upvalues: current.upvalues.clone(),
+            }))),
         })
         .collect()
 }
@@ -718,7 +730,10 @@ fn resume_bind_params(
                     let captured = capture_upvalues(
                         default_upvalues,
                         &callee_locals,
-                        callee_upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice),
+                        SelfClosure {
+                            chunk_index: callee_chunk_index,
+                            upvalues: &callee_upvalues,
+                        },
                     );
                     let default_chunk_ref = &context.chunks[*default_chunk as usize];
                     let mut default_locals = context
