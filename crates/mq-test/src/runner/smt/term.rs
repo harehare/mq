@@ -3,18 +3,23 @@
 
 use std::fmt;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub(super) enum Sort {
     Int,
     Bool,
+    Str,
+    /// An array, modeled as an SMT-LIB sequence.
+    Seq(Box<Sort>),
 }
 
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Sort::Int => "Int",
-            Sort::Bool => "Bool",
-        })
+        match self {
+            Sort::Int => f.write_str("Int"),
+            Sort::Bool => f.write_str("Bool"),
+            Sort::Str => f.write_str("String"),
+            Sort::Seq(elem) => write!(f, "(Seq {elem})"),
+        }
     }
 }
 
@@ -66,6 +71,9 @@ pub(super) fn symbol(name: &str) -> String {
 pub(super) enum Term {
     Int(i64),
     Bool(bool),
+    Str(String),
+    /// `(as seq.empty (Seq elem))`.
+    EmptySeq(Sort),
     Var(String),
     /// A built-in operator applied to arguments.
     App(&'static str, Vec<Term>),
@@ -81,6 +89,8 @@ impl fmt::Display for Term {
             Term::Int(n) if *n < 0 => write!(f, "(- {})", n.unsigned_abs()),
             Term::Int(n) => write!(f, "{n}"),
             Term::Bool(b) => write!(f, "{b}"),
+            Term::Str(text) => write!(f, "\"{}\"", text.replace('"', "\"\"")),
+            Term::EmptySeq(elem) => write!(f, "(as seq.empty (Seq {elem}))"),
             Term::Var(name) => f.write_str(&symbol(name)),
             Term::App(op, args) => write_app(f, op, args),
             Term::Call(name, args) if args.is_empty() => f.write_str(&symbol(name)),
@@ -164,6 +174,106 @@ impl Typed {
         ))
     }
 
+    /// `a + b` over two Ints, two strings (concatenation) or two arrays (concatenation).
+    pub(super) fn add(a: Typed, b: Typed) -> Result<Self> {
+        match &a.sort {
+            Sort::Int => Self::arith("+", a, b),
+            Sort::Str => {
+                let b = b.expect(Sort::Str, "+")?;
+                Ok(Self::app("str.++", vec![a, b], Sort::Str))
+            }
+            Sort::Seq(_) => {
+                let sort = a.sort.clone();
+                let b = b.expect(sort.clone(), "+")?;
+                Ok(Self::app("seq.++", vec![a, b], sort))
+            }
+            Sort::Bool => Err(SmtError::Mismatch {
+                context: "+".to_string(),
+                expected: Sort::Int,
+                found: Sort::Bool,
+            }),
+        }
+    }
+
+    /// A string literal. Only printable ASCII is translated.
+    pub(super) fn string(text: &str) -> Result<Self> {
+        if !text.chars().all(|c| (' '..='~').contains(&c)) {
+            return Err(SmtError::Unsupported(
+                "non-ASCII or control characters in a string".to_string(),
+            ));
+        }
+        Ok(Self {
+            term: Term::Str(text.to_string()),
+            sort: Sort::Str,
+        })
+    }
+
+    /// An array literal whose items share one sort (an empty one is a sequence of Int).
+    pub(super) fn seq(items: Vec<Typed>) -> Result<Self> {
+        let Some(first) = items.first() else {
+            return Ok(Self {
+                term: Term::EmptySeq(Sort::Int),
+                sort: Sort::Seq(Box::new(Sort::Int)),
+            });
+        };
+        let elem = first.sort.clone();
+        let units = items
+            .into_iter()
+            .map(|i| {
+                i.expect(elem.clone(), "array item")
+                    .map(|i| Term::App("seq.unit", vec![i.term]))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let term = units
+            .into_iter()
+            .reduce(|acc, u| Term::App("seq.++", vec![acc, u]))
+            .unwrap_or(Term::EmptySeq(elem.clone()));
+        Ok(Self {
+            term,
+            sort: Sort::Seq(Box::new(elem)),
+        })
+    }
+
+    /// `len(x)` of a string or an array.
+    pub(super) fn len(a: Typed) -> Result<Self> {
+        let op = match a.sort {
+            Sort::Str => "str.len",
+            Sort::Seq(_) => "seq.len",
+            _ => {
+                return Err(SmtError::Mismatch {
+                    context: "len".to_string(),
+                    expected: Sort::Str,
+                    found: a.sort,
+                });
+            }
+        };
+        Ok(Self::app(op, vec![a], Sort::Int))
+    }
+
+    /// `a[i]` for an array (its item) or a string (the one-character string).
+    pub(super) fn index(a: Typed, i: Typed) -> Result<Self> {
+        let i = i.expect(Sort::Int, "index")?;
+        match a.sort.clone() {
+            Sort::Str => Ok(Self::app("str.at", vec![a, i], Sort::Str)),
+            Sort::Seq(elem) => Ok(Self::app("seq.nth", vec![a, i], *elem)),
+            found => Err(SmtError::Mismatch {
+                context: "index".to_string(),
+                expected: Sort::Str,
+                found,
+            }),
+        }
+    }
+
+    /// `contains`, `starts_with` or `ends_with` of a string and a second string.
+    pub(super) fn str_predicate(name: &str, subject: Typed, other: Typed) -> Result<Self> {
+        let (subject, other) = (subject.expect(Sort::Str, name)?, other.expect(Sort::Str, name)?);
+        Ok(match name {
+            "contains" => Self::app("str.contains", vec![subject, other], Sort::Bool),
+            "starts_with" => Self::app("str.prefixof", vec![other, subject], Sort::Bool),
+            _ => Self::app("str.suffixof", vec![other, subject], Sort::Bool),
+        })
+    }
+
     /// `a op b` over Ints giving a Bool (`<`, `<=`, `>`, `>=`).
     pub(super) fn compare(op: &'static str, a: Typed, b: Typed) -> Result<Self> {
         Ok(Self::app(
@@ -175,7 +285,7 @@ impl Typed {
 
     /// `a == b` (or `a != b`) over two terms of the same sort.
     pub(super) fn equal(a: Typed, b: Typed, negate: bool) -> Result<Self> {
-        let b = b.expect(a.sort, if negate { "!=" } else { "==" })?;
+        let b = b.expect(a.sort.clone(), if negate { "!=" } else { "==" })?;
         let eq = Self::app("=", vec![a, b], Sort::Bool);
         Ok(if negate { Self::not(eq) } else { eq })
     }
@@ -201,7 +311,7 @@ impl Typed {
 
     pub(super) fn ite(cond: Typed, then: Typed, otherwise: Typed) -> Result<Self> {
         let cond = cond.expect(Sort::Bool, "if condition")?;
-        let otherwise = otherwise.expect(then.sort, "if branches")?;
+        let otherwise = otherwise.expect(then.sort.clone(), "if branches")?;
         Ok(Self {
             sort: then.sort,
             term: Term::Ite(Box::new(cond.term), Box::new(then.term), Box::new(otherwise.term)),
@@ -220,11 +330,11 @@ impl Typed {
         let terms = args
             .into_iter()
             .zip(&sig.params)
-            .map(|(a, s)| a.expect(*s, name).map(|a| a.term))
+            .map(|(a, s)| a.expect(s.clone(), name).map(|a| a.term))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             term: Term::Call(name.to_string(), terms),
-            sort: sig.ret,
+            sort: sig.ret.clone(),
         })
     }
 

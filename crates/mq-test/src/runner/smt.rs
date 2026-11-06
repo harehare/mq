@@ -9,6 +9,7 @@
 
 mod term;
 mod translate;
+mod verify;
 
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -20,9 +21,80 @@ use self::translate::{Func, Node, Translator};
 use super::TestRunner;
 use super::contract::Contract;
 
+#[cfg(test)]
+pub(super) use self::verify::parse_output;
+pub(super) use self::verify::{Verdict, report_markdown, solve};
+
+/// One `@ensures` to check: the solver is asked for an input satisfying `setup` (definitions,
+/// declarations and every `@requires`) but violating the `@ensures`.
+pub(super) struct Obligation {
+    pub(super) function: String,
+    pub(super) line: u32,
+    pub(super) expr: String,
+    /// Commands shared by every obligation of the function.
+    setup: std::rc::Rc<str>,
+    /// The negated `@ensures`, as an `assert` command.
+    violated: String,
+}
+
+impl Obligation {
+    /// A self-contained script that ends with `(check-sat)`.
+    pub(super) fn script(&self, with_model: bool) -> String {
+        let mut s = format!(
+            "(set-option :produce-models true)\n{}{}\n(check-sat)\n",
+            self.setup, self.violated
+        );
+        if with_model {
+            s.push_str("(get-model)\n");
+        }
+        s
+    }
+}
+
+/// The outcome of translating one function.
+pub(super) enum Entry {
+    Checks(Vec<Obligation>),
+    Skipped { function: String, reason: String },
+}
+
 impl TestRunner {
     /// Renders the SMT-LIB script for every contracted `def` in `content` that has an `@ensures`.
     pub(super) fn emit_smt(content: &str) -> Result<String, String> {
+        let entries = Self::smt_entries(content)?;
+        let mut out = String::from("(set-option :produce-models true)\n");
+        if entries.is_empty() {
+            out.push_str("; no function with @ensures\n");
+        }
+        for entry in &entries {
+            out.push('\n');
+            match entry {
+                Entry::Skipped { function, reason } => {
+                    let _ = writeln!(out, "; skipped {function}: {reason}");
+                }
+                Entry::Checks(obligations) => {
+                    let Some(first) = obligations.first() else {
+                        continue;
+                    };
+                    let _ = write!(out, "; {}\n(push 1)\n{}", first.function, first.setup);
+                    for o in obligations {
+                        let _ = write!(
+                            out,
+                            "(push 1)\n(echo \"{}: @ensures({}) (line {}): unsat = holds, sat = counterexample\")\n{}\n(check-sat)\n(pop 1)\n",
+                            o.function,
+                            o.expr.replace('"', "\"\""),
+                            o.line,
+                            o.violated
+                        );
+                    }
+                    out.push_str("(pop 1)\n");
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Translates every contracted `def` of `content` that has an `@ensures`.
+    pub(super) fn smt_entries(content: &str) -> Result<Vec<Entry>, String> {
         let arena = Shared::new(SharedCell::new(Arena::new(16)));
         let program = mq_lang::parse(content, arena).map_err(|e| e.to_string())?;
         let mut funcs: HashMap<String, Func> = HashMap::new();
@@ -43,8 +115,7 @@ impl TestRunner {
         }
 
         let (cst, _) = mq_lang::parse_recovery(content);
-        let mut out = String::from("(set-option :produce-models true)\n");
-        let mut any = false;
+        let mut entries = Vec::new();
         for node in &cst {
             let CstNodeKind::Def { name, .. } = &node.kind else {
                 continue;
@@ -56,28 +127,21 @@ impl TestRunner {
             if ensures.is_empty() {
                 continue;
             }
-            any = true;
-            out.push('\n');
-            match Self::smt_for(&name, &funcs, &requires, &ensures) {
-                Ok(script) => out.push_str(&script),
-                Err(reason) => {
-                    let _ = writeln!(out, "; skipped {name}: {reason}");
-                }
-            }
+            entries.push(match Self::smt_for(&name, &funcs, &requires, &ensures) {
+                Ok(obligations) => Entry::Checks(obligations),
+                Err(reason) => Entry::Skipped { function: name, reason },
+            });
         }
-        if !any {
-            out.push_str("; no function with @ensures\n");
-        }
-        Ok(out)
+        Ok(entries)
     }
 
-    /// The script checking every `@ensures` of `name` under its `@requires`.
+    /// The obligations for the `@ensures` of `name` under its `@requires`.
     fn smt_for(
         name: &str,
         funcs: &HashMap<String, Func>,
         requires: &[Contract],
         ensures: &[Contract],
-    ) -> Result<String, String> {
+    ) -> Result<Vec<Obligation>, String> {
         let target = funcs
             .get(name)
             .ok_or_else(|| "only top-level defs with plain parameters are supported".to_string())?;
@@ -88,17 +152,18 @@ impl TestRunner {
         let mut tr = Translator::new(funcs);
         let sig = tr.define(name, &hints).map_err(|e| e.to_string())?;
 
-        let mut env: translate::Env = target.params.iter().cloned().zip(sig.params.iter().copied()).collect();
-        let mut script = String::new();
+        let mut env: translate::Env = target.params.iter().cloned().zip(sig.params.iter().cloned()).collect();
+        let mut declarations = String::new();
         for (p, s) in target.params.iter().zip(&sig.params) {
-            let _ = writeln!(script, "(declare-const {} {s})", term::symbol(p));
+            let _ = writeln!(declarations, "(declare-const {} {s})", term::symbol(p));
         }
+        let mut assumptions = String::new();
         for (c, ast) in requires.iter().zip(&requires_ast) {
             let t = tr
                 .expr(ast, &env)
                 .and_then(|t| t.expect(Sort::Bool, &c.expr))
                 .map_err(|e| e.to_string())?;
-            let _ = writeln!(script, "(assert {})", t.term);
+            let _ = writeln!(assumptions, "(assert {})", t.term);
         }
 
         // `result` is bound to the call itself, so the contract reads as written.
@@ -106,32 +171,37 @@ impl TestRunner {
             .params
             .iter()
             .zip(&sig.params)
-            .map(|(p, s)| Typed::var(p, *s))
+            .map(|(p, s)| Typed::var(p, s.clone()))
             .collect();
         let call = Typed::call(name, &sig, args).map_err(|e| e.to_string())?;
-        env.insert("result".to_string(), sig.ret);
+        env.insert("result".to_string(), sig.ret.clone());
+        let mut violations = Vec::new();
         for (c, ast) in ensures.iter().zip(&ensures_ast) {
             let holds = tr
                 .expr(ast, &env)
                 .and_then(|t| t.expect(Sort::Bool, &c.expr))
                 .map_err(|e| e.to_string())?;
             let violated = Typed::not(holds).bind("result", call.clone());
-            let _ = write!(
-                script,
-                "(push 1)\n(echo \"{name}: @ensures({}) (line {}): unsat = holds, sat = counterexample\")\n(assert {})\n(check-sat)\n(get-model)\n(pop 1)\n",
-                c.expr.replace('"', "\"\""),
-                c.line,
-                violated.term
-            );
+            violations.push((c, format!("(assert {})", violated.term)));
         }
 
-        let mut out = format!("; {name}\n(push 1)\n");
+        let mut setup = String::new();
         for d in tr.defs() {
-            let _ = writeln!(out, "{d}");
+            let _ = writeln!(setup, "{d}");
         }
-        out.push_str(&script);
-        out.push_str("(pop 1)\n");
-        Ok(out)
+        setup.push_str(&declarations);
+        setup.push_str(&assumptions);
+        let setup: std::rc::Rc<str> = setup.into();
+        Ok(violations
+            .into_iter()
+            .map(|(c, violated)| Obligation {
+                function: name.to_string(),
+                line: c.line,
+                expr: c.expr.clone(),
+                setup: setup.clone(),
+                violated,
+            })
+            .collect())
     }
 
     fn parse_contracts(contracts: &[Contract]) -> Result<Vec<Node>, String> {

@@ -2083,3 +2083,57 @@ fn test_contract_stats_count_evaluations_and_unmet_requires() {
         "{table}"
     );
 }
+
+#[test]
+fn test_emit_smt_translates_strings_and_arrays() {
+    let content = "\
+# @ensures(len(result) == len(a) + len(b))
+def concat(a, b): a + b;
+
+# @ensures(starts_with(result, \"hi \"))
+def greet(name): \"hi \" + name;
+
+# @requires(len(xs) > 0)
+# @ensures(result == xs[0])
+def head(xs): xs[0];
+
+# @ensures(len(result) == len(xs) + 1)
+def push(xs, x): xs + [x];
+";
+    let smt = TestRunner::emit_smt(content).unwrap();
+    assert!(
+        smt.contains("(define-fun concat ((a String) (b String)) String (str.++ a b))"),
+        "{smt}"
+    );
+    assert!(
+        smt.contains("(define-fun greet ((name String)) String (str.++ \"hi \" name))"),
+        "{smt}"
+    );
+    assert!(
+        smt.contains("(define-fun head ((xs (Seq Int))) Int (seq.nth xs 0))"),
+        "{smt}"
+    );
+    assert!(
+        smt.contains("(define-fun push ((xs (Seq Int)) (x Int)) (Seq Int) (seq.++ xs (seq.unit x)))"),
+        "{smt}"
+    );
+}
+
+#[rstest]
+#[case("unsat\n(error \"model is not available\")\n", smt::Verdict::Holds)]
+#[case("sat\n(\n  (define-fun a () Int\n    0)\n)\n", smt::Verdict::Counterexample("(\n  (define-fun a () Int\n    0)\n)".to_string()))]
+#[case("unknown\n", smt::Verdict::Unknown)]
+#[case("timeout\n", smt::Verdict::Unknown)]
+fn test_smt_solver_output_is_classified(#[case] output: &str, #[case] expected: smt::Verdict) {
+    assert_eq!(smt::parse_output(output), expected);
+}
+
+#[test]
+fn test_smt_missing_solver_is_reported_as_an_error() {
+    let entries = TestRunner::smt_entries("# @ensures(result > 0)\ndef f(n): n;\n").unwrap();
+    let smt::Entry::Checks(obligations) = &entries[0] else {
+        panic!("expected checks");
+    };
+    let verdict = smt::solve("mq-test-no-such-solver -in", &obligations[0]);
+    assert!(matches!(verdict, smt::Verdict::Error(m) if m.contains("cannot run")));
+}

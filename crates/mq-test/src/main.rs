@@ -105,6 +105,15 @@ struct Cli {
     #[arg(long)]
     smt: bool,
 
+    /// Check `@ensures` contracts with an SMT solver (run as an external command) instead of
+    /// running tests. Exits non-zero when a counterexample is found.
+    #[arg(long)]
+    verify: bool,
+
+    /// Solver command line for --verify; it must read SMT-LIB from stdin.
+    #[arg(long, default_value = "z3 -in -t:10000", requires = "verify")]
+    solver: String,
+
     /// Output format for both --list and a normal test run.
     #[arg(long, value_enum, default_value = "text")]
     format: OutputFormat,
@@ -124,6 +133,8 @@ fn main() -> ExitCode {
         .with_update_snapshots(cli.update_snapshots)
         .with_list(cli.list)
         .with_smt(cli.smt)
+        .with_verify(cli.verify)
+        .with_solver(cli.solver)
         .with_format(cli.format)
         .with_module_directories(cli.module_directories)
         .run()

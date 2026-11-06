@@ -21,6 +21,7 @@ mq-test --update-snapshots   # accept current assert_snapshot output as golden
 mq-test --list               # list tests without running (honors -k/--tag)
 mq-test --format json        # JSON for --list and runs, for editors and CI
 mq-test --smt f.mq | z3 -in  # SMT-LIB for @requires/@ensures contracts
+mq-test --verify f.mq        # run a solver (z3) on the contracts, ✅/❌ per @ensures
 mq-test --coverage           # line coverage of included/imported modules
 ```
 
@@ -168,14 +169,17 @@ def push(xs, x): xs + [x];
 ### SMT-LIB
 
 `mq-test --smt file.mq` prints an SMT-LIB script instead of running tests, so a solver can check
-contracts for **all** inputs rather than sampled ones.
+contracts for **all** inputs rather than sampled ones. `mq-test --verify file.mq` runs a solver on
+it and prints a verdict per `@ensures` (`just smt` checks the bundled `smt/examples.mq`):
 
 ```bash
-mq-test --smt clamp.mq | z3 -in
+mq-test --smt clamp.mq | z3 -in   # raw script
+mq-test --verify clamp.mq         # ✅ holds / ❌ counterexample with model / ⚠️ unknown
+mq-test --verify --solver "cvc5 --lang smt2 --tlimit=5000" clamp.mq
 ```
 
-For each function with `@ensures`, the script defines the function, assumes every `@requires` and
-asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` prints a counterexample.
+`--verify` runs the solver (default `z3 -in -t:10000`) as an external command, so `mq-test` itself
+has no solver dependency. It exits non-zero on a counterexample or a solver error.
 
 ```mq
 # @requires(lo <= hi)
@@ -183,10 +187,16 @@ asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` pri
 def clamp(x, lo, hi): min(max(x, lo), hi);
 ```
 
-- Supported: Int and Bool parameters (a parameter used as a condition or with `&&`, `||`, `!` is
-  Bool, otherwise Int), integer literals, `+ - *`, comparisons, `&&`, `||`, `!`, `if`/`elif`/`else`
-  (the `else` is required), leading `let` bindings, `abs`/`min`/`max`, and calls to other
-  top-level `def`s in the file.
+For each function with `@ensures`, the script defines the function, assumes every `@requires` and
+asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` is a counterexample.
+
+- Supported sorts: Int, Bool, String and arrays of Int (SMT sequences). A parameter's sort is
+  inferred from how it is used (`&&`, `if` conditions: Bool; `+ "x"`, `starts_with`: String;
+  `+ [x]`, `xs[i]`: array; only `len(x)`: tried as a String, then an array; otherwise Int).
+- Supported expressions: integer, string (printable ASCII) and array literals, `+ - *` (`+` also
+  concatenates strings and arrays), comparisons, `==`/`!=`, `&&`, `||`, `!`, `not`, `if`/`elif`/
+  `else` (the `else` is required), leading `let` bindings, `len`, `x[i]`, `starts_with`,
+  `ends_with`, `contains`, `abs`/`min`/`max`, and calls to other top-level `def`s in the file.
 - Numbers are modeled as mathematical integers. `/` and `%` are not translated.
 - Self-recursion becomes `define-fun-rec`; a solver may answer `unknown` or time out because no
   induction is performed. Mutual recursion is not supported.

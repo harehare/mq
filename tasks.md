@@ -237,6 +237,14 @@ Run bundled mq tests through the Tarn bytecode VM.
 cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
 ```
 
+## smt
+
+Check `@ensures` contracts with an SMT solver (needs z3 on PATH). Pass files via `MX_ARGS`; defaults to the bundled examples.
+
+```bash
+cargo run -p mq-test -- --verify ${MX_ARGS:-crates/mq-test/smt/examples.mq}
+```
+
 ## bench-mq
 
 Time bundled mq benches through the Tarn bytecode VM.

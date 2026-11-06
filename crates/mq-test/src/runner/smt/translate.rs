@@ -69,35 +69,31 @@ impl<'a> Translator<'a> {
             self.define(callee, &[])?;
         }
 
-        let bools = bool_params(&func.params, func.body.iter().chain(hints));
-        let params: Vec<(String, Sort)> = func
-            .params
-            .iter()
-            .map(|p| (p.clone(), if bools.contains(p) { Sort::Bool } else { Sort::Int }))
-            .collect();
-        let env: Env = params.iter().cloned().collect();
-
+        let evidence = param_evidence(&func.params, func.body.iter().chain(hints));
         let mut first_error = None;
-        for ret in [Sort::Int, Sort::Bool] {
-            let sig = Signature {
-                params: params.iter().map(|(_, s)| *s).collect(),
-                ret,
-            };
-            self.sigs.insert(name.to_string(), sig.clone());
-            match self.program(&func.body, &env) {
-                Ok(body) if body.sort == ret => {
-                    self.defs.push(Define {
-                        name: name.to_string(),
-                        params,
-                        ret,
-                        body: body.term,
-                        recursive,
-                    });
-                    return Ok(sig);
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    first_error.get_or_insert(e);
+        for params in evidence.assignments(&func.params) {
+            let env: Env = params.iter().cloned().collect();
+            for ret in [Sort::Int, Sort::Bool, Sort::Str, Sort::Seq(Box::new(Sort::Int))] {
+                let sig = Signature {
+                    params: params.iter().map(|(_, s)| s.clone()).collect(),
+                    ret: ret.clone(),
+                };
+                self.sigs.insert(name.to_string(), sig.clone());
+                match self.program(&func.body, &env) {
+                    Ok(body) if body.sort == ret => {
+                        self.defs.push(Define {
+                            name: name.to_string(),
+                            params,
+                            ret,
+                            body: body.term,
+                            recursive,
+                        });
+                        return Ok(sig);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        first_error.get_or_insert(e);
+                    }
                 }
             }
         }
@@ -120,7 +116,7 @@ impl<'a> Translator<'a> {
             };
             let value = self.expr(value, &env)?;
             let name = id.name.to_string();
-            env.insert(name.clone(), value.sort);
+            env.insert(name.clone(), value.sort.clone());
             binds.push((name, value));
         }
         let body = self.expr(last, &env)?;
@@ -135,11 +131,15 @@ impl<'a> Translator<'a> {
             AstExpr::Literal(AstLiteral::Number(v)) if v.is_int() => Ok(Typed::int(v.to_int())),
             AstExpr::Literal(AstLiteral::Number(_)) => Err(SmtError::Unsupported("non-integer number".to_string())),
             AstExpr::Literal(AstLiteral::Bool(b)) => Ok(Typed::bool(*b)),
+            AstExpr::Literal(AstLiteral::String(text)) => Typed::string(text),
+            AstExpr::Array(items) => Typed::seq(self.exprs(items, env)?),
+            AstExpr::Index(target, index) => Typed::index(self.expr(target, env)?, self.expr(index, env)?),
             AstExpr::Ident(id) => {
                 let name = id.name.to_string();
-                let sort = *env
+                let sort = env
                     .get(&name)
-                    .ok_or_else(|| SmtError::Invalid(format!("unknown variable `{name}`")))?;
+                    .ok_or_else(|| SmtError::Invalid(format!("unknown variable `{name}`")))?
+                    .clone();
                 Ok(Typed::var(&name, sort))
             }
             AstExpr::Paren(x) => self.expr(x, env),
@@ -151,7 +151,7 @@ impl<'a> Translator<'a> {
             AstExpr::BinaryOp(op, a, b) => {
                 let (a, b) = (self.expr(a, env)?, self.expr(b, env)?);
                 match op {
-                    B::Add => Typed::arith("+", a, b),
+                    B::Add => Typed::add(a, b),
                     B::Sub => Typed::arith("-", a, b),
                     B::Mul => Typed::arith("*", a, b),
                     B::Lt => Typed::compare("<", a, b),
@@ -209,6 +209,9 @@ fn builtin_call(name: &str, args: Vec<Typed>) -> Result<Typed> {
     let ite = |cmp: &'static str, a: Typed, b: Typed| Typed::ite(Typed::compare(cmp, a.clone(), b.clone())?, a, b);
     let mut args = args.into_iter();
     match (name, args.next(), args.next(), args.next()) {
+        ("len", Some(x), None, None) => Typed::len(x),
+        ("not", Some(x), None, None) => Ok(Typed::not(x.expect(Sort::Bool, "not")?)),
+        ("contains" | "starts_with" | "ends_with", Some(a), Some(b), None) => Typed::str_predicate(name, a, b),
         ("abs", Some(x), None, None) => {
             let x = int(x)?;
             Typed::ite(
@@ -223,13 +226,73 @@ fn builtin_call(name: &str, args: Vec<Typed>) -> Result<Typed> {
     }
 }
 
-/// Parameters of `params` used where a Bool is expected anywhere in `nodes`.
-fn bool_params<'n>(params: &[String], nodes: impl IntoIterator<Item = &'n Node>) -> HashSet<String> {
-    let mut bools = HashSet::new();
-    for n in nodes {
-        mark_bools(n, params, &mut bools);
+/// What the body and contracts reveal about the sort of each parameter.
+#[derive(Default)]
+struct Evidence {
+    bools: HashSet<String>,
+    strs: HashSet<String>,
+    seqs: HashSet<String>,
+    /// Used with `len`, which fits both strings and arrays.
+    either: HashSet<String>,
+    /// Indexed with `[i]`: more likely an array than a string.
+    indexed: HashSet<String>,
+}
+
+impl Evidence {
+    /// Every plausible sort assignment, most likely first. Parameters that could be a string
+    /// or an array are tried as a string first.
+    fn assignments(&self, params: &[String]) -> Vec<Vec<(String, Sort)>> {
+        let seq = || Sort::Seq(Box::new(Sort::Int));
+        let mut out: Vec<Vec<(String, Sort)>> = vec![Vec::new()];
+        for p in params {
+            let options = if self.bools.contains(p) {
+                vec![Sort::Bool]
+            } else if self.strs.contains(p) {
+                vec![Sort::Str]
+            } else if self.seqs.contains(p) {
+                vec![seq()]
+            } else if self.indexed.contains(p) {
+                vec![seq(), Sort::Str]
+            } else if self.either.contains(p) {
+                vec![Sort::Str, seq()]
+            } else {
+                vec![Sort::Int]
+            };
+            out = out
+                .into_iter()
+                .flat_map(|prefix| {
+                    options.iter().map(move |s| {
+                        let mut next = prefix.clone();
+                        next.push((p.clone(), s.clone()));
+                        next
+                    })
+                })
+                .collect();
+            // Keeps the search small when many parameters are ambiguous.
+            out.truncate(8);
+        }
+        out
     }
-    bools
+}
+
+fn param_evidence<'n>(params: &[String], nodes: impl IntoIterator<Item = &'n Node>) -> Evidence {
+    let mut ev = Evidence::default();
+    for n in nodes {
+        collect_evidence(n, params, &mut ev);
+    }
+    ev
+}
+
+/// The parameter `node` names, looking through parentheses.
+fn param_of(node: &Node, params: &[String]) -> Option<String> {
+    let mut n = node;
+    while let AstExpr::Paren(inner) = &n.expr {
+        n = inner;
+    }
+    match &n.expr {
+        AstExpr::Ident(id) => Some(id.name.to_string()).filter(|s| params.contains(s)),
+        _ => None,
+    }
 }
 
 /// Whether `node` is syntactically a Bool expression.
@@ -243,61 +306,115 @@ fn is_boolish(node: &Node) -> bool {
     }
 }
 
-/// Records the parameters that appear in a Bool position inside `node`.
-fn mark_bools(node: &Node, params: &[String], bools: &mut HashSet<String>) {
-    let mark = |n: &Node, bools: &mut HashSet<String>| {
-        let mut n = n;
-        while let AstExpr::Paren(inner) = &n.expr {
-            n = inner;
-        }
-        if let AstExpr::Ident(id) = &n.expr {
-            let s = id.name.to_string();
-            if params.contains(&s) {
-                bools.insert(s);
-            }
+/// Whether `node` is syntactically a string.
+fn is_strish(node: &Node) -> bool {
+    match &node.expr {
+        AstExpr::Literal(AstLiteral::String(_)) => true,
+        AstExpr::Paren(x) => is_strish(x),
+        AstExpr::BinaryOp(B::Add, a, b) => is_strish(a) || is_strish(b),
+        _ => false,
+    }
+}
+
+/// Whether `node` is syntactically an array.
+fn is_seqish(node: &Node) -> bool {
+    match &node.expr {
+        AstExpr::Array(_) => true,
+        AstExpr::Paren(x) => is_seqish(x),
+        AstExpr::BinaryOp(B::Add, a, b) => is_seqish(a) || is_seqish(b),
+        _ => false,
+    }
+}
+
+/// Records which parameters appear where a Bool, string or array is expected inside `node`.
+fn collect_evidence(node: &Node, params: &[String], ev: &mut Evidence) {
+    let mark = |n: &Node, set: fn(&mut Evidence) -> &mut HashSet<String>, ev: &mut Evidence| {
+        if let Some(p) = param_of(n, params) {
+            set(ev).insert(p);
         }
     };
+    fn bools(ev: &mut Evidence) -> &mut HashSet<String> {
+        &mut ev.bools
+    }
+    fn strs(ev: &mut Evidence) -> &mut HashSet<String> {
+        &mut ev.strs
+    }
+    fn seqs(ev: &mut Evidence) -> &mut HashSet<String> {
+        &mut ev.seqs
+    }
+    fn either(ev: &mut Evidence) -> &mut HashSet<String> {
+        &mut ev.either
+    }
+    fn indexed(ev: &mut Evidence) -> &mut HashSet<String> {
+        &mut ev.indexed
+    }
     match &node.expr {
         AstExpr::And(xs) | AstExpr::Or(xs) => {
             for x in xs {
-                mark(x, bools);
-                mark_bools(x, params, bools);
+                mark(x, bools, ev);
+                collect_evidence(x, params, ev);
             }
         }
         AstExpr::UnaryOp(op, x) => {
             if matches!(op, AstUnaryOp::Not) {
-                mark(x, bools);
+                mark(x, bools, ev);
             }
-            mark_bools(x, params, bools);
+            collect_evidence(x, params, ev);
         }
         AstExpr::If(branches) | AstExpr::Unless(branches) => {
             let boolish = branches.iter().any(|(_, body)| is_boolish(body));
+            let strish = branches.iter().any(|(_, body)| is_strish(body));
             for (cond, body) in branches {
                 if let Some(c) = cond {
-                    mark(c, bools);
-                    mark_bools(c, params, bools);
+                    mark(c, bools, ev);
+                    collect_evidence(c, params, ev);
                 }
                 if boolish {
-                    mark(body, bools);
+                    mark(body, bools, ev);
                 }
-                mark_bools(body, params, bools);
+                if strish {
+                    mark(body, strs, ev);
+                }
+                collect_evidence(body, params, ev);
             }
         }
         AstExpr::BinaryOp(op, a, b) => {
-            if matches!(op, B::Eq | B::Ne) {
-                if is_boolish(a) {
-                    mark(b, bools);
-                }
-                if is_boolish(b) {
-                    mark(a, bools);
+            if matches!(op, B::Eq | B::Ne | B::Add) {
+                for (this, other) in [(a, b), (b, a)] {
+                    if is_boolish(other) && !matches!(op, B::Add) {
+                        mark(this, bools, ev);
+                    }
+                    if is_strish(other) {
+                        mark(this, strs, ev);
+                    }
+                    if is_seqish(other) {
+                        mark(this, seqs, ev);
+                    }
                 }
             }
-            mark_bools(a, params, bools);
-            mark_bools(b, params, bools);
+            collect_evidence(a, params, ev);
+            collect_evidence(b, params, ev);
         }
-        AstExpr::Call(_, args) => args.iter().for_each(|a| mark_bools(a, params, bools)),
-        AstExpr::Block(p) => p.iter().for_each(|n| mark_bools(n, params, bools)),
-        AstExpr::Paren(x) | AstExpr::Let(_, x) => mark_bools(x, params, bools),
+        AstExpr::Index(target, index) => {
+            mark(target, indexed, ev);
+            collect_evidence(target, params, ev);
+            collect_evidence(index, params, ev);
+        }
+        AstExpr::Call(id, args) => {
+            match (id.name.to_string().as_str(), args.as_slice()) {
+                ("len", [x]) => mark(x, either, ev),
+                ("starts_with" | "ends_with" | "contains", [a, b]) => {
+                    mark(a, strs, ev);
+                    mark(b, strs, ev);
+                }
+                ("not", [x]) => mark(x, bools, ev),
+                _ => {}
+            }
+            args.iter().for_each(|a| collect_evidence(a, params, ev));
+        }
+        AstExpr::Array(items) => items.iter().for_each(|a| collect_evidence(a, params, ev)),
+        AstExpr::Block(p) => p.iter().for_each(|n| collect_evidence(n, params, ev)),
+        AstExpr::Paren(x) | AstExpr::Let(_, x) => collect_evidence(x, params, ev),
         _ => {}
     }
 }

@@ -139,6 +139,8 @@ pub struct TestRunner {
     update_snapshots: bool,
     list: bool,
     smt: bool,
+    verify: bool,
+    solver: String,
     format: OutputFormat,
     module_directories: Vec<PathBuf>,
     step_handler: Option<std::sync::Arc<dyn mq_lang::DebuggerHandler>>,
@@ -170,6 +172,8 @@ impl TestRunner {
             update_snapshots: false,
             list: false,
             smt: false,
+            verify: false,
+            solver: DEFAULT_SOLVER.to_string(),
             format: OutputFormat::default(),
             module_directories: Vec::new(),
             step_handler: None,
@@ -237,6 +241,18 @@ impl TestRunner {
         self
     }
 
+    /// When `true`, checks the contracts with an SMT solver instead of running tests.
+    pub fn with_verify(mut self, verify: bool) -> Self {
+        self.verify = verify;
+        self
+    }
+
+    /// The solver command line used by `--verify` (default `z3 -in -t:10000`).
+    pub fn with_solver(mut self, solver: String) -> Self {
+        self.solver = solver;
+        self
+    }
+
     /// When `true`, prints SMT-LIB for the `@requires`/`@ensures` contracts instead of running tests.
     pub fn with_smt(mut self, smt: bool) -> Self {
         self.smt = smt;
@@ -293,8 +309,8 @@ impl TestRunner {
         if self.list {
             return self.run_list(&test_files);
         }
-        if self.smt {
-            return Self::run_smt(&test_files);
+        if self.smt || self.verify {
+            return self.run_smt(&test_files);
         }
 
         // Merged across all test files, so a shared module gets combined coverage.
@@ -592,15 +608,45 @@ impl TestRunner {
     /// the requested `--format`. A file that fails to read is reported to stderr and skipped;
     /// listing itself always succeeds, since "no tests found" isn't a failure the way a failed
     /// assertion is.
-    /// Prints the SMT-LIB script for the contracts of each file (`--smt`).
-    fn run_smt(test_files: &[PathBuf]) -> miette::Result<bool> {
+    /// Prints the SMT-LIB script for the contracts of each file (`--smt`), or runs the solver
+    /// on it and prints the verdicts (`--verify`).
+    fn run_smt(&self, test_files: &[PathBuf]) -> miette::Result<bool> {
         let mut ok = true;
         for file in test_files {
-            let script = fs::read_to_string(file)
-                .map_err(|e| e.to_string())
-                .and_then(|content| Self::emit_smt(&content));
-            match script {
-                Ok(script) => println!("; {}\n{script}", file.display()),
+            let content = match fs::read_to_string(file) {
+                Ok(content) => content,
+                Err(e) => {
+                    eprintln!("# {}\n\n❌ Failed to read file: {e}\n", file.display());
+                    ok = false;
+                    continue;
+                }
+            };
+            if !self.verify {
+                match Self::emit_smt(&content) {
+                    Ok(script) => println!("; {}\n{script}", file.display()),
+                    Err(e) => {
+                        eprintln!("# {}\n\n❌ {e}\n", file.display());
+                        ok = false;
+                    }
+                }
+                continue;
+            }
+            match Self::smt_entries(&content) {
+                Ok(entries) if entries.is_empty() => {}
+                Ok(entries) => {
+                    let results: Vec<Vec<smt::Verdict>> = entries
+                        .iter()
+                        .map(|entry| match entry {
+                            smt::Entry::Checks(obligations) => {
+                                obligations.iter().map(|o| smt::solve(&self.solver, o)).collect()
+                            }
+                            smt::Entry::Skipped { .. } => Vec::new(),
+                        })
+                        .collect();
+                    let (report, file_ok) = smt::report_markdown(&self.solver, &entries, &results);
+                    println!("# {}\n\n{report}", file.display());
+                    ok &= file_ok;
+                }
                 Err(e) => {
                     eprintln!("# {}\n\n❌ {e}\n", file.display());
                     ok = false;
@@ -1196,5 +1242,8 @@ fn open_in_default_app(path: &Path) -> miette::Result<()> {
 mod contract;
 pub(crate) use contract::ContractStats;
 mod smt;
+
+/// Solver command line used by `--verify` unless `--solver` is given.
+const DEFAULT_SOLVER: &str = "z3 -in -t:10000";
 #[cfg(test)]
 mod tests;
