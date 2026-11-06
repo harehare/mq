@@ -197,6 +197,7 @@ end
 # ```
 #
 # Returns: dict
+# @requires(row_index >= 0 && row_index < len(table[:rows]))
 # @ensures(len(result[:rows]) == len(table[:rows]))
 # @ensures(len(result[:header]) == len(table[:header]))
 def set_cell(table, row_index, col, value):
@@ -253,6 +254,7 @@ end
 # ```
 #
 # Returns: dict
+# @requires(len(row) == len(table[:header]))
 # @ensures(len(result[:rows]) == len(table[:rows]) + 1)
 def add_row(table, row):
   if (len(row) != len(table[:header])):
@@ -281,6 +283,8 @@ end
 # ```
 #
 # Returns: dict
+# @requires(len(row) == len(table[:header]))
+# @requires(index >= 0 && index <= len(table[:rows]))
 # @ensures(len(result[:rows]) == len(table[:rows]) + 1)
 def insert_row(table, index, row):
   if (len(row) != len(table[:header])):
@@ -300,6 +304,7 @@ end
 # ```
 #
 # Returns: dict
+# @requires(len(col) == len(table[:rows]) + 1)
 # @ensures(len(result[:header]) == len(table[:header]) + 1)
 # @ensures(len(result[:rows]) == len(table[:rows]))
 def add_column(table, col):
@@ -334,6 +339,8 @@ end
 # ```
 #
 # Returns: dict
+# @requires(len(col) == len(table[:rows]) + 1)
+# @requires(index >= 0 && index <= len(table[:header]))
 # @ensures(len(result[:header]) == len(table[:header]) + 1)
 # @ensures(len(result[:rows]) == len(table[:rows]))
 def insert_column(table, index, col):
@@ -379,6 +386,7 @@ end
 # ```
 #
 # Returns: dict
+# @requires(len(table_a[:header]) == len(table_b[:header]))
 def union(table_a, table_b):
   if (len(table_a[:header]) != len(table_b[:header])):
     error("Tables must have the same number of columns.")
@@ -408,6 +416,7 @@ end
 # ```
 #
 # Returns: dict
+# @requires(row_index >= 0 && row_index < len(table[:rows]))
 # @ensures(len(result[:rows]) == len(table[:rows]) - 1)
 # @ensures(len(result[:header]) == len(table[:header]))
 def remove_row(table, row_index):
