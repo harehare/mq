@@ -419,6 +419,42 @@ def fact(n):
 end
 ```
 
+### Exhaustive small-scope tests (`enumerate`)
+
+`# @exhaustive(max_size, enumerators, options)` runs a test on every input of size `<= max_size`,
+smallest first, instead of on random inputs. The first failure is a smallest counterexample, so no
+shrinking is needed. A clean run means no counterexample was found within the listed scope; it says
+nothing about larger inputs. The `enumerate` module is bundled with `mq-test` (not available to the
+plain `mq` command) and imported automatically. An enumerator is a dict whose `tier(k)` returns every
+value of size exactly `k`.
+
+| Enumerator | Values |
+| :--- | :--- |
+| `enumerate::element(values)` | Each of `values`, all of size 0 |
+| `enumerate::one_of(enums)` | The values of any of `enums` |
+| `enumerate::tuple(enums)` | One value per enumerator; sizes add |
+| `enumerate::array(en, max_len)` | Arrays of 0 to `max_len` values of `en`; size is the length plus the items' sizes |
+| `enumerate::array_of(en, min_len, max_len)` | Like `array`, with a minimum length |
+| `enumerate::transform(en, mapper)` | `mapper` applied to each value, same size |
+| `enumerate::node(en, mapper)` | Like `transform`, one size larger |
+| `enumerate::markdown(options)` | Markdown source text; size is the number of blocks plus list items |
+
+```mq
+# @requires(len(to_markdown(src)) > 0)
+def first_block(src): to_markdown(src)[0];
+
+# @exhaustive(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "min_blocks": 1})])
+def test_first_block(src):
+  assert_true(is_markdown(first_block(src)))
+end
+```
+
+With `@requires`, an enumerated input that violates the precondition of the function the test calls
+is skipped and counted, not failed. The report lists valid, skipped and total counts and warns when
+most inputs were skipped; build valid inputs with the enumerator options instead (here `min_blocks`).
+Enumeration stops with an error when `max_cases` (default 100000) or `max_total` is exceeded. See the
+`mq-test` crate's README for the options and the full semantics.
+
 ## HTTP Imports
 
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
