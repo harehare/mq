@@ -5,10 +5,12 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
+use crate::resolver::TestModuleResolver;
 use crate::snapshot;
 
 /// Number of iterations a `# @property(generators)` test runs when no count is given.
@@ -358,6 +360,8 @@ impl TestRunner {
             if let Some(paths) = self.search_paths(file) {
                 engine.set_search_paths(paths);
             }
+
+            Self::register_clock(&mut engine);
 
             {
                 let test_file = file.to_string_lossy().into_owned();
@@ -1022,6 +1026,16 @@ impl TestRunner {
                  ) \
              end"
         )
+    }
+
+    /// Registers `test_now_ms()`, the monotonic millisecond clock `test.mq` times tests with
+    /// (`now()` only has second resolution).
+    pub(crate) fn register_clock<IO: mq_lang::Io>(engine: &mut mq_lang::Engine<TestModuleResolver, IO>) {
+        static START: OnceLock<Instant> = OnceLock::new();
+        let start = *START.get_or_init(Instant::now);
+        engine.register_fn("test_now_ms", move || -> Result<i64, mq_lang::HostFunctionError> {
+            Ok(start.elapsed().as_millis() as i64)
+        });
     }
 
     /// Returns the number of positional parameters of a `def` node.

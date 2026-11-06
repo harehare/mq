@@ -844,6 +844,7 @@ fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
 
     let result = engine.eval(query, mq_lang::null_input().into_iter()).unwrap();
     let rendered = result.values().first().map(ToString::to_string).unwrap_or_default();
@@ -1061,6 +1062,7 @@ fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_sti
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
 
     let query = r#"include "test" | run_tests_data([
             test_case("boom", fn(): error("boom");),
@@ -1169,6 +1171,7 @@ fn test_render_file_error_attaches_the_file_name_when_mq_lang_left_it_blank() {
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
     let err = *engine.eval(&query, mq_lang::null_input().into_iter()).unwrap_err();
     assert_eq!(
         err.source_code.name(),
@@ -1449,6 +1452,7 @@ fn run_results(content: &str) -> Vec<serde_json::Value> {
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
     let result = engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
     let json = result.values().first().cloned().unwrap().to_json_value();
     json.as_array().unwrap().clone()
@@ -1972,4 +1976,14 @@ fn test_enumerate_json_tier_sizes(#[case] options: &str, #[case] expected: &[usi
     );
 
     assert_eq!(run_failures(&content), vec![], "{content}");
+}
+
+#[test]
+fn test_durations_have_millisecond_resolution() {
+    // `now()` only counts whole seconds, so a short test would always report 0.
+    let content = "def test_slow(): len(fold(range(0, 30000), 0, fn(a, b): a + b;)) >= 0;\n";
+
+    let duration = run_results(content)[0]["duration"].as_i64().unwrap();
+
+    assert!(duration > 0, "duration was {duration} ms");
 }

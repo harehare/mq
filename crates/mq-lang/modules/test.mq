@@ -318,9 +318,9 @@ end
 # An error raised by the test body is recorded as a failure, so it cannot abort the remaining tests.
 def _run_test(test_name, test_func):
   let test_count = 1
-  | let start_time = now()
+  | let start_time = test_now_ms()
   | let result = try: test_func() catch(e): {"error": true, "message": "Error: " + e["message"]}
-  | let end_time = now()
+  | let end_time = test_now_ms()
   | let duration = end_time - start_time
   | let failure = _test_failure(result)
   | let detail = if (is_dict(result) && contains(result, "small_scope_report")): result["small_scope_report"] else: None
