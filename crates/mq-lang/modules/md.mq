@@ -240,7 +240,8 @@ def math(value): to_math(value);
 # Returns: markdown
 def math_inline(value): to_math_inline(value);
 
-# Creates a link node pointing to `url` with link text `value` and an optional `title`.
+# Creates a link node pointing to `url` with link text `value` (a string or a node, taken as its
+# Markdown text) and an optional `title`.
 #
 # Example:
 # ```
@@ -249,7 +250,7 @@ def math_inline(value): to_math_inline(value);
 # ```
 #
 # Returns: markdown
-def link(url, value, title = ""): to_link(url, value, title);
+def link(url, value, title = ""): to_link(to_string(url), to_string(value), to_string(title));
 
 # Creates an image node pointing to `url` with `alt` text and an optional `title`.
 #
@@ -260,7 +261,7 @@ def link(url, value, title = ""): to_link(url, value, title);
 # ```
 #
 # Returns: markdown
-def image(url, alt, title = ""): to_image(url, alt, title);
+def image(url, alt, title = ""): to_image(to_string(url), to_string(alt), to_string(title));
 
 # Wraps `value` in a footnote definition node identified by `ident`.
 #
