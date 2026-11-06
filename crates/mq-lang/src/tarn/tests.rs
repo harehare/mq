@@ -694,6 +694,32 @@ fn recursion_through_nested_closure(#[case] code: &str, #[case] expected: usize)
     );
 }
 
+/// Defaults and variadics rule out the fixed-call opcodes, but a self call must still not
+/// capture the function's own defining cell.
+#[test]
+fn recursive_def_with_defaults_does_not_capture_its_own_cell() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def f(n, acc = 0): if (n <= 0): acc else: f(n - 1, acc + n); | f(3)",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks[1].upvalue_names.is_empty());
+}
+
+#[rstest]
+#[case::default("def f(n, acc = 0): if (n <= 0): acc else: f(n - 1, acc + n); | f(4)", 10)]
+#[case::default_omitted("def f(n, acc = 5): if (n <= 0): acc else: f(n - 1); | f(3)", 5)]
+#[case::variadic("def f(n, *rest): if (n <= 0): len(rest) else: f(n - 1, 1, 2); | f(3)", 2)]
+fn recursion_with_non_fixed_arity(#[case] code: &str, #[case] expected: usize) {
+    assert_eq!(
+        run_with_call_depth_limit(code, 1_000).unwrap(),
+        RuntimeValue::from(expected)
+    );
+}
+
 #[test]
 fn non_capturing_closures_use_chunk_static_storage() {
     use super::bytecode::OpCode;

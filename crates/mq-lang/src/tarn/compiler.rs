@@ -3074,7 +3074,7 @@ impl<R: ModuleResolver> Compiler<R> {
             .function_names
             .last()
             .and_then(|entry| *entry)
-            .and_then(|(name, arity, is_generator)| (name == ident).then_some((arity?, is_generator)))
+            .and_then(|(name, arity, is_generator)| (name == ident).then_some((arity, is_generator)))
             .filter(|_| self.visible_local(self.scopes.len() - 1, ident).is_none());
         if !shadowed && let Some((arity, is_generator)) = direct_self_call {
             for arg in args {
@@ -3082,13 +3082,14 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             self.set_call_token_id(call_token_id);
             let argc = self.arg_count(args.len())?;
-            self.emit(match Self::fixed_call_form(arity, argc) {
+            // A function with defaults or variadics has no fixed arity and takes the checked path.
+            self.emit(match arity.map(|arity| Self::fixed_call_form(arity, argc)) {
                 // Fixed-call opcodes enter a frame directly; a generator's self-call must create
                 // a coroutine through the checked path instead.
-                FixedCallForm::Exact | FixedCallForm::ImplicitSelf if is_generator => OpCode::CallSelf(argc),
-                FixedCallForm::Exact => Self::self_exact_call_opcode(argc),
-                FixedCallForm::ImplicitSelf => OpCode::CallSelfImplicitSelf(argc),
-                FixedCallForm::Fallback => OpCode::CallSelf(argc),
+                Some(FixedCallForm::Exact | FixedCallForm::ImplicitSelf) if is_generator => OpCode::CallSelf(argc),
+                Some(FixedCallForm::Exact) => Self::self_exact_call_opcode(argc),
+                Some(FixedCallForm::ImplicitSelf) => OpCode::CallSelfImplicitSelf(argc),
+                Some(FixedCallForm::Fallback) | None => OpCode::CallSelf(argc),
             });
             return Ok(());
         }

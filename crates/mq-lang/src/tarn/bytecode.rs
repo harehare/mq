@@ -1678,6 +1678,8 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
+                // The checked fallback also serves non-fixed chunks (defaults or variadics).
+                OpCode::CallSelf(_) if chunk.param_shape.fixed_required_arity().is_none() => {}
                 OpCode::CallSelf(_)
                 | OpCode::CallSelfExact(_)
                 | OpCode::CallSelfExact0
