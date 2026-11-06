@@ -622,9 +622,12 @@ def test_table_filter_rows_renumbers_the_remaining_rows():
 end
 
 def _exh_first_table(src): first(table::tables(to_markdown(src)));
+# @ensures(len(result) == max(n, 0))
 def _exh_seq(n): if (n <= 0): [] else: range(0, n - 1);
 def _exh_all(xs): all(xs, fn(b): b;);
+# @ensures(len(result) == table::num_cols(t))
 def _exh_row_of(t, v): map(_exh_seq(table::num_cols(t)), fn(c): v + to_string(c););
+# @ensures(len(result) == table::num_rows(t) + 1)
 def _exh_col_of(t, v): map(range(0, table::num_rows(t)), fn(r): v + to_string(r););
 
 # True when every cell knows its own (row, column) position.
@@ -660,6 +663,7 @@ def test_table_adding_then_removing_restores_the_table(src):
 end
 
 # @requires(table::num_cols(_exh_first_table(a)) == table::num_cols(_exh_first_table(b)))
+# @ensures(table::num_cols(result) == table::num_cols(_exh_first_table(a)))
 def _exh_union(a, b): table::union(_exh_first_table(a), _exh_first_table(b));
 
 # @small_scope(2, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1}), enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1})])
