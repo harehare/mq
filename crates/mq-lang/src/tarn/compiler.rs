@@ -2737,12 +2737,33 @@ impl<R: ModuleResolver> Compiler<R> {
             .flatten()
     }
 
+    /// Whether `name`, the function owning `scopes[depth - 1]`, is bound by a mutable slot in the scope that defines it.
+    fn defining_slot_is_mutable(&self, depth: usize, name: Ident) -> bool {
+        depth >= 2
+            && self
+                .visible_local(depth - 2, name)
+                .is_some_and(|slot| !self.scopes[depth - 2].is_immutable(slot))
+    }
+
     fn resolve_at(&mut self, depth: usize, name: Ident) -> Option<Resolved> {
         if let Some(slot) = self.visible_local(depth, name) {
             return Some(Resolved::Local(slot));
         }
         if depth == 0 {
             return None;
+        }
+        // A closure nested in a named function reaches that function through a cell built when
+        // the closure is made. Capturing the defining slot instead would form a reference cycle.
+        // A `var` function keeps slot capture so nested closures see and can assign rebindings.
+        if self.function_names[depth - 1].is_some_and(|(own, ..)| own == name)
+            && self.visible_local(depth - 1, name).is_none()
+            && !self.defining_slot_is_mutable(depth, name)
+        {
+            let idx = self.scopes[depth].add_upvalue(name, UpvalueSource::SelfClosure);
+            return Some(Resolved::Upvalue {
+                index: idx,
+                immutable: true,
+            });
         }
         match self.resolve_at(depth - 1, name)? {
             Resolved::Local(slot) => {

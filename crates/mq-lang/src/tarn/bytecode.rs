@@ -32,6 +32,9 @@ pub(crate) struct StaticExactCallTarget {
 pub(crate) enum UpvalueSource {
     Local(u16),
     Upvalue(u16),
+    /// A fresh cell holding the closure that is executing. A named function captures itself this
+    /// way instead of through its defining slot, which would form a reference cycle.
+    SelfClosure,
 }
 
 /// Binary operation.
@@ -855,6 +858,25 @@ pub(crate) struct Chunk {
     /// Whether this chunk's body directly contains a `yield`. Calling it binds arguments as
     /// usual but wraps the resulting frame as a `RuntimeValue::Coroutine` instead of entering it.
     pub(crate) is_generator: bool,
+    /// Shared `SelfClosure` capture for a capture-free function, built on first use.
+    pub(crate) self_cell: SelfCell,
+}
+
+/// A cell holding a capture-free function's own closure. It is never written, so every closure
+/// that captures the function can share it.
+#[derive(Default)]
+pub(crate) struct SelfCell(std::sync::OnceLock<super::value::Cell>);
+
+impl SelfCell {
+    pub(crate) fn get_or_init(&self, init: impl FnOnce() -> super::value::Cell) -> &super::value::Cell {
+        self.0.get_or_init(init)
+    }
+}
+
+impl fmt::Debug for SelfCell {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SelfCell")
+    }
 }
 
 /// Hashes values that can safely share one constant-pool entry.
