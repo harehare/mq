@@ -7,6 +7,7 @@
 //! not translated and the result does not account for floating point. Anything outside the
 //! subset is reported in a `; skipped` comment instead of being approximated.
 
+mod replay;
 mod term;
 mod translate;
 mod verify;
@@ -21,9 +22,10 @@ use self::translate::{Func, Node, Translator};
 use super::TestRunner;
 use super::contract::Contract;
 
+pub(super) use self::replay::replay;
 #[cfg(test)]
 pub(super) use self::verify::parse_output;
-pub(super) use self::verify::{Verdict, report_markdown, solve};
+pub(super) use self::verify::{Counterexample, Replay, Verdict, report_markdown, solve};
 
 /// One `@ensures` to check: the solver is asked for an input satisfying `setup` (definitions,
 /// declarations and every `@requires`) but violating the `@ensures`.
@@ -35,6 +37,10 @@ pub(super) struct Obligation {
     setup: std::rc::Rc<str>,
     /// The negated `@ensures`, as an `assert` command.
     violated: String,
+    /// The mq parameter names, in order.
+    pub(super) params: Vec<String>,
+    /// What `get-value` reports for a counterexample: the parameters, then the call itself.
+    value_terms: String,
 }
 
 impl Obligation {
@@ -45,7 +51,7 @@ impl Obligation {
             self.setup, self.violated
         );
         if with_model {
-            s.push_str("(get-model)\n");
+            s.push_str(&format!("(get-value ({}))\n", self.value_terms));
         }
         s
     }
@@ -185,6 +191,13 @@ impl TestRunner {
             violations.push((c, format!("(assert {})", violated.term)));
         }
 
+        let value_terms = target
+            .params
+            .iter()
+            .map(|p| term::symbol(p))
+            .chain(std::iter::once(call.term.to_string()))
+            .collect::<Vec<_>>()
+            .join(" ");
         let mut setup = String::new();
         for d in tr.defs() {
             let _ = writeln!(setup, "{d}");
@@ -200,6 +213,8 @@ impl TestRunner {
                 expr: c.expr.clone(),
                 setup: setup.clone(),
                 violated,
+                params: target.params.clone(),
+                value_terms: value_terms.clone(),
             })
             .collect())
     }

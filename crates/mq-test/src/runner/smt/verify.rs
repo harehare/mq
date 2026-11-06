@@ -5,13 +5,34 @@ use std::process::{Command, Stdio};
 
 use super::{Entry, Obligation};
 
+/// Whether running the function on a counterexample really violates the contract.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Replay {
+    /// mq itself reported the same `@ensures` violation.
+    Reproduced,
+    /// mq did not, so the translation may differ from mq's semantics. Carries the reason.
+    NotReproduced(String),
+}
+
+/// An input the solver found that violates an `@ensures`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Counterexample {
+    /// Parameter name and its value as an mq literal.
+    pub(crate) inputs: Vec<(String, String)>,
+    /// The function's result as an mq literal.
+    pub(crate) result: Option<String>,
+    /// The solver's raw answer, used when it cannot be turned into mq literals.
+    pub(crate) raw: String,
+    pub(crate) replay: Option<Replay>,
+}
+
 /// What the solver concluded about one `@ensures`.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Verdict {
     /// No input satisfying the `@requires` violates it (`unsat`).
     Holds,
-    /// An input violating it exists (`sat`), with the solver's model.
-    Counterexample(String),
+    /// An input violating it exists (`sat`).
+    Counterexample(Counterexample),
     /// The solver gave up (`unknown` or a timeout).
     Unknown,
     /// The solver could not be run or printed something unexpected.
@@ -39,18 +60,150 @@ pub(crate) fn solve(solver: &str, obligation: &Obligation) -> Verdict {
         let _ = stdin.write_all(obligation.script(true).as_bytes());
     }
     match child.wait_with_output() {
-        Ok(output) => parse_output(&String::from_utf8_lossy(&output.stdout)),
+        Ok(output) => parse_output(&String::from_utf8_lossy(&output.stdout), &obligation.params),
         Err(e) => Verdict::Error(e.to_string()),
     }
 }
 
-pub(crate) fn parse_output(stdout: &str) -> Verdict {
+/// Classifies the solver's answer. `params` names the values `get-value` reports, followed by
+/// the function's result.
+pub(crate) fn parse_output(stdout: &str, params: &[String]) -> Verdict {
     let mut lines = stdout.lines();
     match lines.next().map(str::trim) {
         Some("unsat") => Verdict::Holds,
-        Some("sat") => Verdict::Counterexample(lines.collect::<Vec<_>>().join("\n")),
+        Some("sat") => {
+            let raw = lines.collect::<Vec<_>>().join("\n");
+            Verdict::Counterexample(read_values(&raw, params))
+        }
         Some("unknown" | "timeout") => Verdict::Unknown,
         _ => Verdict::Error(stdout.trim().to_string()),
+    }
+}
+
+/// Turns `((a 0) (b "x") ((f a b) 5))` into mq literals; keeps `raw` when it cannot.
+fn read_values(raw: &str, params: &[String]) -> Counterexample {
+    let mut counterexample = Counterexample {
+        inputs: Vec::new(),
+        result: None,
+        raw: raw.to_string(),
+        replay: None,
+    };
+    let sexps = parse_sexps(raw);
+    let [Sexp::List(pairs)] = sexps.as_slice() else {
+        return counterexample;
+    };
+    let values: Option<Vec<String>> = pairs
+        .iter()
+        .map(|pair| match pair {
+            Sexp::List(kv) => kv.get(1).and_then(to_mq),
+            _ => None,
+        })
+        .collect();
+    if let Some(values) = values.filter(|v| v.len() == params.len() + 1) {
+        let mut values = values.into_iter();
+        counterexample.inputs = params.iter().cloned().zip(values.by_ref()).collect();
+        counterexample.result = values.next();
+    }
+    counterexample
+}
+
+#[derive(Debug, PartialEq)]
+enum Sexp {
+    Atom(String),
+    Str(String),
+    List(Vec<Sexp>),
+}
+
+fn parse_sexps(input: &str) -> Vec<Sexp> {
+    fn parse(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<Sexp> {
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        match chars.peek()? {
+            '(' => {
+                chars.next();
+                let mut items = Vec::new();
+                loop {
+                    while chars.peek().is_some_and(|c| c.is_whitespace()) {
+                        chars.next();
+                    }
+                    if chars.peek() == Some(&')') {
+                        chars.next();
+                        return Some(Sexp::List(items));
+                    }
+                    items.push(parse(chars)?);
+                }
+            }
+            '"' => {
+                chars.next();
+                let mut text = String::new();
+                while let Some(c) = chars.next() {
+                    if c == '"' {
+                        if chars.peek() == Some(&'"') {
+                            chars.next();
+                            text.push('"');
+                        } else {
+                            return Some(Sexp::Str(text));
+                        }
+                    } else {
+                        text.push(c);
+                    }
+                }
+                None
+            }
+            _ => {
+                let mut atom = String::new();
+                while let Some(c) = chars.peek() {
+                    if c.is_whitespace() || *c == '(' || *c == ')' {
+                        break;
+                    }
+                    atom.push(*c);
+                    chars.next();
+                }
+                Some(Sexp::Atom(atom))
+            }
+        }
+    }
+    let mut chars = input.chars().peekable();
+    let mut out = Vec::new();
+    while let Some(sexp) = parse(&mut chars) {
+        out.push(sexp);
+    }
+    out
+}
+
+/// A solver value as an mq literal, or `None` for a form that has no mq equivalent.
+fn to_mq(value: &Sexp) -> Option<String> {
+    match value {
+        Sexp::Atom(a) if a == "true" || a == "false" || a.chars().all(|c| c.is_ascii_digit()) => Some(a.clone()),
+        Sexp::Str(text) if !text.contains("\\u{") => {
+            Some(format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\"")))
+        }
+        Sexp::List(items) => match items.as_slice() {
+            [Sexp::Atom(minus), Sexp::Atom(n)] if minus == "-" => Some(format!("-{n}")),
+            _ => seq_items(value).map(|items| format!("[{}]", items.join(", "))),
+        },
+        Sexp::Atom(a) if a == "seq.empty" => Some("[]".to_string()),
+        _ => None,
+    }
+}
+
+fn seq_items(value: &Sexp) -> Option<Vec<String>> {
+    match value {
+        Sexp::Atom(a) if a == "seq.empty" => Some(Vec::new()),
+        Sexp::List(items) => match items.as_slice() {
+            [Sexp::Atom(a), Sexp::Atom(s), _] if a == "as" && s == "seq.empty" => Some(Vec::new()),
+            [Sexp::Atom(u), x] if u == "seq.unit" => Some(vec![to_mq(x)?]),
+            [Sexp::Atom(c), rest @ ..] if c == "seq.++" => {
+                let mut all = Vec::new();
+                for r in rest {
+                    all.extend(seq_items(r)?);
+                }
+                Some(all)
+            }
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -71,7 +224,7 @@ pub(crate) fn report_markdown(solver: &str, entries: &[Entry], results: &[Vec<Ve
                 for (o, verdict) in obligations.iter().zip(verdicts) {
                     let (icon, text) = match verdict {
                         Verdict::Holds => ("✅", "holds for all inputs".to_string()),
-                        Verdict::Counterexample(_) => ("❌", "counterexample found".to_string()),
+                        Verdict::Counterexample(ce) => ("❌", counterexample_text(ce)),
                         Verdict::Unknown => ("⚠️", "unknown (solver gave up)".to_string()),
                         Verdict::Error(_) => ("❌", "solver error".to_string()),
                     };
@@ -82,11 +235,20 @@ pub(crate) fn report_markdown(solver: &str, entries: &[Entry], results: &[Vec<Ve
                         o.line
                     ));
                     match verdict {
-                        Verdict::Counterexample(model) | Verdict::Error(model) => {
+                        Verdict::Counterexample(ce) => {
+                            ok = false;
+                            if ce.inputs.is_empty() {
+                                details.push_str(&format!(
+                                    "\n### {} `@ensures({})`\n\n```\n{}\n```\n",
+                                    o.function, o.expr, ce.raw
+                                ));
+                            }
+                        }
+                        Verdict::Error(message) => {
                             ok = false;
                             details.push_str(&format!(
                                 "\n### {} `@ensures({})`\n\n```\n{}\n```\n",
-                                o.function, o.expr, model
+                                o.function, o.expr, message
                             ));
                         }
                         _ => {}
@@ -101,4 +263,30 @@ pub(crate) fn report_markdown(solver: &str, entries: &[Entry], results: &[Vec<Ve
         out.push_str(&skipped);
     }
     (out, ok)
+}
+
+fn counterexample_text(ce: &Counterexample) -> String {
+    let mut text = String::from("counterexample");
+    if !ce.inputs.is_empty() {
+        let inputs = ce
+            .inputs
+            .iter()
+            .map(|(name, value)| format!("{name} = {value}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        text.push_str(&format!(": `{inputs}`"));
+        if let Some(result) = &ce.result {
+            text.push_str(&format!(" gives `result = {result}`"));
+        }
+    }
+    match &ce.replay {
+        Some(Replay::Reproduced) => text.push_str(" (reproduced in mq)"),
+        Some(Replay::NotReproduced(why)) => {
+            text.push_str(&format!(
+                " (**not reproduced in mq**, the translation may differ: {why})"
+            ));
+        }
+        None => {}
+    }
+    text.replace('|', "\\|")
 }

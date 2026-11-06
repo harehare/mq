@@ -637,9 +637,16 @@ impl TestRunner {
                     let results: Vec<Vec<smt::Verdict>> = entries
                         .iter()
                         .map(|entry| match entry {
-                            smt::Entry::Checks(obligations) => {
-                                obligations.iter().map(|o| smt::solve(&self.solver, o)).collect()
-                            }
+                            smt::Entry::Checks(obligations) => obligations
+                                .iter()
+                                .map(|o| match smt::solve(&self.solver, o) {
+                                    smt::Verdict::Counterexample(mut ce) => {
+                                        ce.replay = Some(smt::replay(&content, o, &ce));
+                                        smt::Verdict::Counterexample(ce)
+                                    }
+                                    verdict => verdict,
+                                })
+                                .collect(),
                             smt::Entry::Skipped { .. } => Vec::new(),
                         })
                         .collect();

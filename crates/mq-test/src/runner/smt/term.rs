@@ -274,6 +274,16 @@ impl Typed {
         })
     }
 
+    /// `a % b` as the truncated remainder (the sign follows `a`), which is what mq computes on
+    /// integers. A zero divisor is left unconstrained: mq raises an error there.
+    pub(super) fn rem(a: Typed, b: Typed) -> Result<Self> {
+        let (a, b) = (a.expect(Sort::Int, "%")?, b.expect(Sort::Int, "%")?);
+        let abs_b = Self::ite(Self::compare(">=", b.clone(), Self::int(0))?, b.clone(), Self::neg(b)?)?;
+        let positive = Self::arith("mod", a.clone(), abs_b.clone())?;
+        let negative = Self::neg(Self::arith("mod", Self::neg(a.clone())?, abs_b)?)?;
+        Self::ite(Self::compare(">=", a, Self::int(0))?, positive, negative)
+    }
+
     /// `a op b` over Ints giving a Bool (`<`, `<=`, `>`, `>=`).
     pub(super) fn compare(op: &'static str, a: Typed, b: Typed) -> Result<Self> {
         Ok(Self::app(

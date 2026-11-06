@@ -181,6 +181,11 @@ mq-test --verify --solver "cvc5 --lang smt2 --tlimit=5000" clamp.mq
 `--verify` runs the solver (default `z3 -in -t:10000`) as an external command, so `mq-test` itself
 has no solver dependency. It exits non-zero on a counterexample or a solver error.
 
+A counterexample is shown as mq values (`name = "" gives result = "hello, "`) and replayed in the real
+interpreter. `(reproduced in mq)` means mq raises the same `@ensures` violation with the same result;
+`not reproduced` means the SMT translation differs from mq's semantics for that input (for example
+`xs[5]` on a short array is unconstrained in SMT-LIB but `None` in mq).
+
 ```mq
 # @requires(lo <= hi)
 # @ensures(result >= lo && result <= hi)
@@ -193,11 +198,12 @@ asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` is 
 - Supported sorts: Int, Bool, String and arrays of Int (SMT sequences). A parameter's sort is
   inferred from how it is used (`&&`, `if` conditions: Bool; `+ "x"`, `starts_with`: String;
   `+ [x]`, `xs[i]`: array; only `len(x)`: tried as a String, then an array; otherwise Int).
-- Supported expressions: integer, string (printable ASCII) and array literals, `+ - *` (`+` also
+- Supported expressions: integer, string (printable ASCII) and array literals, `+ - * %` (`+` also
   concatenates strings and arrays), comparisons, `==`/`!=`, `&&`, `||`, `!`, `not`, `if`/`elif`/
   `else` (the `else` is required), leading `let` bindings, `len`, `x[i]`, `starts_with`,
   `ends_with`, `contains`, `abs`/`min`/`max`, and calls to other top-level `def`s in the file.
-- Numbers are modeled as mathematical integers. `/` and `%` are not translated.
+- Numbers are modeled as mathematical integers. `%` is the truncated remainder; `/` is not
+  translated. A zero divisor is unconstrained, whereas mq raises an error.
 - Self-recursion becomes `define-fun-rec`; a solver may answer `unknown` or time out because no
   induction is performed. Mutual recursion is not supported.
 - A function outside this subset is skipped with a `; skipped <name>: <reason>` comment instead of

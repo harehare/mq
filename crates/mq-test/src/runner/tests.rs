@@ -2119,13 +2119,28 @@ def push(xs, x): xs + [x];
     );
 }
 
-#[rstest]
-#[case("unsat\n(error \"model is not available\")\n", smt::Verdict::Holds)]
-#[case("sat\n(\n  (define-fun a () Int\n    0)\n)\n", smt::Verdict::Counterexample("(\n  (define-fun a () Int\n    0)\n)".to_string()))]
-#[case("unknown\n", smt::Verdict::Unknown)]
-#[case("timeout\n", smt::Verdict::Unknown)]
-fn test_smt_solver_output_is_classified(#[case] output: &str, #[case] expected: smt::Verdict) {
-    assert_eq!(smt::parse_output(output), expected);
+#[test]
+fn test_smt_solver_output_is_classified() {
+    let params = vec!["a".to_string(), "s".to_string()];
+    assert_eq!(
+        smt::parse_output("unsat\n(error \"model is not available\")\n", &params),
+        smt::Verdict::Holds
+    );
+    assert_eq!(smt::parse_output("unknown\n", &params), smt::Verdict::Unknown);
+    assert_eq!(smt::parse_output("timeout\n", &params), smt::Verdict::Unknown);
+
+    let sat = "sat\n((a (- 3))\n (s \"x\"\"y\")\n ((f a s) (seq.++ (seq.unit 1) (seq.unit 2))))\n";
+    let smt::Verdict::Counterexample(ce) = smt::parse_output(sat, &params) else {
+        panic!("expected a counterexample");
+    };
+    assert_eq!(
+        ce.inputs,
+        vec![
+            ("a".to_string(), "-3".to_string()),
+            ("s".to_string(), "\"x\\\"y\"".to_string())
+        ]
+    );
+    assert_eq!(ce.result.as_deref(), Some("[1, 2]"));
 }
 
 #[test]
@@ -2136,4 +2151,41 @@ fn test_smt_missing_solver_is_reported_as_an_error() {
     };
     let verdict = smt::solve("mq-test-no-such-solver -in", &obligations[0]);
     assert!(matches!(verdict, smt::Verdict::Error(m) if m.contains("cannot run")));
+}
+
+#[test]
+fn test_emit_smt_translates_remainder_as_truncated() {
+    let smt = TestRunner::emit_smt("# @ensures(result >= 0)\ndef f(a): a % 3;\n").unwrap();
+    assert!(smt.contains("(mod a (ite (>= 3 0) 3 (- 3)))"), "{smt}");
+    assert!(smt.contains("(- (mod (- a) (ite (>= 3 0) 3 (- 3))))"), "{smt}");
+}
+
+#[test]
+fn test_smt_counterexamples_are_replayed_in_mq() {
+    let content = "# @ensures(result > 0)\ndef f(n): n;\n";
+    let entries = TestRunner::smt_entries(content).unwrap();
+    let smt::Entry::Checks(obligations) = &entries[0] else {
+        panic!("expected checks");
+    };
+    let counterexample = |n: &str, result: &str| smt::Counterexample {
+        inputs: vec![("n".to_string(), n.to_string())],
+        result: Some(result.to_string()),
+        raw: String::new(),
+        replay: None,
+    };
+
+    assert_eq!(
+        smt::replay(content, &obligations[0], &counterexample("0", "0")),
+        smt::Replay::Reproduced
+    );
+    // The contract holds for 3, so a model claiming otherwise is a translation mismatch.
+    assert!(matches!(
+        smt::replay(content, &obligations[0], &counterexample("3", "3")),
+        smt::Replay::NotReproduced(_)
+    ));
+    // The model's result must match what mq computes.
+    assert!(matches!(
+        smt::replay(content, &obligations[0], &counterexample("0", "7")),
+        smt::Replay::NotReproduced(why) if why.contains("mq returned 0")
+    ));
 }

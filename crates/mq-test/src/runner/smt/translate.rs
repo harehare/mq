@@ -160,7 +160,8 @@ impl<'a> Translator<'a> {
                     B::Ge => Typed::compare(">=", a, b),
                     B::Eq => Typed::equal(a, b, false),
                     B::Ne => Typed::equal(a, b, true),
-                    B::Div | B::Mod => Err(SmtError::Unsupported(format!("operator `{}`", op.as_str()))),
+                    B::Mod => Typed::rem(a, b),
+                    B::Div => Err(SmtError::Unsupported("operator `/`".to_string())),
                 }
             }
             AstExpr::If(branches) => self.branches(branches, env, false),
