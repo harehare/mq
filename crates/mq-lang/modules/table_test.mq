@@ -666,3 +666,10 @@ def _exh_union(a, b): table::union(_exh_first_table(a), _exh_first_table(b));
 def test_table_union_keeps_cell_positions(a, b):
   assert_true(_exh_positions_ok(_exh_union(a, b)))
 end
+
+# @small_scope(1, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1, "min_table_cols": 2, "max_table_cols": 3, "min_table_rows": 1, "max_table_rows": 2})])
+def test_table_pivot_longer_then_wider_restores_the_table(src):
+  let t = _exh_first_table(src)
+  | let longer = table::pivot_longer(t, range(1, table::num_cols(t) - 1))
+  | assert_eq(table::to_csv(table::pivot_wider(longer, 1, 2)), table::to_csv(t))
+end

@@ -349,9 +349,9 @@ def _markdown_table(text, cols, rows):
   | join([line(0), divider] + body, "\n")
 end
 
-def _markdown_leaf_strings(kind, texts, heading_depth, max_cols, max_rows):
+def _markdown_leaf_strings(kind, texts, heading_depth, cols_range, rows_range):
   if (kind == "table"):
-    flatten(map(texts, fn(t): map(range(1, max_cols), fn(cols): map(range(0, max_rows), fn(rows): _markdown_table(t, cols, rows);););))
+    flatten(map(texts, fn(t): map(cols_range, fn(cols): map(rows_range, fn(rows): _markdown_table(t, cols, rows);););))
   elif (kind == "heading"):
     flatten(map(range(1, heading_depth), fn(d): map(texts, fn(t): repeat("#", d) + " " + t;);))
   elif (kind == "paragraph"):
@@ -383,8 +383,8 @@ def _markdown_block(o, depth):
   | let texts = _opt(o, "texts", ["a"])
   | let hd = _opt(o, "max_heading_depth", 6)
   | let items = _opt(o, "max_list_items", 2)
-  | let cols = _opt(o, "max_table_cols", 2)
-  | let rows = _opt(o, "max_table_rows", 2)
+  | let cols = range(_opt(o, "min_table_cols", 1), _opt(o, "max_table_cols", 2))
+  | let rows = range(_opt(o, "min_table_rows", 0), _opt(o, "max_table_rows", 2))
   | let leaves = flatten(map(kinds, fn(k): _markdown_leaf_strings(k, texts, hd, cols, rows);))
   | let parts = flatten([
       if (is_empty(leaves)): [] else: [element(leaves)],
@@ -405,8 +405,8 @@ end
 # blockquote, link, emphasis, table; `table` is opt-in), `texts` (default ["a"]), `max_heading_depth` (1 to 6, default 6),
 # `max_nesting` (blockquote depth, default 1), `max_blocks` (default 3), `min_blocks`
 # (default 0), `max_list_items` (default 2), `max_quote_blocks` (default 2), `max_table_cols`
-# and `max_table_rows` (default 2; a table has 1 to `max_table_cols` columns and 0 to
-# `max_table_rows` body rows).
+# and `max_table_rows` (default 2; a table has `min_table_cols` (default 1) to `max_table_cols`
+# columns and `min_table_rows` (default 0) to `max_table_rows` body rows).
 #
 # Example:
 # ```
