@@ -37,6 +37,23 @@ fn index_and_slice_ignore_user_definitions(mut engine: DefaultEngine, #[case] pr
     assert_eq!(result.values()[0].to_string(), expected);
 }
 
+/// A nested closure in a `var` function binds the mutable slot, not the original closure.
+#[rstest]
+#[case::sees_rebinding(
+    "var f = fn(n): if (n == 0): 1 else: fn(): f(0);; | let g = f(1) | f = fn(n): 42; | g()",
+    "42"
+)]
+#[case::assign_from_nested("var f = fn(n): fn(): f = 7;; | let h = f(0) | h() | f", "7")]
+#[case::let_keeps_original("let f = fn(n): if (n == 0): 1 else: fn(): f(0);; | let g = f(1) | g()", "1")]
+fn nested_closure_in_var_function_uses_mutable_slot(
+    mut engine: DefaultEngine,
+    #[case] program: &str,
+    #[case] expected: &str,
+) {
+    let result = engine.eval(program, vec![RuntimeValue::None].into_iter()).unwrap();
+    assert_eq!(result.values()[0].to_string(), expected);
+}
+
 #[rstest]
 #[case::compound_assign_mul_of_lower_precedence_rhs("var i = 4 | i *= 2 + 3 | i")]
 #[case::compound_assign_sub_of_same_precedence_rhs("var i = 20 | i -= 2 - 3 | i")]
