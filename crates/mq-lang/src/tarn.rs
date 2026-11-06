@@ -16,6 +16,7 @@ mod debug_symbols;
 mod debugger;
 #[cfg(feature = "debug-trace")]
 mod disasm;
+mod fold;
 pub(crate) mod interpreter;
 mod last_use;
 mod nodes_split;

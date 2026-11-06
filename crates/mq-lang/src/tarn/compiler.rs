@@ -10,6 +10,7 @@ use crate::module::BUILTIN_FILE;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::selector::Selector;
+use crate::tarn::fold;
 use crate::{Ident, Module, ModuleError, ModuleLoader, ModuleResolver, TokenArena};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
@@ -135,6 +136,8 @@ struct Compiler<R: ModuleResolver> {
     chunks: Vec<Chunk>,
     /// Constant dedup tables parallel to `chunks`; dropped with the compiler.
     constant_indexes: Vec<ConstantIndex>,
+    /// Operator nodes that do not fold, see [`super::fold::NonConst`].
+    non_const: fold::NonConst,
     scopes: Vec<FunctionScope>,
     /// The directly enclosing named function, its fixed arity if any, and whether it's a generator.
     function_names: Vec<Option<(Ident, Option<usize>, bool)>>,
@@ -1153,6 +1156,7 @@ fn compile_program_impl<R: ModuleResolver>(
     let mut compiler = Compiler {
         chunks: vec![Chunk::default()],
         constant_indexes: vec![ConstantIndex::default()],
+        non_const: Default::default(),
         scopes: vec![scope],
         function_names: vec![None],
         current: 0,
@@ -2949,6 +2953,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 Ok(())
             }
             Expr::Paren(inner) => self.compile_expr(inner),
+            Expr::And(_) | Expr::Or(_) | Expr::BinaryOp(..) | Expr::UnaryOp(..) if self.emit_folded(node) => Ok(()),
             Expr::And(operands) => self.compile_and(operands),
             Expr::Or(operands) => self.compile_or(operands),
             Expr::BinaryOp(op, lhs, rhs) => self.compile_binary_op(*op, lhs, rhs),
@@ -3526,8 +3531,15 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    /// Compiles `lhs op rhs` directly to a VM opcode. Unlike a named call, this skips
-    /// `resolve()`/`shadowed_builtin`, so it can't alias a same-named `def`/local.
+    fn emit_folded(&mut self, node: &Shared<Node>) -> bool {
+        let Some(value) = fold::const_value(node, &mut self.non_const) else {
+            return false;
+        };
+        let idx = self.push_const(value);
+        self.emit(OpCode::Const(idx));
+        true
+    }
+
     fn compile_binary_op(&mut self, op: ast::BinaryOp, lhs: &Shared<Node>, rhs: &Shared<Node>) -> CompileResult<()> {
         let op = to_vm_binary_op(op);
         let token_id = self.current_token_id;
@@ -3774,6 +3786,14 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_short_circuit(operands, true, jump_when)
             }
             _ => {
+                if let Some(value) = super::fold::const_value(node, &mut self.non_const) {
+                    // A constant condition either always or never takes the jump.
+                    return Ok(if value.is_truthy() == jump_when {
+                        vec![self.emit(OpCode::Jump(0))]
+                    } else {
+                        Vec::new()
+                    });
+                }
                 self.compile_expr(node)?;
                 let jump = if jump_when {
                     OpCode::JumpIfTrue(0)
@@ -3829,6 +3849,18 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut has_else = false;
 
         for (cond, body) in branches {
+            if let Some(value) = cond
+                .as_ref()
+                .and_then(|cond| super::fold::const_value(cond, &mut self.non_const))
+            {
+                if !value.is_truthy() {
+                    continue;
+                }
+                // The first always-true branch ends the chain, so later branches are dead.
+                self.compile_expr(body)?;
+                has_else = true;
+                break;
+            }
             let else_jumps = if let Some(cond) = cond {
                 self.compile_branch(cond, false)?
             } else {
@@ -4079,7 +4111,7 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 }
 
-fn to_vm_binary_op(op: ast::BinaryOp) -> BinaryOp {
+pub(super) fn to_vm_binary_op(op: ast::BinaryOp) -> BinaryOp {
     match op {
         ast::BinaryOp::Add => BinaryOp::Add,
         ast::BinaryOp::Sub => BinaryOp::Sub,
@@ -4164,7 +4196,7 @@ pub(super) fn module_var_names(vars: &Program) -> Vec<Ident> {
         .collect()
 }
 
-fn literal_to_runtime_value(lit: &Literal) -> RuntimeValue {
+pub(super) fn literal_to_runtime_value(lit: &Literal) -> RuntimeValue {
     match lit {
         Literal::String(s) => RuntimeValue::String(Shared::new(s.clone())),
         Literal::Bytes(b) => RuntimeValue::Bytes(Shared::new(b.clone())),

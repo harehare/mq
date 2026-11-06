@@ -2934,7 +2934,7 @@ fn eval_local_number_const_binary_op(
 
 /// `left op right` for an arithmetic `op`, or `None` when it fails or is not arithmetic.
 #[inline(always)]
-fn number_arithmetic(op: BinaryOp, left: Number, right: Number) -> Option<Number> {
+pub(super) fn number_arithmetic(op: BinaryOp, left: Number, right: Number) -> Option<Number> {
     match op {
         BinaryOp::Add => Some(left + right),
         BinaryOp::Sub => Some(left - right),
@@ -2976,7 +2976,7 @@ fn number_binop_on_stack(stack: &mut Vec<StackValue>, op: BinaryOp) -> bool {
 
 /// `left op right` for a comparison `op`, or `None` for any other `op`.
 #[inline(always)]
-fn compare_numbers(op: BinaryOp, left: Number, right: Number) -> Option<bool> {
+pub(super) fn compare_numbers(op: BinaryOp, left: Number, right: Number) -> Option<bool> {
     match op {
         BinaryOp::Eq => Some(left == right),
         BinaryOp::Ne => Some(left != right),
