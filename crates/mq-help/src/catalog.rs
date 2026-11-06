@@ -654,6 +654,11 @@ mod tests {
         parts
     }
 
+    /// Stub for the `test_now_ms` host function that the `test` module expects from the test runner.
+    fn register_test_clock(engine: &mut mq_lang::DefaultEngine) {
+        engine.register_fn("test_now_ms", || -> Result<i64, mq_lang::HostFunctionError> { Ok(0) });
+    }
+
     /// Every example shown by `mq help` is a real, runnable snippet; this evaluates each
     /// one through the actual engine and checks it against its recorded `expected` output,
     /// so a stale/wrong example fails CI instead of silently misleading a reader.
@@ -664,6 +669,7 @@ mod tests {
         for entry in all_entries() {
             for example in &entry.examples {
                 let mut engine = mq_lang::DefaultEngine::default();
+                register_test_clock(&mut engine);
                 engine.load_builtin_module();
                 let input = vec![mq_lang::RuntimeValue::NONE].into_iter();
                 match engine.eval(&example.code, input) {
@@ -697,6 +703,7 @@ mod tests {
         for module in all_modules() {
             for example in &module.examples {
                 let mut engine = mq_lang::DefaultEngine::default();
+                register_test_clock(&mut engine);
                 engine.load_builtin_module();
                 let input = vec![mq_lang::RuntimeValue::NONE].into_iter();
                 match engine.eval(&example.code, input) {
