@@ -24,6 +24,10 @@ pub(super) struct Translator<'a> {
     defs: Vec<Define>,
     done: HashSet<String>,
     visiting: Vec<String>,
+    /// Every sort of a translated expression, for the datatypes the script must declare.
+    seen: Vec<Sort>,
+    /// Optional variables known not to be `None` at this point, read as their value.
+    narrowed: HashMap<String, Typed>,
 }
 
 impl<'a> Translator<'a> {
@@ -34,7 +38,14 @@ impl<'a> Translator<'a> {
             defs: Vec::new(),
             done: HashSet::new(),
             visiting: Vec::new(),
+            seen: Vec::new(),
+            narrowed: HashMap::new(),
         }
+    }
+
+    /// The sorts of the expressions translated so far.
+    pub(super) fn sorts_seen(&self) -> &[Sort] {
+        &self.seen
     }
 
     /// The definitions produced so far, callees before callers.
@@ -116,15 +127,34 @@ impl<'a> Translator<'a> {
     }
 
     pub(super) fn expr(&mut self, n: &Node, env: &Env) -> Result<Typed> {
+        let typed = self.expr_inner(n, env)?;
+        if !self.seen.contains(&typed.sort) {
+            self.seen.push(typed.sort.clone());
+        }
+        Ok(typed)
+    }
+
+    fn expr_inner(&mut self, n: &Node, env: &Env) -> Result<Typed> {
         match &n.expr {
             AstExpr::Literal(AstLiteral::Number(v)) if v.is_int() => Ok(Typed::int(v.to_int())),
             AstExpr::Literal(AstLiteral::Number(_)) => Err(SmtError::Unsupported("non-integer number".to_string())),
             AstExpr::Literal(AstLiteral::Bool(b)) => Ok(Typed::bool(*b)),
             AstExpr::Literal(AstLiteral::String(text)) => Typed::string(text),
+            AstExpr::Literal(AstLiteral::None) => Ok(Typed::none()),
+            AstExpr::Dict(entries) => self.dict(entries, env),
             AstExpr::Array(items) => Typed::seq(self.exprs(items, env)?),
-            AstExpr::Index(target, index) => Typed::index(self.expr(target, env)?, self.expr(index, env)?),
+            AstExpr::Index(target, index) => {
+                let target = self.expr(target, env)?;
+                match (key_of(index), &target.sort) {
+                    (Some(key), Sort::Record(_)) => Typed::field(target, &key),
+                    _ => Typed::index(target, self.expr(index, env)?),
+                }
+            }
             AstExpr::Ident(id) => {
                 let name = id.name.to_string();
+                if let Some(narrowed) = self.narrowed.get(&name) {
+                    return Ok(narrowed.clone());
+                }
                 let sort = env
                     .get(&name)
                     .ok_or_else(|| SmtError::Invalid(format!("unknown variable `{name}`")))?
@@ -133,8 +163,8 @@ impl<'a> Translator<'a> {
             }
             AstExpr::Paren(x) => self.expr(x, env),
             AstExpr::Block(p) => self.program(p, env),
-            AstExpr::And(xs) => Typed::connective("and", self.exprs(xs, env)?),
-            AstExpr::Or(xs) => Typed::connective("or", self.exprs(xs, env)?),
+            AstExpr::And(xs) => Typed::connective("and", self.chain(xs, env, true)?),
+            AstExpr::Or(xs) => Typed::connective("or", self.chain(xs, env, false)?),
             AstExpr::UnaryOp(AstUnaryOp::Not, x) => Ok(Typed::not(self.expr(x, env)?.expect(Sort::Bool, "!")?)),
             AstExpr::UnaryOp(AstUnaryOp::Neg, x) => Typed::neg(self.expr(x, env)?),
             AstExpr::BinaryOp(op, a, b) => {
@@ -159,6 +189,12 @@ impl<'a> Translator<'a> {
                 let name = id.name.to_string();
                 if let Some(holds) = self.element_predicate(&name, args, env)? {
                     return Ok(holds);
+                }
+                if let ("set", [rec, key, value]) = (name.as_str(), args.as_slice())
+                    && let Some(key) = key_of(key)
+                {
+                    let (rec, value) = (self.expr(rec, env)?, self.expr(value, env)?);
+                    return Typed::with_field(rec, &key, value);
                 }
                 let args = self.exprs(args, env)?;
                 if self.funcs.contains_key(&name) {
@@ -201,24 +237,151 @@ impl<'a> Translator<'a> {
         }
     }
 
-    /// `if`/`elif`/`else` as nested `ite`; `negate` flips the first condition (`unless`).
+    /// A dict literal of string or symbol keys.
+    fn dict(&mut self, entries: &[Node], env: &Env) -> Result<Typed> {
+        let mut fields = Vec::new();
+        for entry in entries {
+            let AstExpr::Array(pair) = &entry.expr else {
+                return Err(SmtError::Unsupported("dict spread".to_string()));
+            };
+            let [key, value] = pair.as_slice() else {
+                return Err(SmtError::Unsupported("dict entry".to_string()));
+            };
+            let key = key_of(key).ok_or_else(|| SmtError::Unsupported("dict key that is not a literal".to_string()))?;
+            fields.push((key, self.expr(value, env)?));
+        }
+        Ok(Typed::record(fields))
+    }
+
+    /// The operands of `&&` (`holds`) or `||` (`!holds`), each translated knowing what the
+    /// earlier ones imply.
+    fn chain(&mut self, xs: &[Node], env: &Env, holds: bool) -> Result<Vec<Typed>> {
+        let mut saved = Vec::new();
+        let mut out = Vec::new();
+        for x in xs {
+            let typed = self.expr(x, env);
+            let typed = match typed {
+                Ok(t) => t,
+                Err(e) => {
+                    self.restore(saved);
+                    return Err(e);
+                }
+            };
+            out.push(typed);
+            saved.extend(self.narrow(&facts(x, holds), env));
+        }
+        self.restore(saved);
+        Ok(out)
+    }
+
+    /// Reads each optional variable in `names` as its value until [`Self::restore`].
+    fn narrow(&mut self, names: &[String], env: &Env) -> Vec<(String, Option<Typed>)> {
+        let mut saved = Vec::new();
+        for name in names {
+            let Some(sort @ Sort::Opt(_)) = env.get(name) else {
+                continue;
+            };
+            if self.narrowed.contains_key(name) {
+                continue;
+            }
+            if let Ok(value) = Typed::unwrap(Typed::var(name, sort.clone())) {
+                saved.push((name.clone(), self.narrowed.insert(name.clone(), value)));
+            }
+        }
+        saved
+    }
+
+    fn restore(&mut self, saved: Vec<(String, Option<Typed>)>) {
+        for (name, previous) in saved.into_iter().rev() {
+            match previous {
+                Some(value) => self.narrowed.insert(name, value),
+                None => self.narrowed.remove(&name),
+            };
+        }
+    }
+
+    /// `if`/`elif`/`else` as nested `ite`; `negate` flips the first condition (`unless`). A branch
+    /// is translated knowing what its condition, and the failure of the earlier ones, imply.
     fn branches(&mut self, branches: &[(Option<Node>, Node)], env: &Env, negate: bool) -> Result<Typed> {
         let mut arms = Vec::new();
         let mut otherwise = None;
+        let mut earlier_failed = Vec::new();
+        let mut result = Ok(());
         for (i, (cond, body)) in branches.iter().enumerate() {
-            let body = self.expr(body, env)?;
-            match cond {
-                Some(c) => {
-                    let c = self.expr(c, env)?.expect(Sort::Bool, "if condition")?;
-                    arms.push((if negate && i == 0 { Typed::not(c) } else { c }, body));
-                }
-                None => otherwise = Some(body),
+            let step = (|| -> Result<()> {
+                let failed = self.narrow(&earlier_failed, env);
+                let outcome = match cond {
+                    Some(c) => {
+                        let holds = !(negate && i == 0);
+                        let typed = self.expr(c, env)?.expect(Sort::Bool, "if condition")?;
+                        let inside = self.narrow(&facts(c, holds), env);
+                        let body = self.expr(body, env);
+                        self.restore(inside);
+                        arms.push((if holds { typed } else { Typed::not(typed) }, body?));
+                        earlier_failed.extend(facts(c, !holds));
+                        Ok(())
+                    }
+                    None => self.expr(body, env).map(|b| otherwise = Some(b)),
+                };
+                self.restore(failed);
+                outcome
+            })();
+            if step.is_err() {
+                result = step;
+                break;
             }
         }
+        result?;
         let otherwise = otherwise.ok_or_else(|| SmtError::Unsupported("`if` without `else`".to_string()))?;
         arms.into_iter()
             .rev()
             .try_fold(otherwise, |acc, (cond, body)| Typed::ite(cond, body, acc))
+    }
+}
+
+/// The variables known not to be `None` when `cond` evaluates to `holds`.
+fn facts(cond: &Node, holds: bool) -> Vec<String> {
+    fn ident(node: &Node) -> Option<String> {
+        match &node.expr {
+            AstExpr::Ident(id) => Some(id.name.to_string()),
+            AstExpr::Paren(x) => ident(x),
+            _ => None,
+        }
+    }
+    fn is_none_literal(node: &Node) -> bool {
+        match &node.expr {
+            AstExpr::Literal(AstLiteral::None) => true,
+            AstExpr::Paren(x) => is_none_literal(x),
+            _ => false,
+        }
+    }
+    match &cond.expr {
+        AstExpr::Paren(x) => facts(x, holds),
+        AstExpr::UnaryOp(AstUnaryOp::Not, x) => facts(x, !holds),
+        AstExpr::Call(id, args) if !holds && id.name.to_string() == "is_none" => {
+            args.first().and_then(ident).into_iter().collect()
+        }
+        AstExpr::BinaryOp(op @ (B::Eq | B::Ne), a, b) if holds == matches!(op, B::Ne) => {
+            if is_none_literal(b) {
+                ident(a).into_iter().collect()
+            } else if is_none_literal(a) {
+                ident(b).into_iter().collect()
+            } else {
+                Vec::new()
+            }
+        }
+        AstExpr::And(xs) if holds => xs.iter().flat_map(|x| facts(x, true)).collect(),
+        AstExpr::Or(xs) if !holds => xs.iter().flat_map(|x| facts(x, false)).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A string or symbol literal used as a dict key.
+fn key_of(node: &Node) -> Option<String> {
+    match &node.expr {
+        AstExpr::Literal(AstLiteral::String(s)) => Some(s.clone()),
+        AstExpr::Literal(AstLiteral::Symbol(s)) => Some(s.to_string()),
+        _ => None,
     }
 }
 
@@ -229,11 +392,13 @@ fn builtin_call(name: &str, args: Vec<Typed>) -> Result<Typed> {
     let mut args = args.into_iter();
     match (name, args.next(), args.next(), args.next()) {
         ("len", Some(x), None, None) => Typed::len(x),
+        ("is_none", Some(x), None, None) => Ok(Typed::is_none(x)),
         // Type predicates are decided by the sort the value has.
-        ("is_number", Some(x), None, None) => Ok(Typed::bool(x.sort == Sort::Int)),
-        ("is_string", Some(x), None, None) => Ok(Typed::bool(x.sort == Sort::Str)),
-        ("is_bool", Some(x), None, None) => Ok(Typed::bool(x.sort == Sort::Bool)),
-        ("is_array", Some(x), None, None) => Ok(Typed::bool(matches!(x.sort, Sort::Seq(_)))),
+        ("is_number", Some(x), None, None) => Ok(Typed::kind_test(x, |s| *s == Sort::Int)),
+        ("is_string", Some(x), None, None) => Ok(Typed::kind_test(x, |s| *s == Sort::Str)),
+        ("is_bool", Some(x), None, None) => Ok(Typed::kind_test(x, |s| *s == Sort::Bool)),
+        ("is_array", Some(x), None, None) => Ok(Typed::kind_test(x, |s| matches!(s, Sort::Seq(_)))),
+        ("is_dict", Some(x), None, None) => Ok(Typed::kind_test(x, |s| matches!(s, Sort::Record(_)))),
         ("not", Some(x), None, None) => Ok(Typed::not(x.expect(Sort::Bool, "not")?)),
         ("contains" | "starts_with" | "ends_with", Some(a), Some(b), None) => Typed::str_predicate(name, a, b),
         ("abs", Some(x), None, None) => {

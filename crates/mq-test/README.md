@@ -211,10 +211,20 @@ asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` is 
 
   A function whose sorts are still open is skipped and the message names the missing declaration.
 
+  An optional value is declared with `||`, `is_number(x) || is_none(x)`, and a dict with known keys by
+  predicates on its keys, `is_number(p[:x]) && is_string(p[:name])`; `is_dict(p)` may be added.
+  `all(xs, is_number)` is an array of numbers.
+
 - Supported expressions: integer, string (printable ASCII) and array literals, `+ - * %` (`+` also
   concatenates strings and arrays), comparisons, `==`/`!=`, `&&`, `||`, `!`, `not`, `if`/`elif`/
-  `else` (the `else` is required), leading `let` bindings, `len`, `x[i]`, `starts_with`,
+  `else` (the `else` is required), leading `let` bindings, `len`, `x[i]`, `d[:key]`, `set`, `is_none`, `starts_with`,
   `ends_with`, `contains`, `abs`/`min`/`max`, and calls to other top-level `def`s in the file.
+- `x[i]` is the item or `None` when the index is out of range, and a negative index counts from
+  the end, as in mq. Strings index to a one-character string. `is_none(v)` and `v == None` narrow
+  `v` in the branch where it is not `None`, so `if (is_none(v)): 0 else: v + 1` type-checks. A plain
+  value is accepted where an optional one is expected.
+- A dict literal `{"a": 1}` or `set(p, :a, v)` builds a record of the keys it names. Reading a key the
+  declared shape does not have is not translated.
 - Numbers are modeled as mathematical integers. `%` is the truncated remainder; `/` is not
   translated. A zero divisor is unconstrained, whereas mq raises an error.
 - Self-recursion becomes `define-fun-rec`; a solver may answer `unknown` or time out because no

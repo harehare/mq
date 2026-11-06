@@ -31,3 +31,34 @@ def push(xs, x): xs + [x];
 # @requires(is_bool(a) && is_bool(b))
 # @ensures(is_bool(result) && result == (a && b))
 def both(a, b): if (a): b else: false;
+
+# An out-of-range index is None, and a negative one counts from the end.
+# @requires(all(xs, is_number))
+# @ensures(is_number(result) || is_none(result))
+# @ensures(len(xs) == 0 || !is_none(result))
+def first_or_none(xs): xs[0];
+
+# `is_none` narrows: in the else branch `v` is the number itself.
+# @requires(all(xs, is_number))
+# @ensures(is_number(result))
+# @ensures(result >= 0 || len(xs) > 0)
+def first_or_zero(xs):
+  let v = xs[0]
+  | if (is_none(v)): 0 else: v
+end
+
+# A dict with known keys is declared by predicates on its keys.
+# @requires(is_dict(p) && is_number(p[:x]) && is_number(p[:y]))
+# @ensures(is_number(result))
+# @ensures(result == p[:x] + p[:y])
+def sum_point(p): p[:x] + p["y"];
+
+# @requires(is_number(p[:x]) && is_number(p[:y]))
+# @ensures(is_number(result[:x]) && is_number(result[:y]))
+# @ensures(result[:x] == p[:x] + 1 && result[:y] == p[:y])
+def move_right(p): set(p, :x, p[:x] + 1);
+
+# @requires(is_number(a))
+# @ensures(is_number(result[:double]) && is_number(result[:orig]))
+# @ensures(result[:double] == result[:orig] + result[:orig])
+def pair(a): {"orig": a, "double": a + a};

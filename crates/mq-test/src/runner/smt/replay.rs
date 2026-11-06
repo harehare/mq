@@ -53,7 +53,10 @@ pub(crate) fn replay(content: &str, obligation: &Obligation, counterexample: &Co
 
 /// Numbers and booleans print the same in the model and in mq's error message.
 fn is_scalar(value: &str) -> bool {
-    value == "true" || value == "false" || value.trim_start_matches('-').chars().all(|c| c.is_ascii_digit())
+    value == "true"
+        || value == "false"
+        || value == "None"
+        || value.trim_start_matches('-').chars().all(|c| c.is_ascii_digit())
 }
 
 /// The `result = ...` value of a contract violation message; `None` prints as nothing.

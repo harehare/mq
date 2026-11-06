@@ -2113,7 +2113,7 @@ def push(xs, x): xs + [x];
         &[
             ("concat", "string,string->string"),
             ("greet", "string->string"),
-            ("head", "[number]->number"),
+            ("head", "[number]->number?"),
             ("push", "[number],number->[number]"),
         ],
     )
@@ -2126,10 +2126,7 @@ def push(xs, x): xs + [x];
         smt.contains("(define-fun greet ((name String)) String (str.++ \"hi \" name))"),
         "{smt}"
     );
-    assert!(
-        smt.contains("(define-fun head ((xs (Seq Int))) Int (seq.nth xs 0))"),
-        "{smt}"
-    );
+    assert!(smt.contains("(define-fun head ((xs (Seq Int))) (Option Int)"), "{smt}");
     assert!(
         smt.contains("(define-fun push ((xs (Seq Int)) (x Int)) (Seq Int) (seq.++ xs (seq.unit x)))"),
         "{smt}"
@@ -2139,15 +2136,22 @@ def push(xs, x): xs + [x];
 #[test]
 fn test_smt_solver_output_is_classified() {
     let params = vec!["a".to_string(), "s".to_string()];
+    let sorts = ["number", "string", "[number]"];
     assert_eq!(
-        smt::parse_output("unsat\n(error \"model is not available\")\n", &params),
+        smt::parse_output_with("unsat\n(error \"model is not available\")\n", &params, &sorts),
         smt::Verdict::Holds
     );
-    assert_eq!(smt::parse_output("unknown\n", &params), smt::Verdict::Unknown);
-    assert_eq!(smt::parse_output("timeout\n", &params), smt::Verdict::Unknown);
+    assert_eq!(
+        smt::parse_output_with("unknown\n", &params, &sorts),
+        smt::Verdict::Unknown
+    );
+    assert_eq!(
+        smt::parse_output_with("timeout\n", &params, &sorts),
+        smt::Verdict::Unknown
+    );
 
     let sat = "sat\n((a (- 3))\n (s \"x\"\"y\")\n ((f a s) (seq.++ (seq.unit 1) (seq.unit 2))))\n";
-    let smt::Verdict::Counterexample(ce) = smt::parse_output(sat, &params) else {
+    let smt::Verdict::Counterexample(ce) = smt::parse_output_with(sat, &params, &sorts) else {
         panic!("expected a counterexample");
     };
     assert_eq!(
@@ -2258,6 +2262,53 @@ def conflict(x): x;
     assert!(smt.contains("(assert (and true true))"), "{smt}");
     assert!(
         smt.contains("; skipped conflict: `x` is declared both String and Int"),
+        "{smt}"
+    );
+}
+
+#[test]
+fn test_emit_smt_models_out_of_range_access_as_none() {
+    let content = "# @ensures(len(xs) == 0 || !is_none(result))\ndef first(xs): xs[0];\n";
+    let smt = smt::emit_with_sorts(content, &[("first", "[number]->number?")]).unwrap();
+    assert!(
+        smt.contains("(declare-datatype Option (par (T) ((none) (some (val T)))))"),
+        "{smt}"
+    );
+    // A negative index counts from the end, and one out of range is `None`.
+    assert!(smt.contains("(ite (>= 0 0) 0 (+ (seq.len xs) 0))"), "{smt}");
+    assert!(smt.contains("(as none (Option Int))"), "{smt}");
+}
+
+#[test]
+fn test_emit_smt_narrows_an_optional_value_in_the_branch_that_excludes_none() {
+    let content = "# @ensures(result >= 0)\ndef f(xs): let v = xs[0] | if (is_none(v)): 0 else: v + 1;\n";
+    let smt = smt::emit_with_sorts(content, &[("f", "[number]->number")]).unwrap();
+    assert!(smt.contains("(+ (val v) 1)"), "{smt}");
+    // Outside the branch the option is still an option, so adding to it is a sort error.
+    let bad = "# @ensures(true)\ndef g(xs): let v = xs[0] | v + 1;\n";
+    let smt = smt::emit_with_sorts(bad, &[("g", "[number]->number")]).unwrap();
+    assert!(smt.contains("; skipped g:"), "{smt}");
+}
+
+#[test]
+fn test_emit_smt_models_dicts_with_known_keys_as_datatypes() {
+    let content = "# @ensures(result[:x] == p[:x] + 1)\ndef move_right(p): set(p, :x, p[:x] + 1);\n";
+    let smt = smt::emit_with_sorts(content, &[("move_right", "{x:number,y:number}->{x:number,y:number}")]).unwrap();
+    assert!(smt.contains("(declare-datatype R_x_Int_y_Int"), "{smt}");
+    assert!(smt.contains("mk_R_x_Int_y_Int"), "{smt}");
+}
+
+#[test]
+fn test_smt_type_predicates_declare_options_and_dict_shapes() {
+    let content = "\
+# @requires(is_number(p[:x]) && is_string(p[:name]))
+# @ensures(is_number(result) || is_none(result))
+def f(p): p[:x];
+";
+    let smt = TestRunner::emit_smt(content).unwrap();
+    assert!(smt.contains("(declare-const p R_name_String_x_Int)"), "{smt}");
+    assert!(
+        smt.contains("(define-fun f ((p R_name_String_x_Int)) (Option Int)"),
         "{smt}"
     );
 }

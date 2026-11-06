@@ -3,6 +3,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use super::term::Sort;
 use super::{Entry, Obligation};
 
 /// Whether running the function on a counterexample really violates the contract.
@@ -60,20 +61,24 @@ pub(crate) fn solve(solver: &str, obligation: &Obligation) -> Verdict {
         let _ = stdin.write_all(obligation.script(true).as_bytes());
     }
     match child.wait_with_output() {
-        Ok(output) => parse_output(&String::from_utf8_lossy(&output.stdout), &obligation.params),
+        Ok(output) => parse_output(
+            &String::from_utf8_lossy(&output.stdout),
+            &obligation.params,
+            &obligation.sorts,
+        ),
         Err(e) => Verdict::Error(e.to_string()),
     }
 }
 
 /// Classifies the solver's answer. `params` names the values `get-value` reports, followed by
-/// the function's result.
-pub(crate) fn parse_output(stdout: &str, params: &[String]) -> Verdict {
+/// the function's result; `sorts` gives the sort of each of those values.
+pub(crate) fn parse_output(stdout: &str, params: &[String], sorts: &[Sort]) -> Verdict {
     let mut lines = stdout.lines();
     match lines.next().map(str::trim) {
         Some("unsat") => Verdict::Holds,
         Some("sat") => {
             let raw = lines.collect::<Vec<_>>().join("\n");
-            Verdict::Counterexample(read_values(&raw, params))
+            Verdict::Counterexample(read_values(&raw, params, sorts))
         }
         Some("unknown" | "timeout") => Verdict::Unknown,
         _ => Verdict::Error(stdout.trim().to_string()),
@@ -81,7 +86,7 @@ pub(crate) fn parse_output(stdout: &str, params: &[String]) -> Verdict {
 }
 
 /// Turns `((a 0) (b "x") ((f a b) 5))` into mq literals; keeps `raw` when it cannot.
-fn read_values(raw: &str, params: &[String]) -> Counterexample {
+fn read_values(raw: &str, params: &[String], sorts: &[Sort]) -> Counterexample {
     let mut counterexample = Counterexample {
         inputs: Vec::new(),
         result: None,
@@ -94,8 +99,9 @@ fn read_values(raw: &str, params: &[String]) -> Counterexample {
     };
     let values: Option<Vec<String>> = pairs
         .iter()
-        .map(|pair| match pair {
-            Sexp::List(kv) => kv.get(1).and_then(to_mq),
+        .zip(sorts)
+        .map(|(pair, sort)| match pair {
+            Sexp::List(kv) => kv.get(1).and_then(|v| to_mq(v, sort)),
             _ => None,
         })
         .collect();
@@ -172,32 +178,48 @@ fn parse_sexps(input: &str) -> Vec<Sexp> {
     out
 }
 
-/// A solver value as an mq literal, or `None` for a form that has no mq equivalent.
-fn to_mq(value: &Sexp) -> Option<String> {
-    match value {
-        Sexp::Atom(a) if a == "true" || a == "false" || a.chars().all(|c| c.is_ascii_digit()) => Some(a.clone()),
-        Sexp::Str(text) if !text.contains("\\u{") => {
+/// A solver value of the given sort as an mq literal, or `None` for a form with no mq equivalent.
+fn to_mq(value: &Sexp, sort: &Sort) -> Option<String> {
+    let is_atom = |name: &str| matches!(value, Sexp::Atom(a) if a == name);
+    match (sort, value) {
+        (Sort::Int, Sexp::Atom(a)) if a.chars().all(|c| c.is_ascii_digit()) => Some(a.clone()),
+        (Sort::Int, Sexp::List(items)) => match items.as_slice() {
+            [Sexp::Atom(minus), Sexp::Atom(n)] if minus == "-" => Some(format!("-{n}")),
+            _ => None,
+        },
+        (Sort::Bool, Sexp::Atom(a)) if a == "true" || a == "false" => Some(a.clone()),
+        (Sort::Str, Sexp::Str(text)) if !text.contains("\\u{") => {
             Some(format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\"")))
         }
-        Sexp::List(items) => match items.as_slice() {
-            [Sexp::Atom(minus), Sexp::Atom(n)] if minus == "-" => Some(format!("-{n}")),
-            _ => seq_items(value).map(|items| format!("[{}]", items.join(", "))),
+        (Sort::Seq(elem), _) => seq_items(value, elem).map(|items| format!("[{}]", items.join(", "))),
+        (Sort::Opt(_), _) if is_atom("none") => Some("None".to_string()),
+        (Sort::Opt(inner), Sexp::List(items)) => match items.as_slice() {
+            [Sexp::Atom(a), Sexp::Atom(n), _] if a == "as" && n == "none" => Some("None".to_string()),
+            [Sexp::Atom(some), x] if some == "some" => to_mq(x, inner),
+            _ => None,
         },
-        Sexp::Atom(a) if a == "seq.empty" => Some("[]".to_string()),
+        (Sort::Record(fields), Sexp::List(items)) if items.len() == fields.len() + 1 => {
+            let entries: Option<Vec<String>> = fields
+                .iter()
+                .zip(&items[1..])
+                .map(|((key, sort), v)| to_mq(v, sort).map(|v| format!("\"{key}\": {v}")))
+                .collect();
+            entries.map(|entries| format!("{{{}}}", entries.join(", ")))
+        }
         _ => None,
     }
 }
 
-fn seq_items(value: &Sexp) -> Option<Vec<String>> {
+fn seq_items(value: &Sexp, elem: &Sort) -> Option<Vec<String>> {
     match value {
         Sexp::Atom(a) if a == "seq.empty" => Some(Vec::new()),
         Sexp::List(items) => match items.as_slice() {
             [Sexp::Atom(a), Sexp::Atom(s), _] if a == "as" && s == "seq.empty" => Some(Vec::new()),
-            [Sexp::Atom(u), x] if u == "seq.unit" => Some(vec![to_mq(x)?]),
+            [Sexp::Atom(u), x] if u == "seq.unit" => Some(vec![to_mq(x, elem)?]),
             [Sexp::Atom(c), rest @ ..] if c == "seq.++" => {
                 let mut all = Vec::new();
                 for r in rest {
-                    all.extend(seq_items(r)?);
+                    all.extend(seq_items(r, elem)?);
                 }
                 Some(all)
             }

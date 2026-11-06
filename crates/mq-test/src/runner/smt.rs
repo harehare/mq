@@ -25,8 +25,6 @@ use super::TestRunner;
 use super::contract::Contract;
 
 pub(super) use self::replay::replay;
-#[cfg(test)]
-pub(super) use self::verify::parse_output;
 pub(super) use self::verify::{Counterexample, Replay, Verdict, report_markdown, solve};
 
 /// Gives the sorts of each function; production uses `mq-check`, tests can supply their own.
@@ -44,6 +42,8 @@ pub(super) struct Obligation {
     violated: String,
     /// The mq parameter names, in order.
     pub(super) params: Vec<String>,
+    /// The sorts of the parameters, then of the result, for reading a counterexample.
+    sorts: Vec<Sort>,
     /// What `get-value` reports for a counterexample: the parameters, then the call itself.
     value_terms: String,
 }
@@ -224,7 +224,14 @@ impl TestRunner {
             .chain(std::iter::once(call.term.to_string()))
             .collect::<Vec<_>>()
             .join(" ");
-        let mut setup = String::new();
+        let mut every_sort: Vec<Sort> = sig.params.iter().cloned().chain([sig.ret.clone()]).collect();
+        every_sort.extend(tr.sorts_seen().iter().cloned());
+        every_sort.extend(
+            tr.defs()
+                .iter()
+                .flat_map(|d| d.params.iter().map(|(_, s)| s.clone()).chain([d.ret.clone()])),
+        );
+        let mut setup = term::datatype_declarations(&every_sort);
         for d in tr.defs() {
             let _ = writeln!(setup, "{d}");
         }
@@ -240,6 +247,7 @@ impl TestRunner {
                 setup: setup.clone(),
                 violated,
                 params: target.params.clone(),
+                sorts: sig.params.iter().cloned().chain([sig.ret.clone()]).collect(),
                 value_terms: value_terms.clone(),
             })
             .collect())
@@ -272,22 +280,72 @@ pub(super) fn entries_with_sorts(content: &str, spec: &[(&str, &str)]) -> Result
     TestRunner::smt_entries_with(content, &test_sorts(spec))
 }
 
+/// Test helper: classifies solver output for values of the sorts named by `"number"`, `"string"`,
+/// `"bool"`, `"[T]"`, `"T?"` and `"{k:T,..}"`.
 #[cfg(test)]
-fn test_sorts(spec: &[(&str, &str)]) -> impl Fn(&str, &HashMap<String, Func>) -> HashMap<String, Partial> + use<> {
-    fn sort(text: &str) -> Sort {
-        match text.trim() {
-            "bool" => Sort::Bool,
-            "string" => Sort::Str,
-            t if t.starts_with('[') => Sort::Seq(Box::new(sort(&t[1..t.len() - 1]))),
-            _ => Sort::Int,
+pub(super) fn parse_output_with(stdout: &str, params: &[String], sorts: &[&str]) -> Verdict {
+    let sorts: Vec<Sort> = sorts.iter().map(|n| test_sort(n)).collect();
+    verify::parse_output(stdout, params, &sorts)
+}
+
+/// Splits at commas that are not inside brackets or braces.
+#[cfg(test)]
+fn split_top_level(text: &str) -> Vec<&str> {
+    let (mut parts, mut depth, mut start) = (Vec::new(), 0, 0);
+    for (i, c) in text.char_indices() {
+        match c {
+            '[' | '{' => depth += 1,
+            ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
         }
     }
+    parts.push(&text[start..]);
+    parts
+}
+
+#[cfg(test)]
+fn test_sort(text: &str) -> Sort {
+    let text = text.trim();
+    if let Some(inner) = text.strip_suffix('?') {
+        return Sort::Opt(Box::new(test_sort(inner)));
+    }
+    if let Some(inner) = text.strip_prefix('[').and_then(|t| t.strip_suffix(']')) {
+        return Sort::Seq(Box::new(test_sort(inner)));
+    }
+    if let Some(inner) = text.strip_prefix('{').and_then(|t| t.strip_suffix('}')) {
+        let fields = split_top_level(inner)
+            .into_iter()
+            .map(|field| {
+                let (key, sort) = field.split_once(':').unwrap();
+                (key.trim().to_string(), test_sort(sort))
+            })
+            .collect();
+        return Sort::record(fields);
+    }
+    match text {
+        "bool" => Sort::Bool,
+        "string" => Sort::Str,
+        _ => Sort::Int,
+    }
+}
+
+#[cfg(test)]
+fn test_sorts(spec: &[(&str, &str)]) -> impl Fn(&str, &HashMap<String, Func>) -> HashMap<String, Partial> + use<> {
+    let sort = test_sort;
     let spec: Vec<(String, String)> = spec.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect();
     move |_, _| {
         spec.iter()
             .map(|(name, text)| {
                 let (params, ret) = text.split_once("->").unwrap();
-                let params = params.split(',').filter(|p| !p.trim().is_empty()).map(sort).collect();
+                let params = split_top_level(params)
+                    .into_iter()
+                    .filter(|p| !p.trim().is_empty())
+                    .map(sort)
+                    .collect();
                 (name.clone(), Partial::known(&Signature { params, ret: sort(ret) }))
             })
             .collect()
