@@ -45,7 +45,7 @@ impl TestRunner {
     /// user-facing message when a contracted `def` cannot be wrapped.
     ///
     /// With `label_nested`, a `@requires` violation escaping
-    /// from a contracted function's body is re-labelled "in nested call", so `@exhaustive`
+    /// from a contracted function's body is re-labelled "in nested call", so `@small_scope`
     /// can tell it from a violation by the function the test called directly. A violation
     /// that passes through an uncontracted helper first is still seen as direct.
     pub(super) fn apply_contracts(content: &str, label_nested: bool) -> Result<String, String> {

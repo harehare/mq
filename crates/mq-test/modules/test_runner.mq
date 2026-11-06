@@ -1,4 +1,4 @@
-# Runners for `# @property(...)` and `# @exhaustive(...)` tests, used by the queries mq-test builds.
+# Runners for `# @property(...)` and `# @small_scope(...)` tests, used by the queries mq-test builds.
 
 include "test"
 | import "gen"
@@ -55,14 +55,14 @@ end
 
 
 
-# Runner for `# @exhaustive(...)` tests. Appended after `include "test"` by mq-test.
+# Runner for `# @small_scope(...)` tests. Appended after `include "test"` by mq-test.
 
 # A `@requires` violation raised by the function the test called directly (see `contract.rs`).
-def _exhaustive_direct_requires_prefix():
+def _small_scope_direct_requires_prefix():
   "@requires violated (caller's responsibility)"
 end
 
-def _exhaustive_opt(options, key, default):
+def _small_scope_opt(options, key, default):
   if (contains(options, key)): get(options, key) else: default
 end
 
@@ -71,10 +71,10 @@ end
 # Only a `@requires` violation of a function the test called directly is a skip. The same
 # violation reached through another contracted function arrives re-labelled "in nested call"
 # (see `contract.rs`) and is a failure, like `@ensures` violations and every other error.
-def _exhaustive_classify(adapter, args):
+def _small_scope_classify(adapter, args):
   let outcome = try: {"returned": adapter(args)} catch(e): {"thrown": e["message"]}
   | if (contains(outcome, "thrown")):
-      if (starts_with(outcome["thrown"], _exhaustive_direct_requires_prefix())):
+      if (starts_with(outcome["thrown"], _small_scope_direct_requires_prefix())):
         {"kind": "skip"}
       else:
         {"kind": "fail", "message": "Error: " + outcome["thrown"]}
@@ -85,7 +85,7 @@ def _exhaustive_classify(adapter, args):
       end
 end
 
-def _exhaustive_percent(part, whole):
+def _small_scope_percent(part, whole):
   if (whole == 0): "0%" else: to_string(round(part * 100 / whole)) + "%"
 end
 
@@ -95,11 +95,11 @@ end
 # `options`: `max_cases` (valid checks, default 100000), `max_total` (valid + skipped,
 # default 10 * max_cases), `skip_warn` (skip-rate warning threshold, default 0.5).
 #
-# Returns a failure dict, or `{"exhaustive_report": text}` when no counterexample was found.
-def _exhaustive_result(name, tuple_enum, max_size, options, adapter):
-  let max_cases = _exhaustive_opt(options, "max_cases", 100000)
-  | let max_total = _exhaustive_opt(options, "max_total", max_cases * 10)
-  | let skip_warn = _exhaustive_opt(options, "skip_warn", 0.5)
+# Returns a failure dict, or `{"small_scope_report": text}` when no counterexample was found.
+def _small_scope_result(name, tuple_enum, max_size, options, adapter):
+  let max_cases = _small_scope_opt(options, "max_cases", 100000)
+  | let max_total = _small_scope_opt(options, "max_total", max_cases * 10)
+  | let skip_warn = _small_scope_opt(options, "skip_warn", 0.5)
   | let tier_fn = get(tuple_enum, "tier")
   | var valid = 0
   | var skipped = 0
@@ -107,7 +107,7 @@ def _exhaustive_result(name, tuple_enum, max_size, options, adapter):
   | var found = None
   | var stopped = None
   | if (max_size < 0):
-      error("@exhaustive: max_size must be nonnegative, got " + to_string(max_size))
+      error("@small_scope: max_size must be nonnegative, got " + to_string(max_size))
     else:
       None
   | let _ = while (size <= max_size && is_none(found) && is_none(stopped)):
@@ -121,7 +121,7 @@ def _exhaustive_result(name, tuple_enum, max_size, options, adapter):
           else:
             do
               let args = tier[i]
-              | let outcome = _exhaustive_classify(adapter, args)
+              | let outcome = _small_scope_classify(adapter, args)
               | if (outcome["kind"] == "valid"):
                   valid += 1
                 elif (outcome["kind"] == "skip"):
@@ -159,13 +159,13 @@ def _exhaustive_result(name, tuple_enum, max_size, options, adapter):
       do
         let rate = skipped / total
         | let warning = if (rate > skip_warn):
-            "\nwarning: " + _exhaustive_percent(skipped, total) + " of the inputs were skipped (threshold "
-              + _exhaustive_percent(skip_warn, 1) + "); most of this scope never reached the test. "
+            "\nwarning: " + _small_scope_percent(skipped, total) + " of the inputs were skipped (threshold "
+              + _small_scope_percent(skip_warn, 1) + "); most of this scope never reached the test. "
               + "Use the enumerator options (e.g. enumerate::markdown({\"max_heading_depth\": 3})) to build inputs that satisfy @requires."
           else:
             ""
         | {
-            "exhaustive_report": name + ": no counterexample found within this scope.\n" + scope + "\n" + counts + warning
+            "small_scope_report": name + ": no counterexample found within this scope.\n" + scope + "\n" + counts + warning
           }
       end
 end

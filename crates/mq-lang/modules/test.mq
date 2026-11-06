@@ -323,7 +323,7 @@ def _run_test(test_name, test_func):
   | let end_time = now()
   | let duration = end_time - start_time
   | let failure = _test_failure(result)
-  | let detail = if (is_dict(result) && contains(result, "exhaustive_report")): result["exhaustive_report"] else: None
+  | let detail = if (is_dict(result) && contains(result, "small_scope_report")): result["small_scope_report"] else: None
   | if (not(is_none(failure))):
       {
         "name": test_name,
@@ -418,10 +418,10 @@ def run_tests(tests):
     else:
       ""
 
-  # Build the exhaustive-check reports section, if any
+  # Build the small-scope reports section, if any
   | let reports = filter(test_results, fn(r): not(is_none(r["detail"]));)
   | let reports_section = if (len(reports) > 0):
-      "\n## Exhaustive checks\n\n" + join(map(reports, fn(r): "```\n" + r["detail"] + "\n```";), "\n\n") + "\n"
+      "\n## Small-scope checks\n\n" + join(map(reports, fn(r): "```\n" + r["detail"] + "\n```";), "\n\n") + "\n"
     else:
       ""
 

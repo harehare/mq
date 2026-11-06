@@ -10,7 +10,7 @@ Standalone test runner for mq: auto-discovers and executes test functions in `.m
 - It is immediately preceded by a `# @test` or `# [test]` annotation comment, **OR**
 - It is immediately preceded by a `# @parametrize(...)` annotation comment, **OR**
 - It is immediately preceded by a `# @property(...)` annotation comment, **OR**
-- It is immediately preceded by a `# @exhaustive(...)` annotation comment.
+- It is immediately preceded by a `# @small_scope(...)` annotation comment.
 
 Test discovery uses the CST so all conventions are resolved accurately without any line-scanning heuristics.
 
@@ -229,16 +229,16 @@ generic per-value shrinker it's built on). The failure message shows the shrunk 
 alongside the original ones; the case name still reports the original seed, so
 `gen::tuple(generators)(42)` remains the way to reproduce the *unshrunk* case exactly.
 
-### Exhaustive Small-Scope Tests
+### Small-Scope Tests
 
-`# @exhaustive(max_size, enumerators, options)` complements `@property`: instead of random
+`# @small_scope(max_size, enumerators, options)` complements `@property`: instead of random
 inputs it runs the function on **every** input of size `<= max_size`, smallest first. The first
 failure is therefore a smallest counterexample and nothing is shrunk. A clean run is reported as
 "no counterexample found within this scope", never as a proof: it says nothing about larger
 inputs or values the enumerators do not produce.
 
 ```mq
-# @exhaustive(3, [enumerate::markdown({"max_heading_depth": 3})])
+# @small_scope(3, [enumerate::markdown({"max_heading_depth": 3})])
 def test_heading_lines_parse_as_headings(src):
   let doc = to_markdown(src)
   | assert_eq(len(filter(doc, is_h)), len(filter(split(src, "\n"), fn(l): starts_with(l, "#");)))
@@ -270,7 +270,7 @@ end
   and a run with no valid input fails. Prefer building valid inputs with the enumerator options
   over relying on skips.
 
-Direct versus nested calls are told apart by the contract wrapper: in files with `@exhaustive`, a
+Direct versus nested calls are told apart by the contract wrapper: in files with `@small_scope`, a
 `@requires` violation escaping from a contracted function's body is re-labelled "in nested call".
 This needs no call-depth tracking and no declaration in the test. The limit is that a violation
 reached through an *uncontracted* helper the test calls is still seen as direct and skipped; the

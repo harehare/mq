@@ -419,9 +419,9 @@ def fact(n):
 end
 ```
 
-### Exhaustive small-scope tests (`enumerate`)
+### Small-scope tests (`enumerate`)
 
-`# @exhaustive(max_size, enumerators, options)` runs a test on every input of size `<= max_size`,
+`# @small_scope(max_size, enumerators, options)` runs a test on every input of size `<= max_size`,
 smallest first, instead of on random inputs. The first failure is a smallest counterexample, so no
 shrinking is needed. A clean run means no counterexample was found within the listed scope; it says
 nothing about larger inputs. The `enumerate` module is bundled with `mq-test` (not available to the
@@ -443,7 +443,7 @@ value of size exactly `k`.
 # @requires(len(to_markdown(src)) > 0)
 def first_block(src): to_markdown(src)[0];
 
-# @exhaustive(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "min_blocks": 1})])
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "min_blocks": 1})])
 def test_first_block(src):
   assert_true(is_markdown(first_block(src)))
 end

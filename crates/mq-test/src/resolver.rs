@@ -63,7 +63,7 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case("test_runner", "def _exhaustive_result(")]
+    #[case("test_runner", "def _small_scope_result(")]
     #[case("gen", "def tuple(")]
     #[case("enumerate", "def tuple(")]
     fn test_bundled_modules_resolve(#[case] name: &str, #[case] expected: &str) {

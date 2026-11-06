@@ -1,11 +1,11 @@
-# Tier-based enumerators for exhaustive small-scope checking.
+# Tier-based enumerators for small-scope checking.
 #
 # An enumerator is a dict `{"tier": fn(k), "describe": string}`. `tier(k)` returns every value of
 # size exactly `k`, so concatenating the tiers for sizes 0, 1, 2, ... lists all values in
 # non-decreasing size order. The first counterexample found that way is a smallest one, so no
 # shrinking is needed.
 #
-# Pairs with `mq-test`'s `# @exhaustive(max_size, enumerators)`. A clean run means no
+# Pairs with `mq-test`'s `# @small_scope(max_size, enumerators)`. A clean run means no
 # counterexample exists within the enumerators' values of size <= max_size, nothing more.
 #
 # Sizes: `element` values have size 0, `array_of` adds the length to the sizes of its items,

@@ -14,8 +14,8 @@ use crate::snapshot;
 /// Number of iterations a `# @property(generators)` test runs when no count is given.
 const DEFAULT_PROPERTY_CASES: &str = "100";
 
-/// Largest value size a `# @exhaustive(enumerators)` test enumerates when no size is given.
-const DEFAULT_EXHAUSTIVE_SIZE: &str = "3";
+/// Largest value size a `# @small_scope(enumerators)` test enumerates when no size is given.
+const DEFAULT_SMALL_SCOPE_SIZE: &str = "3";
 
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
@@ -31,10 +31,10 @@ enum TestAnnotation {
         count_expr: String,
         generators_expr: String,
     },
-    /// `# @exhaustive(max_size, enumerators, options)`: checks every input of size
-    /// `<= max_size` (see `enumerate.mq`). `max_size` defaults to [`DEFAULT_EXHAUSTIVE_SIZE`]
+    /// `# @small_scope(max_size, enumerators, options)`: checks every input of size
+    /// `<= max_size` (see `enumerate.mq`). `max_size` defaults to [`DEFAULT_SMALL_SCOPE_SIZE`]
     /// and `options` to an empty dict.
-    Exhaustive {
+    SmallScope {
         max_size_expr: String,
         enumerators_expr: String,
         options_expr: String,
@@ -79,8 +79,8 @@ enum DiscoveredTest {
         arity: usize,
         tags: Vec<String>,
     },
-    /// A `# @exhaustive(max_size, enumerators)` test. See `TestRunner::build_exhaustive_case_expr`.
-    Exhaustive {
+    /// A `# @small_scope(max_size, enumerators)` test. See `TestRunner::build_small_scope_case_expr`.
+    SmallScope {
         name: String,
         max_size_expr: String,
         enumerators_expr: String,
@@ -96,7 +96,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { name, .. } => name,
             DiscoveredTest::Parametrized { name, .. } => name,
             DiscoveredTest::Property { name, .. } => name,
-            DiscoveredTest::Exhaustive { name, .. } => name,
+            DiscoveredTest::SmallScope { name, .. } => name,
         }
     }
 
@@ -105,7 +105,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { tags, .. } => tags,
             DiscoveredTest::Parametrized { tags, .. } => tags,
             DiscoveredTest::Property { tags, .. } => tags,
-            DiscoveredTest::Exhaustive { tags, .. } => tags,
+            DiscoveredTest::SmallScope { tags, .. } => tags,
         }
     }
 
@@ -115,7 +115,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { .. } => "simple",
             DiscoveredTest::Parametrized { .. } => "parametrized",
             DiscoveredTest::Property { .. } => "property",
-            DiscoveredTest::Exhaustive { .. } => "exhaustive",
+            DiscoveredTest::SmallScope { .. } => "small_scope",
         }
     }
 }
@@ -326,8 +326,8 @@ impl TestRunner {
                 return;
             }
 
-            let uses_exhaustive = tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. }));
-            let content = match Self::apply_contracts(&content, uses_exhaustive) {
+            let uses_small_scope = tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. }));
+            let content = match Self::apply_contracts(&content, uses_small_scope) {
                 Ok(content) => content,
                 Err(message) => {
                     any_failed.store(true, Ordering::Relaxed);
@@ -734,13 +734,13 @@ impl TestRunner {
                         tags: Self::collect_tags(&node.leading_trivia),
                     });
                 }
-                Some(TestAnnotation::Exhaustive {
+                Some(TestAnnotation::SmallScope {
                     max_size_expr,
                     enumerators_expr,
                     options_expr,
                 }) => {
                     let arity = Self::get_arity(node);
-                    tests.push(DiscoveredTest::Exhaustive {
+                    tests.push(DiscoveredTest::SmallScope {
                         name: func_name.clone(),
                         max_size_expr,
                         enumerators_expr,
@@ -793,14 +793,14 @@ impl TestRunner {
                     generators_expr,
                 })
             }
-            "exhaustive" => {
+            "small_scope" => {
                 let parts: Vec<String> = Self::split_top_level_commas(&args)
                     .into_iter()
                     .map(|part| part.trim().to_string())
                     .collect();
                 let (max_size_expr, enumerators_expr, options_expr) = match parts.as_slice() {
                     [enumerators] => (
-                        DEFAULT_EXHAUSTIVE_SIZE.to_string(),
+                        DEFAULT_SMALL_SCOPE_SIZE.to_string(),
                         enumerators.clone(),
                         "{}".to_string(),
                     ),
@@ -808,7 +808,7 @@ impl TestRunner {
                     [size, enumerators, options] => (size.clone(), enumerators.clone(), options.clone()),
                     _ => return None,
                 };
-                Some(TestAnnotation::Exhaustive {
+                Some(TestAnnotation::SmallScope {
                     max_size_expr,
                     enumerators_expr,
                     options_expr,
@@ -993,10 +993,10 @@ impl TestRunner {
         )
     }
 
-    /// Builds the single `test_case` for a `# @exhaustive(max_size, enumerators, options)` test.
-    /// `_exhaustive_result` (see `exhaustive.mq`) walks the tiers in size order, so the first
+    /// Builds the single `test_case` for a `# @small_scope(max_size, enumerators, options)` test.
+    /// `_small_scope_result` (see `small_scope.mq`) walks the tiers in size order, so the first
     /// failure it reports is a smallest counterexample and nothing is shrunk.
-    fn build_exhaustive_case_expr(
+    fn build_small_scope_case_expr(
         display: &str,
         name: &str,
         max_size_expr: &str,
@@ -1004,20 +1004,21 @@ impl TestRunner {
         options_expr: &str,
         arity: usize,
     ) -> String {
-        let arg_list = Self::build_arg_list("__exhaustive_arg", arity);
-        let arity_check = Self::build_arity_check("@exhaustive", "enumerator", "__exhaustive_enumerators", name, arity);
+        let arg_list = Self::build_arg_list("__small_scope_arg", arity);
+        let arity_check =
+            Self::build_arity_check("@small_scope", "enumerator", "__small_scope_enumerators", name, arity);
         format!(
             "do \
-               let __exhaustive_enumerators = ({enumerators_expr}) \
+               let __small_scope_enumerators = ({enumerators_expr}) \
                | if {arity_check} \
                  else: test_case( \
                    \"{display}\", \
-                   fn(): _exhaustive_result( \
+                   fn(): _small_scope_result( \
                      \"{display}\", \
-                     enumerate::tuple(__exhaustive_enumerators), \
+                     enumerate::tuple(__small_scope_enumerators), \
                      ({max_size_expr}), \
                      ({options_expr}), \
-                     fn(__exhaustive_arg): {name}({arg_list});) ; \
+                     fn(__small_scope_arg): {name}({arg_list});) ; \
                  ) \
              end"
         )
@@ -1077,7 +1078,7 @@ impl TestRunner {
                         Self::build_property_case_expr(display, name, count_expr, generators_expr, *arity)
                     )
                 }
-                DiscoveredTest::Exhaustive {
+                DiscoveredTest::SmallScope {
                     name,
                     max_size_expr,
                     enumerators_expr,
@@ -1088,7 +1089,7 @@ impl TestRunner {
                     let display = Self::display_name(name);
                     format!(
                         "  {}",
-                        Self::build_exhaustive_case_expr(
+                        Self::build_small_scope_case_expr(
                             display,
                             name,
                             max_size_expr,
@@ -1108,7 +1109,7 @@ impl TestRunner {
         if tests.iter().any(|t| matches!(t, DiscoveredTest::Property { .. })) {
             imports.push_str("\n| import \"gen\"");
         }
-        if tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. })) {
+        if tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. })) {
             imports.push_str("\n| import \"enumerate\"");
         }
         if !imports.is_empty() {

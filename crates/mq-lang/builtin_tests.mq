@@ -2381,7 +2381,7 @@ def test_split_empty_separator(value, sep, expected):
   assert_eq(split(value, sep), expected)
 end
 
-# @exhaustive(3, [enumerate::markdown({"max_blocks": 3})])
+# @small_scope(3, [enumerate::markdown({"max_blocks": 3})])
 def test_to_markdown_string_roundtrip_is_stable(src):
   let once = to_markdown_string(to_markdown(src))
   | assert_eq(to_markdown_string(to_markdown(once)), once)
