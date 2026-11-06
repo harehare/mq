@@ -85,6 +85,15 @@ def _small_scope_classify(adapter, args):
       end
 end
 
+# A Markdown table of how many inputs each size produced and how many were valid or skipped.
+def _small_scope_table(by_size):
+  let rows = map(by_size, fn(r): "| " + to_string(r[0]) + " | " + to_string(r[1] + r[2]) + " | " + to_string(r[1]) + " | " + to_string(r[2]) + " |";)
+  | let total_valid = fold(by_size, 0, fn(acc, r): acc + r[1];)
+  | let total_skipped = fold(by_size, 0, fn(acc, r): acc + r[2];)
+  | "| Size | Inputs | Valid | Skipped |\n| --: | --: | --: | --: |\n" + join(rows, "\n")
+      + "\n| **all** | **" + to_string(total_valid + total_skipped) + "** | **" + to_string(total_valid) + "** | **" + to_string(total_skipped) + "** |"
+end
+
 def _small_scope_percent(part, whole):
   if (whole == 0): "0%" else: to_string(round(part * 100 / whole)) + "%"
 end
@@ -106,12 +115,15 @@ def _small_scope_result(name, tuple_enum, max_size, options, adapter):
   | var size = 0
   | var found = None
   | var stopped = None
+  | var by_size = []
   | if (max_size < 0):
       error("@small_scope: max_size must be nonnegative, got " + to_string(max_size))
     else:
       None
   | let _ = while (size <= max_size && is_none(found) && is_none(stopped)):
       let tier = tier_fn(size)
+      | let valid_before = valid
+      | let skipped_before = skipped
       | var i = 0
       | let _ = while (i < len(tier) && is_none(found) && is_none(stopped)):
           if (valid + skipped >= max_total):
@@ -131,6 +143,7 @@ def _small_scope_result(name, tuple_enum, max_size, options, adapter):
             end
           | i += 1
         end
+      | by_size += [[size, valid - valid_before, skipped - skipped_before]]
       | size += 1
     end
   | let total = valid + skipped
@@ -147,7 +160,7 @@ def _small_scope_result(name, tuple_enum, max_size, options, adapter):
       {
         "error": true,
         "message": "Enumeration stopped before finishing: " + stopped + " (no counterexample found in the " + to_string(total) + " inputs tried)"
-          + "\n\n" + scope + "\n" + counts + "\nLower max_size, narrow the enumerators, or raise the limit in the options argument."
+          + "\n\n" + scope + "\n" + counts + "\n" + _small_scope_table(by_size) + "\nLower max_size, narrow the enumerators, or raise the limit in the options argument."
       }
     elif (valid == 0):
       {
@@ -165,7 +178,10 @@ def _small_scope_result(name, tuple_enum, max_size, options, adapter):
           else:
             ""
         | {
-            "small_scope_report": name + ": no counterexample found within this scope.\n" + scope + "\n" + counts + warning
+            "small_scope_report": "### " + (if (warning == ""): "✅ " else: "⚠️ ") + name + "\n\n"
+              + "No counterexample found within this scope (not a proof for larger inputs).\n\n"
+              + _small_scope_table(by_size) + "\n\n"
+              + "- " + scope + "\n- " + counts + (if (warning == ""): "" else: "\n- " + trim(warning))
           }
       end
 end

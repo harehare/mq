@@ -14,6 +14,9 @@ use super::{TestAnnotation, TestRunner};
 /// unused anywhere in the file.
 const ORIG_PREFIX: &str = "__orig_";
 
+/// Host function the checking wrapper calls to count contract evaluations.
+pub(crate) const CONTRACT_CHECK_FN: &str = "__contract_check";
+
 /// Start of the message of a `@requires` violation raised by a direct call.
 const REQUIRES_PREFIX: &str = "@requires violated (caller's responsibility)";
 
@@ -194,6 +197,17 @@ impl TestRunner {
         Ok(out)
     }
 
+    /// The expression of `contract` wrapped so the host function [`CONTRACT_CHECK_FN`] counts
+    /// each evaluation and violation, returning the condition unchanged.
+    fn contract_check(kind: &str, name: &str, contract: &Contract) -> String {
+        format!(
+            "{CONTRACT_CHECK_FN}(\"{kind}\", \"{name}\", {}, \"{}\", ({}))",
+            contract.line,
+            escape_mq_string(&contract.expr),
+            contract.expr
+        )
+    }
+
     /// Builds the checking wrapper `def f(...)` that calls the renamed original.
     fn build_contract_wrapper(c: &Contracted, label_nested: bool) -> String {
         let name = &c.name;
@@ -208,7 +222,8 @@ impl TestRunner {
                 escape_mq_string(&r.expr),
                 r.line
             );
-            steps.push(format!("(if (not({})): error({msg}) else: None)", r.expr));
+            let check = Self::contract_check("requires", name, r);
+            steps.push(format!("(if (not({check})): error({msg}) else: None)"));
         }
         let orig = &c.orig_name;
         if label_nested {
@@ -224,7 +239,8 @@ impl TestRunner {
                 escape_mq_string(&e.expr),
                 e.line
             );
-            steps.push(format!("(if (not({})): error({msg}) else: None)", e.expr));
+            let check = Self::contract_check("ensures", name, e);
+            steps.push(format!("(if (not({check})): error({msg}) else: None)"));
         }
         steps.push("result".to_string());
 
@@ -239,4 +255,80 @@ fn escape_mq_string(s: &str) -> String {
         .replace('"', "\\\"")
         .replace('\n', "\\n")
         .replace('\t', "\\t")
+}
+
+/// How often each contract was evaluated and how often it did not hold, keyed by
+/// (function, kind, line, expression). Fed by the [`CONTRACT_CHECK_FN`] host function.
+#[derive(Clone, Default)]
+pub(crate) struct ContractStats(std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<ContractKey, (u64, u64)>>>);
+
+type ContractKey = (String, String, u32, String);
+
+impl ContractStats {
+    /// Registers [`CONTRACT_CHECK_FN`] on `engine`.
+    pub(crate) fn register<IO: mq_lang::Io>(
+        &self,
+        engine: &mut mq_lang::Engine<crate::resolver::TestModuleResolver, IO>,
+    ) {
+        let stats = self.clone();
+        engine.register_fn(
+            CONTRACT_CHECK_FN,
+            move |kind: String,
+                  name: String,
+                  line: i64,
+                  expr: String,
+                  holds: bool|
+                  -> Result<bool, mq_lang::HostFunctionError> {
+                let mut map = stats.0.lock().unwrap();
+                let entry = map.entry((name, kind, line.max(0) as u32, expr)).or_default();
+                entry.0 += 1;
+                if !holds {
+                    entry.1 += 1;
+                }
+                Ok(holds)
+            },
+        );
+    }
+
+    /// A Markdown table of every contract that was evaluated, or `None` if there were none.
+    ///
+    /// A violated `@ensures` is a failure; an unmet `@requires` only means the input was
+    /// outside the function's domain.
+    pub(crate) fn markdown(&self) -> Option<String> {
+        let map = self.0.lock().unwrap();
+        if map.is_empty() {
+            return None;
+        }
+        let mut out = String::from(
+            "## Contracts\n\n| | Function | Contract | Evaluated | Not held |\n| :-: | :-- | :-- | --: | --: |\n",
+        );
+        for ((name, kind, line, expr), (evaluated, violated)) in map.iter() {
+            let icon = match (*violated, kind.as_str()) {
+                (0, _) => "✅",
+                (_, "ensures") => "❌",
+                _ => "↷",
+            };
+            out.push_str(&format!(
+                "| {icon} | `{name}` | `@{kind}({})` (line {line}) | {evaluated} | {violated} |\n",
+                expr.replace('|', "\\|")
+            ));
+        }
+        out.push_str("\n`↷`: precondition not met, so the input was outside the function's domain.\n");
+        Some(out)
+    }
+
+    /// The same data for `--format json`.
+    pub(crate) fn json(&self) -> serde_json::Value {
+        let map = self.0.lock().unwrap();
+        serde_json::Value::Array(
+            map.iter()
+                .map(|((name, kind, line, expr), (evaluated, violated))| {
+                    serde_json::json!({
+                        "function": name, "kind": kind, "line": line, "expression": expr,
+                        "evaluated": evaluated, "violated": violated,
+                    })
+                })
+                .collect(),
+        )
+    }
 }

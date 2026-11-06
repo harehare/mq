@@ -373,6 +373,8 @@ impl TestRunner {
             }
 
             Self::register_clock(&mut engine);
+            let contract_stats = contract::ContractStats::default();
+            contract_stats.register(&mut engine);
 
             {
                 let test_file = file.to_string_lossy().into_owned();
@@ -425,6 +427,9 @@ impl TestRunner {
                     match self.format {
                         OutputFormat::Text => {
                             let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
+                            if let Some(table) = contract_stats.markdown() {
+                                println!("\n{table}");
+                            }
                             if !passed {
                                 any_failed.store(true, Ordering::Relaxed);
                                 failed_files.lock().unwrap().push(file.clone());
@@ -452,6 +457,7 @@ impl TestRunner {
                             json_results.lock().unwrap().push(serde_json::json!({
                                 "file": file.display().to_string(),
                                 "tests": tests_json,
+                                "contracts": contract_stats.json(),
                             }));
                         }
                     }

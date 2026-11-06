@@ -91,7 +91,8 @@ shrunk with `gen::shrink` first; the report shows the shrunk and original argume
 
 `# @small_scope(max_size, enumerators, options)` runs the function on **every** input of size
 `<= max_size`, smallest first, so the first failure is a smallest counterexample. A clean run means
-"no counterexample within this scope", not a proof.
+"no counterexample within this scope", not a proof. The report shows a per-size table of
+inputs, valid and skipped counts, and flags a high skip rate with ⚠️.
 
 ```mq
 # @small_scope(3, [enumerate::markdown({"max_heading_depth": 3})])
@@ -147,6 +148,11 @@ end
 - Use `all`, `any` and other higher-order builtins in expressions. There is no `old(x)` or `forall`.
 - Only top-level `def`s (not inside a `module`) without variadic parameters. Default values are kept. Expressions are
   not type-checked or checked for purity.
+
+After the run, a `## Contracts` table lists each contract with how often it was evaluated and how
+often it did not hold (`❌` a violated `@ensures`, `↷` an unmet `@requires`, i.e. an input outside the
+function's domain). A contract that never appears was never evaluated by the tests. `--format json`
+carries the same data as a `contracts` array per file.
 
 The `def` is renamed to `__orig_<name>` and a checking wrapper is appended, so line numbers stay put.
 

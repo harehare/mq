@@ -421,7 +421,7 @@ def run_tests(tests):
   # Build the small-scope reports section, if any
   | let reports = filter(test_results, fn(r): not(is_none(r["detail"]));)
   | let reports_section = if (len(reports) > 0):
-      "\n## Small-scope checks\n\n" + join(map(reports, fn(r): "```\n" + r["detail"] + "\n```";), "\n\n") + "\n"
+      "\n## Small-scope checks\n\n" + join(map(reports, fn(r): r["detail"];), "\n\n") + "\n"
     else:
       ""
 

@@ -845,6 +845,7 @@ fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
+    super::contract::ContractStats::default().register(&mut engine);
 
     let result = engine.eval(query, mq_lang::null_input().into_iter()).unwrap();
     let rendered = result.values().first().map(ToString::to_string).unwrap_or_default();
@@ -1063,6 +1064,7 @@ fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_sti
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
+    super::contract::ContractStats::default().register(&mut engine);
 
     let query = r#"include "test" | run_tests_data([
             test_case("boom", fn(): error("boom");),
@@ -1172,6 +1174,7 @@ fn test_render_file_error_attaches_the_file_name_when_mq_lang_left_it_blank() {
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
+    super::contract::ContractStats::default().register(&mut engine);
     let err = *engine.eval(&query, mq_lang::null_input().into_iter()).unwrap_err();
     assert_eq!(
         err.source_code.name(),
@@ -1381,9 +1384,9 @@ fn test_apply_contracts_renames_in_place_and_appends_a_wrapper() {
         )
     );
     assert!(rewritten.contains("def inc(n) do"), "missing wrapper: {rewritten}");
-    assert!(rewritten.contains("not(n > 0)"));
+    assert!(rewritten.contains("\"n > 0\", (n > 0)))"), "{rewritten}");
     assert!(rewritten.contains("let result = __orig_inc(n)"));
-    assert!(rewritten.contains("not(result > n)"));
+    assert!(rewritten.contains("\"result > n\", (result > n)))"), "{rewritten}");
 }
 
 #[test]
@@ -1452,6 +1455,7 @@ fn run_results(content: &str) -> Vec<serde_json::Value> {
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
+    super::contract::ContractStats::default().register(&mut engine);
     let result = engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
     let json = result.values().first().cloned().unwrap().to_json_value();
     json.as_array().unwrap().clone()
@@ -1722,7 +1726,9 @@ fn test_small_scope_passes_and_reports_its_scope() {
 
     assert_eq!(run_failures(content), vec![]);
     let detail = run_detail(content, "short");
-    assert!(detail.contains("no counterexample found within this scope"), "{detail}");
+    assert!(detail.contains("No counterexample found within this scope"), "{detail}");
+    assert!(detail.contains("| 2 | 4 | 4 | 0 |"), "{detail}");
+    assert!(detail.contains("| **all** | **7** | **7** | **0** |"), "{detail}");
     assert!(detail.contains("size <= 2"), "{detail}");
     assert!(detail.contains("7 valid, 0 skipped"), "{detail}");
     assert!(!detail.contains("guarantee") && !detail.contains("proved"), "{detail}");
@@ -2042,4 +2048,37 @@ fn test_apply_contracts_keeps_default_parameters_in_the_wrapper() {
         "{rewritten}"
     );
     assert!(rewritten.contains("__orig_f(a, n, flag)"), "{rewritten}");
+}
+
+#[test]
+fn test_contract_stats_count_evaluations_and_unmet_requires() {
+    let content = concat!(
+        "# @requires(n >= 0)\n# @ensures(result >= n)\ndef f(n): n;\n",
+        "def test_calls():\n  f(1) | f(2) | try: f(-1) catch: 0\nend\n",
+    );
+    let stats = super::contract::ContractStats::default();
+    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
+    let tests = TestRunner::discover_tests(&rewritten);
+    let query = TestRunner::build_test_query(&rewritten, &tests);
+    let mut engine = mq_lang::Engine::with_io(
+        crate::resolver::TestModuleResolver::default(),
+        mq_lang::Shared::new(mq_lang::MemIo::default()),
+    );
+    engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
+    stats.register(&mut engine);
+    engine.register_fn("current_test_file", || -> Result<String, mq_lang::HostFunctionError> {
+        Ok("t.mq".to_string())
+    });
+    engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
+
+    let table = stats.markdown().unwrap();
+    assert!(
+        table.contains("| ↷ | `f` | `@requires(n >= 0)` (line 1) | 3 | 1 |"),
+        "{table}"
+    );
+    assert!(
+        table.contains("| ✅ | `f` | `@ensures(result >= n)` (line 2) | 2 | 0 |"),
+        "{table}"
+    );
 }
