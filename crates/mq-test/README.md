@@ -145,7 +145,7 @@ end
 - In `@property` tests an `@ensures` violation is shrunk; shrink candidates violating `@requires`
   are skipped, so the counterexample stays in the valid domain.
 - Use `all`, `any` and other higher-order builtins in expressions. There is no `old(x)` or `forall`.
-- Only top-level `def`s with plain parameters (no defaults, variadics or `module`). Expressions are
+- Only top-level `def`s (not inside a `module`) without variadic parameters. Default values are kept. Expressions are
   not type-checked or checked for purity.
 
 The `def` is renamed to `__orig_<name>` and a checking wrapper is appended, so line numbers stay put.

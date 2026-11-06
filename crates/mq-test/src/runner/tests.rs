@@ -1432,8 +1432,7 @@ fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
 }
 
 #[rstest]
-#[case("# @requires(true)\ndef f(a, b = 1): a;\n", "only plain parameters")]
-#[case("# @requires(true)\ndef f(*args): args;\n", "only plain parameters")]
+#[case("# @requires(true)\ndef f(*args): args;\n", "variadic parameters are not supported")]
 #[case("# @ensures(true)\ndef f(result): result;\n", "clashes")]
 fn test_apply_contracts_rejects_unsupported_signatures(#[case] content: &str, #[case] expected: &str) {
     let err = TestRunner::apply_contracts(content, false).unwrap_err();
@@ -2032,4 +2031,15 @@ fn test_emit_smt_rejects_ill_sorted_contracts() {
             .unwrap()
             .contains("; skipped m: and: expected Bool, found Int")
     );
+}
+
+#[test]
+fn test_apply_contracts_keeps_default_parameters_in_the_wrapper() {
+    let content = "# @requires(n >= 0)\ndef f(a, n = len([1, 2]) + 1, flag = false): a;\n";
+    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
+    assert!(
+        rewritten.contains("def f(a, n = len([1, 2]) + 1, flag = false) do"),
+        "{rewritten}"
+    );
+    assert!(rewritten.contains("__orig_f(a, n, flag)"), "{rewritten}");
 }

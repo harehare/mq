@@ -32,6 +32,8 @@ struct Contracted {
     /// Collision-free name the original `def` is renamed to.
     orig_name: String,
     params: Vec<String>,
+    /// Parameters as written in the signature, with default values (`n = 1`).
+    param_decls: Vec<String>,
     requires: Vec<Contract>,
     ensures: Vec<Contract>,
     /// One-based line and column of the name token.
@@ -64,22 +66,32 @@ impl TestRunner {
             let name_text = name.name().map(|n| n.to_string()).unwrap_or_default();
             let (sig, _) = node.split_cond_and_program();
             let mut params = Vec::new();
+            let mut param_decls = Vec::new();
             for param in sig.iter().skip(1) {
-                match (&param.kind, param.name()) {
-                    (
-                        CstNodeKind::Param {
-                            asterisk: None,
-                            default: None,
-                            ..
-                        },
-                        Some(p),
-                    ) => params.push(p.to_string()),
-                    _ => {
-                        return Err(format!(
-                            "contracts on '{name_text}': only plain parameters are supported (no defaults or variadics)"
-                        ));
+                let CstNodeKind::Param {
+                    asterisk: None,
+                    default,
+                    ..
+                } = &param.kind
+                else {
+                    return Err(format!(
+                        "contracts on '{name_text}': variadic parameters are not supported"
+                    ));
+                };
+                let Some(p) = param.name() else {
+                    return Err(format!("contracts on '{name_text}': unnamed parameter"));
+                };
+                let decl = match default {
+                    Some(default) => {
+                        let text = Self::source_text(content, default.node_range()).ok_or_else(|| {
+                            format!("contracts on '{name_text}': could not read the default of '{p}'")
+                        })?;
+                        format!("{p} = {text}")
                     }
-                }
+                    None => p.to_string(),
+                };
+                params.push(p.to_string());
+                param_decls.push(decl);
             }
             if !ensures.is_empty() && params.iter().any(|p| p == "result") {
                 return Err(format!(
@@ -92,6 +104,7 @@ impl TestRunner {
                 name: name_text,
                 orig_name: String::new(),
                 params,
+                param_decls,
                 requires,
                 ensures,
                 name_line: range.start.line,
@@ -133,6 +146,24 @@ impl TestRunner {
             }
         }
         (requires, ensures)
+    }
+
+    /// The source text of `range` (one-based line and column), or `None` if it is out of bounds.
+    fn source_text(content: &str, range: mq_lang::Range) -> Option<String> {
+        let line_starts: Vec<usize> = std::iter::once(0)
+            .chain(content.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        let offset = |pos: mq_lang::Position| -> Option<usize> {
+            let start = *line_starts.get((pos.line as usize).checked_sub(1)?)?;
+            let column = pos.column.checked_sub(1)?;
+            match content[start..].char_indices().nth(column) {
+                Some((i, _)) => Some(start + i),
+                None => Some(content.len()),
+            }
+        };
+        content
+            .get(offset(range.start)?..offset(range.end)?)
+            .map(str::to_string)
     }
 
     /// Renames each contracted `def` to its `orig_name`, verifying the name token really
@@ -197,7 +228,8 @@ impl TestRunner {
         }
         steps.push("result".to_string());
 
-        format!("def {name}({params}) do\n    {}\nend\n", steps.join("\n    | "))
+        let decls = c.param_decls.join(", ");
+        format!("def {name}({decls}) do\n    {}\nend\n", steps.join("\n    | "))
     }
 }
 
