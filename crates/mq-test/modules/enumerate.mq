@@ -17,8 +17,18 @@ def _tier_of(en, k):
 end
 
 # One-level concatenation (the built-in `flatten` is recursive and would destroy tuple values).
+# Halving keeps it O(n log n); folding with `+` would copy the accumulator on every step.
 def _concat(arrs):
-  fold(arrs, [], fn(acc, x): acc + x;)
+  let n = len(arrs)
+  | if (n == 0):
+      []
+    elif (n == 1):
+      arrs[0]
+    else:
+      do
+        let mid = trunc(n / 2)
+        | _concat(arrs[0:mid]) + _concat(arrs[mid:n])
+      end
 end
 
 def _opt(options, key, default):
@@ -36,6 +46,8 @@ def _tuple_tier(ens, budget):
     []
   elif (len(ens) == 0):
     if (budget == 0): [[]] else: []
+  elif (len(ens) == 1):
+    map(_tier_of(ens[0], budget), fn(v): [v];)
   else:
     do
       let first_en = ens[0]
