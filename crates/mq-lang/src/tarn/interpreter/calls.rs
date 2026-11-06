@@ -63,6 +63,7 @@ struct ParameterContext<'chunks, 'execution> {
 /// The closure a frame is executing: its chunk and captured cells.
 pub(super) struct SelfClosure<'a> {
     pub(super) chunk_index: u16,
+    pub(super) chunk: &'a Chunk,
     pub(super) upvalues: &'a Option<Shared<Vec<Cell>>>,
 }
 
@@ -73,10 +74,18 @@ pub(super) fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, curre
         .map(|source| match source {
             UpvalueSource::Local(slot) => Shared::clone(locals.cell(*slot)),
             UpvalueSource::Upvalue(idx) => Shared::clone(&upvalues[*idx as usize]),
-            UpvalueSource::SelfClosure => new_cell(StackValue::Closure(Shared::new(Closure {
-                chunk_index: current.chunk_index,
-                upvalues: current.upvalues.clone(),
-            }))),
+            UpvalueSource::SelfClosure => match current.upvalues {
+                Some(_) => new_cell(StackValue::Closure(Shared::new(Closure {
+                    chunk_index: current.chunk_index,
+                    upvalues: current.upvalues.clone(),
+                }))),
+                None => Shared::clone(current.chunk.self_cell.get_or_init(|| {
+                    new_cell(StackValue::Closure(Shared::new(Closure {
+                        chunk_index: current.chunk_index,
+                        upvalues: None,
+                    })))
+                })),
+            },
         })
         .collect()
 }
@@ -732,6 +741,7 @@ fn resume_bind_params(
                         &callee_locals,
                         SelfClosure {
                             chunk_index: callee_chunk_index,
+                            chunk: &context.chunks[callee_chunk_index as usize],
                             upvalues: &callee_upvalues,
                         },
                     );

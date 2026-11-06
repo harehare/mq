@@ -1561,6 +1561,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     locals,
                     SelfClosure {
                         chunk_index: frame.chunk_index,
+                        chunk,
                         upvalues: &frame.upvalues,
                     },
                 );
