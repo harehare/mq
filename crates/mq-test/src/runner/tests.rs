@@ -2218,7 +2218,8 @@ fn test_smt_skips_functions_whose_types_mq_check_leaves_open() {
     let content = "# @ensures(result >= 0)\ndef a(x): abs(x);\n# @ensures(true)\ndef b(s): \"x\" + s;\n";
     let smt = TestRunner::emit_smt(content).unwrap();
     assert!(smt.contains("(define-fun a ((x Int)) Int"), "{smt}");
-    assert!(smt.contains("; skipped b: unsupported type of parameter `s`"), "{smt}");
+    assert!(smt.contains("; skipped b: parameter `s`: mq-check inferred"), "{smt}");
+    assert!(smt.contains("declare it with `# @requires(is_number(s))`"), "{smt}");
 }
 
 #[test]
@@ -2226,4 +2227,37 @@ fn test_smt_empty_array_takes_the_expected_item_sort() {
     let content = "# @ensures(len(result) == len(xs))\ndef f(xs): xs + [];\n";
     let smt = smt::emit_with_sorts(content, &[("f", "[string]->[string]")]).unwrap();
     assert!(smt.contains("(seq.++ xs (as seq.empty (Seq String)))"), "{smt}");
+}
+
+#[test]
+fn test_smt_takes_open_sorts_from_type_predicates_in_the_contracts() {
+    let content = "\
+# @requires(is_string(a) && is_string(b))
+# @ensures(is_string(result) && len(result) == len(a) + len(b))
+def concat(a, b): a + b;
+
+# @requires(all(xs, is_number) && is_number(x))
+# @ensures(all(result, is_number))
+def push(xs, x): xs + [x];
+
+# @requires(is_string(x))
+# @requires(is_number(x))
+# @ensures(true)
+def conflict(x): x;
+";
+    let smt = TestRunner::emit_smt(content).unwrap();
+    assert!(
+        smt.contains("(define-fun concat ((a String) (b String)) String (str.++ a b))"),
+        "{smt}"
+    );
+    assert!(
+        smt.contains("(define-fun push ((xs (Seq Int)) (x Int)) (Seq Int) (seq.++ xs (seq.unit x)))"),
+        "{smt}"
+    );
+    // The predicates are facts the sorts already settle, so they add no constraint.
+    assert!(smt.contains("(assert (and true true))"), "{smt}");
+    assert!(
+        smt.contains("; skipped conflict: `x` is declared both String and Int"),
+        "{smt}"
+    );
 }

@@ -1,16 +1,33 @@
 # Contracts checked by `just smt` (`mq-test --verify`). Every @ensures here holds for all inputs.
-# Parameter and result types come from mq-check, so only functions whose types it settles
-# (for example through `abs`, which only takes numbers) can be checked.
+#
+# Parameter and result types come from mq-check. Where it leaves one open (a `+` or `len`
+# operand can be a number, string or array), a predicate at the top of a @requires/@ensures
+# declares it: is_number(x), is_string(x), is_bool(x) or all(xs, is_number). The same
+# predicates are checked at runtime by `mq-test`.
+
+# @requires(is_number(x) && is_number(lo) && is_number(hi) && lo <= hi)
+# @ensures(is_number(result) && result >= lo && result <= hi)
+def clamp(x, lo, hi): min(max(x, lo), hi);
 
 # @ensures(result >= 0)
 # @ensures(result == x || result == -x)
 def distance_from_zero(x): abs(x);
 
-# @ensures(result >= 0)
-def sum_abs(x, y): abs(x) + abs(y);
+# @requires(is_string(a) && is_string(b))
+# @ensures(is_string(result) && len(result) == len(a) + len(b))
+def concat(a, b): a + b;
 
-# @ensures(result >= 0)
-def larger_magnitude(a, b): if (abs(a) > abs(b)): abs(a) else: abs(b);
+# @requires(is_string(name))
+# @ensures(is_string(result))
+# @ensures(starts_with(result, "hello, "))
+# @ensures(len(result) >= 7)
+def greet(name): "hello, " + name;
 
-# @ensures(result == n)
-def cancels_out(n): abs(n) - abs(n) + n;
+# @requires(all(xs, is_number) && is_number(x))
+# @ensures(all(result, is_number))
+# @ensures(len(result) == len(xs) + 1)
+def push(xs, x): xs + [x];
+
+# @requires(is_bool(a) && is_bool(b))
+# @ensures(is_bool(result) && result == (a && b))
+def both(a, b): if (a): b else: false;

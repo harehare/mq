@@ -20,6 +20,7 @@ use mq_lang::{Arena, AstExpr, CstNodeKind, Shared, SharedCell};
 
 use self::term::{Result as SmtResult, Signature, Sort, Typed};
 use self::translate::{Func, Node, Translator};
+use self::types::Partial;
 use super::TestRunner;
 use super::contract::Contract;
 
@@ -29,7 +30,7 @@ pub(super) use self::verify::parse_output;
 pub(super) use self::verify::{Counterexample, Replay, Verdict, report_markdown, solve};
 
 /// Gives the sorts of each function; production uses `mq-check`, tests can supply their own.
-type Signatures = dyn Fn(&str, &HashMap<String, Func>) -> HashMap<String, SmtResult<Signature>>;
+type Signatures = dyn Fn(&str, &HashMap<String, Func>) -> HashMap<String, Partial>;
 
 /// One `@ensures` to check: the solver is asked for an input satisfying `setup` (definitions,
 /// declarations and every `@requires`) but violating the `@ensures`.
@@ -70,7 +71,7 @@ pub(super) enum Entry {
 impl TestRunner {
     /// Renders the SMT-LIB script for every contracted `def` in `content` that has an `@ensures`.
     pub(super) fn emit_smt(content: &str) -> Result<String, String> {
-        Self::emit_smt_with(content, &types::signatures)
+        Self::emit_smt_with(content, &types::inferred)
     }
 
     fn emit_smt_with(content: &str, signatures: &Signatures) -> Result<String, String> {
@@ -109,7 +110,7 @@ impl TestRunner {
 
     /// Translates every contracted `def` of `content` that has an `@ensures`.
     pub(super) fn smt_entries(content: &str) -> Result<Vec<Entry>, String> {
-        Self::smt_entries_with(content, &types::signatures)
+        Self::smt_entries_with(content, &types::inferred)
     }
 
     fn smt_entries_with(content: &str, signatures: &Signatures) -> Result<Vec<Entry>, String> {
@@ -158,7 +159,7 @@ impl TestRunner {
     fn smt_for(
         name: &str,
         funcs: &HashMap<String, Func>,
-        sigs: &HashMap<String, SmtResult<Signature>>,
+        partials: &HashMap<String, Partial>,
         requires: &[Contract],
         ensures: &[Contract],
     ) -> Result<Vec<Obligation>, String> {
@@ -168,7 +169,19 @@ impl TestRunner {
         let requires_ast = Self::parse_contracts(requires)?;
         let ensures_ast = Self::parse_contracts(ensures)?;
 
-        let mut tr = Translator::new(funcs, sigs);
+        // Sorts mq-check left open are taken from the predicates in this function's contracts.
+        let contract_nodes: Vec<Node> = requires_ast.iter().chain(&ensures_ast).cloned().collect();
+        let declared = types::declared(&contract_nodes).map_err(|e| e.to_string())?;
+        let no_declarations = HashMap::new();
+        let sigs: HashMap<String, SmtResult<Signature>> = partials
+            .iter()
+            .filter_map(|(n, partial)| {
+                let func = funcs.get(n)?;
+                let declared = if n == name { &declared } else { &no_declarations };
+                Some((n.clone(), partial.complete(func, declared)))
+            })
+            .collect();
+        let mut tr = Translator::new(funcs, &sigs);
         let sig = tr.define(name).map_err(|e| e.to_string())?;
 
         let mut env: translate::Env = target.params.iter().cloned().zip(sig.params.iter().cloned()).collect();
@@ -260,9 +273,7 @@ pub(super) fn entries_with_sorts(content: &str, spec: &[(&str, &str)]) -> Result
 }
 
 #[cfg(test)]
-fn test_sorts(
-    spec: &[(&str, &str)],
-) -> impl Fn(&str, &HashMap<String, Func>) -> HashMap<String, SmtResult<Signature>> + use<> {
+fn test_sorts(spec: &[(&str, &str)]) -> impl Fn(&str, &HashMap<String, Func>) -> HashMap<String, Partial> + use<> {
     fn sort(text: &str) -> Sort {
         match text.trim() {
             "bool" => Sort::Bool,
@@ -277,7 +288,7 @@ fn test_sorts(
             .map(|(name, text)| {
                 let (params, ret) = text.split_once("->").unwrap();
                 let params = params.split(',').filter(|p| !p.trim().is_empty()).map(sort).collect();
-                (name.clone(), Ok(Signature { params, ret: sort(ret) }))
+                (name.clone(), Partial::known(&Signature { params, ret: sort(ret) }))
             })
             .collect()
     }

@@ -157,6 +157,9 @@ impl<'a> Translator<'a> {
             AstExpr::Unless(branches) => self.branches(branches, env, true),
             AstExpr::Call(id, args) => {
                 let name = id.name.to_string();
+                if let Some(holds) = self.element_predicate(&name, args, env)? {
+                    return Ok(holds);
+                }
                 let args = self.exprs(args, env)?;
                 if self.funcs.contains_key(&name) {
                     if !self.done.contains(&name) && !self.visiting.contains(&name) {
@@ -172,6 +175,30 @@ impl<'a> Translator<'a> {
 
     fn exprs<'n>(&mut self, nodes: impl IntoIterator<Item = &'n Node>, env: &Env) -> Result<Vec<Typed>> {
         nodes.into_iter().map(|n| self.expr(n, env)).collect()
+    }
+
+    /// `all(xs, is_number)` and the like: a fact about the array's item sort, decided by it.
+    fn element_predicate(&mut self, name: &str, args: &[Node], env: &Env) -> Result<Option<Typed>> {
+        let [xs, pred] = args else {
+            return Ok(None);
+        };
+        let (AstExpr::Ident(pred), "all") = (&pred.expr, name) else {
+            return Ok(None);
+        };
+        let item = match pred.name.to_string().as_str() {
+            "is_number" => Sort::Int,
+            "is_string" => Sort::Str,
+            "is_bool" => Sort::Bool,
+            _ => return Ok(None),
+        };
+        match self.expr(xs, env)?.sort {
+            Sort::Seq(elem) => Ok(Some(Typed::bool(*elem == item))),
+            other => Err(SmtError::Mismatch {
+                context: "all".to_string(),
+                expected: Sort::Seq(Box::new(item)),
+                found: other,
+            }),
+        }
     }
 
     /// `if`/`elif`/`else` as nested `ite`; `negate` flips the first condition (`unless`).
@@ -202,6 +229,11 @@ fn builtin_call(name: &str, args: Vec<Typed>) -> Result<Typed> {
     let mut args = args.into_iter();
     match (name, args.next(), args.next(), args.next()) {
         ("len", Some(x), None, None) => Typed::len(x),
+        // Type predicates are decided by the sort the value has.
+        ("is_number", Some(x), None, None) => Ok(Typed::bool(x.sort == Sort::Int)),
+        ("is_string", Some(x), None, None) => Ok(Typed::bool(x.sort == Sort::Str)),
+        ("is_bool", Some(x), None, None) => Ok(Typed::bool(x.sort == Sort::Bool)),
+        ("is_array", Some(x), None, None) => Ok(Typed::bool(matches!(x.sort, Sort::Seq(_)))),
         ("not", Some(x), None, None) => Ok(Typed::not(x.expect(Sort::Bool, "not")?)),
         ("contains" | "starts_with" | "ends_with", Some(a), Some(b), None) => Typed::str_predicate(name, a, b),
         ("abs", Some(x), None, None) => {

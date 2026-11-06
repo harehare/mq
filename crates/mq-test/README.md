@@ -195,12 +195,21 @@ def clamp(x, lo, hi): min(max(x, lo), hi);
 For each function with `@ensures`, the script defines the function, assumes every `@requires` and
 asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` is a counterexample.
 
-- Sorts come from `mq-check`'s inferred types: `number`, `bool`, `string` and `[T]` for an array.
-  Numbers are modeled as integers. Only a type the checker settles is used, nothing is guessed.
-  Overloaded operators such as `+`, `len` and `x[i]` leave their operands open (`'a`) because they
-  also accept other types, so a function whose parameters are only used through them is skipped
-  with the type mq-check inferred. Passing a value through a builtin that fixes its type, such as
-  `abs(x)` for a number, settles it.
+- Sorts come from `mq-check`'s inferred types (`number`, `bool`, `string`, `[T]` for an array;
+  numbers are modeled as integers). Only a settled type is used. Overloaded operators such as `+`,
+  `len` and `x[i]` also accept other types, so a parameter used only through them stays open (`'a`).
+  Declare it with a type predicate at the top of a `@requires` (or `@ensures`, for `result`):
+  `is_number(x)`, `is_string(x)`, `is_bool(x)` or `all(xs, is_number)`. These are ordinary mq
+  expressions that `mq-test` also checks at runtime, and `--smt` reads them as sorts rather than
+  constraints.
+
+  ```mq
+  # @requires(is_string(a) && is_string(b))
+  # @ensures(is_string(result) && len(result) == len(a) + len(b))
+  def concat(a, b): a + b;
+  ```
+
+  A function whose sorts are still open is skipped and the message names the missing declaration.
 
 - Supported expressions: integer, string (printable ASCII) and array literals, `+ - * %` (`+` also
   concatenates strings and arrays), comparisons, `==`/`!=`, `&&`, `||`, `!`, `not`, `if`/`elif`/
