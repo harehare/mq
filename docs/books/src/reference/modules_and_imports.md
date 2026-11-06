@@ -438,6 +438,11 @@ value of size exactly `k`.
 | `enumerate::transform(en, mapper)` | `mapper` applied to each value, same size |
 | `enumerate::node(en, mapper)` | Like `transform`, one size larger |
 | `enumerate::markdown(options)` | Markdown source text; size is the number of blocks plus list items |
+| `enumerate::int(min, max)` | Integers in `[min, max]`; size is `abs(n)` |
+| `enumerate::string(charset, max_len)` | Strings of 0 to `max_len` characters of `charset`; size is the length |
+| `enumerate::bool()` | `true` and `false` |
+| `enumerate::dict_of(key_en, value_en, max_len)` | Dicts of 0 to `max_len` entries, each listed once |
+| `enumerate::json(options)` | JSON-like values (none, booleans, small integers, short strings, nested arrays and dicts) |
 
 ```mq
 # @requires(len(to_markdown(src)) > 0)

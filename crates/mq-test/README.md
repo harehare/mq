@@ -254,7 +254,10 @@ end
   enumerator is a dict whose `tier(k)` returns every value of size exactly `k`. Combinators:
   `element(values)` (size 0), `one_of(enums)`, `tuple(enums)` (sizes add), `array(en, max_len)` and
   `array_of(en, min_len, max_len)` (size is the length plus the items' sizes), `transform(en, f)`
-  (same size) and `node(en, f)` (one larger). `described(en, text)` sets the description printed in
+  (same size) and `node(en, f)` (one larger). Values: `int(min, max)` (size is `abs(n)`),
+  `string(charset, max_len)` (size is the length), `bool()`, `dict_of(key_en, value_en, max_len)`
+  (each dict once, in key order) and `json(options)` (none, booleans, integers, strings, and arrays
+  and dicts nested up to `max_depth`; `"null": false` leaves out none). `described(en, text)` sets the description printed in
   the report. Tiers are built in memory, so keep `max_size` small.
 - `enumerate::markdown(options)` yields Markdown **source text** (parse it with `to_markdown(src)`).
   Options: `kinds` (heading, paragraph, bullet_list, ordered_list, code, blockquote, link, emphasis, and the opt-in table),

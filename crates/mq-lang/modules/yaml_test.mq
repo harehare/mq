@@ -111,3 +111,9 @@ def test_yaml_stringify_string_round_trips(s):
   let data = dict([["k", s], [s, 1], ["arr", [s]], ["nested", {"x": s}]])
   | assert_eq(yaml::yaml_parse(yaml::yaml_stringify(data)), data)
 end
+
+# Strings hold characters that are special in YAML: colon, dash, hash and a space.
+# @small_scope(3, [enumerate::json({"charset": "a:- #", "max_str_len": 2})])
+def test_yaml_stringify_parse_roundtrip(value):
+  assert_eq(yaml::yaml_parse(yaml::yaml_stringify(value)), value)
+end

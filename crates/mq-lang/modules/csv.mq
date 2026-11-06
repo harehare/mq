@@ -85,7 +85,8 @@ def tsv_parse(input, has_header): _csv_parse(input, "\t", has_header);
 # Returns: array
 def psv_parse(input, has_header): _csv_parse(input, "|", has_header);
 
-# Converts data to a CSV string with a specified delimiter.
+# Converts data to a CSV string with a specified delimiter. A row whose only field is empty is
+# written as `""`, so it is not read back as a blank line.
 #
 # Example:
 # ```
@@ -98,7 +99,10 @@ def psv_parse(input, has_header): _csv_parse(input, "|", has_header);
 def csv_stringify(data, delimiter):
   let headers = _csv_headers(data)
   | let rows = if (!is_empty(data) && is_dict(first(data))): data else: skip(data, 1)
-  | let to_line = fn(row): join(map(if (is_dict(row)): map(headers, fn(h): row[h];) else: row, fn(f): _csv_field(f, delimiter);), delimiter);
+  | let to_line = fn(row):
+      let fields = map(if (is_dict(row)): map(headers, fn(h): row[h];) else: row, fn(f): _csv_field(f, delimiter);)
+      | let line = join(fields, delimiter)
+      | if (line == "" && len(fields) == 1): "\"\"" else: line;
   | if (is_empty(data)):
       ""
     else:

@@ -1918,3 +1918,58 @@ fn test_apply_contracts_labels_nested_requires_only_when_asked() {
             .contains("in nested call")
     );
 }
+
+#[test]
+fn test_enumerate_value_enumerators_list_values_by_size() {
+    let content = concat!(
+        "# @small_scope(0, [enumerate::element([0])])\n",
+        "def test_values(_n):\n",
+        "  assert_eq(\n",
+        "    [\n",
+        "      enumerate::tier(enumerate::int(-5, 5), 0),\n",
+        "      enumerate::tier(enumerate::int(-5, 5), 2),\n",
+        "      enumerate::tier(enumerate::int(0, 5), 2),\n",
+        "      enumerate::tier(enumerate::int(1, 5), 0),\n",
+        "      enumerate::tier(enumerate::string(\"ab\", 2), 0),\n",
+        "      enumerate::tier(enumerate::string(\"ab\", 2), 2),\n",
+        "      enumerate::tier(enumerate::string(\"\", 2), 1),\n",
+        "      enumerate::tier(enumerate::bool(), 0),\n",
+        "      enumerate::tier(enumerate::dict_of(enumerate::element([\"a\", \"b\"]), enumerate::element([1]), 2), 1),\n",
+        "      enumerate::tier(enumerate::dict_of(enumerate::element([\"a\"]), enumerate::element([1, 2]), 2), 1),\n",
+        "      enumerate::tier(enumerate::dict_of(enumerate::element([\"a\", \"b\"]), enumerate::element([1]), 2), 2),\n",
+        "    ],\n",
+        "    [\n",
+        "      [0],\n",
+        "      [2, -2],\n",
+        "      [2],\n",
+        "      [],\n",
+        "      [\"\"],\n",
+        "      [\"aa\", \"ab\", \"ba\", \"bb\"],\n",
+        "      [],\n",
+        "      [true, false],\n",
+        "      [{\"a\": 1}, {\"b\": 1}],\n",
+        "      [{\"a\": 1}, {\"a\": 2}],\n",
+        "      [{\"a\": 1, \"b\": 1}],\n",
+        "    ]\n",
+        "  )\n",
+        "end\n",
+    );
+
+    assert_eq!(run_failures(content), vec![]);
+}
+
+#[rstest]
+#[case("{}", &[7, 25, 159])]
+#[case("{\"null\": false}", &[6, 22, 124])]
+#[case("{\"max_depth\": 0}", &[5, 4, 4])]
+fn test_enumerate_json_tier_sizes(#[case] options: &str, #[case] expected: &[usize]) {
+    let content = format!(
+        "# @small_scope(0, [enumerate::element([0])])\n\
+         def test_sizes(_n):\n  \
+           assert_eq(map(range(0, {last}), fn(k): len(enumerate::tier(enumerate::json({options}), k));), {expected:?})\n\
+         end\n",
+        last = expected.len() - 1
+    );
+
+    assert_eq!(run_failures(&content), vec![], "{content}");
+}

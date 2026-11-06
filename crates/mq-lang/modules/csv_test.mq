@@ -254,3 +254,21 @@ def test_sort_rows_errors(rows, cols):
   let result = try: csv::sort_rows(rows, cols) catch: "err"
   | assert_eq(result, "err")
 end
+
+def test_csv_stringify_quotes_a_lone_empty_field():
+  assert_eq(
+    [csv::csv_stringify([[""]], ","), csv::csv_stringify([["a"], [""], ["b"]], ","), csv::csv_stringify([["a", "b"], ["", ""]], ",")],
+    ["\"\"", "a\n\"\"\nb", "a,b\n,"]
+  )
+end
+
+# Fields hold the delimiters, quotes, a newline and a space, in every supported delimiter.
+# @small_scope(5, [enumerate::array_of(enumerate::array_of(enumerate::string("a,\"\n ", 2), 1, 2), 1, 2), enumerate::element([",", "\t", ";", "|"])])
+def test_csv_rows_roundtrip(rows, delimiter):
+  assert_eq(csv::csv_parse_with_delimiter(csv::csv_stringify(rows, delimiter), delimiter, false), rows)
+end
+
+# @small_scope(4, [enumerate::transform(enumerate::array_of(enumerate::tuple([enumerate::string("a,\"\n ", 2), enumerate::string("a,\"\n ", 2)]), 1, 2), fn(pairs): map(pairs, fn(p): {"a": p[0], "b": p[1]};);)])
+def test_csv_dict_rows_roundtrip(rows):
+  assert_eq(csv::csv_parse(csv::csv_stringify(rows, ","), true), rows)
+end
