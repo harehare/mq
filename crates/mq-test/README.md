@@ -257,9 +257,9 @@ end
   (same size) and `node(en, f)` (one larger). `described(en, text)` sets the description printed in
   the report. Tiers are built in memory, so keep `max_size` small.
 - `enumerate::markdown(options)` yields Markdown **source text** (parse it with `to_markdown(src)`).
-  Options: `kinds` (heading, paragraph, bullet_list, ordered_list, code, blockquote, link, emphasis),
+  Options: `kinds` (heading, paragraph, bullet_list, ordered_list, code, blockquote, link, emphasis, and the opt-in table),
   `texts` (default `["a"]`), `max_heading_depth` (1 to 6), `max_nesting` (blockquote depth, default
-  1), `min_blocks` (default 0), `max_blocks` (default 3), `max_list_items` and `max_quote_blocks`.
+  1), `min_blocks` (default 0), `max_blocks` (default 3), `max_list_items`, `max_quote_blocks`, `max_table_cols` and `max_table_rows`.
   Size is the number of blocks (including blocks nested in blockquotes) plus the number of list
   items. Adjacent lists of the same kind parse as one list.
 - A function with `@requires` may be called with enumerated inputs that violate it. A `@requires`

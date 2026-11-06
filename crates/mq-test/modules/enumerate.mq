@@ -209,12 +209,28 @@ end
 # test). Size is the number of blocks, counting blocks nested in blockquotes, plus the number
 # of list items. Adjacent lists of the same kind parse as one list.
 
-def _markdown_all_kinds():
+def _markdown_default_kinds():
   ["heading", "paragraph", "bullet_list", "ordered_list", "code", "blockquote", "link", "emphasis"]
 end
 
-def _markdown_leaf_strings(kind, texts, heading_depth):
-  if (kind == "heading"):
+def _markdown_valid_kinds():
+  _markdown_default_kinds() + ["table"]
+end
+
+# A table with `cols` columns and `rows` body rows. Cell `(r, c)` is `<text><r><c>` (the header
+# row is r = 0) so every cell is distinct.
+def _markdown_table(text, cols, rows):
+  let cells = fn(r): map(range(0, cols - 1), fn(c): text + to_string(r) + to_string(c););
+  | let line = fn(r): "| " + join(cells(r), " | ") + " |";
+  | let divider = "| " + join(map(range(0, cols - 1), fn(c): "---";), " | ") + " |"
+  | let body = if (rows == 0): [] else: do map(range(1, rows), line) end
+  | join([line(0), divider] + body, "\n")
+end
+
+def _markdown_leaf_strings(kind, texts, heading_depth, max_cols, max_rows):
+  if (kind == "table"):
+    flatten(map(texts, fn(t): map(range(1, max_cols), fn(cols): map(range(0, max_rows), fn(rows): _markdown_table(t, cols, rows);););))
+  elif (kind == "heading"):
     flatten(map(range(1, heading_depth), fn(d): map(texts, fn(t): repeat("#", d) + " " + t;);))
   elif (kind == "paragraph"):
     texts
@@ -241,11 +257,13 @@ def _markdown_quote(blocks):
 end
 
 def _markdown_block(o, depth):
-  let kinds = _opt(o, "kinds", _markdown_all_kinds())
+  let kinds = _opt(o, "kinds", _markdown_default_kinds())
   | let texts = _opt(o, "texts", ["a"])
   | let hd = _opt(o, "max_heading_depth", 6)
   | let items = _opt(o, "max_list_items", 2)
-  | let leaves = flatten(map(kinds, fn(k): _markdown_leaf_strings(k, texts, hd);))
+  | let cols = _opt(o, "max_table_cols", 2)
+  | let rows = _opt(o, "max_table_rows", 2)
+  | let leaves = flatten(map(kinds, fn(k): _markdown_leaf_strings(k, texts, hd, cols, rows);))
   | let parts = flatten([
       if (is_empty(leaves)): [] else: [element(leaves)],
       if (contains(kinds, "bullet_list")): [_markdown_list(texts, items, false)] else: [],
@@ -262,9 +280,11 @@ end
 # test's `@requires` by choosing the options instead of relying on skipped inputs.
 #
 # Options (dict): `kinds` (subset of heading, paragraph, bullet_list, ordered_list, code,
-# blockquote, link, emphasis), `texts` (default ["a"]), `max_heading_depth` (1 to 6, default 6),
+# blockquote, link, emphasis, table; `table` is opt-in), `texts` (default ["a"]), `max_heading_depth` (1 to 6, default 6),
 # `max_nesting` (blockquote depth, default 1), `max_blocks` (default 3), `min_blocks`
-# (default 0), `max_list_items` (default 2), `max_quote_blocks` (default 2).
+# (default 0), `max_list_items` (default 2), `max_quote_blocks` (default 2), `max_table_cols`
+# and `max_table_rows` (default 2; a table has 1 to `max_table_cols` columns and 0 to
+# `max_table_rows` body rows).
 #
 # Example:
 # ```
@@ -274,8 +294,8 @@ end
 #
 # Returns: dict
 def markdown(options = {}):
-  let kinds = _opt(options, "kinds", _markdown_all_kinds())
-  | let unknown = filter(kinds, fn(k): not(contains(_markdown_all_kinds(), k));)
+  let kinds = _opt(options, "kinds", _markdown_default_kinds())
+  | let unknown = filter(kinds, fn(k): not(contains(_markdown_valid_kinds(), k));)
   | let hd = _opt(options, "max_heading_depth", 6)
   | if (not(is_empty(unknown))):
       error("enumerate::markdown: unknown kind(s) " + to_string(unknown))

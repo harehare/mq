@@ -1892,6 +1892,7 @@ fn test_exhaustive_markdown_enumerator_builds_documents_that_satisfy_a_precondit
 #[case("{}", 2, 134)]
 #[case("{\"kinds\": [\"heading\"], \"max_heading_depth\": 2}", 1, 2)]
 #[case("{\"kinds\": [\"heading\"], \"max_heading_depth\": 2}", 2, 4)]
+#[case("{\"kinds\": [\"table\"], \"max_table_rows\": 1, \"min_blocks\": 1}", 1, 4)]
 fn test_enumerate_markdown_tier_sizes(#[case] options: &str, #[case] size: usize, #[case] expected: usize) {
     // Tier 0 is the empty document, tier 1 a single block.
     let content = format!(

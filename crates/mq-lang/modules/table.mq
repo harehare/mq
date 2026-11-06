@@ -279,21 +279,8 @@ end
 def insert_row(table, index, row):
   if (len(row) != len(table[:header])):
     error("Row length does not match table header length.")
-  else: do
-      let new_rows_raw = insert(table[:rows], index, row)
-      | var row_num = 0
-      | let new_rows = foreach (r, new_rows_raw):
-          row_num += 1
-          | var c = 0
-          | let cells = foreach (v, r):
-              let cell = to_md_table_cell(to_string(v), row_num, c)
-              | c += 1
-              | cell
-            end
-          | cells
-        end
-      | set(table, :rows, new_rows)
-    end
+  else:
+    set(table, :rows, _renumber_rows(insert(table[:rows], index, row)))
 end
 
 # Add a new column to a table.
@@ -412,7 +399,7 @@ end
 #
 # Returns: dict
 def remove_row(table, row_index):
-  set(table, :rows, del(table[:rows], row_index))
+  set(table, :rows, _renumber_rows(del(table[:rows], row_index)))
 end
 
 # Returns a new table containing only the given columns (header names or
@@ -544,7 +531,7 @@ end
 #
 # Returns: dict
 def filter_rows(table, f):
-  set(table, :rows, filter(table[:rows], f))
+  set(table, :rows, _renumber_rows(filter(table[:rows], f)))
 end
 
 # Rewrites row and column numbers of `rows` so they are sequential from 1.
