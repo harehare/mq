@@ -408,8 +408,8 @@ tests.
 
 `mq-test` can check `# @requires(expr)` and `# @ensures(expr)` comments placed on a `def` while
 tests run. They compose with `# @property(...)`: a contract violation found on a generated case
-fails the test and is shrunk to a minimal counterexample. See the `mq-test` crate's README
-for the full semantics.
+fails the test and is shrunk to a minimal counterexample. Contracts in `include`d or `import`ed
+modules are checked too. See the `mq-test` crate's README for the full semantics.
 
 ```mq
 # @requires(n >= 0)

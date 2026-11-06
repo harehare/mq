@@ -362,7 +362,7 @@ impl TestRunner {
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
             };
             let mut engine = mq_lang::Engine::with_io(
-                crate::resolver::TestModuleResolver::default(),
+                crate::resolver::TestModuleResolver::default().with_label_nested(uses_small_scope),
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
             );
             engine.load_builtin_module();

@@ -150,6 +150,15 @@ end
 
 The `def` is renamed to `__orig_<name>` and a checking wrapper is appended, so line numbers stay put.
 
+Contracts written in a module you `include`/`import` are checked the same way, so tests that call a
+library function also verify the contracts on it (except the modules bundled with `mq-test`):
+
+```mq
+# lib/rows.mq
+# @ensures(len(result) == len(xs) + 1)
+def push(xs, x): xs + [x];
+```
+
 ### SMT-LIB
 
 `mq-test --smt file.mq` prints an SMT-LIB script instead of running tests, so a solver can check

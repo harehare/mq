@@ -249,6 +249,7 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]) + 1)
 def add_row(table, row):
   if (len(row) != len(table[:header])):
     error("Row length does not match table header length.")
@@ -276,6 +277,7 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]) + 1)
 def insert_row(table, index, row):
   if (len(row) != len(table[:header])):
     error("Row length does not match table header length.")
@@ -294,6 +296,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:header]) == len(table[:header]) + 1)
+# @ensures(len(result[:rows]) == len(table[:rows]))
 def add_column(table, col):
   if (len(col) != len(table[:rows]) + 1):
     error("Column length does not match table row count.")
@@ -326,6 +330,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:header]) == len(table[:header]) + 1)
+# @ensures(len(result[:rows]) == len(table[:rows]))
 def insert_column(table, index, col):
   if (len(col) != len(table[:rows]) + 1):
     error("Column length does not match table row count.")

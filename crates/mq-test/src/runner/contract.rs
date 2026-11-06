@@ -48,7 +48,7 @@ impl TestRunner {
     /// from a contracted function's body is re-labelled "in nested call", so `@small_scope`
     /// can tell it from a violation by the function the test called directly. A violation
     /// that passes through an uncontracted helper first is still seen as direct.
-    pub(super) fn apply_contracts(content: &str, label_nested: bool) -> Result<String, String> {
+    pub(crate) fn apply_contracts(content: &str, label_nested: bool) -> Result<String, String> {
         let (nodes, _) = mq_lang::parse_recovery(content);
         let mut contracted = Vec::new();
 
