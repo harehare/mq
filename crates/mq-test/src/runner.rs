@@ -138,6 +138,7 @@ pub struct TestRunner {
     parallel_threshold: usize,
     update_snapshots: bool,
     list: bool,
+    smt: bool,
     format: OutputFormat,
     module_directories: Vec<PathBuf>,
     step_handler: Option<std::sync::Arc<dyn mq_lang::DebuggerHandler>>,
@@ -168,6 +169,7 @@ impl TestRunner {
             parallel_threshold: usize::MAX,
             update_snapshots: false,
             list: false,
+            smt: false,
             format: OutputFormat::default(),
             module_directories: Vec::new(),
             step_handler: None,
@@ -235,6 +237,12 @@ impl TestRunner {
         self
     }
 
+    /// When `true`, prints SMT-LIB for the `@requires`/`@ensures` contracts instead of running tests.
+    pub fn with_smt(mut self, smt: bool) -> Self {
+        self.smt = smt;
+        self
+    }
+
     /// When `true`, discovers and reports tests without running them.
     pub fn with_list(mut self, list: bool) -> Self {
         self.list = list;
@@ -284,6 +292,9 @@ impl TestRunner {
 
         if self.list {
             return self.run_list(&test_files);
+        }
+        if self.smt {
+            return Self::run_smt(&test_files);
         }
 
         // Merged across all test files, so a shared module gets combined coverage.
@@ -573,6 +584,24 @@ impl TestRunner {
     /// the requested `--format`. A file that fails to read is reported to stderr and skipped;
     /// listing itself always succeeds, since "no tests found" isn't a failure the way a failed
     /// assertion is.
+    /// Prints the SMT-LIB script for the contracts of each file (`--smt`).
+    fn run_smt(test_files: &[PathBuf]) -> miette::Result<bool> {
+        let mut ok = true;
+        for file in test_files {
+            let script = fs::read_to_string(file)
+                .map_err(|e| e.to_string())
+                .and_then(|content| Self::emit_smt(&content));
+            match script {
+                Ok(script) => println!("; {}\n{script}", file.display()),
+                Err(e) => {
+                    eprintln!("# {}\n\n❌ {e}\n", file.display());
+                    ok = false;
+                }
+            }
+        }
+        Ok(ok)
+    }
+
     fn run_list(&self, test_files: &[PathBuf]) -> miette::Result<bool> {
         let mut discovered: Vec<(PathBuf, Vec<DiscoveredTest>)> = Vec::new();
 
@@ -1157,5 +1186,6 @@ fn open_in_default_app(path: &Path) -> miette::Result<()> {
 }
 
 mod contract;
+mod smt;
 #[cfg(test)]
 mod tests;

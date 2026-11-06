@@ -1992,3 +1992,44 @@ fn test_durations_have_millisecond_resolution() {
 
     assert!(duration > 0, "duration was {duration} ms");
 }
+
+#[test]
+fn test_emit_smt_translates_contracts_and_skips_unsupported_bodies() {
+    let content = "\
+# @requires(lo <= hi)
+# @ensures(result >= lo && result <= hi)
+def clamp(x, lo, hi): min(max(x, lo), hi);
+
+# @ensures(result == a)
+def pick(a, b): if (a): b else: false;
+
+# @ensures(len(result) > 0)
+def unsupported(a): foo(a);
+";
+    let smt = TestRunner::emit_smt(content).unwrap();
+    assert!(smt.contains("(define-fun clamp ((x Int) (lo Int) (hi Int)) Int"));
+    assert!(smt.contains("(assert (<= lo hi))"));
+    assert!(smt.contains("(let ((result (clamp x lo hi))) (not (and (>= result lo) (<= result hi))))"));
+    assert!(smt.contains("(define-fun pick ((a Bool) (b Bool)) Bool (ite a b false))"));
+    assert!(smt.contains("; skipped unsupported: unsupported function `foo`"));
+}
+
+#[test]
+fn test_emit_smt_uses_define_fun_rec_for_recursion() {
+    let content = "# @ensures(result >= 0)\ndef f(n): if (n <= 0): 0 else: f(n - 1) + 1;\n";
+    assert!(
+        TestRunner::emit_smt(content)
+            .unwrap()
+            .contains("(define-fun-rec f ((n Int)) Int")
+    );
+}
+
+#[test]
+fn test_emit_smt_rejects_ill_sorted_contracts() {
+    let content = "# @ensures(result && 1)\ndef m(a, b): a && b;\n";
+    assert!(
+        TestRunner::emit_smt(content)
+            .unwrap()
+            .contains("; skipped m: and: expected Bool, found Int")
+    );
+}
