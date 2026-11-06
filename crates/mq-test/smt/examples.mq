@@ -1,32 +1,16 @@
 # Contracts checked by `just smt` (`mq-test --verify`). Every @ensures here holds for all inputs.
-# `@type` gives the sorts; a function without one takes and returns numbers.
-
-# @requires(lo <= hi)
-# @ensures(result >= lo && result <= hi)
-def clamp(x, lo, hi): min(max(x, lo), hi);
+# Parameter and result types come from mq-check, so only functions whose types it settles
+# (for example through `abs`, which only takes numbers) can be checked.
 
 # @ensures(result >= 0)
 # @ensures(result == x || result == -x)
 def distance_from_zero(x): abs(x);
 
-# @type((string, string) -> string)
-# @ensures(len(result) == len(a) + len(b))
-def concat(a, b): a + b;
+# @ensures(result >= 0)
+def sum_abs(x, y): abs(x) + abs(y);
 
-# @type((string) -> string)
-# @ensures(starts_with(result, "hello, "))
-# @ensures(len(result) >= 7)
-def greet(name): "hello, " + name;
+# @ensures(result >= 0)
+def larger_magnitude(a, b): if (abs(a) > abs(b)): abs(a) else: abs(b);
 
-# @type(([number], number) -> [number])
-# @ensures(len(result) == len(xs) + 1)
-def push(xs, x): xs + [x];
-
-# @type(([number]) -> number)
-# @requires(len(xs) > 0)
-# @ensures(result == xs[0])
-def head(xs): xs[0];
-
-# @type((bool, bool) -> bool)
-# @ensures(result == (a && b))
-def both(a, b): if (a): b else: false;
+# @ensures(result == n)
+def cancels_out(n): abs(n) - abs(n) + n;

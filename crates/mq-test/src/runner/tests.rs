@@ -2005,14 +2005,21 @@ fn test_emit_smt_translates_contracts_and_skips_unsupported_bodies() {
 # @ensures(result >= lo && result <= hi)
 def clamp(x, lo, hi): min(max(x, lo), hi);
 
-# @type((bool, bool) -> bool)
 # @ensures(result == a)
 def pick(a, b): if (a): b else: false;
 
 # @ensures(len(result) > 0)
 def unsupported(a): foo(a);
 ";
-    let smt = TestRunner::emit_smt(content).unwrap();
+    let smt = smt::emit_with_sorts(
+        content,
+        &[
+            ("clamp", "number,number,number->number"),
+            ("pick", "bool,bool->bool"),
+            ("unsupported", "number->string"),
+        ],
+    )
+    .unwrap();
     assert!(smt.contains("(define-fun clamp ((x Int) (lo Int) (hi Int)) Int"));
     assert!(smt.contains("(assert (<= lo hi))"));
     assert!(smt.contains("(let ((result (clamp x lo hi))) (not (and (>= result lo) (<= result hi))))"));
@@ -2024,7 +2031,7 @@ def unsupported(a): foo(a);
 fn test_emit_smt_uses_define_fun_rec_for_recursion() {
     let content = "# @ensures(result >= 0)\ndef f(n): if (n <= 0): 0 else: f(n - 1) + 1;\n";
     assert!(
-        TestRunner::emit_smt(content)
+        smt::emit_with_sorts(content, &[("f", "number->number")])
             .unwrap()
             .contains("(define-fun-rec f ((n Int)) Int")
     );
@@ -2034,7 +2041,7 @@ fn test_emit_smt_uses_define_fun_rec_for_recursion() {
 fn test_emit_smt_rejects_ill_sorted_contracts() {
     let content = "# @ensures(result && 1)\ndef m(a, b): a && b;\n";
     assert!(
-        TestRunner::emit_smt(content)
+        smt::emit_with_sorts(content, &[("m", "bool,bool->bool")])
             .unwrap()
             .contains("; skipped m: and: expected Bool, found Int")
     );
@@ -2088,24 +2095,29 @@ fn test_contract_stats_count_evaluations_and_unmet_requires() {
 #[test]
 fn test_emit_smt_translates_strings_and_arrays() {
     let content = "\
-# @type((string, string) -> string)
 # @ensures(len(result) == len(a) + len(b))
 def concat(a, b): a + b;
 
-# @type((string) -> string)
 # @ensures(starts_with(result, \"hi \"))
 def greet(name): \"hi \" + name;
 
-# @type(([number]) -> number)
 # @requires(len(xs) > 0)
 # @ensures(result == xs[0])
 def head(xs): xs[0];
 
-# @type(([number], number) -> [number])
 # @ensures(len(result) == len(xs) + 1)
 def push(xs, x): xs + [x];
 ";
-    let smt = TestRunner::emit_smt(content).unwrap();
+    let smt = smt::emit_with_sorts(
+        content,
+        &[
+            ("concat", "string,string->string"),
+            ("greet", "string->string"),
+            ("head", "[number]->number"),
+            ("push", "[number],number->[number]"),
+        ],
+    )
+    .unwrap();
     assert!(
         smt.contains("(define-fun concat ((a String) (b String)) String (str.++ a b))"),
         "{smt}"
@@ -2150,7 +2162,8 @@ fn test_smt_solver_output_is_classified() {
 
 #[test]
 fn test_smt_missing_solver_is_reported_as_an_error() {
-    let entries = TestRunner::smt_entries("# @ensures(result > 0)\ndef f(n): n;\n").unwrap();
+    let entries =
+        smt::entries_with_sorts("# @ensures(result > 0)\ndef f(n): n;\n", &[("f", "number->number")]).unwrap();
     let smt::Entry::Checks(obligations) = &entries[0] else {
         panic!("expected checks");
     };
@@ -2160,7 +2173,11 @@ fn test_smt_missing_solver_is_reported_as_an_error() {
 
 #[test]
 fn test_emit_smt_translates_remainder_as_truncated() {
-    let smt = TestRunner::emit_smt("# @ensures(result >= 0)\ndef f(a): a % 3;\n").unwrap();
+    let smt = smt::emit_with_sorts(
+        "# @ensures(result >= 0)\ndef f(a): a % 3;\n",
+        &[("f", "number->number")],
+    )
+    .unwrap();
     assert!(smt.contains("(mod a (ite (>= 3 0) 3 (- 3)))"), "{smt}");
     assert!(smt.contains("(- (mod (- a) (ite (>= 3 0) 3 (- 3))))"), "{smt}");
 }
@@ -2168,7 +2185,7 @@ fn test_emit_smt_translates_remainder_as_truncated() {
 #[test]
 fn test_smt_counterexamples_are_replayed_in_mq() {
     let content = "# @ensures(result > 0)\ndef f(n): n;\n";
-    let entries = TestRunner::smt_entries(content).unwrap();
+    let entries = smt::entries_with_sorts(content, &[("f", "number->number")]).unwrap();
     let smt::Entry::Checks(obligations) = &entries[0] else {
         panic!("expected checks");
     };
@@ -2195,31 +2212,18 @@ fn test_smt_counterexamples_are_replayed_in_mq() {
     ));
 }
 
-#[rstest]
-#[case("(number, string) -> bool", true)]
-#[case("() -> [string]", true)]
-#[case("([[number]]) -> bool", true)]
-#[case("(number) -> dict", false)]
-#[case("(number)", false)]
-#[case("number -> number", false)]
-fn test_smt_type_annotations_are_parsed(#[case] text: &str, #[case] valid: bool) {
-    assert_eq!(smt::signature_is_valid(text), valid, "{text}");
-}
-
 #[test]
-fn test_smt_reports_a_missing_or_wrong_type_annotation() {
-    // Without `@type`, `name` is a number, so `+ "x"` mismatches and the hint says why.
-    let smt = TestRunner::emit_smt("# @ensures(true)\ndef f(name): \"x\" + name;\n").unwrap();
-    assert!(smt.contains("; skipped f:"), "{smt}");
-    assert!(smt.contains("@type"), "{smt}");
-
-    let smt = TestRunner::emit_smt("# @type((number, number) -> number)\n# @ensures(true)\ndef f(a): a;\n").unwrap();
-    assert!(smt.contains("lists 2 parameters but `f` has 1"), "{smt}");
+fn test_smt_skips_functions_whose_types_mq_check_leaves_open() {
+    // mq-check settles `abs(x)` to numbers but leaves `+` operands open: strings and numbers both add.
+    let content = "# @ensures(result >= 0)\ndef a(x): abs(x);\n# @ensures(true)\ndef b(s): \"x\" + s;\n";
+    let smt = TestRunner::emit_smt(content).unwrap();
+    assert!(smt.contains("(define-fun a ((x Int)) Int"), "{smt}");
+    assert!(smt.contains("; skipped b: unsupported type of parameter `s`"), "{smt}");
 }
 
 #[test]
 fn test_smt_empty_array_takes_the_expected_item_sort() {
-    let content = "# @type(([string]) -> [string])\n# @ensures(len(result) == len(xs))\ndef f(xs): xs + [];\n";
-    let smt = TestRunner::emit_smt(content).unwrap();
+    let content = "# @ensures(len(result) == len(xs))\ndef f(xs): xs + [];\n";
+    let smt = smt::emit_with_sorts(content, &[("f", "[string]->[string]")]).unwrap();
     assert!(smt.contains("(seq.++ xs (as seq.empty (Seq String)))"), "{smt}");
 }

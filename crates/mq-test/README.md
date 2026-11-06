@@ -195,15 +195,12 @@ def clamp(x, lo, hi): min(max(x, lo), hi);
 For each function with `@ensures`, the script defines the function, assumes every `@requires` and
 asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` is a counterexample.
 
-- Sorts come from a `# @type(...)` comment on the `def`, written like `mq-check` types: `number`,
-  `bool`, `string`, `[T]` and `(A, B) -> R`. A function without one takes and returns numbers.
-  Nothing is inferred, so the sorts are always the ones you wrote.
-
-  ```mq
-  # @type((string, [number]) -> bool)
-  # @ensures(result == (len(s) > len(xs)))
-  def longer(s, xs): len(s) > len(xs);
-  ```
+- Sorts come from `mq-check`'s inferred types: `number`, `bool`, `string` and `[T]` for an array.
+  Numbers are modeled as integers. Only a type the checker settles is used, nothing is guessed.
+  Overloaded operators such as `+`, `len` and `x[i]` leave their operands open (`'a`) because they
+  also accept other types, so a function whose parameters are only used through them is skipped
+  with the type mq-check inferred. Passing a value through a builtin that fixes its type, such as
+  `abs(x)` for a number, settles it.
 
 - Supported expressions: integer, string (printable ASCII) and array literals, `+ - * %` (`+` also
   concatenates strings and arrays), comparisons, `==`/`!=`, `&&`, `||`, `!`, `not`, `if`/`elif`/

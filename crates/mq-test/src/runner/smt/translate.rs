@@ -19,7 +19,7 @@ pub(super) struct Func {
 
 pub(super) struct Translator<'a> {
     funcs: &'a HashMap<String, Func>,
-    /// The `@type` of each function, or the all-number default.
+    /// The sorts mq-check inferred for each function, or why it has none.
     sigs: &'a HashMap<String, Result<Signature>>,
     defs: Vec<Define>,
     done: HashSet<String>,
