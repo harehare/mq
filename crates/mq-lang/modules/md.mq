@@ -141,7 +141,16 @@ def embed(target, display = ""):
   let inner = if (is_empty(display)): target else: target + "|" + display
   | first(to_markdown("![[" + inner + "]]"));
 
-# Escapes Markdown punctuation in `value` so it renders literally.
+# Escapes the Markdown syntax in one line: punctuation anywhere, and the list markers (`-`, `+`,
+# `1.`, `1)`) and thematic breaks and setext underlines (`---`, `- - -`, `===`) that only mean something at the line start.
+def _escape_line(line):
+  let punct = gsub(line, "([\\\\`*_\\[\\]<>~|#])", "\\$1")
+  | let ordered = gsub(punct, "^(\\s*)(\\d{1,9})([.)])(\\s|$)", "$1$2\\$3$4")
+  | let bullet = gsub(ordered, "^(\\s*)([-+])(\\s|$)", "$1\\$2$3")
+  | gsub(bullet, "^(\\s*)([-=][-=\\s]*)$", "$1\\$2");
+
+# Escapes Markdown syntax in `value` so it renders literally, including a line that would
+# otherwise start a list or a setext heading.
 #
 # Example:
 # ```
@@ -150,7 +159,7 @@ def embed(target, display = ""):
 # ```
 #
 # Returns: markdown
-def escape(value): to_md_text(gsub(to_string(value), "([\\\\`*_\\[\\]<>~|#])", "\\$1"));
+def escape(value): to_md_text(join(map(split(to_string(value), "\n"), _escape_line), "\n"));
 
 # Turns single newlines in `value` into hard line breaks; blank lines are kept.
 #
