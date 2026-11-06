@@ -14,6 +14,13 @@ use crate::snapshot;
 /// Number of iterations a `# @property(generators)` test runs when no count is given.
 const DEFAULT_PROPERTY_CASES: &str = "100";
 
+/// Largest value size a `# @exhaustive(enumerators)` test enumerates when no size is given.
+const DEFAULT_EXHAUSTIVE_SIZE: &str = "3";
+
+/// Source of the `enumerate` module and the `@exhaustive` runner, added to files that use it.
+const ENUMERATE_MODULE: &str = include_str!("enumerate.mq");
+const EXHAUSTIVE_RUNNER: &str = include_str!("exhaustive.mq");
+
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
 enum TestAnnotation {
@@ -27,6 +34,14 @@ enum TestAnnotation {
     Property {
         count_expr: String,
         generators_expr: String,
+    },
+    /// `# @exhaustive(max_size, enumerators, options)`: checks every input of size
+    /// `<= max_size` (see `enumerate.mq`). `max_size` defaults to [`DEFAULT_EXHAUSTIVE_SIZE`]
+    /// and `options` to an empty dict.
+    Exhaustive {
+        max_size_expr: String,
+        enumerators_expr: String,
+        options_expr: String,
     },
     Tags(Vec<String>),
     /// `# @requires(expr)`: precondition checked on entry, see `contract.rs`.
@@ -68,6 +83,15 @@ enum DiscoveredTest {
         arity: usize,
         tags: Vec<String>,
     },
+    /// A `# @exhaustive(max_size, enumerators)` test. See `TestRunner::build_exhaustive_case_expr`.
+    Exhaustive {
+        name: String,
+        max_size_expr: String,
+        enumerators_expr: String,
+        options_expr: String,
+        arity: usize,
+        tags: Vec<String>,
+    },
 }
 
 impl DiscoveredTest {
@@ -76,6 +100,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { name, .. } => name,
             DiscoveredTest::Parametrized { name, .. } => name,
             DiscoveredTest::Property { name, .. } => name,
+            DiscoveredTest::Exhaustive { name, .. } => name,
         }
     }
 
@@ -84,6 +109,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { tags, .. } => tags,
             DiscoveredTest::Parametrized { tags, .. } => tags,
             DiscoveredTest::Property { tags, .. } => tags,
+            DiscoveredTest::Exhaustive { tags, .. } => tags,
         }
     }
 
@@ -93,6 +119,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { .. } => "simple",
             DiscoveredTest::Parametrized { .. } => "parametrized",
             DiscoveredTest::Property { .. } => "property",
+            DiscoveredTest::Exhaustive { .. } => "exhaustive",
         }
     }
 }
@@ -303,7 +330,8 @@ impl TestRunner {
                 return;
             }
 
-            let content = match Self::apply_contracts(&content) {
+            let uses_exhaustive = tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. }));
+            let content = match Self::apply_contracts(&content, uses_exhaustive) {
                 Ok(content) => content,
                 Err(message) => {
                     any_failed.store(true, Ordering::Relaxed);
@@ -710,6 +738,21 @@ impl TestRunner {
                         tags: Self::collect_tags(&node.leading_trivia),
                     });
                 }
+                Some(TestAnnotation::Exhaustive {
+                    max_size_expr,
+                    enumerators_expr,
+                    options_expr,
+                }) => {
+                    let arity = Self::get_arity(node);
+                    tests.push(DiscoveredTest::Exhaustive {
+                        name: func_name.clone(),
+                        max_size_expr,
+                        enumerators_expr,
+                        options_expr,
+                        arity,
+                        tags: Self::collect_tags(&node.leading_trivia),
+                    });
+                }
                 _ if func_name.starts_with("test_") => {
                     tests.push(DiscoveredTest::Simple {
                         name: func_name.clone(),
@@ -754,6 +797,27 @@ impl TestRunner {
                     generators_expr,
                 })
             }
+            "exhaustive" => {
+                let parts: Vec<String> = Self::split_top_level_commas(&args)
+                    .into_iter()
+                    .map(|part| part.trim().to_string())
+                    .collect();
+                let (max_size_expr, enumerators_expr, options_expr) = match parts.as_slice() {
+                    [enumerators] => (
+                        DEFAULT_EXHAUSTIVE_SIZE.to_string(),
+                        enumerators.clone(),
+                        "{}".to_string(),
+                    ),
+                    [size, enumerators] => (size.clone(), enumerators.clone(), "{}".to_string()),
+                    [size, enumerators, options] => (size.clone(), enumerators.clone(), options.clone()),
+                    _ => return None,
+                };
+                Some(TestAnnotation::Exhaustive {
+                    max_size_expr,
+                    enumerators_expr,
+                    options_expr,
+                })
+            }
             "requires" => Some(TestAnnotation::Requires(args)),
             "ensures" => Some(TestAnnotation::Ensures(args)),
             "tags" | "tag" => Some(TestAnnotation::Tags(
@@ -771,6 +835,25 @@ impl TestRunner {
     /// itself an array literal full of commas. Returns `None` if there's no such comma (the
     /// single-argument `@property(generators)` form).
     fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
+        let i = *Self::top_level_comma_positions(s).first()?;
+        Some((&s[..i], &s[i + 1..]))
+    }
+
+    /// Splits `s` at every comma that isn't nested inside `()`/`[]`/`{}`.
+    fn split_top_level_commas(s: &str) -> Vec<&str> {
+        let mut parts = Vec::new();
+        let mut start = 0;
+        for i in Self::top_level_comma_positions(s) {
+            parts.push(&s[start..i]);
+            start = i + 1;
+        }
+        parts.push(&s[start..]);
+        parts
+    }
+
+    /// Byte offsets of the commas in `s` that sit outside brackets and string literals.
+    fn top_level_comma_positions(s: &str) -> Vec<usize> {
+        let mut positions = Vec::new();
         let mut depth = 0i32;
         let mut in_string = false;
         let mut chars = s.char_indices();
@@ -789,11 +872,11 @@ impl TestRunner {
                 '"' => in_string = true,
                 '(' | '[' | '{' => depth += 1,
                 ')' | ']' | '}' => depth -= 1,
-                ',' if depth == 0 => return Some((&s[..i], &s[i + 1..])),
+                ',' if depth == 0 => positions.push(i),
                 _ => {}
             }
         }
-        None
+        positions
     }
 
     /// Finds the first `@test`/`[test]`/`@parametrize(...)` annotation among `trivia`,
@@ -877,18 +960,15 @@ impl TestRunner {
         generators_expr: &str,
         arity: usize,
     ) -> String {
-        let arg_list = (0..arity)
-            .map(|i| format!("__property_arg[{i}]"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let arg_list = Self::build_arg_list("__property_arg", arity);
+        let arity_check = Self::build_arity_check("@property", "generator", "__property_generators", name, arity);
         // `range` is inclusive and auto-descends, so `range(0, count - 1)` for count <= 0
         // would still yield seeds instead of an empty case list; guard it explicitly.
         format!(
             "do \
                let __property_generators = ({generators_expr}) \
                | let __property_count = ({count_expr}) \
-               | if (len(__property_generators) != {arity}): \
-                   error(\"@property: expected {arity} generator(s) for '{name}' ({arity} parameter(s)), got \" + to_string(len(__property_generators))) \
+               | if {arity_check} \
                  elif (__property_count <= 0): [] \
                  else: map(range(0, __property_count - 1), fn(__property_seed): \
                    do \
@@ -899,6 +979,50 @@ impl TestRunner {
                        ) \
                    end \
                  ;) \
+             end"
+        )
+    }
+
+    /// `var[0], var[1], ...` for `arity` parameters.
+    fn build_arg_list(var: &str, arity: usize) -> String {
+        (0..arity).map(|i| format!("{var}[{i}]")).collect::<Vec<_>>().join(", ")
+    }
+
+    /// `(len(list_var) != arity): error(...)`, the head of an `if` that fails loudly when the
+    /// number of generators/enumerators doesn't match the test's parameters.
+    fn build_arity_check(annotation: &str, noun: &str, list_var: &str, name: &str, arity: usize) -> String {
+        format!(
+            "(len({list_var}) != {arity}): \
+               error(\"{annotation}: expected {arity} {noun}(s) for '{name}' ({arity} parameter(s)), got \" + to_string(len({list_var})))"
+        )
+    }
+
+    /// Builds the single `test_case` for a `# @exhaustive(max_size, enumerators, options)` test.
+    /// `_exhaustive_result` (see `exhaustive.mq`) walks the tiers in size order, so the first
+    /// failure it reports is a smallest counterexample and nothing is shrunk.
+    fn build_exhaustive_case_expr(
+        display: &str,
+        name: &str,
+        max_size_expr: &str,
+        enumerators_expr: &str,
+        options_expr: &str,
+        arity: usize,
+    ) -> String {
+        let arg_list = Self::build_arg_list("__exhaustive_arg", arity);
+        let arity_check = Self::build_arity_check("@exhaustive", "enumerator", "__exhaustive_enumerators", name, arity);
+        format!(
+            "do \
+               let __exhaustive_enumerators = ({enumerators_expr}) \
+               | if {arity_check} \
+                 else: test_case( \
+                   \"{display}\", \
+                   fn(): _exhaustive_result( \
+                     \"{display}\", \
+                     enumerate::tuple(__exhaustive_enumerators), \
+                     ({max_size_expr}), \
+                     ({options_expr}), \
+                     fn(__exhaustive_arg): {name}({arg_list});) ; \
+                 ) \
              end"
         )
     }
@@ -957,11 +1081,38 @@ impl TestRunner {
                         Self::build_property_case_expr(display, name, count_expr, generators_expr, *arity)
                     )
                 }
+                DiscoveredTest::Exhaustive {
+                    name,
+                    max_size_expr,
+                    enumerators_expr,
+                    options_expr,
+                    arity,
+                    ..
+                } => {
+                    let display = Self::display_name(name);
+                    format!(
+                        "  {}",
+                        Self::build_exhaustive_case_expr(
+                            display,
+                            name,
+                            max_size_expr,
+                            enumerators_expr,
+                            options_expr,
+                            *arity
+                        )
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join(",\n");
 
-        format!("{content}\n| include \"test\"\n| {report_fn}(flatten([\n{cases}\n]))")
+        let exhaustive_support = if tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. })) {
+            format!("\nmodule enumerate:\n{ENUMERATE_MODULE}\nend\n{EXHAUSTIVE_RUNNER}\n")
+        } else {
+            String::new()
+        };
+
+        format!("{content}\n{exhaustive_support}| include \"test\"\n| {report_fn}(flatten([\n{cases}\n]))")
     }
 }
 

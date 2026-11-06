@@ -9,7 +9,8 @@ Standalone test runner for mq: auto-discovers and executes test functions in `.m
 - Its name starts with `test_`, **OR**
 - It is immediately preceded by a `# @test` or `# [test]` annotation comment, **OR**
 - It is immediately preceded by a `# @parametrize(...)` annotation comment, **OR**
-- It is immediately preceded by a `# @property(...)` annotation comment.
+- It is immediately preceded by a `# @property(...)` annotation comment, **OR**
+- It is immediately preceded by a `# @exhaustive(...)` annotation comment.
 
 Test discovery uses the CST so all conventions are resolved accurately without any line-scanning heuristics.
 
@@ -227,6 +228,52 @@ example with `gen::shrink` (see `gen.mq` for the search algorithm and `gen::shri
 generic per-value shrinker it's built on). The failure message shows the shrunk arguments
 alongside the original ones; the case name still reports the original seed, so
 `gen::tuple(generators)(42)` remains the way to reproduce the *unshrunk* case exactly.
+
+### Exhaustive Small-Scope Tests
+
+`# @exhaustive(max_size, enumerators, options)` complements `@property`: instead of random
+inputs it runs the function on **every** input of size `<= max_size`, smallest first. The first
+failure is therefore a smallest counterexample and nothing is shrunk. A clean run is reported as
+"no counterexample found within this scope", never as a proof: it says nothing about larger
+inputs or values the enumerators do not produce.
+
+```mq
+# @exhaustive(3, [enumerate::markdown({"max_heading_depth": 3})])
+def test_heading_lines_parse_as_headings(src):
+  let doc = to_markdown(src)
+  | assert_eq(len(filter(doc, is_h)), len(filter(split(src, "\n"), fn(l): starts_with(l, "#");)))
+end
+```
+
+- `max_size` defaults to 3. `enumerators` is an array with one enumerator per parameter. `options`
+  is an optional dict: `max_cases` (valid checks, default 100000), `max_total` (valid plus skipped,
+  default `10 * max_cases`) and `skip_warn` (skip rate that triggers a warning, default `0.5`).
+  Exceeding either limit fails the test with the counts and the limit; nothing is silently cut off.
+- The `enumerate` module is available without an import in files that use `@exhaustive`. An
+  enumerator is a dict whose `tier(k)` returns every value of size exactly `k`. Combinators:
+  `element(values)` (size 0), `one_of(enums)`, `tuple(enums)` (sizes add), `array(en, max_len)` and
+  `array_of(en, min_len, max_len)` (size is the length plus the items' sizes), `transform(en, f)`
+  (same size) and `node(en, f)` (one larger). `described(en, text)` sets the description printed in
+  the report. Tiers are built in memory, so keep `max_size` small.
+- `enumerate::markdown(options)` yields Markdown **source text** (parse it with `to_markdown(src)`).
+  Options: `kinds` (heading, paragraph, bullet_list, ordered_list, code, blockquote, link, emphasis),
+  `texts` (default `["a"]`), `max_heading_depth` (1 to 6), `max_nesting` (blockquote depth, default
+  1), `min_blocks` (default 0), `max_blocks` (default 3), `max_list_items` and `max_quote_blocks`.
+  Size is the number of blocks (including blocks nested in blockquotes) plus the number of list
+  items. Adjacent lists of the same kind parse as one list.
+- A function with `@requires` may be called with enumerated inputs that violate it. A `@requires`
+  violation of a function the test calls directly is a **skip**, not a failure; `@ensures`
+  violations, other errors, and a `@requires` violation raised by a contracted function calling
+  another contracted function (the caller's bug) are failures.
+- The report lists valid, skipped and total counts. A skip rate above `skip_warn` adds a warning,
+  and a run with no valid input fails. Prefer building valid inputs with the enumerator options
+  over relying on skips.
+
+Direct versus nested calls are told apart by the contract wrapper: in files with `@exhaustive`, a
+`@requires` violation escaping from a contracted function's body is re-labelled "in nested call".
+This needs no call-depth tracking and no declaration in the test. The limit is that a violation
+reached through an *uncontracted* helper the test calls is still seen as direct and skipped; the
+skip count in the report makes that visible.
 
 ### Function Contracts
 

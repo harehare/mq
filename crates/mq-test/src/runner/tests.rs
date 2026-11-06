@@ -1361,14 +1361,14 @@ fn test_collect_contracts_gathers_multiple_and_multiline_annotations_with_lines(
 fn test_apply_contracts_leaves_content_without_contracts_unchanged() {
     let content = "# @test\ndef f(n): n;\n";
 
-    assert_eq!(TestRunner::apply_contracts(content).unwrap(), content);
+    assert_eq!(TestRunner::apply_contracts(content, false).unwrap(), content);
 }
 
 #[test]
 fn test_apply_contracts_renames_in_place_and_appends_a_wrapper() {
     let content = "# @requires(n > 0)\n# @ensures(result > n)\ndef inc(n): n + 1;\ndef other(): inc(1);\n";
 
-    let rewritten = TestRunner::apply_contracts(content).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
 
     // The original lines keep their numbers: only the `def` name changed.
     assert!(
@@ -1386,7 +1386,7 @@ fn test_apply_contracts_renames_in_place_and_appends_a_wrapper() {
 fn test_apply_contracts_avoids_existing_orig_names() {
     let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\ndef test_f(): f();\n";
 
-    let rewritten = TestRunner::apply_contracts(content).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
 
     assert!(rewritten.contains("def __orig_f_(): 1;"), "{rewritten}");
     assert!(rewritten.contains("let result = __orig_f_()"), "{rewritten}");
@@ -1397,7 +1397,7 @@ fn test_apply_contracts_avoids_existing_orig_names() {
 fn test_apply_contracts_gives_each_original_a_distinct_name() {
     let content = "# @ensures(true)\ndef f(): 1;\n# @ensures(true)\ndef f_(): 2;\n";
 
-    let rewritten = TestRunner::apply_contracts(content).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
 
     assert!(rewritten.contains("def __orig_f(): 1;"), "{rewritten}");
     assert!(rewritten.contains("def __orig_f_(): 2;"), "{rewritten}");
@@ -1406,7 +1406,7 @@ fn test_apply_contracts_gives_each_original_a_distinct_name() {
 #[test]
 fn test_contract_wrapper_calls_its_own_original_when_orig_name_exists() {
     let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\n";
-    let rewritten = TestRunner::apply_contracts(content).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
     assert_eq!(
         run_failures(&format!(
             "include \"test\"\n|\n{rewritten}def test_f(): assert_eq(f(), 1);\n"
@@ -1419,7 +1419,7 @@ fn test_contract_wrapper_calls_its_own_original_when_orig_name_exists() {
 fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
     let content = "# @requires(n != \"a\\\"b\")\ndef f(n): n;\n";
 
-    let rewritten = TestRunner::apply_contracts(content).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
 
     assert!(
         rewritten.contains("n != \\\"a\\\\\\\"b\\\""),
@@ -1432,16 +1432,16 @@ fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
 #[case("# @requires(true)\ndef f(*args): args;\n", "only plain parameters")]
 #[case("# @ensures(true)\ndef f(result): result;\n", "clashes")]
 fn test_apply_contracts_rejects_unsupported_signatures(#[case] content: &str, #[case] expected: &str) {
-    let err = TestRunner::apply_contracts(content).unwrap_err();
+    let err = TestRunner::apply_contracts(content, false).unwrap_err();
 
     assert!(err.contains(expected), "unexpected message: {err}");
 }
 
-/// Runs `content` like `mq-test --format json` and returns `name -> error message` for every
-/// failed test (passed tests are absent).
-fn run_failures(content: &str) -> Vec<(String, String)> {
+/// Runs `content` like `mq-test --format json` and returns every test's result dict as JSON.
+fn run_results(content: &str) -> Vec<serde_json::Value> {
     let tests = TestRunner::discover_tests(content);
-    let content = TestRunner::apply_contracts(content).unwrap();
+    let uses_exhaustive = tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. }));
+    let content = TestRunner::apply_contracts(content, uses_exhaustive).unwrap();
     let query = TestRunner::build_test_query_with_fn(&content, &tests, "run_tests_data");
     let mut engine = mq_lang::Engine::with_io(
         mq_lang::DefaultModuleResolver::default(),
@@ -1450,8 +1450,12 @@ fn run_failures(content: &str) -> Vec<(String, String)> {
     engine.load_builtin_module();
     let result = engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
     let json = result.values().first().cloned().unwrap().to_json_value();
-    json.as_array()
-        .unwrap()
+    json.as_array().unwrap().clone()
+}
+
+/// Returns `name -> error message` for every failed test (passed tests are absent).
+fn run_failures(content: &str) -> Vec<(String, String)> {
+    run_results(content)
         .iter()
         .filter(|t| t["status"] == "failed")
         .map(|t| {
@@ -1461,6 +1465,15 @@ fn run_failures(content: &str) -> Vec<(String, String)> {
             )
         })
         .collect()
+}
+
+/// Returns the `detail` report of the passed test `name`.
+fn run_detail(content: &str, name: &str) -> String {
+    run_results(content)
+        .iter()
+        .find(|t| t["name"] == name)
+        .and_then(|t| t["detail"].as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 #[test]
@@ -1647,5 +1660,259 @@ fn test_markdown_contract_with_a_generated_document_passes_and_shrinks_when_brok
             .iter()
             .all(|(_, m)| m.contains("@ensures violated") && m.contains("Shrunk from")),
         "{failures:?}"
+    );
+}
+
+#[rstest]
+#[case("@exhaustive([enumerate::element([1])])", "3", "[enumerate::element([1])]", "{}")]
+#[case("@exhaustive(5, [enumerate::element([1])])", "5", "[enumerate::element([1])]", "{}")]
+#[case(
+    "@exhaustive(2, [enumerate::element([1, 2])], {\"max_cases\": 10, \"skip_warn\": 0.2})",
+    "2",
+    "[enumerate::element([1, 2])]",
+    "{\"max_cases\": 10, \"skip_warn\": 0.2}"
+)]
+fn test_parse_annotation_exhaustive(
+    #[case] comment: &str,
+    #[case] size: &str,
+    #[case] enumerators: &str,
+    #[case] options: &str,
+) {
+    assert_eq!(
+        TestRunner::parse_annotation(comment),
+        Some(TestAnnotation::Exhaustive {
+            max_size_expr: size.to_string(),
+            enumerators_expr: enumerators.to_string(),
+            options_expr: options.to_string(),
+        })
+    );
+}
+
+#[test]
+fn test_parse_annotation_exhaustive_rejects_too_many_arguments() {
+    assert_eq!(TestRunner::parse_annotation("@exhaustive(1, [], {}, 4)"), None);
+}
+
+#[test]
+fn test_exhaustive_annotation_can_span_multiple_lines() {
+    let content = "# @exhaustive(2,\n#   [enumerate::element([1, 2])])\ndef test_x(n): None;\n";
+    let tests = TestRunner::discover_tests(content);
+    assert_eq!(tests.len(), 1);
+    assert_eq!(tests[0].kind(), "exhaustive");
+}
+
+#[test]
+fn test_split_top_level_commas_ignores_nested_commas_and_strings() {
+    assert_eq!(
+        TestRunner::split_top_level_commas("1, [a, b], {\"k\": \"x,y\"}"),
+        vec!["1", " [a, b]", " {\"k\": \"x,y\"}"]
+    );
+}
+
+#[test]
+fn test_exhaustive_passes_and_reports_its_scope() {
+    let content = concat!(
+        "# @exhaustive(2, [enumerate::array(enumerate::element([1, 2]), 2)])\n",
+        "def test_short(xs): assert_true(len(xs) <= 2);\n",
+    );
+
+    assert_eq!(run_failures(content), vec![]);
+    let detail = run_detail(content, "short");
+    assert!(detail.contains("no counterexample found within this scope"), "{detail}");
+    assert!(detail.contains("size <= 2"), "{detail}");
+    assert!(detail.contains("7 valid, 0 skipped"), "{detail}");
+    assert!(!detail.contains("guarantee") && !detail.contains("proved"), "{detail}");
+}
+
+#[test]
+fn test_exhaustive_reports_the_smallest_counterexample_first() {
+    let content = concat!(
+        "# @exhaustive(4, [enumerate::array(enumerate::element([1, 2]), 4)])\n",
+        "def test_short(xs): assert_true(len(xs) < 2);\n",
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0]
+            .1
+            .contains("Counterexample found at size 2: args = [[1, 1]]"),
+        "{}",
+        failures[0].1
+    );
+}
+
+#[test]
+fn test_exhaustive_requires_violation_of_a_direct_call_is_skipped_and_counted() {
+    let content = concat!(
+        "# @requires(n > 0)\n",
+        "def pos(n): n;\n",
+        "# @exhaustive(0, [enumerate::element([0, 1, 2, 3])])\n",
+        "def test_pos(n): assert_true(pos(n) >= 1);\n",
+    );
+
+    assert_eq!(run_failures(content), vec![]);
+    let detail = run_detail(content, "pos");
+    assert!(detail.contains("3 valid, 1 skipped"), "{detail}");
+    assert!(!detail.contains("warning"), "{detail}");
+}
+
+#[test]
+fn test_exhaustive_requires_violation_inside_another_contracted_function_fails() {
+    let content = concat!(
+        "# @requires(n > 0)\n",
+        "def pos(n): n;\n",
+        "# @requires(n > 0)\n",
+        "def outer(n): pos(n - 5);\n",
+        "# @exhaustive(0, [enumerate::element([1])])\n",
+        "def test_outer(n): assert_true(outer(n) >= 1);\n",
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0].1.contains("@requires violated in nested call"),
+        "{}",
+        failures[0].1
+    );
+    assert!(failures[0].1.contains("pos: n > 0"), "{}", failures[0].1);
+}
+
+#[test]
+fn test_exhaustive_ensures_violation_and_other_errors_fail() {
+    let content = concat!(
+        "# @ensures(result > n)\n",
+        "def bad_inc(n): n;\n",
+        "# @exhaustive(0, [enumerate::element([1])])\n",
+        "def test_ensures(n): bad_inc(n);\n",
+        "# @exhaustive(0, [enumerate::element([1])])\n",
+        "def test_error(n): error(\"boom\");\n",
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 2, "{failures:?}");
+    assert!(failures[0].1.contains("@ensures violated"), "{}", failures[0].1);
+    assert!(failures[1].1.contains("boom"), "{}", failures[1].1);
+}
+
+#[test]
+fn test_exhaustive_with_no_valid_input_fails() {
+    let content = concat!(
+        "# @requires(n > 0)\n",
+        "def pos(n): n;\n",
+        "# @exhaustive(0, [enumerate::element([0, -1])])\n",
+        "def test_pos(n): assert_true(pos(n) >= 1);\n",
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0].1.contains("No valid input was checked (2 skipped"),
+        "{}",
+        failures[0].1
+    );
+}
+
+#[test]
+fn test_exhaustive_warns_when_most_inputs_are_skipped() {
+    let content = concat!(
+        "# @requires(n > 0)\n",
+        "def pos(n): n;\n",
+        "# @exhaustive(0, [enumerate::element([0, 0, 0, 1])])\n",
+        "def test_pos(n): assert_true(pos(n) >= 1);\n",
+        "# @exhaustive(0, [enumerate::element([0, 0, 0, 1])], {\"skip_warn\": 0.9})\n",
+        "def test_quiet(n): assert_true(pos(n) >= 1);\n",
+    );
+
+    assert_eq!(run_failures(content), vec![]);
+    let detail = run_detail(content, "pos");
+    assert!(detail.contains("warning: 75% of the inputs were skipped"), "{detail}");
+    assert!(detail.contains("enumerator options"), "{detail}");
+    assert!(!run_detail(content, "quiet").contains("warning"));
+}
+
+#[rstest]
+#[case("{\"max_cases\": 2}", "max_cases = 2")]
+#[case("{\"max_total\": 2}", "max_total = 2")]
+fn test_exhaustive_stops_with_an_error_when_a_limit_is_exceeded(#[case] options: &str, #[case] expected: &str) {
+    let content = format!(
+        "# @exhaustive(2, [enumerate::array(enumerate::element([1]), 5)], {options})\n\
+         def test_any(xs): assert_true(true);\n"
+    );
+
+    let failures = run_failures(&content);
+
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0].1.contains("Enumeration stopped before finishing"),
+        "{}",
+        failures[0].1
+    );
+    assert!(failures[0].1.contains(expected), "{}", failures[0].1);
+}
+
+#[test]
+fn test_exhaustive_with_mismatched_enumerator_count_fails_the_run() {
+    let dir = temp_project_dir("exhaustive_arity_mismatch");
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "# @exhaustive([enumerate::element([1]), enumerate::element([2])])\ndef test_one(a): true;\n",
+    )
+    .unwrap();
+
+    assert!(!TestRunner::new(vec![test_file]).run().unwrap_or(false));
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_exhaustive_markdown_enumerator_builds_documents_that_satisfy_a_precondition() {
+    let content = concat!(
+        "# @requires(len(to_markdown(src)) > 0)\n",
+        "def first_block(src): to_markdown(src)[0];\n",
+        "# @exhaustive(2, [enumerate::markdown({\"kinds\": [\"heading\", \"paragraph\"], \"min_blocks\": 1})])\n",
+        "def test_first_block(src): assert_true(is_markdown(first_block(src)));\n",
+    );
+
+    assert_eq!(run_failures(content), vec![]);
+    let detail = run_detail(content, "first_block");
+    assert!(detail.contains("0 skipped"), "{detail}");
+    assert!(detail.contains("kinds: h1-h6, paragraph"), "{detail}");
+}
+
+#[rstest]
+#[case("{}", 0, 1)]
+#[case("{}", 1, 11)]
+#[case("{}", 2, 134)]
+#[case("{\"kinds\": [\"heading\"], \"max_heading_depth\": 2}", 1, 2)]
+#[case("{\"kinds\": [\"heading\"], \"max_heading_depth\": 2}", 2, 4)]
+fn test_enumerate_markdown_tier_sizes(#[case] options: &str, #[case] size: usize, #[case] expected: usize) {
+    // Tier 0 is the empty document, tier 1 a single block.
+    let content = format!(
+        "# @exhaustive(0, [enumerate::element([0])])\n\
+         def test_count(_n): assert_eq(len(enumerate::tier(enumerate::markdown({options}), {size})), {expected});\n"
+    );
+
+    assert_eq!(run_failures(&content), vec![]);
+}
+
+#[test]
+fn test_apply_contracts_labels_nested_requires_only_when_asked() {
+    let content = "# @requires(n > 0)\ndef f(n): n;\n";
+
+    assert!(
+        !TestRunner::apply_contracts(content, false)
+            .unwrap()
+            .contains("in nested call")
+    );
+    assert!(
+        TestRunner::apply_contracts(content, true)
+            .unwrap()
+            .contains("in nested call")
     );
 }

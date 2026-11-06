@@ -14,6 +14,9 @@ use super::{TestAnnotation, TestRunner};
 /// unused anywhere in the file.
 const ORIG_PREFIX: &str = "__orig_";
 
+/// Start of the message of a `@requires` violation raised by a direct call.
+const REQUIRES_PREFIX: &str = "@requires violated (caller's responsibility)";
+
 /// One `@requires` / `@ensures` annotation attached to a `def`.
 #[derive(Debug, PartialEq)]
 pub(super) struct Contract {
@@ -40,7 +43,12 @@ impl TestRunner {
     /// Rewrites `content` so every top-level `def` with `@requires`/`@ensures` annotations
     /// checks them on each call. Returns `content` unchanged when there are none, and a
     /// user-facing message when a contracted `def` cannot be wrapped.
-    pub(super) fn apply_contracts(content: &str) -> Result<String, String> {
+    ///
+    /// With `label_nested`, a `@requires` violation escaping
+    /// from a contracted function's body is re-labelled "in nested call", so `@exhaustive`
+    /// can tell it from a violation by the function the test called directly. A violation
+    /// that passes through an uncontracted helper first is still seen as direct.
+    pub(super) fn apply_contracts(content: &str, label_nested: bool) -> Result<String, String> {
         let (nodes, _) = mq_lang::parse_recovery(content);
         let mut contracted = Vec::new();
 
@@ -108,7 +116,7 @@ impl TestRunner {
         let mut out = Self::rename_originals(content, &contracted)?;
         for c in &contracted {
             out.push('\n');
-            out.push_str(&Self::build_contract_wrapper(c));
+            out.push_str(&Self::build_contract_wrapper(c, label_nested));
         }
         Ok(out)
     }
@@ -156,7 +164,7 @@ impl TestRunner {
     }
 
     /// Builds the checking wrapper `def f(...)` that calls the renamed original.
-    fn build_contract_wrapper(c: &Contracted) -> String {
+    fn build_contract_wrapper(c: &Contracted, label_nested: bool) -> String {
         let name = &c.name;
         let params = c.params.join(", ");
         let arg_names = c.params.join(", ");
@@ -171,7 +179,14 @@ impl TestRunner {
             );
             steps.push(format!("(if (not({})): error({msg}) else: None)", r.expr));
         }
-        steps.push(format!("let result = {}({params})", c.orig_name));
+        let orig = &c.orig_name;
+        if label_nested {
+            steps.push(format!(
+                "let result = (try: {orig}({params}) catch(e): (error(if (starts_with(e[\"message\"], \"{REQUIRES_PREFIX}\")): \"@requires violated in nested call: \" + e[\"message\"] else: e[\"message\"])))"
+            ));
+        } else {
+            steps.push(format!("let result = {orig}({params})"));
+        }
         for e in &c.ensures {
             let msg = format!(
                 "\"@ensures violated (function's responsibility): {name}: {} (line {}); arguments ({arg_names}) = \" + {args_value} + \"; result = \" + to_string(result)",

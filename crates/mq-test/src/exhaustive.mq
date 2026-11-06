@@ -1,0 +1,114 @@
+# Runner for `# @exhaustive(...)` tests. Appended after `include "test"` by mq-test.
+
+# A `@requires` violation raised by the function the test called directly (see `contract.rs`).
+def _exhaustive_direct_requires_prefix():
+  "@requires violated (caller's responsibility)"
+end
+
+def _exhaustive_opt(options, key, default):
+  if (contains(options, key)): get(options, key) else: default
+end
+
+# Classifies one input: {"kind": "valid"}, {"kind": "skip"} or {"kind": "fail", "message": ...}.
+#
+# Only a `@requires` violation of a function the test called directly is a skip. The same
+# violation reached through another contracted function arrives re-labelled "in nested call"
+# (see `contract.rs`) and is a failure, like `@ensures` violations and every other error.
+def _exhaustive_classify(adapter, args):
+  let outcome = try: {"returned": adapter(args)} catch(e): {"thrown": e["message"]}
+  | if (contains(outcome, "thrown")):
+      if (starts_with(outcome["thrown"], _exhaustive_direct_requires_prefix())):
+        {"kind": "skip"}
+      else:
+        {"kind": "fail", "message": "Error: " + outcome["thrown"]}
+    else:
+      do
+        let failure = _test_failure(outcome["returned"])
+        | if (is_none(failure)): {"kind": "valid"} else: {"kind": "fail", "message": failure["message"]}
+      end
+end
+
+def _exhaustive_percent(part, whole):
+  if (whole == 0): "0%" else: to_string(round(part * 100 / whole)) + "%"
+end
+
+# Runs `adapter` on every input of `tuple_enum` (an `enumerate::tuple`) of size 0..max_size, in
+# size order. The first failure is therefore a smallest counterexample.
+#
+# `options`: `max_cases` (valid checks, default 100000), `max_total` (valid + skipped,
+# default 10 * max_cases), `skip_warn` (skip-rate warning threshold, default 0.5).
+#
+# Returns a failure dict, or `{"exhaustive_report": text}` when no counterexample was found.
+def _exhaustive_result(name, tuple_enum, max_size, options, adapter):
+  let max_cases = _exhaustive_opt(options, "max_cases", 100000)
+  | let max_total = _exhaustive_opt(options, "max_total", max_cases * 10)
+  | let skip_warn = _exhaustive_opt(options, "skip_warn", 0.5)
+  | let tier_fn = get(tuple_enum, "tier")
+  | var valid = 0
+  | var skipped = 0
+  | var size = 0
+  | var found = None
+  | var stopped = None
+  | if (max_size < 0):
+      error("@exhaustive: max_size must be nonnegative, got " + to_string(max_size))
+    else:
+      None
+  | let _ = while (size <= max_size && is_none(found) && is_none(stopped)):
+      let tier = tier_fn(size)
+      | var i = 0
+      | let _ = while (i < len(tier) && is_none(found) && is_none(stopped)):
+          if (valid + skipped >= max_total):
+            stopped = "total attempts reached the limit max_total = " + to_string(max_total)
+          elif (valid >= max_cases):
+            stopped = "valid checks reached the limit max_cases = " + to_string(max_cases)
+          else:
+            do
+              let args = tier[i]
+              | let outcome = _exhaustive_classify(adapter, args)
+              | if (outcome["kind"] == "valid"):
+                  valid += 1
+                elif (outcome["kind"] == "skip"):
+                  skipped += 1
+                else:
+                  found = {"args": args, "size": size, "message": outcome["message"]}
+            end
+          | i += 1
+        end
+      | size += 1
+    end
+  | let total = valid + skipped
+  | let scope = "scope: size <= " + to_string(max_size) + "; " + get(tuple_enum, "describe")
+  | let counts = "checked: " + to_string(valid) + " valid, " + to_string(skipped) + " skipped (requires not met), "
+      + to_string(total) + " total; limits: max_cases " + to_string(max_cases) + ", max_total " + to_string(max_total)
+  | if (not(is_none(found))):
+      {
+        "error": true,
+        "message": "Counterexample found at size " + to_string(found["size"]) + ": args = " + to_string(found["args"])
+          + "\n\n" + found["message"] + "\n" + scope + "\n" + counts
+      }
+    elif (not(is_none(stopped))):
+      {
+        "error": true,
+        "message": "Enumeration stopped before finishing: " + stopped + " (no counterexample found in the " + to_string(total) + " inputs tried)"
+          + "\n\n" + scope + "\n" + counts + "\nLower max_size, narrow the enumerators, or raise the limit in the options argument."
+      }
+    elif (valid == 0):
+      {
+        "error": true,
+        "message": "No valid input was checked (" + to_string(skipped) + " skipped because @requires was not met)"
+          + "\n\n" + scope + "\n" + counts + "\nBuild inputs that satisfy the precondition with the enumerator options."
+      }
+    else:
+      do
+        let rate = skipped / total
+        | let warning = if (rate > skip_warn):
+            "\nwarning: " + _exhaustive_percent(skipped, total) + " of the inputs were skipped (threshold "
+              + _exhaustive_percent(skip_warn, 1) + "); most of this scope never reached the test. "
+              + "Use the enumerator options (e.g. enumerate::markdown({\"max_heading_depth\": 3})) to build inputs that satisfy @requires."
+          else:
+            ""
+        | {
+            "exhaustive_report": name + ": no counterexample found within this scope.\n" + scope + "\n" + counts + warning
+          }
+      end
+end
