@@ -1,6 +1,5 @@
 import "table"
 | import "csv"
-| import "gen"
 | include "test"
 
 | let table_md = "| Name | Age | City |\n| --- | --- | --- |\n| Alice | 30 | Tokyo |\n| Bob | 25 | Osaka |\n"

@@ -1102,16 +1102,20 @@ impl TestRunner {
             .collect::<Vec<_>>()
             .join(",\n");
 
-        let runner_include = if tests
-            .iter()
-            .any(|t| matches!(t, DiscoveredTest::Property { .. } | DiscoveredTest::Exhaustive { .. }))
-        {
-            "\n| include \"test_runner\""
-        } else {
-            ""
-        };
+        // Annotation expressions are spliced into the query, so the modules they name are
+        // imported here instead of in the test file.
+        let mut imports = String::new();
+        if tests.iter().any(|t| matches!(t, DiscoveredTest::Property { .. })) {
+            imports.push_str("\n| import \"gen\"");
+        }
+        if tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. })) {
+            imports.push_str("\n| import \"enumerate\"");
+        }
+        if !imports.is_empty() {
+            imports.push_str("\n| include \"test_runner\"");
+        }
 
-        format!("{content}\n| include \"test\"{runner_include}\n| {report_fn}(flatten([\n{cases}\n]))")
+        format!("{content}\n| include \"test\"{imports}\n| {report_fn}(flatten([\n{cases}\n]))")
     }
 }
 

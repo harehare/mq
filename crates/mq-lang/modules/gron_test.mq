@@ -1,5 +1,4 @@
 import "gron"
-| import "gen"
 | include "test"
 
 # -- gron Tests --

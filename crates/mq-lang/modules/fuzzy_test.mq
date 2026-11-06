@@ -1,5 +1,4 @@
 import "fuzzy"
-| import "gen"
 | include "test"
 
 # @parametrize([["flaw", "lawn", 2], ["", "", 0], ["a", "", 1], ["", "a", 1], ["abc", "abc", 0]])

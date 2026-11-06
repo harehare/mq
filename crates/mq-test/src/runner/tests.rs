@@ -1440,12 +1440,6 @@ fn test_apply_contracts_rejects_unsupported_signatures(#[case] content: &str, #[
 
 /// Runs `content` like `mq-test --format json` and returns every test's result dict as JSON.
 fn run_results(content: &str) -> Vec<serde_json::Value> {
-    // Fixtures that use `enumerate::` get the import a real test file would start with.
-    let content = &if content.contains("enumerate::") {
-        format!("import \"enumerate\"\n|\n{content}")
-    } else {
-        content.to_string()
-    };
     let tests = TestRunner::discover_tests(content);
     let uses_exhaustive = tests.iter().any(|t| matches!(t, DiscoveredTest::Exhaustive { .. }));
     let content = TestRunner::apply_contracts(content, uses_exhaustive).unwrap();

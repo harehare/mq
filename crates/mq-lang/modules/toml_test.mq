@@ -1,6 +1,5 @@
 import "toml"
 | import "json"
-| import "gen"
 | include "test"
 
 # -- TOML Tests --

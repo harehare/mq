@@ -1,5 +1,4 @@
 import "toon"
-| import "gen"
 | include "test"
 
 # -- TOON Tests --

@@ -1,5 +1,4 @@
 import "semver"
-| import "gen"
 | include "test"
 
 # -- SemVer Tests --

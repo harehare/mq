@@ -1,6 +1,5 @@
 import "html"
 | import "json"
-| import "gen"
 | include "test"
 
 # -- HTML Tests --

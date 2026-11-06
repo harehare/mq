@@ -1,5 +1,4 @@
 import "yaml"
-| import "gen"
 | include "test"
 
 # -- YAML Tests --

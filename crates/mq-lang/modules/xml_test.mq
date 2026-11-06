@@ -1,6 +1,5 @@
 import "xml"
 | import "json"
-| import "gen"
 | include "test"
 
 # -- XML Tests --

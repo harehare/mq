@@ -238,8 +238,6 @@ failure is therefore a smallest counterexample and nothing is shrunk. A clean ru
 inputs or values the enumerators do not produce.
 
 ```mq
-import "enumerate"
-|
 # @exhaustive(3, [enumerate::markdown({"max_heading_depth": 3})])
 def test_heading_lines_parse_as_headings(src):
   let doc = to_markdown(src)
@@ -251,8 +249,8 @@ end
   is an optional dict: `max_cases` (valid checks, default 100000), `max_total` (valid plus skipped,
   default `10 * max_cases`) and `skip_warn` (skip rate that triggers a warning, default `0.5`).
   Exceeding either limit fails the test with the counts and the limit; nothing is silently cut off.
-- Add `import "enumerate"` to use the `enumerate` module (like `import "gen"` for `@property`);
-  both are bundled with `mq-test` and are not available to plain `mq`. An
+- The `enumerate` module (like `gen` for `@property`) is bundled with `mq-test`, imported
+  automatically in files that use the annotation, and not available to plain `mq`. An
   enumerator is a dict whose `tier(k)` returns every value of size exactly `k`. Combinators:
   `element(values)` (size 0), `one_of(enums)`, `tuple(enums)` (sizes add), `array(en, max_len)` and
   `array_of(en, min_len, max_len)` (size is the length plus the items' sizes), `transform(en, f)`
