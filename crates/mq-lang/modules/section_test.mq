@@ -387,3 +387,26 @@ end
 def test_section_toc_markdown_empty():
   assert_eq(section::toc_markdown([]), [])
 end
+
+def test_section_split_without_a_matching_heading_is_empty():
+  assert_eq(section::split(to_markdown("# a\n\npara"), 2), [])
+end
+
+# @exhaustive(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "max_blocks": 4})])
+def test_sections_and_toc_have_one_entry_per_heading(src):
+  let doc = to_markdown(src)
+  | let sections = section::sections(doc)
+  | let headings = len(filter(doc, is_h))
+  | assert_eq([len(sections), len(section::toc(sections))], [headings, headings])
+end
+
+# split drops the nodes before the first heading of the requested level and keeps the rest.
+# @exhaustive(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "max_blocks": 4}), enumerate::element([1, 2, 3])])
+def test_split_keeps_every_node_from_the_first_matching_heading(src, level):
+  let parsed = to_markdown(src)
+  | let doc = if (is_array(parsed)): parsed else: [parsed]
+  | let heads = if (is_empty(doc)): [] else: filter(range(0, len(doc) - 1), fn(i): is_h(doc[i]) && doc[i].depth == level;)
+  | let expected = if (is_empty(heads)): 0 else: len(doc) - heads[0]
+  | let actual = fold(section::split(doc, level), 0, fn(acc, s): acc + 1 + len(s[:children]);)
+  | assert_eq(actual, expected)
+end
