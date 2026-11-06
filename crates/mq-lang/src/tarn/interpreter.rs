@@ -2058,6 +2058,43 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 )?;
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
+            OpCode::CallSelf(argc)
+                if chunks[frame.chunk_index as usize]
+                    .param_shape
+                    .fixed_required_arity()
+                    .is_none() =>
+            {
+                // Defaults and variadics need the general binder. The closure is rebuilt from
+                // the running frame rather than loaded from a defining cell that would cycle.
+                let callee = StackValue::Closure(Shared::new(Closure {
+                    chunk_index: frame.chunk_index,
+                    upvalues: frame.upvalues.clone(),
+                }));
+                let mut args = execution.limits.take_stack();
+                for _ in 0..*argc {
+                    args.push(pop!());
+                }
+                args.reverse();
+                let step = call_stack_value::<CHECK_TIMEOUT>(
+                    callee,
+                    &mut args,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                );
+                execution.limits.recycle_stack(args);
+                match step? {
+                    CallStep::Value(v) => stack.push(v),
+                    CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
+                }
+            }
             OpCode::CallSelf(argc) => {
                 let step = call_self_chunk_from_stack(
                     frame.chunk_index,
