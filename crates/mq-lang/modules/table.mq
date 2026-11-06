@@ -602,6 +602,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]))
+# @ensures(len(result[:header]) == len(table[:header]))
 def sort_rows(table, keys = None, order = :asc, kind = :string):
   let new_rows = if (keys == None):
     sort(table[:rows])
@@ -798,6 +800,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]))
+# @ensures(len(result[:header]) == len(table[:header]))
 def forward_fill(table, cols, group_by = [], missing = "both", max_gap = None):
   _fill_table(table, fn(rows): csv::forward_fill(rows, cols, group_by, missing, max_gap);)
 end
@@ -814,6 +818,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]))
+# @ensures(len(result[:header]) == len(table[:header]))
 def backward_fill(table, cols, group_by = [], missing = "both", max_gap = None):
   _fill_table(table, fn(rows): csv::backward_fill(rows, cols, group_by, missing, max_gap);)
 end
@@ -830,6 +836,8 @@ end
 # ```
 #
 # Returns: dict
+# @ensures(len(result[:rows]) == len(table[:rows]))
+# @ensures(len(result[:header]) == len(table[:header]))
 def constant_fill(table, defaults, missing = "both"):
   _fill_table(table, fn(rows): csv::constant_fill(rows, defaults, missing);)
 end
