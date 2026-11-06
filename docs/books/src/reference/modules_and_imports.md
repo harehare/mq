@@ -419,6 +419,10 @@ def fact(n):
 end
 ```
 
+`mq-test --smt file.mq` prints the contracts as SMT-LIB so a solver can check them for all inputs,
+e.g. `mq-test --smt file.mq | z3 -in` (`unsat` means the `@ensures` always holds). Only a small
+Int/Bool subset is translated; other functions are skipped with a comment.
+
 ### Small-scope tests (`enumerate`)
 
 `# @small_scope(max_size, enumerators, options)` runs a test on every input of size `<= max_size`,
