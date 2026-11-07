@@ -2312,3 +2312,11 @@ def f(p): p[:x];
         "{smt}"
     );
 }
+
+#[test]
+fn test_smt_ensures_predicate_on_a_parameter_does_not_declare_its_sort() {
+    let content = "# @ensures(is_number(x))\ndef f(x): 1;\n";
+    let smt = TestRunner::emit_smt(content).unwrap();
+    assert!(smt.contains("; skipped f:"), "{smt}");
+    assert!(!smt.contains("(declare-const x Int)"), "{smt}");
+}

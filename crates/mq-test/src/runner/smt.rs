@@ -169,9 +169,15 @@ impl TestRunner {
         let requires_ast = Self::parse_contracts(requires)?;
         let ensures_ast = Self::parse_contracts(ensures)?;
 
-        // Sorts mq-check left open are taken from the predicates in this function's contracts.
-        let contract_nodes: Vec<Node> = requires_ast.iter().chain(&ensures_ast).cloned().collect();
-        let declared = types::declared(&contract_nodes).map_err(|e| e.to_string())?;
+        // Sorts mq-check left open come from `@requires` predicates. An `@ensures` predicate on a
+        // parameter is a claim to verify, so it may only declare `result`.
+        let mut declared = types::declared(&requires_ast).map_err(|e| e.to_string())?;
+        declared.extend(
+            types::declared(&ensures_ast)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .filter(|(var, _)| var == "result"),
+        );
         let no_declarations = HashMap::new();
         let sigs: HashMap<String, SmtResult<Signature>> = partials
             .iter()
