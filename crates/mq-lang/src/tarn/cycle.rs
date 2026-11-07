@@ -40,14 +40,25 @@ struct Candidates {
     threshold: usize,
 }
 
+#[must_use]
+#[derive(PartialEq, Eq)]
+enum Registration {
+    Pending,
+    CollectionDue,
+}
+
 impl Candidates {
-    /// Adds `cell` unless it repeats the last one. Returns whether a collection is due.
-    fn push(&mut self, cell: WeakCell) -> bool {
+    /// Adds `cell` unless it repeats the last one.
+    fn add(&mut self, cell: WeakCell) -> Registration {
         if self.cells.last().is_some_and(|last| last.ptr_eq(&cell)) {
-            return false;
+            return Registration::Pending;
         }
         self.cells.push(cell);
-        self.cells.len() >= self.threshold.max(threshold_floor())
+        if self.cells.len() >= self.threshold.max(threshold_floor()) {
+            Registration::CollectionDue
+        } else {
+            Registration::Pending
+        }
     }
 
     /// Puts the cells that survived a collection back and waits for as many more before the
@@ -109,9 +120,7 @@ pub(super) fn register(cell: &Cell) {
         return;
     }
 
-    let due = with_candidates(|candidates| candidates.push(Shared::downgrade(cell)));
-
-    if due {
+    if with_candidates(|candidates| candidates.add(Shared::downgrade(cell))) == Registration::CollectionDue {
         collect();
     }
 }
