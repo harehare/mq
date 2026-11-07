@@ -20,8 +20,6 @@ mq-test -P 4                 # run files in parallel once more than 4 are found
 mq-test --update-snapshots   # accept current assert_snapshot output as golden
 mq-test --list               # list tests without running (honors -k/--tag)
 mq-test --format json        # JSON for --list and runs, for editors and CI
-mq-test --smt f.mq | z3 -in  # SMT-LIB for @requires/@ensures contracts
-mq-test --verify f.mq        # run a solver (z3) on the contracts, ✅/❌ per @ensures
 mq-test --coverage           # line coverage of included/imported modules
 ```
 
@@ -148,8 +146,7 @@ end
   are skipped, so the counterexample stays in the valid domain.
 - Use `all`, `any` and other higher-order builtins in expressions. There is no `old(x)` or `forall`.
 - Top-level `def`s and `def`s directly inside a `module` block (call them as `m::f`), without variadic
-  parameters. `--smt` reads top-level `def`s only. Default values are kept. Expressions are
-  not type-checked or checked for purity.
+  parameters. Default values are kept. Expressions are not type-checked or checked for purity.
 
 After the run, a `## Contracts` table lists each contract with how often it was evaluated and how
 often it did not hold (`❌` a violated `@ensures`, `↷` an unmet `@requires`, i.e. an input outside the
@@ -166,72 +163,6 @@ library function also verify the contracts on it (except the modules bundled wit
 # @ensures(len(result) == len(xs) + 1)
 def push(xs, x): xs + [x];
 ```
-
-### SMT-LIB
-
-`mq-test --smt file.mq` prints an SMT-LIB script instead of running tests, so a solver can check
-contracts for **all** inputs rather than sampled ones. `mq-test --verify file.mq` runs a solver on
-it and prints a verdict per `@ensures` (`just smt` checks the bundled `smt/examples.mq`):
-
-```bash
-mq-test --smt clamp.mq | z3 -in   # raw script
-mq-test --verify clamp.mq         # ✅ holds / ❌ counterexample with model / ⚠️ unknown
-mq-test --verify --solver "cvc5 --lang smt2 --tlimit=5000" clamp.mq
-```
-
-`--verify` runs the solver (default `z3 -in -t:10000`) as an external command, so `mq-test` itself
-has no solver dependency. It exits non-zero on a counterexample or a solver error.
-
-A counterexample is shown as mq values (`name = "" gives result = "hello, "`) and replayed in the real
-interpreter. `(reproduced in mq)` means mq raises the same `@ensures` violation with the same result;
-`not reproduced` means the SMT translation differs from mq's semantics for that input (for example
-`xs[5]` on a short array is unconstrained in SMT-LIB but `None` in mq).
-
-```mq
-# @requires(lo <= hi)
-# @ensures(result >= lo && result <= hi)
-def clamp(x, lo, hi): min(max(x, lo), hi);
-```
-
-For each function with `@ensures`, the script defines the function, assumes every `@requires` and
-asserts the negation of one `@ensures`: `unsat` means it always holds, `sat` is a counterexample.
-
-- Sorts come from `mq-check`'s inferred types (`number`, `bool`, `string`, `[T]` for an array;
-  numbers are modeled as integers). Only a settled type is used. Overloaded operators such as `+`,
-  `len` and `x[i]` also accept other types, so a parameter used only through them stays open (`'a`).
-  Declare it with a type predicate at the top of a `@requires` (or `@ensures`, for `result`):
-  `is_number(x)`, `is_string(x)`, `is_bool(x)` or `all(xs, is_number)`. These are ordinary mq
-  expressions that `mq-test` also checks at runtime, and `--smt` reads them as sorts rather than
-  constraints.
-
-  ```mq
-  # @requires(is_string(a) && is_string(b))
-  # @ensures(is_string(result) && len(result) == len(a) + len(b))
-  def concat(a, b): a + b;
-  ```
-
-  A function whose sorts are still open is skipped and the message names the missing declaration.
-
-  An optional value is declared with `||`, `is_number(x) || is_none(x)`, and a dict with known keys by
-  predicates on its keys, `is_number(p[:x]) && is_string(p[:name])`; `is_dict(p)` may be added.
-  `all(xs, is_number)` is an array of numbers.
-
-- Supported expressions: integer, string (printable ASCII) and array literals, `+ - * %` (`+` also
-  concatenates strings and arrays), comparisons, `==`/`!=`, `&&`, `||`, `!`, `not`, `if`/`elif`/
-  `else` (the `else` is required), leading `let` bindings, `len`, `x[i]`, `d[:key]`, `set`, `is_none`, `starts_with`,
-  `ends_with`, `contains`, `abs`/`min`/`max`, and calls to other top-level `def`s in the file.
-- `x[i]` is the item or `None` when the index is out of range, and a negative index counts from
-  the end, as in mq. Strings index to a one-character string. `is_none(v)` and `v == None` narrow
-  `v` in the branch where it is not `None`, so `if (is_none(v)): 0 else: v + 1` type-checks. A plain
-  value is accepted where an optional one is expected.
-- A dict literal `{"a": 1}` or `set(p, :a, v)` builds a record of the keys it names. Reading a key the
-  declared shape does not have is not translated.
-- Numbers are modeled as mathematical integers. `%` is the truncated remainder; `/` is not
-  translated. A zero divisor is unconstrained, whereas mq raises an error.
-- Self-recursion becomes `define-fun-rec`; a solver may answer `unknown` or time out because no
-  induction is performed. Mutual recursion is not supported.
-- A function outside this subset is skipped with a `; skipped <name>: <reason>` comment instead of
-  being approximated.
 
 ## Tags
 

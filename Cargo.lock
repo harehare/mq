@@ -2822,8 +2822,6 @@ dependencies = [
  "clap",
  "glob",
  "miette",
- "mq-check",
- "mq-hir",
  "mq-lang",
  "rayon",
  "rstest",

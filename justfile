@@ -101,10 +101,6 @@ fmt:
 test-mq:
     cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq crates/mq-test/modules/*_test.mq
 
-# Check `@ensures` contracts with an SMT solver (needs z3 on PATH). Defaults to the bundled examples.
-smt *files:
-    cargo run -p mq-test -- --verify {{ if files == "" { "crates/mq-test/smt/examples.mq" } else { files } }}
-
 # Time bundled mq benches through the Tarn bytecode VM.
 bench-mq:
     cargo run --release -p mq-bench -- crates/mq-lang/benches/mq_benches.mq
