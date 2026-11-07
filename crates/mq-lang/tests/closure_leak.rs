@@ -77,6 +77,18 @@ fn leaked_by(code: &str) -> isize {
 #[case::cycle_repeated_in_a_loop(
     "var i = 0 | while (i < 3000): var a = [] | let g = fn(x): len(a); | a = [g] | i += 1; | 1"
 )]
+#[case::resumed_generator_next_to_another_in_an_array(
+    "var b = [] | var c = {} | def gen(): yield: len(b) | yield: len(c); | \
+     let k0 = gen() | let k1 = gen() | b += [k0] | b += [k1] | next(k0) | 1"
+)]
+#[case::resumed_generator_in_a_literal_with_another(
+    "var b = [] | var c = {} | def gen(): yield: len(b) | yield: len(c); | \
+     let k0 = gen() | let k1 = gen() | b = [k0, k1] | next(k0) | 1"
+)]
+#[case::both_generators_resumed(
+    "var b = [] | var c = {} | def gen(): yield: len(b) | yield: len(c); | \
+     let k0 = gen() | let k1 = gen() | b += [k0] | b += [k1] | next(k0) | next(k1) | 1"
+)]
 #[case::cycle_made_by_every_call(
     "def mk(): var a = 0 | let g = fn(x): len(a); | a = [g] | 1; | var i = 0 | while (i < 3000): mk() | i += 1; | i"
 )]
@@ -84,23 +96,11 @@ fn programs_are_freed_with_the_engine(#[case] code: &str) {
     assert_eq!(leaked_by(code), 0, "leaked evaluating {code}");
 }
 
-/// The self-reference downgrade of a generator leaves a cycle when it is resumed while another
-/// generator that captures the same variable sits in the same array. It does not go through the
-/// cycle collector, and fails the same way with the collector off.
-#[test]
-#[ignore = "known leak in the generator self-reference downgrade, independent of the cycle collector"]
-fn a_resumed_generator_next_to_another_in_a_captured_array() {
-    let code = "var b = [] | var c = {} | def gen(): yield: len(b) | yield: len(c); | \
-                let k0 = gen() | let k1 = gen() | b += [k0] | b += [k1] | next(k0) | 1";
-    assert_eq!(leaked_by(code), 0);
-}
-
 mod generated {
     use super::*;
 
     /// A statement that rebinds a variable to something holding a closure, a container of
-    /// closures, a closure with a closure bound as an argument, or a generator. Generators are
-    /// never resumed here; see `a_resumed_generator_next_to_another_in_a_captured_array`.
+    /// closures, a closure with a closure bound as an argument, or a generator.
     fn statement() -> impl Strategy<Value = String> {
         let var = prop::sample::select(vec!["a", "b", "c"]);
         let closure = prop::sample::select(vec!["g0", "g1", "g2"]);
