@@ -86,6 +86,10 @@ Options:
           Update matching Markdown nodes and write the result to stdout
       --diff
           With --update, print a unified diff instead of the transformed content; nothing is written. Multiple files are diffed one at a time with their path in the headers; stdin is labeled `<stdin>`. Exits 1 if anything would change
+  -i, --in-place
+          With --update, rewrite each input file with the result instead of printing it. Writes atomically and keeps the file mode; symlinks are followed and files whose content would not change are left untouched. Combined with --diff, only previews
+      --backup <SUFFIX>
+          With --in-place, copy each changed file to `<file>SUFFIX` before rewriting it
       --unbuffered
           Unbuffered output
       --list-style <LIST_STYLE>
@@ -94,6 +98,8 @@ Options:
           Set the link title surround style for markdown output [default: double] [possible values: double, single, paren]
       --link-url-style <LINK_URL_STYLE>
           Set the link URL surround style for markdown links [default: none] [possible values: none, angle]
+      --no-table-padding
+          Do not pad table cells to a common column width
   -S, --separator <QUERY>
           Specify a query to insert between files as a separator
   -o, --output <FILE>
