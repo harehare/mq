@@ -10,7 +10,7 @@ pub(crate) fn replay(content: &str, obligation: &Obligation, counterexample: &Co
     if counterexample.inputs.len() != obligation.params.len() {
         return Replay::NotReproduced("the solver's model could not be read".to_string());
     }
-    let source = match TestRunner::apply_contracts(content, false, None) {
+    let source = match TestRunner::apply_contracts(content, false, "", None) {
         Ok(source) => source,
         Err(message) => return Replay::NotReproduced(message),
     };

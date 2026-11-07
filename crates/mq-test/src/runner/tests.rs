@@ -1368,14 +1368,14 @@ fn test_collect_contracts_gathers_multiple_and_multiline_annotations_with_lines(
 fn test_apply_contracts_leaves_content_without_contracts_unchanged() {
     let content = "# @test\ndef f(n): n;\n";
 
-    assert_eq!(TestRunner::apply_contracts(content, false, None).unwrap(), content);
+    assert_eq!(TestRunner::apply_contracts(content, false, "", None).unwrap(), content);
 }
 
 #[test]
 fn test_apply_contracts_renames_in_place_and_appends_a_wrapper() {
     let content = "# @requires(n > 0)\n# @ensures(result > n)\ndef inc(n): n + 1;\ndef other(): inc(1);\n";
 
-    let rewritten = TestRunner::apply_contracts(content, false, None).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
 
     // The original lines keep their numbers: only the `def` name changed.
     assert!(
@@ -1393,7 +1393,7 @@ fn test_apply_contracts_renames_in_place_and_appends_a_wrapper() {
 fn test_apply_contracts_avoids_existing_orig_names() {
     let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\ndef test_f(): f();\n";
 
-    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
 
     assert!(rewritten.contains("def __orig_f_(): 1;"), "{rewritten}");
     assert!(rewritten.contains("let result = __orig_f_()"), "{rewritten}");
@@ -1404,7 +1404,7 @@ fn test_apply_contracts_avoids_existing_orig_names() {
 fn test_apply_contracts_gives_each_original_a_distinct_name() {
     let content = "# @ensures(true)\ndef f(): 1;\n# @ensures(true)\ndef f_(): 2;\n";
 
-    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
 
     assert!(rewritten.contains("def __orig_f(): 1;"), "{rewritten}");
     assert!(rewritten.contains("def __orig_f_(): 2;"), "{rewritten}");
@@ -1413,7 +1413,7 @@ fn test_apply_contracts_gives_each_original_a_distinct_name() {
 #[test]
 fn test_contract_wrapper_calls_its_own_original_when_orig_name_exists() {
     let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\n";
-    let rewritten = TestRunner::apply_contracts(content, false).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
     assert_eq!(
         run_failures(&format!(
             "include \"test\"\n|\n{rewritten}def test_f(): assert_eq(f(), 1);\n"
@@ -1426,7 +1426,7 @@ fn test_contract_wrapper_calls_its_own_original_when_orig_name_exists() {
 fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
     let content = "# @requires(n != \"a\\\"b\")\ndef f(n): n;\n";
 
-    let rewritten = TestRunner::apply_contracts(content, false, None).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
 
     assert!(
         rewritten.contains("n != \\\"a\\\\\\\"b\\\""),
@@ -1438,7 +1438,7 @@ fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
 #[case("# @requires(true)\ndef f(*args): args;\n", "variadic parameters are not supported")]
 #[case("# @ensures(true)\ndef f(result): result;\n", "clashes")]
 fn test_apply_contracts_rejects_unsupported_signatures(#[case] content: &str, #[case] expected: &str) {
-    let err = TestRunner::apply_contracts(content, false, None).unwrap_err();
+    let err = TestRunner::apply_contracts(content, false, "", None).unwrap_err();
 
     assert!(err.contains(expected), "unexpected message: {err}");
 }
@@ -1447,7 +1447,7 @@ fn test_apply_contracts_rejects_unsupported_signatures(#[case] content: &str, #[
 fn run_results(content: &str) -> Vec<serde_json::Value> {
     let tests = TestRunner::discover_tests(content);
     let uses_small_scope = tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. }));
-    let content = TestRunner::apply_contracts(content, uses_small_scope, None).unwrap();
+    let content = TestRunner::apply_contracts(content, uses_small_scope, "", None).unwrap();
     let query = TestRunner::build_test_query_with_fn(&content, &tests, "run_tests_data");
     let mut engine = mq_lang::Engine::with_io(
         crate::resolver::TestModuleResolver::default(),
@@ -1922,12 +1922,12 @@ fn test_apply_contracts_labels_nested_requires_only_when_asked() {
     let content = "# @requires(n > 0)\ndef f(n): n;\n";
 
     assert!(
-        !TestRunner::apply_contracts(content, false, None)
+        !TestRunner::apply_contracts(content, false, "", None)
             .unwrap()
             .contains("in nested call")
     );
     assert!(
-        TestRunner::apply_contracts(content, true, None)
+        TestRunner::apply_contracts(content, true, "", None)
             .unwrap()
             .contains("in nested call")
     );
@@ -2050,7 +2050,7 @@ fn test_emit_smt_rejects_ill_sorted_contracts() {
 #[test]
 fn test_apply_contracts_keeps_default_parameters_in_the_wrapper() {
     let content = "# @requires(n >= 0)\ndef f(a, n = len([1, 2]) + 1, flag = false): a;\n";
-    let rewritten = TestRunner::apply_contracts(content, false, None).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
     assert!(
         rewritten.contains("def f(a, n = len([1, 2]) + 1, flag = false) do"),
         "{rewritten}"
@@ -2066,7 +2066,7 @@ fn test_contract_stats_count_evaluations_and_unmet_requires() {
         "def test_calls():\n  f(1) | f(2) | try: f(-1) catch: 0\nend\n",
     );
     let stats = super::contract::ContractStats::default();
-    let rewritten = TestRunner::apply_contracts(content, false, Some(&stats)).unwrap();
+    let rewritten = TestRunner::apply_contracts(content, false, "", Some(&stats)).unwrap();
     let tests = TestRunner::discover_tests(&rewritten);
     let query = TestRunner::build_test_query(&rewritten, &tests);
     let mut engine = mq_lang::Engine::with_io(
@@ -2332,4 +2332,36 @@ fn test_small_scope_rejects_a_tier_larger_than_the_limit() {
 
     assert_eq!(failures.len(), 1, "{failures:?}");
     assert!(failures[0].1.contains("limit 100000"), "{}", failures[0].1);
+}
+
+#[test]
+fn test_contract_stats_keep_identical_contracts_of_different_modules_apart() {
+    let module = "# @ensures(result > 0)\ndef f(n): n;\n";
+    let stats = super::contract::ContractStats::default();
+    TestRunner::apply_contracts(module, false, "b", Some(&stats)).unwrap();
+    let rewritten =
+        TestRunner::apply_contracts(module, false, "a", Some(&stats)).unwrap() + "def test_calls():\n  f(1)\nend\n";
+    let tests = TestRunner::discover_tests(&rewritten);
+    let query = TestRunner::build_test_query(&rewritten, &tests);
+    let mut engine = mq_lang::Engine::with_io(
+        crate::resolver::TestModuleResolver::default(),
+        mq_lang::Shared::new(mq_lang::MemIo::default()),
+    );
+    engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
+    stats.register(&mut engine);
+    engine.register_fn("current_test_file", || -> Result<String, mq_lang::HostFunctionError> {
+        Ok("t.mq".to_string())
+    });
+    engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
+
+    let table = stats.markdown().unwrap();
+    assert!(
+        table.contains("| ✅ | `a::f` | `@ensures(result > 0)` (line 1) | 1 | 0 |"),
+        "{table}"
+    );
+    assert!(
+        table.contains("| ⚪ | `b::f` | `@ensures(result > 0)` (line 1) | 0 | 0 |"),
+        "{table}"
+    );
 }

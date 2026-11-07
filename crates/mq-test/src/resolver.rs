@@ -55,7 +55,7 @@ impl ModuleResolver for TestModuleResolver {
         if !source.contains("@requires") && !source.contains("@ensures") {
             return Ok(source);
         }
-        TestRunner::apply_contracts(&source, self.label_nested, self.stats.as_ref())
+        TestRunner::apply_contracts(&source, self.label_nested, module_name, self.stats.as_ref())
             .map_err(|message| ModuleError::IOError(format!("{module_name}: {message}").into()))
     }
 

@@ -42,6 +42,8 @@ struct Contracted {
     /// One-based line and column of the name token.
     name_line: u32,
     name_column: usize,
+    /// The name contract stats are keyed by: `module::name` for an imported module.
+    stats_name: String,
 }
 
 impl TestRunner {
@@ -55,10 +57,12 @@ impl TestRunner {
     /// that passes through an uncontracted helper first is still seen as direct.
     ///
     /// Every contract is also registered in `stats`, so the report can list those the tests
-    /// never evaluated.
+    /// never evaluated. `module` names the imported module, or is empty for the test file, and
+    /// keeps identical contracts of different modules apart.
     pub(crate) fn apply_contracts(
         content: &str,
         label_nested: bool,
+        module: &str,
         stats: Option<&ContractStats>,
     ) -> Result<String, String> {
         let (nodes, _) = mq_lang::parse_recovery(content);
@@ -110,9 +114,15 @@ impl TestRunner {
             }
 
             let range = name.range();
+            let stats_name = if module.is_empty() {
+                name_text.clone()
+            } else {
+                format!("{module}::{name_text}")
+            };
             contracted.push(Contracted {
                 name: name_text,
                 orig_name: String::new(),
+                stats_name,
                 params,
                 param_decls,
                 requires,
@@ -128,10 +138,10 @@ impl TestRunner {
         if let Some(stats) = stats {
             for c in &contracted {
                 for r in &c.requires {
-                    stats.declare(&c.name, "requires", r);
+                    stats.declare(&c.stats_name, "requires", r);
                 }
                 for e in &c.ensures {
-                    stats.declare(&c.name, "ensures", e);
+                    stats.declare(&c.stats_name, "ensures", e);
                 }
             }
         }
@@ -239,7 +249,7 @@ impl TestRunner {
                 escape_mq_string(&r.expr),
                 r.line
             );
-            let check = Self::contract_check("requires", name, r);
+            let check = Self::contract_check("requires", &c.stats_name, r);
             steps.push(format!("(if (not({check})): error({msg}) else: None)"));
         }
         let orig = &c.orig_name;
@@ -256,7 +266,7 @@ impl TestRunner {
                 escape_mq_string(&e.expr),
                 e.line
             );
-            let check = Self::contract_check("ensures", name, e);
+            let check = Self::contract_check("ensures", &c.stats_name, e);
             steps.push(format!("(if (not({check})): error({msg}) else: None)"));
         }
         steps.push("result".to_string());

@@ -357,7 +357,7 @@ impl TestRunner {
 
             let contract_stats = contract::ContractStats::default();
             let uses_small_scope = tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. }));
-            let content = match Self::apply_contracts(&content, uses_small_scope, Some(&contract_stats)) {
+            let content = match Self::apply_contracts(&content, uses_small_scope, "", Some(&contract_stats)) {
                 Ok(content) => content,
                 Err(message) => {
                     any_failed.store(true, Ordering::Relaxed);
