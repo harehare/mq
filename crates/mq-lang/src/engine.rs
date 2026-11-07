@@ -62,17 +62,8 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     /// Loaded `.mqc` programs, keyed by checksum.
     #[cfg(feature = "mqc")]
     pub(crate) mqc_programs: rustc_hash::FxHashMap<[u8; crate::mqc::CHECKSUM_LEN], CompiledProgram>,
-    _collect_on_drop: CycleCollectOnDrop,
-}
-
-/// Declared last in [`Engine`], so it drops after the VM state and the variables it holds.
-#[derive(Debug, Clone, Default)]
-struct CycleCollectOnDrop;
-
-impl Drop for CycleCollectOnDrop {
-    fn drop(&mut self) {
-        tarn::collect_returned_cycles();
-    }
+    /// Declared last, so it is dropped, and collects, after the VM state and the variables it holds.
+    cycles: tarn::CycleCandidates,
 }
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.
@@ -121,7 +112,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             vm_module_prelude: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
-            _collect_on_drop: CycleCollectOnDrop,
+            cycles: Default::default(),
         }
     }
 }
@@ -166,7 +157,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             vm_module_prelude: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
-            _collect_on_drop: CycleCollectOnDrop,
+            cycles: Default::default(),
         }
     }
 
@@ -529,6 +520,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         );
         let module_loader = self.vm.module_loader.with_same_resolver();
 
+        let _cycles = self.cycles.enter();
         let vm = tarn::TarnVm {
             engine: tarn::EngineRunContext {
                 host_functions: &host_functions,

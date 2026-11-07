@@ -12,10 +12,7 @@ mod cache;
 pub(crate) mod compiler;
 mod cycle;
 
-/// Frees cycles that only the values of a finished evaluation kept alive. Call once the caller has dropped them.
-pub(crate) fn collect_returned_cycles() {
-    cycle::collect_returned();
-}
+pub(crate) use cycle::CycleCandidates;
 #[cfg(feature = "debugger")]
 mod debug_symbols;
 #[cfg(feature = "debugger")]
@@ -850,7 +847,6 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
             input,
         );
         cycle::collect();
-        cycle::note_returned();
         result
     }
 

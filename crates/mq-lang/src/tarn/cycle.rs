@@ -3,6 +3,11 @@
 //! Cycles can only be formed by writing into shared cells (`var` assignments, `+=`).
 //! [`register`] tracks these cells, and [`collect`] performs a trial deletion
 //! over the reachable graph.
+//!
+//! Each engine owns its candidates ([`CycleCandidates`]) and lends them to the running thread
+//! only while it evaluates. Dropping an engine collects its own candidates, so another engine's
+//! drop never consumes them and they follow the engine across threads.
+mod abandoned;
 mod graph;
 
 use super::value::{Cell, StackValue, WeakCell};
@@ -11,11 +16,7 @@ use crate::runtime::runtime_value::RuntimeValue;
 use graph::Graph;
 use rustc_hash::FxHashSet;
 use std::cell::RefCell;
-#[cfg(feature = "sync")]
-use std::sync::{
-    Mutex, PoisonError,
-    atomic::{AtomicBool, Ordering},
-};
+use std::fmt;
 
 /// Candidates that trigger a collection, until survivors raise it.
 const INITIAL_THRESHOLD: usize = 1024;
@@ -40,8 +41,6 @@ fn threshold_floor() -> usize {
 struct Candidates {
     cells: Vec<WeakCell>,
     threshold: usize,
-    /// Set when an evaluation ended with candidates left, which its returned values may keep alive.
-    returned: bool,
 }
 
 #[must_use]
@@ -80,39 +79,63 @@ struct ThreadCandidates(RefCell<Candidates>);
 
 thread_local! {
     static CANDIDATES: ThreadCandidates = const {
-        ThreadCandidates(RefCell::new(Candidates { cells: Vec::new(), threshold: 0, returned: false }))
+        ThreadCandidates(RefCell::new(Candidates { cells: Vec::new(), threshold: 0 }))
     };
 }
-
-// With `sync` a closure can be dropped on another thread, possibly after the thread that
-// registered its cell has exited. What an exiting thread still has registered is left here, and
-// the next collection on any thread takes it.
-#[cfg(feature = "sync")]
-static ORPHANS: Mutex<Vec<WeakCell>> = Mutex::new(Vec::new());
-#[cfg(feature = "sync")]
-static HAS_ORPHANS: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "sync")]
 impl Drop for ThreadCandidates {
     fn drop(&mut self) {
-        let cells: Vec<WeakCell> = std::mem::take(&mut self.0.get_mut().cells)
+        let cells = std::mem::take(&mut self.0.get_mut().cells)
             .into_iter()
             .filter(|weak| weak.strong_count() > 0)
             .collect();
-        if !cells.is_empty() {
-            ORPHANS.lock().unwrap_or_else(PoisonError::into_inner).extend(cells);
-            HAS_ORPHANS.store(true, Ordering::Release);
-        }
+        abandoned::push(cells);
     }
 }
 
-/// The candidates left by threads that have exited. Always empty without `sync`.
-fn take_orphans() -> Vec<WeakCell> {
-    #[cfg(feature = "sync")]
-    if HAS_ORPHANS.swap(false, Ordering::Acquire) {
-        return std::mem::take(&mut *ORPHANS.lock().unwrap_or_else(PoisonError::into_inner));
+/// The candidates of one engine. An engine's clone starts with none of its own.
+#[derive(Default)]
+pub(crate) struct CycleCandidates(Candidates);
+
+impl Clone for CycleCandidates {
+    fn clone(&self) -> Self {
+        Self::default()
     }
-    Vec::new()
+}
+
+impl fmt::Debug for CycleCandidates {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CycleCandidates").finish_non_exhaustive()
+    }
+}
+
+/// Keeps an engine's candidates on the running thread; see [`CycleCandidates::enter`].
+#[must_use]
+pub(crate) struct Entered<'a>(&'a mut Candidates);
+
+impl CycleCandidates {
+    /// Makes these the running thread's candidates until the returned guard drops.
+    pub(crate) fn enter(&mut self) -> Entered<'_> {
+        with_candidates(|running| std::mem::swap(running, &mut self.0));
+        Entered(&mut self.0)
+    }
+}
+
+impl Drop for Entered<'_> {
+    fn drop(&mut self) {
+        with_candidates(|running| std::mem::swap(running, self.0));
+    }
+}
+
+/// Frees the cycles only this engine's variables kept alive. What a returned value still owns
+/// is left for the next collection, since only the value's own drop can release it.
+impl Drop for CycleCandidates {
+    fn drop(&mut self) {
+        let mut registered = std::mem::take(&mut self.0.cells);
+        registered.extend(abandoned::take());
+        abandoned::push(sweep(registered));
+    }
 }
 
 /// Runs `f` on this thread's candidates. During thread teardown they are gone, and `f` is skipped.
@@ -153,35 +176,26 @@ pub(super) fn register(cell: &Cell) {
     }
 }
 
-/// Notes that the values an evaluation returned may still own the candidates left after its
-/// collection, so [`collect_returned`] has something to free once the caller drops them.
-pub(super) fn note_returned() {
-    with_candidates(|candidates| candidates.returned = !candidates.cells.is_empty());
-}
-
-/// Collects if a finished evaluation left candidates behind. Called when the owner of its
-/// returned values goes away, the earliest point a cycle only those values held can be freed.
-pub(crate) fn collect_returned() {
-    if with_candidates(|candidates| std::mem::take(&mut candidates.returned)) {
-        collect();
-    }
-}
-
 /// Frees the registered cells that only a cycle keeps alive.
 pub(super) fn collect() {
     let mut registered = with_candidates(|candidates| std::mem::take(&mut candidates.cells));
-    registered.extend(take_orphans());
+    registered.extend(abandoned::take());
     // An empty list means the threshold was never raised, so there is nothing to reset.
     if registered.is_empty() {
         return;
     }
+    let survivors = sweep(registered);
+    // Restoring even an empty list lowers a threshold that expired candidates had raised.
+    with_candidates(|candidates| candidates.restore(survivors));
+}
+
+/// Clears the garbage reachable from `registered` and returns the candidates still alive.
+fn sweep(registered: Vec<WeakCell>) -> Vec<WeakCell> {
     let distinct = distinct_live(registered);
     if !distinct.is_empty() {
         free_garbage(&distinct);
     }
-    // Restoring even an empty list lowers a threshold that expired candidates had raised.
-    let survivors = distinct.into_iter().filter(|weak| weak.strong_count() > 0).collect();
-    with_candidates(|candidates| candidates.restore(survivors));
+    distinct.into_iter().filter(|weak| weak.strong_count() > 0).collect()
 }
 
 /// `cells` without duplicates and without cells that are already gone. A loop that writes
@@ -470,16 +484,13 @@ mod tests {
         Shared::strong_count(sentinel) == 1
     }
 
-    #[test]
-    fn a_cycle_held_only_by_returned_values_is_freed_when_the_engine_is_dropped() {
-        reset();
-        let mut engine = crate::DefaultEngine::default();
-        engine.load_builtin_module();
+    const RETURNED_CYCLE: &str = "var a = [] | let g = fn(x): len(a); | a = [g, \"sentinel\"] | a";
+
+    /// Evaluates a query on `engine` that returns an array holding a cycle, with the sentinel
+    /// the cycle keeps alive.
+    fn eval_returned_cycle(engine: &mut crate::DefaultEngine) -> (crate::RuntimeValues, Shared<String>) {
         let values = engine
-            .eval(
-                "var a = [] | let g = fn(x): len(a); | a = [g, \"sentinel\"] | a",
-                std::iter::once(RuntimeValue::None),
-            )
+            .eval(RETURNED_CYCLE, std::iter::once(RuntimeValue::None))
             .expect("query runs");
         let sentinel = match &values[0] {
             RuntimeValue::Array(items) => match &items[1] {
@@ -488,9 +499,76 @@ mod tests {
             },
             other => panic!("unexpected {other:?}"),
         };
+        (values, sentinel)
+    }
+
+    fn engine() -> crate::DefaultEngine {
+        let mut engine = crate::DefaultEngine::default();
+        engine.load_builtin_module();
+        engine
+    }
+
+    /// Collects until `sentinel` is freed. Under `sync` another test's thread may be holding the
+    /// abandoned candidates, so this retries until they are handed back.
+    fn freed_by_later_collections(sentinel: &Shared<String>) -> bool {
+        (0..2000).any(|_| {
+            collect();
+            is_freed(sentinel) || {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                false
+            }
+        })
+    }
+
+    #[test]
+    fn a_cycle_held_only_by_returned_values_is_freed_when_the_engine_is_dropped() {
+        reset();
+        let mut engine = engine();
+        let (values, sentinel) = eval_returned_cycle(&mut engine);
         drop(values);
         assert!(!is_freed(&sentinel), "the cycle outlives the result until a collection");
         drop(engine);
+        assert!(is_freed(&sentinel));
+    }
+
+    #[test]
+    fn dropping_another_engine_does_not_consume_the_cycles_of_a_live_result() {
+        reset();
+        let (mut owner, mut other) = (engine(), engine());
+        let (values, sentinel) = eval_returned_cycle(&mut owner);
+        let (other_values, other_sentinel) = eval_returned_cycle(&mut other);
+        drop(other_values);
+        drop(other);
+        assert!(is_freed(&other_sentinel));
+        assert!(!is_freed(&sentinel), "the result still owns the cycle");
+        drop(values);
+        drop(owner);
+        assert!(is_freed(&sentinel));
+    }
+
+    #[test]
+    fn a_cycle_whose_result_outlives_the_engine_is_freed_by_a_later_collection() {
+        reset();
+        let mut owner = engine();
+        let (values, sentinel) = eval_returned_cycle(&mut owner);
+        drop(owner);
+        assert!(!is_freed(&sentinel));
+        drop(values);
+        assert!(freed_by_later_collections(&sentinel));
+    }
+
+    #[cfg(feature = "sync")]
+    #[test]
+    fn an_engine_moved_to_another_thread_collects_the_cycles_of_its_result_there() {
+        reset();
+        let mut owner = engine();
+        let (values, sentinel) = eval_returned_cycle(&mut owner);
+        std::thread::spawn(move || {
+            drop(values);
+            drop(owner);
+        })
+        .join()
+        .unwrap();
         assert!(is_freed(&sentinel));
     }
 
