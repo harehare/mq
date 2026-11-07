@@ -7,21 +7,40 @@
 //! cannot see into (coroutines, a cell that is borrowed, a graph over the work budget) counts as
 //! an outside reference, so the collector leaks rather than frees a live value.
 
+mod graph;
+
 use super::value::{Cell, StackValue, WeakCell};
 use crate::Shared;
 use crate::runtime::runtime_value::RuntimeValue;
+use graph::Graph;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hasher};
+use std::collections::HashSet;
 
+/// Candidates that trigger a collection, until survivors raise it.
 const INITIAL_THRESHOLD: usize = 1024;
-const MAX_WORK: usize = 1 << 20;
-const MAX_DEPTH: usize = 128;
 
 #[derive(Default)]
 struct Candidates {
     cells: Vec<WeakCell>,
     threshold: usize,
+}
+
+impl Candidates {
+    /// Adds `cell` unless it repeats the last one. Returns whether a collection is due.
+    fn push(&mut self, cell: WeakCell) -> bool {
+        if self.cells.last().is_some_and(|last| last.ptr_eq(&cell)) {
+            return false;
+        }
+        self.cells.push(cell);
+        self.cells.len() >= self.threshold.max(INITIAL_THRESHOLD)
+    }
+
+    /// Puts the cells that survived a collection back and waits for as many more before the
+    /// next one, so a program that keeps many live candidates is not rescanned on every write.
+    fn restore(&mut self, survivors: Vec<WeakCell>) {
+        self.threshold = (survivors.len() * 2).max(INITIAL_THRESHOLD);
+        self.cells.extend(survivors);
+    }
 }
 
 thread_local! {
@@ -31,14 +50,14 @@ thread_local! {
 /// Whether writing `value` into a shared cell can close a cycle through a closure.
 #[inline(always)]
 pub(super) fn may_hold_closure(value: &StackValue) -> bool {
-    matches!(
-        value,
-        StackValue::Closure(_)
-            | StackValue::Value(RuntimeValue::Closure(_) | RuntimeValue::Array(_) | RuntimeValue::Dict(_))
-    )
+    match value {
+        StackValue::Closure(_) => true,
+        StackValue::Value(value) => runtime_value_may_hold_closure(value),
+        _ => false,
+    }
 }
 
-/// Whether `value` can add a closure to a container already stored in a cell.
+/// Whether `value` is, or can contain, a closure.
 #[inline(always)]
 pub(super) fn runtime_value_may_hold_closure(value: &RuntimeValue) -> bool {
     matches!(
@@ -49,18 +68,13 @@ pub(super) fn runtime_value_may_hold_closure(value: &RuntimeValue) -> bool {
 
 /// Records `cell` as a place where a cycle may have just closed. Collects when enough pile up.
 pub(super) fn register(cell: &Cell) {
+    // A cell nothing else references cannot be part of a cycle.
     if Shared::strong_count(cell) < 2 {
         return;
     }
-    let weak = Shared::downgrade(cell);
-    let due = CANDIDATES.with(|candidates| {
-        let mut candidates = candidates.borrow_mut();
-        if candidates.cells.last().is_some_and(|last| last.ptr_eq(&weak)) {
-            return false;
-        }
-        candidates.cells.push(weak);
-        candidates.cells.len() >= candidates.threshold.max(INITIAL_THRESHOLD)
-    });
+
+    let due = CANDIDATES.with(|candidates| candidates.borrow_mut().push(Shared::downgrade(cell)));
+
     if due {
         collect();
     }
@@ -69,239 +83,46 @@ pub(super) fn register(cell: &Cell) {
 /// Frees the registered cells that only a cycle keeps alive.
 pub(super) fn collect() {
     let registered = CANDIDATES.with(|candidates| std::mem::take(&mut candidates.borrow_mut().cells));
+
     if registered.is_empty() {
         return;
     }
+
+    free_garbage(&registered);
+
+    let survivors = registered.into_iter().filter(|weak| weak.strong_count() > 0).collect();
+    CANDIDATES.with(|candidates| candidates.borrow_mut().restore(survivors));
+}
+
+/// Scans the graph reachable from the live `registered` cells and clears the garbage in it.
+fn free_garbage(registered: &[WeakCell]) {
     let mut seen = HashSet::new();
     let roots: Vec<Cell> = registered
         .iter()
-        .filter(|weak| seen.insert(weak.as_ptr() as usize))
+        .filter(|weak| seen.insert(weak.as_ptr()))
         .filter_map(WeakCell::upgrade)
         .collect();
-
-    let mut graph = Graph::default();
-    for root in &roots {
-        graph.visit_cell(None, root, 0);
-    }
-    for root in &roots {
-        // `roots` itself holds one strong reference to each.
-        if let Some(node) = graph.nodes.get_mut(&addr(root)) {
-            node.strong -= 1;
-        }
-    }
-    let garbage = graph.garbage();
+    let garbage = Graph::scan(&roots).garbage_cells();
     drop(roots);
-    for cell in garbage.iter().filter_map(WeakCell::upgrade) {
-        clear(&cell);
-    }
 
-    let survivors: Vec<WeakCell> = registered.into_iter().filter(|weak| weak.strong_count() > 0).collect();
-    CANDIDATES.with(|candidates| {
-        let mut candidates = candidates.borrow_mut();
-        let threshold = (survivors.len() * 2).max(INITIAL_THRESHOLD);
-        survivors.into_iter().for_each(|weak| candidates.cells.push(weak));
-        candidates.threshold = threshold;
-    });
+    garbage
+        .iter()
+        .filter_map(WeakCell::upgrade)
+        .for_each(|cell| clear(&cell));
 }
 
+/// Empties `cell`, which drops what the cycle through it kept alive.
 fn clear(cell: &Cell) {
     #[cfg(not(feature = "sync"))]
     let guard = cell.try_borrow_mut().ok();
     #[cfg(feature = "sync")]
     let guard = cell.try_write().ok();
+
     if let Some(mut guard) = guard {
         let old = std::mem::replace(&mut *guard, StackValue::Value(RuntimeValue::None));
+        // Release the cell first: dropping the old value can reach this cell again.
         drop(guard);
         drop(old);
-    }
-}
-
-fn addr<T: ?Sized>(shared: &Shared<T>) -> usize {
-    Shared::as_ptr(shared) as *const () as usize
-}
-
-/// Hashes an address with one multiply; the graph is rebuilt on every collection, so the
-/// default hasher's per-key cost dominates.
-#[derive(Default)]
-struct AddrHasher(u64);
-
-impl Hasher for AddrHasher {
-    fn finish(&self) -> u64 {
-        self.0
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        bytes.iter().for_each(|byte| self.write_u64(u64::from(*byte)));
-    }
-
-    fn write_usize(&mut self, value: usize) {
-        self.write_u64(value as u64);
-    }
-
-    fn write_u64(&mut self, value: u64) {
-        self.0 = (self.0 ^ value).wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(26);
-    }
-}
-
-type AddrMap<V> = HashMap<usize, V, BuildHasherDefault<AddrHasher>>;
-type AddrSet = HashSet<usize, BuildHasherDefault<AddrHasher>>;
-
-struct Node {
-    strong: usize,
-    internal: usize,
-    opaque: bool,
-    children: Vec<usize>,
-    cell: Option<WeakCell>,
-}
-
-#[derive(Default)]
-struct Graph {
-    nodes: AddrMap<Node>,
-    work: usize,
-}
-
-impl Graph {
-    /// Adds the edge `parent -> id`. Returns whether `id` is new and still needs scanning.
-    fn enter(&mut self, parent: Option<usize>, id: usize, strong: usize, cell: Option<WeakCell>) -> bool {
-        if let Some(parent) = parent
-            && let Some(node) = self.nodes.get_mut(&parent)
-        {
-            node.children.push(id);
-        }
-        let edge = usize::from(parent.is_some());
-        match self.nodes.get_mut(&id) {
-            Some(node) => {
-                node.internal += edge;
-                false
-            }
-            None => {
-                self.nodes.insert(
-                    id,
-                    Node {
-                        strong,
-                        internal: edge,
-                        opaque: false,
-                        children: Vec::new(),
-                        cell,
-                    },
-                );
-                true
-            }
-        }
-    }
-
-    /// Whether the scan of node `id` must stop, treating it as referenced from outside.
-    fn exhausted(&mut self, id: usize, depth: usize) -> bool {
-        self.work += 1;
-        if depth > MAX_DEPTH || self.work > MAX_WORK {
-            self.nodes.get_mut(&id).expect("entered").opaque = true;
-            return true;
-        }
-        false
-    }
-
-    fn visit_cell(&mut self, parent: Option<usize>, cell: &Cell, depth: usize) {
-        let id = addr(cell);
-        if !self.enter(parent, id, Shared::strong_count(cell), Some(Shared::downgrade(cell))) {
-            return;
-        }
-        if self.exhausted(id, depth) {
-            return;
-        }
-        #[cfg(not(feature = "sync"))]
-        let guard = cell.try_borrow().ok();
-        #[cfg(feature = "sync")]
-        let guard = cell.try_read().ok();
-        let Some(guard) = guard else {
-            self.nodes.get_mut(&id).expect("entered").opaque = true;
-            return;
-        };
-        match &*guard {
-            StackValue::Closure(closure) => self.visit_closure(id, closure, depth + 1),
-            StackValue::Value(value) => self.visit_value(id, value, depth + 1),
-            StackValue::NestedWeakCoroutine(value) => self.visit_value(id, value, depth + 1),
-            StackValue::WeakCoroutine(_) => {}
-        }
-    }
-
-    fn visit_closure(&mut self, parent: usize, closure: &Shared<super::value::Closure>, depth: usize) {
-        let id = addr(closure);
-        if !self.enter(Some(parent), id, Shared::strong_count(closure), None) || self.exhausted(id, depth) {
-            return;
-        }
-        if let Some(upvalues) = &closure.upvalues {
-            self.visit_upvalues(id, upvalues, depth + 1);
-        }
-    }
-
-    fn visit_upvalues(&mut self, parent: usize, upvalues: &Shared<Vec<Cell>>, depth: usize) {
-        let id = addr(upvalues);
-        if !self.enter(Some(parent), id, Shared::strong_count(upvalues), None) || self.exhausted(id, depth) {
-            return;
-        }
-        for cell in upvalues.iter() {
-            self.visit_cell(Some(id), cell, depth + 1);
-        }
-    }
-
-    fn visit_value(&mut self, parent: usize, value: &RuntimeValue, depth: usize) {
-        match value {
-            RuntimeValue::Array(array) => {
-                let id = addr(array);
-                if !self.enter(Some(parent), id, Shared::strong_count(array), None) || self.exhausted(id, depth) {
-                    return;
-                }
-                for element in array.iter() {
-                    self.visit_value(id, element, depth + 1);
-                }
-            }
-            RuntimeValue::Dict(dict) => {
-                let id = addr(dict);
-                if !self.enter(Some(parent), id, Shared::strong_count(dict), None) || self.exhausted(id, depth) {
-                    return;
-                }
-                for element in dict.values() {
-                    self.visit_value(id, element, depth + 1);
-                }
-            }
-            RuntimeValue::Closure(closure) => {
-                let id = addr(closure);
-                if !self.enter(Some(parent), id, Shared::strong_count(closure), None) || self.exhausted(id, depth) {
-                    return;
-                }
-                if let Some(upvalues) = &closure.upvalues {
-                    self.visit_upvalues(id, upvalues, depth + 1);
-                }
-                for element in &closure.bound_args {
-                    self.visit_value(id, element, depth + 1);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// The cells no live node reaches. Empty when the scan hit its work limit.
-    fn garbage(&self) -> Vec<WeakCell> {
-        if self.work > MAX_WORK {
-            return Vec::new();
-        }
-        let mut live = AddrSet::default();
-        let mut pending: Vec<usize> = self
-            .nodes
-            .iter()
-            .filter(|(_, node)| node.opaque || node.strong > node.internal)
-            .map(|(id, _)| *id)
-            .collect();
-        while let Some(id) = pending.pop() {
-            if live.insert(id) {
-                pending.extend(self.nodes[&id].children.iter().copied());
-            }
-        }
-        self.nodes
-            .iter()
-            .filter(|(id, _)| !live.contains(id))
-            .filter_map(|(_, node)| node.cell.clone())
-            .collect()
     }
 }
 
@@ -454,7 +275,7 @@ mod tests {
         reset();
         let head = empty_cell();
         let mut tail = Shared::clone(&head);
-        for _ in 0..(MAX_DEPTH * 4) {
+        for _ in 0..(graph::MAX_DEPTH * 4) {
             let next = empty_cell();
             write_for_test(&tail, StackValue::Closure(closure_over(vec![Shared::clone(&next)])));
             tail = next;
