@@ -235,3 +235,20 @@ def test_semver_sort_orders_a_permutation(versions):
   | let ordered = len(sorted) < 2 || all(map(range(0, len(sorted) - 2), fn(i): semver::semver_compare(sorted[i], sorted[i + 1]) <= 0;), fn(b): b;)
   | assert_eq([ordered, sort(map(sorted, semver::semver_to_string))], [true, sort(versions)])
 end
+
+# @small_scope(0, [enumerate::element(_sv_versions())])
+def test_semver_bumps_update_only_the_documented_fields(version):
+  let v = semver::semver_parse(version)
+  | let major = semver::semver_bump_major(v)
+  | let minor = semver::semver_bump_minor(v)
+  | let patch = semver::semver_bump_patch(v)
+  | assert_eq(
+      [[major[:major], major[:minor], major[:patch]], [minor[:major], minor[:minor], minor[:patch]], [patch[:major], patch[:minor], patch[:patch]]],
+      [[v[:major] + 1, 0, 0], [v[:major], v[:minor] + 1, 0], [v[:major], v[:minor], v[:patch] + 1]]
+    )
+end
+
+# @small_scope(0, [enumerate::element(_sv_versions()), enumerate::element(_sv_versions())])
+def test_semver_compare_returns_only_minus_one_zero_or_one(a, b):
+  assert_true(contains([-1, 0, 1], _sv_compare(a, b)))
+end

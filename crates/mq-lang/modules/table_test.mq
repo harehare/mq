@@ -675,3 +675,23 @@ def test_table_pivot_longer_then_wider_restores_the_table(src):
   | let longer = table::pivot_longer(t, range(1, table::num_cols(t) - 1))
   | assert_eq(table::to_csv(table::pivot_wider(longer, 1, 2)), table::to_csv(t))
 end
+
+# @small_scope(1, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1})])
+def test_table_operations_change_the_shape_as_documented(src):
+  let t = _exh_first_table(src)
+  | let rows = table::num_rows(t)
+  | let cols = table::num_cols(t)
+  | let shape = fn(x): [table::num_rows(x), table::num_cols(x)];
+  | let checks = flatten([
+      [shape(table::add_row(t, _exh_row_of(t, "x"))) == [rows + 1, cols]],
+      map(range(0, rows), fn(i): shape(table::insert_row(t, i, _exh_row_of(t, "x"))) == [rows + 1, cols];),
+      map(_exh_seq(rows), fn(i): shape(table::remove_row(t, i)) == [rows - 1, cols];),
+      map(_exh_seq(rows), fn(i): shape(table::set_cell(t, i, 0, "x")) == [rows, cols];),
+      [shape(table::add_column(t, _exh_col_of(t, "x"))) == [rows, cols + 1]],
+      map(range(0, cols), fn(i): shape(table::insert_column(t, i, _exh_col_of(t, "x"))) == [rows, cols + 1];),
+      map(_exh_seq(cols), fn(i): shape(table::remove_column(t, i)) == [rows, cols - 1];),
+      [table::num_rows(table::filter_rows(t, fn(r): r[0].row != 1;)) <= rows],
+      [table::num_rows(table::dedupe_rows(t)) <= rows]
+    ])
+  | assert_true(_exh_all(checks))
+end

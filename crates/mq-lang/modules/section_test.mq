@@ -454,3 +454,19 @@ def test_section_shift_level_stays_within_heading_depths(src, delta):
   let depths = flat_map(section::sections(_sc_nodes(src), true), fn(s): _sc_depths(section::shift_level(s, delta));)
   | assert_true(_sc_all(map(depths, fn(d): d >= 1 && d <= 6;)))
 end
+
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "max_blocks": 4})])
+def test_section_filters_never_return_more_than_their_input(src):
+  let doc = to_markdown(src)
+  | let secs = section::sections(doc)
+  | let counts = [
+      len(secs) <= len(doc),
+      len(section::section(doc, "a")) <= len(doc),
+      len(section::by_title(doc, "a")) <= len(doc),
+      len(section::title_contains(secs, "a")) <= len(secs),
+      len(section::title_is(secs, "a")) <= len(secs),
+      len(section::title_match(secs, "a")) <= len(secs),
+      len(section::by_level(secs, 1)) <= len(secs)
+    ]
+  | assert_true(all(counts, fn(b): b;))
+end
