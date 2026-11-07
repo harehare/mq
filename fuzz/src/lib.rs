@@ -67,6 +67,7 @@ pub fn eval_and_check(context: &Context) {
 
     let result = std::panic::catch_unwind(|| {
         let mut engine = mq_lang::DefaultEngine::default();
+        engine.set_timeout(std::time::Duration::from_millis(100));
         let _ = engine.eval(&script, mq_lang::null_input().into_iter());
     });
 
