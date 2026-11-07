@@ -59,21 +59,39 @@ enum Referrer {
     Node(NodeId),
 }
 
+/// The reference counts of a shared object, read together when the scan first reaches it.
+struct Counts {
+    strong: usize,
+    weak: usize,
+}
+
+impl Counts {
+    fn of<T>(shared: &Shared<T>) -> Self {
+        Self {
+            strong: Shared::strong_count(shared),
+            weak: Shared::weak_count(shared),
+        }
+    }
+}
+
 struct Node {
     /// Strong count when the node was first reached.
     strong: usize,
     /// References counted from nodes inside the graph.
     inside: usize,
+    /// Weak references other than the collector's own. One of them can be upgraded at any time,
+    /// so the node can come back to life after it was judged garbage.
+    foreign_weak: usize,
     /// Not scanned, so what it references is unknown and it counts as held from outside.
     opaque: bool,
     children: Vec<NodeId>,
-    /// Kept for cells only, to clear them if they turn out to be garbage.
+    /// Present for cells only, to clear them if they turn out to be garbage.
     cell: Option<WeakCell>,
 }
 
 impl Node {
     fn is_held_from_outside(&self) -> bool {
-        self.opaque || self.strong > self.inside
+        self.opaque || self.strong > self.inside || self.foreign_weak > 0
     }
 }
 
@@ -84,8 +102,8 @@ pub(super) struct Graph {
 }
 
 impl Graph {
-    /// Scans everything reachable from `roots`, which the caller holds one handle each on.
-    /// Those handles are not counted as references from outside.
+    /// Scans everything reachable from `roots`, which the caller holds one strong and one weak
+    /// handle each on. Those handles are not counted as references from outside.
     pub(super) fn scan(roots: &[Cell]) -> Self {
         let mut graph = Self::default();
         for root in roots {
@@ -94,6 +112,7 @@ impl Graph {
         for root in roots {
             if let Some(node) = graph.nodes.get_mut(&NodeId::of(root)) {
                 node.strong -= 1;
+                node.foreign_weak -= 1;
             }
         }
         graph
@@ -133,7 +152,7 @@ impl Graph {
 
     /// Records one reference `from -> id`. Returns whether the children of `id` still need
     /// scanning: it is new and within the depth and work limits.
-    fn reference(&mut self, from: Referrer, id: NodeId, strong: usize, depth: usize, cell: Option<WeakCell>) -> bool {
+    fn reference(&mut self, from: Referrer, id: NodeId, counts: Counts, depth: usize, cell: Option<WeakCell>) -> bool {
         let inside = match from {
             Referrer::Root => 0,
             Referrer::Node(from) => {
@@ -157,7 +176,8 @@ impl Graph {
         self.nodes.insert(
             id,
             Node {
-                strong,
+                strong: counts.strong,
+                foreign_weak: counts.weak,
                 inside,
                 opaque,
                 children: Vec::new(),
@@ -177,16 +197,16 @@ impl Graph {
     /// Records a reference to `shared` and, the first time, scans its children with `scan`.
     fn visit<T>(&mut self, from: NodeId, shared: &Shared<T>, depth: usize, scan: impl FnOnce(&mut Self, NodeId, &T)) {
         let id = NodeId::of(shared);
-        if self.reference(Referrer::Node(from), id, Shared::strong_count(shared), depth, None) {
+        if self.reference(Referrer::Node(from), id, Counts::of(shared), depth, None) {
             scan(self, id, shared);
         }
     }
 
     fn visit_cell(&mut self, from: Referrer, cell: &Cell, depth: usize) {
         let id = NodeId::of(cell);
-        let strong = Shared::strong_count(cell);
-
-        if !self.reference(from, id, strong, depth, Some(Shared::downgrade(cell))) {
+        // Counted before the collector adds its own weak handle to the cell.
+        let counts = Counts::of(cell);
+        if !self.reference(from, id, counts, depth, Some(Shared::downgrade(cell))) {
             return;
         }
 

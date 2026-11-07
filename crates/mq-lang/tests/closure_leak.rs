@@ -4,6 +4,7 @@ use proptest::prelude::*;
 use rstest::rstest;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
+use std::sync::Mutex;
 
 thread_local! {
     // Per thread, so that tests running in parallel do not count each other's allocations.
@@ -41,8 +42,13 @@ fn live_after(code: &str) -> isize {
     LIVE.with(Cell::get) - before
 }
 
+/// With `sync`, the cycle collector's candidates are shared by every thread, so a collection on
+/// one test thread can free what another test allocated. Tests therefore take turns.
+static SERIAL: Mutex<()> = Mutex::new(());
+
 /// Evaluates `code` twice: the first run fills process-wide caches that stay allocated by design.
 fn leaked_by(code: &str) -> isize {
+    let _serial = SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     live_after(code);
     live_after(code)
 }
