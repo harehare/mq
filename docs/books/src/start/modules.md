@@ -46,6 +46,7 @@ Type to search by name or description, or click a category to filter.
   <button type="button" class="module-chip" data-category="terminal-text">Terminal &amp; Text</button>
   <button type="button" class="module-chip" data-category="generators">Generators</button>
   <button type="button" class="module-chip" data-category="interpreters-examples">Interpreters &amp; Examples</button>
+  <button type="button" class="module-chip" data-category="data-algorithms">Data Structures &amp; Algorithms</button>
   <button type="button" class="module-chip" data-category="libraries-toolkits">Libraries &amp; Toolkits</button>
 </div>
 
@@ -103,6 +104,13 @@ Type to search by name or description, or click a category to filter.
 <tr data-category="interpreters-examples"><td><a href="https://github.com/harehare/lisp.mq">lisp.mq</a></td><td><span class="module-category-badge">Interpreters &amp; Examples</span></td><td>Scheme-like Lisp interpreter</td></tr>
 <tr data-category="interpreters-examples"><td><a href="https://github.com/harehare/bf.mq">bf.mq</a></td><td><span class="module-category-badge">Interpreters &amp; Examples</span></td><td>Brainfuck interpreter</td></tr>
 <tr data-category="interpreters-examples"><td><a href="https://github.com/harehare/jq.mq">jq.mq</a></td><td><span class="module-category-badge">Interpreters &amp; Examples</span></td><td>Implementation of the <a href="https://jqlang.org">jq</a> JSON processor, written in mq</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/ds.mq">ds.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Data structures: min-heap, trie, union-find, sorted collections</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/bloom.mq">bloom.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Bloom filter, a compact set answering "definitely not" or "probably in the set"</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/sketch.mq">sketch.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Probabilistic stream summaries with fixed memory and mergeable results</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/consistenthash.mq">consistenthash.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Consistent hash ring for sharding keys over nodes</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/simhash.mq">simhash.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>SimHash fingerprints for near-duplicate detection</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/tfidf.mq">tfidf.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Full-text ranking: BM25 search and TF-IDF keyword extraction</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/vector.mq">vector.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Vector math and nearest-neighbour search</td></tr>
 <tr data-category="libraries-toolkits"><td><a href="https://github.com/harehare/parser_combinator.mq">parser_combinator.mq</a></td><td><span class="module-category-badge">Libraries &amp; Toolkits</span></td><td>A small parser-combinator toolkit, in the spirit of Rust's <a href="https://github.com/rust-bakery/nom">nom</a></td></tr>
 <tr data-category="libraries-toolkits"><td><a href="https://github.com/harehare/diff.mq">diff.mq</a></td><td><span class="module-category-badge">Libraries &amp; Toolkits</span></td><td>Text and array diffing utilities, built on mq's native Myers-diff engine</td></tr>
 <tr data-category="libraries-toolkits"><td><a href="https://github.com/harehare/returns.mq">returns.mq</a></td><td><span class="module-category-badge">Libraries &amp; Toolkits</span></td><td>Result and Maybe types for railway-oriented error handling, inspired by <a href="https://github.com/dry-python/returns">dry-python/returns</a></td></tr>
