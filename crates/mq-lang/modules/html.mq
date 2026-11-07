@@ -188,7 +188,7 @@ def _html_sel_nth(arg):
       {"a": 0, "b": to_number(text)}
     elif (test(text, "^[+-]?[0-9]*n(\\s*[+-]\\s*[0-9]+)?$")):
       do
-        let g = capture(replace(text, " ", ""), "^(?<a>[+-]?[0-9]*)n(?<b>[+-][0-9]+)?$")
+        let g = capture(gsub(text, "\\s+", ""), "^(?<a>[+-]?[0-9]*)n(?<b>[+-][0-9]+)?$")
         | let a = if (g["a"] == "" || g["a"] == "+"): 1 elif (g["a"] == "-"): -1 else: to_number(g["a"])
         | {"a": a, "b": if (is_none(g["b"])): 0 else: to_number(ltrimstr(g["b"], "+"))}
       end
@@ -197,7 +197,8 @@ def _html_sel_nth(arg):
 end
 
 def _html_sel_pseudo(s, comp):
-  let pattern = "^:(?<name>[a-z-]+)(?:\\((?<arg>[^()]*(?:\\([^()]*\\)[^()]*)*)\\))?"
+  let item = "[^()\"']|\"[^\"]*\"|'[^']*'"
+  | let pattern = "^:(?<name>[a-z-]+)(?:\\((?<arg>(?:" + item + ")*(?:\\((?:" + item + ")*\\)(?:" + item + ")*)*)\\))?"
   | let m = first(regex_match(s, pattern))
   | if (is_none(m)):
       error("html_select: invalid pseudo-class in: " + s)

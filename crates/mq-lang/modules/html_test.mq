@@ -189,6 +189,28 @@ def test_html_select_pseudo_classes(selector, expected):
   assert_eq(_select_texts(selector), expected)
 end
 
+# @parametrize([
+#   ["a:not([title=\")\"])", ["y", "z"]],
+#   ["a:not([title=\"(\"])", ["x", "z"]],
+#   ["a:not([title=')'])", ["y", "z"]],
+#   ["a:not([title=\"(\"], [title=\")\"])", ["z"]],
+# ])
+def test_html_select_not_quoted_parens(selector, expected):
+  let html_text = "<a title=\")\">x</a><a title=\"(\">y</a><a>z</a>"
+  | assert_eq(map(html::html_select(html_text, selector), fn(e): e["text"];), expected)
+end
+
+# @parametrize([
+#   ["li:nth-child(2n+1)"],
+#   ["li:nth-child(2n + 1)"],
+#   ["li:nth-child(2n\t+\t1)"],
+#   ["li:nth-child(2n\n+\n1)"],
+# ])
+def test_html_select_nth_child_whitespace(selector):
+  let html_text = "<ul><li>A</li><li>B</li><li>C</li></ul>"
+  | assert_eq(map(html::html_select(html_text, selector), fn(e): e["text"];), ["A", "C"])
+end
+
 def test_html_select_no_match_is_empty_array():
   assert_eq(html::html_select(html::html_parse(select_input), ".missing"), [])
 end
