@@ -16,8 +16,7 @@ use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
 use crate::tarn::value::{
     Cell, ReferenceVisitor, StackValue, WeakCell, collect_coroutine_handles_in_cell,
-    collect_coroutine_handles_in_stack_value, is_weak_self_reference, read_cell, sanitize_nested_self_reference,
-    weak_coroutine_cell, write_cell,
+    collect_coroutine_handles_in_stack_value, downgrade_captured_cell, is_weak_self_reference, read_cell, write_cell,
 };
 use crate::{Ident, Shared, SharedCell, TokenArena};
 
@@ -345,13 +344,7 @@ fn downgrade_self_references(
         resyncs.extend(frame.locals.downgrade_coroutine_references(handle));
         if let Some(upvalues) = &mut frame.upvalues {
             for upvalue in Shared::make_mut(upvalues) {
-                if let Some(weak_cell) = weak_coroutine_cell(upvalue, handle) {
-                    resyncs.push((Shared::clone(&weak_cell), Shared::downgrade(upvalue)));
-                    *upvalue = weak_cell;
-                } else if let Some(sanitized) = sanitize_nested_self_reference(upvalue, handle) {
-                    resyncs.push((Shared::clone(&sanitized), Shared::downgrade(upvalue)));
-                    *upvalue = sanitized;
-                }
+                resyncs.extend(downgrade_captured_cell(upvalue, handle));
             }
         }
     }

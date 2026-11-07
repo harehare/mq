@@ -557,13 +557,7 @@ impl Locals {
                 let HybridLocals { slots, captured } = &mut **hybrid;
                 for (slot, cell) in slots.iter_mut().zip(captured) {
                     if let Some(cell) = cell {
-                        if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
-                            resyncs.push((Shared::clone(&weak_cell), Shared::downgrade(cell)));
-                            *cell = weak_cell;
-                        } else if let Some(sanitized) = sanitize_nested_self_reference(cell, handle) {
-                            resyncs.push((Shared::clone(&sanitized), Shared::downgrade(cell)));
-                            *cell = sanitized;
-                        }
+                        resyncs.extend(downgrade_captured_cell(cell, handle));
                     } else {
                         slot.downgrade_coroutine_reference(handle);
                     }
@@ -571,13 +565,7 @@ impl Locals {
             }
             Locals::Boxed(slots) => {
                 for cell in slots {
-                    if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
-                        resyncs.push((Shared::clone(&weak_cell), Shared::downgrade(cell)));
-                        *cell = weak_cell;
-                    } else if let Some(sanitized) = sanitize_nested_self_reference(cell, handle) {
-                        resyncs.push((Shared::clone(&sanitized), Shared::downgrade(cell)));
-                        *cell = sanitized;
-                    }
+                    resyncs.extend(downgrade_captured_cell(cell, handle));
                 }
             }
         }
@@ -776,6 +764,17 @@ pub(crate) fn is_weak_self_reference(cell: &Cell, handle: &CoroutineHandle) -> b
             StackValue::WeakCoroutine(value) if upgrade_handle(value).is_some_and(|value| same_handle(&value, handle))
         )
     }
+}
+
+/// Swaps `cell` for a copy that holds `handle` weakly, when `cell` holds it at all. Returns the
+/// copy paired with a weak handle on the original, which a later resume writes back to.
+pub(crate) fn downgrade_captured_cell(cell: &mut Cell, handle: &CoroutineHandle) -> Option<(Cell, WeakCell)> {
+    let downgraded = weak_coroutine_cell(cell, handle).or_else(|| sanitize_nested_self_reference(cell, handle))?;
+    let resync = (Shared::clone(&downgraded), Shared::downgrade(cell));
+    // The copy still holds the other generators strongly, and they may hold it in turn.
+    cycle::register(&downgraded);
+    *cell = downgraded;
+    Some(resync)
 }
 
 pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Option<Cell> {
