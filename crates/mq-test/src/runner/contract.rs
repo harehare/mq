@@ -1,6 +1,6 @@
 //! `# @requires(expr)` / `# @ensures(expr)` function contracts.
 //!
-//! A contracted top-level `def f(a, b)` is renamed in place to `__orig_f`, and a wrapper `f`
+//! A contracted top-level `def f(a, b)` is renamed in place to `__orig_f` (or a longer unused name), and a wrapper `f`
 //! that checks the contracts around a call to `__orig_f` is appended after the file content.
 //! Recursive and forward calls resolve `f` at call time, so they go through the wrapper too.
 //! Appending (like `@property` does) keeps every original line number intact; only the
@@ -10,7 +10,8 @@ use mq_lang::{CstNodeKind, CstTrivia};
 
 use super::{TestAnnotation, TestRunner};
 
-/// Prefix of the renamed original function.
+/// Prefix of the renamed original function. A suffix of `_` is appended until the name is
+/// unused anywhere in the file.
 const ORIG_PREFIX: &str = "__orig_";
 
 /// One `@requires` / `@ensures` annotation attached to a `def`.
@@ -25,6 +26,8 @@ pub(super) struct Contract {
 #[derive(Debug, PartialEq)]
 struct Contracted {
     name: String,
+    /// Collision-free name the original `def` is renamed to.
+    orig_name: String,
     params: Vec<String>,
     requires: Vec<Contract>,
     ensures: Vec<Contract>,
@@ -79,6 +82,7 @@ impl TestRunner {
             let range = name.range();
             contracted.push(Contracted {
                 name: name_text,
+                orig_name: String::new(),
                 params,
                 requires,
                 ensures,
@@ -89,6 +93,16 @@ impl TestRunner {
 
         if contracted.is_empty() {
             return Ok(content.to_string());
+        }
+
+        let mut taken = std::collections::HashSet::new();
+        for c in &mut contracted {
+            let mut candidate = format!("{ORIG_PREFIX}{}", c.name);
+            while content.contains(&candidate) || taken.contains(&candidate) {
+                candidate.push('_');
+            }
+            taken.insert(candidate.clone());
+            c.orig_name = candidate;
         }
 
         let mut out = Self::rename_originals(content, &contracted)?;
@@ -113,8 +127,8 @@ impl TestRunner {
         (requires, ensures)
     }
 
-    /// Prefixes each contracted `def` name with [`ORIG_PREFIX`], verifying the name token
-    /// really sits at the reported position.
+    /// Renames each contracted `def` to its `orig_name`, verifying the name token really
+    /// sits at the reported position.
     fn rename_originals(content: &str, contracted: &[Contracted]) -> Result<String, String> {
         let line_starts: Vec<usize> = std::iter::once(0)
             .chain(content.match_indices('\n').map(|(i, _)| i + 1))
@@ -130,18 +144,18 @@ impl TestRunner {
                 })
                 .filter(|&at| content[at..].starts_with(&c.name))
                 .ok_or_else(|| format!("could not locate 'def {}' to attach its contracts", c.name))?;
-            offsets.push(offset);
+            offsets.push((offset, c));
         }
 
         let mut out = content.to_string();
-        offsets.sort_unstable();
-        for offset in offsets.into_iter().rev() {
-            out.insert_str(offset, ORIG_PREFIX);
+        offsets.sort_unstable_by_key(|(offset, _)| *offset);
+        for (offset, c) in offsets.into_iter().rev() {
+            out.replace_range(offset..offset + c.name.len(), &c.orig_name);
         }
         Ok(out)
     }
 
-    /// Builds the checking wrapper `def f(...)` that calls `__orig_f`.
+    /// Builds the checking wrapper `def f(...)` that calls the renamed original.
     fn build_contract_wrapper(c: &Contracted) -> String {
         let name = &c.name;
         let params = c.params.join(", ");
@@ -157,7 +171,7 @@ impl TestRunner {
             );
             steps.push(format!("(if (not({})): error({msg}) else: None)", r.expr));
         }
-        steps.push(format!("let result = {ORIG_PREFIX}{name}({params})"));
+        steps.push(format!("let result = {}({params})", c.orig_name));
         for e in &c.ensures {
             let msg = format!(
                 "\"@ensures violated (function's responsibility): {name}: {} (line {}); arguments ({arg_names}) = \" + {args_value} + \"; result = \" + to_string(result)",

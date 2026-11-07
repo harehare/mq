@@ -1383,6 +1383,39 @@ fn test_apply_contracts_renames_in_place_and_appends_a_wrapper() {
 }
 
 #[test]
+fn test_apply_contracts_avoids_existing_orig_names() {
+    let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\ndef test_f(): f();\n";
+
+    let rewritten = TestRunner::apply_contracts(content).unwrap();
+
+    assert!(rewritten.contains("def __orig_f_(): 1;"), "{rewritten}");
+    assert!(rewritten.contains("let result = __orig_f_()"), "{rewritten}");
+    assert!(rewritten.contains("def __orig_f(): 2;"), "{rewritten}");
+}
+
+#[test]
+fn test_apply_contracts_gives_each_original_a_distinct_name() {
+    let content = "# @ensures(true)\ndef f(): 1;\n# @ensures(true)\ndef f_(): 2;\n";
+
+    let rewritten = TestRunner::apply_contracts(content).unwrap();
+
+    assert!(rewritten.contains("def __orig_f(): 1;"), "{rewritten}");
+    assert!(rewritten.contains("def __orig_f_(): 2;"), "{rewritten}");
+}
+
+#[test]
+fn test_contract_wrapper_calls_its_own_original_when_orig_name_exists() {
+    let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\n";
+    let rewritten = TestRunner::apply_contracts(content).unwrap();
+    assert_eq!(
+        run_failures(&format!(
+            "include \"test\"\n|\n{rewritten}def test_f(): assert_eq(f(), 1);\n"
+        )),
+        vec![]
+    );
+}
+
+#[test]
 fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
     let content = "# @requires(n != \"a\\\"b\")\ndef f(n): n;\n";
 
