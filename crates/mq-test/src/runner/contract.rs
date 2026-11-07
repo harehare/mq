@@ -42,12 +42,15 @@ struct Contracted {
     /// One-based line and column of the name token.
     name_line: u32,
     name_column: usize,
-    /// The name contract stats are keyed by: `module::name` for an imported module.
+    /// The name contract stats are keyed by: `module::name` for a function in a module.
     stats_name: String,
+    /// End of the `def` when it sits inside a `module`: the wrapper is inserted there, on one line,
+    /// so it lands in the same module and later lines keep their numbers.
+    inline_at: Option<mq_lang::Position>,
 }
 
 impl TestRunner {
-    /// Rewrites `content` so every top-level `def` with `@requires`/`@ensures` annotations
+    /// Rewrites `content` so every `def` (top-level or directly in a `module`) with `@requires`/`@ensures` annotations
     /// checks them on each call. Returns `content` unchanged when there are none, and a
     /// user-facing message when a contracted `def` cannot be wrapped.
     ///
@@ -67,70 +70,7 @@ impl TestRunner {
     ) -> Result<String, String> {
         let (nodes, _) = mq_lang::parse_recovery(content);
         let mut contracted = Vec::new();
-
-        for node in &nodes {
-            let CstNodeKind::Def { name, .. } = &node.kind else {
-                continue;
-            };
-            let (requires, ensures) = Self::collect_contracts(&node.leading_trivia);
-            if requires.is_empty() && ensures.is_empty() {
-                continue;
-            }
-
-            let name_text = name.name().map(|n| n.to_string()).unwrap_or_default();
-            let (sig, _) = node.split_cond_and_program();
-            let mut params = Vec::new();
-            let mut param_decls = Vec::new();
-            for param in sig.iter().skip(1) {
-                let CstNodeKind::Param {
-                    asterisk: None,
-                    default,
-                    ..
-                } = &param.kind
-                else {
-                    return Err(format!(
-                        "contracts on '{name_text}': variadic parameters are not supported"
-                    ));
-                };
-                let Some(p) = param.name() else {
-                    return Err(format!("contracts on '{name_text}': unnamed parameter"));
-                };
-                let decl = match default {
-                    Some(default) => {
-                        let text = Self::source_text(content, default.node_range()).ok_or_else(|| {
-                            format!("contracts on '{name_text}': could not read the default of '{p}'")
-                        })?;
-                        format!("{p} = {text}")
-                    }
-                    None => p.to_string(),
-                };
-                params.push(p.to_string());
-                param_decls.push(decl);
-            }
-            if !ensures.is_empty() && params.iter().any(|p| p == "result") {
-                return Err(format!(
-                    "@ensures on '{name_text}': a parameter named 'result' clashes with the bound return value"
-                ));
-            }
-
-            let range = name.range();
-            let stats_name = if module.is_empty() {
-                name_text.clone()
-            } else {
-                format!("{module}::{name_text}")
-            };
-            contracted.push(Contracted {
-                name: name_text,
-                orig_name: String::new(),
-                stats_name,
-                params,
-                param_decls,
-                requires,
-                ensures,
-                name_line: range.start.line,
-                name_column: range.start.column,
-            });
-        }
+        Self::collect_contracted(content, &nodes, module, false, &mut contracted)?;
 
         if contracted.is_empty() {
             return Ok(content.to_string());
@@ -156,12 +96,113 @@ impl TestRunner {
             c.orig_name = candidate;
         }
 
-        let mut out = Self::rename_originals(content, &contracted)?;
-        for c in &contracted {
+        let mut out = Self::rewrite_defs(content, &contracted, label_nested)?;
+        for c in contracted.iter().filter(|c| c.inline_at.is_none()) {
             out.push('\n');
             out.push_str(&Self::build_contract_wrapper(c, label_nested));
         }
         Ok(out)
+    }
+
+    /// Collects the contracted `def`s among `nodes`, descending into `module` blocks.
+    /// `prefix` is the stats name prefix of the enclosing module, and `in_module` tells whether
+    /// the nodes are the body of a `module` block.
+    fn collect_contracted(
+        content: &str,
+        nodes: &[mq_lang::Shared<mq_lang::CstNode>],
+        prefix: &str,
+        in_module: bool,
+        out: &mut Vec<Contracted>,
+    ) -> Result<(), String> {
+        for node in nodes {
+            match &node.kind {
+                CstNodeKind::Module { name, program, .. } => {
+                    let name_text = name.name().map(|n| n.to_string()).unwrap_or_default();
+                    let child_prefix = if prefix.is_empty() {
+                        name_text
+                    } else {
+                        format!("{prefix}::{name_text}")
+                    };
+                    let body: Vec<_> = program.iter().filter(|c| !c.is_token()).cloned().collect();
+                    Self::collect_contracted(content, &body, &child_prefix, true, out)?;
+                }
+                CstNodeKind::Def { name, .. } => {
+                    if let Some(c) = Self::contracted_def(content, node, name, prefix, in_module)? {
+                        out.push(c);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// The contracts of one `def` node, or `None` if it has none.
+    fn contracted_def(
+        content: &str,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        name: &mq_lang::Shared<mq_lang::CstNode>,
+        prefix: &str,
+        in_module: bool,
+    ) -> Result<Option<Contracted>, String> {
+        let (requires, ensures) = Self::collect_contracts(&node.leading_trivia);
+        if requires.is_empty() && ensures.is_empty() {
+            return Ok(None);
+        }
+
+        let name_text = name.name().map(|n| n.to_string()).unwrap_or_default();
+        let (sig, _) = node.split_cond_and_program();
+        let mut params = Vec::new();
+        let mut param_decls = Vec::new();
+        for param in sig.iter().skip(1) {
+            let CstNodeKind::Param {
+                asterisk: None,
+                default,
+                ..
+            } = &param.kind
+            else {
+                return Err(format!(
+                    "contracts on '{name_text}': variadic parameters are not supported"
+                ));
+            };
+            let Some(p) = param.name() else {
+                return Err(format!("contracts on '{name_text}': unnamed parameter"));
+            };
+            let decl = match default {
+                Some(default) => {
+                    let text = Self::source_text(content, default.node_range())
+                        .ok_or_else(|| format!("contracts on '{name_text}': could not read the default of '{p}'"))?;
+                    format!("{p} = {text}")
+                }
+                None => p.to_string(),
+            };
+            params.push(p.to_string());
+            param_decls.push(decl);
+        }
+        if !ensures.is_empty() && params.iter().any(|p| p == "result") {
+            return Err(format!(
+                "@ensures on '{name_text}': a parameter named 'result' clashes with the bound return value"
+            ));
+        }
+
+        let range = name.range();
+        let stats_name = if prefix.is_empty() {
+            name_text.clone()
+        } else {
+            format!("{prefix}::{name_text}")
+        };
+        Ok(Some(Contracted {
+            name: name_text,
+            orig_name: String::new(),
+            stats_name,
+            params,
+            param_decls,
+            requires,
+            ensures,
+            name_line: range.start.line,
+            name_column: range.start.column,
+            inline_at: in_module.then(|| node.node_range().end),
+        }))
     }
 
     /// Collects the `@requires` and `@ensures` annotations among `trivia`, in source order.
@@ -197,29 +238,40 @@ impl TestRunner {
     }
 
     /// Renames each contracted `def` to its `orig_name`, verifying the name token really
-    /// sits at the reported position.
-    fn rename_originals(content: &str, contracted: &[Contracted]) -> Result<String, String> {
+    /// sits at the reported position, and inserts the wrapper of each `def` inside a `module`
+    /// right after the original.
+    fn rewrite_defs(content: &str, contracted: &[Contracted], label_nested: bool) -> Result<String, String> {
         let line_starts: Vec<usize> = std::iter::once(0)
             .chain(content.match_indices('\n').map(|(i, _)| i + 1))
             .collect();
+        let offset_at = |line: u32, column: usize| -> Option<usize> {
+            let start = *line_starts.get((line as usize).checked_sub(1)?)?;
+            let column = column.checked_sub(1)?;
+            match content[start..].char_indices().nth(column) {
+                Some((i, _)) => Some(start + i),
+                None => Some(content.len()),
+            }
+        };
 
-        let mut offsets = Vec::new();
+        // (offset, bytes replaced, replacement)
+        let mut edits: Vec<(usize, usize, String)> = Vec::new();
         for c in contracted {
-            let offset = line_starts
-                .get(c.name_line as usize - 1)
-                .and_then(|&start| {
-                    let line = &content[start..];
-                    line.char_indices().nth(c.name_column - 1).map(|(i, _)| start + i)
-                })
+            let offset = offset_at(c.name_line, c.name_column)
                 .filter(|&at| content[at..].starts_with(&c.name))
                 .ok_or_else(|| format!("could not locate 'def {}' to attach its contracts", c.name))?;
-            offsets.push((offset, c));
+            edits.push((offset, c.name.len(), c.orig_name.clone()));
+            if let Some(end) = c.inline_at {
+                let at = offset_at(end.line, end.column)
+                    .ok_or_else(|| format!("could not locate the end of 'def {}'", c.name))?;
+                let wrapper = Self::build_contract_wrapper(c, label_nested).replace('\n', " ");
+                edits.push((at, 0, format!(" {}", wrapper.trim_end())));
+            }
         }
 
         let mut out = content.to_string();
-        offsets.sort_unstable_by_key(|(offset, _)| *offset);
-        for (offset, c) in offsets.into_iter().rev() {
-            out.replace_range(offset..offset + c.name.len(), &c.orig_name);
+        edits.sort_unstable_by_key(|(offset, _, _)| *offset);
+        for (offset, len, text) in edits.into_iter().rev() {
+            out.replace_range(offset..offset + len, &text);
         }
         Ok(out)
     }

@@ -147,7 +147,8 @@ end
 - In `@property` tests an `@ensures` violation is shrunk; shrink candidates violating `@requires`
   are skipped, so the counterexample stays in the valid domain.
 - Use `all`, `any` and other higher-order builtins in expressions. There is no `old(x)` or `forall`.
-- Only top-level `def`s (not inside a `module`) without variadic parameters. Default values are kept. Expressions are
+- Top-level `def`s and `def`s directly inside a `module` block (call them as `m::f`), without variadic
+  parameters. `--smt` reads top-level `def`s only. Default values are kept. Expressions are
   not type-checked or checked for purity.
 
 After the run, a `## Contracts` table lists each contract with how often it was evaluated and how

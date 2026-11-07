@@ -1434,6 +1434,45 @@ fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
     );
 }
 
+#[test]
+fn test_apply_contracts_wraps_defs_inside_a_module_without_shifting_lines() {
+    let content = "module m:\n  # @ensures(result > n)\n  def inc(n): n + 1;\n  def other(): 2;\nend\n";
+
+    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
+
+    let lines: Vec<_> = rewritten.lines().collect();
+    assert_eq!(lines.len(), content.lines().count(), "{rewritten}");
+    assert!(
+        lines[2].starts_with("  def __orig_inc(n): n + 1; def inc(n) do"),
+        "{rewritten}"
+    );
+    assert_eq!(lines[3], "  def other(): 2;");
+}
+
+#[test]
+fn test_module_def_contract_is_checked_through_the_qualified_name() {
+    let src = "module m:\n  # @requires(n > 0)\n  # @ensures(result > n)\n  def bad(n): n;\n  # @ensures(result > n)\n  def good(n): n + 1;\nend\n";
+    let ok = format!("include \"test\"\n|\n{src}def test_ok(): assert_eq(m::good(1), 2);\n");
+    let violated = format!("include \"test\"\n|\n{src}def test_bad(): m::bad(1);\n");
+    let requires = format!("include \"test\"\n|\n{src}def test_req(): m::bad(0);\n");
+
+    assert_eq!(run_failures(&ok), vec![]);
+    let failures = run_failures(&violated);
+    assert!(failures[0].1.contains("@ensures violated"), "{failures:?}");
+    let failures = run_failures(&requires);
+    assert!(failures[0].1.contains("@requires violated"), "{failures:?}");
+}
+
+#[test]
+fn test_module_contracts_are_keyed_by_the_module_path() {
+    let stats = super::contract::ContractStats::default();
+    let src = "module a:\n  module b:\n    # @ensures(true)\n    def f(): 1;\n  end\nend\n";
+
+    TestRunner::apply_contracts(src, false, "lib", Some(&stats)).unwrap();
+
+    assert_eq!(stats.json()[0]["function"], "lib::a::b::f");
+}
+
 #[rstest]
 #[case("# @requires(true)\ndef f(*args): args;\n", "variadic parameters are not supported")]
 #[case("# @ensures(true)\ndef f(result): result;\n", "clashes")]
