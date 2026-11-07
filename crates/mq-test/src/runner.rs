@@ -42,10 +42,6 @@ enum TestAnnotation {
         options_expr: String,
     },
     Tags(Vec<String>),
-    /// `# @requires(expr)`: precondition checked on entry, see `contract.rs`.
-    Requires(String),
-    /// `# @ensures(expr)`: postcondition checked on return, with `result` bound.
-    Ensures(String),
 }
 
 /// Output format for `--list` and for a normal test run.
@@ -328,33 +324,12 @@ impl TestRunner {
                 return;
             }
 
-            let contract_stats = contract::ContractStats::default();
-            let uses_small_scope = tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. }));
-            let content = match Self::apply_contracts(&content, uses_small_scope, "", Some(&contract_stats)) {
-                Ok(content) => content,
-                Err(message) => {
-                    any_failed.store(true, Ordering::Relaxed);
-                    if self.format == OutputFormat::Json {
-                        json_results.lock().unwrap().push(serde_json::json!({
-                            "file": file.display().to_string(),
-                            "error": message,
-                        }));
-                    }
-                    file_errors
-                        .lock()
-                        .unwrap()
-                        .push((file.clone(), format!("# {}\n\n❌ {message}\n\n---\n", file.display())));
-                    return;
-                }
-            };
             let query = match self.format {
                 OutputFormat::Text => Self::build_test_query(&content, &tests),
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
             };
             let mut engine = mq_lang::Engine::with_io(
-                crate::resolver::TestModuleResolver::default()
-                    .with_label_nested(uses_small_scope)
-                    .with_contract_stats(contract_stats.clone()),
+                crate::resolver::TestModuleResolver::default(),
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
             );
             engine.load_builtin_module();
@@ -365,7 +340,6 @@ impl TestRunner {
             }
 
             Self::register_clock(&mut engine);
-            contract_stats.register(&mut engine);
 
             {
                 let test_file = file.to_string_lossy().into_owned();
@@ -418,9 +392,6 @@ impl TestRunner {
                     match self.format {
                         OutputFormat::Text => {
                             let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
-                            if let Some(table) = contract_stats.markdown() {
-                                println!("\n{table}");
-                            }
                             if !passed {
                                 any_failed.store(true, Ordering::Relaxed);
                                 failed_files.lock().unwrap().push(file.clone());
@@ -448,7 +419,6 @@ impl TestRunner {
                             json_results.lock().unwrap().push(serde_json::json!({
                                 "file": file.display().to_string(),
                                 "tests": tests_json,
-                                "contracts": contract_stats.json(),
                             }));
                         }
                     }
@@ -826,8 +796,6 @@ impl TestRunner {
                     options_expr,
                 })
             }
-            "requires" => Some(TestAnnotation::Requires(args)),
-            "ensures" => Some(TestAnnotation::Ensures(args)),
             "tags" | "tag" => Some(TestAnnotation::Tags(
                 args.split(',')
                     .map(|tag| tag.trim().to_string())
@@ -888,17 +856,12 @@ impl TestRunner {
     }
 
     /// Finds the first `@test`/`[test]`/`@parametrize(...)` annotation among `trivia`,
-    /// ignoring `@tags(...)` (see `collect_tags`) and contract comments (see `contract.rs`).
+    /// ignoring `@tags(...)` (see `collect_tags`).
     fn find_test_annotation(trivia: &[CstTrivia]) -> Option<TestAnnotation> {
         Self::merge_annotation_comments(trivia)
             .into_iter()
             .filter_map(|comment| Self::parse_annotation(&comment))
-            .find(|annotation| {
-                !matches!(
-                    annotation,
-                    TestAnnotation::Tags(_) | TestAnnotation::Requires(_) | TestAnnotation::Ensures(_)
-                )
-            })
+            .find(|annotation| !matches!(annotation, TestAnnotation::Tags(_)))
     }
 
     /// Collects and flattens every `@tags(...)`/`@tag(...)` comment among `trivia`.
@@ -1163,9 +1126,6 @@ fn open_in_default_app(path: &Path) -> miette::Result<()> {
         .into_diagnostic()?;
     Ok(())
 }
-
-mod contract;
-pub(crate) use contract::ContractStats;
 
 #[cfg(test)]
 mod tests;

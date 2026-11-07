@@ -845,7 +845,6 @@ fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
-    super::contract::ContractStats::default().register(&mut engine);
 
     let result = engine.eval(query, mq_lang::null_input().into_iter()).unwrap();
     let rendered = result.values().first().map(ToString::to_string).unwrap_or_default();
@@ -1064,7 +1063,6 @@ fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_sti
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
-    super::contract::ContractStats::default().register(&mut engine);
 
     let query = r#"include "test" | run_tests_data([
             test_case("boom", fn(): error("boom");),
@@ -1174,7 +1172,6 @@ fn test_render_file_error_attaches_the_file_name_when_mq_lang_left_it_blank() {
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
-    super::contract::ContractStats::default().register(&mut engine);
     let err = *engine.eval(&query, mq_lang::null_input().into_iter()).unwrap_err();
     assert_eq!(
         err.source_code.name(),
@@ -1309,192 +1306,16 @@ fn test_assert_snapshot_missing_golden_fails_without_update_flag() {
     fs::remove_dir_all(&dir).ok();
 }
 
-#[rstest]
-#[case("@requires(n >= 0)", Some(TestAnnotation::Requires("n >= 0".to_string())))]
-#[case("  @ensures(  result > n  )  ", Some(TestAnnotation::Ensures("result > n".to_string())))]
-#[case(
-        "@ensures(all(headings(doc), fn(h): h.depth <= 5;))",
-        Some(TestAnnotation::Ensures("all(headings(doc), fn(h): h.depth <= 5;)".to_string()))
-    )]
-#[case("@requires", None)]
-fn test_parse_annotation_contracts(#[case] comment: &str, #[case] expected: Option<TestAnnotation>) {
-    assert_eq!(TestRunner::parse_annotation(comment), expected);
-}
-
-#[test]
-fn test_contract_annotations_do_not_make_a_function_a_test() {
-    let content = "# @requires(n > 0)\n# @ensures(result > 0)\ndef double(n): n * 2;\n";
-
-    assert!(TestRunner::discover_tests(content).is_empty());
-}
-
-#[test]
-fn test_contract_annotations_do_not_hide_the_test_annotation() {
-    let content = "# @requires(n > 0)\n# @property([gen::int(1, 5)])\n# @ensures(result > 0)\ndef check(n): n;\n";
-
-    let tests = TestRunner::discover_tests(content);
-
-    assert!(matches!(tests.as_slice(), [DiscoveredTest::Property { name, .. }] if name == "check"));
-}
-
-#[test]
-fn test_collect_contracts_gathers_multiple_and_multiline_annotations_with_lines() {
-    let content = concat!(
-        "# @requires(n >= 0)\n",
-        "# @ensures(\n",
-        "#   result >= n\n",
-        "# )\n",
-        "# @ensures(result >= 1)\n",
-        "def f(n): n;\n",
-    );
-    let node = first_def(content);
-
-    let (requires, ensures) = TestRunner::collect_contracts(&node.leading_trivia);
-
-    assert_eq!(
-        requires.iter().map(|c| (c.expr.as_str(), c.line)).collect::<Vec<_>>(),
-        vec![("n >= 0", 1)]
-    );
-    assert_eq!(
-        ensures
-            .iter()
-            .map(|c| (c.expr.replace(['\n', '#'], "").trim().to_string(), c.line))
-            .collect::<Vec<_>>(),
-        vec![("result >= n".to_string(), 2), ("result >= 1".to_string(), 5)]
-    );
-}
-
-#[test]
-fn test_apply_contracts_leaves_content_without_contracts_unchanged() {
-    let content = "# @test\ndef f(n): n;\n";
-
-    assert_eq!(TestRunner::apply_contracts(content, false, "", None).unwrap(), content);
-}
-
-#[test]
-fn test_apply_contracts_renames_in_place_and_appends_a_wrapper() {
-    let content = "# @requires(n > 0)\n# @ensures(result > n)\ndef inc(n): n + 1;\ndef other(): inc(1);\n";
-
-    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
-
-    // The original lines keep their numbers: only the `def` name changed.
-    assert!(
-        rewritten.starts_with(
-            "# @requires(n > 0)\n# @ensures(result > n)\ndef __orig_inc(n): n + 1;\ndef other(): inc(1);\n"
-        )
-    );
-    assert!(rewritten.contains("def inc(n) do"), "missing wrapper: {rewritten}");
-    assert!(rewritten.contains("\"n > 0\", (n > 0)))"), "{rewritten}");
-    assert!(rewritten.contains("let result = __orig_inc(n)"));
-    assert!(rewritten.contains("\"result > n\", (result > n)))"), "{rewritten}");
-}
-
-#[test]
-fn test_apply_contracts_avoids_existing_orig_names() {
-    let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\ndef test_f(): f();\n";
-
-    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
-
-    assert!(rewritten.contains("def __orig_f_(): 1;"), "{rewritten}");
-    assert!(rewritten.contains("let result = __orig_f_()"), "{rewritten}");
-    assert!(rewritten.contains("def __orig_f(): 2;"), "{rewritten}");
-}
-
-#[test]
-fn test_apply_contracts_gives_each_original_a_distinct_name() {
-    let content = "# @ensures(true)\ndef f(): 1;\n# @ensures(true)\ndef f_(): 2;\n";
-
-    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
-
-    assert!(rewritten.contains("def __orig_f(): 1;"), "{rewritten}");
-    assert!(rewritten.contains("def __orig_f_(): 2;"), "{rewritten}");
-}
-
-#[test]
-fn test_contract_wrapper_calls_its_own_original_when_orig_name_exists() {
-    let content = "# @ensures(result == 1)\ndef f(): 1;\ndef __orig_f(): 2;\n";
-    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
-    assert_eq!(
-        run_failures(&format!(
-            "include \"test\"\n|\n{rewritten}def test_f(): assert_eq(f(), 1);\n"
-        )),
-        vec![]
-    );
-}
-
-#[test]
-fn test_apply_contracts_escapes_quotes_in_the_reported_expression() {
-    let content = "# @requires(n != \"a\\\"b\")\ndef f(n): n;\n";
-
-    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
-
-    assert!(
-        rewritten.contains("n != \\\"a\\\\\\\"b\\\""),
-        "bad escaping: {rewritten}"
-    );
-}
-
-#[test]
-fn test_apply_contracts_wraps_defs_inside_a_module_without_shifting_lines() {
-    let content = "module m:\n  # @ensures(result > n)\n  def inc(n): n + 1;\n  def other(): 2;\nend\n";
-
-    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
-
-    let lines: Vec<_> = rewritten.lines().collect();
-    assert_eq!(lines.len(), content.lines().count(), "{rewritten}");
-    assert!(
-        lines[2].starts_with("  def __orig_inc(n): n + 1; def inc(n) do"),
-        "{rewritten}"
-    );
-    assert_eq!(lines[3], "  def other(): 2;");
-}
-
-#[test]
-fn test_module_def_contract_is_checked_through_the_qualified_name() {
-    let src = "module m:\n  # @requires(n > 0)\n  # @ensures(result > n)\n  def bad(n): n;\n  # @ensures(result > n)\n  def good(n): n + 1;\nend\n";
-    let ok = format!("include \"test\"\n|\n{src}def test_ok(): assert_eq(m::good(1), 2);\n");
-    let violated = format!("include \"test\"\n|\n{src}def test_bad(): m::bad(1);\n");
-    let requires = format!("include \"test\"\n|\n{src}def test_req(): m::bad(0);\n");
-
-    assert_eq!(run_failures(&ok), vec![]);
-    let failures = run_failures(&violated);
-    assert!(failures[0].1.contains("@ensures violated"), "{failures:?}");
-    let failures = run_failures(&requires);
-    assert!(failures[0].1.contains("@requires violated"), "{failures:?}");
-}
-
-#[test]
-fn test_module_contracts_are_keyed_by_the_module_path() {
-    let stats = super::contract::ContractStats::default();
-    let src = "module a:\n  module b:\n    # @ensures(true)\n    def f(): 1;\n  end\nend\n";
-
-    TestRunner::apply_contracts(src, false, "lib", Some(&stats)).unwrap();
-
-    assert_eq!(stats.json()[0]["function"], "lib::a::b::f");
-}
-
-#[rstest]
-#[case("# @requires(true)\ndef f(*args): args;\n", "variadic parameters are not supported")]
-#[case("# @ensures(true)\ndef f(result): result;\n", "clashes")]
-fn test_apply_contracts_rejects_unsupported_signatures(#[case] content: &str, #[case] expected: &str) {
-    let err = TestRunner::apply_contracts(content, false, "", None).unwrap_err();
-
-    assert!(err.contains(expected), "unexpected message: {err}");
-}
-
 /// Runs `content` like `mq-test --format json` and returns every test's result dict as JSON.
 fn run_results(content: &str) -> Vec<serde_json::Value> {
     let tests = TestRunner::discover_tests(content);
-    let uses_small_scope = tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. }));
-    let content = TestRunner::apply_contracts(content, uses_small_scope, "", None).unwrap();
-    let query = TestRunner::build_test_query_with_fn(&content, &tests, "run_tests_data");
+    let query = TestRunner::build_test_query_with_fn(content, &tests, "run_tests_data");
     let mut engine = mq_lang::Engine::with_io(
         crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
-    super::contract::ContractStats::default().register(&mut engine);
     let result = engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
     let json = result.values().first().cloned().unwrap().to_json_value();
     json.as_array().unwrap().clone()
@@ -1521,193 +1342,6 @@ fn run_detail(content: &str, name: &str) -> String {
         .find(|t| t["name"] == name)
         .and_then(|t| t["detail"].as_str().map(str::to_string))
         .unwrap_or_default()
-}
-
-#[test]
-fn test_contracts_pass_when_satisfied() {
-    let content = concat!(
-        "# @requires(n >= 0)\n",
-        "# @ensures(result > n)\n",
-        "def inc(n): n + 1;\n",
-        "def test_inc(): assert_eq(inc(2), 3);\n",
-    );
-
-    assert_eq!(run_failures(content), vec![]);
-}
-
-#[test]
-fn test_requires_violation_is_reported_as_the_callers_fault_with_arguments() {
-    let content = concat!(
-        "# @requires(n >= 0)\n",
-        "def inc(n): n + 1;\n",
-        "def test_inc(): inc(-4);\n",
-    );
-
-    let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 1);
-    let message = &failures[0].1;
-    assert!(
-        message.contains("@requires violated (caller's responsibility)"),
-        "{message}"
-    );
-    assert!(message.contains("inc: n >= 0 (line 1)"), "{message}");
-    assert!(message.contains("arguments (n) = [-4]"), "{message}");
-}
-
-#[test]
-fn test_ensures_violation_is_reported_as_the_functions_fault_with_result() {
-    let content = concat!(
-        "# @ensures(result > n)\n",
-        "def broken(n): n;\n",
-        "def test_broken(): broken(3);\n",
-    );
-
-    let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 1);
-    let message = &failures[0].1;
-    assert!(
-        message.contains("@ensures violated (function's responsibility)"),
-        "{message}"
-    );
-    assert!(message.contains("broken: result > n (line 1)"), "{message}");
-    assert!(message.contains("arguments (n) = [3]"), "{message}");
-    assert!(message.contains("result = 3"), "{message}");
-}
-
-#[test]
-fn test_every_contract_must_hold() {
-    let content = concat!(
-        "# @requires(a > 0)\n",
-        "# @requires(\n",
-        "#   b > 0\n",
-        "# )\n",
-        "def add(a, b): a + b;\n",
-        "def test_first(): add(0, 1);\n",
-        "def test_second(): add(1, 0);\n",
-        "def test_both_ok(): add(1, 1);\n",
-    );
-
-    let names: Vec<String> = run_failures(content).into_iter().map(|(name, _)| name).collect();
-
-    assert_eq!(names, vec!["first".to_string(), "second".to_string()]);
-}
-
-#[test]
-fn test_recursive_calls_go_through_the_contract() {
-    // `fact(1)` returns 0 inside the recursion, which only the inner call's `@ensures` can see.
-    let content = concat!(
-        "# @ensures(result >= 1)\n",
-        "def fact(n): if (n <= 0): 1 elif (n == 1): 0 else: n * fact(n - 1);\n",
-        "def test_fact(): fact(4);\n",
-    );
-
-    let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 1);
-    assert!(failures[0].1.contains("arguments (n) = [1]"), "{}", failures[0].1);
-}
-
-#[test]
-fn test_a_contract_violation_in_a_property_test_is_shrunk() {
-    let content = concat!(
-        "include \"test\"\n",
-        "| import \"gen\"\n",
-        "|\n",
-        "# @requires(n >= 0)\n",
-        "# @ensures(result > n)\n",
-        "def bad_inc(n): n;\n",
-        "# @property(10, [gen::int(5, 50)])\n",
-        "def prop_bad_inc(n): bad_inc(n);\n",
-    );
-
-    let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 10, "every case must fail: {failures:?}");
-    assert!(
-        failures
-            .iter()
-            .all(|(_, m)| m.contains("@ensures violated") && m.contains("Shrunk from")),
-        "{failures:?}"
-    );
-    assert!(failures.iter().all(|(_, m)| m.contains("to [0]")), "{failures:?}");
-}
-
-#[test]
-fn test_shrinking_skips_candidates_that_violate_a_requires() {
-    // `n` shrinks towards 0 but `@requires(n >= 3)` rules those candidates out, so the
-    // minimal counterexample is the smallest valid one.
-    let content = concat!(
-        "include \"test\"\n",
-        "| import \"gen\"\n",
-        "|\n",
-        "# @requires(n >= 3)\n",
-        "# @ensures(result > n)\n",
-        "def bad_inc(n): n;\n",
-        "# @property(5, [gen::int(20, 50)])\n",
-        "def prop_bad_inc(n): bad_inc(n);\n",
-    );
-
-    let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 5, "{failures:?}");
-    assert!(failures.iter().all(|(_, m)| m.contains("to [3]")), "{failures:?}");
-}
-
-#[test]
-fn test_run_reports_a_contract_violation_as_a_failed_run() {
-    let dir = temp_project_dir("contract_violation");
-    let test_file = dir.join("tests.mq");
-    fs::write(
-        &test_file,
-        "# @ensures(result > n)\ndef broken(n): n;\ndef test_broken(): broken(1);\n",
-    )
-    .unwrap();
-
-    assert!(!TestRunner::new(vec![test_file]).run().unwrap());
-
-    fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
-fn test_run_fails_the_file_when_a_contracted_def_is_unsupported() {
-    let dir = temp_project_dir("contract_unsupported");
-    let test_file = dir.join("tests.mq");
-    fs::write(&test_file, "# @requires(true)\ndef f(*xs): xs;\ndef test_f(): f(1);\n").unwrap();
-
-    assert!(!TestRunner::new(vec![test_file]).run().unwrap());
-
-    fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
-fn test_markdown_contract_with_a_generated_document_passes_and_shrinks_when_broken() {
-    let prelude = concat!("include \"test\"\n", "| import \"gen\"\n", "|\n");
-    let good = concat!(
-        "# @requires(all(doc, fn(n): not(is_h(n)) || n.depth <= 5;))\n",
-        "# @ensures(len(result) == len(doc))\n",
-        "def demote_headings(doc):\n",
-        "  map(doc, fn(n): if (is_h(n)): to_h(to_text(n), n.depth + 1) else: n;)\n",
-        "end\n",
-        "# @property(30, [gen::markdown(1, 6, 5)])\n",
-        "def prop_demote(src): demote_headings(to_markdown(src));\n",
-    );
-    assert_eq!(run_failures(&format!("{prelude}{good}")), vec![]);
-
-    // Dropping the last node breaks `@ensures`; the document shrinks to a short one.
-    let broken = good.replace(
-        "map(doc, fn(n): if (is_h(n)): to_h(to_text(n), n.depth + 1) else: n;)",
-        "slice(doc, 0, len(doc) - 1)",
-    );
-    let failures = run_failures(&format!("{prelude}{broken}"));
-    assert!(!failures.is_empty());
-    assert!(
-        failures
-            .iter()
-            .all(|(_, m)| m.contains("@ensures violated") && m.contains("Shrunk from")),
-        "{failures:?}"
-    );
 }
 
 #[rstest]
@@ -1766,10 +1400,10 @@ fn test_small_scope_passes_and_reports_its_scope() {
     assert_eq!(run_failures(content), vec![]);
     let detail = run_detail(content, "short");
     assert!(detail.contains("No counterexample found within this scope"), "{detail}");
-    assert!(detail.contains("| 2 | 4 | 4 | 0 |"), "{detail}");
-    assert!(detail.contains("| **all** | **7** | **7** | **0** |"), "{detail}");
+    assert!(detail.contains("| 2 | 4 |"), "{detail}");
+    assert!(detail.contains("| **all** | **7** |"), "{detail}");
     assert!(detail.contains("size <= 2"), "{detail}");
-    assert!(detail.contains("7 valid, 0 skipped"), "{detail}");
+    assert!(detail.contains("checked: 7 inputs"), "{detail}");
     assert!(!detail.contains("guarantee") && !detail.contains("proved"), "{detail}");
 }
 
@@ -1793,107 +1427,14 @@ fn test_small_scope_reports_the_smallest_counterexample_first() {
 }
 
 #[test]
-fn test_small_scope_requires_violation_of_a_direct_call_is_skipped_and_counted() {
+fn test_small_scope_stops_with_an_error_when_a_limit_is_exceeded() {
+    let expected = "max_cases = 2";
     let content = concat!(
-        "# @requires(n > 0)\n",
-        "def pos(n): n;\n",
-        "# @small_scope(0, [enumerate::element([0, 1, 2, 3])])\n",
-        "def test_pos(n): assert_true(pos(n) >= 1);\n",
-    );
-
-    assert_eq!(run_failures(content), vec![]);
-    let detail = run_detail(content, "pos");
-    assert!(detail.contains("3 valid, 1 skipped"), "{detail}");
-    assert!(!detail.contains("warning"), "{detail}");
-}
-
-#[test]
-fn test_small_scope_requires_violation_inside_another_contracted_function_fails() {
-    let content = concat!(
-        "# @requires(n > 0)\n",
-        "def pos(n): n;\n",
-        "# @requires(n > 0)\n",
-        "def outer(n): pos(n - 5);\n",
-        "# @small_scope(0, [enumerate::element([1])])\n",
-        "def test_outer(n): assert_true(outer(n) >= 1);\n",
+        "# @small_scope(2, [enumerate::array(enumerate::element([1]), 5)], {\"max_cases\": 2})\n",
+        "def test_any(xs): assert_true(true);\n"
     );
 
     let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 1);
-    assert!(
-        failures[0].1.contains("@requires violated in nested call"),
-        "{}",
-        failures[0].1
-    );
-    assert!(failures[0].1.contains("pos: n > 0"), "{}", failures[0].1);
-}
-
-#[test]
-fn test_small_scope_ensures_violation_and_other_errors_fail() {
-    let content = concat!(
-        "# @ensures(result > n)\n",
-        "def bad_inc(n): n;\n",
-        "# @small_scope(0, [enumerate::element([1])])\n",
-        "def test_ensures(n): bad_inc(n);\n",
-        "# @small_scope(0, [enumerate::element([1])])\n",
-        "def test_error(n): error(\"boom\");\n",
-    );
-
-    let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 2, "{failures:?}");
-    assert!(failures[0].1.contains("@ensures violated"), "{}", failures[0].1);
-    assert!(failures[1].1.contains("boom"), "{}", failures[1].1);
-}
-
-#[test]
-fn test_small_scope_with_no_valid_input_fails() {
-    let content = concat!(
-        "# @requires(n > 0)\n",
-        "def pos(n): n;\n",
-        "# @small_scope(0, [enumerate::element([0, -1])])\n",
-        "def test_pos(n): assert_true(pos(n) >= 1);\n",
-    );
-
-    let failures = run_failures(content);
-
-    assert_eq!(failures.len(), 1);
-    assert!(
-        failures[0].1.contains("No valid input was checked (2 skipped"),
-        "{}",
-        failures[0].1
-    );
-}
-
-#[test]
-fn test_small_scope_warns_when_most_inputs_are_skipped() {
-    let content = concat!(
-        "# @requires(n > 0)\n",
-        "def pos(n): n;\n",
-        "# @small_scope(0, [enumerate::element([0, 0, 0, 1])])\n",
-        "def test_pos(n): assert_true(pos(n) >= 1);\n",
-        "# @small_scope(0, [enumerate::element([0, 0, 0, 1])], {\"skip_warn\": 0.9})\n",
-        "def test_quiet(n): assert_true(pos(n) >= 1);\n",
-    );
-
-    assert_eq!(run_failures(content), vec![]);
-    let detail = run_detail(content, "pos");
-    assert!(detail.contains("warning: 75% of the inputs were skipped"), "{detail}");
-    assert!(detail.contains("enumerator options"), "{detail}");
-    assert!(!run_detail(content, "quiet").contains("warning"));
-}
-
-#[rstest]
-#[case("{\"max_cases\": 2}", "max_cases = 2")]
-#[case("{\"max_total\": 2}", "max_total = 2")]
-fn test_small_scope_stops_with_an_error_when_a_limit_is_exceeded(#[case] options: &str, #[case] expected: &str) {
-    let content = format!(
-        "# @small_scope(2, [enumerate::array(enumerate::element([1]), 5)], {options})\n\
-         def test_any(xs): assert_true(true);\n"
-    );
-
-    let failures = run_failures(&content);
 
     assert_eq!(failures.len(), 1);
     assert!(
@@ -1919,21 +1460,6 @@ fn test_small_scope_with_mismatched_enumerator_count_fails_the_run() {
     fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
-fn test_small_scope_markdown_enumerator_builds_documents_that_satisfy_a_precondition() {
-    let content = concat!(
-        "# @requires(len(to_markdown(src)) > 0)\n",
-        "def first_block(src): to_markdown(src)[0];\n",
-        "# @small_scope(2, [enumerate::markdown({\"kinds\": [\"heading\", \"paragraph\"], \"min_blocks\": 1})])\n",
-        "def test_first_block(src): assert_true(is_markdown(first_block(src)));\n",
-    );
-
-    assert_eq!(run_failures(content), vec![]);
-    let detail = run_detail(content, "first_block");
-    assert!(detail.contains("0 skipped"), "{detail}");
-    assert!(detail.contains("kinds: h1-h6, paragraph"), "{detail}");
-}
-
 #[rstest]
 #[case("{}", 0, 1)]
 #[case("{}", 1, 11)]
@@ -1954,22 +1480,6 @@ fn test_enumerate_markdown_tier_sizes(#[case] options: &str, #[case] size: usize
     );
 
     assert_eq!(run_failures(&content), vec![]);
-}
-
-#[test]
-fn test_apply_contracts_labels_nested_requires_only_when_asked() {
-    let content = "# @requires(n > 0)\ndef f(n): n;\n";
-
-    assert!(
-        !TestRunner::apply_contracts(content, false, "", None)
-            .unwrap()
-            .contains("in nested call")
-    );
-    assert!(
-        TestRunner::apply_contracts(content, true, "", None)
-            .unwrap()
-            .contains("in nested call")
-    );
 }
 
 #[test]
@@ -2038,51 +1548,6 @@ fn test_durations_have_millisecond_resolution() {
 }
 
 #[test]
-fn test_apply_contracts_keeps_default_parameters_in_the_wrapper() {
-    let content = "# @requires(n >= 0)\ndef f(a, n = len([1, 2]) + 1, flag = false): a;\n";
-    let rewritten = TestRunner::apply_contracts(content, false, "", None).unwrap();
-    assert!(
-        rewritten.contains("def f(a, n = len([1, 2]) + 1, flag = false) do"),
-        "{rewritten}"
-    );
-    assert!(rewritten.contains("__orig_f(a, n, flag)"), "{rewritten}");
-}
-
-#[test]
-fn test_contract_stats_count_evaluations_and_unmet_requires() {
-    let content = concat!(
-        "# @requires(n >= 0)\n# @ensures(result >= n)\ndef f(n): n;\n",
-        "# @ensures(result > 0)\ndef never_called(n): n;\n",
-        "def test_calls():\n  f(1) | f(2) | try: f(-1) catch: 0\nend\n",
-    );
-    let stats = super::contract::ContractStats::default();
-    let rewritten = TestRunner::apply_contracts(content, false, "", Some(&stats)).unwrap();
-    let tests = TestRunner::discover_tests(&rewritten);
-    let query = TestRunner::build_test_query(&rewritten, &tests);
-    let mut engine = mq_lang::Engine::with_io(
-        crate::resolver::TestModuleResolver::default(),
-        mq_lang::Shared::new(mq_lang::MemIo::default()),
-    );
-    engine.load_builtin_module();
-    TestRunner::register_clock(&mut engine);
-    stats.register(&mut engine);
-    engine.register_fn("current_test_file", || -> Result<String, mq_lang::HostFunctionError> {
-        Ok("t.mq".to_string())
-    });
-    engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
-
-    let table = stats.markdown().unwrap();
-    assert!(
-        table.contains("| ↷ | `f` | `@requires(n >= 0)` (line 1) | 3 | 1 |"),
-        "{table}"
-    );
-    assert!(
-        table.contains("| ✅ | `f` | `@ensures(result >= n)` (line 2) | 2 | 0 |"),
-        "{table}"
-    );
-}
-
-#[test]
 fn test_small_scope_rejects_a_tier_larger_than_the_limit() {
     let content = concat!(
         "# @small_scope(4, [enumerate::string(\"abcdefghijklmnopqrst\", 4)])\n",
@@ -2093,36 +1558,4 @@ fn test_small_scope_rejects_a_tier_larger_than_the_limit() {
 
     assert_eq!(failures.len(), 1, "{failures:?}");
     assert!(failures[0].1.contains("limit 100000"), "{}", failures[0].1);
-}
-
-#[test]
-fn test_contract_stats_keep_identical_contracts_of_different_modules_apart() {
-    let module = "# @ensures(result > 0)\ndef f(n): n;\n";
-    let stats = super::contract::ContractStats::default();
-    TestRunner::apply_contracts(module, false, "b", Some(&stats)).unwrap();
-    let rewritten =
-        TestRunner::apply_contracts(module, false, "a", Some(&stats)).unwrap() + "def test_calls():\n  f(1)\nend\n";
-    let tests = TestRunner::discover_tests(&rewritten);
-    let query = TestRunner::build_test_query(&rewritten, &tests);
-    let mut engine = mq_lang::Engine::with_io(
-        crate::resolver::TestModuleResolver::default(),
-        mq_lang::Shared::new(mq_lang::MemIo::default()),
-    );
-    engine.load_builtin_module();
-    TestRunner::register_clock(&mut engine);
-    stats.register(&mut engine);
-    engine.register_fn("current_test_file", || -> Result<String, mq_lang::HostFunctionError> {
-        Ok("t.mq".to_string())
-    });
-    engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
-
-    let table = stats.markdown().unwrap();
-    assert!(
-        table.contains("| ✅ | `a::f` | `@ensures(result > 0)` (line 1) | 1 | 0 |"),
-        "{table}"
-    );
-    assert!(
-        table.contains("| ⚪ | `b::f` | `@ensures(result > 0)` (line 1) | 0 | 0 |"),
-        "{table}"
-    );
 }

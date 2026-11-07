@@ -401,8 +401,7 @@ def _markdown_block(o, depth):
   | one_of(parts)
 end
 
-# An enumerator of Markdown documents as source text. Build documents that already satisfy a
-# test's `@requires` by choosing the options instead of relying on skipped inputs.
+# An enumerator of Markdown documents as source text.
 #
 # Options (dict): `kinds` (subset of heading, paragraph, bullet_list, ordered_list, code,
 # blockquote, link, emphasis, table; `table` is opt-in), `texts` (default ["a"]), `max_heading_depth` (1 to 6, default 6),

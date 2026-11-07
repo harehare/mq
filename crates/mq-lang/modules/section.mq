@@ -40,7 +40,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(md_nodes))
 def section(md_nodes, pattern, depth = false):
   sections(md_nodes, depth) | title_contains(pattern)
 end
@@ -70,7 +69,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(md_nodes))
 def by_title(md_nodes, text, depth = false):
   sections(md_nodes, depth) | title_is(text)
 end
@@ -93,7 +91,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(md_nodes))
 def sections(md_nodes, depth = false):
   let agg_nodes = _ensure_aggregated(md_nodes)
   | if (is_empty(agg_nodes)):
@@ -255,7 +252,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(sections))
 def title_contains(sections, text):
   if (is_empty(sections)):
     []
@@ -283,7 +279,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(sections))
 def title_is(sections, text):
   if (is_empty(sections)):
     []
@@ -310,7 +305,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(sections))
 def title_match(sections, pattern):
   if (is_empty(sections)):
     []
@@ -601,7 +595,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(sections))
 def by_level(sections, l):
   if (is_empty(sections)):
     []

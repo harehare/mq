@@ -91,7 +91,7 @@ shrunk with `gen::shrink` first; the report shows the shrunk and original argume
 `# @small_scope(max_size, enumerators, options)` runs the function on **every** input of size
 `<= max_size`, smallest first, so the first failure is a smallest counterexample. A clean run means
 "no counterexample within this scope", not a proof. The report shows a per-size table of
-inputs, valid and skipped counts, and flags a high skip rate with ⚠️.
+inputs checked.
 
 ```mq
 # @small_scope(3, [enumerate::markdown({"max_heading_depth": 3})])
@@ -101,9 +101,8 @@ def test_heading_lines_parse_as_headings(src):
 end
 ```
 
-- `max_size` defaults to 3. `options`: `max_cases` (valid checks, default 100000), `max_total`
-  (valid plus skipped, default `10 * max_cases`), `skip_warn` (default `0.5`). Exceeding a limit
-  fails the test.
+- `max_size` defaults to 3. `options`: `max_cases` (inputs checked, default 100000). Exceeding
+  the limit fails the test.
 - The bundled `enumerate` module is imported automatically. An enumerator is a dict whose `tier(k)`
   returns every value of size exactly `k`. Combinators: `element`, `one_of`, `tuple`, `array`,
   `array_of`, `transform`, `node`, `described`. Values: `int`, `string`, `bool`, `dict_of`,
@@ -113,56 +112,8 @@ end
   emphasis, table), `texts`, `max_heading_depth`, `max_nesting`, `min_blocks`, `max_blocks`,
   `max_list_items`, `max_quote_blocks`, `min_table_cols`, `max_table_cols`, `min_table_rows`,
   `max_table_rows`.
-- A `@requires` violation in a function the test calls directly is a **skip**. `@ensures`
-  violations, other errors, and a `@requires` violation raised from one contracted function calling
-  another (the caller's bug) are failures. The report lists valid, skipped and total counts, warns
-  above `skip_warn`, and fails a run with no valid input. Prefer enumerator options over skips.
-- Nested calls are told apart by the contract wrapper. A violation reached through an
-  *uncontracted* helper still looks direct and is skipped; the skip count makes that visible.
-
-## Function Contracts
-
-`# @requires(expr)` and `# @ensures(expr)` on a top-level `def` are checked on every call while
-tests run (plain `mq` ignores them). The function need not be a test.
-
-```mq
-# @requires(n >= 0)
-# @ensures(result >= n)
-def fact(n):
-  if (n <= 1): 1 else: n * fact(n - 1)
-end
-
-# @property(50, [gen::int(0, 10)])
-def test_fact_keeps_its_contract(n):
-  fact(n)
-end
-```
-
-- `@requires` sees the arguments; a violation is the caller's fault. `@ensures` also sees `result`;
-  a violation is the function's fault (so a parameter cannot be named `result`).
-- Several of each may be given, and all must hold. Reports name the function, expression, line,
-  arguments and result. Recursive calls are checked too.
-- In `@property` tests an `@ensures` violation is shrunk; shrink candidates violating `@requires`
-  are skipped, so the counterexample stays in the valid domain.
-- Use `all`, `any` and other higher-order builtins in expressions. There is no `old(x)` or `forall`.
-- Top-level `def`s and `def`s directly inside a `module` block (call them as `m::f`), without variadic
-  parameters. Default values are kept. Expressions are not type-checked or checked for purity.
-
-After the run, a `## Contracts` table lists each contract with how often it was evaluated and how
-often it did not hold (`❌` a violated `@ensures`, `↷` an unmet `@requires`, i.e. an input outside the
-function's domain). A contract shown as `⚪` (0 evaluations) was never exercised by the tests. `--format json`
-carries the same data as a `contracts` array per file.
-
-The `def` is renamed to `__orig_<name>` and a checking wrapper is appended, so line numbers stay put.
-
-Contracts written in a module you `include`/`import` are checked the same way, so tests that call a
-library function also verify the contracts on it (except the modules bundled with `mq-test`):
-
-```mq
-# lib/rows.mq
-# @ensures(len(result) == len(xs) + 1)
-def push(xs, x): xs + [x];
-```
+- Every enumerated input is checked. Build inputs that satisfy a test's precondition with the
+  enumerator options, or return early from the test for inputs it does not cover.
 
 ## Tags
 

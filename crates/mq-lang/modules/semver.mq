@@ -111,8 +111,6 @@ end
 # ```
 #
 # Returns: number
-# @requires(a[:type] == "semver" && b[:type] == "semver")
-# @ensures(result == -1 || result == 0 || result == 1)
 def semver_compare(a, b):
   let major_cmp = _semver_compare_int(a[:major], b[:major])
   | if (major_cmp != 0): major_cmp
@@ -193,8 +191,6 @@ def semver_lte(a, b): semver_compare(a, b) <= 0;
 # ```
 #
 # Returns: dict
-# @requires(v[:type] == "semver")
-# @ensures(result[:major] == v[:major] + 1 && result[:minor] == 0 && result[:patch] == 0)
 def semver_bump_major(v):
   {type: "semver", major: v[:major] + 1, minor: 0, patch: 0, pre: "", build: ""}
 end
@@ -208,8 +204,6 @@ end
 # ```
 #
 # Returns: dict
-# @requires(v[:type] == "semver")
-# @ensures(result[:major] == v[:major] && result[:minor] == v[:minor] + 1 && result[:patch] == 0)
 def semver_bump_minor(v):
   {type: "semver", major: v[:major], minor: v[:minor] + 1, patch: 0, pre: "", build: ""}
 end
@@ -223,8 +217,6 @@ end
 # ```
 #
 # Returns: dict
-# @requires(v[:type] == "semver")
-# @ensures(result[:major] == v[:major] && result[:minor] == v[:minor] && result[:patch] == v[:patch] + 1)
 def semver_bump_patch(v):
   {type: "semver", major: v[:major], minor: v[:minor], patch: v[:patch] + 1, pre: "", build: ""}
 end
@@ -238,7 +230,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) == len(versions))
 def semver_sort(versions):
   let n = len(versions)
   | if (n <= 1): versions

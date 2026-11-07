@@ -5,8 +5,6 @@ use std::path::PathBuf;
 
 use mq_lang::{DefaultModuleResolver, ModuleError, ModuleResolver};
 
-use crate::runner::{ContractStats, TestRunner};
-
 /// Modules compiled into `mq-test`, by import name.
 const BUNDLED_MODULES: &[(&str, &str)] = &[
     ("test_runner", include_str!("../modules/test_runner.mq")),
@@ -22,28 +20,9 @@ fn bundled(module_name: &str) -> Option<&'static str> {
 }
 
 /// Resolves `gen`, `enumerate` and `test_runner` from the sources bundled in `mq-test`.
-///
-/// Every other module has its `@requires`/`@ensures` contracts wrapped like the test file's own,
-/// so tests exercising a library function also check the contracts written on it.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TestModuleResolver {
     fallback: DefaultModuleResolver,
-    label_nested: bool,
-    stats: Option<ContractStats>,
-}
-
-impl TestModuleResolver {
-    /// Registers the contracts of every resolved module in `stats`.
-    pub(crate) fn with_contract_stats(mut self, stats: ContractStats) -> Self {
-        self.stats = Some(stats);
-        self
-    }
-
-    /// Passes `label_nested` through to [`TestRunner::apply_contracts`].
-    pub(crate) fn with_label_nested(mut self, label_nested: bool) -> Self {
-        self.label_nested = label_nested;
-        self
-    }
 }
 
 impl ModuleResolver for TestModuleResolver {
@@ -51,12 +30,7 @@ impl ModuleResolver for TestModuleResolver {
         if let Some(source) = bundled(module_name) {
             return Ok(source.to_string());
         }
-        let source = self.fallback.resolve(module_name)?;
-        if !source.contains("@requires") && !source.contains("@ensures") {
-            return Ok(source);
-        }
-        TestRunner::apply_contracts(&source, self.label_nested, module_name, self.stats.as_ref())
-            .map_err(|message| ModuleError::IOError(format!("{module_name}: {message}").into()))
+        self.fallback.resolve(module_name)
     }
 
     fn get_path(&self, module_name: &str) -> Result<String, ModuleError> {
@@ -106,27 +80,5 @@ mod tests {
             resolver.resolve("no_such_module_xyz"),
             Err(ModuleError::NotFound(_))
         ));
-    }
-
-    #[test]
-    fn test_modules_with_contracts_are_wrapped() {
-        let dir = std::env::temp_dir().join(format!("mq_test_contract_module_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("contracted_mod.mq"),
-            "# @ensures(result > 0)\ndef f(n): n;\ndef g(n): n;\n",
-        )
-        .unwrap();
-        std::fs::write(dir.join("plain_mod.mq"), "def f(n): n;\n").unwrap();
-
-        let mut resolver = TestModuleResolver::default();
-        resolver.set_search_paths(vec![dir.clone()]);
-        let wrapped = resolver.resolve("contracted_mod").unwrap();
-        let plain = resolver.resolve("plain_mod").unwrap();
-        std::fs::remove_dir_all(&dir).unwrap();
-
-        assert!(wrapped.contains("def __orig_f(n)"));
-        assert!(wrapped.contains("@ensures violated"));
-        assert_eq!(plain, "def f(n): n;\n");
     }
 }

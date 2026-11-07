@@ -497,7 +497,6 @@ end
 # ```
 #
 # Returns: array
-# @ensures(len(result) <= len(md_nodes))
 def resolve_references(md_nodes, index = None):
   let agg_nodes = _ensure_aggregated(md_nodes)
   | let idx = if (is_none(index)): reference_index(agg_nodes) else: index

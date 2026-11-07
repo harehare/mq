@@ -6,9 +6,7 @@ include "test"
 # `gen::shrink`'s `is_interesting` predicate for a `# @property(...)` case: re-runs `adapter`
 # (see `_property_case_result`) on shrink candidate `a` and reports whether it still fails.
 # A thrown error is "not interesting" instead of aborting the whole shrink search, so a candidate
-# outside the generators' actual domain (e.g. a divisor shrunk down to `0`, or one that violates
-# an `@requires` contract) is skipped. An `@ensures` violation is the exception: it is a real
-# failure of the function under test.
+# outside the generators' actual domain (e.g. a divisor shrunk down to `0`) is skipped.
 def _property_case_still_fails(adapter, a):
   try:
     do
@@ -16,7 +14,7 @@ def _property_case_still_fails(adapter, a):
       | not(is_none(_test_failure(r)))
     end
   catch(e):
-    starts_with(e["message"], "@ensures violated");
+    false;
 
 # Runs `adapter` on `a`, recording a thrown error as a failure result like `_run_test` does.
 def _property_case_run(adapter, a):
@@ -57,61 +55,39 @@ end
 
 # Runner for `# @small_scope(...)` tests. Appended after `include "test"` by mq-test.
 
-# A `@requires` violation raised by the function the test called directly (see `contract.rs`).
-def _small_scope_direct_requires_prefix():
-  "@requires violated (caller's responsibility)"
-end
-
 def _small_scope_opt(options, key, default):
   if (contains(options, key)): get(options, key) else: default
 end
 
-# Classifies one input: {"kind": "valid"}, {"kind": "skip"} or {"kind": "fail", "message": ...}.
-#
-# Only a `@requires` violation of a function the test called directly is a skip. The same
-# violation reached through another contracted function arrives re-labelled "in nested call"
-# (see `contract.rs`) and is a failure, like `@ensures` violations and every other error.
+# Classifies one input: {"kind": "pass"} or {"kind": "fail", "message": ...}.
 def _small_scope_classify(adapter, args):
   let outcome = try: {"returned": adapter(args)} catch(e): {"thrown": e["message"]}
   | if (contains(outcome, "thrown")):
-      if (starts_with(outcome["thrown"], _small_scope_direct_requires_prefix())):
-        {"kind": "skip"}
-      else:
-        {"kind": "fail", "message": "Error: " + outcome["thrown"]}
+      {"kind": "fail", "message": "Error: " + outcome["thrown"]}
     else:
       do
         let failure = _test_failure(outcome["returned"])
-        | if (is_none(failure)): {"kind": "valid"} else: {"kind": "fail", "message": failure["message"]}
+        | if (is_none(failure)): {"kind": "pass"} else: {"kind": "fail", "message": failure["message"]}
       end
 end
 
-# A Markdown table of how many inputs each size produced and how many were valid or skipped.
+# A Markdown table of how many inputs each size produced.
 def _small_scope_table(by_size):
-  let rows = map(by_size, fn(r): "| " + to_string(r[0]) + " | " + to_string(r[1] + r[2]) + " | " + to_string(r[1]) + " | " + to_string(r[2]) + " |";)
-  | let total_valid = fold(by_size, 0, fn(acc, r): acc + r[1];)
-  | let total_skipped = fold(by_size, 0, fn(acc, r): acc + r[2];)
-  | "| Size | Inputs | Valid | Skipped |\n| --: | --: | --: | --: |\n" + join(rows, "\n")
-      + "\n| **all** | **" + to_string(total_valid + total_skipped) + "** | **" + to_string(total_valid) + "** | **" + to_string(total_skipped) + "** |"
-end
-
-def _small_scope_percent(part, whole):
-  if (whole == 0): "0%" else: to_string(round(part * 100 / whole)) + "%"
+  let rows = map(by_size, fn(r): "| " + to_string(r[0]) + " | " + to_string(r[1]) + " |";)
+  | let total = fold(by_size, 0, fn(acc, r): acc + r[1];)
+  | "| Size | Inputs |\n| --: | --: |\n" + join(rows, "\n") + "\n| **all** | **" + to_string(total) + "** |"
 end
 
 # Runs `adapter` on every input of `tuple_enum` (an `enumerate::tuple`) of size 0..max_size, in
 # size order. The first failure is therefore a smallest counterexample.
 #
-# `options`: `max_cases` (valid checks, default 100000), `max_total` (valid + skipped,
-# default 10 * max_cases), `skip_warn` (skip-rate warning threshold, default 0.5).
+# `options`: `max_cases` (inputs checked, default 100000).
 #
 # Returns a failure dict, or `{"small_scope_report": text}` when no counterexample was found.
 def _small_scope_result(name, tuple_enum, max_size, options, adapter):
   let max_cases = _small_scope_opt(options, "max_cases", 100000)
-  | let max_total = _small_scope_opt(options, "max_total", max_cases * 10)
-  | let skip_warn = _small_scope_opt(options, "skip_warn", 0.5)
   | let tier_fn = get(tuple_enum, "tier")
-  | var valid = 0
-  | var skipped = 0
+  | var checked = 0
   | var size = 0
   | var found = None
   | var stopped = None
@@ -122,34 +98,27 @@ def _small_scope_result(name, tuple_enum, max_size, options, adapter):
       None
   | let _ = while (size <= max_size && is_none(found) && is_none(stopped)):
       let tier = tier_fn(size)
-      | let valid_before = valid
-      | let skipped_before = skipped
+      | let checked_before = checked
       | var i = 0
       | let _ = while (i < len(tier) && is_none(found) && is_none(stopped)):
-          if (valid + skipped >= max_total):
-            stopped = "total attempts reached the limit max_total = " + to_string(max_total)
-          elif (valid >= max_cases):
-            stopped = "valid checks reached the limit max_cases = " + to_string(max_cases)
+          if (checked >= max_cases):
+            stopped = "checks reached the limit max_cases = " + to_string(max_cases)
           else:
             do
               let args = tier[i]
               | let outcome = _small_scope_classify(adapter, args)
-              | if (outcome["kind"] == "valid"):
-                  valid += 1
-                elif (outcome["kind"] == "skip"):
-                  skipped += 1
+              | if (outcome["kind"] == "pass"):
+                  checked += 1
                 else:
                   found = {"args": args, "size": size, "message": outcome["message"]}
             end
           | i += 1
         end
-      | by_size += [[size, valid - valid_before, skipped - skipped_before]]
+      | by_size += [[size, checked - checked_before]]
       | size += 1
     end
-  | let total = valid + skipped
   | let scope = "scope: size <= " + to_string(max_size) + "; " + get(tuple_enum, "describe")
-  | let counts = "checked: " + to_string(valid) + " valid, " + to_string(skipped) + " skipped (requires not met), "
-      + to_string(total) + " total; limits: max_cases " + to_string(max_cases) + ", max_total " + to_string(max_total)
+  | let counts = "checked: " + to_string(checked) + " inputs; limit: max_cases " + to_string(max_cases)
   | if (not(is_none(found))):
       {
         "error": true,
@@ -159,29 +128,19 @@ def _small_scope_result(name, tuple_enum, max_size, options, adapter):
     elif (not(is_none(stopped))):
       {
         "error": true,
-        "message": "Enumeration stopped before finishing: " + stopped + " (no counterexample found in the " + to_string(total) + " inputs tried)"
+        "message": "Enumeration stopped before finishing: " + stopped + " (no counterexample found in the " + to_string(checked) + " inputs tried)"
           + "\n\n" + scope + "\n" + counts + "\n" + _small_scope_table(by_size) + "\nLower max_size, narrow the enumerators, or raise the limit in the options argument."
       }
-    elif (valid == 0):
+    elif (checked == 0):
       {
         "error": true,
-        "message": "No valid input was checked (" + to_string(skipped) + " skipped because @requires was not met)"
-          + "\n\n" + scope + "\n" + counts + "\nBuild inputs that satisfy the precondition with the enumerator options."
+        "message": "No input was checked\n\n" + scope + "\n" + counts + "\nThe enumerators produced no value within this scope."
       }
     else:
-      do
-        let rate = skipped / total
-        | let warning = if (rate > skip_warn):
-            "\nwarning: " + _small_scope_percent(skipped, total) + " of the inputs were skipped (threshold "
-              + _small_scope_percent(skip_warn, 1) + "); most of this scope never reached the test. "
-              + "Use the enumerator options (e.g. enumerate::markdown({\"max_heading_depth\": 3})) to build inputs that satisfy @requires."
-          else:
-            ""
-        | {
-            "small_scope_report": "### " + (if (warning == ""): "✅ " else: "⚠️ ") + name + "\n\n"
-              + "No counterexample found within this scope (not a proof for larger inputs).\n\n"
-              + _small_scope_table(by_size) + "\n\n"
-              + "- " + scope + "\n- " + counts + (if (warning == ""): "" else: "\n- " + trim(warning))
-          }
-      end
+      {
+        "small_scope_report": "### ✅ " + name + "\n\n"
+          + "No counterexample found within this scope (not a proof for larger inputs).\n\n"
+          + _small_scope_table(by_size) + "\n\n"
+          + "- " + scope + "\n- " + counts
+      }
 end

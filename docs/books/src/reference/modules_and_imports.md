@@ -405,21 +405,6 @@ import "gen"
 Both are also usable directly (not just through `# @property(...)`) by hand-written property
 tests.
 
-### Function contracts
-
-`mq-test` can check `# @requires(expr)` and `# @ensures(expr)` comments placed on a `def` while
-tests run. They compose with `# @property(...)`: a contract violation found on a generated case
-fails the test and is shrunk to a minimal counterexample. Contracts in `include`d or `import`ed
-modules are checked too. See the `mq-test` crate's README for the full semantics.
-
-```mq
-# @requires(n >= 0)
-# @ensures(result >= n)
-def fact(n):
-  if (n <= 1): 1 else: n * fact(n - 1)
-end
-```
-
 ### Small-scope tests (`enumerate`)
 
 `# @small_scope(max_size, enumerators, options)` runs a test on every input of size `<= max_size`,
@@ -446,20 +431,15 @@ value of size exactly `k`.
 | `enumerate::json(options)` | JSON-like values (none, booleans, small integers, short strings, nested arrays and dicts) |
 
 ```mq
-# @requires(len(to_markdown(src)) > 0)
-def first_block(src): to_markdown(src)[0];
-
 # @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "min_blocks": 1})])
 def test_first_block(src):
-  assert_true(is_markdown(first_block(src)))
+  assert_true(is_markdown(to_markdown(src)[0]))
 end
 ```
 
-With `@requires`, an enumerated input that violates the precondition of the function the test calls
-is skipped and counted, not failed. The report lists valid, skipped and total counts and warns when
-most inputs were skipped; build valid inputs with the enumerator options instead (here `min_blocks`).
-Enumeration stops with an error when `max_cases` (default 100000) or `max_total` is exceeded. See the
-`mq-test` crate's README for the options and the full semantics.
+Every enumerated input is checked; build inputs that satisfy a precondition with the enumerator
+options (here `min_blocks`). Enumeration stops with an error when `max_cases` (default 100000) is
+exceeded. See the `mq-test` crate's README for the options and the full semantics.
 
 ## HTTP Imports
 
