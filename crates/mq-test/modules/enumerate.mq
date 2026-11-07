@@ -37,7 +37,10 @@ end
 
 # All `[x] + ys` for `x` in `xs`, `ys` in `yss`.
 def _cons_product(xs, yss):
-  _concat(map(xs, fn(x): map(yss, fn(ys): [x] + ys;);))
+  if (len(xs) * len(yss) > 100000):
+    error("enumerate: a tier would hold " + to_string(len(xs) * len(yss)) + " values (limit 100000), lower the scope")
+  else:
+    _concat(map(xs, fn(x): map(yss, fn(ys): [x] + ys;);))
 end
 
 # All tuples of the enumerators `ens` whose sizes sum to `budget`.

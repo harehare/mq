@@ -2320,3 +2320,16 @@ fn test_smt_ensures_predicate_on_a_parameter_does_not_declare_its_sort() {
     assert!(smt.contains("; skipped f:"), "{smt}");
     assert!(!smt.contains("(declare-const x Int)"), "{smt}");
 }
+
+#[test]
+fn test_small_scope_rejects_a_tier_larger_than_the_limit() {
+    let content = concat!(
+        "# @small_scope(4, [enumerate::string(\"abcdefghijklmnopqrst\", 4)])\n",
+        "def test_big(s): true;\n",
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0].1.contains("limit 100000"), "{}", failures[0].1);
+}
