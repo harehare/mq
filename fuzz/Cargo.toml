@@ -46,3 +46,10 @@ doc = false
 name = "markdown_scaling"
 path = "fuzz_targets/markdown_scaling.rs"
 test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "stdlib"
+path = "fuzz_targets/stdlib.rs"
+test = false

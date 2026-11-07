@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [interpreter, mqc, markdown]
+        target: [interpreter, mqc, markdown, stdlib]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
