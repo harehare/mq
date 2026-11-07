@@ -40,6 +40,8 @@ fn threshold_floor() -> usize {
 struct Candidates {
     cells: Vec<WeakCell>,
     threshold: usize,
+    /// Set when an evaluation ended with candidates left, which its returned values may keep alive.
+    returned: bool,
 }
 
 #[must_use]
@@ -78,7 +80,7 @@ struct ThreadCandidates(RefCell<Candidates>);
 
 thread_local! {
     static CANDIDATES: ThreadCandidates = const {
-        ThreadCandidates(RefCell::new(Candidates { cells: Vec::new(), threshold: 0 }))
+        ThreadCandidates(RefCell::new(Candidates { cells: Vec::new(), threshold: 0, returned: false }))
     };
 }
 
@@ -147,6 +149,20 @@ pub(super) fn register(cell: &Cell) {
     }
 
     if with_candidates(|candidates| candidates.add(Shared::downgrade(cell))) == Registration::CollectionDue {
+        collect();
+    }
+}
+
+/// Notes that the values an evaluation returned may still own the candidates left after its
+/// collection, so [`collect_returned`] has something to free once the caller drops them.
+pub(super) fn note_returned() {
+    with_candidates(|candidates| candidates.returned = !candidates.cells.is_empty());
+}
+
+/// Collects if a finished evaluation left candidates behind. Called when the owner of its
+/// returned values goes away, the earliest point a cycle only those values held can be freed.
+pub(crate) fn collect_returned() {
+    if with_candidates(|candidates| std::mem::take(&mut candidates.returned)) {
         collect();
     }
 }
@@ -452,6 +468,30 @@ mod tests {
 
     fn is_freed(sentinel: &Shared<String>) -> bool {
         Shared::strong_count(sentinel) == 1
+    }
+
+    #[test]
+    fn a_cycle_held_only_by_returned_values_is_freed_when_the_engine_is_dropped() {
+        reset();
+        let mut engine = crate::DefaultEngine::default();
+        engine.load_builtin_module();
+        let values = engine
+            .eval(
+                "var a = [] | let g = fn(x): len(a); | a = [g, \"sentinel\"] | a",
+                std::iter::once(RuntimeValue::None),
+            )
+            .expect("query runs");
+        let sentinel = match &values[0] {
+            RuntimeValue::Array(items) => match &items[1] {
+                RuntimeValue::String(text) => Shared::clone(text),
+                other => panic!("unexpected {other:?}"),
+            },
+            other => panic!("unexpected {other:?}"),
+        };
+        drop(values);
+        assert!(!is_freed(&sentinel), "the cycle outlives the result until a collection");
+        drop(engine);
+        assert!(is_freed(&sentinel));
     }
 
     #[test]
