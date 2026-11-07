@@ -48,3 +48,9 @@ end
 def test_toon_stringify_parse_roundtrip(value):
   assert_eq(toon::toon_parse(toon::toon_stringify(value)), value)
 end
+
+# @small_scope(3, [enumerate::json({"max_depth": 1, "charset": "a\"\\\n :,-#[]{} é"})])
+def test_toon_stringify_is_stable_after_a_round_trip(value):
+  let text = toon::toon_stringify(value)
+  | assert_eq(toon::toon_stringify(toon::toon_parse(text)), text)
+end

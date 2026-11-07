@@ -51,3 +51,9 @@ end
 def test_gron_stringify_parse_roundtrip(value):
   assert_eq(gron::gron_parse(gron::gron_stringify(value)), value)
 end
+
+# @small_scope(3, [enumerate::json({"max_depth": 1, "charset": "a\"\\\n é.[]"})])
+def test_gron_stringify_is_stable_after_a_round_trip(value):
+  let text = gron::gron_stringify(value)
+  | assert_eq(gron::gron_stringify(gron::gron_parse(text)), text)
+end
