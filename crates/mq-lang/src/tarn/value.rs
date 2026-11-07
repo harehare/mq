@@ -257,7 +257,29 @@ pub(crate) struct HybridLocals {
     captured: Vec<Option<Cell>>,
 }
 
+/// Receives the shared objects a value or a suspended frame holds, for the cycle collector.
+pub(crate) trait ReferenceVisitor {
+    fn cell(&mut self, cell: &Cell);
+    fn upvalues(&mut self, upvalues: &Shared<Vec<Cell>>);
+    fn weak_cell(&mut self, cell: &WeakCell);
+    fn stack_value(&mut self, value: &StackValue);
+}
+
 impl Locals {
+    /// Reports every shared cell and every directly stored slot to `visitor`.
+    pub(crate) fn visit_references(&self, visitor: &mut dyn ReferenceVisitor) {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => slots.iter().for_each(|value| visitor.stack_value(value)),
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid(hybrid) => {
+                hybrid.slots.iter().for_each(|value| visitor.stack_value(value));
+                hybrid.captured.iter().flatten().for_each(|cell| visitor.cell(cell));
+            }
+            Locals::Boxed(cells) => cells.iter().for_each(|cell| visitor.cell(cell)),
+        }
+    }
+
     /// Creates a non-capturing frame.
     pub(crate) fn flat(count: usize) -> Self {
         #[cfg(not(feature = "sync"))]

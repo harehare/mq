@@ -9,11 +9,13 @@ use super::value::{Cell, StackValue, WeakCell};
 use crate::Shared;
 use crate::runtime::runtime_value::RuntimeValue;
 use graph::Graph;
-#[cfg(not(feature = "sync"))]
+use rustc_hash::FxHashSet;
 use std::cell::RefCell;
-use std::collections::HashSet;
 #[cfg(feature = "sync")]
-use std::sync::{Mutex, PoisonError};
+use std::sync::{
+    Mutex, PoisonError,
+    atomic::{AtomicBool, Ordering},
+};
 
 /// Candidates that trigger a collection, until survivors raise it.
 const INITIAL_THRESHOLD: usize = 1024;
@@ -41,8 +43,9 @@ struct Candidates {
 }
 
 #[must_use]
-#[derive(PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq)]
 enum Registration {
+    #[default]
     Pending,
     CollectionDue,
 }
@@ -69,29 +72,52 @@ impl Candidates {
     }
 }
 
-// Without `sync` a closure never leaves its thread, so the candidates stay per thread. With it,
-// a closure can be dropped on another thread after the one that registered its cell has exited,
-// so the candidates are shared by the process and any later collection can pick them up.
-#[cfg(not(feature = "sync"))]
+/// One thread's candidates. Each thread registers and collects its own, so a collection never
+/// touches the cells another running thread is working with.
+struct ThreadCandidates(RefCell<Candidates>);
+
 thread_local! {
-    static CANDIDATES: RefCell<Candidates> = const { RefCell::new(Candidates { cells: Vec::new(), threshold: 0 }) };
+    static CANDIDATES: ThreadCandidates = const {
+        ThreadCandidates(RefCell::new(Candidates { cells: Vec::new(), threshold: 0 }))
+    };
 }
 
+// With `sync` a closure can be dropped on another thread, possibly after the thread that
+// registered its cell has exited. What an exiting thread still has registered is left here, and
+// the next collection on any thread takes it.
 #[cfg(feature = "sync")]
-static CANDIDATES: Mutex<Candidates> = Mutex::new(Candidates {
-    cells: Vec::new(),
-    threshold: 0,
-});
+static ORPHANS: Mutex<Vec<WeakCell>> = Mutex::new(Vec::new());
+#[cfg(feature = "sync")]
+static HAS_ORPHANS: AtomicBool = AtomicBool::new(false);
 
-fn with_candidates<T>(f: impl FnOnce(&mut Candidates) -> T) -> T {
-    #[cfg(not(feature = "sync"))]
-    {
-        CANDIDATES.with(|candidates| f(&mut candidates.borrow_mut()))
+#[cfg(feature = "sync")]
+impl Drop for ThreadCandidates {
+    fn drop(&mut self) {
+        let cells: Vec<WeakCell> = std::mem::take(&mut self.0.get_mut().cells)
+            .into_iter()
+            .filter(|weak| weak.strong_count() > 0)
+            .collect();
+        if !cells.is_empty() {
+            ORPHANS.lock().unwrap_or_else(PoisonError::into_inner).extend(cells);
+            HAS_ORPHANS.store(true, Ordering::Release);
+        }
     }
+}
+
+/// The candidates left by threads that have exited. Always empty without `sync`.
+fn take_orphans() -> Vec<WeakCell> {
     #[cfg(feature = "sync")]
-    {
-        f(&mut CANDIDATES.lock().unwrap_or_else(PoisonError::into_inner))
+    if HAS_ORPHANS.swap(false, Ordering::Acquire) {
+        return std::mem::take(&mut *ORPHANS.lock().unwrap_or_else(PoisonError::into_inner));
     }
+    Vec::new()
+}
+
+/// Runs `f` on this thread's candidates. During thread teardown they are gone, and `f` is skipped.
+fn with_candidates<T: Default>(f: impl FnOnce(&mut Candidates) -> T) -> T {
+    CANDIDATES
+        .try_with(|candidates| f(&mut candidates.0.borrow_mut()))
+        .unwrap_or_default()
 }
 
 /// Whether writing `value` into a shared cell can close a cycle through a closure.
@@ -127,7 +153,8 @@ pub(super) fn register(cell: &Cell) {
 
 /// Frees the registered cells that only a cycle keeps alive.
 pub(super) fn collect() {
-    let registered = with_candidates(|candidates| std::mem::take(&mut candidates.cells));
+    let mut registered = with_candidates(|candidates| std::mem::take(&mut candidates.cells));
+    registered.extend(take_orphans());
     // An empty list means the threshold was never raised, so there is nothing to reset.
     if registered.is_empty() {
         return;
@@ -144,7 +171,7 @@ pub(super) fn collect() {
 /// `cells` without duplicates and without cells that are already gone. A loop that writes
 /// several shared cells in turn registers each of them over and over.
 fn distinct_live(cells: Vec<WeakCell>) -> Vec<WeakCell> {
-    let mut seen = HashSet::new();
+    let mut seen = FxHashSet::default();
     cells
         .into_iter()
         .filter(|weak| weak.strong_count() > 0 && seen.insert(weak.as_ptr()))
@@ -183,19 +210,23 @@ fn threshold() -> usize {
     with_candidates(|candidates| candidates.threshold)
 }
 
+/// How many registered entries point at one of `cells`. Counting only these keeps a test
+/// independent of whatever other tests register in the shared candidates under `sync`.
 #[cfg(test)]
-fn registered_len() -> usize {
-    with_candidates(|candidates| candidates.cells.len())
+fn registered_for(cells: &[&Cell]) -> usize {
+    with_candidates(|candidates| {
+        candidates
+            .cells
+            .iter()
+            .filter(|weak| cells.iter().any(|cell| weak.as_ptr() == Shared::as_ptr(cell)))
+            .count()
+    })
 }
 
-/// Empties the candidates and returns a guard that keeps other tests off them, since with
-/// `sync` they are shared by every test thread.
+/// Empties this thread's candidates, so a test starts from none.
 #[cfg(test)]
-fn reset() -> std::sync::MutexGuard<'static, ()> {
-    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let guard = SERIAL.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+fn reset() {
     with_candidates(|candidates| *candidates = Candidates::default());
-    guard
 }
 
 #[cfg(test)]
@@ -205,7 +236,7 @@ mod tests {
     use rstest::rstest;
 
     fn eval(query: &str) -> Vec<String> {
-        let _serial = reset();
+        reset();
         let mut engine = crate::DefaultEngine::default();
         engine.load_builtin_module();
         let input = crate::parse_markdown_input("# a\n").unwrap();
@@ -213,42 +244,91 @@ mod tests {
         values.values().iter().map(ToString::to_string).collect()
     }
 
-    /// Runs `query` with a collection after every `floor` candidates.
-    fn eval_with_floor(query: &str, floor: usize) -> Result<Vec<String>, String> {
-        THRESHOLD_FLOOR.set(floor);
-        let _serial = reset();
+    /// Evaluates `query` on a fresh engine.
+    fn eval_on_new_engine(query: &str) -> Result<Vec<String>, String> {
         let mut engine = crate::DefaultEngine::default();
         engine.load_builtin_module();
         let input = crate::parse_markdown_input("# a\n").unwrap();
-        let result = engine.eval(query, input.into_iter());
-        THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
-        result
+        engine
+            .eval(query, input.into_iter())
             .map(|values| values.values().iter().map(ToString::to_string).collect())
             .map_err(|error| error.to_string())
+    }
+
+    /// Runs `query` with a collection after every `floor` candidates.
+    fn eval_with_floor(query: &str, floor: usize) -> Result<Vec<String>, String> {
+        reset();
+        THRESHOLD_FLOOR.set(floor);
+        let result = eval_on_new_engine(query);
+        THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
+        result
+    }
+
+    #[rstest]
+    #[case::stored_in_a_captured_variable(
+        "var a = [] | def gen(): yield: len(a) | yield: len(a) | yield: len(a); | let k = gen() | next(k) | a = [k] | [next(k), next(k)]"
+    )]
+    #[case::variable_written_while_suspended(
+        "var a = [] | def gen(): yield: len(a) | yield: len(a) | yield: len(a); | let k = gen() | next(k) | a += [1] | a += [2] | [next(k), len(a)]"
+    )]
+    #[case::stored_with_a_closure(
+        "var a = [] | def gen(): yield: len(a) | yield: len(a); | let k = gen() | let g = fn(v): len(a) + v; | a = [k, g] | [next(k), g(1), next(k)]"
+    )]
+    #[case::kept_by_two_variables(
+        "var a = [] | var b = [] | def gen(): yield: len(a) + len(b) | yield: len(a) + len(b); | let k = gen() | a = [k] | b = [k] | [next(k), next(k)]"
+    )]
+    fn generators_keep_working_after_collections(#[case] query: &str) {
+        let early = eval_with_floor(query, 1);
+        assert!(early.is_ok(), "{early:?}");
+        assert_eq!(early, eval_with_floor(query, usize::MAX));
     }
 
     mod sound {
         use super::*;
         use proptest::prelude::*;
 
+        /// A statement over array variables, closures that read them, generators that yield
+        /// their lengths, and containers holding any of these.
         fn statement() -> impl Strategy<Value = String> {
             let var = prop::sample::select(vec!["a", "b", "c"]);
             let closure = prop::sample::select(vec!["g0", "g1", "g2"]);
+            let generator = prop::sample::select(vec!["k0", "k1"]);
             prop_oneof![
                 (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = [{g}]")),
                 (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} += [{g}]")),
+                (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x}[0] = {g}")),
+                (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = foreach(v, [1, 2]): [{g}];")),
+                (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = partial(h, {g})")),
+                (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} += [partial(h, {g})]")),
                 (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = {y}")),
                 var.clone().prop_map(|x| format!("{x} += [1]")),
                 (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = [fn(v): len({y});]")),
+                (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = [fn(v): [fn(w): len({y});];]")),
+                (var.clone(), generator.clone()).prop_map(|(x, k)| format!("{x} = [{k}]")),
+                (var.clone(), generator.clone()).prop_map(|(x, k)| format!("{x} += [{k}]")),
+                generator.clone().prop_map(|k| format!("next({k})")),
+                generator.prop_map(|k| format!("let {k} = gen()")),
                 (closure, var).prop_map(|(g, y)| format!("let {g} = fn(v): len({y}) + v;")),
             ]
         }
 
         fn program(statements: &[String], in_loop: bool) -> String {
-            let setup = "var a = [] | var b = [] | var c = [] | \
-                         let g0 = fn(v): len(a) + v; | let g1 = fn(v): len(b) + v; | let g2 = fn(v): len(c) + v;";
+            let setup = [
+                "var a = []",
+                "var b = []",
+                "var c = []",
+                "let g0 = fn(v): len(a) + v;",
+                "let g1 = fn(v): len(b) + v;",
+                "let g2 = fn(v): len(c) + v;",
+                "let h = fn(p, q): len(a) + len(q);",
+                "def gen(): yield: len(a) | yield: len(b) | yield: len(c);",
+                "let k0 = gen()",
+                "let k1 = gen()",
+            ]
+            .join(" | ");
             let body = statements.join(" | ");
-            let result = "[len(a), len(b), len(c), g0(1), g1(2), g2(3)]";
+            // Closures and generators still work after any collection that ran meanwhile.
+            let result = "[len(a), len(b), len(c), g0(1), g1(2), g2(3), next(k0), next(k1)]";
             if in_loop {
                 format!(
                     "def run(): {setup} | {body} | {result}; | var i = 0 | var r = 0 | while (i < 3): r = run() | i += 1; | r"
@@ -314,7 +394,7 @@ mod tests {
 
     #[test]
     fn cells_written_in_turn_are_registered_once_after_a_collection() {
-        let _serial = reset();
+        reset();
         THRESHOLD_FLOOR.set(usize::MAX);
         let (x, y) = (empty_cell(), empty_cell());
         let (_x_user, _y_user) = (Shared::clone(&x), Shared::clone(&y));
@@ -322,15 +402,28 @@ mod tests {
             write_for_test(&x, StackValue::Value(RuntimeValue::Array(Default::default())));
             write_for_test(&y, StackValue::Value(RuntimeValue::Array(Default::default())));
         }
-        assert_eq!(registered_len(), 200);
+        assert_eq!(registered_for(&[&x, &y]), 200);
         collect();
         THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
-        assert_eq!(registered_len(), 2);
+        assert_eq!(registered_for(&[&x, &y]), 2);
+    }
+
+    #[test]
+    fn restoring_no_survivors_lowers_the_threshold_to_the_floor() {
+        THRESHOLD_FLOOR.set(4);
+        let mut candidates = Candidates::default();
+        let live: Vec<Cell> = (0..10).map(|_| empty_cell()).collect();
+        candidates.restore(live.iter().map(Shared::downgrade).collect());
+        let raised = candidates.threshold;
+        candidates.restore(Vec::new());
+        let lowered = candidates.threshold;
+        THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
+        assert_eq!((raised, lowered), (20, 4));
     }
 
     #[test]
     fn the_threshold_falls_back_when_the_candidates_that_raised_it_are_gone() {
-        let _serial = reset();
+        reset();
         THRESHOLD_FLOOR.set(4);
         let cells: Vec<Cell> = (0..10).map(|_| empty_cell()).collect();
         let holders: Vec<Cell> = cells.iter().map(Shared::clone).collect();
@@ -363,7 +456,7 @@ mod tests {
 
     #[test]
     fn a_cell_and_closure_that_only_refer_to_each_other_are_freed() {
-        let _serial = reset();
+        reset();
         let (cell, closure, sentinel) = self_capturing_cell();
         drop((cell, closure));
         assert!(!is_freed(&sentinel));
@@ -373,7 +466,7 @@ mod tests {
 
     #[test]
     fn a_closure_referenced_from_outside_keeps_its_cell_until_it_is_dropped() {
-        let _serial = reset();
+        reset();
         let (cell, closure, sentinel) = self_capturing_cell();
         drop(cell);
         collect();
@@ -385,7 +478,7 @@ mod tests {
 
     #[test]
     fn a_cell_referenced_from_outside_is_not_freed() {
-        let _serial = reset();
+        reset();
         let (cell, closure, sentinel) = self_capturing_cell();
         drop(closure);
         collect();
@@ -393,10 +486,38 @@ mod tests {
         assert!(matches!(read(&cell), StackValue::Closure(_)));
     }
 
+    /// Threads evaluate programs full of cycles, generators and closures at once, collecting
+    /// after every candidate against one shared list, and must all get the single-threaded result.
+    #[cfg(feature = "sync")]
+    #[test]
+    fn concurrent_evaluations_keep_their_results() {
+        const PROGRAM: &str = "var a = [] | var b = [] | def gen(): yield: len(a) | yield: len(b) | yield: 7; | \
+            let g0 = fn(v): len(a) + v; | let g1 = fn(v): len(b) + v; | let k = gen() | \
+            var i = 0 | while (i < 20): a = [g0, k] | b += [g1] | i += 1; | \
+            [len(a), len(b), g0(1), g1(2), next(k)]";
+        reset();
+        let expected = eval_on_new_engine(PROGRAM);
+        assert!(expected.is_ok(), "{expected:?}");
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    THRESHOLD_FLOOR.set(1);
+                    (0..100).map(|_| eval_on_new_engine(PROGRAM)).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        for thread in threads {
+            for result in thread.join().expect("no thread panics") {
+                assert_eq!(result, expected);
+            }
+        }
+        collect();
+    }
+
     #[cfg(feature = "sync")]
     #[test]
     fn a_cycle_left_by_an_exited_thread_is_collected_by_a_later_collection() {
-        let _serial = reset();
+        reset();
         let (closure, sentinel) = std::thread::spawn(|| {
             let (cell, closure, sentinel) = self_capturing_cell();
             drop(cell);
@@ -407,13 +528,21 @@ mod tests {
         .unwrap();
         assert!(!is_freed(&sentinel));
         drop(closure);
-        collect();
-        assert!(is_freed(&sentinel));
+        // A collection on another test's thread may take the orphan first. It frees the cycle on
+        // its next collection, so this one waits for that.
+        let freed = (0..2000).any(|_| {
+            collect();
+            is_freed(&sentinel) || {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                false
+            }
+        });
+        assert!(freed);
     }
 
     #[test]
     fn a_cell_with_a_foreign_weak_reference_is_not_freed() {
-        let _serial = reset();
+        reset();
         let (cell, closure, sentinel) = self_capturing_cell();
         let foreign = Shared::downgrade(&cell);
         drop((cell, closure));
@@ -429,7 +558,7 @@ mod tests {
 
     #[test]
     fn a_borrowed_cell_is_treated_as_referenced() {
-        let _serial = reset();
+        reset();
         let (cell, closure, sentinel) = self_capturing_cell();
         drop(closure);
         #[cfg(not(feature = "sync"))]
@@ -442,8 +571,22 @@ mod tests {
     }
 
     #[test]
+    fn a_scan_over_the_work_limit_frees_nothing() {
+        reset();
+        let (cell, closure, sentinel) = self_capturing_cell();
+        drop(closure);
+        // The registry holds the weak handle `write_cell` registered; the roots hold the strong one.
+        let roots = vec![cell];
+        assert!(Graph::scan_within(&roots, 1).garbage_cells().is_empty());
+        assert!(!Graph::scan_within(&roots, graph::MAX_WORK).garbage_cells().is_empty());
+        drop(roots);
+        collect();
+        assert!(is_freed(&sentinel));
+    }
+
+    #[test]
     fn a_graph_deeper_than_the_limit_is_kept_not_overflowed() {
-        let _serial = reset();
+        reset();
         let sentinel = Shared::new(String::from("sentinel"));
         let sentinel_cell = new_cell(StackValue::Value(RuntimeValue::String(Shared::clone(&sentinel))));
         // A ring of cells, each holding a closure over the next one; the first also holds the sentinel.

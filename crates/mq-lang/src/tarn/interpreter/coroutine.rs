@@ -15,8 +15,9 @@ use crate::ast::node::Node;
 use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
 use crate::tarn::value::{
-    Cell, StackValue, WeakCell, collect_coroutine_handles_in_cell, collect_coroutine_handles_in_stack_value,
-    is_weak_self_reference, read_cell, sanitize_nested_self_reference, weak_coroutine_cell, write_cell,
+    Cell, ReferenceVisitor, StackValue, WeakCell, collect_coroutine_handles_in_cell,
+    collect_coroutine_handles_in_stack_value, is_weak_self_reference, read_cell, sanitize_nested_self_reference,
+    weak_coroutine_cell, write_cell,
 };
 use crate::{Ident, Shared, SharedCell, TokenArena};
 
@@ -32,6 +33,23 @@ pub(crate) enum CoroutineStatus {
     Completed,
     /// Raised an error; every later `next()` re-raises it.
     Failed(Shared<VmError>),
+}
+
+impl CoroutineState {
+    /// Reports the shared objects its suspended frames and operand stack hold.
+    pub(crate) fn visit_references(&self, visitor: &mut dyn ReferenceVisitor) {
+        for frame in &self.frames {
+            if let Some(upvalues) = &frame.upvalues {
+                visitor.upvalues(upvalues);
+            }
+            frame.locals.visit_references(visitor);
+        }
+        self.operand_stack.iter().for_each(|value| visitor.stack_value(value));
+        for (cell, original) in &self.pending_resyncs {
+            visitor.cell(cell);
+            visitor.weak_cell(original);
+        }
+    }
 }
 
 pub(crate) struct CoroutineState {

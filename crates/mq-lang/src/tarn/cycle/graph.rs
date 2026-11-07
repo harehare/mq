@@ -6,48 +6,31 @@
 
 use crate::Shared;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::tarn::value::{Cell, Closure, StackValue, WeakCell};
-use std::collections::{HashMap, HashSet};
-use std::hash::{BuildHasherDefault, Hasher};
+use crate::tarn::value::{Cell, Closure, ReferenceVisitor, StackValue, WeakCell};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Nesting beyond this is not scanned; the node counts as referenced from outside.
 pub(super) const MAX_DEPTH: usize = 128;
 /// Nodes scanned before the whole collection gives up and frees nothing.
-const MAX_WORK: usize = 1 << 20;
-
-/// Hashes an address with one multiply. The graph is rebuilt on every collection, so the
-/// default hasher's per-key cost would dominate.
-#[derive(Default)]
-struct AddrHasher(u64);
-
-impl Hasher for AddrHasher {
-    fn finish(&self) -> u64 {
-        self.0
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        bytes.iter().for_each(|byte| self.write_u64(u64::from(*byte)));
-    }
-
-    fn write_usize(&mut self, value: usize) {
-        self.write_u64(value as u64);
-    }
-
-    fn write_u64(&mut self, value: u64) {
-        self.0 = (self.0 ^ value).wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(26);
-    }
-}
-
-type AddrMap<V> = HashMap<NodeId, V, BuildHasherDefault<AddrHasher>>;
-type AddrSet = HashSet<NodeId, BuildHasherDefault<AddrHasher>>;
+pub(super) const MAX_WORK: usize = 1 << 20;
 
 /// Identity of a shared object: its address.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct NodeId(usize);
 
+#[cfg(not(feature = "sync"))]
+type WeakShared<T> = std::rc::Weak<T>;
+#[cfg(feature = "sync")]
+type WeakShared<T> = std::sync::Weak<T>;
+
 impl NodeId {
     fn of<T: ?Sized>(shared: &Shared<T>) -> Self {
         Self(Shared::as_ptr(shared) as *const () as usize)
+    }
+
+    /// The node a weak reference points at, which is the same object as its strong handles.
+    fn of_weak<T>(weak: &WeakShared<T>) -> Self {
+        Self(weak.as_ptr() as *const () as usize)
     }
 }
 
@@ -79,33 +62,52 @@ struct Node {
     strong: usize,
     /// References counted from nodes inside the graph.
     inside: usize,
-    /// Weak references other than the collector's own. One of them can be upgraded at any time,
-    /// so the node can come back to life after it was judged garbage.
+    /// Weak references other than the collector's own. Those that nothing in the graph accounts
+    /// for can be upgraded at any time, so the node could come back to life after it was judged
+    /// garbage.
     foreign_weak: usize,
     /// Not scanned, so what it references is unknown and it counts as held from outside.
     opaque: bool,
     children: Vec<NodeId>,
+    /// Nodes this one holds weak references to. Not owning them, it does not keep them alive,
+    /// but while it is alive it can upgrade them.
+    weak_children: Vec<NodeId>,
     /// Present for cells only, to clear them if they turn out to be garbage.
     cell: Option<WeakCell>,
 }
 
 impl Node {
-    fn is_held_from_outside(&self) -> bool {
-        self.opaque || self.strong > self.inside || self.foreign_weak > 0
+    /// `weak_inside` is how many of its weak references were found held by scanned nodes. The
+    /// others belong to someone the scan cannot see; a mismatch in either direction counts too.
+    fn is_held_from_outside(&self, weak_inside: usize) -> bool {
+        self.opaque || self.strong > self.inside || self.foreign_weak != weak_inside
     }
 }
 
-#[derive(Default)]
 pub(super) struct Graph {
-    nodes: AddrMap<Node>,
+    nodes: FxHashMap<NodeId, Node>,
+    /// Weak references found held by scanned nodes, by the node they point at. The target may
+    /// not have been reached yet when the holder is scanned.
+    weak_inside: FxHashMap<NodeId, usize>,
     work: usize,
+    max_work: usize,
 }
 
 impl Graph {
     /// Scans everything reachable from `roots`, which the caller holds one strong and one weak
     /// handle each on. Those handles are not counted as references from outside.
     pub(super) fn scan(roots: &[Cell]) -> Self {
-        let mut graph = Self::default();
+        Self::scan_within(roots, MAX_WORK)
+    }
+
+    /// Like [`Graph::scan`], giving up after `max_work` nodes.
+    pub(super) fn scan_within(roots: &[Cell], max_work: usize) -> Self {
+        let mut graph = Self {
+            nodes: FxHashMap::default(),
+            weak_inside: FxHashMap::default(),
+            work: 0,
+            max_work,
+        };
         for root in roots {
             graph.visit_cell(Referrer::Root, root, 0);
         }
@@ -120,7 +122,7 @@ impl Graph {
 
     /// The cells that no node held from outside reaches. Empty when the scan hit its work limit.
     pub(super) fn garbage_cells(&self) -> Vec<WeakCell> {
-        if self.work > MAX_WORK {
+        if self.work > self.max_work {
             return Vec::new();
         }
 
@@ -133,18 +135,21 @@ impl Graph {
             .collect()
     }
 
-    fn live_nodes(&self) -> AddrSet {
-        let mut live = AddrSet::default();
+    fn live_nodes(&self) -> FxHashSet<NodeId> {
+        let mut live = FxHashSet::default();
         let mut pending: Vec<NodeId> = self
             .nodes
             .iter()
-            .filter(|(_, node)| node.is_held_from_outside())
+            .filter(|(id, node)| node.is_held_from_outside(self.weak_inside.get(id).copied().unwrap_or(0)))
             .map(|(id, _)| *id)
             .collect();
 
         while let Some(id) = pending.pop() {
-            if live.insert(id) {
-                pending.extend(&self.nodes[&id].children);
+            // A weak reference can point at an object the scan never reached.
+            if live.insert(id)
+                && let Some(node) = self.nodes.get(&id)
+            {
+                pending.extend(node.children.iter().chain(&node.weak_children));
             }
         }
         live
@@ -172,7 +177,7 @@ impl Graph {
 
         self.work += 1;
 
-        let opaque = depth > MAX_DEPTH || self.work > MAX_WORK;
+        let opaque = depth > MAX_DEPTH || self.work > self.max_work;
         self.nodes.insert(
             id,
             Node {
@@ -181,10 +186,21 @@ impl Graph {
                 inside,
                 opaque,
                 children: Vec::new(),
+                weak_children: Vec::new(),
                 cell,
             },
         );
         !opaque
+    }
+
+    /// Records that the node `from` holds a weak reference to `to`.
+    fn weak_edge(&mut self, from: NodeId, to: NodeId) {
+        *self.weak_inside.entry(to).or_default() += 1;
+        self.nodes
+            .get_mut(&from)
+            .expect("a referencing node is already recorded")
+            .weak_children
+            .push(to);
     }
 
     fn mark_opaque(&mut self, id: NodeId) {
@@ -219,11 +235,15 @@ impl Graph {
             return;
         };
 
-        match &*guard {
-            StackValue::Closure(closure) => self.visit_closure(id, closure, depth + 1),
-            StackValue::Value(value) => self.visit_value(id, value, depth + 1),
-            StackValue::NestedWeakCoroutine(value) => self.visit_value(id, value, depth + 1),
-            StackValue::WeakCoroutine(_) => {}
+        self.visit_stack_value(id, &guard, depth + 1);
+    }
+
+    fn visit_stack_value(&mut self, from: NodeId, value: &StackValue, depth: usize) {
+        match value {
+            StackValue::Closure(closure) => self.visit_closure(from, closure, depth),
+            StackValue::Value(value) => self.visit_value(from, value, depth),
+            StackValue::NestedWeakCoroutine(value) => self.visit_value(from, value, depth),
+            StackValue::WeakCoroutine(weak) => self.weak_edge(from, NodeId::of_weak(weak)),
         }
     }
 
@@ -264,7 +284,119 @@ impl Graph {
                     graph.visit_value(id, element, depth + 1);
                 }
             }),
+            RuntimeValue::WeakCoroutine(weak) => self.weak_edge(from, NodeId::of_weak(weak)),
+            RuntimeValue::Coroutine(handle) => self.visit(from, handle, depth, |graph, id, state| {
+                #[cfg(not(feature = "sync"))]
+                let guard = state.try_borrow().ok();
+                #[cfg(feature = "sync")]
+                let guard = state.try_read().ok();
+                match guard {
+                    Some(state) => state.visit_references(&mut Visiting {
+                        graph,
+                        from: id,
+                        depth: depth + 1,
+                    }),
+                    // Running: it is borrowed by whoever drives it.
+                    None => graph.mark_opaque(id),
+                }
+            }),
             _ => {}
         }
+    }
+}
+
+/// Adapts the graph to what a suspended coroutine reports holding.
+struct Visiting<'a> {
+    graph: &'a mut Graph,
+    from: NodeId,
+    depth: usize,
+}
+
+impl ReferenceVisitor for Visiting<'_> {
+    fn cell(&mut self, cell: &Cell) {
+        self.graph.visit_cell(Referrer::Node(self.from), cell, self.depth);
+    }
+
+    fn upvalues(&mut self, upvalues: &Shared<Vec<Cell>>) {
+        self.graph.visit_upvalues(self.from, upvalues, self.depth);
+    }
+
+    fn weak_cell(&mut self, cell: &WeakCell) {
+        self.graph.weak_edge(self.from, NodeId::of_weak(cell));
+    }
+
+    fn stack_value(&mut self, value: &StackValue) {
+        self.graph.visit_stack_value(self.from, value, self.depth);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(strong: usize, inside: usize, foreign_weak: usize) -> Node {
+        Node {
+            strong,
+            inside,
+            foreign_weak,
+            opaque: false,
+            children: Vec::new(),
+            weak_children: Vec::new(),
+            cell: Some(WeakCell::new()),
+        }
+    }
+
+    fn graph(nodes: Vec<(usize, Node)>, weak_inside: Vec<(usize, usize)>) -> Graph {
+        Graph {
+            nodes: nodes.into_iter().map(|(id, node)| (NodeId(id), node)).collect(),
+            weak_inside: weak_inside.into_iter().map(|(id, count)| (NodeId(id), count)).collect(),
+            work: 0,
+            max_work: MAX_WORK,
+        }
+    }
+
+    /// Cells 1 and 2 refer to each other; cell 2 also has one weak reference.
+    fn cycle_with_a_weak_reference() -> Vec<(usize, Node)> {
+        let mut first = node(1, 1, 0);
+        first.children = vec![NodeId(2)];
+        let mut second = node(1, 1, 1);
+        second.children = vec![NodeId(1)];
+        vec![(1, first), (2, second)]
+    }
+
+    #[test]
+    fn a_weak_reference_nothing_in_the_graph_holds_keeps_the_cycle() {
+        let graph = graph(cycle_with_a_weak_reference(), vec![]);
+        assert!(graph.garbage_cells().is_empty());
+    }
+
+    #[test]
+    fn a_weak_reference_held_by_garbage_does_not_keep_the_cycle() {
+        // Cell 3 is garbage too (held only by itself) and holds the weak reference to cell 2.
+        let mut nodes = cycle_with_a_weak_reference();
+        let mut holder = node(1, 1, 0);
+        holder.children = vec![NodeId(3)];
+        holder.weak_children = vec![NodeId(2)];
+        nodes.push((3, holder));
+        let graph = graph(nodes, vec![(2, 1)]);
+        assert_eq!(graph.garbage_cells().len(), 3);
+    }
+
+    #[test]
+    fn a_weak_reference_held_by_a_live_node_keeps_the_cycle() {
+        // Cell 3 is held from outside and holds the weak reference to cell 2, so it can upgrade it.
+        let mut nodes = cycle_with_a_weak_reference();
+        let mut holder = node(2, 1, 0);
+        holder.children = vec![NodeId(3)];
+        holder.weak_children = vec![NodeId(2)];
+        nodes.push((3, holder));
+        let graph = graph(nodes, vec![(2, 1)]);
+        assert!(graph.garbage_cells().is_empty());
+    }
+
+    #[test]
+    fn more_weak_references_found_than_counted_are_treated_as_outside() {
+        let graph = graph(cycle_with_a_weak_reference(), vec![(2, 2)]);
+        assert!(graph.garbage_cells().is_empty());
     }
 }
