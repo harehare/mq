@@ -64,12 +64,14 @@ use std::sync::RwLock;
 pub use arena::{Arena, ArenaId};
 pub use ast::Program;
 pub use ast::constants::identifiers::IMPLICIT_FN_ARG;
+pub use ast::node::BinaryOp as AstBinaryOp;
 pub use ast::node::Expr as AstExpr;
 pub use ast::node::IdentWithToken;
 pub use ast::node::Literal as AstLiteral;
 pub use ast::node::Node as AstNode;
 pub use ast::node::Params as AstParams;
 pub use ast::node::Pattern as AstPattern;
+pub use ast::node::UnaryOp as AstUnaryOp;
 pub use ast::parser::Parser as AstParser;
 #[cfg(feature = "ast-json")]
 pub use ast::{ast_from_json, ast_to_json};

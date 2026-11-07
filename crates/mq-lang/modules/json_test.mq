@@ -1,5 +1,4 @@
 import "json"
-| import "gen"
 | include "test"
 
 # -- JSON Tests --
@@ -299,4 +298,22 @@ end
 def test_json_stringify_indent(data, indent, expected):
   assert_eq(json::json_stringify(data, {indent: indent}), expected)
   | assert_eq(json::json_parse(expected), data)
+end
+
+# Strings hold quotes, a backslash, a newline, a space and a non-ASCII character.
+# @small_scope(3, [enumerate::json({"max_depth": 1, "charset": "a\"\\\n é", "max_str_len": 2})])
+def test_json_stringify_parse_roundtrip(value):
+  assert_eq(json::json_parse(json::json_stringify(value)), value)
+end
+
+# @small_scope(2, [enumerate::json()])
+def test_json_indented_stringify_parse_roundtrip(value):
+  assert_eq(json::json_parse(json::json_stringify(value, {"indent": 2})), value)
+end
+
+# @small_scope(3, [enumerate::json({"max_depth": 1, "charset": "a\"\\\n é"}), enumerate::element([0, 2])])
+def test_json_stringify_is_stable_after_a_round_trip(value, indent):
+  let options = if (indent == 0): {} else: {"indent": indent}
+  | let text = json::json_stringify(value, options)
+  | assert_eq(json::json_stringify(json::json_parse(text), options), text)
 end

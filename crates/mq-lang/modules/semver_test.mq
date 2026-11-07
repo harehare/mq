@@ -1,5 +1,4 @@
 import "semver"
-| import "gen"
 | include "test"
 
 # -- SemVer Tests --
@@ -210,4 +209,46 @@ end
 def test_semver_max_satisfying(versions, range_expr, expected):
   let result = semver::semver_max_satisfying(versions, range_expr)
   | assert_eq(result, expected)
+end
+
+def _sv_versions(): ["1.2.3", "1.2.3-alpha", "1.2.3-alpha.1", "1.2.3-1", "1.2.3-beta", "1.2.3+b", "1.2.3-rc.1+b", "0.0.0", "10.0.0", "1.10.0", "1.2.10", "1.2.3-alpha.beta", "1.2.3-2"];
+def _sv_compare(a, b): semver::semver_compare(semver::semver_parse(a), semver::semver_parse(b));
+
+# @small_scope(0, [enumerate::element(_sv_versions())])
+def test_semver_to_string_parse_roundtrip(version):
+  assert_eq(semver::semver_to_string(semver::semver_parse(version)), version)
+end
+
+# @small_scope(0, [enumerate::element(_sv_versions()), enumerate::element(_sv_versions())])
+def test_semver_compare_is_antisymmetric_for_all_pairs(a, b):
+  assert_eq(_sv_compare(a, b), 0 - _sv_compare(b, a))
+end
+
+# @small_scope(0, [enumerate::element(take(_sv_versions(), 8)), enumerate::element(take(_sv_versions(), 8)), enumerate::element(take(_sv_versions(), 8))])
+def test_semver_compare_is_transitive(a, b, c):
+  assert_true(!(_sv_compare(a, b) <= 0 && _sv_compare(b, c) <= 0) || _sv_compare(a, c) <= 0)
+end
+
+# @small_scope(2, [enumerate::array_of(enumerate::element(_sv_versions()), 0, 4)])
+def test_semver_sort_orders_a_permutation(versions):
+  let sorted = semver::semver_sort(map(versions, semver::semver_parse))
+  | let ordered = len(sorted) < 2 || all(map(range(0, len(sorted) - 2), fn(i): semver::semver_compare(sorted[i], sorted[i + 1]) <= 0;), fn(b): b;)
+  | assert_eq([ordered, sort(map(sorted, semver::semver_to_string))], [true, sort(versions)])
+end
+
+# @small_scope(0, [enumerate::element(_sv_versions())])
+def test_semver_bumps_update_only_the_documented_fields(version):
+  let v = semver::semver_parse(version)
+  | let major = semver::semver_bump_major(v)
+  | let minor = semver::semver_bump_minor(v)
+  | let patch = semver::semver_bump_patch(v)
+  | assert_eq(
+      [[major[:major], major[:minor], major[:patch]], [minor[:major], minor[:minor], minor[:patch]], [patch[:major], patch[:minor], patch[:patch]]],
+      [[v[:major] + 1, 0, 0], [v[:major], v[:minor] + 1, 0], [v[:major], v[:minor], v[:patch] + 1]]
+    )
+end
+
+# @small_scope(0, [enumerate::element(_sv_versions()), enumerate::element(_sv_versions())])
+def test_semver_compare_returns_only_minus_one_zero_or_one(a, b):
+  assert_true(contains([-1, 0, 1], _sv_compare(a, b)))
 end

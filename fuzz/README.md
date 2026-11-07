@@ -27,4 +27,12 @@ just test-fuzz markdown_scaling
 
 `markdown_scaling` repeats the document to 16 KiB and to four times that, and fails when the second takes more than 12 times as long as the first. Linear work takes four times as long and quadratic work sixteen times. A reported input is slow in itself, so check it with `cargo fuzz run markdown_scaling <artifact>`.
 
-CI runs `interpreter`, `mqc` and `markdown` for 15 minutes each every week. `markdown_scaling` compares run times, so it is left to local runs. Pass cargo-fuzz arguments after `--`, for example `just test-fuzz mqc -- -max_total_time=60`.
+Run the standard library target:
+
+```sh
+just test-fuzz stdlib
+```
+
+`stdlib` feeds generated text to the parsers, stringifiers and scorers of the bundled modules (`json`, `yaml`, `toml`, `xml`, `gron`, `toon`, `csv`, `semver`, `fuzzy`, `section`, `table`), including parse then stringify chains. An error result is fine; a panic or an abort is reported.
+
+CI runs `interpreter`, `mqc`, `markdown` and `stdlib` for 15 minutes each every week. `markdown_scaling` compares run times, so it is left to local runs. Pass cargo-fuzz arguments after `--`, for example `just test-fuzz mqc -- -max_total_time=60`.

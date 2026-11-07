@@ -1,5 +1,4 @@
 import "fuzzy"
-| import "gen"
 | include "test"
 
 # @parametrize([["flaw", "lawn", 2], ["", "", 0], ["a", "", 1], ["", "a", 1], ["abc", "abc", 0]])
@@ -11,6 +10,16 @@ end
 def test_jaro_winkler_partial_match():
   let result = fuzzy::jaro_winkler("flaw", "lawn")
   | assert(result > 0 && result < 1)
+end
+
+# @parametrize([["", "", 1], ["a", "", 0], ["", "a", 0], ["abc", "abc", 1]])
+def test_jaro(a, b, expected):
+  assert_eq(fuzzy::jaro(a, b), expected)
+end
+
+# @property(50, [gen::string("abcdefghijklmnopqrstuvwxyz", 6), gen::string("abcdefghijklmnopqrstuvwxyz", 6)])
+def test_jaro_is_symmetric(a, b):
+  assert_eq(fuzzy::jaro(a, b), fuzzy::jaro(b, a))
 end
 
 # @parametrize([["", "", 1], ["a", "", 0], ["", "a", 0], ["abc", "abc", 1]])
@@ -67,4 +76,16 @@ def test_jaro_winkler_is_bounded_and_symmetric(a, b):
   let score = fuzzy::jaro_winkler(a, b)
   | assert_true(score >= 0 && score <= 1)
   | assert_eq(score, fuzzy::jaro_winkler(b, a))
+end
+
+# @property(50, [gen::string("abcxyz", 6), gen::string("abcxyz", 6)])
+def test_fuzzy_scores_stay_in_range(a, b):
+  let j = fuzzy::jaro(a, b)
+  | let w = fuzzy::jaro_winkler(a, b)
+  | assert_true(fuzzy::levenshtein(a, b) >= 0 && j >= 0 && j <= 1 && w >= 0 && w <= 1)
+end
+
+# @property(50, [gen::array(gen::string("ab", 3), 5), gen::string("ab", 3), gen::int(0, 1)])
+def test_fuzzy_match_and_filter_never_return_more_than_the_candidates(candidates, query, threshold):
+  assert_true(len(fuzzy::fuzzy_match(candidates, query)) <= len(candidates) && len(fuzzy::fuzzy_filter(candidates, query, threshold)) <= len(candidates))
 end

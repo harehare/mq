@@ -3,6 +3,8 @@
 extend-exclude = ["crates/mq-markdown/src/parser/inline/entities.rs"]
 
 [default.extend-words]
+# Enumerated two-letter strings ("aa", "ab", "ba", "bb") in enumerate tests
+ba = "ba"
 # HashiCorp is a proper noun
 Hashi = "Hashi"
 # CLI help abbreviation syntax: b[reakpoint], l[ist]

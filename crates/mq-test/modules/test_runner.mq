@@ -1,0 +1,146 @@
+# Runners for `# @property(...)` and `# @small_scope(...)` tests, used by the queries mq-test builds.
+
+include "test"
+| import "gen"
+
+# `gen::shrink`'s `is_interesting` predicate for a `# @property(...)` case: re-runs `adapter`
+# (see `_property_case_result`) on shrink candidate `a` and reports whether it still fails.
+# A thrown error is "not interesting" instead of aborting the whole shrink search, so a candidate
+# outside the generators' actual domain (e.g. a divisor shrunk down to `0`) is skipped.
+def _property_case_still_fails(adapter, a):
+  try:
+    do
+      let r = adapter(a)
+      | not(is_none(_test_failure(r)))
+    end
+  catch(e):
+    false;
+
+# Runs `adapter` on `a`, recording a thrown error as a failure result like `_run_test` does.
+def _property_case_run(adapter, a):
+  try: adapter(a) catch(e): {"error": true, "message": "Error: " + e["message"]};
+
+# Runs a single `# @property(...)` case. `adapter` wraps the property function as a
+# `fn(args): result` taking one array argument instead of one per parameter (see
+# `TestRunner::build_test_query` in `mq-test`). `args` is that iteration's generated arguments,
+# from `gen::tuple(generators)(seed)`.
+#
+# On failure, searches for a smaller failing `args` with `gen::shrink` before reporting, so the
+# failure message shows a minimal counterexample. The case name still reports the original seed
+# (`name[seed]`), so the unshrunk case stays reproducible via `gen::tuple(generators)(seed)`.
+#
+# Returns: dict
+def _property_case_result(args, adapter):
+  let result = _property_case_run(adapter, args)
+  | let failure = _test_failure(result)
+  | if (not(is_none(failure))):
+      do
+        let shrunk = gen::shrink(args, fn(a): _property_case_still_fails(adapter, a);)
+        | if (shrunk == args):
+            failure
+          else:
+            do
+              let shrunk_failure = _test_failure(_property_case_run(adapter, shrunk))
+              | {
+                  "error": true,
+                  "message": shrunk_failure["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
+                }
+            end
+      end
+    else:
+      result
+end
+
+
+
+# Runner for `# @small_scope(...)` tests. Appended after `include "test"` by mq-test.
+
+def _small_scope_opt(options, key, default):
+  if (contains(options, key)): get(options, key) else: default
+end
+
+# Classifies one input: {"kind": "pass"} or {"kind": "fail", "message": ...}.
+def _small_scope_classify(adapter, args):
+  let outcome = try: {"returned": adapter(args)} catch(e): {"thrown": e["message"]}
+  | if (contains(outcome, "thrown")):
+      {"kind": "fail", "message": "Error: " + outcome["thrown"]}
+    else:
+      do
+        let failure = _test_failure(outcome["returned"])
+        | if (is_none(failure)): {"kind": "pass"} else: {"kind": "fail", "message": failure["message"]}
+      end
+end
+
+# A Markdown table of how many inputs each size produced.
+def _small_scope_table(by_size):
+  let rows = map(by_size, fn(r): "| " + to_string(r[0]) + " | " + to_string(r[1]) + " |";)
+  | let total = fold(by_size, 0, fn(acc, r): acc + r[1];)
+  | "| Size | Inputs |\n| --: | --: |\n" + join(rows, "\n") + "\n| **all** | **" + to_string(total) + "** |"
+end
+
+# Runs `adapter` on every input of `tuple_enum` (an `enumerate::tuple`) of size 0..max_size, in
+# size order. The first failure is therefore a smallest counterexample.
+#
+# `options`: `max_cases` (inputs checked, default 100000).
+#
+# Returns a failure dict, or `{"small_scope_report": text}` when no counterexample was found.
+def _small_scope_result(name, tuple_enum, max_size, options, adapter):
+  let max_cases = _small_scope_opt(options, "max_cases", 100000)
+  | let tier_fn = get(tuple_enum, "tier")
+  | var checked = 0
+  | var size = 0
+  | var found = None
+  | var stopped = None
+  | var by_size = []
+  | if (max_size < 0):
+      error("@small_scope: max_size must be nonnegative, got " + to_string(max_size))
+    else:
+      None
+  | let _ = while (size <= max_size && is_none(found) && is_none(stopped)):
+      let tier = tier_fn(size)
+      | let checked_before = checked
+      | var i = 0
+      | let _ = while (i < len(tier) && is_none(found) && is_none(stopped)):
+          if (checked >= max_cases):
+            stopped = "checks reached the limit max_cases = " + to_string(max_cases)
+          else:
+            do
+              let args = tier[i]
+              | let outcome = _small_scope_classify(adapter, args)
+              | if (outcome["kind"] == "pass"):
+                  checked += 1
+                else:
+                  found = {"args": args, "size": size, "message": outcome["message"]}
+            end
+          | i += 1
+        end
+      | by_size += [[size, checked - checked_before]]
+      | size += 1
+    end
+  | let scope = "scope: size <= " + to_string(max_size) + "; " + get(tuple_enum, "describe")
+  | let counts = "checked: " + to_string(checked) + " inputs; limit: max_cases " + to_string(max_cases)
+  | if (not(is_none(found))):
+      {
+        "error": true,
+        "message": "Counterexample found at size " + to_string(found["size"]) + ": args = " + to_string(found["args"])
+          + "\n\n" + found["message"] + "\n" + scope + "\n" + counts
+      }
+    elif (not(is_none(stopped))):
+      {
+        "error": true,
+        "message": "Enumeration stopped before finishing: " + stopped + " (no counterexample found in the " + to_string(checked) + " inputs tried)"
+          + "\n\n" + scope + "\n" + counts + "\n" + _small_scope_table(by_size) + "\nLower max_size, narrow the enumerators, or raise the limit in the options argument."
+      }
+    elif (checked == 0):
+      {
+        "error": true,
+        "message": "No input was checked\n\n" + scope + "\n" + counts + "\nThe enumerators produced no value within this scope."
+      }
+    else:
+      {
+        "small_scope_report": "### ✅ " + name + "\n\n"
+          + "No counterexample found within this scope (not a proof for larger inputs).\n\n"
+          + _small_scope_table(by_size) + "\n\n"
+          + "- " + scope + "\n- " + counts
+      }
+end

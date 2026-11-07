@@ -40,7 +40,6 @@ mod tests {
 
     #[rstest]
     #[case("csv")]
-    #[case("gen")]
     #[case("gron")]
     #[case("json")]
     #[case("yaml")]

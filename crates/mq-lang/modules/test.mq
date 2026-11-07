@@ -1,8 +1,6 @@
 # Testing framework for mq
 # A simple testing framework to execute test functions and output results
 
-import "gen"
-
 # Verifies that a condition is true and raises an error if it's false.
 #
 # Example:
@@ -320,24 +318,27 @@ end
 # An error raised by the test body is recorded as a failure, so it cannot abort the remaining tests.
 def _run_test(test_name, test_func):
   let test_count = 1
-  | let start_time = now()
+  | let start_time = test_now_ms()
   | let result = try: test_func() catch(e): {"error": true, "message": "Error: " + e["message"]}
-  | let end_time = now()
+  | let end_time = test_now_ms()
   | let duration = end_time - start_time
   | let failure = _test_failure(result)
+  | let detail = if (is_dict(result) && contains(result, "small_scope_report")): result["small_scope_report"] else: None
   | if (not(is_none(failure))):
       {
         "name": test_name,
         "status": "failed",
         "duration": duration,
-        "error": failure["message"]
+        "error": failure["message"],
+        "detail": None
       }
     else:
       {
         "name": test_name,
         "status": "passed",
         "duration": duration,
-        "error": None
+        "error": None,
+        "detail": detail
       }
 end
 
@@ -371,7 +372,7 @@ def _run_tests_results(tests):
         | let duration_str = _format_duration(result["duration"])
         | let status_str = if (result["status"] == "passed"): "✅" else: "❌"
         | let row = "| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |"
-        | {"name": result["name"], "status": result["status"], "duration": result["duration"], "error": result["error"], "row": row}
+        | {"name": result["name"], "status": result["status"], "duration": result["duration"], "error": result["error"], "detail": result["detail"], "row": row}
       end
     else:
       error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
@@ -417,6 +418,13 @@ def run_tests(tests):
     else:
       ""
 
+  # Build the small-scope reports section, if any
+  | let reports = filter(test_results, fn(r): not(is_none(r["detail"]));)
+  | let reports_section = if (len(reports) > 0):
+      "\n## Small-scope checks\n\n" + join(map(reports, fn(r): r["detail"];), "\n\n") + "\n"
+    else:
+      ""
+
   # Build the summary section
   | let summary_duration = _format_duration(total_duration)
   | let passed_str = "✅ " + to_string(passed_count)
@@ -424,13 +432,13 @@ def run_tests(tests):
   | let summary = "\n## Summary\n\n| Duration | Tests | Passed | Failed |\n| :--- | :--- | :--- | :--- |\n" +
     "| `" + summary_duration + "` | " + to_string(final_test_count) + " | " + passed_str + " | " + failed_str + " |\n\n---\n"
 
-  | let _ = print(header + "\n" + rows + "\n" + failures_section + summary)
+  | let _ = print(header + "\n" + rows + "\n" + failures_section + reports_section + summary)
 
   | final_failed_count == 0
 end
 
 # Like `run_tests`, but returns the per-test result dicts (`name`, `status`, `duration`,
-# `error`) instead of printing a Markdown report. Used by `mq-test --format json` so the
+# `error`, `detail`) instead of printing a Markdown report. Used by `mq-test --format json` so the
 # caller can build its own machine-readable report.
 #
 # Example:
@@ -441,7 +449,7 @@ end
 #
 # Returns: array<dict>
 def run_tests_data(tests):
-  map(_run_tests_results(tests), fn(r): {"name": r["name"], "status": r["status"], "duration": r["duration"], "error": r["error"]};)
+  map(_run_tests_results(tests), fn(r): {"name": r["name"], "status": r["status"], "duration": r["duration"], "error": r["error"], "detail": r["detail"]};)
 end
 
 # Helper function to create a test case
@@ -459,50 +467,3 @@ def test_case(name, func):
     "func": func
   }
 end
-
-# `gen::shrink`'s `is_interesting` predicate for a `# @property(...)` case: re-runs `adapter`
-# (see `_property_case_result`) on shrink candidate `a` and reports whether it still fails.
-# Treats a thrown error as "not interesting" instead of letting it propagate, so a shrink
-# candidate outside the generators' actual domain (e.g. a divisor shrunk down to `0`) can't
-# abort the whole shrink search.
-def _property_case_still_fails(adapter, a):
-  try:
-    do
-      let r = adapter(a)
-      | not(is_none(_test_failure(r)))
-    end
-  catch:
-    false;
-
-# Runs a single `# @property(...)` case. `adapter` wraps the property function as a
-# `fn(args): result` taking one array argument instead of one per parameter (see
-# `TestRunner::build_test_query` in `mq-test`). `args` is that iteration's generated arguments,
-# from `gen::tuple(generators)(seed)`.
-#
-# On failure, searches for a smaller failing `args` with `gen::shrink` before reporting, so the
-# failure message shows a minimal counterexample. The case name still reports the original seed
-# (`name[seed]`), so the unshrunk case stays reproducible via `gen::tuple(generators)(seed)`.
-#
-# Returns: dict
-def _property_case_result(args, adapter):
-  let result = adapter(args)
-  | let failure = _test_failure(result)
-  | if (not(is_none(failure))):
-      do
-        let shrunk = gen::shrink(args, fn(a): _property_case_still_fails(adapter, a);)
-        | if (shrunk == args):
-            failure
-          else:
-            do
-              let shrunk_failure = _test_failure(adapter(shrunk))
-              | {
-                  "error": true,
-                  "message": shrunk_failure["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
-                }
-            end
-      end
-    else:
-      result
-end
-
-

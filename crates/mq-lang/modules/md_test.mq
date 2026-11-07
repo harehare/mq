@@ -293,3 +293,74 @@ def test_md_resolve_references_resolves_against_index_from_other_nodes():
   | assert_eq(r[:resolved], true)
   | assert_eq(r[:definition][:url], "https://example.com")
 end
+
+# @parametrize([["1. a"], ["12) a"], ["- a"], ["+ a"], ["---"], ["==="], ["a\n---"], ["x\n- y"]])
+def test_md_escape_keeps_line_start_syntax_literal(value):
+  let names = map(flatten([to_markdown(to_markdown_string(md::text(md::escape(value))))]), to_md_name)
+  | assert_true(all(names, fn(n): n == "text";))
+end
+
+def test_md_escape_leaves_plain_text_alone():
+  assert_eq(map(["a - b", "1.5", "-x", "a 1. b"], fn(v): to_string(md::escape(v));), ["a - b", "1.5", "-x", "a 1. b"])
+end
+
+# Escaped text must still parse as plain text, whatever syntax its tokens would form at a line start.
+# @small_scope(3, [enumerate::array_of(enumerate::element(["-", "+", "1.", "2)", "---", "===", ">", "#", "*", "a"]), 1, 3), enumerate::element([" ", "\n"])])
+def test_md_escape_always_parses_as_plain_text(tokens, separator):
+  let value = join(tokens, separator)
+  | let names = map(flatten([to_markdown(to_markdown_string(md::text(md::escape(value))))]), to_md_name)
+  | assert_true(all(names, fn(n): n == "text";))
+end
+
+def test_md_link_and_image_accept_nodes_as_text():
+  assert_eq(
+    map([md::link("u", md::strong("a")), md::image("u", md::text("alt"))], to_string),
+    ["[**a**](u)", "![alt](u \"\")"]
+  )
+end
+
+def _mb_parsed(node): let d = to_markdown(to_markdown_string(node)) | if (is_array(d)): d else: [d];
+def _mb_names(node): map(_mb_parsed(node), to_md_name);
+
+# Builder output must parse back into the node it was built as, even for awkward text.
+# @small_scope(0, [enumerate::element(["a", "a*b", "a_b", "a`b", "#a", "a|b", "a[b]", "<a>", "a\\b", "a~b", "1. a", "- a", "> a", " a", "a "]), enumerate::element([1, 2, 3, 4, 5, 6])])
+def test_md_heading_roundtrips(value, depth):
+  let parsed = _mb_parsed(md::h(md::escape(value), depth))
+  | assert_eq([len(parsed), to_md_name(parsed[0]), parsed[0].depth], [1, "h" + to_string(depth), depth])
+end
+
+# @small_scope(0, [enumerate::element(["a", "a*b", "a_b", "a`b", "#a", "a|b", "a[b]", "<a>", "a\\b", "1. a", "- a", "> a"])])
+def test_md_inline_wrappers_roundtrip(value):
+  let escaped = md::escape(value)
+  | assert_eq(
+      [_mb_names(md::strong(escaped)), _mb_names(md::em(escaped)), _mb_names(md::delete(escaped))],
+      [_mb_names(md::strong("a")), _mb_names(md::em("a")), _mb_names(md::delete("a"))]
+    )
+end
+
+# @small_scope(0, [enumerate::element(["https://e.com", "https://e.com/a b", "https://e.com/(x)", "u", "https://e.com/a)b"]), enumerate::element(["a", "a*b", "a]b", "a[b"]), enumerate::element(["", "t", "t\"q"])])
+def test_md_link_roundtrips(url, text, title):
+  let link = first(_mb_parsed(md::link(url, md::escape(text), title)))
+  | assert_eq([to_md_name(link), link.url, link.title], ["link", url, if (title == ""): None else: title])
+end
+
+# @small_scope(0, [enumerate::element(["https://e.com/a.png", "u"]), enumerate::element(["a", "a*b", "a]b"]), enumerate::element(["", "t"])])
+def test_md_image_roundtrips(url, alt, title):
+  let image = first(_mb_parsed(md::image(url, alt, title)))
+  | assert_eq([to_md_name(image), image.url, image.alt], ["image", url, alt])
+end
+
+# @small_scope(0, [enumerate::element(["a", "a*b", "1. a", "- a", "a|b"]), enumerate::element([0, 1, 2]), enumerate::element([true, false])])
+def test_md_list_item_roundtrips(value, level, ordered):
+  let parsed = _mb_parsed(md::list(md::escape(value), level, ordered))
+  | let item = first(parsed)
+  | assert_eq([len(parsed), to_md_name(item), item.ordered], [1, "list", ordered])
+end
+
+# @small_scope(0, [enumerate::element(["a", "a*b", "a|b", "a\\b"]), enumerate::element(["a", "b|c"])])
+def test_md_table_roundtrips(header, cell):
+  assert_eq(
+    _mb_names(md::table([md::escape(header)], [[md::escape(cell)]])),
+    _mb_names(md::table(["a"], [["a"]]))
+  )
+end

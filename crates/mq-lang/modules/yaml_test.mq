@@ -1,5 +1,5 @@
 import "yaml"
-| import "gen"
+| import "json"
 | include "test"
 
 # -- YAML Tests --
@@ -111,4 +111,23 @@ end
 def test_yaml_stringify_string_round_trips(s):
   let data = dict([["k", s], [s, 1], ["arr", [s]], ["nested", {"x": s}]])
   | assert_eq(yaml::yaml_parse(yaml::yaml_stringify(data)), data)
+end
+
+# Strings hold characters that are special in YAML: colon, dash, hash and a space.
+# @small_scope(3, [enumerate::json({"charset": "a:- #", "max_str_len": 2})])
+def test_yaml_stringify_parse_roundtrip(value):
+  assert_eq(yaml::yaml_parse(yaml::yaml_stringify(value)), value)
+end
+
+# JSON is a subset of YAML 1.2, so YAML reads JSON text as the same value.
+# @small_scope(3, [enumerate::json({"max_depth": 1, "charset": "a\"\\\n é"}), enumerate::element([0, 2])])
+def test_yaml_reads_json_text_as_the_same_value(value, indent):
+  let text = if (indent == 0): json::json_stringify(value) else: json::json_stringify(value, {"indent": indent})
+  | assert_eq(yaml::yaml_parse(text), value)
+end
+
+# @small_scope(3, [enumerate::json({"max_depth": 1, "charset": "a:- #\"'"})])
+def test_yaml_stringify_is_stable_after_a_round_trip(value):
+  let text = yaml::yaml_stringify(value)
+  | assert_eq(yaml::yaml_stringify(yaml::yaml_parse(text)), text)
 end

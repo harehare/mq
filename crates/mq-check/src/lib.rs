@@ -42,7 +42,7 @@ pub use related::Related;
 
 /// Names `mq-test` defines at runtime, which no source declares. Pass them to
 /// [`Hir::declare_global`] when checking test files.
-pub const TEST_RUNNER_GLOBALS: &[&str] = &["current_test_file", "assert_snapshot"];
+pub const TEST_RUNNER_GLOBALS: &[&str] = &["current_test_file", "assert_snapshot", "test_now_ms"];
 
 /// Result type for type checking operations
 pub type Result<T> = std::result::Result<T, TypeError>;

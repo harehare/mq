@@ -1,0 +1,440 @@
+# Tier-based enumerators for small-scope checking.
+#
+# An enumerator is a dict `{"tier": fn(k), "describe": string}`. `tier(k)` returns every value of
+# size exactly `k`, so concatenating the tiers for sizes 0, 1, 2, ... lists all values in
+# non-decreasing size order. The first counterexample found that way is a smallest one, so no
+# shrinking is needed.
+#
+# Pairs with `mq-test`'s `# @small_scope(max_size, enumerators)`. A clean run means no
+# counterexample exists within the enumerators' values of size <= max_size, nothing more.
+#
+# Sizes: `element` values have size 0, `array_of` adds the length to the sizes of its items,
+# `tuple` sums its parts, `node` adds 1, `one_of` and `transform` keep the size unchanged.
+
+def _tier_of(en, k):
+  let f = get(en, "tier")
+  | f(k)
+end
+
+# One-level concatenation (the built-in `flatten` is recursive and would destroy tuple values).
+# Halving keeps it O(n log n); folding with `+` would copy the accumulator on every step.
+def _concat(arrs):
+  let n = len(arrs)
+  | if (n == 0):
+      []
+    elif (n == 1):
+      arrs[0]
+    else:
+      do
+        let mid = trunc(n / 2)
+        | _concat(arrs[0:mid]) + _concat(arrs[mid:n])
+      end
+end
+
+def _opt(options, key, default):
+  if (contains(options, key)): get(options, key) else: default
+end
+
+# All `[x] + ys` for `x` in `xs`, `ys` in `yss`.
+def _cons_product(xs, yss):
+  if (len(xs) * len(yss) > 100000):
+    error("enumerate: a tier would hold " + to_string(len(xs) * len(yss)) + " values (limit 100000), lower the scope")
+  else:
+    _concat(map(xs, fn(x): map(yss, fn(ys): [x] + ys;);))
+end
+
+# All tuples of the enumerators `ens` whose sizes sum to `budget`.
+def _tuple_tier(ens, budget):
+  if (budget < 0):
+    []
+  elif (len(ens) == 0):
+    if (budget == 0): [[]] else: []
+  elif (len(ens) == 1):
+    map(_tier_of(ens[0], budget), fn(v): [v];)
+  else:
+    do
+      let first_en = ens[0]
+      | let rest = skip(ens, 1)
+      | _concat(map(range(0, budget), fn(s): _cons_product(_tier_of(first_en, s), _tuple_tier(rest, budget - s));))
+    end
+end
+
+# All sequences of exactly `n` values of `en` whose sizes sum to `budget`.
+def _seq_tier(en, n, budget):
+  if (budget < 0):
+    []
+  elif (n == 0):
+    if (budget == 0): [[]] else: []
+  else:
+    _concat(map(range(0, budget), fn(s): _cons_product(_tier_of(en, s), _seq_tier(en, n - 1, budget - s));))
+end
+
+# Builds an enumerator from a tier function and a description.
+#
+# Returns: dict
+def make(tier, describe):
+  {"tier": tier, "describe": describe}
+end
+
+# The description of `en`: the kinds and texts it covers, for reports.
+#
+# Returns: string
+def describe(en):
+  get(en, "describe")
+end
+
+# Replaces the description of `en`.
+#
+# Returns: dict
+def described(en, text):
+  make(get(en, "tier"), text)
+end
+
+# The values of `en` of size exactly `k`.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::array(enumerate::element(["a", "b"]), 2), 1)
+# #=> [["a"], ["b"]]
+# ```
+#
+# Returns: array
+def tier(en, k):
+  _tier_of(en, k)
+end
+
+# Every value of `en` of size at most `max_size`, smallest first.
+#
+# Example:
+# ```
+# import "enumerate" | len(enumerate::values(enumerate::array(enumerate::element(["a", "b"]), 2), 2))
+# #=> 7
+# ```
+#
+# Returns: array
+def values(en, max_size):
+  _concat(map(range(0, max_size), fn(k): _tier_of(en, k);))
+end
+
+# An enumerator over a fixed list of values, all of size 0.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::element([1, 2]), 0)
+# #=> [1, 2]
+# ```
+#
+# Returns: dict
+def element(values):
+  make(fn(k): if (k == 0): values else: [];, "element(" + join(map(values, to_string), ", ") + ")")
+end
+
+# The sum of enumerators: every value of each, at the same size.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::one_of([enumerate::element([1]), enumerate::element([2])]), 0)
+# #=> [1, 2]
+# ```
+#
+# Returns: dict
+def one_of(ens):
+  make(
+    fn(k): _concat(map(ens, fn(en): _tier_of(en, k);));,
+    "one_of(" + join(map(ens, describe), " | ") + ")"
+  )
+end
+
+# The product of enumerators: one array per combination. The size is the sum of the parts' sizes.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::tuple([enumerate::element([1, 2]), enumerate::element(["a"])]), 0)
+# #=> [[1, "a"], [2, "a"]]
+# ```
+#
+# Returns: dict
+def tuple(ens):
+  make(fn(k): _tuple_tier(ens, k);, "tuple(" + join(map(ens, describe), "; ") + ")")
+end
+
+# Arrays of `min_len` to `max_len` values of `en`. The size is the length plus the items' sizes.
+#
+# Example:
+# ```
+# import "enumerate" | len(enumerate::values(enumerate::array_of(enumerate::element([1, 2]), 1, 2), 2))
+# #=> 6
+# ```
+#
+# Returns: dict
+def array_of(en, min_len, max_len):
+  if (min_len < 0 || min_len > max_len):
+    error("enumerate::array_of: lengths must satisfy 0 <= min_len <= max_len, got " + to_string(min_len) + ", " + to_string(max_len))
+  else:
+    make(
+      fn(k): _concat(map(range(min_len, max_len), fn(n): _seq_tier(en, n, k - n);));,
+      "array(" + to_string(min_len) + ".." + to_string(max_len) + " of " + describe(en) + ")"
+    )
+end
+
+# Arrays of 0 to `max_len` values of `en`.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::array(enumerate::element([1]), 2), 2)
+# #=> [[1, 1]]
+# ```
+#
+# Returns: dict
+def array(en, max_len):
+  array_of(en, 0, max_len)
+end
+
+# Maps every value of `en` through `mapper`, keeping its size.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::transform(enumerate::element([1, 2]), fn(n): n * 10;), 0)
+# #=> [10, 20]
+# ```
+#
+# Returns: dict
+def transform(en, mapper):
+  make(fn(k): map(_tier_of(en, k), mapper);, describe(en))
+end
+
+# Like `transform`, but the result is one size larger than the value it wraps.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::node(enumerate::element([1]), fn(n): [n];), 1)
+# #=> [[1]]
+# ```
+#
+# Returns: dict
+def node(en, mapper):
+  make(fn(k): if (k == 0): [] else: map(_tier_of(en, k - 1), mapper);, describe(en))
+end
+
+# ---------------------------------------------------------------------------
+# Values
+# ---------------------------------------------------------------------------
+
+# The integers in `[min, max]`. The size of `n` is `abs(n)`, so values near 0 come first.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::int(-5, 5), 2)
+# #=> [2, -2]
+# ```
+#
+# Returns: dict
+def int(min, max):
+  make(
+    fn(k):
+      filter(if (k == 0): [0] else: [k, 0 - k], fn(n): n >= min && n <= max;),
+    "int(" + to_string(min) + ".." + to_string(max) + ")"
+  )
+end
+
+# Strings of 0 to `max_len` characters drawn from `charset`. The size is the length.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::string("ab", 2), 1)
+# #=> ["a", "b"]
+# ```
+#
+# Returns: dict
+def string(charset, max_len):
+  let chars = if (is_empty(charset)): [] else: map(range(0, len(charset) - 1), fn(i): charset[i:i + 1];)
+  | described(
+      transform(array(element(chars), max_len), fn(cs): join(cs, "");),
+      "string(" + to_string(charset) + ", <= " + to_string(max_len) + " chars)"
+    )
+end
+
+# `true` and `false`.
+#
+# Returns: dict
+def bool():
+  described(element([true, false]), "bool")
+end
+
+# True when the keys of `pairs` are strictly increasing (compared as strings), so each dict is
+# listed once instead of once per key order and repeated key.
+def _keys_increasing(pairs):
+  len(pairs) < 2 || all(map(range(0, len(pairs) - 2), fn(i): to_string(pairs[i][0]) < to_string(pairs[i + 1][0]);), fn(b): b;)
+end
+
+# Dicts of 0 to `max_len` entries, keys from `key_en` and values from `value_en`. Each dict is
+# listed once, with its entries in increasing key order. The size is the number of entries plus
+# the sizes of keys and values.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::dict_of(enumerate::element(["a"]), enumerate::element([1]), 1), 1)
+# #=> [{"a": 1}]
+# ```
+#
+# Returns: dict
+def dict_of(key_en, value_en, max_len):
+  let pairs = array(tuple([key_en, value_en]), max_len)
+  | make(
+      fn(k): map(filter(_tier_of(pairs, k), _keys_increasing), fn(ps): fold(ps, {}, fn(acc, p): set(acc, p[0], p[1]);););,
+      "dict(<= " + to_string(max_len) + " of " + describe(key_en) + ": " + describe(value_en) + ")"
+    )
+end
+
+def _json_value(o, depth):
+  let max_len = _opt(o, "max_len", 2)
+  | let scalars = one_of([
+      element(if (_opt(o, "null", true)): [None, true, false] else: [true, false]),
+      int(_opt(o, "min_int", -1), _opt(o, "max_int", 1)),
+      string(_opt(o, "charset", "ab"), _opt(o, "max_str_len", 2))
+    ])
+  | if (depth >= _opt(o, "max_depth", 2)):
+      scalars
+    else:
+      do
+        let inner = _json_value(o, depth + 1)
+        | one_of([scalars, array_of(inner, 0, max_len), dict_of(element(_opt(o, "keys", ["a", "b"])), inner, max_len)])
+      end
+end
+
+# JSON-like values: none, booleans, small integers, short strings, and arrays and dicts of
+# them nested up to `max_depth`. Options (dict): `max_depth` (default 2), `max_len` (entries per
+# array or dict, default 2), `min_int` / `max_int` (default -1 / 1), `charset` (default "ab"),
+# `max_str_len` (default 2), `keys` (default ["a", "b"]) and `null` (default true; false leaves
+# out none, for formats without null). Size counts entries, string
+# characters and `abs` of integers, so the first counterexample is a small one.
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::json({"max_depth": 1}), 0)
+# #=> [None, true, false, 0, ""]
+# ```
+#
+# Returns: dict
+def json(options = {}):
+  let value = _json_value(options, 0)
+  | described(
+      value,
+      "json(depth <= " + to_string(_opt(options, "max_depth", 2)) + ", entries <= " + to_string(_opt(options, "max_len", 2))
+        + ", ints " + to_string(_opt(options, "min_int", -1)) + ".." + to_string(_opt(options, "max_int", 1))
+        + ", strings of \"" + _opt(options, "charset", "ab") + "\" <= " + to_string(_opt(options, "max_str_len", 2)) + ")"
+    )
+end
+
+# ---------------------------------------------------------------------------
+# Markdown
+# ---------------------------------------------------------------------------
+#
+# Enumerators of Markdown source text (parse an argument with `to_markdown(source)` inside the
+# test). Size is the number of blocks, counting blocks nested in blockquotes, plus the number
+# of list items. Adjacent lists of the same kind parse as one list.
+
+def _markdown_default_kinds():
+  ["heading", "paragraph", "bullet_list", "ordered_list", "code", "blockquote", "link", "emphasis"]
+end
+
+def _markdown_valid_kinds():
+  _markdown_default_kinds() + ["table"]
+end
+
+# A table with `cols` columns and `rows` body rows. Cell `(r, c)` is `<text><r><c>` (the header
+# row is r = 0) so every cell is distinct.
+def _markdown_table(text, cols, rows):
+  let cells = fn(r): map(range(0, cols - 1), fn(c): text + to_string(r) + to_string(c););
+  | let line = fn(r): "| " + join(cells(r), " | ") + " |";
+  | let divider = "| " + join(map(range(0, cols - 1), fn(c): "---";), " | ") + " |"
+  | let body = if (rows == 0): [] else: do map(range(1, rows), line) end
+  | join([line(0), divider] + body, "\n")
+end
+
+def _markdown_leaf_strings(kind, texts, heading_depth, cols_range, rows_range):
+  if (kind == "table"):
+    flatten(map(texts, fn(t): map(cols_range, fn(cols): map(rows_range, fn(rows): _markdown_table(t, cols, rows);););))
+  elif (kind == "heading"):
+    flatten(map(range(1, heading_depth), fn(d): map(texts, fn(t): repeat("#", d) + " " + t;);))
+  elif (kind == "paragraph"):
+    texts
+  elif (kind == "code"):
+    map(texts, fn(t): "```\n" + t + "\n```";)
+  elif (kind == "link"):
+    map(texts, fn(t): "[" + t + "](https://example.com)";)
+  elif (kind == "emphasis"):
+    flatten(map(texts, fn(t): ["*" + t + "*", "**" + t + "**"];))
+  else:
+    []
+end
+
+def _markdown_list(texts, max_items, ordered):
+  transform(
+    array_of(element(texts), 1, max_items),
+    fn(items):
+      join(map(zip(range(1, len(items)), items), fn(p): (if (ordered): to_string(p[0]) + ". " else: "- ") + p[1];), "\n");
+  )
+end
+
+def _markdown_quote(blocks):
+  join(map(blocks, fn(b): join(map(split(b, "\n"), fn(l): "> " + l;), "\n");), "\n>\n")
+end
+
+def _markdown_block(o, depth):
+  let kinds = _opt(o, "kinds", _markdown_default_kinds())
+  | let texts = _opt(o, "texts", ["a"])
+  | let hd = _opt(o, "max_heading_depth", 6)
+  | let items = _opt(o, "max_list_items", 2)
+  | let cols = range(_opt(o, "min_table_cols", 1), _opt(o, "max_table_cols", 2))
+  | let rows = range(_opt(o, "min_table_rows", 0), _opt(o, "max_table_rows", 2))
+  | let leaves = flatten(map(kinds, fn(k): _markdown_leaf_strings(k, texts, hd, cols, rows);))
+  | let parts = flatten([
+      if (is_empty(leaves)): [] else: [element(leaves)],
+      if (contains(kinds, "bullet_list")): [_markdown_list(texts, items, false)] else: [],
+      if (contains(kinds, "ordered_list")): [_markdown_list(texts, items, true)] else: [],
+      if (contains(kinds, "blockquote") && depth < _opt(o, "max_nesting", 1)):
+        [transform(array_of(_markdown_block(o, depth + 1), 1, _opt(o, "max_quote_blocks", 2)), _markdown_quote)]
+      else:
+        []
+    ])
+  | one_of(parts)
+end
+
+# An enumerator of Markdown documents as source text.
+#
+# Options (dict): `kinds` (subset of heading, paragraph, bullet_list, ordered_list, code,
+# blockquote, link, emphasis, table; `table` is opt-in), `texts` (default ["a"]), `max_heading_depth` (1 to 6, default 6),
+# `max_nesting` (blockquote depth, default 1), `max_blocks` (default 3), `min_blocks`
+# (default 0), `max_list_items` (default 2), `max_quote_blocks` (default 2), `max_table_cols`
+# and `max_table_rows` (default 2; a table has `min_table_cols` (default 1) to `max_table_cols`
+# columns and `min_table_rows` (default 0) to `max_table_rows` body rows).
+#
+# Example:
+# ```
+# import "enumerate" | enumerate::tier(enumerate::markdown({"kinds": ["heading"], "max_heading_depth": 2, "max_blocks": 1}), 1)
+# #=> ["# a", "## a"]
+# ```
+#
+# Returns: dict
+def markdown(options = {}):
+  let kinds = _opt(options, "kinds", _markdown_default_kinds())
+  | let unknown = filter(kinds, fn(k): not(contains(_markdown_valid_kinds(), k));)
+  | let hd = _opt(options, "max_heading_depth", 6)
+  | if (not(is_empty(unknown))):
+      error("enumerate::markdown: unknown kind(s) " + to_string(unknown))
+    elif (hd < 1 || hd > 6):
+      error("enumerate::markdown: max_heading_depth must be within 1 to 6, got " + to_string(hd))
+    else:
+      do
+        let texts = _opt(options, "texts", ["a"])
+        | let doc = array_of(_markdown_block(options, 0), _opt(options, "min_blocks", 0), _opt(options, "max_blocks", 3))
+        | let kind_text = join(map(kinds, fn(k): if (k == "heading"): "h1-h" + to_string(hd) else: k;), ", ")
+        | make(
+            get(transform(doc, fn(blocks): join(blocks, "\n\n");), "tier"),
+            "markdown kinds: " + kind_text + "; texts: " + join(map(texts, fn(t): "\"" + t + "\"";), ", ")
+              + "; blocks: " + to_string(_opt(options, "min_blocks", 0)) + ".." + to_string(_opt(options, "max_blocks", 3))
+              + "; nesting: " + to_string(_opt(options, "max_nesting", 1))
+          )
+      end
+end

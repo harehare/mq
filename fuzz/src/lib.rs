@@ -398,3 +398,109 @@ pub fn check_markdown_scaling(input: &MarkdownInput) {
         );
     }
 }
+
+/// Standard library calls on the generated text `self`, as `(module, expression)`. A fuzz input
+/// picks one, so each parser, stringifier and scorer sees arbitrary input.
+const STDLIB_CALLS: &[(&str, &str)] = &[
+    ("json", "json::json_parse(self)"),
+    ("json", "json::json_parse(self) | json::json_stringify(self)"),
+    ("yaml", "yaml::yaml_parse(self)"),
+    ("yaml", "yaml::yaml_parse(self) | yaml::yaml_stringify(self)"),
+    ("toml", "toml::toml_parse(self)"),
+    ("toml", "toml::toml_parse(self) | toml::toml_stringify(self)"),
+    ("xml", "xml::xml_parse(self)"),
+    ("xml", "xml::xml_parse(self) | xml::xml_stringify(self)"),
+    ("gron", "gron::gron_parse(self)"),
+    ("toon", "toon::toon_parse(self)"),
+    ("csv", "csv::csv_parse(self, true)"),
+    ("csv", "csv::tsv_parse(self, false)"),
+    ("csv", "csv::csv_parse(self, true) | csv::csv_stringify(self, \",\")"),
+    ("semver", "semver::semver_parse(self)"),
+    (
+        "fuzzy",
+        "let p = split(self, \"\\n\") | fuzzy::levenshtein(first(p), last(p))",
+    ),
+    (
+        "fuzzy",
+        "let p = split(self, \"\\n\") | fuzzy::jaro_winkler(first(p), last(p))",
+    ),
+    (
+        "fuzzy",
+        "let p = split(self, \"\\n\") | fuzzy::fuzzy_match(p, first(p))",
+    ),
+    ("section", "section::sections(to_markdown(self))"),
+    ("section", "section::tree(to_markdown(self))"),
+    ("table", "table::tables(to_markdown(self))"),
+];
+
+/// Text and the stdlib call to run on it.
+#[derive(Debug, Clone, Arbitrary)]
+pub struct StdlibInput {
+    call: u8,
+    text: String,
+}
+
+/// Runs one stdlib call on the text under a `catch_unwind`, panicking (with the input printed) if
+/// the engine panics. An error result is fine: only a panic or an abort is a finding.
+pub fn run_stdlib(input: &StdlibInput) {
+    let (module, call) = STDLIB_CALLS[usize::from(input.call) % STDLIB_CALLS.len()];
+    let query = format!("import \"{module}\" | {call}");
+
+    let result = std::panic::catch_unwind(|| {
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.set_timeout(std::time::Duration::from_millis(200));
+        engine.set_max_call_stack_depth(256);
+        let _ = engine.eval(&query, mq_lang::raw_input(&input.text).into_iter());
+    });
+
+    if let Err(err) = result {
+        println!("Fuzzing {query:?} with input: {input:?}");
+        std::panic::resume_unwind(err);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every call must compile and run on ordinary and hostile text without panicking.
+    #[test]
+    fn test_every_stdlib_call_runs_without_panicking() {
+        let texts = [
+            "",
+            "a\nb",
+            "{\"a\": [1, 2]}",
+            "a: 1\nb:\n  - x",
+            "<a b=\"1\">t</a>",
+            "# h\n\n| a | b |\n|---|---|\n| 1 | 2 |",
+            "\u{0}\u{1f600}\\\"[{",
+        ];
+        for call in 0..STDLIB_CALLS.len() {
+            for text in texts {
+                run_stdlib(&StdlibInput {
+                    call: call as u8,
+                    text: text.to_string(),
+                });
+            }
+        }
+    }
+
+    /// A call that cannot compile would only ever return an error, hiding the stdlib from the fuzzer.
+    #[test]
+    fn test_every_stdlib_call_compiles() {
+        for (module, call) in STDLIB_CALLS {
+            let mut engine = mq_lang::DefaultEngine::default();
+            engine.load_builtin_module();
+            let query = format!("import \"{module}\" | {call}");
+            let sample = "a\nb";
+            if let Err(err) = engine.eval(&query, mq_lang::raw_input(sample).into_iter()) {
+                let message = format!("{err:?}");
+                let compile_error = ["cause: Module(", "cause: Parse", "cause: Lexer", "UndefinedReference"]
+                    .iter()
+                    .any(|marker| message.contains(marker));
+                assert!(!compile_error, "{query}: {message}");
+            }
+        }
+    }
+}

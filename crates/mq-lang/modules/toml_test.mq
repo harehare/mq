@@ -1,6 +1,5 @@
 import "toml"
 | import "json"
-| import "gen"
 | include "test"
 
 # -- TOML Tests --
@@ -145,4 +144,16 @@ def test_toml_to_frontmatter(input):
   | assert(ends_with(result, "\n+++"))
   | let body = result[4:len(result) - 4]
   | assert_eq(toml::toml_parse(body), input)
+end
+
+# TOML has no null, so the values leave it out; the document itself is a table.
+# @small_scope(3, [enumerate::dict_of(enumerate::string("ab", 1), enumerate::json({"max_depth": 1, "null": false, "charset": "a\"\\\n é#="}), 2)])
+def test_toml_stringify_parse_roundtrip(value):
+  assert_eq(toml::toml_parse(toml::toml_stringify(value)), value)
+end
+
+# @small_scope(3, [enumerate::dict_of(enumerate::string("ab", 1), enumerate::json({"max_depth": 1, "null": false, "charset": "a\"\\\n é#="}), 2)])
+def test_toml_stringify_is_stable_after_a_round_trip(value):
+  let text = toml::toml_stringify(value)
+  | assert_eq(toml::toml_stringify(toml::toml_parse(text)), text)
 end

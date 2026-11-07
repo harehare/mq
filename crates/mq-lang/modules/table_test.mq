@@ -1,6 +1,5 @@
 import "table"
 | import "csv"
-| import "gen"
 | include "test"
 
 | let table_md = "| Name | Age | City |\n| --- | --- | --- |\n| Alice | 30 | Tokyo |\n| Bob | 25 | Osaka |\n"
@@ -609,4 +608,90 @@ end
 def test_table_fill_unknown_column_is_error():
   let t = first(table::tables(to_markdown(fill_align_md)))
   | assert_eq(try: table::forward_fill(t, ["nope"]) catch: "error", "error")
+end
+
+def test_table_remove_row_renumbers_the_remaining_rows():
+  let t = first(table::tables(to_markdown("| a | b |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |")))
+  | let rows = table::add_row(table::remove_row(t, 0), ["x", "y"])[:rows]
+  | assert_eq(map(rows, fn(r): r[0].row;), [1, 2])
+end
+
+def test_table_filter_rows_renumbers_the_remaining_rows():
+  let t = first(table::tables(to_markdown("| a |\n| - |\n| 1 |\n| 2 |\n| 3 |")))
+  | assert_eq(map(table::filter_rows(t, fn(r): to_string(r[0]) != "1";)[:rows], fn(r): r[0].row;), [1, 2])
+end
+
+def _exh_first_table(src): first(table::tables(to_markdown(src)));
+def _exh_seq(n): if (n <= 0): [] else: range(0, n - 1);
+def _exh_all(xs): all(xs, fn(b): b;);
+def _exh_row_of(t, v): map(_exh_seq(table::num_cols(t)), fn(c): v + to_string(c););
+def _exh_col_of(t, v): map(range(0, table::num_rows(t)), fn(r): v + to_string(r););
+
+# True when every cell knows its own (row, column) position.
+def _exh_positions_ok(t):
+  let rows = t[:rows]
+  | let body = _exh_all(map(_exh_seq(len(rows)), fn(r): _exh_all(map(_exh_seq(len(rows[r])), fn(c): rows[r][c].row == r + 1 && rows[r][c].column == c;));))
+  | let hdr = _exh_all(map(_exh_seq(len(t[:header])), fn(c): t[:header][c].column == c;))
+  | hdr && body
+end
+
+# @small_scope(1, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1})])
+def test_table_row_and_column_ops_keep_cell_positions(src):
+  let t = _exh_first_table(src)
+  | let rows = table::num_rows(t)
+  | let cols = table::num_cols(t)
+  | let checks = flatten([
+      [_exh_positions_ok(t), _exh_positions_ok(table::add_row(t, _exh_row_of(t, "x")))],
+      map(range(0, rows), fn(i): _exh_positions_ok(table::insert_row(t, i, _exh_row_of(t, "x")));),
+      map(_exh_seq(rows), fn(i): _exh_positions_ok(table::remove_row(t, i));),
+      map(range(0, cols), fn(i): _exh_positions_ok(table::insert_column(t, i, _exh_col_of(t, "x")));),
+      map(_exh_seq(cols), fn(i): _exh_positions_ok(table::remove_column(t, i));),
+      [_exh_positions_ok(table::filter_rows(t, fn(r): r[0].row != 1;))]
+    ])
+  | assert_true(_exh_all(checks))
+end
+
+# @small_scope(1, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1})])
+def test_table_adding_then_removing_restores_the_table(src):
+  let t = _exh_first_table(src)
+  | let row_back = table::to_csv(table::remove_row(table::add_row(t, _exh_row_of(t, "x")), table::num_rows(t)))
+  | let col_back = table::to_csv(table::remove_column(table::add_column(t, _exh_col_of(t, "x")), table::num_cols(t)))
+  | assert_eq([row_back, col_back], [table::to_csv(t), table::to_csv(t)])
+end
+
+def _exh_union(a, b): table::union(_exh_first_table(a), _exh_first_table(b));
+
+# @small_scope(2, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1}), enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1})])
+def test_table_union_keeps_cell_positions(a, b):
+  if (table::num_cols(_exh_first_table(a)) == table::num_cols(_exh_first_table(b))):
+    assert_true(_exh_positions_ok(_exh_union(a, b)))
+  else:
+    None
+end
+
+# @small_scope(1, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1, "min_table_cols": 2, "max_table_cols": 3, "min_table_rows": 1, "max_table_rows": 2})])
+def test_table_pivot_longer_then_wider_restores_the_table(src):
+  let t = _exh_first_table(src)
+  | let longer = table::pivot_longer(t, range(1, table::num_cols(t) - 1))
+  | assert_eq(table::to_csv(table::pivot_wider(longer, 1, 2)), table::to_csv(t))
+end
+
+# @small_scope(1, [enumerate::markdown({"kinds": ["table"], "min_blocks": 1, "max_blocks": 1})])
+def test_table_operations_change_the_shape_as_documented(src):
+  let t = _exh_first_table(src)
+  | let rows = table::num_rows(t)
+  | let cols = table::num_cols(t)
+  | let shape = fn(x): [table::num_rows(x), table::num_cols(x)];
+  | let checks = flatten([
+      [shape(table::add_row(t, _exh_row_of(t, "x"))) == [rows + 1, cols]],
+      map(range(0, rows), fn(i): shape(table::insert_row(t, i, _exh_row_of(t, "x"))) == [rows + 1, cols];),
+      map(_exh_seq(rows), fn(i): shape(table::remove_row(t, i)) == [rows - 1, cols];),
+      map(_exh_seq(rows), fn(i): shape(table::set_cell(t, i, 0, "x")) == [rows, cols];),
+      [shape(table::add_column(t, _exh_col_of(t, "x"))) == [rows, cols + 1]],
+      map(range(0, cols), fn(i): shape(table::insert_column(t, i, _exh_col_of(t, "x"))) == [rows, cols + 1];),
+      map(_exh_seq(cols), fn(i): shape(table::remove_column(t, i)) == [rows, cols - 1];),
+      [table::num_rows(table::filter_rows(t, fn(r): r[0].row != 1;)) <= rows],
+      [table::num_rows(table::dedupe_rows(t)) <= rows]
+    ])
+  | assert_true(_exh_all(checks))
 end

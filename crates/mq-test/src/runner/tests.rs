@@ -827,11 +827,12 @@ fn test_a_property_with_too_few_generators_fails_the_run() {
 
 #[test]
 fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
-    // Calls `_property_case_result` (from `test.mq`) directly with args `[500]`, bypassing
+    // Calls `_property_case_result` (from `test_runner.mq`) directly with args `[500]`, bypassing
     // `gen::tuple` entirely so the starting point is deterministic: the smallest `n` for
     // which `n < 5` is false is `5`, so a working shrink search must report exactly that.
     let query = concat!(
         "include \"test\"\n",
+        "| include \"test_runner\"\n",
         "|\n",
         "def test_less_than_five(n):\n",
         "  assert_true(n < 5)\n",
@@ -839,10 +840,11 @@ fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
         "| _property_case_result([500], fn(__a): test_less_than_five(__a[0]);)",
     );
     let mut engine = mq_lang::Engine::with_io(
-        mq_lang::DefaultModuleResolver::default(),
+        crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
 
     let result = engine.eval(query, mq_lang::null_input().into_iter()).unwrap();
     let rendered = result.values().first().map(ToString::to_string).unwrap_or_default();
@@ -1056,10 +1058,11 @@ fn test_run_supports_importing_the_test_module() {
 #[test]
 fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_still_run() {
     let mut engine = mq_lang::Engine::with_io(
-        mq_lang::DefaultModuleResolver::default(),
+        crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
 
     let query = r#"include "test" | run_tests_data([
             test_case("boom", fn(): error("boom");),
@@ -1164,10 +1167,11 @@ fn test_render_file_error_attaches_the_file_name_when_mq_lang_left_it_blank() {
     let query = TestRunner::build_test_query(content, &tests);
 
     let mut engine = mq_lang::Engine::with_io(
-        mq_lang::DefaultModuleResolver::default(),
+        crate::resolver::TestModuleResolver::default(),
         mq_lang::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
     let err = *engine.eval(&query, mq_lang::null_input().into_iter()).unwrap_err();
     assert_eq!(
         err.source_code.name(),
@@ -1300,4 +1304,258 @@ fn test_assert_snapshot_missing_golden_fails_without_update_flag() {
     assert!(!dir.join("__snapshots__/tests/greeting.snap").exists());
 
     fs::remove_dir_all(&dir).ok();
+}
+
+/// Runs `content` like `mq-test --format json` and returns every test's result dict as JSON.
+fn run_results(content: &str) -> Vec<serde_json::Value> {
+    let tests = TestRunner::discover_tests(content);
+    let query = TestRunner::build_test_query_with_fn(content, &tests, "run_tests_data");
+    let mut engine = mq_lang::Engine::with_io(
+        crate::resolver::TestModuleResolver::default(),
+        mq_lang::Shared::new(mq_lang::MemIo::default()),
+    );
+    engine.load_builtin_module();
+    TestRunner::register_clock(&mut engine);
+    let result = engine.eval(&query, mq_lang::null_input().into_iter()).unwrap();
+    let json = result.values().first().cloned().unwrap().to_json_value();
+    json.as_array().unwrap().clone()
+}
+
+/// Returns `name -> error message` for every failed test (passed tests are absent).
+fn run_failures(content: &str) -> Vec<(String, String)> {
+    run_results(content)
+        .iter()
+        .filter(|t| t["status"] == "failed")
+        .map(|t| {
+            (
+                t["name"].as_str().unwrap().to_string(),
+                t["error"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+/// Returns the `detail` report of the passed test `name`.
+fn run_detail(content: &str, name: &str) -> String {
+    run_results(content)
+        .iter()
+        .find(|t| t["name"] == name)
+        .and_then(|t| t["detail"].as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+#[rstest]
+#[case("@small_scope([enumerate::element([1])])", "3", "[enumerate::element([1])]", "{}")]
+#[case("@small_scope(5, [enumerate::element([1])])", "5", "[enumerate::element([1])]", "{}")]
+#[case(
+    "@small_scope(2, [enumerate::element([1, 2])], {\"max_cases\": 10, \"skip_warn\": 0.2})",
+    "2",
+    "[enumerate::element([1, 2])]",
+    "{\"max_cases\": 10, \"skip_warn\": 0.2}"
+)]
+fn test_parse_annotation_small_scope(
+    #[case] comment: &str,
+    #[case] size: &str,
+    #[case] enumerators: &str,
+    #[case] options: &str,
+) {
+    assert_eq!(
+        TestRunner::parse_annotation(comment),
+        Some(TestAnnotation::SmallScope {
+            max_size_expr: size.to_string(),
+            enumerators_expr: enumerators.to_string(),
+            options_expr: options.to_string(),
+        })
+    );
+}
+
+#[test]
+fn test_parse_annotation_small_scope_rejects_too_many_arguments() {
+    assert_eq!(TestRunner::parse_annotation("@small_scope(1, [], {}, 4)"), None);
+}
+
+#[test]
+fn test_small_scope_annotation_can_span_multiple_lines() {
+    let content = "# @small_scope(2,\n#   [enumerate::element([1, 2])])\ndef test_x(n): None;\n";
+    let tests = TestRunner::discover_tests(content);
+    assert_eq!(tests.len(), 1);
+    assert_eq!(tests[0].kind(), "small_scope");
+}
+
+#[test]
+fn test_split_top_level_commas_ignores_nested_commas_and_strings() {
+    assert_eq!(
+        TestRunner::split_top_level_commas("1, [a, b], {\"k\": \"x,y\"}"),
+        vec!["1", " [a, b]", " {\"k\": \"x,y\"}"]
+    );
+}
+
+#[test]
+fn test_small_scope_passes_and_reports_its_scope() {
+    let content = concat!(
+        "# @small_scope(2, [enumerate::array(enumerate::element([1, 2]), 2)])\n",
+        "def test_short(xs): assert_true(len(xs) <= 2);\n",
+    );
+
+    assert_eq!(run_failures(content), vec![]);
+    let detail = run_detail(content, "short");
+    assert!(detail.contains("No counterexample found within this scope"), "{detail}");
+    assert!(detail.contains("| 2 | 4 |"), "{detail}");
+    assert!(detail.contains("| **all** | **7** |"), "{detail}");
+    assert!(detail.contains("size <= 2"), "{detail}");
+    assert!(detail.contains("checked: 7 inputs"), "{detail}");
+    assert!(!detail.contains("guarantee") && !detail.contains("proved"), "{detail}");
+}
+
+#[test]
+fn test_small_scope_reports_the_smallest_counterexample_first() {
+    let content = concat!(
+        "# @small_scope(4, [enumerate::array(enumerate::element([1, 2]), 4)])\n",
+        "def test_short(xs): assert_true(len(xs) < 2);\n",
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0]
+            .1
+            .contains("Counterexample found at size 2: args = [[1, 1]]"),
+        "{}",
+        failures[0].1
+    );
+}
+
+#[test]
+fn test_small_scope_stops_with_an_error_when_a_limit_is_exceeded() {
+    let expected = "max_cases = 2";
+    let content = concat!(
+        "# @small_scope(2, [enumerate::array(enumerate::element([1]), 5)], {\"max_cases\": 2})\n",
+        "def test_any(xs): assert_true(true);\n"
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0].1.contains("Enumeration stopped before finishing"),
+        "{}",
+        failures[0].1
+    );
+    assert!(failures[0].1.contains(expected), "{}", failures[0].1);
+}
+
+#[test]
+fn test_small_scope_with_mismatched_enumerator_count_fails_the_run() {
+    let dir = temp_project_dir("small_scope_arity_mismatch");
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "# @small_scope([enumerate::element([1]), enumerate::element([2])])\ndef test_one(a): true;\n",
+    )
+    .unwrap();
+
+    assert!(!TestRunner::new(vec![test_file]).run().unwrap_or(false));
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[rstest]
+#[case("{}", 0, 1)]
+#[case("{}", 1, 11)]
+#[case("{}", 2, 134)]
+#[case("{\"kinds\": [\"heading\"], \"max_heading_depth\": 2}", 1, 2)]
+#[case("{\"kinds\": [\"heading\"], \"max_heading_depth\": 2}", 2, 4)]
+#[case("{\"kinds\": [\"table\"], \"max_table_rows\": 1, \"min_blocks\": 1}", 1, 4)]
+#[case(
+    "{\"kinds\": [\"table\"], \"min_table_cols\": 2, \"max_table_cols\": 3, \"min_table_rows\": 1, \"max_table_rows\": 2, \"min_blocks\": 1}",
+    1,
+    4
+)]
+fn test_enumerate_markdown_tier_sizes(#[case] options: &str, #[case] size: usize, #[case] expected: usize) {
+    // Tier 0 is the empty document, tier 1 a single block.
+    let content = format!(
+        "# @small_scope(0, [enumerate::element([0])])\n\
+         def test_count(_n): assert_eq(len(enumerate::tier(enumerate::markdown({options}), {size})), {expected});\n"
+    );
+
+    assert_eq!(run_failures(&content), vec![]);
+}
+
+#[test]
+fn test_enumerate_value_enumerators_list_values_by_size() {
+    let content = concat!(
+        "# @small_scope(0, [enumerate::element([0])])\n",
+        "def test_values(_n):\n",
+        "  assert_eq(\n",
+        "    [\n",
+        "      enumerate::tier(enumerate::int(-5, 5), 0),\n",
+        "      enumerate::tier(enumerate::int(-5, 5), 2),\n",
+        "      enumerate::tier(enumerate::int(0, 5), 2),\n",
+        "      enumerate::tier(enumerate::int(1, 5), 0),\n",
+        "      enumerate::tier(enumerate::string(\"ab\", 2), 0),\n",
+        "      enumerate::tier(enumerate::string(\"ab\", 2), 2),\n",
+        "      enumerate::tier(enumerate::string(\"\", 2), 1),\n",
+        "      enumerate::tier(enumerate::bool(), 0),\n",
+        "      enumerate::tier(enumerate::dict_of(enumerate::element([\"a\", \"b\"]), enumerate::element([1]), 2), 1),\n",
+        "      enumerate::tier(enumerate::dict_of(enumerate::element([\"a\"]), enumerate::element([1, 2]), 2), 1),\n",
+        "      enumerate::tier(enumerate::dict_of(enumerate::element([\"a\", \"b\"]), enumerate::element([1]), 2), 2),\n",
+        "    ],\n",
+        "    [\n",
+        "      [0],\n",
+        "      [2, -2],\n",
+        "      [2],\n",
+        "      [],\n",
+        "      [\"\"],\n",
+        "      [\"aa\", \"ab\", \"ba\", \"bb\"],\n",
+        "      [],\n",
+        "      [true, false],\n",
+        "      [{\"a\": 1}, {\"b\": 1}],\n",
+        "      [{\"a\": 1}, {\"a\": 2}],\n",
+        "      [{\"a\": 1, \"b\": 1}],\n",
+        "    ]\n",
+        "  )\n",
+        "end\n",
+    );
+
+    assert_eq!(run_failures(content), vec![]);
+}
+
+#[rstest]
+#[case("{}", &[7, 25, 159])]
+#[case("{\"null\": false}", &[6, 22, 124])]
+#[case("{\"max_depth\": 0}", &[5, 4, 4])]
+fn test_enumerate_json_tier_sizes(#[case] options: &str, #[case] expected: &[usize]) {
+    let content = format!(
+        "# @small_scope(0, [enumerate::element([0])])\n\
+         def test_sizes(_n):\n  \
+           assert_eq(map(range(0, {last}), fn(k): len(enumerate::tier(enumerate::json({options}), k));), {expected:?})\n\
+         end\n",
+        last = expected.len() - 1
+    );
+
+    assert_eq!(run_failures(&content), vec![], "{content}");
+}
+
+#[test]
+fn test_durations_have_millisecond_resolution() {
+    // `now()` only counts whole seconds, so a short test would always report 0.
+    let content = "def test_slow(): len(fold(range(0, 30000), 0, fn(a, b): a + b;)) >= 0;\n";
+
+    let duration = run_results(content)[0]["duration"].as_i64().unwrap();
+
+    assert!(duration > 0, "duration was {duration} ms");
+}
+
+#[test]
+fn test_small_scope_rejects_a_tier_larger_than_the_limit() {
+    let content = concat!(
+        "# @small_scope(4, [enumerate::string(\"abcdefghijklmnopqrst\", 4)])\n",
+        "def test_big(s): true;\n",
+    );
+
+    let failures = run_failures(content);
+
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0].1.contains("limit 100000"), "{}", failures[0].1);
 }

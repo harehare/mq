@@ -1,17 +1,6 @@
 <h1 align="center">mq-test</h1>
 
-Standalone test runner for mq: auto-discovers and executes test functions in `.mq` files.
-
-## Overview
-
-`mq-test` discovers test functions in `.mq` files and runs them using the mq engine. A function is treated as a test if:
-
-- Its name starts with `test_`, **OR**
-- It is immediately preceded by a `# @test` or `# [test]` annotation comment, **OR**
-- It is immediately preceded by a `# @parametrize(...)` annotation comment, **OR**
-- It is immediately preceded by a `# @property(...)` annotation comment.
-
-Test discovery uses the CST so all conventions are resolved accurately without any line-scanning heuristics.
+Standalone test runner for mq: discovers and runs test functions in `.mq` files.
 
 ## Installation
 
@@ -22,111 +11,24 @@ cargo install mq-test
 ## Usage
 
 ```bash
-# Run all *.mq files in the current directory (recursive)
-mq-test
-
-# Run a specific test file
-mq-test tests.mq
-
-# Run multiple test files
-mq-test tests.mq other_tests.mq
-
-# Resolve include/import from an extra module directory (repeatable)
-mq-test -L vendor/mqmq tests.mq
-
-# Run with a line-coverage report
-mq-test --coverage
-
-# Write an lcov tracefile for CI (e.g. codecov, genhtml)
-mq-test --coverage --coverage-format lcov --coverage-output lcov.info
-
-# Write a self-contained HTML report with per-line source highlighting
-mq-test --coverage --coverage-format html --coverage-output coverage.html
-
-# Write an HTML report and open it in the browser
-mq-test --coverage --coverage-format html --coverage-output coverage.html --open
-
-# Write a Markdown report (e.g. to paste into a PR description)
-mq-test --coverage --coverage-format markdown --coverage-output coverage.md
-
-# Write a JSON report
-mq-test --coverage --coverage-format json --coverage-output coverage.json
-
-# Write a Cobertura XML report (e.g. Jenkins, GitLab CI)
-mq-test --coverage --coverage-format cobertura --coverage-output cobertura.xml
-
-# Only run tests whose name contains "parse" (case-insensitive)
-mq-test --filter parse
-
-# Only run tests tagged "smoke" (see `# @tags(...)` below)
-mq-test --tag smoke
-
-# Run test files in parallel once more than 4 files are discovered
-mq-test --parallel-threshold 4
-
-# Accept the current output of every assert_snapshot(...) call as the new golden snapshot
-mq-test --update-snapshots
-
-# List discovered tests without running them (respects --filter/--tag)
-mq-test --list
-
-# List discovered tests as JSON, e.g. for an editor integration
-mq-test --list --format json
-
-# Run tests and print per-test results as JSON instead of a Markdown report
-mq-test --format json
+mq-test                      # all *.mq files under the current directory
+mq-test tests.mq other.mq    # specific files
+mq-test -L vendor/mqmq t.mq  # extra module directory (repeatable)
+mq-test -k parse             # tests whose name contains "parse" (case-insensitive)
+mq-test --tag smoke          # tests tagged "smoke" (repeatable)
+mq-test -P 4                 # run files in parallel once more than 4 are found
+mq-test --update-snapshots   # accept current assert_snapshot output as golden
+mq-test --list               # list tests without running (honors -k/--tag)
+mq-test --format json        # JSON for --list and runs, for editors and CI
+mq-test --coverage           # line coverage of included/imported modules
 ```
 
-## Coverage
-
-Pass `--coverage` to report how much of the code your tests `include`/`import`
-was actually exercised while the tests ran, i.e. is the library code under
-test covered, not just the test file itself:
-
-```
-Coverage report:
-  lib/string_utils.mq                                   66.7% (2/3)
-      uncovered lines: 9
-
-  Total: 66.7% (2/3)
-```
-
-- Only `include`d/imported modules are measured. The test file's own lines
-  (test bodies, assertions, `include`/`import` statements) are not counted:
-  they're the thing doing the exercising, not the thing being measured. A
-  test file with no `include`/`import` produces no coverage output.
-- A module is reported once with combined coverage across every test file
-  that imports it, even if several test files share it.
-- `--coverage-format <text|lcov|html|markdown|json|cobertura>` selects the report format (default: `text`).
-  - `lcov` produces an [lcov tracefile](https://ltp.sourceforge.net/coverage/lcov/geninfo.1.php)
-    suitable for `genhtml` or CI coverage integrations.
-  - `html` produces a self-contained HTML report: a summary table plus a
-    collapsible, line-by-line source view per file, with covered lines
-    highlighted green and uncovered lines red. Follows the viewer's
-    light/dark theme.
-  - `markdown` produces the same summary table plus a per-file source listing
-    in a ` ```diff ` block, so GitHub (and other diff-aware Markdown
-    renderers) colors covered/uncovered lines green/red, handy for pasting
-    into a PR description or CI job summary.
-  - `json` produces a machine-readable report with per-file and total stats,
-    plus a `lines` array per file giving each line's content and
-    `covered`/`uncovered`/`plain` status.
-  - `cobertura` produces a [Cobertura](https://cobertura.github.io/cobertura/) XML report
-    suitable for Jenkins/GitLab CI coverage integrations.
-- `--coverage-output <path>` writes the report to a file instead of stdout.
-- `--open` opens the written report in the OS default application (`open` on
-  macOS, `xdg-open` on Linux, `start` on Windows). Requires `--coverage-output`.
-- Coverage is line-based: a line counts as covered if the evaluator executed
-  any expression on it while running the tests. `def`/`include`/`import`
-  declaration lines themselves aren't counted (only their bodies are).
-- Coverage tracking is only active when `--coverage` is passed, so normal
-  `mq-test` runs have no added overhead.
+A failing test, or a file that fails to run, does not stop other files. `mq-test` exits non-zero if any failed. An error inside a test body is recorded as that test's failure.
 
 ## Writing Tests
 
-### Naming Convention
-
-Any function whose name begins with `test_` is automatically treated as a test:
+A function is a test if its name starts with `test_`, or the comment directly above it is one of
+`# @test` / `#[test]`, `@parametrize`, `@property` or `@small_scope`.
 
 ```mq
 include "test"
@@ -135,69 +37,40 @@ include "test"
 def test_is_array():
   assert_eq(is_array([1, 2, 3]), true)
 end
-```
-
-### Annotation Convention
-
-Use the `# @test` or `#[test]` comment immediately before a function to mark it as a test regardless of its name:
-
-```mq
-include "test"
-|
 
 # @test
-def check_string_len():
+def check_len():
   assert_eq(len("hello"), 5)
-end
-
-#[test]
-def check_string_upcase():
-  assert_eq(upcase("hello"), "HELLO")
 end
 ```
 
-### Parameterized Tests
+| Function                       | Description                                     |
+| ------------------------------ | ----------------------------------------------- |
+| `assert_eq(actual, expect)`    | Fails if `actual != expect`                     |
+| `assert(cond)`                 | Fails if `cond` is not `true`                   |
+| `assert_snapshot(name, actual)`| Fails if `actual` differs from the golden file  |
+| `mock_fetch(url, body)`        | Seeds the response of a later `http()` call     |
 
-Use `# @parametrize(expr)` to run a function once per element in an array.
-Each element is spread as positional arguments to the function.
-Generated test case names use the pattern `name[0]`, `name[1]`, etc.
+`run_tests(...)` is generated from the discovered tests, so files keep no manual list. A failed
+assertion is a returned value, so assertions inside `foreach`, `map` and `while` are detected too.
+
+### Parameterized tests
+
+`# @parametrize(expr)` runs the function once per element; each element is spread as arguments.
+Cases are named `name[0]`, `name[1]`, and the `(...)` may span several comment lines.
 
 ```mq
-include "test"
-|
-
 # @parametrize([["hello", 5], ["world", 5], ["", 0]])
 def test_len(input, expected):
   assert_eq(len(input), expected)
 end
 ```
 
-This produces three test cases, `len[0]`, `len[1]`, `len[2]`, each called
-with the corresponding `[input, expected]` pair.
+### Property-based tests
 
-The annotation's `(...)` can also span multiple comment lines, handy once the
-array of cases gets long:
-
-```mq
-include "test"
-|
-
-# @parametrize([
-#   ["hello", 5],
-#   ["world", 5],
-#   ["", 0],
-# ])
-def test_len(input, expected):
-  assert_eq(len(input), expected)
-end
-```
-
-### Property-Based Tests
-
-Use `# @property(count, generators)` to run a function against `count` generated cases instead
-of a fixed list. `generators` is an array with one generator per test parameter, built from the
-`gen` standard module's combinators (`gen::int`, `gen::string`, `gen::array`, `gen::one_of`, and
-more; `import "gen"` to use them). `count` can be omitted, in which case it defaults to 100:
+`# @property(count, generators)` runs against `count` (default 100) generated cases, one `gen`
+generator per parameter (`import "gen"`: `gen::int`, `gen::string`, `gen::array`, `gen::one_of`,
+`gen::markdown(min_blocks, max_blocks, max_depth)`, ...).
 
 ```mq
 include "test"
@@ -208,244 +81,103 @@ include "test"
 def test_addition_is_commutative(a, b):
   assert_eq(a + b, b + a)
 end
+```
 
-# Count defaults to 100 when omitted.
-# @property([gen::string("abcdefghijklmnopqrstuvwxyz", 10)])
-def test_upcase_is_idempotent(s):
-  assert_eq(upcase(upcase(s)), upcase(s))
+Case `name[42]` is seeded by its index: `gen::tuple(generators)(42)` reproduces it. A failure is
+shrunk with `gen::shrink` first; the report shows the shrunk and original arguments.
+
+### Small-scope tests
+
+`# @small_scope(max_size, enumerators, options)` runs the function on **every** input of size
+`<= max_size`, smallest first, so the first failure is a smallest counterexample. A clean run means
+"no counterexample within this scope", not a proof. The report shows a per-size table of
+inputs checked.
+
+```mq
+# @small_scope(3, [enumerate::markdown({"max_heading_depth": 3})])
+def test_heading_lines_parse_as_headings(src):
+  let doc = to_markdown(src)
+  | assert_eq(len(filter(doc, is_h)), len(filter(split(src, "\n"), fn(l): starts_with(l, "#");)))
 end
 ```
 
-Like `@parametrize`, generated cases are reported as `name[0]`, `name[1]`, etc., and each index
-doubles as the seed that produced it: a failing `name[42]` can be reproduced deterministically by
-calling `gen::tuple(generators)(42)` with the exact same `generators` array from the annotation
-(not by calling an individual generator directly; `gen::tuple` derives each parameter's actual
-seed from the one passed in).
+- `max_size` defaults to 3. `options`: `max_cases` (inputs checked, default 100000). Exceeding
+  the limit fails the test.
+- The bundled `enumerate` module is imported automatically. An enumerator is a dict whose `tier(k)`
+  returns every value of size exactly `k`. Combinators: `element`, `one_of`, `tuple`, `array`,
+  `array_of`, `transform`, `node`, `described`. Values: `int`, `string`, `bool`, `dict_of`,
+  `json`, `markdown`.
+- `enumerate::markdown(options)` yields Markdown **source text** (parse with `to_markdown(src)`).
+  Options: `kinds` (heading, paragraph, bullet_list, ordered_list, code, blockquote, link,
+  emphasis, table), `texts`, `max_heading_depth`, `max_nesting`, `min_blocks`, `max_blocks`,
+  `max_list_items`, `max_quote_blocks`, `min_table_cols`, `max_table_cols`, `min_table_rows`,
+  `max_table_rows`.
+- Every enumerated input is checked. Build inputs that satisfy a test's precondition with the
+  enumerator options, or return early from the test for inputs it does not cover.
 
-Before reporting a failure, the runner automatically searches for a smaller, simpler failing
-example with `gen::shrink` (see `gen.mq` for the search algorithm and `gen::shrink_value`, the
-generic per-value shrinker it's built on). The failure message shows the shrunk arguments
-alongside the original ones; the case name still reports the original seed, so
-`gen::tuple(generators)(42)` remains the way to reproduce the *unshrunk* case exactly.
+## Tags
 
-### Tags
-
-Use `# @tags(a, b)` (or the singular `# @tag(a)`) immediately before a test
-function to tag it. Combine with `--tag <TAG>` to only run tests carrying at
-least one of the given tags:
+`# @tags(a, b)` (or `# @tag(a)`) on a test, combined with `--tag <TAG>`:
 
 ```mq
-include "test"
-|
-
 # @tags(smoke, fast)
 def test_add():
   assert_eq(1 + 1, 2)
 end
-
-# @tags(slow)
-def test_large_input():
-  assert_eq(len(range(0, 100000)), 100000)
-end
 ```
 
-```bash
-# Only runs test_add
-mq-test --tag smoke
-```
+## Snapshot Testing
 
-Tags can be combined with `# @test`/`# @parametrize(...)` on the same
-function via a separate comment line placed right above it.
+`assert_snapshot(name, actual)` compares against `__snapshots__/<test file stem>/<name>.snap` next
+to the test file. A missing snapshot fails the test; create or overwrite with `--update-snapshots`.
+Snapshots use real disk I/O, the one exception to the hermetic `Io` below.
 
-### Filtering and Parallel Execution
+## Mocking File and Network I/O
 
-- `--filter <SUBSTRING>` / `-k <SUBSTRING>` only runs tests whose display
-  name (the test name with any `test_` prefix stripped) contains
-  `<SUBSTRING>`, case-insensitively.
-- `--tag <TAG>` only runs tests carrying `<TAG>` (see above). Repeat the flag
-  to match any of several tags.
-- `--parallel-threshold <N>` / `-P <N>` runs test files in parallel (each
-  file still gets its own hermetic engine and `Io`) once more than `N`
-  files are discovered. Defaults to never parallelizing. Coverage data is
-  merged safely across parallel files, and each file's report prints
-  atomically so concurrent files' output never interleaves.
-
-A failing test in one file no longer stops other files from running: every discovered file always runs to completion, and `mq-test` exits non-zero if any test in any file failed.
-
-An error raised inside a test body (e.g. `error(...)` or a call to an undefined function) is recorded as that test's failure, so the remaining tests in the file still run. Errors that prevent a whole file from running (e.g. a syntax error) are printed to stderr together after all files have finished, followed by a list of every file that failed or could not run.
-
-### Test Helpers
-
-Tests use the built-in `assert_eq` and related helpers from the `test` module:
-
-| Function                        | Description                    |
-| -------------------------------- | ------------------------------ |
-| `assert_eq(actual, expect)`      | Fails if `actual != expect`    |
-| `assert(cond)`                   | Fails if `cond` is not `true`  |
-| `assert_snapshot(name, actual)`  | Fails if `actual` doesn't match the golden snapshot `name` |
-| `test_case(name, fn)`            | Registers a named test case    |
-| `run_tests(cases)`               | Runs all registered test cases, printing a Markdown report |
-| `run_tests_data(cases)`          | Like `run_tests`, but returns per-test result dicts instead of printing |
-
-The runner automatically generates a `run_tests(flatten([...]))` call (or,
-under `--format json`, a `run_tests_data(flatten([...]))` call) from all
-discovered test functions, so test files do not need to maintain a manual list.
-
-A failed assertion is returned as a value, not raised. Assertions inside loops such as `foreach`, `map` and `while` are still detected, because the runner looks through the (nested) result array for a failure.
-
-### Snapshot Testing
-
-`assert_snapshot(name, actual)` compares `actual` against a golden file, for outputs too large to usefully inline in an `assert_eq` diff (e.g. a rendered document):
+Each test file runs against a fresh in-memory `Io`, so `read_file`, `write_file` and `http` always
+work regardless of `--allow-*` flags, and state never leaks between files.
 
 ```mq
-include "test"
-|
-
-def test_renders_the_full_report():
-  assert_snapshot("report", render_report(data))
-end
-```
-
-The layout follows the `suite`/`ref`/`store` split from
-[typst's test runner](https://github.com/typst/typst/tree/main/tests): the test file
-itself plus whatever it feeds into `assert_snapshot` is the "suite" (input), and:
-
-- **ref**: `__snapshots__/<test file stem>/<name>.snap`, next to the test file. This is
-  the golden, checked-in expected value.
-
-A snapshot that doesn't exist yet fails the test (it does not get created implicitly); this is the one exception in `mq-test` where "no such thing" is a real failure, not an error to silently paper over. Run with `--update-snapshots` to create or overwrite golden snapshots from the current output:
-
-```bash
-mq-test --update-snapshots
-```
-
-`assert_snapshot` is real, unmocked disk I/O: the one deliberate exception to the
-hermetic `Io` described below, since golden files must survive across runs and be
-checked into version control.
-
-### Mocking File and Network I/O
-
-Each test file runs against an in-memory, hermetic `Io` (no real disk or network access),
-so `read_file`/`write_file`/`http` are always allowed, regardless of the `--allow-read` / `--allow-write` / `--allow-net` flags the CLI itself requires.
-
-Files can be seeded from within a test simply by writing them first:
-
-```mq
-include "test"
-|
-
-def test_reads_a_file_it_wrote():
-  write_file("/config.json", "{}")
-  | assert_eq(read_file("/config.json"), "{}")
-end
-```
-
-`mock_fetch(url, body)` seeds the response body a subsequent `http()` call for `url`
-returns, so a test can exercise code that calls `http()` without making a real request:
-
-```mq
-include "test"
-|
-
 def test_reads_a_mocked_api_response():
   mock_fetch("https://api.example.com/data", "{\"ok\": true}")
   | assert_eq(http("get", "https://api.example.com/data"), "{\"ok\": true}")
 end
 ```
 
-State (files written, mocked responses) does not leak between test files; each gets a fresh in-memory `Io`.
+## Coverage
 
-## Example
+`--coverage` reports line coverage of the code your tests `include`/`import`. The test file's own
+lines are not counted, and a module shared by several test files is reported once, combined.
 
-```mq
-include "test"
-|
-
-def test_add():
-  assert_eq(1 + 1, 2)
-end
-
-def test_string_upcase():
-  assert_eq(upcase("hello"), "HELLO")
-end
-
-# @test
-def verify_array_length():
-  assert_eq(len([1, 2, 3]), 3)
-end
-
-#[test]
-def verify_string_empty():
-  assert_eq(length(""), 0)
-end
 ```
+  lib/string_utils.mq                                   66.7% (2/3)
+      uncovered lines: 9
+```
+
+- `--coverage-format <text|lcov|html|markdown|json|cobertura>` (default `text`).
+- `--coverage-output <path>` writes to a file; `--open` then opens it (needs `--coverage-output`).
+- Line-based: a line is covered if any expression on it ran. Tracking is off without `--coverage`.
 
 ## JSON Output
 
-`--format json` switches both `--list` and a normal run from the default human-readable text
-to a single JSON document printed to stdout, meant for editor and CI integrations (e.g. the
-VS Code extension's Test Explorer) rather than a terminal.
-
-### `--list --format json`
-
-Discovers tests (honoring `--filter`/`--tag`) without running them:
+`--format json` prints one JSON document for `--list` and for runs.
 
 ```json
-{
-  "files": [
-    {
-      "file": "tests.mq",
-      "tests": [
-        { "name": "add", "kind": "simple", "tags": [] },
-        { "name": "len", "kind": "parametrized", "tags": [] },
-        { "name": "addition_is_commutative", "kind": "property", "tags": ["math"] }
-      ]
-    }
-  ]
-}
+{ "files": [ { "file": "tests.mq", "tests": [
+  { "name": "add", "kind": "simple", "tags": [] } ] } ] }
 ```
 
-`kind` is one of `simple`, `parametrized`, or `property`. A `# @parametrize(...)`/
-`# @property(...)` test is listed once as its own function; the individual generated
-cases (`name[0]`, `name[1]`, ...) only exist once the test actually runs.
-
-### `--format json` (run)
-
-Runs tests as usual, but prints per-test results instead of a Markdown report:
-
-```json
-{
-  "files": [
-    {
-      "file": "tests.mq",
-      "tests": [
-        { "name": "add", "status": "passed", "duration": 0, "error": null },
-        { "name": "fails", "status": "failed", "duration": 0, "error": "Assertion failed\n\n- 2\n+ 1" }
-      ]
-    }
-  ]
-}
-```
-
-A file that fails to read or evaluate (e.g. a syntax error) is reported as
-`{"file": "...", "error": "..."}` instead of a `tests` array, mirroring the
-`# ❌ Failed to ...` message `mq-test` still also prints to stderr in both formats.
+`kind` is `simple`, `parametrized`, `property` or `small_scope`; generated cases (`name[0]`, ...)
+only appear in run results, which carry `status`, `duration` and `error` per test. A file that
+fails to read or evaluate is reported as `{"file": "...", "error": "..."}`.
 
 ## Development
 
-### Running Tests
-
 ```bash
 just test-all
-```
-
-### Building
-
-```bash
 cargo build -p mq-test
 ```
 
 ## License
 
 MIT
-

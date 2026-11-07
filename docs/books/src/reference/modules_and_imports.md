@@ -345,7 +345,8 @@ into another file, which is exactly the case where a reference legitimately come
 
 ## Property-Based Test Generators (`gen`)
 
-The `gen` module provides generator combinators for `mq-test`'s
+The `gen` module is bundled with `mq-test` (it is not available to the plain `mq` command) and
+provides generator combinators for `mq-test`'s
 `# @property(count, generators)` annotation (see the `mq-test` crate's README for the annotation
 itself). A generator is a plain function `fn(seed): value;` built on top of the seeded `rand`/`rand_int`/
 `random_string` builtins, so the same seed always produces the same value. Combinators build
@@ -370,6 +371,12 @@ import "gen"
 | `gen::array_of(gen, min_len, max_len)` | A variable-length array (`min_len` to `max_len`) of values from `gen` |
 | `gen::transform(gen, mapper)`      | Transforms the value `gen` produces through `mapper`                    |
 | `gen::tuple(gens)`                 | One value per generator in `gens`, independently seeded                 |
+| `gen::markdown_heading(min_depth, max_depth)` | An ATX heading line with a depth in `[min_depth, max_depth]` (1 to 6) |
+| `gen::markdown_block(max_depth = 6)` | One Markdown block: heading, paragraph, bullet list, fenced code block or blockquote |
+| `gen::markdown(min_blocks, max_blocks, max_depth = 6)` | A Markdown document of `min_blocks` to `max_blocks` blocks |
+
+The Markdown generators produce source text (a string), so a failing document shrinks by
+truncation. Parse it inside the property with `to_markdown(source)`.
 
 `gen::tuple` is what `# @property(...)` calls under the hood to turn an array of per-parameter
 generators into one argument list per iteration; a failing iteration's reported index doubles as
@@ -388,6 +395,7 @@ large or convoluted value:
 | `gen::shrink_value(value)`               | One step of "smaller" candidates for `value` (numbers toward `0`, strings/arrays toward shorter, dicts toward simpler values) |
 | `gen::shrink(args, is_interesting)`      | Searches the array `args` for a smaller array that's still `is_interesting` (a `fn(args): bool`) |
 
+<!-- doc-test: skip -->
 ```mq
 import "gen"
 | gen::shrink([10], fn(a): a[0] > 3;)
@@ -396,6 +404,42 @@ import "gen"
 
 Both are also usable directly (not just through `# @property(...)`) by hand-written property
 tests.
+
+### Small-scope tests (`enumerate`)
+
+`# @small_scope(max_size, enumerators, options)` runs a test on every input of size `<= max_size`,
+smallest first, instead of on random inputs. The first failure is a smallest counterexample, so no
+shrinking is needed. A clean run means no counterexample was found within the listed scope; it says
+nothing about larger inputs. The `enumerate` module is bundled with `mq-test` (not available to the
+plain `mq` command) and imported automatically. An enumerator is a dict whose `tier(k)` returns every
+value of size exactly `k`.
+
+| Enumerator | Values |
+| :--- | :--- |
+| `enumerate::element(values)` | Each of `values`, all of size 0 |
+| `enumerate::one_of(enums)` | The values of any of `enums` |
+| `enumerate::tuple(enums)` | One value per enumerator; sizes add |
+| `enumerate::array(en, max_len)` | Arrays of 0 to `max_len` values of `en`; size is the length plus the items' sizes |
+| `enumerate::array_of(en, min_len, max_len)` | Like `array`, with a minimum length |
+| `enumerate::transform(en, mapper)` | `mapper` applied to each value, same size |
+| `enumerate::node(en, mapper)` | Like `transform`, one size larger |
+| `enumerate::markdown(options)` | Markdown source text; size is the number of blocks plus list items |
+| `enumerate::int(min, max)` | Integers in `[min, max]`; size is `abs(n)` |
+| `enumerate::string(charset, max_len)` | Strings of 0 to `max_len` characters of `charset`; size is the length |
+| `enumerate::bool()` | `true` and `false` |
+| `enumerate::dict_of(key_en, value_en, max_len)` | Dicts of 0 to `max_len` entries, each listed once |
+| `enumerate::json(options)` | JSON-like values (none, booleans, small integers, short strings, nested arrays and dicts) |
+
+```mq
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "min_blocks": 1})])
+def test_first_block(src):
+  assert_true(is_markdown(to_markdown(src)[0]))
+end
+```
+
+Every enumerated input is checked; build inputs that satisfy a precondition with the enumerator
+options (here `min_blocks`). Enumeration stops with an error when `max_cases` (default 100000) is
+exceeded. See the `mq-test` crate's README for the options and the full semantics.
 
 ## HTTP Imports
 

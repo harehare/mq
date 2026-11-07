@@ -387,3 +387,86 @@ end
 def test_section_toc_markdown_empty():
   assert_eq(section::toc_markdown([]), [])
 end
+
+def test_section_split_without_a_matching_heading_is_empty():
+  assert_eq(section::split(to_markdown("# a\n\npara"), 2), [])
+end
+
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "max_blocks": 4})])
+def test_sections_and_toc_have_one_entry_per_heading(src):
+  let doc = to_markdown(src)
+  | let sections = section::sections(doc)
+  | let headings = len(filter(doc, is_h))
+  | assert_eq([len(sections), len(section::toc(sections))], [headings, headings])
+end
+
+# split drops the nodes before the first heading of the requested level and keeps the rest.
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "max_blocks": 4}), enumerate::element([1, 2, 3])])
+def test_split_keeps_every_node_from_the_first_matching_heading(src, level):
+  let parsed = to_markdown(src)
+  | let doc = if (is_array(parsed)): parsed else: [parsed]
+  | let heads = if (is_empty(doc)): [] else: filter(range(0, len(doc) - 1), fn(i): is_h(doc[i]) && doc[i].depth == level;)
+  | let expected = if (is_empty(heads)): 0 else: len(doc) - heads[0]
+  | let actual = fold(section::split(doc, level), 0, fn(acc, s): acc + 1 + len(s[:children]);)
+  | assert_eq(actual, expected)
+end
+
+def test_section_tree_keeps_a_deeper_heading_before_the_first_top_level_one():
+  let tree = section::tree(to_markdown("## a\n\n# b\n\n## c"))
+  | assert_eq(map(tree, fn(s): [to_string(s[:header]), s[:path], len(s[:subsections])];), [["## a", [0], 0], ["# b", [1], 1]])
+end
+
+def _sc_seq(n): if (n <= 0): [] else: range(0, n - 1);
+def _sc_all(xs): all(xs, fn(b): b;);
+def _sc_nodes(src): let d = to_markdown(src) | if (is_array(d)): d else: [d];
+def _sc_flat(ss): fold(ss, [], fn(acc, s): acc + [s] + _sc_flat(s[:subsections]););
+def _sc_levels_increase(ss, parent): _sc_all(map(ss, fn(s): section::level(s) > parent && _sc_levels_increase(s[:subsections], section::level(s));));
+def _sc_resolve(ss, path): if (len(path) == 1): ss[path[0]] else: _sc_resolve(ss[path[0]][:subsections], skip(path, 1));
+def _sc_depths(s): map(filter(flatten([s[:header], s[:children]]), is_h), fn(n): n.depth;);
+
+# @small_scope(4, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "max_blocks": 5})])
+def test_section_tree_is_consistent_with_sections(src):
+  let doc = _sc_nodes(src)
+  | let tree = section::tree(doc)
+  | let flat = _sc_flat(tree)
+  | let heads = filter(_sc_seq(len(doc)), fn(i): is_h(doc[i]);)
+  | let body_nodes = fold(flat, 0, fn(acc, s): acc + 1 + len(s[:children]);)
+  | let expected_nodes = if (is_empty(heads)): 0 else: len(doc) - heads[0]
+  | let paths_ok = _sc_all(map(flat, fn(s): to_string(_sc_resolve(tree, s[:path])[:header]) == to_string(s[:header]);))
+  | assert_eq(
+      [len(flat), body_nodes, _sc_levels_increase(tree, 0), paths_ok],
+      [len(section::sections(doc)), expected_nodes, true, true]
+    )
+end
+
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "min_blocks": 1, "max_blocks": 4}), enumerate::element([1, 2, 3])])
+def test_section_shift_level_roundtrips(src, delta):
+  let sections = section::sections(_sc_nodes(src), true)
+  | let same = map(sections, fn(s): do
+      let back = section::shift_level(section::shift_level(s, delta), 0 - delta)
+      | to_string(flatten([back[:header], back[:children]])) == to_string(flatten([s[:header], s[:children]]))
+    end;)
+  | assert_true(_sc_all(same))
+end
+
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 6, "min_blocks": 1, "max_blocks": 4}), enumerate::element([-6, -3, -1, 0, 1, 3, 6])])
+def test_section_shift_level_stays_within_heading_depths(src, delta):
+  let depths = flat_map(section::sections(_sc_nodes(src), true), fn(s): _sc_depths(section::shift_level(s, delta));)
+  | assert_true(_sc_all(map(depths, fn(d): d >= 1 && d <= 6;)))
+end
+
+# @small_scope(3, [enumerate::markdown({"kinds": ["heading", "paragraph"], "max_heading_depth": 3, "max_blocks": 4})])
+def test_section_filters_never_return_more_than_their_input(src):
+  let doc = to_markdown(src)
+  | let secs = section::sections(doc)
+  | let counts = [
+      len(secs) <= len(doc),
+      len(section::section(doc, "a")) <= len(doc),
+      len(section::by_title(doc, "a")) <= len(doc),
+      len(section::title_contains(secs, "a")) <= len(secs),
+      len(section::title_is(secs, "a")) <= len(secs),
+      len(section::title_match(secs, "a")) <= len(secs),
+      len(section::by_level(secs, 1)) <= len(secs)
+    ]
+  | assert_true(all(counts, fn(b): b;))
+end

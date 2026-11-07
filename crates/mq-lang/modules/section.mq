@@ -132,7 +132,7 @@ def sections(md_nodes, depth = false):
         end
 end
 
-def _tree_from_nodes(items, prefix = []):
+def _tree_from_nodes(items, prefix = [], offset = 0):
   if (is_empty(items)):
     []
   else:
@@ -146,7 +146,9 @@ def _tree_from_nodes(items, prefix = []):
             | let top_idxs = filter(h_idxs, fn(i): _md_heading_level(items[i]) == min_level;)
             | let top_idxs_with_end = top_idxs + [len(items)]
             | let n = len(top_idxs)
-            | var result = []
+            | let before = _tree_from_nodes(items[0:top_idxs[0]], prefix, offset)
+            | let first_k = offset + len(before)
+            | var result = before
             | var k = 0
             | while (k != n):
                 let start = top_idxs[k]
@@ -156,7 +158,7 @@ def _tree_from_nodes(items, prefix = []):
                 | let first_sub = first(sub_h_idxs)
                 | let own_body = if (is_none(first_sub)): span else: span[0:first_sub]
                 | let rest = if (is_none(first_sub)): [] else: span[first_sub:len(span)]
-                | let here = prefix + [k]
+                | let here = prefix + [first_k + k]
                 | result += [{type: :section, header: items[start], children: own_body, path: here, subsections: _tree_from_nodes(rest, here)}]
                 | k += 1
                 | result
@@ -230,14 +232,14 @@ def split(md_nodes, level):
         | let indices_len = len(indices)
         | var result = []
         | var i = 0
-        | while (i < len(indices)):
+        | let _ = while (i < len(indices)):
             let start_node = indices[i]
             | let end_node = indices_with_end[i + 1]
             | let children = agg_nodes[start_node + 1:end_node]
             | result += [{type: :section, header: agg_nodes[start_node], children: children}]
             | i += 1
-            | result
           end
+        | result
       end
 end
 

@@ -5,14 +5,19 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
+use crate::resolver::TestModuleResolver;
 use crate::snapshot;
 
 /// Number of iterations a `# @property(generators)` test runs when no count is given.
 const DEFAULT_PROPERTY_CASES: &str = "100";
+
+/// Largest value size a `# @small_scope(enumerators)` test enumerates when no size is given.
+const DEFAULT_SMALL_SCOPE_SIZE: &str = "3";
 
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
@@ -27,6 +32,14 @@ enum TestAnnotation {
     Property {
         count_expr: String,
         generators_expr: String,
+    },
+    /// `# @small_scope(max_size, enumerators, options)`: checks every input of size
+    /// `<= max_size` (see `enumerate.mq`). `max_size` defaults to [`DEFAULT_SMALL_SCOPE_SIZE`]
+    /// and `options` to an empty dict.
+    SmallScope {
+        max_size_expr: String,
+        enumerators_expr: String,
+        options_expr: String,
     },
     Tags(Vec<String>),
 }
@@ -64,6 +77,15 @@ enum DiscoveredTest {
         arity: usize,
         tags: Vec<String>,
     },
+    /// A `# @small_scope(max_size, enumerators)` test. See `TestRunner::build_small_scope_case_expr`.
+    SmallScope {
+        name: String,
+        max_size_expr: String,
+        enumerators_expr: String,
+        options_expr: String,
+        arity: usize,
+        tags: Vec<String>,
+    },
 }
 
 impl DiscoveredTest {
@@ -72,6 +94,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { name, .. } => name,
             DiscoveredTest::Parametrized { name, .. } => name,
             DiscoveredTest::Property { name, .. } => name,
+            DiscoveredTest::SmallScope { name, .. } => name,
         }
     }
 
@@ -80,6 +103,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { tags, .. } => tags,
             DiscoveredTest::Parametrized { tags, .. } => tags,
             DiscoveredTest::Property { tags, .. } => tags,
+            DiscoveredTest::SmallScope { tags, .. } => tags,
         }
     }
 
@@ -89,6 +113,7 @@ impl DiscoveredTest {
             DiscoveredTest::Simple { .. } => "simple",
             DiscoveredTest::Parametrized { .. } => "parametrized",
             DiscoveredTest::Property { .. } => "property",
+            DiscoveredTest::SmallScope { .. } => "small_scope",
         }
     }
 }
@@ -304,7 +329,7 @@ impl TestRunner {
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
             };
             let mut engine = mq_lang::Engine::with_io(
-                mq_lang::DefaultModuleResolver::default(),
+                crate::resolver::TestModuleResolver::default(),
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
             );
             engine.load_builtin_module();
@@ -313,6 +338,8 @@ impl TestRunner {
             if let Some(paths) = self.search_paths(file) {
                 engine.set_search_paths(paths);
             }
+
+            Self::register_clock(&mut engine);
 
             {
                 let test_file = file.to_string_lossy().into_owned();
@@ -689,6 +716,21 @@ impl TestRunner {
                         tags: Self::collect_tags(&node.leading_trivia),
                     });
                 }
+                Some(TestAnnotation::SmallScope {
+                    max_size_expr,
+                    enumerators_expr,
+                    options_expr,
+                }) => {
+                    let arity = Self::get_arity(node);
+                    tests.push(DiscoveredTest::SmallScope {
+                        name: func_name.clone(),
+                        max_size_expr,
+                        enumerators_expr,
+                        options_expr,
+                        arity,
+                        tags: Self::collect_tags(&node.leading_trivia),
+                    });
+                }
                 _ if func_name.starts_with("test_") => {
                     tests.push(DiscoveredTest::Simple {
                         name: func_name.clone(),
@@ -733,6 +775,27 @@ impl TestRunner {
                     generators_expr,
                 })
             }
+            "small_scope" => {
+                let parts: Vec<String> = Self::split_top_level_commas(&args)
+                    .into_iter()
+                    .map(|part| part.trim().to_string())
+                    .collect();
+                let (max_size_expr, enumerators_expr, options_expr) = match parts.as_slice() {
+                    [enumerators] => (
+                        DEFAULT_SMALL_SCOPE_SIZE.to_string(),
+                        enumerators.clone(),
+                        "{}".to_string(),
+                    ),
+                    [size, enumerators] => (size.clone(), enumerators.clone(), "{}".to_string()),
+                    [size, enumerators, options] => (size.clone(), enumerators.clone(), options.clone()),
+                    _ => return None,
+                };
+                Some(TestAnnotation::SmallScope {
+                    max_size_expr,
+                    enumerators_expr,
+                    options_expr,
+                })
+            }
             "tags" | "tag" => Some(TestAnnotation::Tags(
                 args.split(',')
                     .map(|tag| tag.trim().to_string())
@@ -748,6 +811,25 @@ impl TestRunner {
     /// itself an array literal full of commas. Returns `None` if there's no such comma (the
     /// single-argument `@property(generators)` form).
     fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
+        let i = *Self::top_level_comma_positions(s).first()?;
+        Some((&s[..i], &s[i + 1..]))
+    }
+
+    /// Splits `s` at every comma that isn't nested inside `()`/`[]`/`{}`.
+    fn split_top_level_commas(s: &str) -> Vec<&str> {
+        let mut parts = Vec::new();
+        let mut start = 0;
+        for i in Self::top_level_comma_positions(s) {
+            parts.push(&s[start..i]);
+            start = i + 1;
+        }
+        parts.push(&s[start..]);
+        parts
+    }
+
+    /// Byte offsets of the commas in `s` that sit outside brackets and string literals.
+    fn top_level_comma_positions(s: &str) -> Vec<usize> {
+        let mut positions = Vec::new();
         let mut depth = 0i32;
         let mut in_string = false;
         let mut chars = s.char_indices();
@@ -766,15 +848,15 @@ impl TestRunner {
                 '"' => in_string = true,
                 '(' | '[' | '{' => depth += 1,
                 ')' | ']' | '}' => depth -= 1,
-                ',' if depth == 0 => return Some((&s[..i], &s[i + 1..])),
+                ',' if depth == 0 => positions.push(i),
                 _ => {}
             }
         }
-        None
+        positions
     }
 
     /// Finds the first `@test`/`[test]`/`@parametrize(...)` annotation among `trivia`,
-    /// ignoring `@tags(...)` comments (collected separately via `collect_tags`).
+    /// ignoring `@tags(...)` (see `collect_tags`).
     fn find_test_annotation(trivia: &[CstTrivia]) -> Option<TestAnnotation> {
         Self::merge_annotation_comments(trivia)
             .into_iter()
@@ -795,10 +877,22 @@ impl TestRunner {
             .collect()
     }
 
-    /// Joins comment lines whose `name(...)` annotation doesn't close on the same line,
-    /// so e.g. `@parametrize(...)` can span multiple comment lines.
     fn merge_annotation_comments(trivia: &[CstTrivia]) -> Vec<String> {
-        let lines: Vec<&str> = trivia.iter().filter_map(|t| t.comment()).collect();
+        Self::merge_annotation_lines(trivia)
+            .into_iter()
+            .map(|(_, comment)| comment)
+            .collect()
+    }
+
+    /// Joins comment lines whose `name(...)` annotation doesn't close on the same line,
+    /// so e.g. `@parametrize(...)` can span multiple comment lines. Each entry carries the
+    /// one-based source line of its first comment line.
+    fn merge_annotation_lines(trivia: &[CstTrivia]) -> Vec<(u32, String)> {
+        let comments: Vec<(u32, &str)> = trivia
+            .iter()
+            .filter_map(|t| t.comment().map(|c| (t.range().start.line, c)))
+            .collect();
+        let lines: Vec<&str> = comments.iter().map(|(_, c)| *c).collect();
         let mut merged = Vec::new();
         let mut i = 0;
 
@@ -814,10 +908,10 @@ impl TestRunner {
                 if end < lines.len() {
                     end += 1;
                 }
-                merged.push(lines[i..end].join("\n"));
+                merged.push((comments[i].0, lines[i..end].join("\n")));
                 i = end;
             } else {
-                merged.push(lines[i].to_string());
+                merged.push((comments[i].0, lines[i].to_string()));
                 i += 1;
             }
         }
@@ -837,18 +931,15 @@ impl TestRunner {
         generators_expr: &str,
         arity: usize,
     ) -> String {
-        let arg_list = (0..arity)
-            .map(|i| format!("__property_arg[{i}]"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let arg_list = Self::build_arg_list("__property_arg", arity);
+        let arity_check = Self::build_arity_check("@property", "generator", "__property_generators", name, arity);
         // `range` is inclusive and auto-descends, so `range(0, count - 1)` for count <= 0
         // would still yield seeds instead of an empty case list; guard it explicitly.
         format!(
             "do \
                let __property_generators = ({generators_expr}) \
                | let __property_count = ({count_expr}) \
-               | if (len(__property_generators) != {arity}): \
-                   error(\"@property: expected {arity} generator(s) for '{name}' ({arity} parameter(s)), got \" + to_string(len(__property_generators))) \
+               | if {arity_check} \
                  elif (__property_count <= 0): [] \
                  else: map(range(0, __property_count - 1), fn(__property_seed): \
                    do \
@@ -861,6 +952,61 @@ impl TestRunner {
                  ;) \
              end"
         )
+    }
+
+    /// `var[0], var[1], ...` for `arity` parameters.
+    fn build_arg_list(var: &str, arity: usize) -> String {
+        (0..arity).map(|i| format!("{var}[{i}]")).collect::<Vec<_>>().join(", ")
+    }
+
+    /// `(len(list_var) != arity): error(...)`, the head of an `if` that fails loudly when the
+    /// number of generators/enumerators doesn't match the test's parameters.
+    fn build_arity_check(annotation: &str, noun: &str, list_var: &str, name: &str, arity: usize) -> String {
+        format!(
+            "(len({list_var}) != {arity}): \
+               error(\"{annotation}: expected {arity} {noun}(s) for '{name}' ({arity} parameter(s)), got \" + to_string(len({list_var})))"
+        )
+    }
+
+    /// Builds the single `test_case` for a `# @small_scope(max_size, enumerators, options)` test.
+    /// `_small_scope_result` (see `small_scope.mq`) walks the tiers in size order, so the first
+    /// failure it reports is a smallest counterexample and nothing is shrunk.
+    fn build_small_scope_case_expr(
+        display: &str,
+        name: &str,
+        max_size_expr: &str,
+        enumerators_expr: &str,
+        options_expr: &str,
+        arity: usize,
+    ) -> String {
+        let arg_list = Self::build_arg_list("__small_scope_arg", arity);
+        let arity_check =
+            Self::build_arity_check("@small_scope", "enumerator", "__small_scope_enumerators", name, arity);
+        format!(
+            "do \
+               let __small_scope_enumerators = ({enumerators_expr}) \
+               | if {arity_check} \
+                 else: test_case( \
+                   \"{display}\", \
+                   fn(): _small_scope_result( \
+                     \"{display}\", \
+                     enumerate::tuple(__small_scope_enumerators), \
+                     ({max_size_expr}), \
+                     ({options_expr}), \
+                     fn(__small_scope_arg): {name}({arg_list});) ; \
+                 ) \
+             end"
+        )
+    }
+
+    /// Registers `test_now_ms()`, the monotonic millisecond clock `test.mq` times tests with
+    /// (`now()` only has second resolution).
+    pub(crate) fn register_clock<IO: mq_lang::Io>(engine: &mut mq_lang::Engine<TestModuleResolver, IO>) {
+        static START: OnceLock<Instant> = OnceLock::new();
+        let start = *START.get_or_init(Instant::now);
+        engine.register_fn("test_now_ms", move || -> Result<i64, mq_lang::HostFunctionError> {
+            Ok(start.elapsed().as_millis() as i64)
+        });
     }
 
     /// Returns the number of positional parameters of a `def` node.
@@ -917,11 +1063,45 @@ impl TestRunner {
                         Self::build_property_case_expr(display, name, count_expr, generators_expr, *arity)
                     )
                 }
+                DiscoveredTest::SmallScope {
+                    name,
+                    max_size_expr,
+                    enumerators_expr,
+                    options_expr,
+                    arity,
+                    ..
+                } => {
+                    let display = Self::display_name(name);
+                    format!(
+                        "  {}",
+                        Self::build_small_scope_case_expr(
+                            display,
+                            name,
+                            max_size_expr,
+                            enumerators_expr,
+                            options_expr,
+                            *arity
+                        )
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join(",\n");
 
-        format!("{content}\n| include \"test\"\n| {report_fn}(flatten([\n{cases}\n]))")
+        // Annotation expressions are spliced into the query, so the modules they name are
+        // imported here instead of in the test file.
+        let mut imports = String::new();
+        if tests.iter().any(|t| matches!(t, DiscoveredTest::Property { .. })) {
+            imports.push_str("\n| import \"gen\"");
+        }
+        if tests.iter().any(|t| matches!(t, DiscoveredTest::SmallScope { .. })) {
+            imports.push_str("\n| import \"enumerate\"");
+        }
+        if !imports.is_empty() {
+            imports.push_str("\n| include \"test_runner\"");
+        }
+
+        format!("{content}\n| include \"test\"{imports}\n| {report_fn}(flatten([\n{cases}\n]))")
     }
 }
 

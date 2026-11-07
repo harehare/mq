@@ -41,8 +41,10 @@ def _xml_stringify(data):
     replace(replace(replace(str, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
   end
 
+  # A parser turns raw newlines and tabs in an attribute value into spaces, so they are written
+  # as character references.
   def _escape_attr(str):
-    replace(_escape_text(str), "\"", "&quot;")
+    replace(replace(replace(replace(_escape_text(str), "\"", "&quot;"), "\n", "&#10;"), "\r", "&#13;"), "\t", "&#9;")
   end
 
   def _format_attributes(attributes):

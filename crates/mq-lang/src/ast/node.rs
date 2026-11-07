@@ -373,20 +373,32 @@ impl Display for Literal {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
 pub enum BinaryOp {
+    /// `+`
     Add,
+    /// `-`
     Sub,
+    /// `*`
     Mul,
+    /// `/`
     Div,
+    /// `%`
     Mod,
+    /// `==`
     Eq,
+    /// `!=`
     Ne,
+    /// `<`
     Lt,
+    /// `<=`
     Le,
+    /// `>`
     Gt,
+    /// `>=`
     Ge,
 }
 
 impl BinaryOp {
+    /// The operator as written in source.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Add => "+",
@@ -414,11 +426,14 @@ impl Display for BinaryOp {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
 pub enum UnaryOp {
+    /// `!`
     Not,
+    /// `-`
     Neg,
 }
 
 impl UnaryOp {
+    /// The operator as written in source.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Not => "!",

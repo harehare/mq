@@ -99,7 +99,7 @@ fmt:
 
 # Run bundled mq tests through the Tarn bytecode VM.
 test-mq:
-    cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
+    cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq crates/mq-test/modules/*_test.mq
 
 # Time bundled mq benches through the Tarn bytecode VM.
 bench-mq:
@@ -157,7 +157,7 @@ test-all: fmt lint test-mq test-doc test-all-features test
 test-cov:
     cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|bench|wasm|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
-# Run fuzzing tests (targets: interpreter, mqc, markdown, markdown_scaling). Extra args go to cargo-fuzz, e.g. `-- -max_total_time=60`
+# Run fuzzing tests (targets: interpreter, mqc, markdown, markdown_scaling, stdlib). Extra args go to cargo-fuzz, e.g. `-- -max_total_time=60`
 test-fuzz target="interpreter" *args:
     #!/usr/bin/env sh
     set -eu

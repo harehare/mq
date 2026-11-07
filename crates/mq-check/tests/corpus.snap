@@ -7,8 +7,6 @@ crates/mq-lang/modules/csv.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/csv_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/fuzzy.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/fuzzy_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
-crates/mq-lang/modules/gen.mq: syntax=0 type=0 unresolved=0 dynamic=0
-crates/mq-lang/modules/gen_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/gron.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/gron_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/json.mq: syntax=0 type=0 unresolved=0 dynamic=0
