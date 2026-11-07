@@ -19,6 +19,22 @@ use std::collections::HashSet;
 /// Candidates that trigger a collection, until survivors raise it.
 const INITIAL_THRESHOLD: usize = 1024;
 
+#[cfg(test)]
+thread_local! {
+    static THRESHOLD_FLOOR: std::cell::Cell<usize> = const { std::cell::Cell::new(INITIAL_THRESHOLD) };
+}
+
+fn threshold_floor() -> usize {
+    #[cfg(test)]
+    {
+        THRESHOLD_FLOOR.get()
+    }
+    #[cfg(not(test))]
+    {
+        INITIAL_THRESHOLD
+    }
+}
+
 #[derive(Default)]
 struct Candidates {
     cells: Vec<WeakCell>,
@@ -32,13 +48,13 @@ impl Candidates {
             return false;
         }
         self.cells.push(cell);
-        self.cells.len() >= self.threshold.max(INITIAL_THRESHOLD)
+        self.cells.len() >= self.threshold.max(threshold_floor())
     }
 
     /// Puts the cells that survived a collection back and waits for as many more before the
     /// next one, so a program that keeps many live candidates is not rescanned on every write.
     fn restore(&mut self, survivors: Vec<WeakCell>) {
-        self.threshold = (survivors.len() * 2).max(INITIAL_THRESHOLD);
+        self.threshold = (survivors.len() * 2).max(threshold_floor());
         self.cells.extend(survivors);
     }
 }
@@ -127,20 +143,8 @@ fn clear(cell: &Cell) {
 }
 
 #[cfg(test)]
-pub(super) fn pending_candidates() -> usize {
-    CANDIDATES.with(|candidates| {
-        candidates
-            .borrow()
-            .cells
-            .iter()
-            .filter(|weak| weak.strong_count() > 0)
-            .count()
-    })
-}
-
-#[cfg(test)]
 pub(super) fn reset() {
-    CANDIDATES.with(|candidates| candidates.borrow_mut().cells.clear());
+    CANDIDATES.with(|candidates| *candidates.borrow_mut() = Candidates::default());
 }
 
 #[cfg(test)]
@@ -158,6 +162,71 @@ mod tests {
         values.values().iter().map(ToString::to_string).collect()
     }
 
+    /// Runs `query` with a collection after every `floor` candidates.
+    fn eval_with_floor(query: &str, floor: usize) -> Result<Vec<String>, String> {
+        THRESHOLD_FLOOR.set(floor);
+        reset();
+        let mut engine = crate::DefaultEngine::default();
+        engine.load_builtin_module();
+        let input = crate::parse_markdown_input("# a\n").unwrap();
+        let result = engine.eval(query, input.into_iter());
+        THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
+        result
+            .map(|values| values.values().iter().map(ToString::to_string).collect())
+            .map_err(|error| error.to_string())
+    }
+
+    mod sound {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn statement() -> impl Strategy<Value = String> {
+            let var = prop::sample::select(vec!["a", "b", "c"]);
+            let closure = prop::sample::select(vec!["g0", "g1", "g2"]);
+            prop_oneof![
+                (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = [{g}]")),
+                (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} += [{g}]")),
+                (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = {y}")),
+                var.clone().prop_map(|x| format!("{x} += [1]")),
+                (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = [fn(v): len({y});]")),
+                (closure, var).prop_map(|(g, y)| format!("let {g} = fn(v): len({y}) + v;")),
+            ]
+        }
+
+        fn program(statements: &[String], in_loop: bool) -> String {
+            let setup = "var a = [] | var b = [] | var c = [] | \
+                         let g0 = fn(v): len(a) + v; | let g1 = fn(v): len(b) + v; | let g2 = fn(v): len(c) + v;";
+            let body = statements.join(" | ");
+            let result = "[len(a), len(b), len(c), g0(1), g1(2), g2(3)]";
+            if in_loop {
+                format!(
+                    "def run(): {setup} | {body} | {result}; | var i = 0 | var r = 0 | while (i < 3): r = run() | i += 1; | r"
+                )
+            } else {
+                format!("{setup} | {body} | {result}")
+            }
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(512))]
+
+            /// Collecting after every candidate gives the same result as collecting only at the
+            /// end, so no live cell is ever cleared.
+            #[test]
+            fn collecting_early_never_changes_the_result(
+                statements in prop::collection::vec(statement(), 1..10),
+                in_loop in any::<bool>(),
+            ) {
+                let code = program(&statements, in_loop);
+                prop_assert_eq!(
+                    eval_with_floor(&code, 1),
+                    eval_with_floor(&code, usize::MAX),
+                    "diverged evaluating {}", code
+                );
+            }
+        }
+    }
+
     fn closure_over(cells: Vec<Cell>) -> Shared<Closure> {
         Shared::new(Closure {
             chunk_index: 0,
@@ -167,29 +236,6 @@ mod tests {
 
     fn empty_cell() -> Cell {
         new_cell(StackValue::Value(RuntimeValue::None))
-    }
-
-    #[rstest]
-    #[case::stored_in_its_own_variable("var a = 0 | a = fn(x): a; | 1")]
-    #[case::through_another_local("var a = 0 | let g = fn(x): a; | a = g | 1")]
-    #[case::through_a_chain("var a = 0 | let g = fn(x): a; | let h = fn(x): g(x); | a = h | 1")]
-    #[case::two_variables("var a = 0 | var b = 0 | a = fn(x): b; | b = fn(x): a; | 1")]
-    #[case::inside_an_array("var a = [] | let g = fn(x): len(a); | a = [g] | 1")]
-    #[case::inside_a_dict("var a = {} | let g = fn(x): len(a); | a = {\"f\": g} | 1")]
-    #[case::appended_to_an_array("var a = [] | let g = fn(x): len(a); | a += [g] | 1")]
-    #[case::inside_a_function("def mk(): var a = 0 | let g = fn(x): a; | a = g | 1; | mk()")]
-    #[case::returned_from_a_function(
-        "def mk(): var a = [] | let g = fn(x): len(a); | a = [g] | [g]; | let r = mk() | 1"
-    )]
-    #[case::next_to_a_coroutine(
-        "def gen(): yield: 1 | yield: 2; | var c = gen() | let f = fn(x): next(c); | c = [c, f] | 1"
-    )]
-    #[case::repeated_in_a_loop(
-        "var i = 0 | while (i < 3000): var a = [] | let g = fn(x): len(a); | a = [g] | i += 1; | 1"
-    )]
-    fn cycles_are_freed_by_the_end_of_the_run(#[case] query: &str) {
-        assert_eq!(eval(query).last().map(String::as_str), Some("1"));
-        assert_eq!(pending_candidates(), 0);
     }
 
     #[rstest]
