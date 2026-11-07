@@ -84,21 +84,45 @@ fn programs_are_freed_with_the_engine(#[case] code: &str) {
     assert_eq!(leaked_by(code), 0, "leaked evaluating {code}");
 }
 
+/// The self-reference downgrade of a generator leaves a cycle when it is resumed while another
+/// generator that captures the same variable sits in the same array. It does not go through the
+/// cycle collector, and fails the same way with the collector off.
+#[test]
+#[ignore = "known leak in the generator self-reference downgrade, independent of the cycle collector"]
+fn a_resumed_generator_next_to_another_in_a_captured_array() {
+    let code = "var b = [] | var c = {} | def gen(): yield: len(b) | yield: len(c); | \
+                let k0 = gen() | let k1 = gen() | b += [k0] | b += [k1] | next(k0) | 1";
+    assert_eq!(leaked_by(code), 0);
+}
+
 mod generated {
     use super::*;
 
-    /// A statement that rebinds a variable to something holding a closure.
+    /// A statement that rebinds a variable to something holding a closure, a container of
+    /// closures, a closure with a closure bound as an argument, or a generator. Generators are
+    /// never resumed here; see `a_resumed_generator_next_to_another_in_a_captured_array`.
     fn statement() -> impl Strategy<Value = String> {
         let var = prop::sample::select(vec!["a", "b", "c"]);
         let closure = prop::sample::select(vec!["g0", "g1", "g2"]);
+        let generator = prop::sample::select(vec!["k0", "k1"]);
         prop_oneof![
             (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = {g}")),
             (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = [{g}]")),
             (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = {{\"k\": {g}}}")),
             (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} += [{g}]")),
+            (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x}[0] = {g}")),
+            (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = set({x}, \"k\", {g})")),
+            (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = foreach(v, [1, 2]): [{g}];")),
+            (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} = partial(h, {g})")),
+            (var.clone(), closure.clone()).prop_map(|(x, g)| format!("{x} += [partial(h, {g})]")),
             (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = fn(v): {y};")),
             (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = [fn(v): {y};]")),
+            (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = fn(v): [fn(w): {y};];")),
+            (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = [fn(v): fn(w): {y};;]")),
             (var.clone(), var.clone()).prop_map(|(x, y)| format!("{x} = {y}")),
+            (var.clone(), generator.clone()).prop_map(|(x, k)| format!("{x} = [{k}]")),
+            (var.clone(), generator.clone()).prop_map(|(x, k)| format!("{x} += [{k}]")),
+            generator.prop_map(|k| format!("let {k} = gen()")),
             (closure, var).prop_map(|(g, y)| format!("let {g} = fn(v): {y};")),
         ]
     }
@@ -111,9 +135,20 @@ mod generated {
     }
 
     fn program(statements: &[String], shape: Shape) -> String {
+        let setup = [
+            "var a = 0",
+            "var b = []",
+            "var c = {}",
+            "let g0 = fn(v): a;",
+            "let g1 = fn(v): b;",
+            "let g2 = fn(v): c;",
+            "let h = fn(p, q): a;",
+            "def gen(): yield: len(b) | yield: len(c);",
+            "let k0 = gen()",
+            "let k1 = gen()",
+        ]
+        .join(" | ");
         let body = statements.join(" | ");
-        let setup = "var a = 0 | var b = [] | var c = {} | \
-                     let g0 = fn(v): a; | let g1 = fn(v): b; | let g2 = fn(v): c;";
         match shape {
             Shape::TopLevel => format!("{setup} | {body} | 1"),
             Shape::InFunction => format!("def run(): {setup} | {body} | 1; | run()"),
