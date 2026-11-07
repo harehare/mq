@@ -128,11 +128,15 @@ pub(super) fn register(cell: &Cell) {
 /// Frees the registered cells that only a cycle keeps alive.
 pub(super) fn collect() {
     let registered = with_candidates(|candidates| std::mem::take(&mut candidates.cells));
-    let distinct = distinct_live(registered);
-    if distinct.is_empty() {
+    // An empty list means the threshold was never raised, so there is nothing to reset.
+    if registered.is_empty() {
         return;
     }
-    free_garbage(&distinct);
+    let distinct = distinct_live(registered);
+    if !distinct.is_empty() {
+        free_garbage(&distinct);
+    }
+    // Restoring even an empty list lowers a threshold that expired candidates had raised.
     let survivors = distinct.into_iter().filter(|weak| weak.strong_count() > 0).collect();
     with_candidates(|candidates| candidates.restore(survivors));
 }
@@ -172,6 +176,11 @@ fn clear(cell: &Cell) {
         drop(guard);
         drop(old);
     }
+}
+
+#[cfg(test)]
+fn threshold() -> usize {
+    with_candidates(|candidates| candidates.threshold)
 }
 
 #[cfg(test)]
@@ -317,6 +326,24 @@ mod tests {
         collect();
         THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
         assert_eq!(registered_len(), 2);
+    }
+
+    #[test]
+    fn the_threshold_falls_back_when_the_candidates_that_raised_it_are_gone() {
+        let _serial = reset();
+        THRESHOLD_FLOOR.set(4);
+        let cells: Vec<Cell> = (0..10).map(|_| empty_cell()).collect();
+        let holders: Vec<Cell> = cells.iter().map(Shared::clone).collect();
+        for cell in &cells {
+            write_for_test(cell, StackValue::Value(RuntimeValue::Array(Default::default())));
+        }
+        collect();
+        assert!(threshold() > 4, "ten live candidates raise the threshold");
+        drop((cells, holders));
+        collect();
+        let lowered = threshold();
+        THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
+        assert_eq!(lowered, 4);
     }
 
     /// A cell holding a closure that captures the cell itself and a sentinel. The sentinel is
