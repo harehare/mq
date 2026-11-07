@@ -6939,7 +6939,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
             }
         }
         RuntimeValue::Array(array) => {
-            if n == 0 {
+            if n == 0 || array.is_empty() {
                 return Ok(RuntimeValue::empty_array());
             }
 
