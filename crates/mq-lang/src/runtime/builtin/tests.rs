@@ -1716,6 +1716,7 @@ fn test_repeat_array_size_limit_exceeds(
         1_000_000,
         1_000_000
     )]
+#[case::empty_array_huge_n(vec![], usize::MAX, 0)]
 fn test_repeat_array_size_limit_success(
     #[case] array: Vec<RuntimeValue>,
     #[case] n: usize,
