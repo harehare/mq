@@ -1,4 +1,5 @@
 use super::bytecode::Chunk;
+use super::cycle;
 use crate::number::Number;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::{RuntimeValue, array_mut, dict_mut};
@@ -254,81 +255,6 @@ pub(crate) enum Locals {
 pub(crate) struct HybridLocals {
     slots: Vec<StackValue>,
     captured: Vec<Option<Cell>>,
-}
-
-impl Drop for Locals {
-    fn drop(&mut self) {
-        // A cycle needs a shared cell holding a closure; the common frame has none and returns
-        // after one pass over the cells.
-        match self {
-            #[cfg(not(feature = "sync"))]
-            Locals::Flat(_) => {}
-            #[cfg(not(feature = "sync"))]
-            Locals::Hybrid(hybrid) => {
-                if hybrid.captured.iter().flatten().any(holds_shared_closure) {
-                    drop(std::mem::take(&mut hybrid.slots));
-                    hybrid.captured.iter().flatten().for_each(release_closure_cycle);
-                }
-            }
-            Locals::Boxed(cells) => {
-                if cells.iter().any(holds_shared_closure) {
-                    // Drop the values only this frame owns first, so a closure also held by
-                    // another slot is no longer counted as shared.
-                    for cell in cells.iter().filter(|cell| !is_shared_cell(cell)) {
-                        replace_cell_with_none(cell);
-                    }
-                    cells.iter().for_each(release_closure_cycle);
-                }
-            }
-        }
-    }
-}
-
-fn is_shared_cell(cell: &Cell) -> bool {
-    Shared::strong_count(cell) > 1
-}
-
-fn holds_shared_closure(cell: &Cell) -> bool {
-    is_shared_cell(cell) && {
-        #[cfg(not(feature = "sync"))]
-        let guard = cell.borrow();
-        #[cfg(feature = "sync")]
-        let guard = cell.read().unwrap();
-        matches!(&*guard, StackValue::Closure(_))
-    }
-}
-
-fn replace_cell_with_none(cell: &Cell) {
-    #[cfg(not(feature = "sync"))]
-    let mut guard = cell.borrow_mut();
-    #[cfg(feature = "sync")]
-    let mut guard = cell.write().unwrap();
-    *guard = StackValue::Value(RuntimeValue::None);
-}
-
-/// Empties `cell` when it holds a closure that captured `cell` itself and nothing else refers to
-/// either, so the reference cycle `cell -> closure -> upvalues -> cell` cannot outlive the frame.
-fn release_closure_cycle(cell: &Cell) {
-    let cyclic = {
-        #[cfg(not(feature = "sync"))]
-        let guard = cell.borrow();
-        #[cfg(feature = "sync")]
-        let guard = cell.read().unwrap();
-        match &*guard {
-            StackValue::Closure(closure) if Shared::strong_count(closure) == 1 => {
-                closure.upvalues.as_ref().is_some_and(|upvalues| {
-                    let self_captures = upvalues.iter().filter(|upvalue| Shared::ptr_eq(upvalue, cell)).count();
-                    Shared::strong_count(upvalues) == 1
-                        && self_captures > 0
-                        && Shared::strong_count(cell) == 1 + self_captures
-                })
-            }
-            _ => false,
-        }
-    };
-    if cyclic {
-        replace_cell_with_none(cell);
-    }
 }
 
 impl Locals {
@@ -866,6 +792,9 @@ pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bo
     // The cell guard is released first; only the appended operand is scanned.
     if appended {
         downgrade_coroutine_handles(appended_handles);
+        if cycle::runtime_value_may_hold_closure(rhs) {
+            cycle::register(cell);
+        }
     }
     Ok(appended)
 }
@@ -876,6 +805,7 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     if let StackValue::Value(value) = &value {
         collect_coroutine_handles(value, &mut written_handles);
     }
+    let candidate = cycle::may_hold_closure(&value);
     #[cfg(not(feature = "sync"))]
     {
         *cell.borrow_mut() = value;
@@ -885,12 +815,16 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
         *cell.write().unwrap() = value;
     }
     downgrade_coroutine_handles(written_handles);
+    if candidate {
+        cycle::register(cell);
+    }
 }
 
 /// Appends to an array cell.
 pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(), &'static str> {
     let mut appended_handles = Vec::new();
     collect_coroutine_handles(&value, &mut appended_handles);
+    let candidate = cycle::runtime_value_may_hold_closure(&value);
     #[cfg(not(feature = "sync"))]
     {
         let mut stored = cell.borrow_mut();
@@ -909,44 +843,15 @@ pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(
     }
     // Scan only the new value to keep `foreach` collection linear.
     downgrade_coroutine_handles(appended_handles);
+    if candidate {
+        cycle::register(cell);
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn store_self_capturing_closure(locals: &Locals, slot: u16) -> Shared<Closure> {
-        let cell = locals.cell(slot);
-        let closure = Shared::new(Closure {
-            chunk_index: 0,
-            upvalues: Some(Shared::new(vec![Shared::clone(cell)])),
-        });
-        write_cell(cell, StackValue::Closure(Shared::clone(&closure)));
-        closure
-    }
-
-    #[test]
-    fn dropping_locals_frees_a_closure_stored_in_its_own_captured_cell() {
-        let locals = Locals::for_captured_slots(1, &[0]);
-        drop(store_self_capturing_closure(&locals, 0));
-        let cell = Shared::downgrade(locals.cell(0));
-        drop(locals);
-        assert!(cell.upgrade().is_none());
-    }
-
-    #[test]
-    fn dropping_locals_keeps_a_closure_that_is_still_referenced() {
-        let locals = Locals::for_captured_slots(1, &[0]);
-        let escaped = store_self_capturing_closure(&locals, 0);
-        let cell = Shared::downgrade(locals.cell(0));
-        drop(locals);
-        assert!(cell.upgrade().is_some());
-        assert!(matches!(
-            read_cell(&escaped.upvalues.as_ref().unwrap()[0]),
-            StackValue::Closure(_)
-        ));
-    }
 
     #[test]
     fn advance_foreach_reports_progress_and_updates_loop_slots() {

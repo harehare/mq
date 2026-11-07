@@ -10,6 +10,7 @@ pub(crate) mod bytecode;
 #[cfg(not(feature = "debugger"))]
 mod cache;
 pub(crate) mod compiler;
+mod cycle;
 #[cfg(feature = "debugger")]
 mod debug_symbols;
 #[cfg(feature = "debugger")]
@@ -829,6 +830,25 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     ///
     /// `prepared` is `compiled`'s program after [`build_program`], when that changed it.
     pub(crate) fn run<I>(
+        &self,
+        compiled: &engine::CompiledProgram,
+        #[cfg(feature = "debugger")] prepared: Option<&Program>,
+        input: I,
+    ) -> Result<Vec<RuntimeValue>, Error>
+    where
+        I: Iterator<Item = RuntimeValue>,
+    {
+        let result = self.run_program(
+            compiled,
+            #[cfg(feature = "debugger")]
+            prepared,
+            input,
+        );
+        cycle::collect();
+        result
+    }
+
+    fn run_program<I>(
         &self,
         compiled: &engine::CompiledProgram,
         #[cfg(feature = "debugger")] prepared: Option<&Program>,
