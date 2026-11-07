@@ -110,7 +110,7 @@ pub use node::Callout;
 pub use node::Embed;
 
 #[cfg(feature = "html-to-markdown")]
-pub use html_to_markdown::{ConversionOptions, convert_html_to_markdown};
+pub use html_to_markdown::{ConversionOptions, check_html_depth, convert_html_to_markdown};
 
 #[cfg(test)]
 mod tests {

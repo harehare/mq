@@ -164,6 +164,11 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
         return Vec::new();
     }
 
+    if let Err(e) = mq_markdown::check_html_depth(html_content) {
+        tracing::debug!("Skipping link extraction for {}: {}", base_url, e);
+        return Vec::new();
+    }
+
     let mut found_urls = Vec::new();
     let document = Html::parse_document(html_content);
     let link_selector = Selector::parse("a[href]").expect("Failed to parse 'a[href]' selector"); // Should not panic with valid selector
@@ -861,6 +866,18 @@ mod tests {
                 links
             );
         }
+    }
+
+    #[test]
+    fn test_extract_links_skips_deeply_nested_page() {
+        let base = Url::parse("http://example.com").unwrap();
+        let html = format!(
+            "{}<a href=\"/x\">x</a>{}",
+            "<div>".repeat(100_000),
+            "</div>".repeat(100_000)
+        );
+
+        assert!(extract_links(&html, &base).is_empty());
     }
 
     #[rstest]

@@ -162,6 +162,9 @@ fn attach(stack: &mut [OpenElement], element: RuntimeValue) -> Option<RuntimeVal
     }
 }
 
+/// Deepest element nesting accepted, so the resulting value tree stays safe to walk and drop.
+const MAX_DEPTH: usize = if cfg!(debug_assertions) { 128 } else { 512 };
+
 /// Parses the first root element of `xml`, or returns `NONE` when there is none.
 ///
 /// Text split by child elements or comments is joined, with a single space where whitespace
@@ -183,6 +186,13 @@ pub(super) fn parse_xml(xml: &str) -> Result<RuntimeValue, Error> {
 
         match event {
             Ok(Event::Start(e)) => {
+                if stack.len() >= MAX_DEPTH {
+                    return Err(Error::Runtime(format!(
+                        "XML parse error at position {}: nested deeper than {} levels",
+                        reader.buffer_position(),
+                        MAX_DEPTH
+                    )));
+                }
                 let tag = e.name().as_ref().to_string();
                 stack.push(OpenElement::new(tag, parse_attributes(&e)?));
             }
@@ -462,5 +472,13 @@ mod tests {
                 root_text(&format!("<a>\n  {escaped}\n</a>"))
             );
         }
+    }
+
+    #[test]
+    fn test_parse_xml_depth_limit() {
+        let nested = |n: usize| format!("{}{}", "<a>".repeat(n), "</a>".repeat(n));
+
+        assert!(parse_xml(&nested(MAX_DEPTH)).is_ok());
+        assert!(parse_xml(&nested(MAX_DEPTH + 1)).is_err());
     }
 }

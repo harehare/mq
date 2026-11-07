@@ -2117,6 +2117,28 @@ fn test_yaml_parse(#[case] yaml: &str, #[case] expected: Result<RuntimeValue, Er
 }
 
 #[rstest]
+#[case::flat("a: 1\nb: 2\n", 1)]
+#[case::mapping("a:\n  b:\n    c: 1\n", 3)]
+#[case::sequence_in_mapping("a:\n  - b: 1\n", 3)]
+#[case::compact_sequences("- - - 1\n", 4)]
+#[case::comments_and_blanks("# c\n\na: 1\n", 1)]
+fn test_yaml_block_depth(#[case] input: &str, #[case] expected: usize) {
+    assert_eq!(super::yaml_block_depth(input), expected);
+}
+
+#[test]
+fn test_yaml_parse_depth_limit() {
+    let ident = Ident::new("_yaml_parse");
+    let nested = |n: usize| format!("{}1\n", "- ".repeat(n));
+
+    for (depth, ok) in [(super::YAML_MAX_DEPTH - 1, true), (super::YAML_MAX_DEPTH + 1, false)] {
+        let arg = RuntimeValue::String(Shared::new(nested(depth)));
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![arg].into(), &VmEnv::default());
+        assert_eq!(result.is_ok(), ok, "depth {depth}");
+    }
+}
+
+#[rstest]
 #[case::invalid_type(RuntimeValue::Number(1.into()))]
 fn test_yaml_parse_error(#[case] input: impl Into<RuntimeValue>) {
     let ident = Ident::new("_yaml_parse");

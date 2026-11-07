@@ -4553,10 +4553,53 @@ fn _json_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Deepest block nesting accepted, so the parser and the resulting value tree cannot overflow the stack.
+const YAML_MAX_DEPTH: usize = if cfg!(debug_assertions) { 128 } else { 512 };
+
+/// Returns the deepest block nesting by indentation, counting each leading `- ` as a level.
+fn yaml_block_depth(input: &str) -> usize {
+    let mut columns: Vec<usize> = Vec::new();
+    let mut max_depth = 0;
+
+    for line in input.lines() {
+        let content = line.trim_start_matches(' ');
+        if content.is_empty() || content.starts_with('#') {
+            continue;
+        }
+
+        let mut column = line.len() - content.len();
+        let mut rest = content;
+        loop {
+            while columns.last().is_some_and(|&c| c >= column) {
+                columns.pop();
+            }
+            columns.push(column);
+            max_depth = max_depth.max(columns.len());
+
+            match rest.strip_prefix("- ") {
+                Some(tail) => {
+                    let inner = tail.trim_start_matches(' ');
+                    column += 2 + (tail.len() - inner.len());
+                    rest = inner;
+                }
+                None => break,
+            }
+        }
+    }
+
+    max_depth
+}
+
 #[mq_macros::mq_fn(name = "_yaml_parse", params = Fixed(1))]
 fn _yaml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => {
+            if yaml_block_depth(s) > YAML_MAX_DEPTH {
+                return Err(Error::Runtime(format!(
+                    "Failed to parse YAML: nested deeper than {YAML_MAX_DEPTH} levels"
+                )));
+            }
+
             let mut docs = yaml_rust2::YamlLoader::load_from_str(s)
                 .map_err(|e| Error::Runtime(format!("Failed to parse YAML: {}", e)))?
                 .into_iter();
