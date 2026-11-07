@@ -62,6 +62,8 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     /// Loaded `.mqc` programs, keyed by checksum.
     #[cfg(feature = "mqc")]
     pub(crate) mqc_programs: rustc_hash::FxHashMap<[u8; crate::mqc::CHECKSUM_LEN], CompiledProgram>,
+    /// Declared last, so it is dropped, and collects, after the VM state and the variables it holds.
+    cycles: tarn::CycleCandidates,
 }
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.
@@ -110,6 +112,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             vm_module_prelude: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
+            cycles: Default::default(),
         }
     }
 }
@@ -154,6 +157,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             vm_module_prelude: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
+            cycles: Default::default(),
         }
     }
 
@@ -516,6 +520,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         );
         let module_loader = self.vm.module_loader.with_same_resolver();
 
+        let _cycles = self.cycles.enter();
         let vm = tarn::TarnVm {
             engine: tarn::EngineRunContext {
                 host_functions: &host_functions,

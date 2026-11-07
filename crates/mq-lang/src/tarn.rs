@@ -11,6 +11,8 @@ pub(crate) mod bytecode;
 mod cache;
 pub(crate) mod compiler;
 mod cycle;
+
+pub(crate) use cycle::CycleCandidates;
 #[cfg(feature = "debugger")]
 mod debug_symbols;
 #[cfg(feature = "debugger")]

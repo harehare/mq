@@ -30,10 +30,11 @@ const QUERY_ID_BIT: u32 = 1 << 31;
 /// ```
 #[derive(Debug)]
 pub struct Session<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
-    engine: Engine<T, IO>,
     bindings: SessionBindings,
     /// Source of each query, indexed by its module id.
     sources: Vec<String>,
+    /// Declared last, so the engine collects after the bindings are released.
+    engine: Engine<T, IO>,
 }
 
 impl<T: ModuleResolver, IO: Io> Session<T, IO> {
