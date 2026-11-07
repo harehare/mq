@@ -79,7 +79,7 @@ vm-profile = []
 # Use the browser clock for VM deadlines when targeting WebAssembly.
 wasm = ["dep:web-time"]
 cst = []
-css-selector = ["dep:ego-tree", "dep:scraper"]
+html-parse = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]
 default = ["html-to-markdown"]
 file-io = ["dep:ignore"]

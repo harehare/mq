@@ -13,11 +13,11 @@ version.workspace = true
 default-run = "mq"
 
 [features]
-css-selector = ["mq-lang/css-selector"]
+html-parse = ["mq-lang/html-parse"]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap", "debug-trace"]
 debug-trace = ["debugger", "mq-lang/debug-trace"]
 vm-profile = ["mq-lang/vm-profile"]
-default = ["use_mimalloc", "http-import", "css-selector", "watch"]
+default = ["use_mimalloc", "http-import", "html-parse", "watch"]
 http-import = ["mq-lang/http-import-ureq"]
 tiktoken = ["mq-lang/tiktoken"]
 use_mimalloc = ["mimalloc"]

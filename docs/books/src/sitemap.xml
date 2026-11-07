@@ -285,6 +285,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/select-html-with-css-selectors</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/find-latest-version-with-semver</loc>
     <priority>1.0</priority>
   </url>

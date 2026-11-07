@@ -141,7 +141,7 @@ Any executable named `mq-NAME` in `~/.local/bin` or on `PATH` is available as `m
 | Feature                     | Description                                                      |
 | --------------------------- | ---------------------------------------------------------------- |
 | `http-import`               | Import modules over HTTP (default)                               |
-| `css-selector`              | CSS selectors on HTML input (default)                            |
+| `html-parse`                | `html` module (HTML parsing and CSS selectors)                   |
 | `watch`                     | `--watch` re-runs the query when an input file changes (default) |
 | `use_mimalloc`              | Use the mimalloc allocator (default)                             |
 | `debugger`                  | Builds `mq-dbg`, the step debugger, with DAP support             |

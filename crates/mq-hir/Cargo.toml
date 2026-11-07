@@ -14,7 +14,7 @@ version.workspace = true
 [features]
 # Declare feature-gated builtins without building their runtime dependencies.
 http = []
-css-selector = []
+html-parse = []
 
 [lints]
 workspace = true

@@ -486,19 +486,6 @@ fn register_string(ctx: &mut InferenceContext) {
     );
     register_binary(ctx, "unicode_normalize", Type::None, Type::String, Type::None);
 
-    // css family: (html, selector) -> [string]; css_attr also takes the attribute name and
-    // yields none for elements without it.
-    register_binary(ctx, "css", Type::String, Type::String, Type::array(Type::String));
-    register_binary(ctx, "css_text", Type::String, Type::String, Type::array(Type::String));
-    register_ternary(
-        ctx,
-        "css_attr",
-        Type::String,
-        Type::String,
-        Type::String,
-        Type::array(Type::union(vec![Type::String, Type::None])),
-    );
-
     // word_wrap: (string, number) -> string
     register_binary(ctx, "word_wrap", Type::String, Type::Number, Type::String);
     // truncate: (string, number, string) -> string

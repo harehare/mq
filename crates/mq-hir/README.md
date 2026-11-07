@@ -90,7 +90,7 @@ A runner can define names the program does not declare, such as `mq-test`'s `ass
 | Feature        | Description                                                          |
 | -------------- | -------------------------------------------------------------------- |
 | `http`         | Declare the `http` builtin without building its runtime dependencies |
-| `css-selector` | Declare the CSS selector builtins the same way                       |
+| `html-parse`   | Declare the `_html_parse` builtin the same way                       |
 
 ## Documentation
 

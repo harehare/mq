@@ -10,7 +10,7 @@ Standard modules are built into `mq`: use them with `include` or `import`, no in
 | `yaml`    | YAML 1.2 parser and formatter                                         |
 | `toml`    | TOML parser and formatter                                             |
 | `xml`     | XML parser and formatter                                              |
-| `html`    | HTML parser and formatter (requires the `css-selector` build feature) |
+| `html`    | HTML parser, formatter and CSS selector search (requires the `html-parse` build feature) |
 | `csv`     | CSV / TSV parser, formatter, and blank-cell fill helpers              |
 | `cbor`    | CBOR binary format support                                            |
 | `semver`  | Semantic versioning (SemVer) utilities                                |
