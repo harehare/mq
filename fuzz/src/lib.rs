@@ -78,7 +78,8 @@ pub fn eval_and_check(context: &Context) {
 }
 
 /// Programs that together compile to every VM instruction (the same set as mq-lang's
-/// `mqc::fuzz_tests`), compiled to `.mqc` and then corrupted.
+/// `mqc::fuzz_tests`), then closure reference cycles for the leak detector. Each is compiled to
+/// `.mqc` and then corrupted.
 const MQC_PROGRAMS: &[&str] = &[
     r#"def f(x): x + 1; | [f(1), .h1, s"${self}"]"#,
     "let add = fn(a): fn(b): a + b;; | let inc = add(1) | inc(2)",
@@ -134,6 +135,15 @@ const MQC_PROGRAMS: &[&str] = &[
     "var n = 0 | while (true): n += 1 | try: break catch: 0; | n",
     "foreach(x, [1, 2, 3]): try: do if (x == 2): continue else: x end catch: 0;",
     "foreach(x, [1, 2, 3]): try: do if (x == 2): break else: x end catch: 0;",
+    "var a = 0 | a = fn(x): a; | 1",
+    "var a = 0 | let g = fn(x): a; | let h = fn(x): g(x); | a = h | 1",
+    "var a = 0 | var b = 0 | a = fn(x): b; | b = fn(x): a; | 1",
+    r#"var a = [] | let g = fn(x): len(a); | a = [g] | 1"#,
+    r#"var a = {} | let g = fn(x): len(a); | a = {"f": g} | 1"#,
+    "var a = [] | let g = fn(x): len(a); | a += [g] | 1",
+    "def mk(): var a = [] | let g = fn(x): len(a); | a = [g, 5] | [g]; | let f = first(mk()) | f(0)",
+    "def gen(): yield: 1 | yield: 2; | var c = gen() | let f = fn(x): next(c); | c = [c, f] | 1",
+    "var i = 0 | while (i < 3): var a = [] | let g = fn(x): len(a); | a = [g] | i += 1; | 1",
 ];
 
 /// A `.mqc` file compiled from one of the fuzz programs, then corrupted.
