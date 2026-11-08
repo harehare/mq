@@ -7,7 +7,7 @@ use crate::runtime::builtin;
 use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::selector::{AttrKind, Selector};
 use crate::tarn::bytecode::{
-    BinaryOp, Chunk, NodeSelectorKind, OpCode, ParamBinding, ParamShape, StaticExactCallTarget, TryCatchInfo,
+    BinaryOp, Chunk, NodeSelectorKind, OpCode, ParamBinding, ParamShape, PathOp, StaticExactCallTarget, TryCatchInfo,
     UpvalueSource, verify_chunks,
 };
 use crate::tarn::compiler::CompiledProgram;
@@ -507,6 +507,20 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         OpCode::AddAssignUpvalue(index) => {
             writer.u8(tags::opcode::ADD_ASSIGN_UPVALUE);
             writer.var_u16(*index);
+        }
+        OpCode::SetIndexUpvalue(index) => {
+            writer.u8(tags::opcode::SET_INDEX_UPVALUE);
+            writer.var_u16(*index);
+        }
+        OpCode::PathUpvalue { index, depth, op } => {
+            writer.u8(tags::opcode::PATH_UPVALUE);
+            writer.var_u16(*index);
+            writer.u8(*depth);
+            writer.u8(match op {
+                PathOp::Check => 0,
+                PathOp::Set => 1,
+                PathOp::Add => 2,
+            });
         }
         OpCode::CheckPathLocal { slot, depth } => {
             writer.u8(tags::opcode::CHECK_PATH_LOCAL);
@@ -1244,6 +1258,7 @@ impl Decoder<'_> {
             tags::opcode::SET_INDEX_LOCAL => OpCode::SetIndexLocal(r.var_u16()?),
             tags::opcode::ADD_ASSIGN_LOCAL => OpCode::AddAssignLocal(r.var_u16()?),
             tags::opcode::ADD_ASSIGN_UPVALUE => OpCode::AddAssignUpvalue(r.var_u16()?),
+            tags::opcode::SET_INDEX_UPVALUE => OpCode::SetIndexUpvalue(r.var_u16()?),
             tags::opcode::CHECK_PATH_LOCAL => OpCode::CheckPathLocal {
                 slot: r.var_u16()?,
                 depth: r.u8()?,
@@ -1255,6 +1270,16 @@ impl Decoder<'_> {
             tags::opcode::ADD_ASSIGN_PATH_LOCAL => OpCode::AddAssignPathLocal {
                 slot: r.var_u16()?,
                 depth: r.u8()?,
+            },
+            tags::opcode::PATH_UPVALUE => OpCode::PathUpvalue {
+                index: r.var_u16()?,
+                depth: r.u8()?,
+                op: match r.u8()? {
+                    0 => PathOp::Check,
+                    1 => PathOp::Set,
+                    2 => PathOp::Add,
+                    other => return Err(invalid(format!("unknown path operation {other}"))),
+                },
             },
             tags::opcode::SET_LOCAL_AND_COPY => OpCode::SetLocalAndCopy {
                 source: r.var_u16()?,

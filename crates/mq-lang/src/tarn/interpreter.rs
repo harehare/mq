@@ -20,11 +20,12 @@ use self::calls::{
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
 #[cfg(debug_assertions)]
 use super::bytecode::stack_effect;
-use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
+use super::bytecode::{BinaryOp, Chunk, OpCode, PathOp, SELF_SLOT, TryCatchInfo};
 use super::compiler::CompiledProgram;
 use super::value::ClosureValue;
 use super::value::{
-    Cell, Closure, Locals, StackValue, add_to_cell_in_place, read_cell, resolve_weak_coroutines, write_cell,
+    Cell, Closure, Locals, StackValue, add_path_in_cell, add_to_cell_in_place, path_exists_in_cell, read_cell,
+    resolve_weak_coroutines, set_index_in_cell, set_path_in_cell, write_cell,
 };
 #[cfg(feature = "debugger")]
 use crate::ast::TokenId;
@@ -551,9 +552,12 @@ fn set_index_local(
     mut value: RuntimeValue,
     chunks: &Shared<Vec<Chunk>>,
 ) -> VmResult<()> {
-    let updated = match locals.direct_runtime_value_mut(slot) {
-        Some(target) => builtin::set_in_place(target, &key, &mut value).map_err(VmError::from)?,
-        None => false,
+    let updated = if let Some(cell) = locals.captured_cell(slot) {
+        set_index_in_cell(cell, &key, &mut value).map_err(VmError::from)?
+    } else if let Some(target) = locals.direct_runtime_value_mut(slot) {
+        builtin::set_in_place(target, &key, &mut value).map_err(VmError::from)?
+    } else {
+        false
     };
     if !updated {
         // A captured local, or operands `set` does not accept.
@@ -564,6 +568,21 @@ fn set_index_local(
         locals.set(slot, StackValue::Value(target));
     }
     Ok(())
+}
+
+/// Runs `SetIndexUpvalue`: `upvalue[key] = value`, in place when the variable is a dict or array.
+#[inline(never)]
+fn set_index_upvalue(
+    cell: &Cell,
+    key: RuntimeValue,
+    mut value: RuntimeValue,
+    chunks: &Shared<Vec<Chunk>>,
+) -> VmResult<()> {
+    if set_index_in_cell(cell, &key, &mut value).map_err(VmError::from)? {
+        return Ok(());
+    }
+    let target = into_runtime_value(read_cell(cell), chunks);
+    Err(builtin::Error::InvalidTypes(builtins::SET.to_string(), vec![target, key, value]).into())
 }
 
 /// Pops the operand and the `depth` keys pushed before it.
@@ -595,12 +614,78 @@ fn check_path_local(
         .collect();
     let target = match locals.direct_runtime_value(slot) {
         Some(target) => std::borrow::Cow::Borrowed(target),
-        None => std::borrow::Cow::Owned(local_runtime_value(locals, slot, chunks)?),
+        None => {
+            if locals
+                .captured_cell(slot)
+                .is_some_and(|cell| path_exists_in_cell(cell, &keys))
+            {
+                return Ok(());
+            }
+            std::borrow::Cow::Owned(local_runtime_value(locals, slot, chunks)?)
+        }
     };
     if builtin::path_exists(&target, &keys) {
         return Ok(());
     }
     builtin::get_path(&target, &keys).map(drop).map_err(VmError::from)
+}
+
+/// Runs `PathUpvalue`: a path check, store or add on a variable of an enclosing function.
+#[inline(never)]
+fn path_upvalue_from_stack(
+    stack: &mut Vec<StackValue>,
+    cell: &Cell,
+    depth: u8,
+    op: PathOp,
+    locals: &mut Locals,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<()> {
+    if op == PathOp::Check {
+        let keys: smallvec::SmallVec<[RuntimeValue; 4]> = stack[stack.len() - usize::from(depth)..]
+            .iter()
+            .map(|key| into_runtime_value(key.clone(), chunks))
+            .collect();
+        if path_exists_in_cell(cell, &keys) {
+            return Ok(());
+        }
+        let target = into_runtime_value(read_cell(cell), chunks);
+        return builtin::get_path(&target, &keys).map(drop).map_err(VmError::from);
+    }
+    let (operand, keys) = pop_path_operands(stack, depth, chunks);
+    if op == PathOp::Set {
+        return set_path_cell(cell, &keys, operand, chunks);
+    }
+    if add_path_in_cell(cell, &keys, &operand).map_err(VmError::from)? {
+        return Ok(());
+    }
+    let lhs = builtin::get_path(&into_runtime_value(read_cell(cell), chunks), &keys).map_err(VmError::from)?;
+    let result = eval_binary_op(
+        BinaryOp::Add,
+        lhs,
+        operand,
+        locals,
+        chunks,
+        execution.env,
+        execution.host_functions,
+    )?;
+    set_path_cell(cell, &keys, result, chunks)
+}
+
+/// `cell[k1]...[kn] = value`, in place when the cell holds a plain value.
+fn set_path_cell(
+    cell: &Cell,
+    keys: &[RuntimeValue],
+    mut value: RuntimeValue,
+    chunks: &Shared<Vec<Chunk>>,
+) -> VmResult<()> {
+    if set_path_in_cell(cell, keys, &mut value).map_err(VmError::from)? {
+        return Ok(());
+    }
+    let mut target = into_runtime_value(read_cell(cell), chunks);
+    builtin::set_path_in_place(&mut target, keys, &mut value).map_err(VmError::from)?;
+    write_cell(cell, StackValue::Value(target));
+    Ok(())
 }
 
 #[inline(never)]
@@ -640,6 +725,11 @@ fn set_path_local(
     if let Some(target) = locals.direct_runtime_value_mut(slot) {
         return builtin::set_path_in_place(target, keys, &mut value).map_err(VmError::from);
     }
+    if let Some(cell) = locals.captured_cell(slot)
+        && set_path_in_cell(cell, keys, &mut value).map_err(VmError::from)?
+    {
+        return Ok(());
+    }
     let mut target = local_runtime_value(locals, slot, chunks)?;
     builtin::set_path_in_place(&mut target, keys, &mut value).map_err(VmError::from)?;
     locals.set(slot, StackValue::Value(target));
@@ -672,7 +762,14 @@ fn add_assign_path_local(
             }
             builtin::get_path(target, keys)
         }
-        None => builtin::get_path(&local_runtime_value(locals, slot, chunks)?, keys),
+        None => {
+            if let Some(cell) = locals.captured_cell(slot)
+                && add_path_in_cell(cell, keys, &rhs).map_err(VmError::from)?
+            {
+                return Ok(());
+            }
+            builtin::get_path(&local_runtime_value(locals, slot, chunks)?, keys)
+        }
     }
     .map_err(VmError::from)?;
     let result = eval_binary_op(
@@ -1477,6 +1574,23 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let value = pop_value!();
                 let key = pop_value!();
                 set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+            }
+            OpCode::SetIndexUpvalue(idx) => {
+                let value = pop_value!();
+                let key = pop_value!();
+                set_index_upvalue(&upvalues[*idx as usize], key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+            }
+            OpCode::PathUpvalue { index, depth, op } => {
+                path_upvalue_from_stack(
+                    stack,
+                    &upvalues[*index as usize],
+                    *depth,
+                    *op,
+                    locals,
+                    chunks,
+                    execution,
+                )
+                .map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::CheckPathLocal { slot, depth } => {
                 check_path_local(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;

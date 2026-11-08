@@ -244,6 +244,10 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::GetUpvalue(slot) => format!("GetUpvalue {}", upvalue(*slot)),
         bytecode::OpCode::SetUpvalue(slot) => format!("SetUpvalue {}", upvalue(*slot)),
         bytecode::OpCode::AddAssignUpvalue(slot) => format!("AddAssignUpvalue {}", upvalue(*slot)),
+        bytecode::OpCode::PathUpvalue { index, depth, op } => {
+            format!("PathUpvalue {} depth={depth} {op:?}", upvalue(*index))
+        }
+        bytecode::OpCode::SetIndexUpvalue(slot) => format!("SetIndexUpvalue {}", upvalue(*slot)),
         bytecode::OpCode::MakeClosure(payload) => {
             format!("MakeClosure chunk {}, upvalues {}", payload.0, payload.1.len())
         }

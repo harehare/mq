@@ -820,6 +820,105 @@ pub(crate) fn add_to_cell_in_place(cell: &Cell, rhs: &RuntimeValue) -> Result<bo
     Ok(appended)
 }
 
+/// Applies `cell[key] = value` to a dict or array held directly in `cell`, without copying it
+/// when the cell is its only owner. Returns `false`, leaving the cell and `value` untouched, for
+/// any other combination.
+pub(crate) fn set_index_in_cell(
+    cell: &Cell,
+    key: &RuntimeValue,
+    value: &mut RuntimeValue,
+) -> Result<bool, builtin::Error> {
+    let mut stored_handles = Vec::new();
+    collect_coroutine_handles(value, &mut stored_handles);
+    let candidate = cycle::runtime_value_may_hold_closure(value);
+    let updated = {
+        #[cfg(not(feature = "sync"))]
+        let mut guard = cell.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut guard = cell.write().unwrap();
+        match &mut *guard {
+            StackValue::Value(target) => builtin::set_in_place(target, key, value)?,
+            _ => false,
+        }
+    };
+    if updated {
+        downgrade_coroutine_handles(stored_handles);
+        if candidate {
+            cycle::register(cell);
+        }
+    }
+    Ok(updated)
+}
+
+/// Runs `f` on the value held in `cell`, with the cell exclusively borrowed.
+fn with_cell_mut<R>(cell: &Cell, f: impl FnOnce(&mut StackValue) -> R) -> R {
+    #[cfg(not(feature = "sync"))]
+    let mut guard = cell.borrow_mut();
+    #[cfg(feature = "sync")]
+    let mut guard = cell.write().unwrap();
+    f(&mut guard)
+}
+
+/// Applies `cell[k1]...[kn] = value` to a value held directly in `cell`, without copying the
+/// containers along the path when the cell is its only owner. Returns `false`, leaving the cell
+/// and `value` untouched, when the cell holds anything else.
+pub(crate) fn set_path_in_cell(
+    cell: &Cell,
+    keys: &[RuntimeValue],
+    value: &mut RuntimeValue,
+) -> Result<bool, builtin::Error> {
+    let mut stored_handles = Vec::new();
+    collect_coroutine_handles(value, &mut stored_handles);
+    let candidate = cycle::runtime_value_may_hold_closure(value);
+    let updated = with_cell_mut(cell, |stored| match stored {
+        StackValue::Value(target) => builtin::set_path_in_place(target, keys, value).map(|()| true),
+        _ => Ok(false),
+    })?;
+    if updated {
+        downgrade_coroutine_handles(stored_handles);
+        if candidate {
+            cycle::register(cell);
+        }
+    }
+    Ok(updated)
+}
+
+/// Applies `cell[k1]...[kn] + rhs` to the number, string or array at that path of a value held
+/// directly in `cell`, in place. Returns `false`, leaving the cell untouched, for any other
+/// combination.
+pub(crate) fn add_path_in_cell(cell: &Cell, keys: &[RuntimeValue], rhs: &RuntimeValue) -> Result<bool, builtin::Error> {
+    let mut appended_handles = Vec::new();
+    collect_coroutine_handles(rhs, &mut appended_handles);
+    let appended = with_cell_mut(cell, |stored| {
+        let StackValue::Value(target) = stored else {
+            return Ok(false);
+        };
+        let Some(element) = builtin::path_element_mut(target, keys) else {
+            return Ok(false);
+        };
+        if let (RuntimeValue::Number(number), RuntimeValue::Number(n)) = (&mut *element, rhs) {
+            *number = *number + *n;
+            return Ok(true);
+        }
+        builtin::add_in_place(element, rhs)
+    })?;
+    if appended {
+        downgrade_coroutine_handles(appended_handles);
+        if cycle::runtime_value_may_hold_closure(rhs) {
+            cycle::register(cell);
+        }
+    }
+    Ok(appended)
+}
+
+/// Whether every step of `keys` names an existing entry of a value held directly in `cell`.
+pub(crate) fn path_exists_in_cell(cell: &Cell, keys: &[RuntimeValue]) -> bool {
+    with_cell_mut(cell, |stored| match stored {
+        StackValue::Value(target) => builtin::path_exists(target, keys),
+        _ => false,
+    })
+}
+
 /// Writes a VM cell and cleans up nested coroutine cycles.
 pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     let mut written_handles = Vec::new();

@@ -1,5 +1,6 @@
 use super::bytecode::{
-    self, BinaryOp, Chunk, ConstantIndex, OpCode, ParamBinding, ParamShape, SELF_SLOT, TryCatchInfo, UpvalueSource,
+    self, BinaryOp, Chunk, ConstantIndex, OpCode, ParamBinding, ParamShape, PathOp, SELF_SLOT, TryCatchInfo,
+    UpvalueSource,
 };
 use super::resolver::FunctionScope;
 use crate::Shared;
@@ -656,6 +657,13 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
         | Expr::Continue
         | Expr::Ident(_) => {}
     }
+}
+
+/// The variable a nested index assignment updates.
+#[derive(Clone, Copy)]
+enum PathTarget {
+    Local(u16),
+    Upvalue(u16),
 }
 
 /// What a nested index assignment stores at the end of its path.
@@ -3303,7 +3311,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 if self.scope_mut().is_immutable(slot) {
                     return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
                 }
-                if self.is_used_by_nested_function(name) {
+                if self.is_used_by_nested_function(name) && !self.cannot_run_user_code_in(index, value) {
                     self.emit(OpCode::GetLocal(slot));
                     self.compile_expr(index)?;
                     self.compile_expr(value)?;
@@ -3311,44 +3319,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit_call_builtin(builtins::SET.into(), 3);
                     self.emit(OpCode::SetLocal(slot));
                 } else if let Some((keys, leaf)) = self.nested_assign_path(name, index, value) {
-                    let depth = keys.len() as u8;
-                    // The old chained form read the path before evaluating the operand, so an
-                    // operand that can fail or have effects must not run if that read fails.
-                    let (operand, checked) = match leaf {
-                        PathLeaf::Set(operand) => (operand, keys.len() - 1),
-                        PathLeaf::Add(operand) => (operand, keys.len()),
-                    };
-                    let check = checked > 0 && !is_effect_free(operand);
-                    for (position, key) in keys.into_iter().enumerate() {
-                        if check && position == checked {
-                            self.set_call_token_id(token_id);
-                            self.emit(OpCode::CheckPathLocal {
-                                slot,
-                                depth: checked as u8,
-                            });
-                        }
-                        self.compile_expr(key)?;
-                    }
-                    if check && checked == usize::from(depth) {
-                        self.set_call_token_id(token_id);
-                        self.emit(OpCode::CheckPathLocal {
-                            slot,
-                            depth: checked as u8,
-                        });
-                    }
-                    self.set_call_token_id(token_id);
-                    match leaf {
-                        PathLeaf::Set(value) => {
-                            self.compile_expr(value)?;
-                            self.set_call_token_id(token_id);
-                            self.emit(OpCode::SetPathLocal { slot, depth });
-                        }
-                        PathLeaf::Add(rhs) => {
-                            self.compile_expr(rhs)?;
-                            self.set_call_token_id(token_id);
-                            self.emit(OpCode::AddAssignPathLocal { slot, depth });
-                        }
-                    }
+                    self.compile_path_assign(PathTarget::Local(slot), keys, leaf)?;
                 } else {
                     self.compile_expr(index)?;
                     self.compile_expr(value)?;
@@ -3363,17 +3334,75 @@ impl<R: ModuleResolver> Compiler<R> {
                 if immutable {
                     return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
                 }
-                self.emit(OpCode::GetUpvalue(upvalue));
-                self.compile_expr(index)?;
-                self.compile_expr(value)?;
-                self.set_call_token_id(token_id);
-                self.emit_call_builtin(builtins::SET.into(), 3);
-                self.emit(OpCode::SetUpvalue(upvalue));
+                if self.cannot_run_user_code_in(index, value) {
+                    if let Some((keys, leaf)) = self.nested_assign_path(name, index, value) {
+                        self.compile_path_assign(PathTarget::Upvalue(upvalue), keys, leaf)?;
+                    } else {
+                        self.compile_expr(index)?;
+                        self.compile_expr(value)?;
+                        self.set_call_token_id(token_id);
+                        self.emit(OpCode::SetIndexUpvalue(upvalue));
+                    }
+                } else {
+                    self.emit(OpCode::GetUpvalue(upvalue));
+                    self.compile_expr(index)?;
+                    self.compile_expr(value)?;
+                    self.set_call_token_id(token_id);
+                    self.emit_call_builtin(builtins::SET.into(), 3);
+                    self.emit(OpCode::SetUpvalue(upvalue));
+                }
             }
             None => return Err(CompileError::UndefinedIdent(name.to_string(), token_id)),
         }
         self.emit(OpCode::GetLocal(SELF_SLOT));
         Ok(())
+    }
+
+    /// Emits the keys, the operand and the path opcode for `target[k1]...[kn] = leaf`.
+    fn compile_path_assign(
+        &mut self,
+        target: PathTarget,
+        keys: Vec<&Shared<Node>>,
+        leaf: PathLeaf<'_>,
+    ) -> CompileResult<()> {
+        let token_id = self.current_token_id;
+        let depth = keys.len() as u8;
+        // The old chained form read the path before evaluating the operand, so an operand that
+        // can fail or have effects must not run if that read fails.
+        let (operand, checked, op) = match leaf {
+            PathLeaf::Set(operand) => (operand, keys.len() - 1, PathOp::Set),
+            PathLeaf::Add(operand) => (operand, keys.len(), PathOp::Add),
+        };
+        let check = checked > 0 && !is_effect_free(operand);
+        for (position, key) in keys.into_iter().enumerate() {
+            if check && position == checked {
+                self.emit_path_check(target, checked as u8, token_id);
+            }
+            self.compile_expr(key)?;
+        }
+        if check && checked == usize::from(depth) {
+            self.emit_path_check(target, checked as u8, token_id);
+        }
+        self.compile_expr(operand)?;
+        self.set_call_token_id(token_id);
+        self.emit(match (target, op) {
+            (PathTarget::Local(slot), PathOp::Add) => OpCode::AddAssignPathLocal { slot, depth },
+            (PathTarget::Local(slot), _) => OpCode::SetPathLocal { slot, depth },
+            (PathTarget::Upvalue(index), op) => OpCode::PathUpvalue { index, depth, op },
+        });
+        Ok(())
+    }
+
+    fn emit_path_check(&mut self, target: PathTarget, depth: u8, token_id: TokenId) {
+        self.set_call_token_id(token_id);
+        self.emit(match target {
+            PathTarget::Local(slot) => OpCode::CheckPathLocal { slot, depth },
+            PathTarget::Upvalue(index) => OpCode::PathUpvalue {
+                index,
+                depth,
+                op: PathOp::Check,
+            },
+        });
     }
 
     /// Recognizes `name[k1]...[kn] = leaf` after the parser's `name[k1] = set(name[k1], k2, ...)`
@@ -3500,6 +3529,12 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             _ => false,
         }
+    }
+
+    /// Whether neither `index` nor `value` can run user code, so reading the target after they
+    /// run gives the same result as reading it before.
+    fn cannot_run_user_code_in(&mut self, index: &Shared<Node>, value: &Shared<Node>) -> bool {
+        self.cannot_run_user_code(index) && self.cannot_run_user_code(value)
     }
 
     /// Compiles `x = set(x, key, value)` on a mutable local `x` as `x[key] = value`; reading `x`
