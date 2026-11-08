@@ -251,7 +251,7 @@ struct Cursor<'a> {
     bytes: &'a [u8],
     pos: usize,
     line: u32,
-    col: usize,
+    col: u32,
     module_id: ModuleId,
     /// Byte offset from which no `}` exists, so later `${` scans can stop early.
     no_closing_brace_from: usize,
@@ -264,7 +264,7 @@ struct Cursor<'a> {
 struct Mark {
     pos: usize,
     line: u32,
-    col: usize,
+    col: u32,
 }
 
 impl<'a> Cursor<'a> {
@@ -338,7 +338,7 @@ impl<'a> Cursor<'a> {
     #[inline(always)]
     fn advance_ascii(&mut self, len: usize) {
         self.pos += len;
-        self.col += len;
+        self.col += len as u32;
     }
 
     /// Range of the unconsumed input, as reported for the end-of-input token.
@@ -354,7 +354,7 @@ impl<'a> Cursor<'a> {
             start,
             end: Position {
                 line: start.line,
-                column: start.column + fragment.chars().count(),
+                column: start.column + fragment.chars().count() as u32,
             },
         }
     }
@@ -369,7 +369,7 @@ impl<'a> Cursor<'a> {
                 start,
                 end: Position {
                     line: start.line,
-                    column: start.column + columns,
+                    column: start.column + columns as u32,
                 },
             },
             kind,
@@ -387,7 +387,7 @@ impl<'a> Cursor<'a> {
                 start,
                 end: Position {
                     line: start.line,
-                    column: start.column + len,
+                    column: start.column + len as u32,
                 },
             },
             kind,
@@ -428,7 +428,7 @@ impl<'a> Cursor<'a> {
                 }
                 Some(b'#') => {
                     let len = Self::comment_len(&self.bytes[i..]);
-                    col += self.src[i..i + len].chars().count();
+                    col += self.src[i..i + len].chars().count() as u32;
                     i += len;
                 }
                 _ => break,
@@ -448,7 +448,7 @@ impl<'a> Cursor<'a> {
 
     /// Like `advance`, for text without a newline but possibly non-ASCII.
     fn advance_text(&mut self, end: usize) {
-        self.col += self.src[self.pos..end].chars().count();
+        self.col += self.src[self.pos..end].chars().count() as u32;
         self.pos = end;
     }
 
@@ -2194,7 +2194,7 @@ mod tests {
         }
     }
 
-    fn range(start: (u32, usize), end: (u32, usize)) -> Range {
+    fn range(start: (u32, u32), end: (u32, u32)) -> Range {
         Range {
             start: Position {
                 line: start.0,
@@ -2265,7 +2265,7 @@ mod tests {
     #[case::emoji_string("\"🎉🎉🎉\" | x", 1, 9)]
     #[case::multibyte_on_previous_line("\"あいう\"\n| x", 2, 3)]
     #[case::several_multibyte_tokens("\"あ\" + \"い\" | x", 1, 13)]
-    fn test_column_counts_chars_not_bytes(#[case] code: &str, #[case] line: u32, #[case] column: usize) {
+    fn test_column_counts_chars_not_bytes(#[case] code: &str, #[case] line: u32, #[case] column: u32) {
         let range = ident_range(code, "x");
         assert_eq!(range.start, Position { line, column });
         assert_eq!(
@@ -2282,7 +2282,7 @@ mod tests {
         fn prop_column_after_string_literal_counts_chars(s in "[^\"\\\\\\n\\r$]{0,20}") {
             let code = format!("\"{s}\" | x");
             let range = ident_range(&code, "x");
-            proptest::prop_assert_eq!(range.start.column, s.chars().count() + 6);
+            proptest::prop_assert_eq!(range.start.column, s.chars().count() as u32 + 6);
         }
     }
 

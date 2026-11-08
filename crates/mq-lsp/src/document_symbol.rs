@@ -34,21 +34,21 @@ pub(crate) fn response(
                             let range = Range {
                                 start: Position {
                                     line: text_range.start.line - 1,
-                                    character: (text_range.start.column - 1) as u32,
+                                    character: (text_range.start.column - 1),
                                 },
                                 end: Position {
                                     line: text_range.end.line - 1,
-                                    character: (text_range.end.column - 1) as u32,
+                                    character: (text_range.end.column - 1),
                                 },
                             };
                             let selection_range = Range {
                                 start: Position {
                                     line: text_range.start.line - 1,
-                                    character: (text_range.start.column - 1) as u32,
+                                    character: (text_range.start.column - 1),
                                 },
                                 end: Position {
                                     line: text_range.start.line - 1,
-                                    character: (text_range.start.column - 1) as u32,
+                                    character: (text_range.start.column - 1),
                                 },
                             };
 

@@ -575,8 +575,8 @@ async fn test_code_action_using_real_diagnostics_from_pipeline() {
             .map(|(message, item)| {
                 ls_types::Diagnostic::new_simple(
                     ls_types::Range::new(
-                        ls_types::Position::new(item.start.line - 1, (item.start.column - 1) as u32),
-                        ls_types::Position::new(item.end.line - 1, (item.end.column - 1) as u32),
+                        ls_types::Position::new(item.start.line - 1, item.start.column - 1),
+                        ls_types::Position::new(item.end.line - 1, item.end.column - 1),
                     ),
                     message,
                 )

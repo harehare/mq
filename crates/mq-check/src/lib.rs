@@ -277,7 +277,7 @@ impl TypeError {
     pub fn span(&self, source: &str) -> Option<miette::SourceSpan> {
         let range = self.location()?;
         let offset = |position: &mq_lang::Position| {
-            miette::SourceOffset::from_location(source, position.line as usize, position.column).offset()
+            miette::SourceOffset::from_location(source, position.line as usize, position.column as usize).offset()
         };
         let start = offset(&range.start);
         let end = offset(&range.end).max(start);
@@ -789,9 +789,9 @@ mod tests {
     fn test_type_error_span(
         #[case] source: &str,
         #[case] start_line: u32,
-        #[case] start_column: usize,
+        #[case] start_column: u32,
         #[case] end_line: u32,
-        #[case] end_column: usize,
+        #[case] end_column: u32,
         #[case] offset: usize,
         #[case] len: usize,
     ) {

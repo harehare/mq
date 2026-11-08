@@ -19,8 +19,8 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticT
     for symbol in symbols.into_iter().sorted_by_key(|symbol| symbol.source.text_range) {
         for (range, _) in &symbol.doc {
             let line = range.start.line - 1_u32;
-            let start = (range.start.column - 2) as u32;
-            let length = ((range.end.column - 1) - (range.start.column - 2)) as u32;
+            let start = range.start.column - 2;
+            let length = (range.end.column - 1) - (range.start.column - 2);
             let token_type = token_type(ls_types::SemanticTokenType::COMMENT);
 
             if line.checked_sub(pre_line).is_none() {
@@ -44,9 +44,9 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticT
 
         if let Some(range) = &symbol.source.text_range {
             let line = range.start.line - 1_u32;
-            let start = (range.start.column - 1) as u32;
+            let start = range.start.column - 1;
             let length = if range.start.line == range.end.line {
-                ((range.end.column - 1) - (range.start.column - 1)) as u32
+                (range.end.column - 1) - (range.start.column - 1)
             } else {
                 symbol.value.as_ref().map(|name| name.len()).unwrap_or_default() as u32
             };

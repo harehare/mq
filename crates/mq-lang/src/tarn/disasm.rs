@@ -148,7 +148,7 @@ fn build_phase(name: &str, compiled: &compiler::CompiledProgram, token_arena: &T
                             let (range, _) = token_location(token_arena, token_id);
                             BytecodeLocation {
                                 line: range.start.line as usize + 1,
-                                column: range.start.column + 1,
+                                column: range.start.column as usize + 1,
                             }
                         }),
                     }

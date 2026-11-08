@@ -175,7 +175,7 @@ pub fn apply_edits(source: &str, edits: &[(mq_lang::Range, String)]) -> String {
 mod tests {
     use super::*;
 
-    fn range(start_line: u32, start_col: usize, end_line: u32, end_col: usize) -> mq_lang::Range {
+    fn range(start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> mq_lang::Range {
         mq_lang::Range {
             start: mq_lang::Position {
                 line: start_line,

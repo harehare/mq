@@ -774,7 +774,7 @@ end"#;
 
         // The diagnostic covers the path string, not only the keyword.
         let end = hir.error_ranges()[0].1.end.column;
-        assert_eq!(end, directive.len() + " \"nope\"".len() + 1);
+        assert_eq!(end as usize, directive.len() + " \"nope\"".len() + 1);
     }
 
     #[test]

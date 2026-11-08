@@ -9,11 +9,11 @@ fn to_range(range: mq_lang::Range) -> Range {
     Range {
         start: Position {
             line: range.start.line - 1,
-            character: (range.start.column - 1) as u32,
+            character: (range.start.column - 1),
         },
         end: Position {
             line: range.end.line - 1,
-            character: (range.end.column - 1) as u32,
+            character: (range.end.column - 1),
         },
     }
 }
@@ -23,7 +23,7 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Positi
     let source = hir_guard.source_by_url(&url)?;
     let (_, symbol) = hir_guard.find_symbol_in_position(
         source,
-        mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
+        mq_lang::Position::new(position.line + 1, position.character + 1),
     )?;
 
     // `import "x"` jumps to the top of the module.

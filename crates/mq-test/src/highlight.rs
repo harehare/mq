@@ -112,8 +112,8 @@ fn collect_spans(nodes: &[Shared<CstNode>], parent: Option<&CstNodeKind>, out: &
                     line: token.range.start.line,
                     // The lexer's comment token starts after the `#` delimiter;
                     // pull the span back one column so `#` is highlighted too.
-                    start_col: token.range.start.column.saturating_sub(1),
-                    end_col: token.range.end.column,
+                    start_col: token.range.start.column.saturating_sub(1) as usize,
+                    end_col: token.range.end.column as usize,
                     class: TokenClass::Comment,
                 });
             }
@@ -124,8 +124,8 @@ fn collect_spans(nodes: &[Shared<CstNode>], parent: Option<&CstNodeKind>, out: &
         {
             out.push(Span {
                 line: token.range.start.line,
-                start_col: token.range.start.column,
-                end_col: token.range.end.column,
+                start_col: token.range.start.column as usize,
+                end_col: token.range.end.column as usize,
                 class,
             });
         }

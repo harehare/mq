@@ -745,7 +745,7 @@ fn encode_source(files: &[SourceFile], spans: &[Span]) -> Result<Vec<u8>, MqcErr
         writer.var_u32(span.file);
         for position in [span.range.start, span.range.end] {
             writer.var_u32(position.line);
-            writer.var_u32(u32::try_from(position.column).unwrap_or(u32::MAX));
+            writer.var_u32(position.column);
         }
     }
     Ok(writer.into_bytes())
@@ -771,7 +771,7 @@ fn decode_source(payload: &[u8]) -> Result<(Vec<SourceFile>, Vec<Span>), MqcErro
         let mut position = || -> Result<Position, MqcError> {
             Ok(Position {
                 line: reader.var_u32()?,
-                column: reader.var_u32()? as usize,
+                column: reader.var_u32()?,
             })
         };
         let start = position()?;

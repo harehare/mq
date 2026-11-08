@@ -133,9 +133,9 @@ fn write_snippet(
         return Ok(());
     };
 
-    let col_start = range.start.column.saturating_sub(1);
+    let col_start = range.start.column.saturating_sub(1) as usize;
     let col_end = if range.end.line == range.start.line {
-        range.end.column.saturating_sub(1)
+        range.end.column.saturating_sub(1) as usize
     } else {
         source_line.len()
     };

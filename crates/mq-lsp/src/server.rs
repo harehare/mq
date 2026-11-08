@@ -666,11 +666,11 @@ impl Backend {
                         ls_types::Range::new(
                             ls_types::Position {
                                 line: item.start.line - 1,
-                                character: (item.start.column - 1) as u32,
+                                character: (item.start.column - 1),
                             },
                             ls_types::Position {
                                 line: item.end.line - 1,
-                                character: (item.end.column - 1) as u32,
+                                character: (item.end.column - 1),
                             },
                         ),
                         message,
@@ -687,11 +687,11 @@ impl Backend {
                         ls_types::Range::new(
                             ls_types::Position {
                                 line: item.start.line - 1,
-                                character: (item.start.column - 1) as u32,
+                                character: (item.start.column - 1),
                             },
                             ls_types::Position {
                                 line: item.end.line - 1,
-                                character: (item.end.column - 1) as u32,
+                                character: (item.end.column - 1),
                             },
                         ),
                         message,

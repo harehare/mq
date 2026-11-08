@@ -8,7 +8,7 @@ pub struct Position {
     /// One-based line number.
     pub line: u32,
     /// One-based column number.
-    pub column: usize,
+    pub column: u32,
 }
 
 impl Default for Position {
@@ -19,7 +19,7 @@ impl Default for Position {
 
 impl Position {
     /// Creates a new position with the specified line and column.
-    pub fn new(line: u32, column: usize) -> Self {
+    pub fn new(line: u32, column: u32) -> Self {
         Position { line, column }
     }
 }
@@ -39,5 +39,16 @@ impl Range {
     pub fn contains(&self, position: &Position) -> bool {
         (self.start.line < position.line || (self.start.line == position.line && self.start.column <= position.column))
             && (self.end.line > position.line || (self.end.line == position.line && self.end.column >= position.column))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_position_and_range_size() {
+        assert_eq!(std::mem::size_of::<Position>(), 8);
+        assert_eq!(std::mem::size_of::<Range>(), 16);
     }
 }

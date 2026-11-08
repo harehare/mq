@@ -156,7 +156,7 @@ fn hir_hover(
     if let Some(source) = source {
         if let Some((symbol_id, symbol)) = hir.read().unwrap().find_symbol_in_position(
             source,
-            mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
+            mq_lang::Position::new(position.line + 1, position.character + 1),
         ) {
             match &symbol.kind {
                 mq_hir::SymbolKind::Function(_)
@@ -213,8 +213,8 @@ fn hir_hover(
                         }),
                         range: symbol.source.text_range.map(|text_range| {
                             Range::new(
-                                Position::new(text_range.start.line - 1, (text_range.start.column - 1) as u32),
-                                Position::new(text_range.end.line - 1, (text_range.end.column - 1) as u32),
+                                Position::new(text_range.start.line - 1, text_range.start.column - 1),
+                                Position::new(text_range.end.line - 1, text_range.end.column - 1),
                             )
                         }),
                     })
