@@ -257,22 +257,11 @@ pub(crate) enum OpCode {
         slot: u16,
         depth: u8,
     },
-    /// Path update on a captured variable of an enclosing function, with the stack effect of
-    /// [`OpCode::CheckPathLocal`], [`OpCode::SetPathLocal`] or [`OpCode::AddAssignPathLocal`]
-    /// according to `op`.
-    PathUpvalue {
-        index: u16,
-        depth: u8,
-        op: PathOp,
-    },
     /// Pops an operand and applies `local + operand` to the local in place where possible.
     AddAssignLocal(u16),
     /// Pops an operand and applies `upvalue + operand` to the captured variable in place where
     /// possible, so appending to a variable of an enclosing function does not copy it.
     AddAssignUpvalue(u16),
-    /// Pops a value and a key and applies `upvalue[key] = value` to the captured variable in
-    /// place where possible, so updating a collection of an enclosing function does not copy it.
-    SetIndexUpvalue(u16),
     /// Clones the top operand into one local, then pops it into another local.
     SetLocalAndCopy {
         source: u16,
@@ -526,6 +515,17 @@ pub(crate) enum OpCode {
     /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
     Yield,
     Resume(u8),
+    /// Pops a value and a key and applies `upvalue[key] = value` to the captured variable in
+    /// place where possible, so updating a collection of an enclosing function does not copy it.
+    SetIndexUpvalue(u16),
+    /// Path update on a captured variable of an enclosing function, with the stack effect of
+    /// [`OpCode::CheckPathLocal`], [`OpCode::SetPathLocal`] or [`OpCode::AddAssignPathLocal`]
+    /// according to `op`.
+    PathUpvalue {
+        index: u16,
+        depth: u8,
+        op: PathOp,
+    },
 }
 
 /// The update a [`OpCode::PathUpvalue`] performs.

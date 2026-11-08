@@ -1596,9 +1596,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let key = pop_value!();
                 set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
-            OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
-                upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
-            }
             OpCode::CheckPathLocal { slot, depth } => {
                 check_path_local(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
@@ -2568,6 +2565,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 )
                 .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
+            }
+            OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
+                upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
             }
         }
     };
