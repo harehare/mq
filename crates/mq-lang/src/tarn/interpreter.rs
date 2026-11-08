@@ -632,9 +632,28 @@ fn check_path_local(
     builtin::get_path(&target, &keys).map(drop).map_err(VmError::from)
 }
 
+/// Runs `SetIndexUpvalue` or `PathUpvalue`, so the dispatch loop carries a single arm for both.
+#[inline(never)]
+fn upvalue_update(
+    stack: &mut Vec<StackValue>,
+    upvalues: &[Cell],
+    opcode: &OpCode,
+    locals: &mut Locals,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<()> {
+    match *opcode {
+        OpCode::SetIndexUpvalue(index) => set_index_upvalue(&upvalues[index as usize], stack, chunks),
+        OpCode::PathUpvalue { index, depth, op } => {
+            path_upvalue(stack, &upvalues[index as usize], depth, op, locals, chunks, execution)
+        }
+        _ => unreachable!("only upvalue update opcodes reach upvalue_update"),
+    }
+}
+
 /// Runs `PathUpvalue`: a path check, store or add on a variable of an enclosing function.
 #[inline(never)]
-fn path_upvalue_from_stack(
+fn path_upvalue(
     stack: &mut Vec<StackValue>,
     cell: &Cell,
     depth: u8,
@@ -1577,20 +1596,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let key = pop_value!();
                 set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
-            OpCode::SetIndexUpvalue(idx) => {
-                set_index_upvalue(&upvalues[*idx as usize], stack, chunks).map_err(|e| locate(chunk, ip, e))?;
-            }
-            OpCode::PathUpvalue { index, depth, op } => {
-                path_upvalue_from_stack(
-                    stack,
-                    &upvalues[*index as usize],
-                    *depth,
-                    *op,
-                    locals,
-                    chunks,
-                    execution,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
+            OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
+                upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::CheckPathLocal { slot, depth } => {
                 check_path_local(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
