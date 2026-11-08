@@ -84,6 +84,16 @@ pub(crate) type CoroutineWeakHandle = std::rc::Weak<SharedCell<CoroutineState>>;
 #[cfg(feature = "sync")]
 pub(crate) type CoroutineWeakHandle = std::sync::Weak<SharedCell<CoroutineState>>;
 
+/// Set once any coroutine is created. Until then no value can hold one, so scans for nested
+/// coroutine handles are skipped.
+static COROUTINE_CREATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a coroutine has ever been created in this process.
+#[inline(always)]
+pub(crate) fn coroutine_created() -> bool {
+    COROUTINE_CREATED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub(crate) fn downgrade_handle(handle: &CoroutineHandle) -> CoroutineWeakHandle {
     Shared::downgrade(handle)
 }
@@ -98,6 +108,7 @@ pub(crate) fn same_handle(left: &CoroutineHandle, right: &CoroutineHandle) -> bo
 
 impl CoroutineState {
     pub(super) fn new_handle(frame: Frame, chunks: Shared<Vec<Chunk>>, token_arena: TokenArena) -> CoroutineHandle {
+        COROUTINE_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         Shared::new(SharedCell::new(CoroutineState {
             status: CoroutineStatus::Created,
             frames: vec![frame],

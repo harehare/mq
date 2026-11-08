@@ -4,7 +4,7 @@ use crate::number::Number;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::{RuntimeValue, array_mut, dict_mut};
 use crate::tarn::interpreter::coroutine::{
-    CoroutineHandle, CoroutineWeakHandle, downgrade_handle, downgrade_self_references_before_resume, same_handle,
+    CoroutineHandle, CoroutineWeakHandle, coroutine_created, downgrade_handle, downgrade_self_references_before_resume, same_handle,
     upgrade_handle,
 };
 use crate::{Shared, SharedCell};
@@ -68,6 +68,9 @@ fn value_contains_self_reference(value: &RuntimeValue, handle: &CoroutineHandle)
 
 /// Collects distinct coroutine handles nested in a value.
 fn collect_coroutine_handles(value: &RuntimeValue, handles: &mut Vec<CoroutineHandle>) {
+    if !coroutine_created() {
+        return;
+    }
     match value {
         RuntimeValue::Coroutine(handle) => {
             if !handles.iter().any(|existing| same_handle(existing, handle)) {
