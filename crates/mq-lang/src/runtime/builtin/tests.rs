@@ -1680,6 +1680,32 @@ fn test_char_range_size_limit_success(
 }
 
 #[rstest]
+#[case::odometer_overflow(").ss", "..ss")]
+#[case::longer_than_u128("aaaaaaaaaaaaaaaaa", "baaaaaaaaaaaaaaaa")]
+#[case::long_prefix_suffix_over_16("xaaaaaaaaaaaaaaaaa", "xbaaaaaaaaaaaaaaaa")]
+fn test_multi_char_range_size_limit_exceeds(#[case] start: &str, #[case] end: &str) {
+    let result = generate_multi_char_range(start, end);
+    assert!(matches!(result, Err(Error::Runtime(msg)) if msg.contains("exceeds maximum allowed size")));
+}
+
+#[rstest]
+#[case::within_limit("aa", "ad", vec!["aa", "ab", "ac", "ad"])]
+#[case::start_after_end("ad", "aa", vec!["ad"])]
+#[case::identical_short("a", "a", vec!["a"])]
+#[case::long_identical("abcdefghijklmnopq", "abcdefghijklmnopq", vec!["abcdefghijklmnopq"])]
+#[case::long_start_after_end("abcdefghijklmnopr", "abcdefghijklmnopq", vec!["abcdefghijklmnopr"])]
+#[case::long_prefix_suffix_16("xaaaaaaaaaaaaaaaa", "xaaaaaaaaaaaaaaac", vec!["xaaaaaaaaaaaaaaaa", "xaaaaaaaaaaaaaaab", "xaaaaaaaaaaaaaaac"])]
+#[case::long_common_prefix("aaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaab", vec!["aaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaab"])]
+fn test_multi_char_range_success(#[case] start: &str, #[case] end: &str, #[case] expected: Vec<&str>) {
+    let result = generate_multi_char_range(start, end).unwrap();
+    let expected: Vec<RuntimeValue> = expected
+        .into_iter()
+        .map(|s| RuntimeValue::String(Shared::new(s.into())))
+        .collect();
+    assert_eq!(result, expected);
+}
+
+#[rstest]
 #[case::excessively_large_array_repeat(
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
         600_000,
