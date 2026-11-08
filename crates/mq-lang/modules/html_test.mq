@@ -244,3 +244,9 @@ end
 def test_html_select_invalid_selector_is_error(selector):
   assert_eq(try: html::html_select(html::html_parse(select_input), selector) catch: "error", "error")
 end
+
+def test_html_select_general_sibling_over_many_siblings():
+  let html = "<ul>" + join(map(range(0, 399), fn(i): "<li>x</li>";), "") + "<span>ok</span></ul>"
+  | assert_eq(len(html::html_select(html, ".missing ~ span")), 0)
+  | assert_eq(len(html::html_select(html, "li ~ span")), 1)
+end

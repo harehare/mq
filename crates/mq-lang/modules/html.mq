@@ -345,14 +345,16 @@ def _html_sel_prev_ctx(ctx):
   {"el": ctx["sibs"][ctx["idx"] - 1], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": ctx["idx"] - 1}
 end
 
-# Whether some sibling before `ctx` (nearest first) satisfies steps[0..=k], stopping at the first hit.
-def _html_sel_prev_any(steps, k, ctx, i):
-  if (i < 0):
-    false
-  elif (_html_sel_steps_ok(steps, k, {"el": ctx["sibs"][i], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": i})):
-    true
-  else:
-    _html_sel_prev_any(steps, k, ctx, i - 1)
+# Whether some sibling before `ctx`, from `start` down, satisfies steps[0..=k]. A loop rather than
+# recursion, so a long sibling list cannot exhaust the call limit.
+def _html_sel_prev_any(steps, k, ctx, start):
+  var i = start
+  | var found = false
+  | while (!found && i >= 0):
+      found = _html_sel_steps_ok(steps, k, {"el": ctx["sibs"][i], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": i})
+      | i -= 1
+    end
+  | found
 end
 
 def _html_sel_ancestors(ctx):
@@ -383,6 +385,25 @@ def _html_sel_match_list(list, ctx):
   any(list, fn(steps): _html_sel_steps_ok(steps, len(steps) - 1, ctx);)
 end
 
+def _html_sel_all(el):
+  [el] + flat_map(el["children"], _html_sel_all)
+end
+
+# Drops `~` selectors with a step no element can satisfy (pseudo-classes ignored), since `~`
+# is quadratic when the left side never matches.
+def _html_sel_prune(tree, list):
+  if (!any(list, fn(steps): any(steps, fn(step): step["comb"] == "~";);)):
+    list
+  else:
+    do
+      let els = _html_sel_all(tree)
+      | filter(list, fn(steps): all(steps, fn(step): do
+          let comp = set(step["comp"], "pseudos", [])
+          | any(els, fn(e): _html_sel_compound_ok(comp, {"el": e, "parent": None, "sibs": [], "idx": 0});)
+        end;);)
+    end
+end
+
 def _html_sel_walk(ctx, list):
   let children = ctx["el"]["children"]
   | let own = if (_html_sel_match_list(list, ctx)): [ctx["el"]] else: []
@@ -410,5 +431,5 @@ end
 # Returns: array
 def html_select(data, selector):
   let tree = if (is_string(data)): html_parse(data) else: data
-  | _html_sel_walk({"el": tree, "parent": None, "sibs": [tree], "idx": 0}, _html_sel_parse_list(to_string(selector)))
+  | _html_sel_walk({"el": tree, "parent": None, "sibs": [tree], "idx": 0}, _html_sel_prune(tree, _html_sel_parse_list(to_string(selector))))
 end
