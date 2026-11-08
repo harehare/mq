@@ -4,8 +4,8 @@ use crate::number::Number;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::{RuntimeValue, array_mut, dict_mut};
 use crate::tarn::interpreter::coroutine::{
-    CoroutineHandle, CoroutineWeakHandle, coroutine_created, downgrade_handle, downgrade_self_references_before_resume, same_handle,
-    upgrade_handle,
+    CoroutineHandle, CoroutineWeakHandle, coroutine_created, downgrade_handle, downgrade_self_references_before_resume,
+    same_handle, upgrade_handle,
 };
 use crate::{Shared, SharedCell};
 
