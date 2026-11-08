@@ -687,6 +687,18 @@ def test_all_coroutine_short_circuits():
   | assert_eq(pulls, 2)
 end
 
+def test_any_array_short_circuits():
+  var calls = 0
+  | assert_eq(any([1, 2, 3], fn(x): calls += 1 | x == 2;), true)
+  | assert_eq(calls, 2)
+end
+
+def test_all_array_short_circuits():
+  var calls = 0
+  | assert_eq(all([1, 2, 3], fn(x): calls += 1 | x < 2;), false)
+  | assert_eq(calls, 2)
+end
+
 def test_fold_and_sum_coroutine():
   let source = fn(): yield: 1 | yield: 2 | yield: 3;
   | assert_eq(fold(source(), 10, fn(acc, x): acc + x;), 16)
