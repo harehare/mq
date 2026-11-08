@@ -14,34 +14,99 @@ const VOID_ELEMENTS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
 ];
 
+/// Elements whose content is raw text, so tag-shaped substrings inside are not markup.
+const RAW_TEXT_ELEMENTS: &[&str] = &[
+    "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes",
+];
+
+/// Returns the index just past the `>` that ends the tag starting at `pos`, skipping quoted
+/// attribute values. `None` when the tag is unterminated.
+fn tag_end(bytes: &[u8], mut pos: usize) -> Option<usize> {
+    while pos < bytes.len() {
+        match bytes[pos] {
+            b'>' => return Some(pos + 1),
+            b'=' => {
+                pos += 1;
+                while bytes.get(pos).is_some_and(u8::is_ascii_whitespace) {
+                    pos += 1;
+                }
+                if let Some(&q @ (b'"' | b'\'')) = bytes.get(pos) {
+                    let close = bytes[pos + 1..].iter().position(|&c| c == q)?;
+                    pos += close + 2;
+                }
+            }
+            _ => pos += 1,
+        }
+    }
+    None
+}
+
+/// Index of the next `</name` (ASCII case-insensitive) at or after `from`, or `bytes.len()`.
+fn find_close_tag(bytes: &[u8], from: usize, name: &[u8]) -> usize {
+    let n = name.len() + 2;
+    (from..bytes.len().saturating_sub(n - 1))
+        .find(|&i| bytes[i] == b'<' && bytes[i + 1] == b'/' && bytes[i + 2..i + n].eq_ignore_ascii_case(name))
+        .unwrap_or(bytes.len())
+}
+
 /// Rejects markup whose tags nest deeper than `MAX_RAW_DEPTH`, without building a tree.
+///
+/// Comments, quoted attribute values and raw text elements (`<script>`, `<style>`, ...) are
+/// skipped, so only real tags are counted.
 pub fn check_raw_depth(html: &str) -> miette::Result<()> {
+    let bytes = html.as_bytes();
     let mut depth = 0usize;
     let mut pos = 0;
-    // Position of the next `>`; only searched again once passed, to keep the scan linear.
-    let mut gt = 0;
 
-    while let Some(offset) = html[pos..].find('<') {
+    while let Some(offset) = bytes[pos..].iter().position(|&b| b == b'<') {
         pos += offset + 1;
-        let Some(&first) = html.as_bytes().get(pos) else { break };
+        let Some(&first) = bytes.get(pos) else { break };
 
-        if first == b'/' {
-            depth = depth.saturating_sub(1);
-        } else if first.is_ascii_alphabetic() {
-            if gt < pos {
-                gt = html[pos..].find('>').map_or(html.len(), |g| pos + g);
+        if bytes[pos..].starts_with(b"!--") {
+            match html[pos + 3..].find("-->") {
+                Some(end) => pos += 3 + end + 3,
+                None => break,
             }
-            let tag = &html[pos..gt];
-            let name = tag
-                .split(|c: char| !c.is_ascii_alphanumeric())
-                .next()
-                .unwrap_or_default();
-
-            if !tag.ends_with('/') && !VOID_ELEMENTS.iter().any(|v| v.eq_ignore_ascii_case(name)) {
-                depth += 1;
-                if depth > MAX_RAW_DEPTH {
-                    return Err(miette::miette!("HTML is nested deeper than {MAX_RAW_DEPTH} levels"));
+        } else if first == b'!' || first == b'?' {
+            match bytes[pos..].iter().position(|&b| b == b'>') {
+                Some(end) => pos += end + 1,
+                None => break,
+            }
+        } else if first == b'/' {
+            if bytes.get(pos + 1).is_some_and(u8::is_ascii_alphabetic) {
+                depth = depth.saturating_sub(1);
+                match tag_end(bytes, pos + 1) {
+                    Some(end) => pos = end,
+                    None => break,
                 }
+            }
+        } else if first.is_ascii_alphabetic() {
+            let name_len = bytes[pos..]
+                .iter()
+                .position(|c| !c.is_ascii_alphanumeric())
+                .unwrap_or(bytes.len() - pos);
+            let name = &bytes[pos..pos + name_len];
+            let Some(end) = tag_end(bytes, pos + name_len) else {
+                break;
+            };
+            let self_closing = bytes[end - 2] == b'/';
+            pos = end;
+
+            if self_closing || VOID_ELEMENTS.iter().any(|v| v.as_bytes().eq_ignore_ascii_case(name)) {
+                continue;
+            }
+
+            if RAW_TEXT_ELEMENTS
+                .iter()
+                .any(|r| r.as_bytes().eq_ignore_ascii_case(name))
+            {
+                pos = find_close_tag(bytes, pos, name);
+                continue;
+            }
+
+            depth += 1;
+            if depth > MAX_RAW_DEPTH {
+                return Err(miette::miette!("HTML is nested deeper than {MAX_RAW_DEPTH} levels"));
             }
         }
     }
@@ -96,4 +161,36 @@ pub fn map_nodes_to_html_nodes(nodes: Vec<ego_tree::NodeRef<Node>>) -> miette::R
         }
     }
     Ok(html_nodes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::quoted_attr("<div title=\"</div>\">")]
+    #[case::single_quoted_attr("<div title='</div>'>")]
+    fn test_check_raw_depth_rejects_quoted_close_tags(#[case] unit: &str) {
+        let n = MAX_RAW_DEPTH + 1;
+        let input = format!("{}{}", unit.repeat(n), "</div>".repeat(n));
+        assert!(check_raw_depth(&input).is_err());
+    }
+
+    #[test]
+    fn test_check_raw_depth_ignores_script_and_comment_text() {
+        let n = MAX_RAW_DEPTH + 1;
+        let script = format!("<script>{}</script><a href=\"/next\">x</a>", "<div>".repeat(n));
+        let comment = format!("<!--{}--><p>x</p>", "<div>".repeat(n));
+        let attr = format!("<a title=\"{}\">x</a>", "<div>".repeat(n));
+        assert!(check_raw_depth(&script).is_ok());
+        assert!(check_raw_depth(&comment).is_ok());
+        assert!(check_raw_depth(&attr).is_ok());
+    }
+
+    #[test]
+    fn test_check_raw_depth_rejects_plain_nesting() {
+        let input = "<div>".repeat(MAX_RAW_DEPTH + 1);
+        assert!(check_raw_depth(&input).is_err());
+    }
 }

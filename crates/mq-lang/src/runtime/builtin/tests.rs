@@ -2122,6 +2122,11 @@ fn test_yaml_parse(#[case] yaml: &str, #[case] expected: Result<RuntimeValue, Er
 #[case::sequence_in_mapping("a:\n  - b: 1\n", 3)]
 #[case::compact_sequences("- - - 1\n", 4)]
 #[case::comments_and_blanks("# c\n\na: 1\n", 1)]
+#[case::flow_sequence("[[1]]\n", 3)]
+#[case::flow_in_block("a: {b: [1]}\n", 3)]
+#[case::flow_multiline("a: [\n  [1],\n  2]\n", 4)]
+#[case::quoted_brackets("a: \"[[[\"\n", 1)]
+#[case::comment_brackets("a: 1 # [[[\n", 1)]
 fn test_yaml_block_depth(#[case] input: &str, #[case] expected: usize) {
     assert_eq!(super::yaml_block_depth(input), expected);
 }
@@ -2135,6 +2140,22 @@ fn test_yaml_parse_depth_limit() {
         let arg = RuntimeValue::String(Shared::new(nested(depth)));
         let result = eval_builtin(&RuntimeValue::None, &ident, vec![arg].into(), &VmEnv::default());
         assert_eq!(result.is_ok(), ok, "depth {depth}");
+    }
+}
+
+#[test]
+fn test_yaml_parse_flow_depth_limit() {
+    let ident = Ident::new("_yaml_parse");
+    let n = super::YAML_MAX_DEPTH * 40;
+    let inputs = [
+        format!("{}0{}", "[".repeat(n), "]".repeat(n)),
+        format!("{}0{}", "{a: ".repeat(n), "}".repeat(n)),
+    ];
+
+    for input in inputs {
+        let arg = RuntimeValue::String(Shared::new(input));
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![arg].into(), &VmEnv::default());
+        assert!(result.is_err());
     }
 }
 
