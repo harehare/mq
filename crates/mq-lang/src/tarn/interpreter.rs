@@ -572,12 +572,9 @@ fn set_index_local(
 
 /// Runs `SetIndexUpvalue`: `upvalue[key] = value`, in place when the variable is a dict or array.
 #[inline(never)]
-fn set_index_upvalue(
-    cell: &Cell,
-    key: RuntimeValue,
-    mut value: RuntimeValue,
-    chunks: &Shared<Vec<Chunk>>,
-) -> VmResult<()> {
+fn set_index_upvalue(cell: &Cell, stack: &mut Vec<StackValue>, chunks: &Shared<Vec<Chunk>>) -> VmResult<()> {
+    let mut value = into_runtime_value(stack.pop().expect("verified bytecode keeps an operand"), chunks);
+    let key = into_runtime_value(stack.pop().expect("verified bytecode keeps an operand"), chunks);
     if set_index_in_cell(cell, &key, &mut value).map_err(VmError::from)? {
         return Ok(());
     }
@@ -1581,9 +1578,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::SetIndexUpvalue(idx) => {
-                let value = pop_value!();
-                let key = pop_value!();
-                set_index_upvalue(&upvalues[*idx as usize], key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+                set_index_upvalue(&upvalues[*idx as usize], stack, chunks).map_err(|e| locate(chunk, ip, e))?;
             }
             OpCode::PathUpvalue { index, depth, op } => {
                 path_upvalue_from_stack(
