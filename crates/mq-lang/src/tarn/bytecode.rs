@@ -515,6 +515,25 @@ pub(crate) enum OpCode {
     /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
     Yield,
     Resume(u8),
+    /// Pops a value and a key and applies `upvalue[key] = value` to the captured variable in
+    /// place where possible, so updating a collection of an enclosing function does not copy it.
+    SetIndexUpvalue(u16),
+    /// Path update on a captured variable of an enclosing function, with the stack effect of
+    /// [`OpCode::CheckPathLocal`], [`OpCode::SetPathLocal`] or [`OpCode::AddAssignPathLocal`]
+    /// according to `op`.
+    PathUpvalue {
+        index: u16,
+        depth: u8,
+        op: PathOp,
+    },
+}
+
+/// The update a [`OpCode::PathUpvalue`] performs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathOp {
+    Check,
+    Set,
+    Add,
 }
 
 impl OpCode {
@@ -613,6 +632,8 @@ impl OpCode {
             | Self::GetUpvalue(_)
             | Self::SetUpvalue(_)
             | Self::AddAssignUpvalue(_)
+            | Self::SetIndexUpvalue(_)
+            | Self::PathUpvalue { .. }
             | Self::MakeStaticClosure(_)
             | Self::Pop
             | Self::Dup
@@ -699,6 +720,8 @@ impl OpCode {
             Self::AddAssignPathLocal { .. } => "AddAssignPathLocal",
             Self::AddAssignLocal(_) => "AddAssignLocal",
             Self::AddAssignUpvalue(_) => "AddAssignUpvalue",
+            Self::SetIndexUpvalue(_) => "SetIndexUpvalue",
+            Self::PathUpvalue { .. } => "PathUpvalue",
             Self::SetLocalAndCopy { .. } => "SetLocalAndCopy",
             Self::SetLocalAndCopyAndJump { .. } => "SetLocalAndCopyAndJump",
             Self::SetLocalConst { .. } => "SetLocalConst",
@@ -1563,7 +1586,11 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                     verify_jump_target(chunk.code.len(), chunk_index, pc, *exit_offset)?;
                 }
-                OpCode::GetUpvalue(index) | OpCode::SetUpvalue(index) | OpCode::AddAssignUpvalue(index) => {
+                OpCode::GetUpvalue(index)
+                | OpCode::SetUpvalue(index)
+                | OpCode::AddAssignUpvalue(index)
+                | OpCode::SetIndexUpvalue(index)
+                | OpCode::PathUpvalue { index, .. } => {
                     if *index as usize >= chunk.upvalue_names.len() {
                         return Err(BytecodeError::UpvalueOutOfBounds {
                             chunk: chunk_index,
@@ -1961,7 +1988,13 @@ pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::ForeachCollectAndJump { .. } => (1, 0),
         OpCode::TeeLocal(_) => (1, 1),
         OpCode::AddAssignLocal(_) => (1, 0),
-        OpCode::SetIndexLocal(_) => (2, 0),
+        OpCode::SetIndexLocal(_) | OpCode::SetIndexUpvalue(_) => (2, 0),
+        OpCode::PathUpvalue {
+            depth,
+            op: PathOp::Check,
+            ..
+        } => (*depth as usize, *depth as usize),
+        OpCode::PathUpvalue { depth, .. } => (*depth as usize + 1, 0),
         OpCode::CheckPathLocal { depth, .. } => (*depth as usize, *depth as usize),
         OpCode::SetPathLocal { depth, .. } | OpCode::AddAssignPathLocal { depth, .. } => (*depth as usize + 1, 0),
         OpCode::Dup => (1, 2),

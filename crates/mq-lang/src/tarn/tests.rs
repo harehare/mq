@@ -337,6 +337,50 @@ fn direct_calls_bind_native_builtins_at_compile_time(#[case] code: &str, #[case]
 }
 
 #[rstest]
+#[case::or_in_and("var s = \"d\" | var i = 5 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2", 1)]
+#[case::or_in_and_none_match("var s = \"z\" | var i = 5 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2", 2)]
+#[case::or_in_and_first_false("var s = \"d\" | var i = 1 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2", 2)]
+#[case::and_in_or(
+    "var s = \"d\" | var i = 1 | if ((i > 3 && s == \"d\") || (i < 3 && s == \"d\")): 1 else: 2",
+    1
+)]
+#[case::negated_group("var s = \"d\" | if (!(s == \"a\" || s == \"b\")): 1 else: 2", 1)]
+#[case::nested_groups("var s = \"b\" | if (((s == \"a\") || ((s == \"b\")))): 1 else: 2", 1)]
+#[case::unless_group(
+    "var s = \"d\" | var i = 5 | unless (i > 3 && (s == \"a\" || s == \"d\")): 1",
+    RuntimeValue::NONE
+)]
+#[case::while_group(
+    "var i = 0 | var s = \"d\" | while (i < 3 && (s == \"a\" || s == \"d\")): i += 1; | i",
+    3
+)]
+fn grouped_conditions_evaluate_like_ungrouped_ones(#[case] code: &str, #[case] expected: impl Into<RuntimeValue>) {
+    assert_eq!(run(code), expected.into());
+}
+
+#[rstest]
+#[case::or_in_and("var s = \"d\" | var i = 5 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2")]
+#[case::negated_or("var s = \"d\" | if (!(s == \"a\" || s == \"b\")): 1 else: 2")]
+#[case::while_group("var i = 0 | var s = \"d\" | while (i < 3 && (s == \"a\" || s == \"d\")): i += 1; | i")]
+fn grouped_conditions_branch_without_materializing_a_value(#[case] code: &str) {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        !compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(|op| matches!(op, OpCode::Dup)),
+        "{:?}",
+        compiled.chunks
+    );
+}
+
+#[rstest]
 #[case::not_operator("let a = true | let b = !a | b")]
 #[case::not_call("let a = true | let b = not(a) | b")]
 #[case::not_in_array("let a = true | [!a, !!a]")]
@@ -982,6 +1026,42 @@ fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] exp
 #[case::nested_copy_unchanged("var a = [1] | var xs = [a] | a[0] = 2 | xs == [[1]]")]
 #[case::captured_local("var a = [1, 2] | def f(): a[0] = 9; | f() | a == [9, 2]")]
 #[case::captured_by_closure_then_set("var a = [1, 2] | def f(): a; | a[0] = 9 | f() == [9, 2]")]
+#[case::captured_local_sees_update("var a = [1, 2] | var g = fn(): a; | a[1] = 7 | g() == [1, 7]")]
+#[case::captured_local_alias_keeps_original(
+    "var a = [1, 2] | var b = a | var g = fn(): a; | a[0] = 9 | b == [1, 2] && g() == [9, 2]"
+)]
+#[case::upvalue_dict_set(r#"var d = {} | def f(i): d[to_string(i)] = i; | f(1) | f(2) | d == {"1": 1, "2": 2}"#)]
+#[case::captured_nested_set("var a = [[1, 2], [3]] | var g = fn(): a; | a[0][1] = 9 | g() == [[1, 9], [3]]")]
+#[case::captured_nested_alias_keeps_original(
+    "var a = [[1]] | var b = a | var g = fn(): a; | a[0][0] = 9 | b == [[1]] && a == [[9]]"
+)]
+#[case::captured_path_add(r#"var d = {"k": [1]} | var g = fn(): d; | d["k"] += [2] | g() == {"k": [1, 2]}"#)]
+#[case::captured_path_add_number(r#"var d = {"k": 1} | var g = fn(): d; | d["k"] += 2 | g() == {"k": 3}"#)]
+#[case::upvalue_nested_set(r#"var d = {"k": [0, 0]} | def f(i): d["k"][i] = 5; | f(1) | d == {"k": [0, 5]}"#)]
+#[case::upvalue_path_add(
+    r#"var d = {"k": []} | def f(i): d["k"] += [to_string(i)]; | f(1) | f(2) | d == {"k": ["1", "2"]}"#
+)]
+#[case::upvalue_path_add_number(r#"var d = {"k": 1} | def f(): d["k"] += 2; | f() | f() | d == {"k": 5}"#)]
+#[case::upvalue_nested_alias_keeps_original(
+    "var a = [[0]] | var b = a | def f(): a[0][0] = 5; | f() | b == [[0]] && a == [[5]]"
+)]
+#[case::upvalue_array_set("var a = [0, 0] | def f(i): a[i] = 5; | f(1) | a == [0, 5]")]
+#[case::upvalue_alias_keeps_original(
+    "var a = [0, 0] | var b = a | def f(): a[0] = 5; | f() | b == [0, 0] && a == [5, 0]"
+)]
+#[case::upvalue_index_evaluated_before_target_read(
+    "var a = [0] | def k(): do a[0] = 9 | 0 end; | def f(): a[k()] = a[0] + 1; | f() | a == [10]"
+)]
+#[case::upvalue_grows_array("var a = [1] | def f(): a[3] = 9; | f() | a == [1, None, None, 9]")]
+#[case::generator_self_reference_upvalue_set(
+    "var a = [0] | def g(): yield: 1 | a[0] = 5; | let s = g() | a[0] = s | next(s) | get(next(s), \"done\") == true"
+)]
+#[case::generator_self_reference_upvalue_path_set(
+    "var d = {\"k\": [0]} | def g(): yield: 1 | d[\"k\"][0] = 5; | let s = g() | d[\"k\"] = [s] | next(s) | get(next(s), \"done\") == true"
+)]
+#[case::generator_self_reference_upvalue_path_add(
+    "var d = {\"k\": 1} | def g(): yield: 1 | d[\"k\"] += 2; | let s = g() | d[\"j\"] = s | next(s) | get(next(s), \"done\") == true"
+)]
 #[case::ignores_user_defined_set("def set(x, k, v): 0; | var a = [1] | a[0] = 2 | a == [2]")]
 #[case::explicit_set_call("var a = [1, 2] | a = set(a, 0, 9) | a == [9, 2]")]
 #[case::set_assign_dict(r#"var d = {"a": 1} | d = set(d, "b", 2) | d == {"a": 1, "b": 2}"#)]
@@ -991,6 +1071,16 @@ fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] exp
 #[case::set_assign_user_defined_set("def set(x, k, v): 0; | var a = [1] | a = set(a, 0, 2) | a == 0")]
 fn index_assignment_updates_local_in_place_preserving_value_semantics(#[case] code: &str) {
     assert_eq!(run(code), RuntimeValue::from(true));
+}
+
+#[rstest]
+#[case::upvalue_array_string_key(r#"var a = [1] | def f(): a["x"] = 1; | f()"#)]
+#[case::upvalue_dict_number_key("var d = {} | def f(): d[1] = 2; | f()")]
+#[case::upvalue_number_target("var a = 1 | def f(): a[0] = 1; | f()")]
+#[case::upvalue_string_target(r#"var a = "ab" | def f(): a[0] = "c"; | f()"#)]
+#[case::captured_local_string_key(r#"var a = [1] | var g = fn(): a; | a["x"] = 1"#)]
+fn index_assignment_to_captured_variable_rejects_invalid_operands(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code}");
 }
 
 #[test]
@@ -1307,9 +1397,6 @@ fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
 #[case::nested_set_simple_operand_unchecked("var a = [[1]] | var i = 0 | a[0][0] = i", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { .. }))]
 #[case::path_add_simple_operand_unchecked("var d = {\"k\": []} | var i = 0 | d[\"k\"] += [i]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { .. }))]
 #[case::nested_set_impure_key("var a = [[1]] | def k(): 0; | a[k()][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
-#[case::nested_set_captured("var a = [[1]] | def f(): a; | a[0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
-#[case::index_set_captured("var a = [1] | def f(): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
-#[case::index_set_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::add_array_operand_calls_user_code("var a = [1] | def f(): a; | a += f()", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 #[case::set_assign_captured("var a = [1] | def f(): a; | a = set(a, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::set_assign_other_target("var a = [1] | var b = [2] | a = set(b, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
