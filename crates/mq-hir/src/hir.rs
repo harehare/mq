@@ -57,7 +57,7 @@ impl Default for Hir {
 /// Whether an mq-hir feature declares builtins that the runtime build may lack.
 fn declared_by_feature(capability: Option<&str>) -> bool {
     (cfg!(feature = "http") && capability == Some("http"))
-        || (cfg!(feature = "css-selector") && capability == Some("css-selector"))
+        || (cfg!(feature = "html-parse") && capability == Some("html-parse"))
 }
 
 impl Hir {

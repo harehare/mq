@@ -173,3 +173,236 @@ def html_to_json(data):
   else:
     "\"" + to_string(data) + "\""
 end
+
+def _html_sel_rest(s, consumed):
+  slice(s, len(consumed), len(s))
+end
+
+def _html_sel_nth(arg):
+  let text = downcase(trim(arg))
+  | if (text == "odd"):
+      {"a": 2, "b": 1}
+    elif (text == "even"):
+      {"a": 2, "b": 0}
+    elif (test(text, "^[+-]?[0-9]+$")):
+      {"a": 0, "b": to_number(text)}
+    elif (test(text, "^[+-]?[0-9]*n(\\s*[+-]\\s*[0-9]+)?$")):
+      do
+        let g = capture(gsub(text, "\\s+", ""), "^(?<a>[+-]?[0-9]*)n(?<b>[+-][0-9]+)?$")
+        | let a = if (g["a"] == "" || g["a"] == "+"): 1 elif (g["a"] == "-"): -1 else: to_number(g["a"])
+        | {"a": a, "b": if (is_none(g["b"])): 0 else: to_number(ltrimstr(g["b"], "+"))}
+      end
+    else:
+      error("html_select: invalid :nth-child argument: " + arg)
+end
+
+def _html_sel_pseudo(s, comp):
+  let item = "[^()\"']|\"[^\"]*\"|'[^']*'"
+  | let pattern = "^:(?<name>[a-z-]+)(?:\\((?<arg>(?:" + item + ")*(?:\\((?:" + item + ")*\\)(?:" + item + ")*)*)\\))?"
+  | let m = first(regex_match(s, pattern))
+  | if (is_none(m)):
+      error("html_select: invalid pseudo-class in: " + s)
+    else:
+      do
+        let g = capture(s, pattern)
+        | let name = g["name"]
+        | let arg = g["arg"]
+        | let pseudo = if ((name == "first-child" || name == "last-child") && is_none(arg)):
+            {"name": name}
+          elif (name == "nth-child" && !is_none(arg)):
+            {"name": name, "nth": _html_sel_nth(arg)}
+          elif (name == "not" && !is_none(arg)):
+            {"name": name, "list": _html_sel_parse_list(arg)}
+          else:
+            error("html_select: unsupported pseudo-class: " + m)
+        | _html_sel_simple(_html_sel_rest(s, m), set(comp, "pseudos", comp["pseudos"] + [pseudo]))
+      end
+end
+
+def _html_sel_attr(s, comp):
+  let pattern = "^\\[\\s*(?<name>[^\\s=~^$*\\]]+)\\s*(?:(?<op>[~^$*]?=)\\s*(?:\"(?<dq>[^\"]*)\"|'(?<sq>[^']*)'|(?<uq>[^\\s\\]]+))\\s*)?\\]"
+  | let m = first(regex_match(s, pattern))
+  | if (is_none(m)):
+      error("html_select: invalid attribute selector in: " + s)
+    else:
+      do
+        let g = capture(s, pattern)
+        | let value = if (!is_none(g["dq"])): g["dq"] elif (!is_none(g["sq"])): g["sq"] else: g["uq"]
+        | let attr = {"name": downcase(g["name"]), "op": if (is_none(g["op"])): "" else: g["op"], "value": value}
+        | _html_sel_simple(_html_sel_rest(s, m), set(comp, "attrs", comp["attrs"] + [attr]))
+      end
+end
+
+# Consumes `#id`, `.class`, `[attr]` and `:pseudo` parts of one compound selector.
+def _html_sel_simple(s, comp):
+  if (test(s, "^#[A-Za-z0-9_-]+")):
+    do
+      let m = first(regex_match(s, "^#[A-Za-z0-9_-]+"))
+      | _html_sel_simple(_html_sel_rest(s, m), set(comp, "id", ltrimstr(m, "#")))
+    end
+  elif (test(s, "^\\.[A-Za-z0-9_-]+")):
+    do
+      let m = first(regex_match(s, "^\\.[A-Za-z0-9_-]+"))
+      | _html_sel_simple(_html_sel_rest(s, m), set(comp, "classes", comp["classes"] + [ltrimstr(m, ".")]))
+    end
+  elif (starts_with(s, "[")):
+    _html_sel_attr(s, comp)
+  elif (starts_with(s, ":")):
+    _html_sel_pseudo(s, comp)
+  else:
+    {"comp": comp, "rest": s}
+end
+
+def _html_sel_compound(s):
+  let tag_match = first(regex_match(s, "^(\\*|[A-Za-z][A-Za-z0-9_-]*)"))
+  | let tag = if (is_none(tag_match) || tag_match == "*"): None else: downcase(tag_match)
+  | let rest = if (is_none(tag_match)): s else: _html_sel_rest(s, tag_match)
+  | let parsed = _html_sel_simple(rest, {"tag": tag, "id": None, "classes": [], "attrs": [], "pseudos": []})
+  | if (is_none(tag_match) && parsed["rest"] == rest):
+      error("html_select: unexpected selector syntax: " + if (is_empty(s)): "(end of selector)" else: s)
+    else:
+      parsed
+end
+
+# Parses one complex selector into `[{comb, comp}, ...]` and returns it with the unparsed rest.
+def _html_sel_complex(s, steps, comb):
+  let parsed = _html_sel_compound(s)
+  | let steps2 = steps + [{"comb": comb, "comp": parsed["comp"]}]
+  | let rest = parsed["rest"]
+  | let trimmed = ltrim(rest)
+  | let had_space = len(trimmed) != len(rest)
+  | if (is_empty(trimmed) || starts_with(trimmed, ",")):
+      {"steps": steps2, "rest": trimmed}
+    elif (test(trimmed, "^[>+~]")):
+      _html_sel_complex(ltrim(slice(trimmed, 1, len(trimmed))), steps2, slice(trimmed, 0, 1))
+    elif (had_space):
+      _html_sel_complex(trimmed, steps2, " ")
+    else:
+      error("html_select: unexpected selector syntax: " + rest)
+end
+
+def _html_sel_list(s, acc):
+  let parsed = _html_sel_complex(ltrim(s), [], "")
+  | let acc2 = acc + [parsed["steps"]]
+  | if (is_empty(parsed["rest"])):
+      acc2
+    else:
+      _html_sel_list(slice(parsed["rest"], 1, len(parsed["rest"])), acc2)
+end
+
+def _html_sel_parse_list(selector):
+  _html_sel_list(selector, [])
+end
+
+def _html_sel_attr_ok(attr, el):
+  let actual = el["attributes"][attr["name"]]
+  | let value = attr["value"]
+  | let op = attr["op"]
+  | if (is_none(actual)):
+      false
+    elif (op == ""):
+      true
+    elif (op == "="):
+      actual == value
+    elif (op == "~="):
+      !is_empty(value) && index(split(trim(actual), "\\s+"), value) != -1
+    elif (is_empty(value)):
+      false
+    elif (op == "^="):
+      starts_with(actual, value)
+    elif (op == "$="):
+      ends_with(actual, value)
+    else:
+      contains(actual, value)
+end
+
+def _html_sel_pseudo_ok(pseudo, ctx):
+  let name = pseudo["name"]
+  | if (name == "first-child"):
+      ctx["idx"] == 0
+    elif (name == "last-child"):
+      ctx["idx"] == len(ctx["sibs"]) - 1
+    elif (name == "nth-child"):
+      do
+        let d = ctx["idx"] + 1 - pseudo["nth"]["b"]
+        | let a = pseudo["nth"]["a"]
+        | if (a == 0): d == 0 else: d * a >= 0 && d % a == 0
+      end
+    else:
+      !_html_sel_match_list(pseudo["list"], ctx)
+end
+
+def _html_sel_compound_ok(comp, ctx):
+  let el = ctx["el"]
+  | (is_none(comp["tag"]) || el["tag"] == comp["tag"])
+    && (is_none(comp["id"]) || el["attributes"]["id"] == comp["id"])
+    && all(comp["classes"], fn(c): index(split(trim(el["attributes"]["class"] ?? ""), "\\s+"), c) != -1;)
+    && all(comp["attrs"], fn(a): _html_sel_attr_ok(a, el);)
+    && all(comp["pseudos"], fn(p): _html_sel_pseudo_ok(p, ctx);)
+end
+
+def _html_sel_prev_ctx(ctx):
+  {"el": ctx["sibs"][ctx["idx"] - 1], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": ctx["idx"] - 1}
+end
+
+def _html_sel_prev_ctxs(ctx):
+  map(range(0, ctx["idx"] - 1), fn(i): {"el": ctx["sibs"][i], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": i};)
+end
+
+def _html_sel_ancestors(ctx):
+  if (is_none(ctx["parent"])): [] else: [ctx["parent"]] + _html_sel_ancestors(ctx["parent"])
+end
+
+# Matches steps[0..=k] right to left, with `ctx` standing for the element matched by steps[k].
+def _html_sel_steps_ok(steps, k, ctx):
+  if (!_html_sel_compound_ok(steps[k]["comp"], ctx)):
+    false
+  elif (k == 0):
+    true
+  else:
+    do
+      let comb = steps[k]["comb"]
+      | if (comb == ">"):
+          !is_none(ctx["parent"]) && _html_sel_steps_ok(steps, k - 1, ctx["parent"])
+        elif (comb == " "):
+          any(_html_sel_ancestors(ctx), fn(a): _html_sel_steps_ok(steps, k - 1, a);)
+        elif (comb == "+"):
+          ctx["idx"] > 0 && _html_sel_steps_ok(steps, k - 1, _html_sel_prev_ctx(ctx))
+        else:
+          ctx["idx"] > 0 && any(_html_sel_prev_ctxs(ctx), fn(p): _html_sel_steps_ok(steps, k - 1, p);)
+    end
+end
+
+def _html_sel_match_list(list, ctx):
+  any(list, fn(steps): _html_sel_steps_ok(steps, len(steps) - 1, ctx);)
+end
+
+def _html_sel_walk(ctx, list):
+  let children = ctx["el"]["children"]
+  | let own = if (_html_sel_match_list(list, ctx)): [ctx["el"]] else: []
+  | let n = len(children)
+  | own + if (n == 0):
+      []
+    else:
+      flat_map(range(0, n - 1), fn(i): _html_sel_walk({"el": children[i], "parent": ctx, "sibs": children, "idx": i}, list);)
+end
+
+# Returns every element of `data` (including `data` itself) matching the CSS selector, in
+# document order without duplicates. `data` is a `html_parse` tree or an HTML string.
+#
+# Supported: `tag`, `*`, `.class`, `#id`, `[attr]`, `[attr=v]`, `[attr~=v]`, `[attr^=v]`,
+# `[attr$=v]`, `[attr*=v]`, the combinators ` `, `>`, `+`, `~`, comma-separated lists, and
+# the pseudo-classes `:first-child`, `:last-child`, `:nth-child(n | odd | even | an+b)`
+# and `:not(selector list)`. Other syntax raises an error.
+#
+# Example:
+# ```
+# import "html" | len(html::html_select(html::html_parse("<div><p class=\"a\">x</p><p>y</p></div>"), "div > p.a"))
+# #=> 1
+# ```
+#
+# Returns: array
+def html_select(data, selector):
+  let tree = if (is_string(data)): html_parse(data) else: data
+  | _html_sel_walk({"el": tree, "parent": None, "sibs": [tree], "idx": 0}, _html_sel_parse_list(to_string(selector)))
+end

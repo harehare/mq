@@ -18,7 +18,7 @@ workspace = true
 clap = {workspace = true, features = ["derive"]}
 glob = {workspace = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
-mq-lang = {workspace = true, features = ["cst", "css-selector", "debugger", "file-io", "http", "mock-io"]}
+mq-lang = {workspace = true, features = ["cst", "html-parse", "debugger", "file-io", "http", "mock-io"]}
 rayon = {workspace = true}
 rustc-hash = {workspace = true}
 serde_json = {workspace = true}

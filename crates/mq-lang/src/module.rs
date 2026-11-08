@@ -144,7 +144,7 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(csv);
     std_module!(fuzzy);
     std_module!(gron);
-    #[cfg(feature = "css-selector")]
+    #[cfg(feature = "html-parse")]
     std_module!(html);
     std_module!(json);
     std_module!(md);
