@@ -26,6 +26,14 @@ mq --allow-env=HOME '$HOME' README.md
 `--allow-all` grants `--allow-read`/`--allow-write`/`--allow-net`/`--allow-run`/`--allow-env`
 all at once, including `$VAR` access.
 
+### `MQ_SANDBOX`
+
+Default `--sandbox` preset: `strict` or `read-only`. Ignored when `--sandbox` or any `--allow-*` flag is given. Other presets are rejected.
+
+```sh
+MQ_SANDBOX=strict mq '.h' README.md
+```
+
 ## Color Configuration
 
 ### `NO_COLOR`

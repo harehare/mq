@@ -4251,3 +4251,30 @@ fn test_jsonl_error_reports_input_line(#[case] file: Option<PathBuf>, #[case] ex
 
     assert_eq!(err.to_string(), expected);
 }
+
+#[rstest]
+#[case(&["mq", "self"], Some("strict"), Some(SandboxProfile::Strict))]
+#[case(&["mq", "self"], Some("read-only"), Some(SandboxProfile::ReadOnly))]
+#[case(&["mq", "self"], Some(""), None)]
+#[case(&["mq", "self"], None, None)]
+#[case(&["mq", "--sandbox=networked", "self"], Some("strict"), Some(SandboxProfile::Networked))]
+#[case(&["mq", "--allow-read", "self"], Some("strict"), None)]
+#[case(&["mq", "--allow-all", "self"], Some("strict"), None)]
+fn test_env_sandbox_default(
+    #[case] args: &[&str],
+    #[case] env: Option<&str>,
+    #[case] expected: Option<SandboxProfile>,
+) {
+    let mut cli = Cli::parse_from(args);
+    cli.input.program.apply_env_sandbox(env).unwrap();
+    assert_eq!(cli.input.program.sandbox, expected);
+}
+
+#[rstest]
+#[case("unsafe")]
+#[case("networked")]
+#[case("bogus")]
+fn test_env_sandbox_rejects(#[case] env: &str) {
+    let mut cli = Cli::parse_from(["mq", "self"]);
+    assert!(cli.input.program.apply_env_sandbox(Some(env)).is_err());
+}
