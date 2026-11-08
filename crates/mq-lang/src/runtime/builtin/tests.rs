@@ -1692,7 +1692,10 @@ fn test_multi_char_range_size_limit_exceeds(#[case] start: &str, #[case] end: &s
 #[case::start_after_end("ad", "aa", vec!["ad"])]
 fn test_multi_char_range_success(#[case] start: &str, #[case] end: &str, #[case] expected: Vec<&str>) {
     let result = generate_multi_char_range(start, end).unwrap();
-    let expected: Vec<RuntimeValue> = expected.into_iter().map(|s| RuntimeValue::String(Shared::new(s.into()))).collect();
+    let expected: Vec<RuntimeValue> = expected
+        .into_iter()
+        .map(|s| RuntimeValue::String(Shared::new(s.into())))
+        .collect();
     assert_eq!(result, expected);
 }
 

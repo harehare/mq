@@ -102,8 +102,6 @@ pub(super) fn generate_char_range(
     Ok(result)
 }
 
-/// Number of odometer steps from `start` to `end`, reading both as big-endian base-256 numbers.
-/// Returns 1 when `start > end`, since only `start` is yielded.
 fn multi_char_range_count(start: &[u8], end: &[u8]) -> Result<u128, Error> {
     let too_large = || Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE));
 
