@@ -105,17 +105,19 @@ pub(super) fn generate_char_range(
 fn multi_char_range_count(start: &[u8], end: &[u8]) -> Result<u128, Error> {
     let too_large = || Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE));
 
+    // A common prefix does not change the difference.
+    let common = start.iter().zip(end).take_while(|(a, b)| a == b).count();
+    let (start, end) = (&start[common..], &end[common..]);
+
+    if start > end {
+        return Ok(1);
+    }
     if start.len() > 16 {
         return Err(too_large());
     }
 
     let value = |bytes: &[u8]| bytes.iter().fold(0u128, |acc, &b| (acc << 8) | b as u128);
-    let (s, e) = (value(start), value(end));
-
-    if s > e {
-        return Ok(1);
-    }
-    (e - s).checked_add(1).ok_or_else(too_large)
+    (value(end) - value(start)).checked_add(1).ok_or_else(too_large)
 }
 
 pub(super) fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>, Error> {
