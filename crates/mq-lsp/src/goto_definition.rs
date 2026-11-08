@@ -9,11 +9,11 @@ fn to_range(range: mq_lang::Range) -> Range {
     Range {
         start: Position {
             line: range.start.line - 1,
-            character: (range.start.column - 1) as u32,
+            character: (range.start.column - 1),
         },
         end: Position {
             line: range.end.line - 1,
-            character: (range.end.column - 1) as u32,
+            character: (range.end.column - 1),
         },
     }
 }

@@ -31,7 +31,7 @@ pub(crate) fn response(
 
             // Convert mq 1-based positions to LSP 0-based positions
             let symbol_line = text_range.start.line.saturating_sub(1);
-            let symbol_col = (text_range.start.column as u32).saturating_sub(1);
+            let symbol_col = text_range.start.column.saturating_sub(1);
 
             // Only show hints for symbols within the requested range
             if symbol_line < range.start.line
@@ -54,7 +54,7 @@ pub(crate) fn response(
                 {
                     let type_label = format!(": {}", type_scheme.ty);
                     // Place hint after the variable name (end of the symbol)
-                    let hint_col = (text_range.end.column as u32).saturating_sub(1);
+                    let hint_col = text_range.end.column.saturating_sub(1);
                     let hint_line = text_range.end.line.saturating_sub(1);
                     Some(InlayHint {
                         position: Position::new(hint_line, hint_col),

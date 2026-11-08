@@ -18,11 +18,11 @@ fn lsp_range(range: mq_lang::Range) -> ls_types::Range {
     ls_types::Range::new(
         ls_types::Position {
             line: range.start.line.saturating_sub(1),
-            character: range.start.column.saturating_sub(1) as u32,
+            character: range.start.column.saturating_sub(1),
         },
         ls_types::Position {
             line: range.end.line.saturating_sub(1),
-            character: range.end.column.saturating_sub(1) as u32,
+            character: range.end.column.saturating_sub(1),
         },
     )
 }

@@ -10,8 +10,8 @@ use url::Url;
 
 fn to_range(text_range: mq_lang::Range) -> Range {
     Range::new(
-        Position::new(text_range.start.line - 1, (text_range.start.column - 1) as u32),
-        Position::new(text_range.end.line - 1, (text_range.end.column - 1) as u32),
+        Position::new(text_range.start.line - 1, text_range.start.column - 1),
+        Position::new(text_range.end.line - 1, text_range.end.column - 1),
     )
 }
 

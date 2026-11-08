@@ -790,9 +790,9 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
         .iter()
         .map(|(message, range)| Diagnostic {
             start_line: range.start.line,
-            start_column: range.start.column as u32,
+            start_column: range.start.column,
             end_line: range.end.line,
-            end_column: range.end.column as u32,
+            end_column: range.end.column,
             message: message.to_owned(),
         })
         .collect::<Vec<_>>();
@@ -808,9 +808,9 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
             if let Some(range) = error.location() {
                 errors.push(Diagnostic {
                     start_line: range.start.line,
-                    start_column: range.start.column as u32,
+                    start_column: range.start.column,
                     end_line: range.end.line,
-                    end_column: range.end.column as u32,
+                    end_column: range.end.column,
                     message: error.to_string(),
                 });
             }
@@ -858,7 +858,7 @@ pub async fn inlay_hints(code: &str) -> JsValue {
 
             Some(InlayHint {
                 line: range.end.line,
-                column: range.end.column as u32,
+                column: range.end.column,
                 label: format!(": {}", type_scheme),
             })
         })

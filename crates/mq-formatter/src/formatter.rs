@@ -34,7 +34,11 @@ impl Source {
         let line_start = *self.line_starts.get((pos.line as usize).checked_sub(1)?)?;
         let line = &self.text[line_start..];
         let column = pos.column.checked_sub(1)?;
-        let byte = line.char_indices().nth(column as usize).map(|(i, _)| i).unwrap_or(line.len());
+        let byte = line
+            .char_indices()
+            .nth(column as usize)
+            .map(|(i, _)| i)
+            .unwrap_or(line.len());
         Some(line_start + byte)
     }
 
