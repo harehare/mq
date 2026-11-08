@@ -345,8 +345,14 @@ def _html_sel_prev_ctx(ctx):
   {"el": ctx["sibs"][ctx["idx"] - 1], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": ctx["idx"] - 1}
 end
 
-def _html_sel_prev_ctxs(ctx):
-  map(range(0, ctx["idx"] - 1), fn(i): {"el": ctx["sibs"][i], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": i};)
+# Whether some sibling before `ctx` (nearest first) satisfies steps[0..=k], stopping at the first hit.
+def _html_sel_prev_any(steps, k, ctx, i):
+  if (i < 0):
+    false
+  elif (_html_sel_steps_ok(steps, k, {"el": ctx["sibs"][i], "parent": ctx["parent"], "sibs": ctx["sibs"], "idx": i})):
+    true
+  else:
+    _html_sel_prev_any(steps, k, ctx, i - 1)
 end
 
 def _html_sel_ancestors(ctx):
@@ -369,7 +375,7 @@ def _html_sel_steps_ok(steps, k, ctx):
         elif (comb == "+"):
           ctx["idx"] > 0 && _html_sel_steps_ok(steps, k - 1, _html_sel_prev_ctx(ctx))
         else:
-          ctx["idx"] > 0 && any(_html_sel_prev_ctxs(ctx), fn(p): _html_sel_steps_ok(steps, k - 1, p);)
+          _html_sel_prev_any(steps, k - 1, ctx, ctx["idx"] - 1)
     end
 end
 
