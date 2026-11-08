@@ -1005,6 +1005,19 @@ fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] exp
 #[case::upvalue_alias_keeps_original(
     "var a = [0, 0] | var b = a | def f(): a[0] = 5; | f() | b == [0, 0] && a == [5, 0]"
 )]
+#[case::upvalue_index_evaluated_before_target_read(
+    "var a = [0] | def k(): do a[0] = 9 | 0 end; | def f(): a[k()] = a[0] + 1; | f() | a == [10]"
+)]
+#[case::upvalue_grows_array("var a = [1] | def f(): a[3] = 9; | f() | a == [1, None, None, 9]")]
+#[case::generator_self_reference_upvalue_set(
+    "var a = [0] | def g(): yield: 1 | a[0] = 5; | let s = g() | a[0] = s | next(s) | get(next(s), \"done\") == true"
+)]
+#[case::generator_self_reference_upvalue_path_set(
+    "var d = {\"k\": [0]} | def g(): yield: 1 | d[\"k\"][0] = 5; | let s = g() | d[\"k\"] = [s] | next(s) | get(next(s), \"done\") == true"
+)]
+#[case::generator_self_reference_upvalue_path_add(
+    "var d = {\"k\": 1} | def g(): yield: 1 | d[\"k\"] += 2; | let s = g() | d[\"j\"] = s | next(s) | get(next(s), \"done\") == true"
+)]
 #[case::ignores_user_defined_set("def set(x, k, v): 0; | var a = [1] | a[0] = 2 | a == [2]")]
 #[case::explicit_set_call("var a = [1, 2] | a = set(a, 0, 9) | a == [9, 2]")]
 #[case::set_assign_dict(r#"var d = {"a": 1} | d = set(d, "b", 2) | d == {"a": 1, "b": 2}"#)]
@@ -1014,6 +1027,16 @@ fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] exp
 #[case::set_assign_user_defined_set("def set(x, k, v): 0; | var a = [1] | a = set(a, 0, 2) | a == 0")]
 fn index_assignment_updates_local_in_place_preserving_value_semantics(#[case] code: &str) {
     assert_eq!(run(code), RuntimeValue::from(true));
+}
+
+#[rstest]
+#[case::upvalue_array_string_key(r#"var a = [1] | def f(): a["x"] = 1; | f()"#)]
+#[case::upvalue_dict_number_key("var d = {} | def f(): d[1] = 2; | f()")]
+#[case::upvalue_number_target("var a = 1 | def f(): a[0] = 1; | f()")]
+#[case::upvalue_string_target(r#"var a = "ab" | def f(): a[0] = "c"; | f()"#)]
+#[case::captured_local_string_key(r#"var a = [1] | var g = fn(): a; | a["x"] = 1"#)]
+fn index_assignment_to_captured_variable_rejects_invalid_operands(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code}");
 }
 
 #[test]

@@ -581,8 +581,13 @@ fn set_index_upvalue(
     if set_index_in_cell(cell, &key, &mut value).map_err(VmError::from)? {
         return Ok(());
     }
-    let target = into_runtime_value(read_cell(cell), chunks);
-    Err(builtin::Error::InvalidTypes(builtins::SET.to_string(), vec![target, key, value]).into())
+    // The cell may hold a sanitized self-reference form that only `read_cell` upgrades.
+    let mut target = into_runtime_value(read_cell(cell), chunks);
+    if !builtin::set_in_place(&mut target, &key, &mut value).map_err(VmError::from)? {
+        return Err(builtin::Error::InvalidTypes(builtins::SET.to_string(), vec![target, key, value]).into());
+    }
+    write_cell(cell, StackValue::Value(target));
+    Ok(())
 }
 
 /// Pops the operand and the `depth` keys pushed before it.
