@@ -3833,6 +3833,10 @@ impl<R: ModuleResolver> Compiler<R> {
             return self.compile_branch(operand, !jump_when);
         }
         match &node.expr {
+            Expr::Paren(inner) => {
+                self.begin_node(node);
+                self.compile_branch(inner, jump_when)
+            }
             // `a && b` is decided by the first false operand, `a || b` by the first true one.
             Expr::And(operands) if !operands.is_empty() => {
                 self.begin_node(node);

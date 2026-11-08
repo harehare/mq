@@ -337,6 +337,50 @@ fn direct_calls_bind_native_builtins_at_compile_time(#[case] code: &str, #[case]
 }
 
 #[rstest]
+#[case::or_in_and("var s = \"d\" | var i = 5 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2", 1)]
+#[case::or_in_and_none_match("var s = \"z\" | var i = 5 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2", 2)]
+#[case::or_in_and_first_false("var s = \"d\" | var i = 1 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2", 2)]
+#[case::and_in_or(
+    "var s = \"d\" | var i = 1 | if ((i > 3 && s == \"d\") || (i < 3 && s == \"d\")): 1 else: 2",
+    1
+)]
+#[case::negated_group("var s = \"d\" | if (!(s == \"a\" || s == \"b\")): 1 else: 2", 1)]
+#[case::nested_groups("var s = \"b\" | if (((s == \"a\") || ((s == \"b\")))): 1 else: 2", 1)]
+#[case::unless_group(
+    "var s = \"d\" | var i = 5 | unless (i > 3 && (s == \"a\" || s == \"d\")): 1",
+    RuntimeValue::NONE
+)]
+#[case::while_group(
+    "var i = 0 | var s = \"d\" | while (i < 3 && (s == \"a\" || s == \"d\")): i += 1; | i",
+    3
+)]
+fn grouped_conditions_evaluate_like_ungrouped_ones(#[case] code: &str, #[case] expected: impl Into<RuntimeValue>) {
+    assert_eq!(run(code), expected.into());
+}
+
+#[rstest]
+#[case::or_in_and("var s = \"d\" | var i = 5 | if (i > 3 && (s == \"a\" || s == \"d\")): 1 else: 2")]
+#[case::negated_or("var s = \"d\" | if (!(s == \"a\" || s == \"b\")): 1 else: 2")]
+#[case::while_group("var i = 0 | var s = \"d\" | while (i < 3 && (s == \"a\" || s == \"d\")): i += 1; | i")]
+fn grouped_conditions_branch_without_materializing_a_value(#[case] code: &str) {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        !compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(|op| matches!(op, OpCode::Dup)),
+        "{:?}",
+        compiled.chunks
+    );
+}
+
+#[rstest]
 #[case::not_operator("let a = true | let b = !a | b")]
 #[case::not_call("let a = true | let b = not(a) | b")]
 #[case::not_in_array("let a = true | [!a, !!a]")]
