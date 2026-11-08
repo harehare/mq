@@ -102,6 +102,24 @@ pub(super) fn generate_char_range(
     Ok(result)
 }
 
+/// Number of odometer steps from `start` to `end`, reading both as big-endian base-256 numbers.
+/// Returns 1 when `start > end`, since only `start` is yielded.
+fn multi_char_range_count(start: &[u8], end: &[u8]) -> Result<u128, Error> {
+    let too_large = || Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE));
+
+    if start.len() > 16 {
+        return Err(too_large());
+    }
+
+    let value = |bytes: &[u8]| bytes.iter().fold(0u128, |acc, &b| (acc << 8) | b as u128);
+    let (s, e) = (value(start), value(end));
+
+    if s > e {
+        return Ok(1);
+    }
+    (e - s).checked_add(1).ok_or_else(too_large)
+}
+
 pub(super) fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<RuntimeValue>, Error> {
     if start.len() != end.len() {
         return Err(Error::Runtime(
@@ -112,22 +130,16 @@ pub(super) fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<Ru
     let start_bytes = start.as_bytes();
     let end_bytes = end.as_bytes();
 
-    let capacity_estimate = (end_bytes.iter().zip(start_bytes.iter()))
-        .map(|(e, s)| (e.max(s) - e.min(s)) as usize)
-        .try_fold(0usize, |acc, diff| {
-            acc.checked_add(diff)
-                .ok_or_else(|| Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE)))
-        })?
-        + 1;
+    let count = multi_char_range_count(start_bytes, end_bytes)?;
 
-    if capacity_estimate > MAX_RANGE_SIZE {
+    if count > MAX_RANGE_SIZE as u128 {
         return Err(Error::Runtime(format!(
             "range size {} exceeds maximum allowed size of {}",
-            capacity_estimate, MAX_RANGE_SIZE
+            count, MAX_RANGE_SIZE
         )));
     }
 
-    let mut result = Vec::with_capacity(capacity_estimate);
+    let mut result = Vec::with_capacity(count as usize);
     let mut current = start_bytes.to_vec();
 
     loop {
