@@ -683,6 +683,33 @@ struct InputArgs {
 }
 
 impl ProgramArgs {
+    /// Applies `MQ_SANDBOX` as the default profile when no `--sandbox` or capability flag
+    /// is given. Only `strict` and `read-only` are accepted, so the environment never grants more than reads.
+    fn apply_env_sandbox(&mut self, value: Option<&str>) -> miette::Result<()> {
+        let Some(value) = value.filter(|v| !v.is_empty()) else {
+            return Ok(());
+        };
+        let explicit = self.sandbox.is_some()
+            || self.allow_all
+            || self.allow_read.is_some()
+            || self.allow_net.is_some()
+            || self.allow_run.is_some()
+            || self.allow_env.is_some()
+            || self.allow_http_import.is_some();
+        if explicit {
+            return Ok(());
+        }
+        match <SandboxProfile as clap::ValueEnum>::from_str(value, true) {
+            Ok(profile @ (SandboxProfile::Strict | SandboxProfile::ReadOnly)) => {
+                self.sandbox = Some(profile);
+                Ok(())
+            }
+            _ => Err(miette!(
+                "invalid MQ_SANDBOX value '{value}' (expected strict or read-only)"
+            )),
+        }
+    }
+
     /// Builds sandboxed IO permissions from `--sandbox` or the individual `--allow-*` flags.
     fn build_sandboxed_io(&self) -> mq_lang::SandboxedIo {
         let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
@@ -1870,6 +1897,13 @@ impl Cli {
         let mut json = String::new();
         miette::JSONReportHandler::new().render_report(&mut json, &**err).ok()?;
         Some(json)
+    }
+
+    /// Applies environment-variable defaults (`MQ_SANDBOX`). Explicit flags take precedence.
+    pub fn with_env_defaults(mut self) -> miette::Result<Self> {
+        let value = std::env::var("MQ_SANDBOX").ok();
+        self.input.program.apply_env_sandbox(value.as_deref())?;
+        Ok(self)
     }
 
     /// Runs the command or query.

@@ -120,6 +120,8 @@ $ mq -R -I null 'read_file("README.md") | len()'
 
 Pass a value (`--allow-read=./docs`) to restrict a permission to those paths, domains or commands. The `=` is required.
 
+`MQ_SANDBOX=strict|read-only` sets the default preset (for example in CI). It is ignored when `--sandbox` or any `--allow-*` flag is given, and other presets are rejected.
+
 ## Modules
 
 `-L DIR` adds a module search directory, `-M FILE` loads a module file, and `-m NAME` imports a module so its functions are called as `name::fn()`. Modules can be imported over HTTP with `--allow-http-import`, which is off by default. Fetched modules are pinned in `mq.lock` and checked on each run (`--frozen` fails instead of recording a new entry, for CI). See the [module guide](https://mqlang.org/book/start/modules.html).

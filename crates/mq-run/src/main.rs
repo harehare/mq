@@ -19,7 +19,13 @@ fn main() -> std::process::ExitCode {
         return code;
     }
 
-    let cli = mq_run::Cli::parse_from(args);
+    let cli = match mq_run::Cli::parse_from(args).with_env_defaults() {
+        Ok(cli) => cli,
+        Err(err) => {
+            eprintln!("{err:?}");
+            return std::process::ExitCode::from(2);
+        }
+    };
     match cli.run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
