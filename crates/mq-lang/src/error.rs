@@ -132,15 +132,15 @@ impl Error {
 
                 let span_for = |t: &Token| {
                     SourceSpan::new(
-                        SourceOffset::from_location(&source_str, t.range.start.line as usize, t.range.start.column),
+                        SourceOffset::from_location(&source_str, t.range.start.line as usize, t.range.start.column as usize),
                         std::cmp::max(
-                            SourceOffset::from_location(&source_str, t.range.end.line as usize, t.range.end.column)
+                            SourceOffset::from_location(&source_str, t.range.end.line as usize, t.range.end.column as usize)
                                 .offset()
                                 .saturating_sub(
                                     SourceOffset::from_location(
                                         &source_str,
                                         t.range.start.line as usize,
-                                        t.range.start.column,
+                                        t.range.start.column as usize,
                                     )
                                     .offset(),
                                 ),

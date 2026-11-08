@@ -6906,7 +6906,7 @@ fn test_interpolated_expr_nesting_reports_nesting_error() {
     match result {
         Err(SyntaxError::TooDeeplyNested(token, _)) => {
             assert!(
-                token.range.start.column >= prefix_len,
+                token.range.start.column >= prefix_len as u32,
                 "range should point into the original source, got {:?}",
                 token.range
             );

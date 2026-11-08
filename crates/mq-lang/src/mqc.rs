@@ -771,7 +771,7 @@ fn decode_source(payload: &[u8]) -> Result<(Vec<SourceFile>, Vec<Span>), MqcErro
         let mut position = || -> Result<Position, MqcError> {
             Ok(Position {
                 line: reader.var_u32()?,
-                column: reader.var_u32()? as usize,
+                column: reader.var_u32()?,
             })
         };
         let start = position()?;

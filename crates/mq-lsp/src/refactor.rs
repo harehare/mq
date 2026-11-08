@@ -16,20 +16,20 @@ use tower_lsp_server::ls_types::{
 
 fn to_range(text_range: MqRange) -> ls_types::Range {
     ls_types::Range::new(
-        Position::new(text_range.start.line - 1, (text_range.start.column - 1) as u32),
-        Position::new(text_range.end.line - 1, (text_range.end.column - 1) as u32),
+        Position::new(text_range.start.line - 1, text_range.start.column - 1),
+        Position::new(text_range.end.line - 1, text_range.end.column - 1),
     )
 }
 
 fn to_mq_position(position: Position) -> mq_lang::Position {
-    mq_lang::Position::new(position.line + 1, (position.character + 1) as usize)
+    mq_lang::Position::new(position.line + 1, position.character + 1)
 }
 
 /// Converts a 1-indexed `mq_lang::Position` (line/column counted in chars) to a byte
 /// offset into `text`, since CST ranges are char-based but Rust string slicing is byte-based.
 fn byte_offset(text: &str, pos: mq_lang::Position) -> Option<usize> {
     let mut line = 1u32;
-    let mut column = 1usize;
+    let mut column = 1u32;
 
     if line == pos.line && column == pos.column {
         return Some(0);
@@ -350,7 +350,7 @@ fn byte_to_mq_position(text: &str, target_byte: usize) -> Option<mq_lang::Positi
     }
 
     let mut line = 1u32;
-    let mut column = 1usize;
+    let mut column = 1u32;
 
     for (byte_idx, ch) in text.char_indices() {
         if byte_idx == target_byte {

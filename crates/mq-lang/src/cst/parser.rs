@@ -116,7 +116,7 @@ impl ErrorReporter {
         error.range().unwrap_or_else(|| {
             let end = Position {
                 line: text.lines().count() as u32,
-                column: text.lines().last().map(|line| line.len()).unwrap_or(0),
+                column: text.lines().last().map(|line| line.len() as u32).unwrap_or(0),
             };
             Range { start: end, end }
         })

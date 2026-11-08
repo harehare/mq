@@ -1003,7 +1003,7 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
     let _ = checker.check(&hir);
     let type_env = checker.symbol_types();
 
-    let pos = mq_lang::Position::new(line, column as usize);
+    let pos = mq_lang::Position::new(line, column);
     let Some((symbol_id, symbol)) = hir.find_symbol_in_position(source_id, pos) else {
         return JsValue::NULL;
     };

@@ -27,7 +27,7 @@ pub(crate) fn prepare(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Positio
 
     let (symbol_id, symbol) = hir_guard.find_symbol_in_position(
         source,
-        mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
+        mq_lang::Position::new(position.line + 1, position.character + 1),
     )?;
 
     if hir_guard.is_builtin_symbol(&symbol) {
@@ -89,7 +89,7 @@ fn rename(
 
     let Some((symbol_id, symbol)) = hir_guard.find_symbol_in_position(
         source,
-        mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
+        mq_lang::Position::new(position.line + 1, position.character + 1),
     ) else {
         return Ok(None);
     };

@@ -156,7 +156,7 @@ fn hir_hover(
     if let Some(source) = source {
         if let Some((symbol_id, symbol)) = hir.read().unwrap().find_symbol_in_position(
             source,
-            mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
+            mq_lang::Position::new(position.line + 1, position.character + 1),
         ) {
             match &symbol.kind {
                 mq_hir::SymbolKind::Function(_)

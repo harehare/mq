@@ -56,7 +56,7 @@ impl LineIndex {
     /// Converts an mq position. Columns past the end of the line clamp to its end.
     pub(crate) fn to_lsp(&self, position: mq_lang::Position) -> Position {
         let line = position.line.saturating_sub(1);
-        let column = position.column.saturating_sub(1);
+        let column = position.column.saturating_sub(1) as usize;
         let character = match self.line_text(line) {
             Some((text, true, lead)) => column.min(text.len()) + lead,
             Some((text, false, lead)) => text.chars().take(column).map(char::len_utf16).sum::<usize>() + lead,
@@ -86,7 +86,7 @@ impl LineIndex {
                     .count()
             }
         };
-        mq_lang::Position::new(position.line + 1, column + 1)
+        mq_lang::Position::new(position.line + 1, column as u32 + 1)
     }
 }
 
@@ -98,7 +98,7 @@ mod tests {
         LineIndex::new(Arc::new(text.to_string()))
     }
 
-    fn mq(line: u32, column: usize) -> mq_lang::Position {
+    fn mq(line: u32, column: u32) -> mq_lang::Position {
         mq_lang::Position::new(line, column)
     }
 

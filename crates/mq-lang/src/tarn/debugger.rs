@@ -217,7 +217,7 @@ impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
         let breakpoint = Breakpoint {
             id: 0,
             line: context.range.start.line as usize,
-            column: Some(context.range.start.column),
+            column: Some(context.range.start.column as usize),
             enabled: true,
             ..Default::default()
         };

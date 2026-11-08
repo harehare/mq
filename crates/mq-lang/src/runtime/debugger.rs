@@ -417,7 +417,7 @@ impl Debugger {
         }
 
         let line = context.range.start.line as usize;
-        let column = context.range.start.column;
+        let column = context.range.start.column as usize;
 
         self.find_active_breakpoint(line, column, &context.source)
     }
@@ -664,11 +664,11 @@ mod tests {
         Range {
             start: crate::Position {
                 line: line as u32,
-                column,
+                column: column as u32,
             },
             end: crate::Position {
                 line: line as u32,
-                column: column + 1,
+                column: column as u32 + 1,
             },
         }
     }

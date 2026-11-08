@@ -457,7 +457,7 @@ impl Hir {
 
                     // Pad so the parsed symbols keep their positions in the source.
                     let padding =
-                        "\n".repeat(range.start.line.saturating_sub(1) as usize) + &" ".repeat(range.start.column + 1);
+                        "\n".repeat(range.start.line.saturating_sub(1) as usize) + &" ".repeat((range.start.column + 1) as usize);
                     let (nodes, _) = mq_lang::parse_recovery(&format!("{padding}{expr}"));
                     nodes.iter().for_each(|n| {
                         self.add_expr(n, source_id, scope_id, Some(embed_id));

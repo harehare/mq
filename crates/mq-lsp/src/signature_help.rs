@@ -17,7 +17,7 @@ pub(crate) fn response(
     let source_text = source_text?;
     let hir_guard = hir.read().unwrap();
     let source_id = hir_guard.source_by_url(&url)?;
-    let cursor = mq_lang::Position::new(position.line + 1, (position.character + 1) as usize);
+    let cursor = mq_lang::Position::new(position.line + 1, position.character + 1);
 
     let (nodes, _) = mq_lang::parse_recovery(source_text);
     let call = find_enclosing_call(&nodes, cursor)?;
