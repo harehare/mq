@@ -3,7 +3,10 @@ pub mod resolver;
 
 use crate::{
     Arena, ArenaId, Program, Shared, SharedCell, TokenArena,
-    ast::{node as ast, parser::Parser},
+    ast::{
+        node::{self as ast, Node},
+        parser::Parser,
+    },
     lexer::{self, Lexer},
     module::{
         error::ModuleError,
@@ -329,7 +332,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         &mut self,
         module_id: ModuleId,
         module_name: &str,
-        program: &Program,
+        program: &[Shared<Node>],
     ) -> Result<Module, ModuleError> {
         let module = Self::classify_module(module_name, program)?;
         self.loaded_modules.insert(module_id);
@@ -337,7 +340,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         Ok(module)
     }
 
-    fn classify_module(module_name: &str, program: &Program) -> Result<Module, ModuleError> {
+    fn classify_module(module_name: &str, program: &[Shared<Node>]) -> Result<Module, ModuleError> {
         let modules = program
             .iter()
             .filter(|node| {

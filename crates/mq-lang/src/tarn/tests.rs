@@ -8,7 +8,7 @@ use crate::{Token, TokenKind, arena::Arena, token_alloc};
 use proptest::prelude::*;
 use rstest::rstest;
 
-fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
+fn compile_and_run(program: &[Shared<Node>], token_arena: TokenArena) -> Result<RuntimeValue, Error> {
     compile_and_run_full(
         program,
         RuntimeValue::None,
@@ -19,7 +19,7 @@ fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<Runtime
 }
 
 fn compile_and_run_with_input(
-    program: &Program,
+    program: &[Shared<Node>],
     input: RuntimeValue,
     token_arena: TokenArena,
 ) -> Result<RuntimeValue, Error> {
@@ -27,7 +27,7 @@ fn compile_and_run_with_input(
 }
 
 fn compile_and_run_full(
-    program: &Program,
+    program: &[Shared<Node>],
     input: RuntimeValue,
     host_functions: &HostFunctions,
     timeout: Option<Duration>,
@@ -2854,7 +2854,7 @@ fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValu
 /// Compiles and runs `program` through the same split pipeline as `Engine::eval`.
 #[cfg(any(feature = "mqc", not(feature = "debugger")))]
 fn run_split<I, R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     inputs: I,
     mut context: EngineRunContext<'_, R>,
 ) -> Result<Vec<RuntimeValue>, Error>

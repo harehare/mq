@@ -197,7 +197,7 @@ struct ModuleBarrier {
 
 #[cfg(test)]
 pub(crate) fn compile_program<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
@@ -225,7 +225,7 @@ pub(crate) fn compile_program<R: ModuleResolver>(
 /// aren't redeclared out from under the seed binding.
 #[cfg(feature = "debugger")]
 pub(crate) fn compile_debug_expression<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     bindings: &[Ident],
@@ -277,7 +277,7 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
 
 #[cfg(test)]
 pub(crate) fn compile_program_with_builtin_prelude<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
@@ -298,7 +298,7 @@ pub(crate) fn compile_program_with_builtin_prelude<R: ModuleResolver>(
 }
 
 pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     external_globals: &[Ident],
@@ -320,7 +320,7 @@ const MAX_PRELUDE_ATTEMPTS: usize = 16;
 
 /// Compiles with predeclared top-level bindings.
 pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     seed_bindings: &[Ident],
@@ -341,7 +341,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
 /// Like [`compile_program_for_engine_with_bindings`], without debugger instrumentation.
 #[cfg(any(feature = "mqc", not(feature = "debugger")))]
 pub(crate) fn compile_uninstrumented_program_for_engine<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     seeds: CompileSeeds<'_>,
@@ -350,7 +350,7 @@ pub(crate) fn compile_uninstrumented_program_for_engine<R: ModuleResolver>(
 }
 
 fn compile_engine_program<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     seeds: CompileSeeds<'_>,
@@ -516,12 +516,12 @@ fn builtin_dependency_graph(module: &Module) -> Option<Shared<BuiltinDependencyG
 }
 
 /// Finds referenced soft builtins.
-fn soft_builtin_names_in_program(program: &Program) -> FxHashSet<Ident> {
+fn soft_builtin_names_in_program(program: &[Shared<Node>]) -> FxHashSet<Ident> {
     soft_builtin_names_in_program_with_shadowed(program, &FxHashSet::default())
 }
 
 fn soft_builtin_names_in_program_with_shadowed(
-    program: &Program,
+    program: &[Shared<Node>],
     inherited_shadowed: &FxHashSet<Ident>,
 ) -> FxHashSet<Ident> {
     let mut names = FxHashSet::default();
@@ -732,7 +732,7 @@ fn reads_path(node: &Shared<Node>, name: Ident, keys: &[&Shared<Node>]) -> bool 
 ///
 /// A nested function's own parameters and bindings are left out from where they are declared
 /// until the end of their block, since those uses cannot reach the enclosing function's locals.
-fn names_used_in_nested_functions(program: &Program) -> FxHashSet<Ident> {
+fn names_used_in_nested_functions(program: &[Shared<Node>]) -> FxHashSet<Ident> {
     let mut collector = NestedFunctionNames::default();
     collector.block(program, false);
     collector.names
@@ -767,7 +767,7 @@ impl NestedFunctionNames {
 
     /// Walks a function body. It starts without bindings from any enclosing nested function,
     /// because a function declared before a binding may be compiled without seeing it.
-    fn function(&mut self, params: &ast::Params, body: &[Shared<Node>]) {
+    fn function(&mut self, params: &[ast::Param], body: &[Shared<Node>]) {
         let outer = std::mem::take(&mut self.own);
         for default in params.iter().filter_map(|parameter| parameter.default.as_ref()) {
             self.node(default, true);
@@ -914,7 +914,7 @@ impl NestedFunctionNames {
 }
 
 /// Collects direct function names used by a program.
-fn referenced_names_in_program(program: &Program) -> FxHashSet<Ident> {
+fn referenced_names_in_program(program: &[Shared<Node>]) -> FxHashSet<Ident> {
     let mut names = FxHashSet::default();
     for node in program {
         collect_referenced_names(node, &mut names);
@@ -1052,7 +1052,7 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
 
 /// Whether `program` has no `break`, `continue`, `try`, nested loop or nested function, so a loop
 /// around it can only leave through its condition. Anything not listed is treated as not simple.
-fn program_is_straight_line(program: &Program) -> bool {
+fn program_is_straight_line(program: &[Shared<Node>]) -> bool {
     program.iter().all(|node| node_is_straight_line(node, true))
 }
 
@@ -1081,7 +1081,7 @@ fn node_is_straight_line(node: &Shared<Node>, bindings: bool) -> bool {
 /// Whether `program`'s own level (recursing into `try`/`if`/`while`/etc., but not into a nested
 /// `def`/`fn`) directly contains a `yield`, i.e. whether it makes its enclosing function a
 /// generator.
-fn program_contains_direct_yield(program: &Program) -> bool {
+fn program_contains_direct_yield(program: &[Shared<Node>]) -> bool {
     program.iter().any(node_contains_direct_yield)
 }
 
@@ -1150,7 +1150,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
 /// Returns the compiled program plus `Compiler::unresolved_call_names`.
 #[inline(never)]
 fn compile_program_impl<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     options: CompileOptions<'_>,
@@ -1179,7 +1179,7 @@ fn compile_program_impl<R: ModuleResolver>(
         qualified_bindings: FxHashMap::default(),
         external_globals: seeds.external_globals.iter().copied().collect(),
         preresolved_module_vars: seeds.preresolved_module_vars.clone(),
-        top_level_program: program.clone(),
+        top_level_program: program.into(),
         module_function_roots: std::cell::OnceCell::new(),
         prune_module_functions: true,
         unresolved_call_names: FxHashSet::default(),
@@ -1301,7 +1301,7 @@ impl<R: ModuleResolver> Compiler<R> {
             .collect()
     }
 
-    fn compile_top_level(&mut self, program: &Program) -> CompileResult<()> {
+    fn compile_top_level(&mut self, program: &[Shared<Node>]) -> CompileResult<()> {
         enum Deferred {
             Statement(Shared<Node>),
             ModuleVars(String, Module, Option<Ident>),
@@ -1496,7 +1496,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_body(&mut self, body: &Program) -> CompileResult<()> {
+    fn compile_body(&mut self, body: &[Shared<Node>]) -> CompileResult<()> {
         Self::check_module_extensions(body)?;
         for node in body {
             if let Expr::Def(ident, _, _) = &node.expr {
@@ -1543,8 +1543,8 @@ impl<R: ModuleResolver> Compiler<R> {
     /// none of them silently skips generator detection.
     fn compile_def_or_fn(
         &mut self,
-        params: &ast::Params,
-        body: &Program,
+        params: &[ast::Param],
+        body: &[Shared<Node>],
         name_for_shadow: Option<Ident>,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let is_generator = program_contains_direct_yield(body);
@@ -1558,8 +1558,8 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_function(
         &mut self,
-        params: &ast::Params,
-        body: &Program,
+        params: &[ast::Param],
+        body: &[Shared<Node>],
         name_for_shadow: Option<Ident>,
         is_generator: bool,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
@@ -2031,7 +2031,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn predeclare_module_var_slots(&mut self, vars: &Program) -> FxHashMap<Ident, u16> {
+    fn predeclare_module_var_slots(&mut self, vars: &[Shared<Node>]) -> FxHashMap<Ident, u16> {
         vars.iter()
             .filter_map(|node| match &node.expr {
                 Expr::Let(Pattern::Ident(ident), _) => Some((ident.name, self.scope_mut().declare(ident.name))),
@@ -2093,7 +2093,11 @@ impl<R: ModuleResolver> Compiler<R> {
     /// constant instead of recompiling its initializer. Falls back to a live compile when a var
     /// isn't in `known`, or its value is a `Closure` (closures capture chunk indices from
     /// their original compile, so can't be baked into a different program's constant pool).
-    fn compile_module_vars_from_known(&mut self, vars: &Program, known: &[(Ident, RuntimeValue)]) -> CompileResult<()> {
+    fn compile_module_vars_from_known(
+        &mut self,
+        vars: &[Shared<Node>],
+        known: &[(Ident, RuntimeValue)],
+    ) -> CompileResult<()> {
         for node in vars {
             self.current_token_id = node.token_id;
             let Expr::Let(pattern, value) = &node.expr else {
@@ -2125,7 +2129,7 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    fn compile_discarding(&mut self, nodes: &Program) -> CompileResult<()> {
+    fn compile_discarding(&mut self, nodes: &[Shared<Node>]) -> CompileResult<()> {
         self.compile_discarding_in_module_path(nodes, &[])
     }
 
@@ -2133,7 +2137,7 @@ impl<R: ModuleResolver> Compiler<R> {
     /// inline modules imported under an alias.
     fn compile_discarding_in_module_path(
         &mut self,
-        nodes: &Program,
+        nodes: &[Shared<Node>],
         parent_module_path: &[Ident],
     ) -> CompileResult<()> {
         for node in nodes {
@@ -2199,7 +2203,11 @@ impl<R: ModuleResolver> Compiler<R> {
         result
     }
 
-    fn compile_module_directives(&mut self, modules: &Program, parent_module_path: &[Ident]) -> CompileResult<()> {
+    fn compile_module_directives(
+        &mut self,
+        modules: &[Shared<Node>],
+        parent_module_path: &[Ident],
+    ) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
         let result = Self::check_module_extensions(modules)
             .and_then(|()| self.compile_discarding_in_module_path(modules, parent_module_path));
@@ -2275,11 +2283,11 @@ impl<R: ModuleResolver> Compiler<R> {
             .iter()
             .filter(|node| matches!(&node.expr, Expr::Def(ident, _, _) if required.contains(&ident.name)))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
         self.compile_functions_with_forward_refs(&functions)
     }
 
-    fn compile_functions_with_forward_refs(&mut self, nodes: &Program) -> CompileResult<()> {
+    fn compile_functions_with_forward_refs(&mut self, nodes: &[Shared<Node>]) -> CompileResult<()> {
         let mut slots = Vec::with_capacity(nodes.len());
         for node in nodes {
             let Expr::Def(ident, _, _) = &node.expr else {
@@ -2380,7 +2388,7 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_module(
         &mut self,
         ident: &ast::IdentWithToken,
-        program: &Program,
+        program: &[Shared<Node>],
         parent_path: &[Ident],
     ) -> CompileResult<()> {
         // Module initializers are declaration-only at the enclosing level. Rejecting a direct
@@ -2398,7 +2406,7 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_module_functions(
         &mut self,
         module_path: &[Ident],
-        program: &Program,
+        program: &[Shared<Node>],
     ) -> CompileResult<(Program, FxHashMap<Ident, u16>, ModuleBarrier)> {
         let depth = self.scopes.len() - 1;
         if let [root] = module_path {
@@ -2508,7 +2516,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     /// Rejects a member bound by more than one declaration of the same inline module in `program`,
     /// descending into nested modules.
-    fn check_module_extensions(program: &Program) -> CompileResult<()> {
+    fn check_module_extensions(program: &[Shared<Node>]) -> CompileResult<()> {
         Self::check_module_members(program, &mut Vec::new(), &mut FxHashMap::default())
     }
 
@@ -2526,7 +2534,7 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn check_module_members(
-        program: &Program,
+        program: &[Shared<Node>],
         path: &mut Vec<Ident>,
         seen: &mut FxHashMap<Vec<Ident>, FxHashSet<Ident>>,
     ) -> CompileResult<()> {
@@ -2583,7 +2591,7 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self,
         module_path: &[Ident],
         depth: usize,
-        rest: &Program,
+        rest: &[Shared<Node>],
         let_slots: &FxHashMap<Ident, u16>,
         barrier: &ModuleBarrier,
     ) -> CompileResult<()> {
@@ -3983,7 +3991,7 @@ impl<R: ModuleResolver> Compiler<R> {
         continue_target: usize,
         acc_slot: u16,
         completed_iteration_slot: Option<u16>,
-        body: &Program,
+        body: &[Shared<Node>],
     ) -> CompileResult<(Vec<usize>, Vec<usize>, Vec<usize>)> {
         self.loops.push(LoopCtx {
             continue_target,
@@ -4019,7 +4027,7 @@ impl<R: ModuleResolver> Compiler<R> {
         ))
     }
 
-    fn compile_foreach(&mut self, ident: Ident, iterable: &Shared<Node>, body: &Program) -> CompileResult<()> {
+    fn compile_foreach(&mut self, ident: Ident, iterable: &Shared<Node>, body: &[Shared<Node>]) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
         let array_slot = self.scope_mut().declare_synthetic();
         self.compile_expr(iterable)?;
@@ -4077,11 +4085,11 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    fn compile_while(&mut self, cond: &Shared<Node>, body: &Program) -> CompileResult<()> {
+    fn compile_while(&mut self, cond: &Shared<Node>, body: &[Shared<Node>]) -> CompileResult<()> {
         self.compile_conditional_loop(cond, body, false)
     }
 
-    fn compile_until(&mut self, cond: &Shared<Node>, body: &Program) -> CompileResult<()> {
+    fn compile_until(&mut self, cond: &Shared<Node>, body: &[Shared<Node>]) -> CompileResult<()> {
         self.compile_conditional_loop(cond, body, true)
     }
 
@@ -4089,7 +4097,12 @@ impl<R: ModuleResolver> Compiler<R> {
     /// between iterations, so no separate accumulator or completed flag is kept. The condition is
     /// tested once before the loop, so a loop that never runs evaluates to `None`, and again after
     /// each iteration in place of a jump back to a shared test.
-    fn compile_straight_line_loop(&mut self, cond: &Shared<Node>, body: &Program, invert: bool) -> CompileResult<()> {
+    fn compile_straight_line_loop(
+        &mut self,
+        cond: &Shared<Node>,
+        body: &[Shared<Node>],
+        invert: bool,
+    ) -> CompileResult<()> {
         let skip_jumps = self.compile_branch(cond, invert)?;
         let body_start = self.chunk_mut().code.len();
         self.scope_mut().push_scope();
@@ -4114,7 +4127,12 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    fn compile_conditional_loop(&mut self, cond: &Shared<Node>, body: &Program, invert: bool) -> CompileResult<()> {
+    fn compile_conditional_loop(
+        &mut self,
+        cond: &Shared<Node>,
+        body: &[Shared<Node>],
+        invert: bool,
+    ) -> CompileResult<()> {
         if node_is_straight_line(cond, false) && program_is_straight_line(body) {
             return self.compile_straight_line_loop(cond, body, invert);
         }
@@ -4156,7 +4174,7 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    fn compile_loop(&mut self, body: &Program) -> CompileResult<()> {
+    fn compile_loop(&mut self, body: &[Shared<Node>]) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
         self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
@@ -4255,7 +4273,7 @@ pub(super) fn collect_pattern_idents(pattern: &Pattern, out: &mut Vec<Ident>) {
 }
 
 /// Names bound by a module's top-level `let`s, in declaration order.
-pub(super) fn module_var_names(vars: &Program) -> Vec<Ident> {
+pub(super) fn module_var_names(vars: &[Shared<Node>]) -> Vec<Ident> {
     vars.iter()
         .filter_map(|node| match &node.expr {
             Expr::Let(Pattern::Ident(ident), _) => Some(ident.name),

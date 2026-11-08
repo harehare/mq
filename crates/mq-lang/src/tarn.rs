@@ -540,7 +540,7 @@ pub(crate) struct DebugRunContext<'a, R: ModuleResolver> {
 }
 
 pub(crate) fn build_program(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_prelude: &[engine::VmModulePrelude],
 ) -> Result<Option<Program>, Box<error::Error>> {
@@ -571,7 +571,7 @@ pub(crate) fn build_program(
 /// `program`. Nested inline modules remain part of their root's probe so their initializers
 /// execute in source order exactly once.
 fn collect_module_prelude_targets(
-    program: &Program,
+    program: &[Shared<Node>],
     paths: &mut Vec<String>,
     inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
 ) {
@@ -598,7 +598,7 @@ fn collect_module_prelude_targets(
 
 /// Collects external module paths below an inline module without adding nested inline modules
 /// as separate probes.
-fn collect_module_paths(program: &Program, paths: &mut Vec<String>) {
+fn collect_module_paths(program: &[Shared<Node>], paths: &mut Vec<String>) {
     for node in program {
         match &node.expr {
             Expr::Include(Literal::String(path)) | Expr::Import(Literal::String(path), _) => {
@@ -691,7 +691,7 @@ impl<R: ModuleResolver> PreludeScan<'_, R> {
 /// needed to read it from one root-module probe.
 fn collect_inline_module_vars(
     module: &ast::IdentWithToken,
-    body: &Program,
+    body: &[Shared<Node>],
     parent_path: &[ast::IdentWithToken],
     vars: &mut Vec<(Vec<ast::IdentWithToken>, Shared<Node>)>,
 ) {
@@ -718,7 +718,7 @@ fn collect_inline_module_vars(
 /// outside it, so the probe needs no enclosing nodes. A probe failure is a real initializer
 /// bug and is propagated.
 fn resolve_module_prelude_globals<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     context: &mut EngineRunContext<'_, R>,
     deadline: Option<Instant>,
 ) -> Result<compiler::ResolvedModuleVars, Error> {
@@ -835,7 +835,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     pub(crate) fn run<I>(
         &self,
         compiled: &engine::CompiledProgram,
-        #[cfg(feature = "debugger")] prepared: Option<&Program>,
+        #[cfg(feature = "debugger")] prepared: Option<&[Shared<Node>]>,
         input: I,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
@@ -854,7 +854,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     fn run_program<I>(
         &self,
         compiled: &engine::CompiledProgram,
-        #[cfg(feature = "debugger")] prepared: Option<&Program>,
+        #[cfg(feature = "debugger")] prepared: Option<&[Shared<Node>]>,
         input: I,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
@@ -899,7 +899,12 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
 
     /// Runs `program` from `cache`, rebuilding the bytecode when it is stale.
     #[cfg(not(feature = "debugger"))]
-    fn run_cached<I>(&self, program: &Program, cache: &engine::VmCache, input: I) -> Result<Vec<RuntimeValue>, Error>
+    fn run_cached<I>(
+        &self,
+        program: &[Shared<Node>],
+        cache: &engine::VmCache,
+        input: I,
+    ) -> Result<Vec<RuntimeValue>, Error>
     where
         I: Iterator<Item = RuntimeValue>,
     {
@@ -922,7 +927,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 let prepared_program =
                     build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
                         .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
-                let prepared_program = prepared_program.as_ref().unwrap_or(program);
+                let prepared_program = prepared_program.as_deref().unwrap_or(program);
                 let cached = Shared::new(cache::compile_cached_program(
                     prepared_program,
                     &mut cache_context,
@@ -968,7 +973,7 @@ struct SessionSeed {
     capture_names: Vec<Ident>,
 }
 
-fn session_seed(session: &Shared<SharedCell<Vec<SessionBinding>>>, program: &Program) -> SessionSeed {
+fn session_seed(session: &Shared<SharedCell<Vec<SessionBinding>>>, program: &[Shared<Node>]) -> SessionSeed {
     let existing = session_snapshot(session);
     let seed_names: Vec<Ident> = existing.iter().map(|binding| binding.name).collect();
     let seed_immutable: Vec<Ident> = existing
@@ -1112,7 +1117,7 @@ where
     let mut before_names = seed.seed_names.clone();
     extend_unique(&mut before_names, let_names_before_nodes(before));
     let before_compiled = compiler::compile_program_for_engine_with_bindings(
-        &before.iter().cloned().collect::<Program>(),
+        before,
         Shared::clone(&context.token_arena),
         context.module_loader.clone(),
         &seed.seed_names,
@@ -1168,7 +1173,7 @@ where
 
 /// Runs a program while preserving top-level bindings in `session`.
 fn run_with_session<I, R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     inputs: I,
     context: &EngineRunContext<'_, R>,
     session: &Shared<SharedCell<Vec<SessionBinding>>>,
@@ -1236,7 +1241,7 @@ where
     let mut before_names = seed.seed_names.clone();
     extend_unique(&mut before_names, let_names_before_nodes(before));
     let before_compiled = compiler::compile_program_for_engine_with_bindings(
-        &before.iter().cloned().collect::<Program>(),
+        before,
         Shared::clone(&engine.token_arena),
         engine.module_loader.clone(),
         &seed.seed_names,
@@ -1314,7 +1319,7 @@ where
 /// Debugger counterpart to [`run_with_session`].
 #[cfg(feature = "debugger")]
 fn run_with_session_debugged<I, R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     inputs: I,
     context: DebugRunContext<'_, R>,
     session: &Shared<SharedCell<Vec<SessionBinding>>>,
@@ -1373,7 +1378,7 @@ where
 // `compile_and_run_debugged` takes over when the `debugger` feature is on.
 #[cfg_attr(feature = "debugger", allow(dead_code))]
 fn compile_and_run_session<I, R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     inputs: I,
     mut context: EngineRunContext<'_, R>,
     session: &Shared<SharedCell<Vec<SessionBinding>>>,
@@ -1389,7 +1394,7 @@ where
 
 #[cfg(feature = "debugger")]
 fn compile_and_run_debugged<I, R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     inputs: I,
     mut context: DebugRunContext<'_, R>,
 ) -> Result<Vec<RuntimeValue>, Error>
@@ -1433,7 +1438,7 @@ where
         });
     };
     let compiled = compiler::compile_program_for_engine(
-        &before.iter().cloned().collect::<Program>(),
+        before,
         Shared::clone(&context.engine.token_arena),
         context.engine.module_loader.clone(),
         &global_names,
@@ -1540,7 +1545,7 @@ where
 /// Evaluates a debugger expression against paused-frame bindings.
 #[cfg(feature = "debugger")]
 pub(crate) fn eval_debug_expression<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     input: RuntimeValue,

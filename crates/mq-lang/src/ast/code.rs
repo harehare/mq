@@ -1,6 +1,6 @@
 use crate::{IMPLICIT_FN_ARG, Ident, Program, Shared};
 
-use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment, UnaryOp};
+use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Param, Pattern, StringSegment, UnaryOp};
 use std::fmt::Write;
 
 impl Node {
@@ -477,7 +477,7 @@ fn format_args(args: &Args, buf: &mut String, indent: usize) {
     }
 }
 
-fn format_params(params: &Params, buf: &mut String, indent: usize) {
+fn format_params(params: &[Param], buf: &mut String, indent: usize) {
     for (i, param) in params.iter().enumerate() {
         if i > 0 {
             buf.push_str(", ");
@@ -491,7 +491,7 @@ fn format_params(params: &Params, buf: &mut String, indent: usize) {
     }
 }
 
-fn format_program_block(program: &Program, buf: &mut String, indent: usize) {
+fn format_program_block(program: &[Shared<Node>], buf: &mut String, indent: usize) {
     buf.push_str(" do\n");
     buf.push_str(&"  ".repeat(indent + 1));
     for (i, stmt) in program.iter().enumerate() {
@@ -566,9 +566,9 @@ fn format_pattern(pattern: &Pattern, buf: &mut String) {
 }
 
 /// The statements of `fn: body` after the synthetic leading argument reference.
-fn implicit_fn_body<'a>(params: &Params, program: &'a Program) -> Option<&'a [Shared<Node>]> {
+fn implicit_fn_body<'a>(params: &[Param], program: &'a Program) -> Option<&'a [Shared<Node>]> {
     let arg = Ident::new(IMPLICIT_FN_ARG);
-    let [param] = params.as_slice() else {
+    let [param] = params else {
         return None;
     };
     match program.split_first() {
@@ -579,7 +579,7 @@ fn implicit_fn_body<'a>(params: &Params, program: &'a Program) -> Option<&'a [Sh
     }
 }
 
-fn needs_block_syntax(program: &Program) -> bool {
+fn needs_block_syntax(program: &[Shared<Node>]) -> bool {
     program.len() > 1
 }
 

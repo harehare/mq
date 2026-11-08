@@ -2,7 +2,8 @@
 use super::split_program::SplitProgram;
 use super::{EngineRunContext, Error, engine};
 use crate::ModuleResolver;
-use crate::ast::Program;
+use crate::Shared;
+use crate::ast::node::Node;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::tarn::{VmEnvCacheKey, VmModuleCacheKey};
 use std::fmt;
@@ -51,7 +52,7 @@ impl CachedProgram {
 /// Only runs on a cache miss, so module var initializers resolve here exactly once; a cache
 /// hit reuses the bytecode (and its already-baked constants) without calling this again.
 pub(super) fn compile_cached_program<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     context: &mut EngineRunContext<'_, R>,
     configuration: Vec<engine::VmModulePrelude>,
     deadline: Option<Instant>,

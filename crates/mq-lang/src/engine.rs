@@ -552,7 +552,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         vm.run(
             compiled,
             #[cfg(feature = "debugger")]
-            vm_program.as_ref(),
+            vm_program.as_deref(),
             input,
         )
         .map(Into::into)

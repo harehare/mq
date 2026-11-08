@@ -18,7 +18,7 @@ pub type TokenId = ArenaId<Token>;
 ///
 /// Returns a `miette::Error` if serialization fails.
 #[cfg(feature = "ast-json")]
-pub fn ast_to_json(program: &Program) -> miette::Result<String> {
+pub fn ast_to_json(program: &[Shared<Node>]) -> miette::Result<String> {
     serde_json::to_string(program).map_err(|e| miette::miette!("Failed to serialize AST to JSON: {}", e))
 }
 
