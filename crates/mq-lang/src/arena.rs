@@ -62,14 +62,11 @@ impl<T> From<i32> for ArenaId<T> {
 }
 
 impl<T> ArenaId<T> {
-    /// Creates a new arena identifier from a raw `u32` index.
+    /// Creates a new arena identifier from a raw `u32` index. `u32::MAX` is not representable
+    /// and maps to `u32::MAX - 1`.
     pub const fn new(id: u32) -> ArenaId<T> {
-        let id = match NonZeroU32::new(id.saturating_add(1)) {
-            Some(id) => id,
-            None => NonZeroU32::MIN,
-        };
         Self {
-            id,
+            id: NonZeroU32::MIN.saturating_add(id),
             _phantom_data: PhantomData,
         }
     }
