@@ -5,6 +5,8 @@
 //! from the caller, so a coroutine can be resumed by an unrelated later evaluation. It does keep
 //! its own owned `TokenArena` (see `CoroutineState::token_arena`), since that evaluation's arena
 //! is the wrong one to blame a failure on.
+use std::sync::atomic::{AtomicBool, Ordering};
+
 #[cfg(feature = "debugger")]
 use super::DebugRuntime;
 use super::errors::{VmError, VmResult};
@@ -84,6 +86,16 @@ pub(crate) type CoroutineWeakHandle = std::rc::Weak<SharedCell<CoroutineState>>;
 #[cfg(feature = "sync")]
 pub(crate) type CoroutineWeakHandle = std::sync::Weak<SharedCell<CoroutineState>>;
 
+/// Set once any coroutine is created. Until then no value can hold one, so scans for nested
+/// coroutine handles are skipped.
+static COROUTINE_CREATED: AtomicBool = AtomicBool::new(false);
+
+/// Whether a coroutine has ever been created in this process.
+#[inline(always)]
+pub(crate) fn coroutine_created() -> bool {
+    COROUTINE_CREATED.load(Ordering::Relaxed)
+}
+
 pub(crate) fn downgrade_handle(handle: &CoroutineHandle) -> CoroutineWeakHandle {
     Shared::downgrade(handle)
 }
@@ -98,6 +110,7 @@ pub(crate) fn same_handle(left: &CoroutineHandle, right: &CoroutineHandle) -> bo
 
 impl CoroutineState {
     pub(super) fn new_handle(frame: Frame, chunks: Shared<Vec<Chunk>>, token_arena: TokenArena) -> CoroutineHandle {
+        COROUTINE_CREATED.store(true, Ordering::Relaxed);
         Shared::new(SharedCell::new(CoroutineState {
             status: CoroutineStatus::Created,
             frames: vec![frame],
