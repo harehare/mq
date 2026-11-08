@@ -390,7 +390,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     #[doc(hidden)]
     pub fn compile_with_prelude(&mut self, prelude: &str, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
         if prelude.is_empty() && code.is_empty() {
-            return Ok(CompiledProgram::cached(String::new(), Vec::new()));
+            return Ok(CompiledProgram::cached(String::new(), crate::Program::new()));
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let program = parse_with_prelude(prelude, code, Shared::clone(&self.token_arena))?;

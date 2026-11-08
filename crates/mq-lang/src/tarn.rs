@@ -41,6 +41,7 @@ use nodes_split::{
     ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
     top_level_binding_names,
 };
+use thin_vec::thin_vec;
 
 use crate::Shared;
 use crate::TokenArena;
@@ -577,13 +578,13 @@ fn collect_module_prelude_targets(
     for node in program {
         match &node.expr {
             Expr::Include(Literal::String(path)) => {
-                if !paths.iter().any(|existing| existing == path) {
-                    paths.push(path.clone());
+                if !paths.iter().any(|existing| existing.as_str() == &**path) {
+                    paths.push(path.to_string());
                 }
             }
             Expr::Import(Literal::String(path), _) => {
-                if !paths.iter().any(|existing| existing == path) {
-                    paths.push(path.clone());
+                if !paths.iter().any(|existing| existing.as_str() == &**path) {
+                    paths.push(path.to_string());
                 }
             }
             Expr::Module(ident, body) => {
@@ -601,8 +602,8 @@ fn collect_module_paths(program: &Program, paths: &mut Vec<String>) {
     for node in program {
         match &node.expr {
             Expr::Include(Literal::String(path)) | Expr::Import(Literal::String(path), _) => {
-                if !paths.iter().any(|existing| existing == path) {
-                    paths.push(path.clone());
+                if !paths.iter().any(|existing| existing.as_str() == &**path) {
+                    paths.push(path.to_string());
                 }
             }
             Expr::Module(_, body) => collect_module_paths(body, paths),
@@ -654,9 +655,9 @@ impl<R: ModuleResolver> PreludeScan<'_, R> {
             return Ok(());
         }
 
-        let directive_program: Program = vec![Shared::new(Node {
+        let directive_program: Program = thin_vec![Shared::new(Node {
             token_id: TokenId::new(0),
-            expr: Expr::Include(Literal::String(path.to_string())),
+            expr: Expr::Include(Literal::String(path.into())),
         })];
         let compiled = compiler::compile_program_for_engine(
             &directive_program,
@@ -759,11 +760,11 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 };
                 Shared::new(Node {
                     token_id: TokenId::new(0),
-                    expr: Expr::QualifiedAccess(path.clone(), AccessTarget::Ident(let_ident.clone())),
+                    expr: Expr::QualifiedAccess(path.iter().cloned().collect(), AccessTarget::Ident(let_ident.clone())),
                 })
             })
             .collect();
-        let probe_program: Program = vec![
+        let probe_program: Program = thin_vec![
             Shared::new(Node {
                 token_id: TokenId::new(0),
                 expr: Expr::Module(ident.clone(), body),
@@ -1111,7 +1112,7 @@ where
     let mut before_names = seed.seed_names.clone();
     extend_unique(&mut before_names, let_names_before_nodes(before));
     let before_compiled = compiler::compile_program_for_engine_with_bindings(
-        &before.to_vec(),
+        &before.iter().cloned().collect::<Program>(),
         Shared::clone(&context.token_arena),
         context.module_loader.clone(),
         &seed.seed_names,
@@ -1235,7 +1236,7 @@ where
     let mut before_names = seed.seed_names.clone();
     extend_unique(&mut before_names, let_names_before_nodes(before));
     let before_compiled = compiler::compile_program_for_engine_with_bindings(
-        &before.to_vec(),
+        &before.iter().cloned().collect::<Program>(),
         Shared::clone(&engine.token_arena),
         engine.module_loader.clone(),
         &seed.seed_names,
@@ -1432,7 +1433,7 @@ where
         });
     };
     let compiled = compiler::compile_program_for_engine(
-        &before.to_vec(),
+        &before.iter().cloned().collect::<Program>(),
         Shared::clone(&context.engine.token_arena),
         context.engine.module_loader.clone(),
         &global_names,

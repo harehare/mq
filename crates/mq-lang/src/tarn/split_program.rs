@@ -129,7 +129,7 @@ impl SplitProgram {
             let per_input = if before.iter().all(|node| is_declaration(node)) {
                 Program::new()
             } else {
-                before.to_vec()
+                before.iter().cloned().collect()
             };
             let program_before = compiler::compile_uninstrumented_program_for_engine(
                 &per_input,

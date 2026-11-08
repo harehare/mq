@@ -347,19 +347,19 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                 )
             })
             .cloned()
-            .collect::<Vec<_>>();
+            .collect::<Program>();
 
         let functions = program
             .iter()
             .filter(|node| matches!(&node.expr, ast::Expr::Def(..)))
             .cloned()
-            .collect::<Vec<_>>();
+            .collect::<Program>();
 
         let vars = program
             .iter()
             .filter(|node| matches!(&node.expr, ast::Expr::Let(..)))
             .cloned()
-            .collect::<Vec<_>>();
+            .collect::<Program>();
 
         let expected_len = functions.len() + modules.len() + vars.len();
 
@@ -685,6 +685,7 @@ mod tests {
     };
     use rstest::{fixture, rstest};
     use smallvec::smallvec;
+    use thin_vec::{ThinVec, thin_vec};
 
     use super::{Module, ModuleError, ModuleLoader};
 
@@ -713,38 +714,38 @@ mod tests {
     #[case::load1("test".to_string(), Err(ModuleError::InvalidModule))]
     #[case::load2("let test = \"value\"".to_string(), Ok(Module{
         name: "test".to_string(),
-        functions: Vec::new(),
-        modules: Vec::new(),
-        vars: vec![
+        functions: ThinVec::new(),
+        modules: ThinVec::new(),
+        vars: thin_vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Let(
                 ast::Pattern::Ident(IdentWithToken::new_with_token("test", Some(1.into()))),
-                Shared::new(ast::Node{token_id: 3.into(), expr: ast::Expr::Literal(ast::Literal::String("value".to_string()))})
+                Shared::new(ast::Node{token_id: 3.into(), expr: ast::Expr::Literal(ast::Literal::String("value".into()))})
             )})],
     }))]
     #[case::load3("def test(): 1;".to_string(), Ok(Module{
         name: "test".to_string(),
-        modules: Vec::new(),
-        functions: vec![
+        modules: ThinVec::new(),
+        functions: thin_vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Def(
             IdentWithToken::new_with_token("test", Some(3.into())),
-            Vec::new(),
-            vec![
+            ThinVec::new(),
+            thin_vec![
                 Shared::new(ast::Node{token_id: 2.into(), expr: ast::Expr::Literal(ast::Literal::Number(1.into()))})
             ]
             )})],
-        vars: Vec::new(),
+        vars: ThinVec::new(),
     }))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Module{
         name: "test".to_string(),
-        modules: Vec::new(),
-        functions: vec![
+        modules: ThinVec::new(),
+        functions: thin_vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Def(
                 IdentWithToken::new_with_token("test", Some(7.into())),
-                vec![
+                thin_vec![
                     Param::new(IdentWithToken::new_with_token("a", Some(1.into()))),
                     Param::new(IdentWithToken::new_with_token("b", Some(2.into()))),
                 ],
-                vec![
+                thin_vec![
                     Shared::new(ast::Node{token_id: 6.into(), expr: ast::Expr::Call(
                     IdentWithToken::new_with_token("add", Some(6.into())),
                     smallvec![
@@ -759,7 +760,7 @@ mod tests {
                     ],
                 )})]
             )})],
-        vars: Vec::new(),
+        vars: ThinVec::new(),
     }))]
     fn test_load(
         token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,
@@ -775,9 +776,9 @@ mod tests {
     #[rstest]
     #[case::load_standard_csv("csv", Ok(Module {
         name: "csv".to_string(),
-        functions: Vec::new(),
-        modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
-        vars: Vec::new(),
+        functions: ThinVec::new(),
+        modules: ThinVec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
+        vars: ThinVec::new(),
     }))]
     fn test_load_standard_module(
         token_arena: Shared<SharedCell<crate::arena::Arena<Token>>>,

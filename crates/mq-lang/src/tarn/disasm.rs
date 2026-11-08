@@ -102,7 +102,7 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
     };
 
     let input_compiled = compiler::compile_program_for_engine(
-        &before.to_vec(),
+        &before.iter().cloned().collect::<crate::Program>(),
         token_arena.clone(),
         module_loader.clone(),
         &global_names,

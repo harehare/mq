@@ -101,9 +101,9 @@ impl<T: ModuleResolver, IO: Io> Session<T, IO> {
     fn keep_modules(&mut self, program: &Program) {
         for node in program {
             let module = match &node.expr {
-                Expr::Include(Literal::String(name)) => VmModulePrelude::Include(name.clone()),
+                Expr::Include(Literal::String(name)) => VmModulePrelude::Include(name.to_string()),
                 Expr::Import(Literal::String(name), alias) => {
-                    VmModulePrelude::Import(name.clone(), alias.as_ref().map(|alias| alias.name.to_string()))
+                    VmModulePrelude::Import(name.to_string(), alias.as_ref().map(|alias| alias.name.to_string()))
                 }
                 _ => continue,
             };

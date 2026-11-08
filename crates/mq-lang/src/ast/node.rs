@@ -10,6 +10,7 @@ use std::{
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
 };
+use thin_vec::ThinVec;
 
 /// Represents a function parameter with an optional default value
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -54,11 +55,11 @@ impl Param {
 }
 
 /// Function parameters.
-pub type Params = Vec<Param>;
-pub type Args = SmallVec<[Shared<Node>; 4]>;
+pub type Params = ThinVec<Param>;
+pub type Args = SmallVec<[Shared<Node>; 2]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
-pub type Branches = Vec<Cond>;
-pub type MatchArms = Vec<MatchArm>;
+pub type Branches = ThinVec<Cond>;
+pub type MatchArms = ThinVec<MatchArm>;
 
 /// An AST node: an expression plus the id of the token it was parsed from.
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
@@ -289,21 +290,21 @@ pub enum StringSegment {
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Pattern {
     /// A literal value.
-    Literal(Literal),
+    Literal(Box<Literal>),
     /// Binds the matched value to a name.
     Ident(IdentWithToken),
     /// `_`, matches anything.
     Wildcard,
     /// `[p1, p2]`, matches an array element-wise.
-    Array(Vec<Pattern>),
+    Array(ThinVec<Pattern>),
     /// Array pattern with a rest binding: the patterns before `..` and the rest binding.
-    ArrayRest(Vec<Pattern>, IdentWithToken), // patterns before .., rest binding
+    ArrayRest(ThinVec<Pattern>, IdentWithToken), // patterns before .., rest binding
     /// `{key: pattern}`, matches a dict by key.
-    Dict(Vec<(IdentWithToken, Pattern)>),
+    Dict(ThinVec<(IdentWithToken, Pattern)>),
     /// A type pattern such as `:string` or `:number`.
     Type(Ident), // :string, :number, etc.
     /// `p1 || p2`, matches if any alternative matches.
-    Or(Vec<Pattern>), // p1 || p2 || p3
+    Or(ThinVec<Pattern>), // p1 || p2 || p3
 }
 
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -319,9 +320,9 @@ pub struct MatchArm {
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Literal {
     /// A string literal.
-    String(String),
+    String(Box<str>),
     /// A bytes literal.
-    Bytes(Vec<u8>),
+    Bytes(Box<[u8]>),
     /// A number literal.
     Number(Number),
     /// A `:name` symbol.
@@ -334,7 +335,7 @@ pub enum Literal {
 
 impl From<&str> for Literal {
     fn from(s: &str) -> Self {
-        Literal::String(s.to_owned())
+        Literal::String(s.into())
     }
 }
 
@@ -493,9 +494,9 @@ pub enum Expr {
     /// into `Assign(ident, set(ident, ..))`, so the VM can update the variable in place.
     IndexAssign(IdentWithToken, Shared<Node>, Shared<Node>),
     /// Short-circuiting `&&` over its operands.
-    And(Vec<Shared<Node>>),
+    And(ThinVec<Shared<Node>>),
     /// Short-circuiting `||` over its operands.
-    Or(Vec<Shared<Node>>),
+    Or(ThinVec<Shared<Node>>),
     /// A literal value.
     Literal(Literal),
     /// A variable or function reference.
@@ -503,13 +504,13 @@ pub enum Expr {
     /// An environment variable reference (`$NAME`), read when the program runs.
     Env(SmolStr),
     /// A string with `${...}` segments.
-    InterpolatedString(Vec<StringSegment>),
+    InterpolatedString(ThinVec<StringSegment>),
     /// A Markdown selector such as `.h1`.
     Selector(Selector),
     /// A selector with runtime-evaluated arguments for filtered matching.
     ///
     /// Supports `.h(1..2)`, `.h(1, 2)`, `.code("rust")`, etc.
-    SelectorCall(Selector, Box<Args>),
+    SelectorCall(Box<Selector>, Args),
     /// A `while` loop.
     While(Shared<Node>, Program),
     /// An `until` loop.
@@ -529,7 +530,7 @@ pub enum Expr {
     /// An inline module definition.
     Module(IdentWithToken, Program),
     /// `module::name` access: the module path and the accessed target.
-    QualifiedAccess(Vec<IdentWithToken>, AccessTarget),
+    QualifiedAccess(ThinVec<IdentWithToken>, AccessTarget),
     /// The implicit `self` value.
     Self_,
     /// The `nodes` keyword.
@@ -587,6 +588,7 @@ mod tests {
     use crate::{Position, TokenKind, arena::ArenaId};
     use rstest::rstest;
     use smallvec::smallvec;
+    use thin_vec::thin_vec;
 
     fn create_token(range: Range) -> Token {
         Token {
@@ -601,16 +603,16 @@ mod tests {
         Expr::CallDynamic(
             Shared::new(Node {
                 token_id: ArenaId::new(1),
-                expr: Expr::Literal(Literal::String("callee".to_string())),
+                expr: Expr::Literal(Literal::String("callee".into())),
             }),
             smallvec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Expr::Literal(Literal::String("arg1".to_string())),
+                    expr: Expr::Literal(Literal::String("arg1".into())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("arg2".to_string())),
+                    expr: Expr::Literal(Literal::String("arg2".into())),
                 }),
             ]
         ),
@@ -624,23 +626,23 @@ mod tests {
         Expr::Match(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("val".to_string())),
+                expr: Expr::Literal(Literal::String("val".into())),
             }),
-            vec![
+            thin_vec![
                 MatchArm {
-                    pattern: Pattern::Literal(Literal::String("a".to_string())),
+                    pattern: Pattern::Literal(Box::new(Literal::String("a".into()))),
                     guard: None,
                     body: Shared::new(Node {
                         token_id: ArenaId::new(1),
-                        expr: Expr::Literal(Literal::String("body1".to_string())),
+                        expr: Expr::Literal(Literal::String("body1".into())),
                     }),
                 },
                 MatchArm {
-                    pattern: Pattern::Literal(Literal::String("b".to_string())),
+                    pattern: Pattern::Literal(Box::new(Literal::String("b".into()))),
                     guard: None,
                     body: Shared::new(Node {
                         token_id: ArenaId::new(2),
-                        expr: Expr::Literal(Literal::String("body2".to_string())),
+                        expr: Expr::Literal(Literal::String("body2".into())),
                     }),
                 },
             ]
@@ -656,12 +658,12 @@ mod tests {
         Expr::Try(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("try".to_string())),
+                expr: Expr::Literal(Literal::String("try".into())),
             }),
             None,
             Shared::new(Node {
                 token_id: ArenaId::new(1),
-                expr: Expr::Literal(Literal::String("catch".to_string())),
+                expr: Expr::Literal(Literal::String("catch".into())),
             })
         ),
         vec![
@@ -675,7 +677,7 @@ mod tests {
             Pattern::Ident(IdentWithToken::new("x")),
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("letval".to_string())),
+                expr: Expr::Literal(Literal::String("letval".into())),
             })
         ),
         vec![
@@ -687,7 +689,7 @@ mod tests {
         Expr::Paren(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("paren".to_string())),
+                expr: Expr::Literal(Literal::String("paren".into())),
             })
         ),
         vec![
@@ -696,14 +698,14 @@ mod tests {
         Range { start: Position::new(40, 1), end: Position::new(40, 5) }
     )]
     #[case(
-        Expr::Block(vec![
+        Expr::Block(thin_vec![
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("block1".to_string())),
+                expr: Expr::Literal(Literal::String("block1".into())),
             }),
             Shared::new(Node {
                 token_id: ArenaId::new(1),
-                expr: Expr::Literal(Literal::String("block2".to_string())),
+                expr: Expr::Literal(Literal::String("block2".into())),
             }),
         ]),
         vec![
@@ -715,15 +717,15 @@ mod tests {
     #[case(
         Expr::Def(
             IdentWithToken::new("f"),
-            vec![],
-            vec![
+            thin_vec![],
+            thin_vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Expr::Literal(Literal::String("def1".to_string())),
+                    expr: Expr::Literal(Literal::String("def1".into())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("def2".to_string())),
+                    expr: Expr::Literal(Literal::String("def2".into())),
                 }),
             ]
         ),
@@ -735,15 +737,15 @@ mod tests {
     )]
     #[case(
         Expr::Fn(
-            vec![],
-            vec![
+            thin_vec![],
+            thin_vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Expr::Literal(Literal::String("fn1".to_string())),
+                    expr: Expr::Literal(Literal::String("fn1".into())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("fn2".to_string())),
+                    expr: Expr::Literal(Literal::String("fn2".into())),
                 }),
             ]
         ),
@@ -757,16 +759,16 @@ mod tests {
         Expr::While(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("cond".to_string())),
+                expr: Expr::Literal(Literal::String("cond".into())),
             }),
-            vec![
+            thin_vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("while1".to_string())),
+                    expr: Expr::Literal(Literal::String("while1".into())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Expr::Literal(Literal::String("while2".to_string())),
+                    expr: Expr::Literal(Literal::String("while2".into())),
                 }),
             ]
         ),
@@ -781,16 +783,16 @@ mod tests {
         Expr::Until(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("cond".to_string())),
+                expr: Expr::Literal(Literal::String("cond".into())),
             }),
-            vec![
+            thin_vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("until1".to_string())),
+                    expr: Expr::Literal(Literal::String("until1".into())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Expr::Literal(Literal::String("until2".to_string())),
+                    expr: Expr::Literal(Literal::String("until2".into())),
                 }),
             ]
         ),
@@ -806,16 +808,16 @@ mod tests {
             IdentWithToken::new("item"),
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Expr::Literal(Literal::String("iter".to_string())),
+                expr: Expr::Literal(Literal::String("iter".into())),
             }),
-            vec![
+            thin_vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("foreach1".to_string())),
+                    expr: Expr::Literal(Literal::String("foreach1".into())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Expr::Literal(Literal::String("foreach2".to_string())),
+                    expr: Expr::Literal(Literal::String("foreach2".into())),
                 }),
             ]
         ),
@@ -827,25 +829,25 @@ mod tests {
         Range { start: Position::new(102, 1), end: Position::new(102, 5) }
     )]
     #[case(
-        Expr::If(vec![
+        Expr::If(thin_vec![
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Expr::Literal(Literal::String("cond1".to_string())),
+                    expr: Expr::Literal(Literal::String("cond1".into())),
                 })),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("if1".to_string())),
+                    expr: Expr::Literal(Literal::String("if1".into())),
                 })
             ),
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Expr::Literal(Literal::String("cond2".to_string())),
+                    expr: Expr::Literal(Literal::String("cond2".into())),
                 })),
                 Shared::new(Node {
                     token_id: ArenaId::new(3),
-                    expr: Expr::Literal(Literal::String("if2".to_string())),
+                    expr: Expr::Literal(Literal::String("if2".into())),
                 })
             ),
         ]),
@@ -858,15 +860,15 @@ mod tests {
         Range { start: Position::new(113, 1), end: Position::new(117, 5) }
     )]
     #[case(
-        Expr::Unless(vec![
+        Expr::Unless(thin_vec![
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Expr::Literal(Literal::String("cond1".to_string())),
+                    expr: Expr::Literal(Literal::String("cond1".into())),
                 })),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("unless1".to_string())),
+                    expr: Expr::Literal(Literal::String("unless1".into())),
                 })
             ),
         ]),
@@ -882,11 +884,11 @@ mod tests {
             smallvec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Expr::Literal(Literal::String("arg1".to_string())),
+                    expr: Expr::Literal(Literal::String("arg1".into())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Expr::Literal(Literal::String("arg2".to_string())),
+                    expr: Expr::Literal(Literal::String("arg2".into())),
                 }),
             ]
         ),
@@ -939,7 +941,7 @@ mod tests {
         let mut arena = Arena::new(10);
         arena.alloc(create_token(r0));
         arena.alloc(create_token(r1));
-        let expr = Expr::Loop(vec![make_node(0), make_node(1)]);
+        let expr = Expr::Loop(thin_vec![make_node(0), make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -962,7 +964,7 @@ mod tests {
         let mut arena = Arena::new(10);
         arena.alloc(create_token(r0));
         arena.alloc(create_token(r1));
-        let expr = Expr::Module(IdentWithToken::new("m"), vec![make_node(0), make_node(1)]);
+        let expr = Expr::Module(IdentWithToken::new("m"), thin_vec![make_node(0), make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -979,7 +981,7 @@ mod tests {
             end: Position::new(5, 5),
         };
         let arena = single_token_arena(r0);
-        let expr = Expr::Block(vec![]);
+        let expr = Expr::Block(thin_vec![]);
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -1040,7 +1042,7 @@ mod tests {
             end: Position::new(30, 5),
         };
         let arena = single_token_arena(r0);
-        let expr = Expr::And(vec![]);
+        let expr = Expr::And(thin_vec![]);
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -1055,7 +1057,7 @@ mod tests {
             end: Position::new(31, 5),
         };
         let arena = single_token_arena(r0);
-        let expr = Expr::Or(vec![]);
+        let expr = Expr::Or(thin_vec![]);
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -1098,7 +1100,7 @@ mod tests {
         let mut arena = Arena::new(10);
         arena.alloc(create_token(r0));
         arena.alloc(create_token(r1));
-        let expr = Expr::And(vec![make_node(0), make_node(1)]);
+        let expr = Expr::And(thin_vec![make_node(0), make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -1145,7 +1147,7 @@ mod tests {
         let mut arena = Arena::new(10);
         arena.alloc(create_token(r0));
         arena.alloc(create_token(r1));
-        let expr = Expr::SelectorCall(Selector::Heading(None), Box::new(smallvec![make_node(1)]));
+        let expr = Expr::SelectorCall(Box::new(Selector::Heading(None)), smallvec![make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -1233,7 +1235,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Literal::String("hello".to_string()), "hello")]
+    #[case(Literal::String("hello".into()), "hello")]
     #[case(Literal::Number(crate::number::Number::from(42.0)), "42")]
     #[case(Literal::Bool(true), "true")]
     #[case(Literal::Bool(false), "false")]
@@ -1244,13 +1246,13 @@ mod tests {
 
     #[test]
     fn test_literal_bytes_display_ascii() {
-        let lit = Literal::Bytes(b"hello".to_vec());
+        let lit = Literal::Bytes(b"hello".as_slice().into());
         assert_eq!(lit.to_string(), "b\"hello\"");
     }
 
     #[test]
     fn test_literal_bytes_display_non_ascii() {
-        let lit = Literal::Bytes(vec![0x00, 0xff]);
+        let lit = Literal::Bytes(vec![0x00, 0xff].into());
         assert_eq!(lit.to_string(), "b\"\\x00\\xff\"");
     }
 
@@ -1319,12 +1321,12 @@ mod tests {
     fn test_node_size_stays_small() {
         // Every node is its own allocation, so one large variant enlarges all of them.
         assert!(
-            std::mem::size_of::<Expr>() <= 72,
+            std::mem::size_of::<Expr>() <= 40,
             "Expr is {} bytes",
             std::mem::size_of::<Expr>()
         );
         assert!(
-            std::mem::size_of::<Node>() <= 80,
+            std::mem::size_of::<Node>() <= 48,
             "Node is {} bytes",
             std::mem::size_of::<Node>()
         );

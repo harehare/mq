@@ -16,6 +16,7 @@ use crate::{Ident, Module, ModuleError, ModuleLoader, ModuleResolver, TokenArena
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
 use std::sync::LazyLock;
+use thin_vec::thin_vec;
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSymbolTable;
@@ -498,7 +499,10 @@ fn builtin_dependency_graph(module: &Module) -> Option<Shared<BuiltinDependencyG
         .functions
         .iter()
         .filter_map(|node| match &node.expr {
-            Expr::Def(ident, _, _) => Some((ident.name, soft_builtin_names_in_program(&vec![Shared::clone(node)]))),
+            Expr::Def(ident, _, _) => Some((
+                ident.name,
+                soft_builtin_names_in_program(&thin_vec![Shared::clone(node)]),
+            )),
             _ => None,
         })
         .collect();
@@ -1304,7 +1308,7 @@ impl<R: ModuleResolver> Compiler<R> {
             InlineModuleRest(Vec<Ident>, usize, Program, FxHashMap<Ident, u16>, ModuleBarrier),
         }
         let mut deferred = Vec::with_capacity(program.len());
-        let mut defs: Program = Vec::new();
+        let mut defs: Program = Program::new();
         Self::check_module_extensions(program)?;
         for node in program {
             self.current_token_id = node.token_id;
@@ -1335,7 +1339,7 @@ impl<R: ModuleResolver> Compiler<R> {
                             self.current_token_id,
                         ));
                     };
-                    let path = path.clone();
+                    let path = path.to_string();
                     let module = self.compile_include_functions(literal)?;
                     deferred.push(Deferred::ModuleVars(path, module, None));
                 }
@@ -1346,7 +1350,7 @@ impl<R: ModuleResolver> Compiler<R> {
                             self.current_token_id,
                         ));
                     };
-                    let path = path.clone();
+                    let path = path.to_string();
                     let module = self.compile_import_functions(literal, alias.as_ref())?;
                     let module_alias = alias
                         .as_ref()
@@ -1593,7 +1597,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 has_variadic = true;
                 bindings.push(ParamBinding::Variadic(slot));
             } else if let Some(default_expr) = &param.default {
-                let default_body: Program = vec![Shared::clone(default_expr)];
+                let default_body: Program = thin_vec![Shared::clone(default_expr)];
                 // A default-value expression runs before the function body starts, so `yield`
                 // in it is not "inside the function" for this purpose.
                 let outer_in_fn_body = std::mem::replace(&mut self.in_fn_body, false);
@@ -1638,7 +1642,7 @@ impl<R: ModuleResolver> Compiler<R> {
         binder: &Option<ast::IdentWithToken>,
         catch: &Shared<Node>,
     ) -> CompileResult<()> {
-        let try_program: Program = vec![Shared::clone(body)];
+        let try_program: Program = thin_vec![Shared::clone(body)];
         self.try_depth += 1;
         let try_result = self.compile_function(&ast::Params::new(), &try_program, None, false);
         self.try_depth -= 1;
@@ -1648,7 +1652,7 @@ impl<R: ModuleResolver> Compiler<R> {
         if let Some(binder) = binder {
             catch_params.push(ast::Param::new(binder.clone()));
         }
-        let catch_program: Program = vec![Shared::clone(catch)];
+        let catch_program: Program = thin_vec![Shared::clone(catch)];
         self.try_depth += 1;
         let catch_result = self.compile_function(&catch_params, &catch_program, None, false);
         self.try_depth -= 1;
@@ -2231,7 +2235,7 @@ impl<R: ModuleResolver> Compiler<R> {
             let Some(definition) = definitions.get(&name) else {
                 continue;
             };
-            for dependency in referenced_names_in_program(&vec![Shared::clone(definition)]) {
+            for dependency in referenced_names_in_program(&thin_vec![Shared::clone(definition)]) {
                 if definitions.contains_key(&dependency) && required.insert(dependency) {
                     pending.push(dependency);
                 }
@@ -2364,7 +2368,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 barrier.members.insert(ident.name, *slot);
             }
         }
-        self.import_members.insert(path.clone(), barrier);
+        self.import_members.insert(path.to_string(), barrier);
         self.add_module_root(module_alias);
         // Only qualified names remain visible after compilation.
         for slot in slots {
@@ -2448,7 +2452,7 @@ impl<R: ModuleResolver> Compiler<R> {
                             self.current_token_id,
                         ));
                     };
-                    let path = path.clone();
+                    let path = path.to_string();
                     let module = self.compile_include_functions(literal)?;
                     self.compile_module_vars_binding(&path, &module, None)?;
                 }
@@ -2460,7 +2464,7 @@ impl<R: ModuleResolver> Compiler<R> {
                             self.current_token_id,
                         ));
                     };
-                    let path = path.clone();
+                    let path = path.to_string();
                     let module = self.compile_import_functions(literal, alias.as_ref())?;
                     let import_alias = alias
                         .as_ref()
@@ -2978,7 +2982,10 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_expr(arg)?;
                 }
                 let argc = self.arg_count(args.len())?;
-                self.emit(OpCode::SelectorMatchWithArgs(Box::new((selector.clone(), argc))));
+                self.emit(OpCode::SelectorMatchWithArgs(Box::new((
+                    Selector::clone(selector),
+                    argc,
+                ))));
                 Ok(())
             }
             Expr::Paren(inner) => self.compile_expr(inner),
@@ -4259,8 +4266,8 @@ pub(super) fn module_var_names(vars: &Program) -> Vec<Ident> {
 
 pub(super) fn literal_to_runtime_value(lit: &Literal) -> RuntimeValue {
     match lit {
-        Literal::String(s) => RuntimeValue::String(Shared::new(s.clone())),
-        Literal::Bytes(b) => RuntimeValue::Bytes(Shared::new(b.clone())),
+        Literal::String(s) => RuntimeValue::String(Shared::new(s.to_string())),
+        Literal::Bytes(b) => RuntimeValue::Bytes(Shared::new(b.to_vec())),
         Literal::Number(n) => RuntimeValue::Number(*n),
         Literal::Symbol(i) => RuntimeValue::Symbol(*i),
         Literal::Bool(b) => RuntimeValue::Boolean(*b),

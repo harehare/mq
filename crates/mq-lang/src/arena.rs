@@ -1,17 +1,31 @@
 use crate::{Shared, SharedCell};
 #[cfg(feature = "ast-json")]
-use serde::{Deserialize, Serialize};
-use std::{marker::PhantomData, ops::Index};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::{marker::PhantomData, num::NonZeroU32, ops::Index};
 
 /// A type-safe identifier for elements stored in an [`Arena`].
 ///
 /// Uses phantom data to ensure type safety - an `ArenaId<A>` cannot be used
 /// to access elements from an `Arena<B>`.
-#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ArenaId<T> {
-    id: u32,
+    /// The index plus one, so `Option<ArenaId<T>>` needs no extra space.
+    id: NonZeroU32,
     _phantom_data: PhantomData<T>,
+}
+
+#[cfg(feature = "ast-json")]
+impl<T> Serialize for ArenaId<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.raw().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "ast-json")]
+impl<'de, T> Deserialize<'de> for ArenaId<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        u32::deserialize(deserializer).map(Self::new)
+    }
 }
 
 impl<T> Copy for ArenaId<T> {}
@@ -50,6 +64,10 @@ impl<T> From<i32> for ArenaId<T> {
 impl<T> ArenaId<T> {
     /// Creates a new arena identifier from a raw `u32` index.
     pub const fn new(id: u32) -> ArenaId<T> {
+        let id = match NonZeroU32::new(id.saturating_add(1)) {
+            Some(id) => id,
+            None => NonZeroU32::MIN,
+        };
         Self {
             id,
             _phantom_data: PhantomData,
@@ -58,7 +76,7 @@ impl<T> ArenaId<T> {
 
     /// The raw `u32` index.
     pub(crate) const fn raw(self) -> u32 {
-        self.id
+        self.id.get() - 1
     }
 }
 
@@ -182,7 +200,7 @@ impl<T> Arena<T> {
     /// Returns a reference to the element this arena itself holds at `id`, or `None` if out of
     /// bounds or held by a parent arena.
     pub fn get(&self, id: ArenaId<T>) -> Option<&T> {
-        let (layered, index) = decode_id(id.id);
+        let (layered, index) = decode_id(id.raw());
         if layered != self.parent.is_some() {
             return None;
         }
@@ -311,12 +329,12 @@ mod tests {
     #[test]
     fn test_from() {
         let id_u32: ArenaId<i32> = 5u32.into();
-        assert_eq!(id_u32.id, 5);
+        assert_eq!(id_u32.raw(), 5);
 
         let id_usize: ArenaId<i32> = 10usize.into();
-        assert_eq!(id_usize.id, 10);
+        assert_eq!(id_usize.raw(), 10);
 
         let id_i32: ArenaId<i32> = 15i32.into();
-        assert_eq!(id_i32.id, 15);
+        assert_eq!(id_i32.raw(), 15);
     }
 }

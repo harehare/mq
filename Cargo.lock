@@ -2666,6 +2666,7 @@ dependencies = [
  "string-interner",
  "strsim",
  "tempfile",
+ "thin-vec",
  "thiserror 2.0.21",
  "tiktoken-rs",
  "toml 1.1.8+spec-1.1.0",
@@ -4368,6 +4369,15 @@ checksum = "6ecfad6c3abc80a577f2b91c1e412ee57e7a060d430b553c1b0c940974ebcd49"
 dependencies = [
  "icu_segmenter 2.4.0",
  "unicode-width 0.2.3",
+]
+
+[[package]]
+name = "thin-vec"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6a4b9ba8738cb4a4f399d37e266becfd475e75eb73425b87a05a2f2039ba63e"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

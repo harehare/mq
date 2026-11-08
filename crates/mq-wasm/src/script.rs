@@ -1232,7 +1232,7 @@ fn extract_local_import_names(code: &str) -> Vec<String> {
                 _ => return None,
             };
             if !mq_lang::http_import::is_remote_url(path) && !mq_lang::http_import::is_github_url(path) {
-                Some(path.clone())
+                Some(path.to_string())
             } else {
                 None
             }
@@ -1256,7 +1256,7 @@ fn extract_http_import_urls(code: &str) -> Vec<String> {
                 _ => return None,
             };
             if mq_lang::http_import::is_remote_url(url) || mq_lang::http_import::is_github_url(url) {
-                Some(url.clone())
+                Some(url.to_string())
             } else {
                 None
             }
