@@ -1307,7 +1307,18 @@ def any(v, f):
   elif (is_empty(v)):
     false
   else:
-    len(filter(v, f)) != 0
+    do
+      let target = if (is_dict(v)): entries(v) else: v
+      | var i = 0
+      | var found = false
+      | while (i < len(target) && !found):
+          if (f(target[i])):
+            found = true
+          else:
+            i += 1
+        end
+      | found
+    end
 end
 
 # Returns true if all elements in the array or coroutine satisfy the provided function.
@@ -1335,7 +1346,18 @@ def all(v, f):
   elif (is_empty(v)):
     true
   else:
-    len(filter(v, f)) == len(v)
+    do
+      let target = if (is_dict(v)): entries(v) else: v
+      | var i = 0
+      | var matches = true
+      | while (i < len(target) && matches):
+          if (!f(target[i])):
+            matches = false
+          else:
+            i += 1
+        end
+      | matches
+    end
 end
 
 # Returns true if the element is in the array.
