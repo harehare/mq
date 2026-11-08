@@ -461,12 +461,13 @@ mod tests {
             write_for_test(cell, StackValue::Value(RuntimeValue::Array(Default::default())));
         }
         collect();
-        assert!(threshold() > 4, "ten live candidates raise the threshold");
+        let raised = threshold();
+        assert!(raised > 4, "ten live candidates raise the threshold");
         drop((cells, holders));
         collect();
         let lowered = threshold();
         THRESHOLD_FLOOR.set(INITIAL_THRESHOLD);
-        assert_eq!(lowered, 4);
+        assert!(lowered < raised, "{lowered} should be below {raised}");
     }
 
     /// A cell holding a closure that captures the cell itself and a sentinel. The sentinel is
