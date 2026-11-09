@@ -3446,13 +3446,24 @@ impl Cli {
         }
     }
 
-    /// Converts a `RuntimeValue` into a list of Markdown nodes.
-    fn runtime_value_to_nodes(runtime_value: &mq_lang::RuntimeValue) -> Vec<mq_markdown::Node> {
+    /// Appends the Markdown nodes of a `RuntimeValue` to `out`.
+    fn push_nodes(runtime_value: mq_lang::RuntimeValue, out: &mut Vec<mq_markdown::Node>) {
         match runtime_value {
-            mq_lang::RuntimeValue::Markdown(node, _) => vec![(**node).clone()],
-            mq_lang::RuntimeValue::Dict(map) => {
-                Self::expand_typed_dict(map).unwrap_or_else(|| vec![runtime_value.to_string().into()])
+            // Moves the node out when nothing else holds it.
+            mq_lang::RuntimeValue::Markdown(node, _) => {
+                out.push(mq_lang::Shared::try_unwrap(node).unwrap_or_else(|shared| (*shared).clone()))
             }
+            other => Self::push_nodes_ref(&other, out),
+        }
+    }
+
+    fn push_nodes_ref(runtime_value: &mq_lang::RuntimeValue, out: &mut Vec<mq_markdown::Node>) {
+        match runtime_value {
+            mq_lang::RuntimeValue::Markdown(node, _) => out.push((**node).clone()),
+            mq_lang::RuntimeValue::Dict(map) => match Self::expand_typed_dict(map) {
+                Some(nodes) => out.extend(nodes),
+                None => out.push(runtime_value.to_string().into()),
+            },
             mq_lang::RuntimeValue::Array(items) => {
                 let has_expandable = items.iter().any(|v| match v {
                     mq_lang::RuntimeValue::Markdown(_, _) => true,
@@ -3460,14 +3471,12 @@ impl Cli {
                     _ => false,
                 });
                 if has_expandable {
-                    items.iter().flat_map(Self::runtime_value_to_nodes).collect()
-                } else if items.is_empty() {
-                    vec![]
-                } else {
-                    vec![runtime_value.to_string().into()]
+                    items.iter().for_each(|item| Self::push_nodes_ref(item, out));
+                } else if !items.is_empty() {
+                    out.push(runtime_value.to_string().into());
                 }
             }
-            _ => vec![runtime_value.to_string().into()],
+            _ => out.push(runtime_value.to_string().into()),
         }
     }
 
@@ -3478,9 +3487,12 @@ impl Cli {
         value
     }
 
-    fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue], mdx: bool) -> mq_markdown::Markdown {
-        let mut markdown =
-            mq_markdown::Markdown::new(runtime_values.iter().flat_map(Self::runtime_value_to_nodes).collect());
+    fn build_markdown(&self, runtime_values: Vec<mq_lang::RuntimeValue>, mdx: bool) -> mq_markdown::Markdown {
+        let mut nodes = Vec::with_capacity(runtime_values.len());
+        runtime_values
+            .into_iter()
+            .for_each(|value| Self::push_nodes(value, &mut nodes));
+        let mut markdown = mq_markdown::Markdown::new(nodes);
         markdown.set_options(mq_markdown::RenderOptions {
             list_style: self.output.list_style.clone().map(|style| match style {
                 ListStyle::Dash => mq_markdown::ListStyle::Dash,
@@ -3505,12 +3517,12 @@ impl Cli {
     /// Renders `runtime_values` to a byte buffer without writing anywhere.
     /// `emit_diff` always passes `colorize: false`; it needs plain text to diff
     /// against the uncolored original, and colors the diff lines itself.
-    fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool, mdx: bool) -> miette::Result<Vec<u8>> {
+    fn render(&self, runtime_values: Vec<mq_lang::RuntimeValue>, colorize: bool, mdx: bool) -> miette::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
         match self.resolved_output_format() {
             OutputFormat::Raw => {
-                for value in runtime_values {
+                for value in &runtime_values {
                     match value {
                         mq_lang::RuntimeValue::Bytes(b) => buf.extend_from_slice(b),
                         mq_lang::RuntimeValue::Markdown(node, _) if node.is_empty() || node.is_empty_fragment() => {}
@@ -3524,7 +3536,7 @@ impl Cli {
             OutputFormat::Json => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
                 let json_str = crate::output::json::runtime_values_to_json(
-                    runtime_values,
+                    &runtime_values,
                     theme.as_ref(),
                     self.output.compact,
                     &self.output.json_indent_unit(),
@@ -3536,7 +3548,7 @@ impl Cli {
             }
             OutputFormat::Jsonl => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
-                let jsonl_str = crate::output::json::runtime_values_to_jsonl(runtime_values, theme.as_ref())?;
+                let jsonl_str = crate::output::json::runtime_values_to_jsonl(&runtime_values, theme.as_ref())?;
                 buf.extend_from_slice(jsonl_str.as_bytes());
             }
             OutputFormat::Html => {
@@ -3558,7 +3570,7 @@ impl Cli {
             }
             OutputFormat::Table => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
-                let table = crate::output::table::runtime_values_to_table(runtime_values, theme.as_ref());
+                let table = crate::output::table::runtime_values_to_table(&runtime_values, theme.as_ref());
                 buf.extend_from_slice(format!("{}\n", table).as_bytes());
             }
             OutputFormat::Grep => {
@@ -3566,29 +3578,29 @@ impl Cli {
                 buf.extend_from_slice(markdown.to_string().as_bytes());
             }
             OutputFormat::Gron => {
-                let gron_str = crate::output::gron::runtime_values_to_gron(runtime_values);
+                let gron_str = crate::output::gron::runtime_values_to_gron(&runtime_values);
                 buf.extend_from_slice(gron_str.as_bytes());
             }
             OutputFormat::Csv => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
-                let csv_str = crate::output::csv::runtime_values_to_csv(runtime_values, theme.as_ref())?;
+                let csv_str = crate::output::csv::runtime_values_to_csv(&runtime_values, theme.as_ref())?;
                 buf.extend_from_slice(csv_str.as_bytes());
             }
             OutputFormat::Toml => {
-                let toml_str = crate::output::toml::runtime_values_to_toml(runtime_values)?;
+                let toml_str = crate::output::toml::runtime_values_to_toml(&runtime_values)?;
                 buf.extend_from_slice(toml_str.as_bytes());
             }
             OutputFormat::Toon => {
-                let toon_str = crate::output::toon::runtime_values_to_toon(runtime_values)?;
+                let toon_str = crate::output::toon::runtime_values_to_toon(&runtime_values)?;
                 buf.extend_from_slice(toon_str.as_bytes());
             }
             OutputFormat::Xml => {
                 let (indent_char, indent_size) = self.output.xml_indent();
-                let xml_str = crate::output::xml::runtime_values_to_xml(runtime_values, indent_char, indent_size)?;
+                let xml_str = crate::output::xml::runtime_values_to_xml(&runtime_values, indent_char, indent_size)?;
                 buf.extend_from_slice(xml_str.as_bytes());
             }
             OutputFormat::Yaml => {
-                let yaml_str = crate::output::yaml::runtime_values_to_yaml(runtime_values)?;
+                let yaml_str = crate::output::yaml::runtime_values_to_yaml(&runtime_values)?;
                 buf.extend_from_slice(yaml_str.as_bytes());
             }
             OutputFormat::Shell => {
@@ -3597,7 +3609,7 @@ impl Cli {
                     .shell_prefix
                     .as_deref()
                     .unwrap_or(crate::output::shell::DEFAULT_PREFIX);
-                let shell_str = crate::output::shell::runtime_values_to_shell(runtime_values, prefix)?;
+                let shell_str = crate::output::shell::runtime_values_to_shell(&runtime_values, prefix)?;
                 buf.extend_from_slice(shell_str.as_bytes());
             }
             OutputFormat::None => {}
@@ -3614,17 +3626,13 @@ impl Cli {
     }
 
     fn print(&self, runtime_values: mq_lang::RuntimeValues, mdx: bool) -> miette::Result<()> {
-        let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
-            runtime_values
-                .values()
-                .iter()
-                .cloned()
-                .map(Self::strip_markdown_position)
-                .collect()
-        });
-        let runtime_values: &[mq_lang::RuntimeValue] = stripped_values.as_deref().unwrap_or(runtime_values.values());
+        let runtime_values: Vec<mq_lang::RuntimeValue> = if self.output.no_position {
+            runtime_values.into_iter().map(Self::strip_markdown_position).collect()
+        } else {
+            runtime_values.into_iter().collect()
+        };
 
-        self.record_exit_status(runtime_values);
+        self.record_exit_status(&runtime_values);
 
         if self.quiet {
             return Ok(());
@@ -3657,7 +3665,7 @@ impl Cli {
         let path = file
             .as_deref()
             .ok_or_else(|| miette!("--in-place requires input files, not stdin"))?;
-        let rendered = self.render(runtime_values.values(), false, self.is_mdx_input(file))?;
+        let rendered = self.render(runtime_values.values().clone(), false, self.is_mdx_input(file))?;
 
         if content.as_bytes() == rendered.as_slice() {
             return Ok(());
@@ -3677,7 +3685,7 @@ impl Cli {
     ) -> miette::Result<()> {
         self.record_exit_status(runtime_values.values());
         let original = content.as_str().unwrap_or("");
-        let rendered = self.render(runtime_values.values(), false, self.is_mdx_input(file))?;
+        let rendered = self.render(runtime_values.values().clone(), false, self.is_mdx_input(file))?;
         let rendered = String::from_utf8_lossy(&rendered);
 
         if original != rendered {
