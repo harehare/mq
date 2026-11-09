@@ -6,6 +6,7 @@ use super::*;
 use crate::cst::node::BinaryOp;
 use rstest::rstest;
 use smallvec::smallvec;
+use thin_vec::thin_vec;
 
 fn error_node(kinds: Vec<TokenKind>) -> Shared<Node> {
     Shared::new(Node {
@@ -428,7 +429,7 @@ Shared::new(Node {
             vec![
                 Shared::new(Node {
                     kind: NodeKind::Error {
-                        children: smallvec![
+                        children: thin_vec![
                             Shared::new(Node {
                                 kind: NodeKind::Token,
                                 token: Some(Shared::new(token(TokenKind::Let))),
@@ -4281,7 +4282,7 @@ Shared::new(Node {
         (
             vec![
                 Shared::new(Node {
-                    kind: NodeKind::Block { program: smallvec![Shared::new(Node {
+                    kind: NodeKind::Block { program: thin_vec![Shared::new(Node {
                         kind: NodeKind::End,
                         token: Some(Shared::new(token(TokenKind::End))),
                         leading_trivia: TriviaList::new(),

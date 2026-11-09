@@ -3,6 +3,7 @@ use std::fmt::{self, Display};
 
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
+use thin_vec::ThinVec;
 
 use crate::{Module, Position, Range, Token};
 use crate::{Shared, TokenKind};
@@ -12,11 +13,11 @@ type Comment = (Range, String);
 /// A flat, source-ordered list of child nodes for a variable-arity construct
 /// (e.g. call arguments), including any structural tokens (parens, commas)
 /// interleaved with them so lossless formatting stays possible.
-pub type ArgList = SmallVec<[Shared<Node>; 2]>;
+pub type ArgList = ThinVec<Shared<Node>>;
 /// Trivia around a node; most nodes have at most one piece (e.g. a trailing space).
 pub type TriviaList = SmallVec<[Trivia; 1]>;
 /// `elif` clauses attached to an `if`.
-pub type Elifs = SmallVec<[Shared<Node>; 2]>;
+pub type Elifs = ThinVec<Shared<Node>>;
 
 /// Whitespace, newlines and comments attached to a node.
 #[derive(Debug, Clone, PartialEq)]
@@ -954,6 +955,21 @@ mod tests {
 
     use super::*;
     use crate::arena::ArenaId;
+
+    #[test]
+    fn node_size_stays_small() {
+        // Every node is its own allocation, so one wide variant enlarges all of them.
+        assert!(
+            std::mem::size_of::<NodeKind>() <= 56,
+            "NodeKind is {}",
+            std::mem::size_of::<NodeKind>()
+        );
+        assert!(
+            std::mem::size_of::<Node>() <= 112,
+            "Node is {}",
+            std::mem::size_of::<Node>()
+        );
+    }
 
     #[test]
     fn test_node_range_includes_binary_operands_and_nested_call() {
