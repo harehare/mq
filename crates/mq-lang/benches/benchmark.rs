@@ -621,3 +621,10 @@ fn parse_long_and_chain() -> mq_lang::Program {
     let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(8_192)));
     mq_lang::parse(&CODE, token_arena).unwrap()
 }
+
+/// Lexes and parses the embedded `builtin.mq` into a lossless CST, as the language server does.
+#[cfg(feature = "cst")]
+#[divan::bench]
+fn cst_parse_recovery_builtin_module() -> usize {
+    mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE).0.len()
+}
