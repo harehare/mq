@@ -491,6 +491,18 @@ fn constant_expressions_fold_to_a_single_value(#[case] code: &str, #[case] expec
 }
 
 #[rstest]
+#[case::plain(r#"var s = "d" | if (s == "a" || s == "d"): 1 else: 2"#)]
+#[case::parenthesized(r#"var s = "d" | if ((s == "a" || s == "d")): 1 else: 2"#)]
+#[case::in_and_chain(r#"var s = "d" | if (!(s == "x") && (s == "a" || s == "d")): 1 else: 2"#)]
+fn branch_conditions_fuse_comparisons_with_jumps(#[case] code: &str) {
+    let ops = main_chunk_ops(code);
+    assert!(
+        !ops.iter().any(|op| matches!(op, bytecode::OpCode::Dup)),
+        "{code:?} should branch without materializing `||`: {ops:?}"
+    );
+}
+
+#[rstest]
 #[case::dead_branch_with_division("if (true): 1 else: 1 / 0", RuntimeValue::Number(1.into()))]
 #[case::dead_else_with_type_error("if (false): \"a\" - 1 else: 2", RuntimeValue::Number(2.into()))]
 fn dead_branches_are_not_compiled(#[case] code: &str, #[case] expected: RuntimeValue) {
