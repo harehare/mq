@@ -421,12 +421,15 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::DocumentFormattingParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::TextEdit>>> {
+        let uri_string = params.text_document.uri.to_string();
+        let Some(snapshot) = self.documents.get(&uri_string).map(|d| Arc::clone(d.value())) else {
+            return Ok(None);
+        };
+
         if self
             .error_map
-            .get(&params.text_document.uri.to_string())
-            .unwrap()
-            .iter()
-            .any(|e| matches!(e, LspError::SyntaxError(_)))
+            .get(&uri_string)
+            .is_some_and(|errors| errors.iter().any(|e| matches!(e, LspError::SyntaxError(_))))
         {
             return Ok(None);
         }
@@ -445,8 +448,6 @@ impl LanguageServer for Backend {
             None
         };
 
-        let uri_string = params.text_document.uri.to_string();
-        let snapshot = Arc::clone(self.documents.get(&uri_string).unwrap().value());
         let text = Arc::clone(&snapshot.text);
         let nodes = snapshot.nodes.clone();
         // Replace the whole original text, not the formatted length.

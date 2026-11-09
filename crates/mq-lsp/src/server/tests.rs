@@ -21,6 +21,32 @@ fn test_document_end_position() {
 }
 
 #[tokio::test]
+async fn test_formatting_unopened_document_returns_none() {
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        config: LspConfig::default(),
+    });
+
+    let uri = Url::parse("file:///never_opened.mq").unwrap();
+    let edits = service
+        .inner()
+        .formatting(ls_types::DocumentFormattingParams {
+            text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+            options: Default::default(),
+            work_done_progress_params: Default::default(),
+        })
+        .await
+        .unwrap();
+
+    assert!(edits.is_none());
+}
+
+#[tokio::test]
 async fn test_formatting_edit_covers_removed_trailing_lines() {
     let (service, _) = LspService::new(|client| Backend {
         client,
