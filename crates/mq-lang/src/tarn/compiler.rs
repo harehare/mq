@@ -466,27 +466,49 @@ impl<'a> CompileOptions<'a> {
 static IMPLICIT_FN_ARG: LazyLock<Ident> = LazyLock::new(|| Ident::new(crate::IMPLICIT_FN_ARG));
 
 /// Names implemented by `builtin.mq`, rather than native Rust builtins.
-static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<Ident>> = LazyLock::new(|| {
-    BUILTIN_FILE
-        .lines()
-        .filter_map(|line| line.trim_start().strip_prefix("def "))
-        .filter_map(|definition| definition.split_once('(').map(|(name, _)| Ident::new(name.trim())))
-        .collect()
-});
+static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<Ident>> =
+    LazyLock::new(|| soft_builtin_definition_names(BUILTIN_FILE).map(Ident::new).collect());
 
-/// Cached per-function soft-builtin call graph.
+/// Names of the `def`s that start a line of `source`, in order.
+fn soft_builtin_definition_names(source: &str) -> impl Iterator<Item = &str> {
+    source.match_indices("def ").filter_map(move |(index, _)| {
+        let line_start = source[..index].rfind('\n').map_or(0, |newline| newline + 1);
+        if !source[line_start..index].chars().all(char::is_whitespace) {
+            return None;
+        }
+        let definition = &source[index + "def ".len()..];
+        let line = definition.split_once('\n').map_or(definition, |(line, _)| line);
+        line.split_once('(').map(|(name, _)| name.trim())
+    })
+}
+
+/// Cached per-function soft-builtin call graph, filled on demand per function.
 struct BuiltinDependencyGraph {
     /// `module.functions[0]`, used to detect a reparsed (non-cached) `builtin.mq`.
     anchor: Shared<Node>,
-    dependencies: FxHashMap<Ident, FxHashSet<Ident>>,
+    definitions: FxHashMap<Ident, Shared<Node>>,
+    dependencies: std::cell::RefCell<FxHashMap<Ident, Shared<FxHashSet<Ident>>>>,
+}
+
+impl BuiltinDependencyGraph {
+    /// The soft builtins `name` calls directly, or `None` when `name` is not defined here.
+    fn dependencies_of(&self, name: Ident) -> Option<Shared<FxHashSet<Ident>>> {
+        if let Some(found) = self.dependencies.borrow().get(&name) {
+            return Some(Shared::clone(found));
+        }
+        let definition = self.definitions.get(&name)?;
+        let found = Shared::new(soft_builtin_names_in_program(std::slice::from_ref(definition)));
+        self.dependencies.borrow_mut().insert(name, Shared::clone(&found));
+        Some(found)
+    }
 }
 
 thread_local! {
-    static BUILTIN_DEPENDENCY_GRAPH: std::cell::RefCell<Option<Shared<BuiltinDependencyGraph>>> =
+    static BUILTIN_DEPENDENCY_GRAPH: std::cell::RefCell<Option<std::rc::Rc<BuiltinDependencyGraph>>> =
         const { std::cell::RefCell::new(None) };
 }
 
-fn builtin_dependency_graph(module: &Module) -> Option<Shared<BuiltinDependencyGraph>> {
+fn builtin_dependency_graph(module: &Module) -> Option<std::rc::Rc<BuiltinDependencyGraph>> {
     let anchor = module.functions.first()?;
 
     if let Some(cached) = BUILTIN_DEPENDENCY_GRAPH.with(|cache| cache.borrow().clone())
@@ -495,23 +517,21 @@ fn builtin_dependency_graph(module: &Module) -> Option<Shared<BuiltinDependencyG
         return Some(cached);
     }
 
-    let dependencies = module
+    let definitions = module
         .functions
         .iter()
         .filter_map(|node| match &node.expr {
-            Expr::Def(ident, _, _) => Some((
-                ident.name,
-                soft_builtin_names_in_program(&thin_vec![Shared::clone(node)]),
-            )),
+            Expr::Def(ident, _, _) => Some((ident.name, Shared::clone(node))),
             _ => None,
         })
         .collect();
 
-    let graph = Shared::new(BuiltinDependencyGraph {
+    let graph = std::rc::Rc::new(BuiltinDependencyGraph {
         anchor: Shared::clone(anchor),
-        dependencies,
+        definitions,
+        dependencies: std::cell::RefCell::default(),
     });
-    BUILTIN_DEPENDENCY_GRAPH.with(|cache| *cache.borrow_mut() = Some(Shared::clone(&graph)));
+    BUILTIN_DEPENDENCY_GRAPH.with(|cache| *cache.borrow_mut() = Some(std::rc::Rc::clone(&graph)));
     Some(graph)
 }
 
@@ -2268,10 +2288,10 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut required = roots.clone();
         let mut pending: Vec<Ident> = roots.iter().copied().collect();
         while let Some(name) = pending.pop() {
-            let Some(dependencies) = graph.as_ref().and_then(|graph| graph.dependencies.get(&name)) else {
+            let Some(dependencies) = graph.as_ref().and_then(|graph| graph.dependencies_of(name)) else {
                 continue;
             };
-            for &dependency in dependencies {
+            for &dependency in dependencies.iter() {
                 if required.insert(dependency) {
                     pending.push(dependency);
                 }
@@ -4302,6 +4322,28 @@ mod tests {
 
     fn parse_program(code: &str) -> Program {
         parse(code, Shared::new(SharedCell::new(Arena::new(100)))).unwrap()
+    }
+
+    #[rstest]
+    #[case::top_level("def a(x): x\ndef b(): 1", vec!["a", "b"])]
+    #[case::indented("def a():\n  def _inner(x): x\n", vec!["a", "_inner"])]
+    #[case::not_at_line_start("# def a(x)\nundef b(x)\nlet s = \"def c(\"", vec![])]
+    #[case::no_parenthesis("def a\ndef b(x)", vec!["b"])]
+    fn soft_builtin_definition_names_reads_line_leading_defs(#[case] source: &str, #[case] expected: Vec<&str>) {
+        assert_eq!(soft_builtin_definition_names(source).collect::<Vec<_>>(), expected);
+    }
+
+    #[test]
+    fn soft_builtin_definition_names_matches_line_scan_of_builtin_file() {
+        let by_lines = BUILTIN_FILE
+            .lines()
+            .filter_map(|line| line.trim_start().strip_prefix("def "))
+            .filter_map(|definition| definition.split_once('(').map(|(name, _)| name.trim()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            soft_builtin_definition_names(BUILTIN_FILE).collect::<Vec<_>>(),
+            by_lines
+        );
     }
 
     #[rstest]
