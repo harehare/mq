@@ -126,7 +126,24 @@ fn flatten(blocks: Vec<Block>, doc: Document<'_>, nodes: &mut Vec<Node>) -> Resu
         root: Vec::with_capacity(blocks.len()),
     };
 
-    for block in blocks {
+    // A paragraph becomes all of its inline nodes, so the count is only known once blocks are converted.
+    // Reserving once from the rate of the first blocks avoids doubling a list of millions of nodes.
+    let total = blocks.len();
+    let checkpoint = if nodes.is_empty() && total >= 256 {
+        total / 8
+    } else {
+        usize::MAX
+    };
+
+    for (index, block) in blocks.into_iter().enumerate() {
+        if index == checkpoint {
+            let root = &mut frames.root;
+            let projected = root.len() * total / index;
+            let wanted = projected + projected / 4;
+            if wanted > root.capacity() {
+                root.reserve_exact(wanted - root.len());
+            }
+        }
         match block {
             Block::Node(node) => frames.push(node),
             Block::Fenced(fenced) => frames.push(fenced.node),
