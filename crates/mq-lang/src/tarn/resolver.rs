@@ -1,6 +1,7 @@
 use super::bytecode::UpvalueSource;
 use crate::Ident;
-use crate::ast::Program;
+use crate::Shared;
+use crate::ast::{Program, node::Node};
 use rustc_hash::FxHashSet;
 
 /// Always-active root lexical block.
@@ -44,8 +45,8 @@ impl Default for FunctionScope {
 
 impl FunctionScope {
     /// Records the body compiled in this scope.
-    pub(crate) fn set_body(&mut self, body: &Program) {
-        self.body = Some(Program::clone(body));
+    pub(crate) fn set_body(&mut self, body: &[Shared<Node>]) {
+        self.body = Some(body.into());
     }
 
     /// Returns whether a function nested in this scope's body uses `name`, so it may read or
@@ -55,7 +56,7 @@ impl FunctionScope {
     pub(crate) fn is_used_by_nested_function(
         &mut self,
         name: Ident,
-        collect: impl FnOnce(&Program) -> FxHashSet<Ident>,
+        collect: impl FnOnce(&[Shared<Node>]) -> FxHashSet<Ident>,
     ) -> bool {
         let Some(body) = &self.body else {
             return true;

@@ -4,6 +4,7 @@ use mq_lang::{
     SharedCell,
 };
 use proptest::prelude::*;
+use thin_vec::thin_vec;
 
 fn create_token_arena() -> Shared<SharedCell<Arena<mq_lang::Token>>> {
     Shared::new(SharedCell::new(Arena::new(1024)))
@@ -88,11 +89,11 @@ mod strategies {
     pub fn string_lit() -> impl Strategy<Value = AstLiteral> {
         prop_oneof![
             // Simple strings
-            "[a-zA-Z0-9 ]{0,20}".prop_map(AstLiteral::String),
+            "[a-zA-Z0-9 ]{0,20}".prop_map(|s| AstLiteral::String(s.into())),
             // Empty string
-            Just(AstLiteral::String(String::new())),
+            Just(AstLiteral::String("".into())),
             // Strings with special chars
-            r#"[a-zA-Z0-9!@#$%^&*()_+=\-\[\]{};:'",.<>?/\\| ]{0,15}"#.prop_map(AstLiteral::String),
+            r#"[a-zA-Z0-9!@#$%^&*()_+=\-\[\]{};:'",.<>?/\\| ]{0,15}"#.prop_map(|s| AstLiteral::String(s.into())),
         ]
     }
 
@@ -134,11 +135,11 @@ mod strategies {
     }
 
     pub fn and_expr() -> impl Strategy<Value = Shared<AstNode>> {
-        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::And(vec![left, right])))
+        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::And(thin_vec![left, right])))
     }
 
     pub fn or_expr() -> impl Strategy<Value = Shared<AstNode>> {
-        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::Or(vec![left, right])))
+        (simple_expr(), simple_expr()).prop_map(|(left, right)| make_node(AstExpr::Or(thin_vec![left, right])))
     }
 
     pub fn binary_op_expr() -> impl Strategy<Value = Shared<AstNode>> {
@@ -166,13 +167,13 @@ mod strategies {
 
     pub fn if_expr() -> impl Strategy<Value = Shared<AstNode>> {
         (simple_expr(), simple_expr(), simple_expr()).prop_map(|(cond, then_branch, else_branch)| {
-            make_node(AstExpr::If(vec![(Some(cond), then_branch), (None, else_branch)]))
+            make_node(AstExpr::If(thin_vec![(Some(cond), then_branch), (None, else_branch)]))
         })
     }
 
     pub fn if_expr_complex() -> impl Strategy<Value = Shared<AstNode>> {
         (simple_expr(), simple_expr(), prop::option::of(simple_expr())).prop_map(|(cond, then_branch, else_branch)| {
-            let mut branches = vec![(Some(cond), then_branch)];
+            let mut branches = thin_vec![(Some(cond), then_branch)];
             if let Some(else_b) = else_branch {
                 branches.push((None, else_b));
             }
@@ -181,7 +182,7 @@ mod strategies {
     }
 
     pub fn block_expr() -> impl Strategy<Value = Shared<AstNode>> {
-        prop::collection::vec(simple_expr(), 1..=3).prop_map(|stmts| make_node(AstExpr::Block(stmts)))
+        prop::collection::vec(simple_expr(), 1..=3).prop_map(|stmts| make_node(AstExpr::Block(stmts.into())))
     }
 
     pub fn any_expr() -> impl Strategy<Value = Shared<AstNode>> {
@@ -196,15 +197,15 @@ mod strategies {
     }
 
     pub fn program() -> impl Strategy<Value = Program> {
-        prop::collection::vec(any_expr(), 1..=5)
+        prop::collection::vec(any_expr(), 1..=5).prop_map(Into::into)
     }
 
     pub fn small_program() -> impl Strategy<Value = Program> {
-        prop::collection::vec(simple_expr(), 1..=3)
+        prop::collection::vec(simple_expr(), 1..=3).prop_map(Into::into)
     }
 
     pub fn medium_program() -> impl Strategy<Value = Program> {
-        prop::collection::vec(any_expr(), 3..=7)
+        prop::collection::vec(any_expr(), 3..=7).prop_map(Into::into)
     }
 }
 

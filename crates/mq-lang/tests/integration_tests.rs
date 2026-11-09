@@ -4251,6 +4251,7 @@ mod ast_json {
     use mq_lang::{ArenaId, AstExpr, AstLiteral, AstNode, Program, Shared};
     use rstest::rstest;
     use smallvec::smallvec;
+    use thin_vec::thin_vec;
 
     fn default_token_id() -> ArenaId<mq_lang::Token> {
         ArenaId::new(0)
@@ -4260,7 +4261,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: AstExpr::Literal(AstLiteral::String("hello".to_string())),
+        expr: AstExpr::Literal(AstLiteral::String("hello".into())),
     }),
     Some(vec!["Literal", "String", "hello"]),
     true
@@ -4298,7 +4299,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: AstExpr::If(vec![
+        expr: AstExpr::If(thin_vec![
             (
                 Some(Shared::new(AstNode {
                     token_id: default_token_id(),
@@ -4306,7 +4307,7 @@ mod ast_json {
                 })),
                 Shared::new(AstNode {
                     token_id: default_token_id(),
-                    expr: AstExpr::Literal(AstLiteral::String("then_branch".to_string())),
+                    expr: AstExpr::Literal(AstLiteral::String("then_branch".into())),
                 })
             )
         ]),
@@ -4339,13 +4340,13 @@ mod ast_json {
     fn test_program_serialization_deserialization() {
         let node1 = Shared::new(AstNode {
             token_id: default_token_id(),
-            expr: AstExpr::Literal(AstLiteral::String("first".to_string())),
+            expr: AstExpr::Literal(AstLiteral::String("first".into())),
         });
         let node2 = Shared::new(AstNode {
             token_id: default_token_id(),
             expr: AstExpr::Literal(AstLiteral::Number(10.into())),
         });
-        let original_program: Program = vec![node1, node2];
+        let original_program: Program = thin_vec![node1, node2];
 
         let json_string = serde_json::to_string_pretty(&original_program)
             .unwrap()

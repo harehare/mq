@@ -1224,7 +1224,7 @@ fn test_builtin_cache_and_fresh_parse_error_location_identical(#[case] query: &s
 
 #[test]
 fn test_compiled_program_from_has_empty_source() {
-    let compiled = CompiledProgram::from(vec![]);
+    let compiled = CompiledProgram::from(crate::Program::new());
     assert_eq!(compiled.source(), "");
     assert!(compiled.program().unwrap().is_empty());
 }
@@ -1307,9 +1307,9 @@ fn test_eval_compiled_with_ast() {
     let mut engine = DefaultEngine::default();
     engine.load_builtin_module();
 
-    let program = vec![Shared::new(AstNode {
+    let program: crate::Program = thin_vec::thin_vec![Shared::new(AstNode {
         token_id: crate::arena::ArenaId::new(1),
-        expr: AstExpr::Literal(AstLiteral::String("hello".to_string())),
+        expr: AstExpr::Literal(AstLiteral::String("hello".into())),
     })];
 
     let compiled = CompiledProgram::from(program);

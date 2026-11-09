@@ -6,7 +6,7 @@ use crate::ast::node::{Expr, Node};
 
 pub(super) type ProgramSlice<'a> = &'a [Shared<Node>];
 
-pub(super) fn split_at_nodes(program: &Program) -> Option<(ProgramSlice<'_>, ProgramSlice<'_>)> {
+pub(super) fn split_at_nodes(program: &[Shared<Node>]) -> Option<(ProgramSlice<'_>, ProgramSlice<'_>)> {
     let index = program.iter().position(|node| node.is_nodes())?;
     Some(program.split_at(index))
 }
@@ -71,7 +71,7 @@ pub(super) fn immutable_let_names_before_nodes(before: ProgramSlice<'_>) -> Vec<
 }
 
 /// Like [`let_names_before_nodes`], but for the whole program and including `def`.
-pub(super) fn top_level_binding_names(program: &Program) -> Vec<crate::Ident> {
+pub(super) fn top_level_binding_names(program: &[Shared<Node>]) -> Vec<crate::Ident> {
     let mut names = Vec::new();
     for node in program {
         match &node.expr {

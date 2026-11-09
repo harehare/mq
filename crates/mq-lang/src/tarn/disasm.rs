@@ -3,8 +3,9 @@ use super::nodes_split::{program_after_nodes, split_at_nodes};
 #[cfg(feature = "mqc")]
 use super::split_program::SplitProgram;
 use super::{Error, bytecode, compiler};
+use crate::Shared;
 use crate::TokenArena;
-use crate::ast::Program;
+use crate::ast::node::Node;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::token_location;
 use crate::{ModuleLoader, ModuleResolver};
@@ -81,7 +82,7 @@ pub(crate) fn dump_compiled_program(compiled: &SplitProgram, token_arena: &Token
 
 /// Compiles a program as the Engine VM path would and lists its bytecode.
 pub(crate) fn dump_bytecode<R: ModuleResolver>(
-    program: &Program,
+    program: &[Shared<Node>],
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     global_bindings: &[(crate::Ident, RuntimeValue)],
@@ -102,7 +103,7 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
     };
 
     let input_compiled = compiler::compile_program_for_engine(
-        &before.to_vec(),
+        before,
         token_arena.clone(),
         module_loader.clone(),
         &global_names,

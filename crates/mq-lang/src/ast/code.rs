@@ -1,6 +1,6 @@
 use crate::{IMPLICIT_FN_ARG, Ident, Program, Shared};
 
-use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment, UnaryOp};
+use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Param, Pattern, StringSegment, UnaryOp};
 use std::fmt::Write;
 
 impl Node {
@@ -477,7 +477,7 @@ fn format_args(args: &Args, buf: &mut String, indent: usize) {
     }
 }
 
-fn format_params(params: &Params, buf: &mut String, indent: usize) {
+fn format_params(params: &[Param], buf: &mut String, indent: usize) {
     for (i, param) in params.iter().enumerate() {
         if i > 0 {
             buf.push_str(", ");
@@ -491,7 +491,7 @@ fn format_params(params: &Params, buf: &mut String, indent: usize) {
     }
 }
 
-fn format_program_block(program: &Program, buf: &mut String, indent: usize) {
+fn format_program_block(program: &[Shared<Node>], buf: &mut String, indent: usize) {
     buf.push_str(" do\n");
     buf.push_str(&"  ".repeat(indent + 1));
     for (i, stmt) in program.iter().enumerate() {
@@ -566,9 +566,9 @@ fn format_pattern(pattern: &Pattern, buf: &mut String) {
 }
 
 /// The statements of `fn: body` after the synthetic leading argument reference.
-fn implicit_fn_body<'a>(params: &Params, program: &'a Program) -> Option<&'a [Shared<Node>]> {
+fn implicit_fn_body<'a>(params: &[Param], program: &'a Program) -> Option<&'a [Shared<Node>]> {
     let arg = Ident::new(IMPLICIT_FN_ARG);
-    let [param] = params.as_slice() else {
+    let [param] = params else {
         return None;
     };
     match program.split_first() {
@@ -579,7 +579,7 @@ fn implicit_fn_body<'a>(params: &Params, program: &'a Program) -> Option<&'a [Sh
     }
 }
 
-fn needs_block_syntax(program: &Program) -> bool {
+fn needs_block_syntax(program: &[Shared<Node>]) -> bool {
     program.len() > 1
 }
 
@@ -594,6 +594,7 @@ mod tests {
     };
     use rstest::rstest;
     use smallvec::smallvec;
+    use thin_vec::{ThinVec, thin_vec};
 
     // Helper function to create a Node from an Expr
     fn create_node(expr: Expr) -> Node {
@@ -604,11 +605,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::string(Literal::String("hello".to_string()), r#""hello""#)]
-    #[case::string_with_quote(Literal::String(r#"hello"world"#.to_string()), r#""hello\"world""#)]
-    #[case::string_with_backslash(Literal::String(r"hello\world".to_string()), r#""hello\\world""#)]
-    #[case::string_with_newline(Literal::String("hello\nworld".to_string()), r#""hello\nworld""#)]
-    #[case::string_with_tab(Literal::String("hello\tworld".to_string()), r#""hello\tworld""#)]
+    #[case::string(Literal::String("hello".into()), r#""hello""#)]
+    #[case::string_with_quote(Literal::String(r#"hello"world"#.into()), r#""hello\"world""#)]
+    #[case::string_with_backslash(Literal::String(r"hello\world".into()), r#""hello\\world""#)]
+    #[case::string_with_newline(Literal::String("hello\nworld".into()), r#""hello\nworld""#)]
+    #[case::string_with_tab(Literal::String("hello\tworld".into()), r#""hello\tworld""#)]
     #[case::number_int(Literal::Number(Number::new(42.0)), "42")]
     #[case::number_float(Literal::Number(Number::new(42.5)), "42.5")]
     #[case::symbol(Literal::Symbol(Ident::new("test")), ":test")]
@@ -642,21 +643,21 @@ mod tests {
 
     #[rstest]
     #[case::and(
-        Expr::And(vec![
+        Expr::And(thin_vec![
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("y")))),
         ]),
         "x && y"
     )]
     #[case::or(
-        Expr::Or(vec![
+        Expr::Or(thin_vec![
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
         ]),
         "a || b"
     )]
     #[case::and_three_operands(
-        Expr::And(vec![
+        Expr::And(thin_vec![
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("y")))),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("z")))),
@@ -664,7 +665,7 @@ mod tests {
         "x && y && z"
     )]
     #[case::or_three_operands(
-        Expr::Or(vec![
+        Expr::Or(thin_vec![
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("c")))),
@@ -673,8 +674,8 @@ mod tests {
     )]
     #[case::or_with_nested_and(
         // Or([And([a, b]), c])
-        Expr::Or(vec![
-            Shared::new(create_node(Expr::And(vec![
+        Expr::Or(thin_vec![
+            Shared::new(create_node(Expr::And(thin_vec![
                 Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
                 Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
             ]))),
@@ -684,9 +685,9 @@ mod tests {
     )]
     #[case::or_with_and_in_middle(
         // Or([a, And([b, c]), d])
-        Expr::Or(vec![
+        Expr::Or(thin_vec![
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("a")))),
-            Shared::new(create_node(Expr::And(vec![
+            Shared::new(create_node(Expr::And(thin_vec![
                 Shared::new(create_node(Expr::Ident(IdentWithToken::new("b")))),
                 Shared::new(create_node(Expr::Ident(IdentWithToken::new("c")))),
             ]))),
@@ -715,11 +716,11 @@ mod tests {
         Shared::new(create_node(Expr::Literal(Literal::Bool(b))))
     }
 
-    fn and_node(operands: Vec<Shared<Node>>) -> Shared<Node> {
+    fn and_node(operands: ThinVec<Shared<Node>>) -> Shared<Node> {
         Shared::new(create_node(Expr::And(operands)))
     }
 
-    fn or_node(operands: Vec<Shared<Node>>) -> Shared<Node> {
+    fn or_node(operands: ThinVec<Shared<Node>>) -> Shared<Node> {
         Shared::new(create_node(Expr::Or(operands)))
     }
 
@@ -743,7 +744,7 @@ mod tests {
         "!(a < b)"
     )]
     #[case::not_wraps_and_operand(
-        Expr::UnaryOp(UnaryOp::Not, and_node(vec![ident_node("a"), ident_node("b")])),
+        Expr::UnaryOp(UnaryOp::Not, and_node(thin_vec![ident_node("a"), ident_node("b")])),
         "!(a && b)"
     )]
     #[case::higher_precedence_op_wraps_lower_precedence_rhs(
@@ -791,7 +792,7 @@ mod tests {
     #[case::and_lhs_needs_parens(
         Expr::BinaryOp(
             BinaryOp::Eq,
-            and_node(vec![bool_node(false), bool_node(false)]),
+            and_node(thin_vec![bool_node(false), bool_node(false)]),
             bool_node(false)
         ),
         "(false && false) == false"
@@ -800,7 +801,7 @@ mod tests {
         Expr::BinaryOp(
             BinaryOp::Eq,
             ident_node("a"),
-            or_node(vec![ident_node("b"), ident_node("c")])
+            or_node(thin_vec![ident_node("b"), ident_node("c")])
         ),
         "a == (b || c)"
     )]
@@ -863,7 +864,7 @@ mod tests {
     )]
     #[case::mixed_elements(
         Expr::Array(smallvec![
-            Shared::new(create_node(Expr::Literal(Literal::String("text".to_string())))),
+            Shared::new(create_node(Expr::Literal(Literal::String("text".into())))),
             Shared::new(create_node(Expr::Literal(Literal::Bool(true)))),
             Shared::new(create_node(Expr::Literal(Literal::None))),
         ]),
@@ -873,7 +874,7 @@ mod tests {
     #[case::single_pair(
         Expr::Dict(smallvec![Shared::new(create_node(Expr::Array(smallvec![
             Shared::new(create_node(Expr::Literal(Literal::Symbol(Ident::new("key"))))),
-            Shared::new(create_node(Expr::Literal(Literal::String("value".to_string())))),
+            Shared::new(create_node(Expr::Literal(Literal::String("value".into())))),
         ])))]),
         r#"{:key: "value"}"#
     )]
@@ -928,7 +929,7 @@ mod tests {
     )]
     #[case::let_array_pattern(
         Expr::Let(
-            Pattern::Array(vec![
+            Pattern::Array(thin_vec![
                 Pattern::Ident(IdentWithToken::new("a")),
                 Pattern::Ident(IdentWithToken::new("b")),
             ]),
@@ -938,7 +939,7 @@ mod tests {
     )]
     #[case::let_dict_pattern(
         Expr::Let(
-            Pattern::Dict(vec![
+            Pattern::Dict(thin_vec![
                 (IdentWithToken::new("x"), Pattern::Ident(IdentWithToken::new("x"))),
                 (IdentWithToken::new("y"), Pattern::Ident(IdentWithToken::new("y"))),
             ]),
@@ -949,7 +950,7 @@ mod tests {
     #[case::var_simple(
         Expr::Var(
             Pattern::Ident(IdentWithToken::new("y")),
-            Shared::new(create_node(Expr::Literal(Literal::String("hello".to_string()))))
+            Shared::new(create_node(Expr::Literal(Literal::String("hello".into()))))
         ),
         r#"var y = "hello""#
     )]
@@ -975,7 +976,7 @@ mod tests {
 
     #[rstest]
     #[case::if_simple(
-        Expr::If(vec![
+        Expr::If(thin_vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -984,7 +985,7 @@ mod tests {
         "if (x): 1"
     )]
     #[case::if_else(
-        Expr::If(vec![
+        Expr::If(thin_vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -997,7 +998,7 @@ mod tests {
         "if (x): 1 else: 2"
     )]
     #[case::if_elif_else(
-        Expr::If(vec![
+        Expr::If(thin_vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -1020,7 +1021,7 @@ mod tests {
 
     #[rstest]
     #[case::unless_simple(
-        Expr::Unless(vec![
+        Expr::Unless(thin_vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -1037,14 +1038,14 @@ mod tests {
     #[case::while_inline(
         Expr::While(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "while (x): 1"
     )]
     #[case::while_block(
         Expr::While(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-            vec![
+            thin_vec![
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
             ]
@@ -1060,14 +1061,14 @@ mod tests {
     #[case::until_inline(
         Expr::Until(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "until (x): 1"
     )]
     #[case::until_block(
         Expr::Until(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-            vec![
+            thin_vec![
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
             ]
@@ -1081,7 +1082,7 @@ mod tests {
 
     #[rstest]
     #[case::loop_single(
-        Expr::Loop(vec![Shared::new(create_node(Expr::Break(None)))]),
+        Expr::Loop(thin_vec![Shared::new(create_node(Expr::Break(None)))]),
         "loop do\n  break\nend"
     )]
     fn test_to_code_loop(#[case] expr: Expr, #[case] expected: &str) {
@@ -1094,7 +1095,7 @@ mod tests {
         Expr::Foreach(
             IdentWithToken::new("item"),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("items")))),
-            vec![Shared::new(create_node(Expr::Ident(IdentWithToken::new("item"))))]
+            thin_vec![Shared::new(create_node(Expr::Ident(IdentWithToken::new("item"))))]
         ),
         "foreach(item, items): item"
     )]
@@ -1102,7 +1103,7 @@ mod tests {
         Expr::Foreach(
             IdentWithToken::new("x"),
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("arr")))),
-            vec![
+            thin_vec![
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
             ]
@@ -1116,11 +1117,11 @@ mod tests {
 
     #[rstest]
     #[case::single(
-        Expr::Block(vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]),
+        Expr::Block(thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]),
         "do\n  1\nend"
     )]
     #[case::multiple(
-        Expr::Block(vec![
+        Expr::Block(thin_vec![
             Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
             Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0))))),
             Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(3.0)))))
@@ -1136,40 +1137,40 @@ mod tests {
     #[case::no_params_inline(
         Expr::Def(
             IdentWithToken::new("test"),
-            vec![],
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))]
+            thin_vec![],
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))]
         ),
         "def test(): 42"
     )]
     #[case::with_params_inline(
         Expr::Def(
             IdentWithToken::new("add"),
-            vec![
+            thin_vec![
                 Param::new(IdentWithToken::new("x")),
                 Param::new(IdentWithToken::new("y"))
             ],
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "def add(x, y): 1"
     )]
     #[case::with_default_value(
         Expr::Def(
             IdentWithToken::new("greet"),
-            vec![
+            thin_vec![
                 Param::new(IdentWithToken::new("name")),
                 Param::with_default(
                     IdentWithToken::new("greeting"),
-                    Some(Shared::new(create_node(Expr::Literal(Literal::String("Hello".to_string())))))
+                    Some(Shared::new(create_node(Expr::Literal(Literal::String("Hello".into())))))
                 )
             ],
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         r#"def greet(name, greeting = "Hello"): 1"#
     )]
     #[case::with_multiple_defaults(
         Expr::Def(
             IdentWithToken::new("foo"),
-            vec![
+            thin_vec![
                 Param::new(IdentWithToken::new("a")),
                 Param::with_default(
                     IdentWithToken::new("b"),
@@ -1180,15 +1181,15 @@ mod tests {
                     Some(Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(3.0))))))
                 )
             ],
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "def foo(a, b = 2, c = 3): 1"
     )]
     #[case::block(
         Expr::Def(
             IdentWithToken::new("test"),
-            vec![Param::new(IdentWithToken::new("x"))],
-            vec![
+            thin_vec![Param::new(IdentWithToken::new("x"))],
+            thin_vec![
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
             ]
@@ -1203,31 +1204,31 @@ mod tests {
     #[rstest]
     #[case::no_params_inline(
         Expr::Fn(
-            vec![],
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))]
+            thin_vec![],
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))]
         ),
         "fn(): 42"
     )]
     #[case::with_params_inline(
         Expr::Fn(
-            vec![
+            thin_vec![
                 Param::new(IdentWithToken::new("x")),
                 Param::new(IdentWithToken::new("y"))
             ],
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "fn(x, y): 1"
     )]
     #[case::with_default_value(
         Expr::Fn(
-            vec![
+            thin_vec![
                 Param::new(IdentWithToken::new("x")),
                 Param::with_default(
                     IdentWithToken::new("y"),
                     Some(Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(10.0))))))
                 )
             ],
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "fn(x, y = 10): 1"
     )]
@@ -1240,16 +1241,16 @@ mod tests {
     #[case::simple(
         Expr::Match(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-            vec![
+            thin_vec![
                 MatchArm {
-                    pattern: Pattern::Literal(Literal::Number(Number::new(1.0))),
+                    pattern: Pattern::Literal(Box::new(Literal::Number(Number::new(1.0)))),
                     guard: None,
-                    body: Shared::new(create_node(Expr::Literal(Literal::String("one".to_string()))))
+                    body: Shared::new(create_node(Expr::Literal(Literal::String("one".into()))))
                 },
                 MatchArm {
                     pattern: Pattern::Wildcard,
                     guard: None,
-                    body: Shared::new(create_node(Expr::Literal(Literal::String("other".to_string()))))
+                    body: Shared::new(create_node(Expr::Literal(Literal::String("other".into()))))
                 }
             ]
         ),
@@ -1262,11 +1263,11 @@ mod tests {
 
     #[rstest]
     #[case::text_only(
-        Expr::InterpolatedString(vec![StringSegment::Text("hello".to_string())]),
+        Expr::InterpolatedString(thin_vec![StringSegment::Text("hello".to_string())]),
         r#"s"hello""#
     )]
     #[case::with_expr(
-        Expr::InterpolatedString(vec![
+        Expr::InterpolatedString(thin_vec![
             StringSegment::Text("Hello ".to_string()),
             StringSegment::Expr(Shared::new(create_node(Expr::Ident(IdentWithToken::new("name"))))),
             StringSegment::Text("!".to_string())
@@ -1283,7 +1284,7 @@ mod tests {
         Expr::Try(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("risky")))),
             None,
-            Shared::new(create_node(Expr::Literal(Literal::String("error".to_string()))))
+            Shared::new(create_node(Expr::Literal(Literal::String("error".into()))))
         ),
         r#"try risky catch: "error""#
     )]
@@ -1304,7 +1305,7 @@ mod tests {
     #[case::simple(
         Expr::Module(
             IdentWithToken::new("math"),
-            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+            thin_vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "module math do\n  1\nend"
     )]
@@ -1316,14 +1317,14 @@ mod tests {
     #[rstest]
     #[case::ident(
         Expr::QualifiedAccess(
-            vec![IdentWithToken::new("module"), IdentWithToken::new("submodule")],
+            thin_vec![IdentWithToken::new("module"), IdentWithToken::new("submodule")],
             AccessTarget::Ident(IdentWithToken::new("func"))
         ),
         "module::submodule::func"
     )]
     #[case::call(
         Expr::QualifiedAccess(
-            vec![IdentWithToken::new("module")],
+            thin_vec![IdentWithToken::new("module")],
             AccessTarget::Call(
                 IdentWithToken::new("func"),
                 Box::new(smallvec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))])
@@ -1338,16 +1339,16 @@ mod tests {
 
     #[rstest]
     #[case::include(
-        Expr::Include(Literal::String("file.mq".to_string())),
+        Expr::Include(Literal::String("file.mq".into())),
         r#"include "file.mq""#
     )]
     #[case::import(
-        Expr::Import(Literal::String("module.mq".to_string()), None),
+        Expr::Import(Literal::String("module.mq".into()), None),
         r#"import "module.mq""#
     )]
     #[case::import_as(
         Expr::Import(
-            Literal::String("module.mq".to_string()),
+            Literal::String("module.mq".into()),
             Some(IdentWithToken::new("m"))
         ),
         r#"import "module.mq" as m"#

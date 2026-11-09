@@ -10,6 +10,7 @@ use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
+use thin_vec::{ThinVec, thin_vec};
 
 use super::constants;
 use super::node::{AccessTarget, Args, BinaryOp, Branches, Expr, Literal, Node, Param, Params, UnaryOp};
@@ -118,7 +119,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_program(&mut self, kind: ProgramKind) -> Result<Program, SyntaxError> {
         let root = kind == ProgramKind::Root;
-        let mut asts = Vec::with_capacity(64);
+        let mut asts = ThinVec::with_capacity(64);
 
         // Initial check for invalid starting tokens in a program.
         match self.tokens.peek() {
@@ -438,7 +439,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     } else {
                         Shared::new(Node {
                             token_id: operator_token_id,
-                            expr: Expr::And(vec![lhs, rhs]),
+                            expr: Expr::And(thin_vec![lhs, rhs]),
                         })
                     }
                 }
@@ -455,7 +456,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     } else {
                         Shared::new(Node {
                             token_id: operator_token_id,
-                            expr: Expr::Or(vec![lhs, rhs]),
+                            expr: Expr::Or(thin_vec![lhs, rhs]),
                         })
                     }
                 }
@@ -884,7 +885,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }),
                 TokenKind::StringLiteral(s) => Shared::new(Node {
                     token_id: self.alloc_token(key_token),
-                    expr: Expr::Literal(Literal::String(s.clone())),
+                    expr: Expr::Literal(Literal::String(s.as_str().into())),
                 }),
                 _ => {
                     return Err(SyntaxError::UnexpectedToken(key_token.clone()));
@@ -955,7 +956,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let attr_literal_token_id = self.alloc_token(selector_token);
             let attr_literal = Shared::new(Node {
                 token_id: attr_literal_token_id,
-                expr: Expr::Literal(Literal::String(attribute_name.to_string())),
+                expr: Expr::Literal(Literal::String(attribute_name.into())),
             });
 
             self.tokens.next(); // Consume selector token
@@ -1077,7 +1078,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_array(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let opening = token.clone();
         let token_id = self.alloc_token(token);
-        let mut elements: SmallVec<[Shared<Node>; 4]> = SmallVec::new();
+        let mut elements: Args = SmallVec::new();
         let mut closed = false;
         let mut after_element = false;
 
@@ -1203,11 +1204,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             })),
             TokenKind::StringLiteral(s) => Ok(Shared::new(Node {
                 token_id: self.alloc_token(literal_token),
-                expr: Expr::Literal(Literal::String(s.to_owned())),
+                expr: Expr::Literal(Literal::String(s.as_str().into())),
             })),
             TokenKind::BytesLiteral(b) => Ok(Shared::new(Node {
                 token_id: self.alloc_token(literal_token),
-                expr: Expr::Literal(Literal::Bytes(b.clone())),
+                expr: Expr::Literal(Literal::Bytes(b.as_slice().into())),
             })),
             TokenKind::NumberLiteral(n) => Ok(Shared::new(Node {
                 token_id: self.alloc_token(literal_token),
@@ -1256,7 +1257,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Some(TokenKind::DoubleColon) => {
                 // Parse qualified access: module::function(), module::ident, or module::module2::method
                 // Build the module path by collecting all identifiers separated by '::'
-                let mut module_path = vec![IdentWithToken::new_with_token(
+                let mut module_path = thin_vec![IdentWithToken::new_with_token(
                     ident,
                     Some(self.alloc_ident_token(ident_token)),
                 )];
@@ -1710,7 +1711,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let fn_node = Shared::new(Node {
             token_id: fn_token_id,
             expr: Expr::Fn(
-                vec![Param {
+                thin_vec![Param {
                     ident: IdentWithToken::new(constants::identifiers::IMPLICIT_FN_ARG),
                     default: None,
                     is_variadic: false,
@@ -1802,7 +1803,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let then_expr = self.parse_next_expr(token_id)?;
 
-        let branches: Branches = vec![(Some(Shared::clone(cond)), then_expr)];
+        let branches: Branches = thin_vec![(Some(Shared::clone(cond)), then_expr)];
 
         Ok(Shared::new(Node {
             token_id: self.alloc_token(unless_token),
@@ -1918,7 +1919,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let then_expr = self.parse_next_expr(token_id)?;
 
-        let mut branches: Branches = vec![(Some(Shared::clone(cond)), then_expr)];
+        let mut branches: Branches = thin_vec![(Some(Shared::clone(cond)), then_expr)];
 
         let elif_branches = self.parse_elif()?;
         branches.extend(elif_branches);
@@ -1954,7 +1955,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.consume_colon_or_do();
 
         // Parse match arms
-        let mut arms: super::node::MatchArms = Vec::new();
+        let mut arms: super::node::MatchArms = ThinVec::new();
 
         while let Some(token) = self.tokens.peek() {
             // Check for end of match
@@ -2009,7 +2010,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if !matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
             return Ok(first);
         }
-        let mut patterns = vec![first];
+        let mut patterns = thin_vec![first];
         while matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
             self.tokens.next(); // consume ||
             patterns.push(self.parse_single_pattern()?);
@@ -2048,11 +2049,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
             }
             // Literal patterns
-            TokenKind::StringLiteral(s) => Ok(Pattern::Literal(Literal::String(s.clone()))),
-            TokenKind::BytesLiteral(b) => Ok(Pattern::Literal(Literal::Bytes(b.clone()))),
-            TokenKind::NumberLiteral(n) => Ok(Pattern::Literal(Literal::Number(*n))),
-            TokenKind::BoolLiteral(b) => Ok(Pattern::Literal(Literal::Bool(*b))),
-            TokenKind::None => Ok(Pattern::Literal(Literal::None)),
+            TokenKind::StringLiteral(s) => Ok(Pattern::Literal(Box::new(Literal::String(s.as_str().into())))),
+            TokenKind::BytesLiteral(b) => Ok(Pattern::Literal(Box::new(Literal::Bytes(b.as_slice().into())))),
+            TokenKind::NumberLiteral(n) => Ok(Pattern::Literal(Box::new(Literal::Number(*n)))),
+            TokenKind::BoolLiteral(b) => Ok(Pattern::Literal(Box::new(Literal::Bool(*b)))),
+            TokenKind::None => Ok(Pattern::Literal(Box::new(Literal::None))),
             // Array pattern: [pattern, pattern, ...]
             TokenKind::LBracket => self.parse_array_pattern(),
             // Dict pattern: {key, key: pattern}
@@ -2064,7 +2065,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_array_pattern(&mut self) -> Result<super::node::Pattern, SyntaxError> {
-        let mut patterns = Vec::new();
+        let mut patterns = ThinVec::new();
         let mut rest_binding: Option<IdentWithToken> = None;
 
         loop {
@@ -2118,7 +2119,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn parse_dict_pattern(&mut self) -> Result<super::node::Pattern, SyntaxError> {
-        let mut fields = Vec::new();
+        let mut fields = ThinVec::new();
 
         loop {
             // Check for closing brace
@@ -2312,7 +2313,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     self.tokens.next();
                     Ok(Shared::new(Node {
                         token_id: self.alloc_token(include_token),
-                        expr: Expr::Include(Literal::String(module.to_owned())),
+                        expr: Expr::Include(Literal::String(module.as_str().into())),
                     }))
                 }
                 _ => Err(SyntaxError::InsufficientTokens((**token).clone())),
@@ -2354,7 +2355,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Expr::Import(Literal::String(module_name), alias),
+                    expr: Expr::Import(Literal::String(module_name.into()), alias),
                 }))
             }
             _ => Err(SyntaxError::InsufficientTokens(token.clone())),
@@ -2364,7 +2365,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     #[inline(never)]
     fn parse_interpolated_string(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::InterpolatedString(segments) = &token.kind {
-            let mut parsed_segments = Vec::new();
+            let mut parsed_segments = ThinVec::new();
 
             for segment in segments {
                 match segment {
@@ -2440,7 +2441,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
-        let mut params: Params = Vec::new();
+        let mut params: Params = ThinVec::new();
         let mut prev_token: Option<&TokenKind> = None;
         let mut seen_default = false;
         let mut seen_variadic = false;
@@ -2630,7 +2631,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         let token_id = first.token_id;
-        let mut program = vec![first];
+        let mut program = thin_vec![first];
         while self.is_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
             let pipe_token = self.next_or_eof()?;
             let next_token = match self.tokens.next() {
@@ -2688,7 +2689,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let attribute = &attr_selector[1..]; // Skip the dot
             let attr_literal = Shared::new(Node {
                 token_id: self.alloc_token(token),
-                expr: Expr::Literal(Literal::String(attribute.to_string())),
+                expr: Expr::Literal(Literal::String(attribute.into())),
             });
 
             if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
@@ -2721,7 +2722,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         // Descendant chain: `.blockquote .code` → Block([base, .., .code, ...])
-        let mut nodes: Program = vec![base_node];
+        let mut nodes: Program = thin_vec![base_node];
         let mut step_token = next_token;
         let mut step_selector = selector;
 
@@ -2732,7 +2733,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }));
 
             let step_expr = if self.is_next_token(|kind| matches!(kind, TokenKind::LParen)) {
-                Expr::SelectorCall(step_selector, Box::new(self.parse_args()?))
+                Expr::SelectorCall(Box::new(step_selector), self.parse_args()?)
             } else {
                 Expr::Selector(step_selector)
             };
@@ -2789,7 +2790,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         });
                         let attr_literal = Shared::new(Node {
                             token_id,
-                            expr: Expr::Literal(Literal::String(selector.name())),
+                            expr: Expr::Literal(Literal::String(selector.name().into())),
                         });
                         if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
                             self.tokens.next();
@@ -2815,7 +2816,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             token_id: self.alloc_token(token),
                             expr: Expr::Selector(selector),
                         });
-                        return self.parse_property_iterator(token, vec![prop_node]);
+                        return self.parse_property_iterator(token, thin_vec![prop_node]);
                     }
 
                     Ok(Shared::new(Node {
@@ -2841,7 +2842,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             });
                             let base_node = Shared::new(Node {
                                 token_id: self.alloc_token(token),
-                                expr: Expr::Block(vec![recursive_node, prop_node]),
+                                expr: Expr::Block(thin_vec![recursive_node, prop_node]),
                             });
                             return self.parse_selector_tail(token, base_node);
                         }
@@ -2861,7 +2862,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                                 let base_node = Shared::new(Node {
                                     token_id: self.alloc_token(token),
-                                    expr: Expr::Block(vec![recursive_node, sel_node]),
+                                    expr: Expr::Block(thin_vec![recursive_node, sel_node]),
                                 });
                                 return self.parse_selector_tail(token, base_node);
                             }
@@ -2905,7 +2906,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 let args = self.parse_args()?;
                 let base_node = Shared::new(Node {
                     token_id: self.alloc_token(token),
-                    expr: Expr::SelectorCall(selector, Box::new(args)),
+                    expr: Expr::SelectorCall(Box::new(selector), args),
                 });
                 // Check for attribute access or a descendant chain continuation: `.h(1).level`, `.h(1) .code`
                 return self.parse_selector_tail(token, base_node);
@@ -2917,7 +2918,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_chained_property_selectors(&mut self, first_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let first_sel = Selector::try_from(first_token).map_err(SyntaxError::UnknownSelector)?;
-        let mut nodes: Program = vec![Shared::new(Node {
+        let mut nodes: Program = thin_vec![Shared::new(Node {
             token_id: self.alloc_token(first_token),
             expr: Expr::Selector(first_sel),
         })];
@@ -2962,7 +2963,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let token_id = self.alloc_token(token);
                     nodes.push(Shared::new(Node {
                         token_id,
-                        expr: Expr::SelectorCall(Selector::List(None, None), Box::new(smallvec![Shared::clone(node)])),
+                        expr: Expr::SelectorCall(Box::new(Selector::List(None, None)), smallvec![Shared::clone(node)]),
                     }));
                     return Ok(Shared::new(Node {
                         token_id: self.alloc_token(token),
@@ -3033,7 +3034,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let token_id = self.alloc_token(token);
             return Ok(Shared::new(Node {
                 token_id,
-                expr: Expr::SelectorCall(selector, Box::new(args)),
+                expr: Expr::SelectorCall(Box::new(selector), args),
             }));
         }
 

@@ -1,9 +1,6 @@
 //! [`Session`]: evaluates queries one after another, as a REPL does.
 use super::{CompiledProgram, Engine, VmModulePrelude};
-use crate::ast::{
-    Program,
-    node::{Expr, Literal},
-};
+use crate::ast::node::{Expr, Literal, Node};
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::ModuleId;
 use crate::runtime::builtin::io_context;
@@ -98,12 +95,12 @@ impl<T: ModuleResolver, IO: Io> Session<T, IO> {
     }
 
     /// Keeps top-level `import`/`include` directives so later queries can use the modules.
-    fn keep_modules(&mut self, program: &Program) {
+    fn keep_modules(&mut self, program: &[Shared<Node>]) {
         for node in program {
             let module = match &node.expr {
-                Expr::Include(Literal::String(name)) => VmModulePrelude::Include(name.clone()),
+                Expr::Include(Literal::String(name)) => VmModulePrelude::Include(name.to_string()),
                 Expr::Import(Literal::String(name), alias) => {
-                    VmModulePrelude::Import(name.clone(), alias.as_ref().map(|alias| alias.name.to_string()))
+                    VmModulePrelude::Import(name.to_string(), alias.as_ref().map(|alias| alias.name.to_string()))
                 }
                 _ => continue,
             };

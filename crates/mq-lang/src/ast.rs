@@ -1,6 +1,7 @@
 use node::Node;
 
 use crate::{Shared, Token, arena::ArenaId};
+use thin_vec::ThinVec;
 
 pub mod code;
 pub mod constants;
@@ -8,7 +9,7 @@ pub mod node;
 pub mod parser;
 
 /// A sequence of top-level or block-level nodes.
-pub type Program = Vec<Shared<Node>>;
+pub type Program = ThinVec<Shared<Node>>;
 pub type TokenId = ArenaId<Token>;
 
 /// Serializes an AST `Program` to a JSON string.
@@ -17,7 +18,7 @@ pub type TokenId = ArenaId<Token>;
 ///
 /// Returns a `miette::Error` if serialization fails.
 #[cfg(feature = "ast-json")]
-pub fn ast_to_json(program: &Program) -> miette::Result<String> {
+pub fn ast_to_json(program: &[Shared<Node>]) -> miette::Result<String> {
     serde_json::to_string(program).map_err(|e| miette::miette!("Failed to serialize AST to JSON: {}", e))
 }
 
@@ -45,7 +46,7 @@ mod tests {
             token_id: TokenId::new(1),
             expr: AstExpr::Ident(IdentWithToken::new("foo")),
         });
-        let program = vec![ident.clone()];
+        let program: Program = std::iter::once(ident.clone()).collect();
 
         let json = ast_to_json(&program).expect("Serialization should succeed");
         let deserialized = ast_from_json(&json).expect("Deserialization should succeed");

@@ -1,8 +1,9 @@
 use std::borrow::Cow;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Write as _};
 
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
+use thin_vec::ThinVec;
 
 use crate::{Module, Position, Range, Token};
 use crate::{Shared, TokenKind};
@@ -12,21 +13,47 @@ type Comment = (Range, String);
 /// A flat, source-ordered list of child nodes for a variable-arity construct
 /// (e.g. call arguments), including any structural tokens (parens, commas)
 /// interleaved with them so lossless formatting stays possible.
-pub type ArgList = SmallVec<[Shared<Node>; 2]>;
+pub type ArgList = ThinVec<Shared<Node>>;
 /// Trivia around a node; most nodes have at most one piece (e.g. a trailing space).
 pub type TriviaList = SmallVec<[Trivia; 1]>;
 /// `elif` clauses attached to an `if`.
-pub type Elifs = SmallVec<[Shared<Node>; 2]>;
+pub type Elifs = ThinVec<Shared<Node>>;
+
+/// A run of spaces or tabs, which needs no token of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Blank {
+    /// Where the run starts.
+    pub start: Position,
+    /// The number of characters in the run.
+    pub len: u32,
+}
+
+impl Blank {
+    /// Source range of the run, which never crosses a line.
+    pub fn range(&self) -> Range {
+        Range {
+            start: self.start,
+            end: Position {
+                line: self.start.line,
+                column: self.start.column + self.len,
+            },
+        }
+    }
+
+    fn write(&self, f: &mut fmt::Formatter<'_>, c: char) -> fmt::Result {
+        (0..self.len).try_for_each(|_| f.write_char(c))
+    }
+}
 
 /// Whitespace, newlines and comments attached to a node.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Trivia {
     /// A run of spaces.
-    Whitespace(Shared<Token>),
+    Whitespace(Blank),
     /// A line break.
     NewLine,
     /// A run of tabs.
-    Tab(Shared<Token>),
+    Tab(Blank),
     /// A `#` comment.
     Comment(Shared<Token>),
 }
@@ -34,9 +61,9 @@ pub enum Trivia {
 impl Display for Trivia {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Trivia::Whitespace(token) => write!(f, "{}", token),
+            Trivia::Whitespace(blank) => blank.write(f, ' '),
             Trivia::NewLine => writeln!(f),
-            Trivia::Tab(token) => write!(f, "{}", token),
+            Trivia::Tab(blank) => blank.write(f, '\t'),
             Trivia::Comment(token) => write!(f, "{}", token),
         }
     }
@@ -78,8 +105,7 @@ impl Trivia {
     pub fn range(&self) -> Range {
         match self {
             Trivia::Comment(token) => token.range,
-            Trivia::Whitespace(token) => token.range,
-            Trivia::Tab(token) => token.range,
+            Trivia::Whitespace(blank) | Trivia::Tab(blank) => blank.range(),
             _ => Range::default(),
         }
     }
@@ -580,11 +606,10 @@ impl Node {
             } else {
                 TriviaList::new()
             },
-            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(Token {
-                kind: TokenKind::Whitespace(1),
-                range: Range::default(),
-                module_id: Module::TOP_LEVEL_MODULE_ID,
-            }))],
+            trailing_trivia: smallvec![Trivia::Whitespace(Blank {
+                start: Position::default(),
+                len: 1
+            })],
         }
     }
 
@@ -956,6 +981,21 @@ mod tests {
     use crate::arena::ArenaId;
 
     #[test]
+    fn node_size_stays_small() {
+        // Every node is its own allocation, so one wide variant enlarges all of them.
+        assert!(
+            std::mem::size_of::<NodeKind>() <= 56,
+            "NodeKind is {}",
+            std::mem::size_of::<NodeKind>()
+        );
+        assert!(
+            std::mem::size_of::<Node>() <= 112,
+            "Node is {}",
+            std::mem::size_of::<Node>()
+        );
+    }
+
+    #[test]
     fn test_node_range_includes_binary_operands_and_nested_call() {
         let (nodes, errors) = crate::parse_recovery("1 + foo(2)");
         assert!(!errors.has_errors(), "{errors}");
@@ -980,20 +1020,12 @@ mod tests {
 
     #[rstest]
     #[case(
-        Trivia::Whitespace(Shared::new(Token {
-            kind: TokenKind::Whitespace(1),
-            range: Range::default(),
-            module_id: ArenaId::new(0),
-        })),
+        Trivia::Whitespace(Blank { start: Position::default(), len: 1 }),
         " "
     )]
     #[case(Trivia::NewLine, "\n")]
     #[case(
-        Trivia::Tab(Shared::new(Token {
-            kind: TokenKind::Tab(1),
-            range: Range::default(),
-            module_id: ArenaId::new(0),
-        })),
+        Trivia::Tab(Blank { start: Position::default(), len: 1 }),
         "\t"
     )]
     #[case(
@@ -1010,20 +1042,12 @@ mod tests {
 
     #[rstest]
     #[case(
-        Trivia::Whitespace(Shared::new(Token {
-            kind: TokenKind::Whitespace(1),
-            range: Range::default(),
-            module_id: ArenaId::new(0),
-        })),
+        Trivia::Whitespace(Blank { start: Position::default(), len: 1 }),
         true, false, false, false
     )]
     #[case(Trivia::NewLine, false, true, false, false)]
     #[case(
-        Trivia::Tab(Shared::new(Token {
-            kind: TokenKind::Tab(1),
-            range: Range::default(),
-            module_id: ArenaId::new(0),
-        })),
+        Trivia::Tab(Blank { start: Position::default(), len: 1 }),
         false, false, true, false
     )]
     #[case(
@@ -1057,11 +1081,7 @@ mod tests {
         Some("test comment")
     )]
     #[case(
-        Trivia::Whitespace(Shared::new(Token {
-            kind: TokenKind::Whitespace(1),
-            range: Range::default(),
-            module_id: ArenaId::new(0),
-        })),
+        Trivia::Whitespace(Blank { start: Position::default(), len: 1 }),
         None
     )]
     fn test_trivia_comment(#[case] trivia: Trivia, #[case] expected: Option<&str>) {

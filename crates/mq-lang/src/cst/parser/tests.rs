@@ -6,6 +6,7 @@ use super::*;
 use crate::cst::node::BinaryOp;
 use rstest::rstest;
 use smallvec::smallvec;
+use thin_vec::thin_vec;
 
 fn error_node(kinds: Vec<TokenKind>) -> Shared<Node> {
     Shared::new(Node {
@@ -46,6 +47,20 @@ fn eof_node() -> Shared<Node> {
         token: Some(Shared::new(token(TokenKind::Eof))),
         leading_trivia: TriviaList::new(),
         trailing_trivia: TriviaList::new(),
+    })
+}
+
+fn ws(len: u32) -> Trivia {
+    Trivia::Whitespace(Blank {
+        start: Position::default(),
+        len,
+    })
+}
+
+fn tab(len: u32) -> Trivia {
+    Trivia::Tab(Blank {
+        start: Position::default(),
+        len,
     })
 }
 
@@ -114,7 +129,7 @@ Shared::new(Node {
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1)))),
+                    leading_trivia: smallvec![ws(1),
                                          Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment".into()))))],
                     trailing_trivia: TriviaList::new(),
                 }),
@@ -342,8 +357,8 @@ Shared::new(Node {
                             trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Let))),
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                    leading_trivia: smallvec![ws(4)],
+                    trailing_trivia: smallvec![ws(4)],
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
@@ -405,7 +420,7 @@ Shared::new(Node {
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1)))),
+                    leading_trivia: smallvec![ws(1),
                                          Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment".into())))) ],
                     trailing_trivia: TriviaList::new(),
                 }),
@@ -428,12 +443,12 @@ Shared::new(Node {
             vec![
                 Shared::new(Node {
                     kind: NodeKind::Error {
-                        children: smallvec![
+                        children: thin_vec![
                             Shared::new(Node {
                                 kind: NodeKind::Token,
                                 token: Some(Shared::new(token(TokenKind::Let))),
                                 leading_trivia: TriviaList::new(),
-                                trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                                trailing_trivia: smallvec![ws(4)],
                             }),
                             Shared::new(Node {
                                 kind: NodeKind::Token,
@@ -450,7 +465,7 @@ Shared::new(Node {
                         ],
                     },
                     token: None,
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                    leading_trivia: smallvec![ws(4)],
                     trailing_trivia: TriviaList::new(),
                 }),
                 eof_node(),
@@ -521,7 +536,7 @@ Shared::new(Node {
                         })) },
                     token: Some(Shared::new(token(TokenKind::If))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: smallvec![ws(2)],
                 }),
             ],
             ErrorReporter::default()
@@ -572,7 +587,7 @@ Shared::new(Node {
                         }) },
                     token: Some(Shared::new(token(TokenKind::Unless))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: smallvec![ws(2)],
                 }),
             ],
             ErrorReporter::default()
@@ -664,7 +679,7 @@ Shared::new(Node {
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Elif))),
                             leading_trivia: TriviaList::new(),
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                            trailing_trivia: smallvec![ws(2)],
                         }),
 ].into(), else_branch: Some(Shared::new(Node {
                             kind: NodeKind::Else { colon: Some(Shared::new(Node {
@@ -684,7 +699,7 @@ Shared::new(Node {
                         })) },
                     token: Some(Shared::new(token(TokenKind::If))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: smallvec![ws(2)],
                 }),
             ],
             ErrorReporter::default()
@@ -735,7 +750,7 @@ Shared::new(Node {
                         }), elifs: Elifs::new(), else_branch: None },
                     token: Some(Shared::new(token(TokenKind::If))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: smallvec![ws(2)],
                 }),
             ],
             ErrorReporter::default()
@@ -824,12 +839,12 @@ Shared::new(Node {
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Elif))),
                             leading_trivia: TriviaList::new(),
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                            trailing_trivia: smallvec![ws(2)],
                         }),
 ].into(), else_branch: None },
                     token: Some(Shared::new(token(TokenKind::If))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: smallvec![ws(2)],
                 }),
             ],
             ErrorReporter::default()
@@ -850,20 +865,20 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: smallvec![ws(1)],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::Pipe))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -986,7 +1001,7 @@ Shared::new(Node {
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Foreach))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1062,7 +1077,7 @@ Shared::new(Node {
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Foreach))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1152,7 +1167,7 @@ Shared::new(Node {
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Foreach))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1204,12 +1219,12 @@ Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
                             leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                            trailing_trivia: smallvec![ws(4)],
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::While))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1271,7 +1286,7 @@ Shared::new(Node {
 ].into() },
                     token: Some(Shared::new(token(TokenKind::While))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1324,7 +1339,7 @@ Shared::new(Node {
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Until))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1353,7 +1368,7 @@ Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
                             leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("loop comment".into())))), Trivia::NewLine],
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                            trailing_trivia: smallvec![ws(2)],
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Loop))),
@@ -1585,7 +1600,7 @@ Shared::new(Node {
                         }) },
                     token: Some(Shared::new(token(TokenKind::Include))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1608,7 +1623,7 @@ Shared::new(Node {
                         }), as_token: None, alias: None },
                     token: Some(Shared::new(token(TokenKind::Import))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1631,12 +1646,12 @@ Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("module".into())))),
                             leading_trivia: TriviaList::new(),
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            trailing_trivia: smallvec![ws(1)],
                         }), as_token: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::As))),
                             leading_trivia: TriviaList::new(),
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            trailing_trivia: smallvec![ws(1)],
                         })), alias: Some(Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("m".into())))),
@@ -1645,7 +1660,7 @@ Shared::new(Node {
                         })) },
                     token: Some(Shared::new(token(TokenKind::Import))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -1765,7 +1780,7 @@ Shared::new(Node {
                     kind: NodeKind::Nodes,
                     token: Some(Shared::new(token(TokenKind::Nodes))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -2153,11 +2168,11 @@ Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
                             leading_trivia: smallvec![Trivia::NewLine],
-                                trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                trailing_trivia: smallvec![ws(1)],
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: smallvec![ws(2)],
                     trailing_trivia: TriviaList::new(),
                 }),
             ],
@@ -2555,7 +2570,7 @@ Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
                             leading_trivia: TriviaList::new(),
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            trailing_trivia: smallvec![ws(1)],
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
@@ -2564,7 +2579,7 @@ Shared::new(Node {
                         }) },
                     token: Some(Shared::new(token(TokenKind::NeEq))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -3034,16 +3049,16 @@ Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
                                     leading_trivia: TriviaList::new(),
-                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    trailing_trivia: smallvec![ws(1)],
                                 }), rhs: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
                                     leading_trivia: TriviaList::new(),
-                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    trailing_trivia: smallvec![ws(1)],
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Plus))),
                             leading_trivia: TriviaList::new(),
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            trailing_trivia: smallvec![ws(1)],
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("z".into())))),
@@ -3052,7 +3067,7 @@ Shared::new(Node {
                         }) },
                     token: Some(Shared::new(token(TokenKind::Minus))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -3729,10 +3744,10 @@ Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
                             leading_trivia: TriviaList::new(),
-                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            trailing_trivia: smallvec![ws(1)],
                         }) },
                     token: None,
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: smallvec![ws(2)],
                     trailing_trivia: TriviaList::new(),
                 }),
             ],
@@ -4049,7 +4064,7 @@ Shared::new(Node {
                         }), elifs: Elifs::new(), else_branch: None },
                     token: Some(Shared::new(token(TokenKind::If))),
                     leading_trivia: TriviaList::new(),
-                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![ws(1)],
                 }),
             ],
             ErrorReporter::default()
@@ -4222,7 +4237,7 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("expression".into())))),
-                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Tab(Shared::new(token(TokenKind::Tab(1))))],
+                            leading_trivia: smallvec![Trivia::NewLine, tab(1)],
                             trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
@@ -4233,7 +4248,7 @@ Shared::new(Node {
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Do))),
-                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: smallvec![ws(2)],
                     trailing_trivia: TriviaList::new(),
                 }),
             ],
@@ -4281,7 +4296,7 @@ Shared::new(Node {
         (
             vec![
                 Shared::new(Node {
-                    kind: NodeKind::Block { program: smallvec![Shared::new(Node {
+                    kind: NodeKind::Block { program: thin_vec![Shared::new(Node {
                         kind: NodeKind::End,
                         token: Some(Shared::new(token(TokenKind::End))),
                         leading_trivia: TriviaList::new(),
@@ -5614,13 +5629,13 @@ Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
                                     leading_trivia: TriviaList::new(),
-                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    trailing_trivia: smallvec![ws(1)],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
                                     leading_trivia: TriviaList::new(),
-                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    trailing_trivia: smallvec![ws(1)],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
@@ -5902,7 +5917,7 @@ Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
                                     leading_trivia: smallvec![Trivia::NewLine],
-                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    trailing_trivia: smallvec![ws(1)],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
@@ -5970,7 +5985,7 @@ Shared::new(Node {
                                             kind: NodeKind::Token,
                                             token: Some(Shared::new(token(TokenKind::RParen))),
                                             leading_trivia: TriviaList::new(),
-                                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                            trailing_trivia: smallvec![ws(1)],
                                         }),
 ].into() },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
@@ -5981,7 +5996,7 @@ Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
                                     leading_trivia: TriviaList::new(),
-                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    trailing_trivia: smallvec![ws(1)],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Call { args: vec![
@@ -7645,7 +7660,8 @@ Shared::new(Node {
     )]
 
 fn test_parse(#[case] input: Vec<Shared<Token>>, #[case] expected: (Vec<Shared<Node>>, ErrorReporter)) {
-    let (nodes, errors) = Parser::new(&input).parse();
+    let tokens: Vec<Token> = input.iter().map(|token| (**token).clone()).collect();
+    let (nodes, errors) = Parser::new(&tokens).parse();
     assert_eq!(errors, expected.1);
     assert_eq!(nodes, expected.0);
 }

@@ -4,6 +4,7 @@ use crate::{Module, ast::node::MatchArm, range::Range, selector};
 use super::*;
 use rstest::rstest;
 use smallvec::smallvec;
+use thin_vec::{ThinVec, thin_vec};
 
 fn token(token_kind: TokenKind) -> Token {
     Token {
@@ -30,7 +31,7 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 4.into(),
                 expr: Expr::Call(
@@ -42,7 +43,7 @@ fn token(token_kind: TokenKind) -> Token {
                                 IdentWithToken::new_with_token("contains", Some(1.into())),
                                 smallvec![Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Expr::Literal(Literal::String("test".to_owned()))
+                                    expr: Expr::Literal(Literal::String("test".into()))
                                 })],
                             )
                         }),
@@ -52,7 +53,7 @@ fn token(token_kind: TokenKind) -> Token {
                                 IdentWithToken::new_with_token("startswith", Some(3.into())),
                                 smallvec![Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Expr::Literal(Literal::String("test2".to_owned()))
+                                    expr: Expr::Literal(Literal::String("test2".into()))
                                 })],
                             )
                         })
@@ -75,7 +76,7 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 8.into(),
                 expr: Expr::Call(
@@ -110,27 +111,27 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::StringLiteral("arg2".to_owned())),
             token(TokenKind::RParen),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                     IdentWithToken::new_with_token("filter", Some(7.into())),
-                    vec![
+                    thin_vec![
                         Param::new(IdentWithToken::new_with_token("arg1", Some(1.into()))),
                         Param::new(IdentWithToken::new_with_token("arg2", Some(2.into()))),
                     ],
-                    vec![Shared::new(Node {
+                    thin_vec![Shared::new(Node {
                         token_id: 6.into(),
                         expr: Expr::Call(
                             IdentWithToken::new_with_token("contains", Some(6.into())),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 4.into(),
-                                    expr: Expr::Literal(Literal::String("arg1".to_owned())),
+                                    expr: Expr::Literal(Literal::String("arg1".into())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 5.into(),
-                                    expr: Expr::Literal(Literal::String("arg2".to_owned())),
+                                    expr: Expr::Literal(Literal::String("arg2".into())),
                                 }),
                             ],
                         ),
@@ -148,7 +149,7 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Call(
@@ -200,7 +201,7 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::Selector(SmolStr::new(".lang"))),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Call(
@@ -212,7 +213,7 @@ fn token(token_kind: TokenKind) -> Token {
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Expr::Literal(Literal::String("lang".to_owned())),
+                            expr: Expr::Literal(Literal::String("lang".into())),
                         }),
                     ],
                 ),
@@ -236,15 +237,15 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::SemiColon)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(3.into())),
-                        Vec::new(),
-                        vec![Shared::new(Node {
+                        ThinVec::new(),
+                        thin_vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Expr::Literal(Literal::String("value".to_owned())),
+                            expr: Expr::Literal(Literal::String("value".into())),
                         })],
                 ),
             }),
@@ -259,15 +260,15 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::End)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(3.into())),
-                        Vec::new(),
-                        vec![Shared::new(Node {
+                        ThinVec::new(),
+                        thin_vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Expr::Literal(Literal::String("value".to_owned())),
+                            expr: Expr::Literal(Literal::String("value".into())),
                         })],
                 ),
             }),
@@ -351,15 +352,15 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::SemiColon)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(2.into())),
-                        Vec::new(),
-                        vec![Shared::new(Node {
+                        ThinVec::new(),
+                        thin_vec![Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Expr::Literal(Literal::String("value".to_owned())),
+                            expr: Expr::Literal(Literal::String("value".into())),
                         })],
                 ),
             }),
@@ -373,15 +374,15 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::StringLiteral("value".to_owned())),
             token(TokenKind::End)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(2.into())),
-                        Vec::new(),
-                        vec![Shared::new(Node {
+                        ThinVec::new(),
+                        thin_vec![Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Expr::Literal(Literal::String("value".to_owned())),
+                            expr: Expr::Literal(Literal::String("value".into())),
                         })],
                 ),
             }),
@@ -396,15 +397,15 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::Ident(SmolStr::new("x"))),
             token(TokenKind::SemiColon)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(3.into())),
-                        vec![
+                        thin_vec![
                           Param::new(IdentWithToken::new_with_token("x", Some(1.into()))),
                         ],
-                        vec![Shared::new(Node {
+                        thin_vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Ident(
                                 IdentWithToken::new_with_token("x", Some(2.into())),
@@ -461,7 +462,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::NumberLiteral(42.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Let(
@@ -481,14 +482,14 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::StringLiteral("hello".to_owned())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Let(
                         Pattern::Ident(IdentWithToken::new_with_token("y", Some(1.into()))),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Expr::Literal(Literal::String("hello".to_owned())),
+                            expr: Expr::Literal(Literal::String("hello".into())),
                         }),
                     ),
                 })
@@ -501,7 +502,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::BoolLiteral(true)),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Let(
@@ -521,7 +522,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::Ident(SmolStr::new("some_var"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Let(
@@ -551,7 +552,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::Equal),
                 token(TokenKind::Ident(SmolStr::new("some_var"))),
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Let(
@@ -572,7 +573,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::NumberLiteral(42.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Var(
@@ -592,7 +593,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::NumberLiteral(0.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Var(
@@ -611,7 +612,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::NumberLiteral(100.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Assign(
@@ -630,14 +631,14 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::StringLiteral("Alice".to_owned())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Assign(
                         IdentWithToken::new_with_token("name", Some(0.into())),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Expr::Literal(Literal::String("Alice".to_owned())),
+                            expr: Expr::Literal(Literal::String("Alice".into())),
                         }),
                     ),
                 })
@@ -652,7 +653,7 @@ fn token(token_kind: TokenKind) -> Token {
                 token(TokenKind::NumberLiteral(10.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
                     expr: Expr::IndexAssign(
@@ -678,7 +679,7 @@ Shared::new(Node {
                 token(TokenKind::NumberLiteral(1.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
                     expr: Expr::IndexAssign(
@@ -721,7 +722,7 @@ Shared::new(Node {
                 token(TokenKind::Eof)
             ],
             // arr[0] //= 2  →  arr[0] = floor(div(get(arr, 0), 2))
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
                     expr: Expr::IndexAssign(
@@ -780,10 +781,10 @@ Shared::new(Node {
                 token(TokenKind::StringLiteral("false branch".to_owned())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 7.into(),
-                    expr: Expr::If(vec![
+                    expr: Expr::If(thin_vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -791,14 +792,14 @@ Shared::new(Node {
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("true branch".into())),
                             })
                         ),
                         (
                             None,
                             Shared::new(Node {
                                 token_id: 6.into(),
-                                expr: Expr::Literal(Literal::String("false branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("false branch".into())),
                             })
                         )
                     ]),
@@ -823,10 +824,10 @@ Shared::new(Node {
                 token(TokenKind::StringLiteral("else branch".to_owned())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 11.into(),
-                    expr: Expr::If(vec![
+                    expr: Expr::If(thin_vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -834,7 +835,7 @@ Shared::new(Node {
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("true branch".into())),
                             })
                         ),
                         (
@@ -844,14 +845,14 @@ Shared::new(Node {
                             })),
                             Shared::new(Node {
                                 token_id: 7.into(),
-                                expr: Expr::Literal(Literal::String("elif branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("elif branch".into())),
                             })
                         ),
                         (
                             None,
                             Shared::new(Node {
                                 token_id: 10.into(),
-                                expr: Expr::Literal(Literal::String("else branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("else branch".into())),
                             })
                         )
                     ]),
@@ -867,10 +868,10 @@ Shared::new(Node {
                 token(TokenKind::StringLiteral("true branch".to_owned())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 4.into(),
-                    expr: Expr::If(vec![
+                    expr: Expr::If(thin_vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -878,7 +879,7 @@ Shared::new(Node {
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("true branch".into())),
                             })
                         ),
                     ]),
@@ -900,10 +901,10 @@ Shared::new(Node {
                 token(TokenKind::StringLiteral("true branch".to_owned())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 8.into(),
-                    expr: Expr::If(vec![
+                    expr: Expr::If(thin_vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -911,7 +912,7 @@ Shared::new(Node {
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("true branch".into())),
                             })
                         ),
                         (
@@ -921,7 +922,7 @@ Shared::new(Node {
                             })),
                             Shared::new(Node {
                                 token_id: 7.into(),
-                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
+                                expr: Expr::Literal(Literal::String("true branch".into())),
                             })
                         ),
                     ]),
@@ -987,7 +988,7 @@ Shared::new(Node {
             token(TokenKind::Selector(SmolStr::new(".h"))),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Selector(Selector::Heading(None)),
@@ -998,7 +999,7 @@ Shared::new(Node {
             token(TokenKind::Selector(SmolStr::new(".h"))),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 1.into(),
                 expr: Expr::Selector(Selector::Heading(None)),
@@ -1014,16 +1015,16 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("loop body".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 0.into(),
             expr: Expr::While(
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Literal(Literal::Bool(true)),
                 }),
-                vec![Shared::new(Node {
+                thin_vec![Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
+                    expr: Expr::Literal(Literal::String("loop body".into())),
                 })],
             ),
         })]))]
@@ -1056,16 +1057,16 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("loop body".to_owned())),
             token(TokenKind::End),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 0.into(),
             expr: Expr::While(
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Literal(Literal::Bool(true)),
                 }),
-                vec![Shared::new(Node {
+                thin_vec![Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
+                    expr: Expr::Literal(Literal::String("loop body".into())),
                 })],
             ),
         })]))]
@@ -1076,12 +1077,12 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("loop body".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 1.into(),
             expr: Expr::Loop(
-                vec![Shared::new(Node {
+                thin_vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
+                    expr: Expr::Literal(Literal::String("loop body".into())),
                 })],
             ),
         })]))]
@@ -1101,16 +1102,16 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("loop body".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 0.into(),
             expr: Expr::Until(
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Literal(Literal::Bool(true)),
                 }),
-                vec![Shared::new(Node {
+                thin_vec![Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
+                    expr: Expr::Literal(Literal::String("loop body".into())),
                 })],
             ),
         })]))]
@@ -1134,10 +1135,10 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("branch".to_owned())),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Expr::Unless(vec![
+                expr: Expr::Unless(thin_vec![
                     (
                         Some(Shared::new(Node {
                             token_id: 1.into(),
@@ -1145,7 +1146,7 @@ Shared::new(Node {
                         })),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Expr::Literal(Literal::String("branch".to_owned())),
+                            expr: Expr::Literal(Literal::String("branch".into())),
                         })
                     ),
                 ]),
@@ -1171,7 +1172,7 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("fallback".to_owned())),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 2.into(),
             expr: Expr::Try(
                 Shared::new(Node {
@@ -1181,7 +1182,7 @@ Shared::new(Node {
                 None,
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Expr::Literal(Literal::String("fallback".to_owned())),
+                    expr: Expr::Literal(Literal::String("fallback".into())),
                 }),
             ),
         })]))]
@@ -1198,7 +1199,7 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("e"))),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 2.into(),
             expr: Expr::Try(
                 Shared::new(Node {
@@ -1227,7 +1228,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 6.into(),
             expr: Expr::Foreach(
                 IdentWithToken::new_with_token(
@@ -1236,9 +1237,9 @@ Shared::new(Node {
                 ),
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Expr::Literal(Literal::String("array".to_owned())),
+                    expr: Expr::Literal(Literal::String("array".into())),
                 }),
-                vec![Shared::new(Node {
+                thin_vec![Shared::new(Node {
                     token_id: 4.into(),
                     expr: Expr::Call(
                         IdentWithToken::new_with_token(
@@ -1284,7 +1285,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::End),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 6.into(),
             expr: Expr::Foreach(
                 IdentWithToken::new_with_token(
@@ -1293,9 +1294,9 @@ Shared::new(Node {
                 ),
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Expr::Literal(Literal::String("array".to_owned())),
+                    expr: Expr::Literal(Literal::String("array".into())),
                 }),
-                vec![Shared::new(Node {
+                thin_vec![Shared::new(Node {
                     token_id: 4.into(),
                     expr: Expr::Call(
                         IdentWithToken::new_with_token(
@@ -1315,7 +1316,7 @@ Shared::new(Node {
         })]))]
 #[case::self_(
         vec![token(TokenKind::Self_), token(TokenKind::Eof)],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 0.into(),
             expr: Expr::Self_,
         })]))]
@@ -1325,16 +1326,16 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("module_name".to_owned())),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 0.into(),
-            expr: Expr::Include(Literal::String("module_name".to_owned())),
+            expr: Expr::Include(Literal::String("module_name".into())),
         })]))]
 #[case::code_selector_with_language(
         vec![
             token(TokenKind::Selector(SmolStr::new(".code"))),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 2.into(),
             expr: Expr::Selector(Selector::Code),
         })]))]
@@ -1346,15 +1347,15 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 1.into(),
             expr: Expr::SelectorCall(
-                Selector::Heading(None),
+                Box::new(Selector::Heading(None)),
                 // arg literal is allocated first (id=0), then the selector token (id=1)
-                Box::new(smallvec![Shared::new(Node {
+                smallvec![Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Literal(Literal::Number(1.into())),
-                })]),
+                })],
             ),
         })]))]
 #[case::selector_call_heading_multi_arg(
@@ -1367,12 +1368,12 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 2.into(),
             expr: Expr::SelectorCall(
-                Selector::Heading(None),
+                Box::new(Selector::Heading(None)),
                 // args are allocated first (id=0, id=1), then the selector token (id=2)
-                Box::new(smallvec![
+                smallvec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Literal(Literal::Number(1.into())),
@@ -1381,7 +1382,7 @@ Shared::new(Node {
                         token_id: 1.into(),
                         expr: Expr::Literal(Literal::Number(2.into())),
                     }),
-                ]),
+                ],
             ),
         })]))]
 #[case::selector_call_code_lang(
@@ -1392,15 +1393,15 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 1.into(),
             expr: Expr::SelectorCall(
-                Selector::Code,
+                Box::new(Selector::Code),
                 // arg literal is allocated first (id=0), then the selector token (id=1)
-                Box::new(smallvec![Shared::new(Node {
+                smallvec![Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Expr::Literal(Literal::String("rust".to_owned())),
-                })]),
+                    expr: Expr::Literal(Literal::String("rust".into())),
+                })],
             ),
         })]))]
 #[case::selector_call_with_attribute(
@@ -1412,7 +1413,7 @@ Shared::new(Node {
             token(TokenKind::Selector(SmolStr::new(".level"))),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             // attr() Call: arg literal id=0, SelectorCall id=1, attr_literal id=2, Call id=3
             token_id: 3.into(),
             expr: Expr::Call(
@@ -1424,16 +1425,16 @@ Shared::new(Node {
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Expr::SelectorCall(
-                            Selector::Heading(None),
-                            Box::new(smallvec![Shared::new(Node {
+                            Box::new(Selector::Heading(None)),
+                            smallvec![Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Literal(Literal::Number(1.into())),
-                            })]),
+                            })],
                         ),
                     }),
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Expr::Literal(Literal::String("level".to_owned())),
+                        expr: Expr::Literal(Literal::String("level".into())),
                     }),
                 ],
             ),
@@ -1447,7 +1448,7 @@ Shared::new(Node {
             token(TokenKind::Selector(SmolStr::new(".lang"))),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             // attr() Call: arg literal id=0, SelectorCall id=1, attr_literal id=2, Call id=3
             token_id: 3.into(),
             expr: Expr::Call(
@@ -1459,16 +1460,16 @@ Shared::new(Node {
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Expr::SelectorCall(
-                            Selector::Code,
-                            Box::new(smallvec![Shared::new(Node {
+                            Box::new(Selector::Code),
+                            smallvec![Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Expr::Literal(Literal::String("rust".to_owned())),
-                            })]),
+                                expr: Expr::Literal(Literal::String("rust".into())),
+                            })],
                         ),
                     }),
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Expr::Literal(Literal::String("lang".to_owned())),
+                        expr: Expr::Literal(Literal::String("lang".into())),
                     }),
                 ],
             ),
@@ -1484,7 +1485,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 8.into(),
             expr: Expr::Selector(Selector::Table(Some(1), Some(2))),
         })]))]
@@ -1498,14 +1499,14 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 2.into(),
             expr: Expr::SelectorCall(
-                Selector::List(None, None),
-                Box::new(smallvec![Shared::new(Node {
+                Box::new(Selector::List(None, None)),
+                smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Literal(Literal::Number(2.into())),
-                })]),
+                })],
             ),
         })]))]
 #[case::selector_call_table_bracket_single_arg(
@@ -1520,14 +1521,14 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 3.into(),
             expr: Expr::SelectorCall(
-                Selector::Table(None, None),
-                Box::new(smallvec![Shared::new(Node {
+                Box::new(Selector::Table(None, None)),
+                smallvec![Shared::new(Node {
                     token_id: 2.into(),
                     expr: Expr::Literal(Literal::Number(1.into())),
-                })]),
+                })],
             ),
         })]))]
 #[case::selector_call_list_bracket_variable(
@@ -1538,17 +1539,17 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 3.into(),
             expr: Expr::SelectorCall(
-                Selector::List(None, None),
-                Box::new(smallvec![Shared::new(Node {
+                Box::new(Selector::List(None, None)),
+                smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(1.into()),
                     )),
-                })]),
+                })],
             ),
         })]))]
 #[case::selector_call_table_bracket_column_variable(
@@ -1561,11 +1562,11 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 5.into(),
             expr: Expr::SelectorCall(
-                Selector::Table(None, None),
-                Box::new(smallvec![
+                Box::new(Selector::Table(None, None)),
+                smallvec![
                     Shared::new(Node {
                         token_id: 4.into(),
                         expr: Expr::Literal(Literal::None),
@@ -1577,7 +1578,7 @@ Shared::new(Node {
                             Some(2.into()),
                         )),
                     }),
-                ]),
+                ],
             ),
         })]))]
 #[case::selector_call_table_bracket_variable(
@@ -1590,17 +1591,17 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 4.into(),
             expr: Expr::SelectorCall(
-                Selector::Table(None, None),
-                Box::new(smallvec![Shared::new(Node {
+                Box::new(Selector::Table(None, None)),
+                smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(1.into()),
                     )),
-                })]),
+                })],
             ),
         })]))]
 #[case::selector_call_table_bracket_row_col_args(
@@ -1617,11 +1618,11 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![Shared::new(Node {
+        Ok(thin_vec![Shared::new(Node {
             token_id: 4.into(),
             expr: Expr::SelectorCall(
-                Selector::Table(None, None),
-                Box::new(smallvec![
+                Box::new(Selector::Table(None, None)),
+                smallvec![
                     Shared::new(Node {
                         token_id: 2.into(),
                         expr: Expr::Literal(Literal::Number(1.into())),
@@ -1630,7 +1631,7 @@ Shared::new(Node {
                         token_id: 3.into(),
                         expr: Expr::Literal(Literal::Number(2.into())),
                     }),
-                ]),
+                ],
             ),
         })]))]
 #[case::foreach_error(
@@ -1696,7 +1697,7 @@ Shared::new(Node {
             token(TokenKind::Nodes),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Nodes,
@@ -1720,7 +1721,7 @@ Shared::new(Node {
             token(TokenKind::Selector(SmolStr::new(".h1"))),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Nodes,
@@ -1741,7 +1742,7 @@ Shared::new(Node {
             token(TokenKind::Selector(SmolStr::new(".text"))),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Nodes,
@@ -1768,15 +1769,15 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("result".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    Vec::new(),
-                    vec![
+                    ThinVec::new(),
+                    thin_vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Expr::Literal(Literal::String("result".to_owned())),
+                            expr: Expr::Literal(Literal::String("result".into())),
                         })
                     ],
                 ),
@@ -1799,15 +1800,15 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    vec![
+                    thin_vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(1.into()))),
                         Param::new(IdentWithToken::new_with_token("y", Some(2.into()))),
                     ],
-                    vec![
+                    thin_vec![
                         Shared::new(Node {
                             token_id: 6.into(),
                             expr: Expr::Call(
@@ -1840,21 +1841,21 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("second".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    vec![
+                    thin_vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(1.into()))),
                     ],
-                    vec![
+                    thin_vec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Expr::Literal(Literal::String("first".to_owned())),
+                            expr: Expr::Literal(Literal::String("first".into())),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Expr::Literal(Literal::String("second".to_owned())),
+                            expr: Expr::Literal(Literal::String("second".into())),
                         })
                     ],
                 ),
@@ -1894,7 +1895,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 4.into(),
                 expr: Expr::Call(
@@ -1903,13 +1904,13 @@ Shared::new(Node {
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Fn(
-                                vec![
+                                thin_vec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(1.into()))),
                                 ],
-                                vec![
+                                thin_vec![
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Expr::Literal(Literal::String("processed".to_owned())),
+                                        expr: Expr::Literal(Literal::String("processed".into())),
                                     })
                                 ],
                             ),
@@ -1924,7 +1925,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Array(SmallVec::new()),
@@ -1939,14 +1940,14 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Array(
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Expr::Literal(Literal::String("first".to_owned())),
+                                    expr: Expr::Literal(Literal::String("first".into())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
@@ -1967,14 +1968,14 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Array(
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Expr::Literal(Literal::String("text".to_owned())),
+                                    expr: Expr::Literal(Literal::String("text".into())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
@@ -2001,7 +2002,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Array(
@@ -2040,14 +2041,14 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Array(
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Expr::Literal(Literal::String("value".to_owned())),
+                                    expr: Expr::Literal(Literal::String("value".into())),
                                 }),
                             ],
                         ),
@@ -2086,7 +2087,7 @@ Shared::new(Node {
                         token(TokenKind::RBracket),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Array(
@@ -2110,18 +2111,18 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("world".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
     BinaryOp::Eq,
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Expr::Literal(Literal::String("hello".to_owned())),
+                                        expr: Expr::Literal(Literal::String("hello".into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("world".to_owned())),
+                                        expr: Expr::Literal(Literal::String("world".into())),
                                     }),
                                 ),
                         })
@@ -2133,7 +2134,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(42.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2156,7 +2157,7 @@ Shared::new(Node {
                         token(TokenKind::BoolLiteral(false)),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2179,7 +2180,7 @@ Shared::new(Node {
                         token(TokenKind::Ident(SmolStr::new("y"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2205,7 +2206,7 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("result".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::BinaryOp(
@@ -2217,14 +2218,14 @@ Shared::new(Node {
                                             smallvec![
                                                 Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Expr::Literal(Literal::String("arg".to_owned())),
+                                                    expr: Expr::Literal(Literal::String("arg".into())),
                                                 }),
                                             ],
                                         ),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Expr::Literal(Literal::String("result".to_owned())),
+                                        expr: Expr::Literal(Literal::String("result".into())),
                                     }),
                                 ),
                         })
@@ -2236,7 +2237,7 @@ Shared::new(Node {
                         token(TokenKind::Selector(SmolStr::new(".text"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2259,7 +2260,7 @@ Shared::new(Node {
                         token(TokenKind::None),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2294,10 +2295,10 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("equal".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Expr::If(vec![
+                            expr: Expr::If(thin_vec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
@@ -2315,7 +2316,7 @@ Shared::new(Node {
                                     })),
                                     Shared::new(Node {
                                         token_id: 5.into(),
-                                        expr: Expr::Literal(Literal::String("equal".to_owned())),
+                                        expr: Expr::Literal(Literal::String("equal".into())),
                                     })
                                 ),
                             ]),
@@ -2328,18 +2329,18 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("world".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
     BinaryOp::Ne,
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Expr::Literal(Literal::String("hello".to_owned())),
+                                        expr: Expr::Literal(Literal::String("hello".into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("world".to_owned())),
+                                        expr: Expr::Literal(Literal::String("world".into())),
                                     }),
                                 ),
                         })
@@ -2351,7 +2352,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(24.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2374,7 +2375,7 @@ Shared::new(Node {
                         token(TokenKind::BoolLiteral(false)),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2397,7 +2398,7 @@ Shared::new(Node {
                         token(TokenKind::Ident(SmolStr::new("y"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2423,7 +2424,7 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("result".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::BinaryOp(
@@ -2435,14 +2436,14 @@ Shared::new(Node {
                                             smallvec![
                                                 Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Expr::Literal(Literal::String("arg".to_owned())),
+                                                    expr: Expr::Literal(Literal::String("arg".into())),
                                                 }),
                                             ],
                                         ),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Expr::Literal(Literal::String("result".to_owned())),
+                                        expr: Expr::Literal(Literal::String("result".into())),
                                     }),
                                 ),
                         })
@@ -2454,7 +2455,7 @@ Shared::new(Node {
                         token(TokenKind::Selector(SmolStr::new(".text"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2477,7 +2478,7 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("something".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2488,7 +2489,7 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("something".to_owned())),
+                                        expr: Expr::Literal(Literal::String("something".into())),
                                     }),
                                 ),
                         })
@@ -2512,10 +2513,10 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("not equal".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Expr::If(vec![
+                            expr: Expr::If(thin_vec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
@@ -2533,7 +2534,7 @@ Shared::new(Node {
                                     })),
                                     Shared::new(Node {
                                         token_id: 5.into(),
-                                        expr: Expr::Literal(Literal::String("not equal".to_owned())),
+                                        expr: Expr::Literal(Literal::String("not equal".into())),
                                     })
                                 ),
                             ]),
@@ -2546,7 +2547,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(2.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2569,7 +2570,7 @@ Shared::new(Node {
                         token(TokenKind::Ident(SmolStr::new("y"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2599,7 +2600,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(2.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2622,7 +2623,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(2.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2645,7 +2646,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(2.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2668,7 +2669,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(2.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::BinaryOp(
@@ -2690,7 +2691,7 @@ Shared::new(Node {
                             token(TokenKind::RBrace),
                             token(TokenKind::Eof)
                         ],
-                        Ok(vec![
+                        Ok(thin_vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Dict(SmallVec::new()),
@@ -2705,7 +2706,7 @@ Shared::new(Node {
                             token(TokenKind::RBrace),
                             token(TokenKind::Eof)
                         ],
-                        Ok(vec![
+                        Ok(thin_vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Dict(
@@ -2720,7 +2721,7 @@ Shared::new(Node {
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 2.into(),
-                                                        expr: Expr::Literal(Literal::String("value".to_owned())),
+                                                        expr: Expr::Literal(Literal::String("value".into())),
                                                     }),
                                                 ],
                                             ),
@@ -2742,7 +2743,7 @@ Shared::new(Node {
                             token(TokenKind::RBrace),
                             token(TokenKind::Eof)
                         ],
-                        Ok(vec![
+                        Ok(thin_vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Dict(
@@ -2768,7 +2769,7 @@ Shared::new(Node {
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 3.into(),
-                                                        expr: Expr::Literal(Literal::String("b".to_owned())),
+                                                        expr: Expr::Literal(Literal::String("b".into())),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 4.into(),
@@ -2791,7 +2792,7 @@ Shared::new(Node {
                             token(TokenKind::RBrace),
                             token(TokenKind::Eof)
                         ],
-                        Ok(vec![
+                        Ok(thin_vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Dict(
@@ -2848,7 +2849,7 @@ Shared::new(Node {
             token(TokenKind::Selector(".h".into())),
             token(TokenKind::Selector(".value".into())),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Call(IdentWithToken::new_with_token(constants::builtins::ATTR, Some(0.into())),
@@ -2859,7 +2860,7 @@ Shared::new(Node {
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Expr::Literal(Literal::String("value".to_owned())),
+                            expr: Expr::Literal(Literal::String("value".into())),
                         }),
 
                     ],
@@ -2869,7 +2870,7 @@ Shared::new(Node {
             token(TokenKind::Selector(".list".into())),
             token(TokenKind::Selector(".checked".into())),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Call(IdentWithToken::new_with_token(constants::builtins::ATTR, Some(0.into())),
@@ -2880,7 +2881,7 @@ Shared::new(Node {
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Expr::Literal(Literal::String("checked".to_owned())),
+                            expr: Expr::Literal(Literal::String("checked".into())),
                         }),
 
                     ],
@@ -2893,7 +2894,7 @@ Shared::new(Node {
             token(TokenKind::NumberLiteral(2.into())),
             token(TokenKind::RParen),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Paren(
@@ -2921,7 +2922,7 @@ Shared::new(Node {
             token(TokenKind::NumberLiteral(3.into())),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 1.into(),
                 expr: Expr::BinaryOp(
@@ -2944,7 +2945,7 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("b"))),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 1.into(),
                 expr: Expr::BinaryOp(
@@ -2967,7 +2968,7 @@ Shared::new(Node {
             token(TokenKind::NumberLiteral(2.into())),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 1.into(),
                 expr: Expr::BinaryOp(
@@ -2990,7 +2991,7 @@ Shared::new(Node {
                 token(TokenKind::NumberLiteral(3.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::BinaryOp(
@@ -3013,7 +3014,7 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("b"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::BinaryOp(
@@ -3043,7 +3044,7 @@ Shared::new(Node {
                 token(TokenKind::NumberLiteral(4.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::BinaryOp(
@@ -3066,7 +3067,7 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("b"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::BinaryOp(
@@ -3096,7 +3097,7 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("b"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Call(
@@ -3130,7 +3131,7 @@ Shared::new(Node {
                 token(TokenKind::NumberLiteral(3.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
                     expr: Expr::BinaryOp(
@@ -3165,7 +3166,7 @@ Shared::new(Node {
                 token(TokenKind::NumberLiteral(3.into())),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
                     expr: Expr::BinaryOp(
@@ -3200,10 +3201,10 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("c"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::And(vec![
+                    expr: Expr::And(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
@@ -3228,10 +3229,10 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("z"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Or(vec![
+                    expr: Expr::Or(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(0.into()))),
@@ -3256,13 +3257,13 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("c"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Or(vec![
+                    expr: Expr::Or(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Expr::And(vec![
+                            expr: Expr::And(thin_vec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
@@ -3291,10 +3292,10 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("d"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Expr::And(vec![
+                    expr: Expr::And(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
@@ -3325,10 +3326,10 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("d"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Expr::Or(vec![
+                    expr: Expr::Or(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
@@ -3359,17 +3360,17 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("d"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Expr::Or(vec![
+                    expr: Expr::Or(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Expr::And(vec![
+                            expr: Expr::And(thin_vec![
                                 Shared::new(Node {
                                     token_id: 2.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(2.into()))),
@@ -3399,13 +3400,13 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("d"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Or(vec![
+                    expr: Expr::Or(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Expr::And(vec![
+                            expr: Expr::And(thin_vec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
@@ -3418,7 +3419,7 @@ Shared::new(Node {
                         }),
                         Shared::new(Node {
                             token_id: 5.into(),
-                            expr: Expr::And(vec![
+                            expr: Expr::And(thin_vec![
                                 Shared::new(Node {
                                     token_id: 4.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(4.into()))),
@@ -3444,17 +3445,17 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("d"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Expr::Or(vec![
+                    expr: Expr::Or(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Expr::And(vec![
+                            expr: Expr::And(thin_vec![
                                 Shared::new(Node {
                                     token_id: 2.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(2.into()))),
@@ -3488,13 +3489,13 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("f"))),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Expr::Or(vec![
+                    expr: Expr::Or(thin_vec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Expr::And(vec![
+                            expr: Expr::And(thin_vec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(0.into()))),
@@ -3511,7 +3512,7 @@ Shared::new(Node {
                         }),
                         Shared::new(Node {
                             token_id: 9.into(),
-                            expr: Expr::And(vec![
+                            expr: Expr::And(thin_vec![
                                 Shared::new(Node {
                                     token_id: 6.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("d", Some(6.into()))),
@@ -3536,7 +3537,7 @@ Shared::new(Node {
                     token(TokenKind::NumberLiteral(5.into())),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Expr::Call(
@@ -3561,7 +3562,7 @@ Shared::new(Node {
                     token(TokenKind::Ident(SmolStr::new("end"))),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Expr::Call(
@@ -3648,10 +3649,10 @@ Shared::new(Node {
                     token(TokenKind::NumberLiteral(1.into())),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Expr::Or(vec![
+                        expr: Expr::Or(thin_vec![
                             Shared::new(Node {
                                 token_id: 1.into(),
                                 expr: Expr::BinaryOp(
@@ -3689,7 +3690,7 @@ Shared::new(Node {
                     token(TokenKind::BoolLiteral(false)),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::UnaryOp(UnaryOp::Not, Shared::new(Node {
@@ -3704,7 +3705,7 @@ Shared::new(Node {
                     token(TokenKind::Ident(SmolStr::new("x"))),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::UnaryOp(UnaryOp::Not, Shared::new(Node {
@@ -3721,7 +3722,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 2.into(),
                         expr: Expr::Index(Shared::new(Node {
@@ -3741,7 +3742,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 2.into(),
                         expr: Expr::Index(Shared::new(Node {
@@ -3749,7 +3750,7 @@ Shared::new(Node {
                                     expr: Expr::Ident(IdentWithToken::new_with_token(constants::builtins::DICT, Some(0.into()))),
                                 }), Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Expr::Literal(Literal::String("key".to_owned())),
+                                    expr: Expr::Literal(Literal::String("key".into())),
                                 })),
                     })
                 ]))]
@@ -3774,7 +3775,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 5.into(),
                         expr: Expr::Slice(Shared::new(Node {
@@ -3799,7 +3800,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 5.into(),
                         expr: Expr::Slice(Shared::new(Node {
@@ -3822,7 +3823,7 @@ Shared::new(Node {
                     token(TokenKind::RParen),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::UnaryOp(UnaryOp::Not, Shared::new(Node {
@@ -3842,7 +3843,7 @@ Shared::new(Node {
                     token(TokenKind::None),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::UnaryOp(
@@ -3865,7 +3866,7 @@ Shared::new(Node {
                         token(TokenKind::Break),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Break(None),
@@ -3876,7 +3877,7 @@ Shared::new(Node {
                         token(TokenKind::Continue),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Continue,
@@ -3890,7 +3891,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 2.into(),
                         expr: Expr::Index(Shared::new(Node {
@@ -3910,7 +3911,7 @@ Shared::new(Node {
                     token(TokenKind::RBracket),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 2.into(),
                         expr: Expr::Index(Shared::new(Node {
@@ -3918,7 +3919,7 @@ Shared::new(Node {
                                     expr: Expr::Self_,
                                 }), Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Expr::Literal(Literal::String("key".to_owned())),
+                                    expr: Expr::Literal(Literal::String("key".into())),
                                 })),
                     })
                 ]))]
@@ -3933,7 +3934,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Index(Shared::new(Node {
@@ -3960,7 +3961,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 1.into(),
                 expr: Expr::Index(Shared::new(Node {
@@ -3970,13 +3971,13 @@ Shared::new(Node {
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Expr::Literal(Literal::String("arg".to_owned())),
+                                        expr: Expr::Literal(Literal::String("arg".into())),
                                     })
                                 ],
                             ),
                         }), Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Expr::Literal(Literal::String("key".to_owned())),
+                            expr: Expr::Literal(Literal::String("key".into())),
                         })),
             })
         ]))]
@@ -3994,7 +3995,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Index(Shared::new(Node {
@@ -4022,7 +4023,7 @@ Shared::new(Node {
                 token(TokenKind::Ident(SmolStr::new("error_expr"))),
                 token(TokenKind::Eof),
             ],
-            Ok(vec![Shared::new(Node {
+            Ok(thin_vec![Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::Try(
                     Shared::new(Node {
@@ -4048,7 +4049,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::CallDynamic(
@@ -4078,7 +4079,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 2.into(),
                 expr: Expr::CallDynamic(
@@ -4095,7 +4096,7 @@ Shared::new(Node {
                     smallvec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Expr::Literal(Literal::String("test".to_owned())),
+                            expr: Expr::Literal(Literal::String("test".into())),
                         })
                     ],
                 ),
@@ -4112,7 +4113,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Index(Shared::new(Node {
@@ -4140,7 +4141,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::CallDynamic(
@@ -4156,7 +4157,7 @@ Shared::new(Node {
                     smallvec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Expr::Literal(Literal::String("test".to_owned())),
+                            expr: Expr::Literal(Literal::String("test".into())),
                         }),
                     ],
                 ),
@@ -4176,7 +4177,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Index(Shared::new(Node {
@@ -4194,7 +4195,7 @@ Shared::new(Node {
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("a".to_owned())),
+                                        expr: Expr::Literal(Literal::String("a".into())),
                                     }),
                                 ],
                             ),
@@ -4217,7 +4218,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Index(Shared::new(Node {
@@ -4254,7 +4255,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 4.into(),
                 expr: Expr::CallDynamic(
@@ -4287,7 +4288,7 @@ Shared::new(Node {
                 token(TokenKind::Question),
                 token(TokenKind::Eof),
             ],
-            Ok(vec![Shared::new(Node {
+            Ok(thin_vec![Shared::new(Node {
                 token_id: 1.into(),
                 expr: Expr::Try(
                     Shared::new(Node {
@@ -4297,7 +4298,7 @@ Shared::new(Node {
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Expr::Literal(Literal::String("arg".to_owned())),
+                                    expr: Expr::Literal(Literal::String("arg".into())),
                                 }),
                             ],
                         ),
@@ -4318,7 +4319,7 @@ Shared::new(Node {
                     token(TokenKind::Question),
                     token(TokenKind::Eof),
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Expr::Try(
@@ -4346,7 +4347,7 @@ Shared::new(Node {
                     token(TokenKind::Question),
                     token(TokenKind::Eof),
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 1.into(),
                         expr: Expr::Try(
@@ -4357,7 +4358,7 @@ Shared::new(Node {
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Expr::Literal(Literal::String("arg".to_owned())),
+                                            expr: Expr::Literal(Literal::String("arg".into())),
                                         }),
                                     ],
                                 ),
@@ -4384,7 +4385,7 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("bar".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Call(
@@ -4392,11 +4393,11 @@ Shared::new(Node {
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Expr::Literal(Literal::String("foo".to_owned())),
+                                        expr: Expr::Literal(Literal::String("foo".into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("bar".to_owned())),
+                                        expr: Expr::Literal(Literal::String("bar".into())),
                                     }),
                                 ],
                             ),
@@ -4409,7 +4410,7 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("default".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Call(
@@ -4421,7 +4422,7 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("default".to_owned())),
+                                        expr: Expr::Literal(Literal::String("default".into())),
                                     }),
                                 ],
                             ),
@@ -4434,7 +4435,7 @@ Shared::new(Node {
                         token(TokenKind::Ident(SmolStr::new("y"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Call(
@@ -4465,7 +4466,7 @@ Shared::new(Node {
             token(TokenKind::NumberLiteral(42.into())),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::UnaryOp(UnaryOp::Neg, Shared::new(Node {
@@ -4480,7 +4481,7 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("x"))),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::UnaryOp(UnaryOp::Neg, Shared::new(Node {
@@ -4497,7 +4498,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::UnaryOp(
@@ -4518,14 +4519,14 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("a".to_owned())),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::UnaryOp(
                     UnaryOp::Neg,
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Expr::Literal(Literal::String("a".to_owned())),
+                        expr: Expr::Literal(Literal::String("a".into())),
                     })
                 ),
             })
@@ -4542,11 +4543,11 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("name".to_owned())),
             token(TokenKind::Eof),
             ],
-            Ok(vec![
+            Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Import(
-                    Literal::String("name".to_owned()),
+                    Literal::String("name".into()),
                     None,
                 ),
             })
@@ -4559,11 +4560,11 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("alias"))),
             token(TokenKind::Eof),
             ],
-            Ok(vec![
+            Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Import(
-                    Literal::String("name".to_owned()),
+                    Literal::String("name".into()),
                     Some(IdentWithToken::new_with_token(
                         "alias",
                         Some(1.into()),
@@ -4586,11 +4587,11 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("foo"))),
             token(TokenKind::Eof),
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::QualifiedAccess(
-                        vec![IdentWithToken::new_with_token("test", Some(0.into()))],
+                        thin_vec![IdentWithToken::new_with_token("test", Some(0.into()))],
                         AccessTarget::Ident(IdentWithToken::new_with_token("foo", Some(1.into())),
                     )),
                 })
@@ -4605,17 +4606,17 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 4.into(),
                 expr: Expr::QualifiedAccess(
-                    vec![IdentWithToken::new_with_token("mod", Some(0.into()))],
+                    thin_vec![IdentWithToken::new_with_token("mod", Some(0.into()))],
                     AccessTarget::Call(
                         IdentWithToken::new_with_token("func", Some(2.into())),
                         Box::new(smallvec![
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Expr::Literal(Literal::String("arg".to_owned())),
+                                expr: Expr::Literal(Literal::String("arg".into())),
                             }),
                         ]),
                     ),
@@ -4633,11 +4634,11 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 4.into(),
                 expr: Expr::QualifiedAccess(
-                    vec![
+                    thin_vec![
                         IdentWithToken::new_with_token("mod1", Some(0.into())),
                         IdentWithToken::new_with_token("mod2", Some(1.into())),
                     ],
@@ -4657,7 +4658,7 @@ Shared::new(Node {
                 token(TokenKind::RBracket),
                 token(TokenKind::Eof)
             ],
-            Ok(vec![
+            Ok(thin_vec![
                 Shared::new(Node {
                     token_id: 4.into(),
                     expr: Expr::Slice(Shared::new(Node {
@@ -4678,7 +4679,7 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 3.into(),
                 expr: Expr::Slice(Shared::new(Node {
@@ -4707,13 +4708,13 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 3.into(),
                 expr: Expr::Slice(Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::QualifiedAccess(
-                                vec![IdentWithToken::new_with_token("mod", Some(0.into()))],
+                                thin_vec![IdentWithToken::new_with_token("mod", Some(0.into()))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(1.into())),
                                     Box::new(smallvec![]),
@@ -4741,13 +4742,13 @@ Shared::new(Node {
             token(TokenKind::RBracket),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 3.into(),
                 expr: Expr::Slice(Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::QualifiedAccess(
-                                vec![IdentWithToken::new_with_token("mod", Some(0.into()))],
+                                thin_vec![IdentWithToken::new_with_token("mod", Some(0.into()))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(1.into())),
                                     Box::new(smallvec![]),
@@ -4767,7 +4768,7 @@ Shared::new(Node {
                     token(TokenKind::Selector(SmolStr::new("."))),
                     token(TokenKind::Eof)
                 ],
-                Ok(vec![
+                Ok(thin_vec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Self_,
@@ -4779,7 +4780,7 @@ Shared::new(Node {
                         token(TokenKind::Selector(SmolStr::new(".name"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Call(
@@ -4791,7 +4792,7 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Expr::Literal(Literal::String("name".to_owned())),
+                                        expr: Expr::Literal(Literal::String("name".into())),
                                     }),
                                 ],
                             ),
@@ -4805,7 +4806,7 @@ Shared::new(Node {
                         token(TokenKind::Selector(SmolStr::new(".name"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 3.into(),
                             expr: Expr::Call(
@@ -4820,7 +4821,7 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Expr::Literal(Literal::String("name".to_owned())),
+                                        expr: Expr::Literal(Literal::String("name".into())),
                                     }),
                                 ],
                             ),
@@ -4834,7 +4835,7 @@ Shared::new(Node {
                         token(TokenKind::Selector(SmolStr::new(".value"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("data", Some(0.into()))),
@@ -4850,7 +4851,7 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("value".to_owned())),
+                                        expr: Expr::Literal(Literal::String("value".into())),
                                     }),
                                 ],
                             ),
@@ -4862,7 +4863,7 @@ Shared::new(Node {
                         token(TokenKind::Selector(SmolStr::new(".value"))),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Call(
@@ -4874,7 +4875,7 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Expr::Literal(Literal::String("value".to_owned())),
+                                        expr: Expr::Literal(Literal::String("value".into())),
                                     }),
                                 ],
                             ),
@@ -4888,7 +4889,7 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("new_id".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 3.into(),
                             expr: Expr::Call(
@@ -4900,11 +4901,11 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Expr::Literal(Literal::String("value".to_owned())),
+                                        expr: Expr::Literal(Literal::String("value".into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("new_id".to_owned())),
+                                        expr: Expr::Literal(Literal::String("new_id".into())),
                                     }),
                                 ],
                             ),
@@ -4918,7 +4919,7 @@ Shared::new(Node {
                         token(TokenKind::StringLiteral("John".to_owned())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 3.into(),
                             expr: Expr::Call(
@@ -4930,11 +4931,11 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Expr::Literal(Literal::String("value".to_owned())),
+                                        expr: Expr::Literal(Literal::String("value".into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Expr::Literal(Literal::String("John".to_owned())),
+                                        expr: Expr::Literal(Literal::String("John".into())),
                                     }),
                                 ],
                             ),
@@ -4948,7 +4949,7 @@ Shared::new(Node {
                         token(TokenKind::NumberLiteral(42.into())),
                         token(TokenKind::Eof)
                     ],
-                    Ok(vec![
+                    Ok(thin_vec![
                         Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Call(
@@ -4960,7 +4961,7 @@ Shared::new(Node {
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Expr::Literal(Literal::String("value".to_owned())),
+                                        expr: Expr::Literal(Literal::String("value".into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
@@ -5024,15 +5025,15 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("args"))),
             token(TokenKind::SemiColon)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(4.into())),
-                        vec![
+                        thin_vec![
                             Param::variadic(IdentWithToken::new_with_token("args", Some(1.into()))),
                         ],
-                        vec![Shared::new(Node {
+                        thin_vec![Shared::new(Node {
                             token_id: 3.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(3.into()))),
                         })],
@@ -5053,16 +5054,16 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("rest"))),
             token(TokenKind::SemiColon)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(5.into())),
-                        vec![
+                        thin_vec![
                             Param::new(IdentWithToken::new_with_token("a", Some(1.into()))),
                             Param::variadic(IdentWithToken::new_with_token("rest", Some(2.into()))),
                         ],
-                        vec![Shared::new(Node {
+                        thin_vec![Shared::new(Node {
                             token_id: 4.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("rest", Some(4.into()))),
                         })],
@@ -5102,13 +5103,13 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("args"))),
             token(TokenKind::SemiColon)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(3.into())),
-                        vec![],
-                        vec![Shared::new(Node {
+                        thin_vec![],
+                        thin_vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(2.into()))),
                         })],
@@ -5123,13 +5124,13 @@ Shared::new(Node {
             token(TokenKind::Ident(SmolStr::new("args"))),
             token(TokenKind::SemiColon)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(3.into())),
-                        vec![],
-                        vec![Shared::new(Node {
+                        thin_vec![],
+                        thin_vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(2.into()))),
                         })],
@@ -5145,15 +5146,15 @@ Shared::new(Node {
             token(TokenKind::StringLiteral("result".to_owned())),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    Vec::new(),
-                    vec![
+                    ThinVec::new(),
+                    thin_vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Expr::Literal(Literal::String("result".to_owned())),
+                            expr: Expr::Literal(Literal::String("result".into())),
                         })
                     ],
                 ),
@@ -5176,15 +5177,15 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::SemiColon),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    vec![
+                    thin_vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(1.into()))),
                         Param::new(IdentWithToken::new_with_token("y", Some(2.into()))),
                     ],
-                    vec![
+                    thin_vec![
                         Shared::new(Node {
                             token_id: 6.into(),
                             expr: Expr::Call(
@@ -5219,7 +5220,7 @@ Shared::new(Node {
             token(TokenKind::RParen),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 4.into(),
                 expr: Expr::Call(
@@ -5228,13 +5229,13 @@ Shared::new(Node {
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Fn(
-                                vec![
+                                thin_vec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(1.into()))),
                                 ],
-                                vec![
+                                thin_vec![
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Expr::Literal(Literal::String("processed".to_owned())),
+                                        expr: Expr::Literal(Literal::String("processed".into())),
                                     })
                                 ],
                             ),
@@ -5677,7 +5678,7 @@ fn test_parse_standalone_attr_selector(#[case] selector: &str, #[case] attribute
                 assert_eq!(args.len(), 2);
                 assert!(matches!(&args[0].expr, Expr::Self_));
                 if let Expr::Literal(Literal::String(attr_str)) = &args[1].expr {
-                    assert_eq!(attr_str, attribute);
+                    assert_eq!(&**attr_str, attribute);
                 } else {
                     panic!("Expected String literal in second argument, got {:?}", args[1].expr);
                 }
@@ -5740,7 +5741,7 @@ fn test_parse_selector_with_attribute(
 
                 // Second argument should be the attribute string
                 if let Expr::Literal(Literal::String(attr_str)) = &args[1].expr {
-                    assert_eq!(attr_str, attribute);
+                    assert_eq!(&**attr_str, attribute);
                 } else {
                     panic!("Expected String literal in second argument, got {:?}", args[1].expr);
                 }
@@ -5839,7 +5840,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                 assert_eq!(ident.name, "attr".into());
                 assert_eq!(args.len(), 2);
                 assert!(matches!(&args[0].expr, Expr::Block(nodes) if nodes.len() == 3));
-                assert!(matches!(&args[1].expr, Expr::Literal(Literal::String(s)) if s == "lang"));
+                assert!(matches!(&args[1].expr, Expr::Literal(Literal::String(s)) if &**s == "lang"));
             } else {
                 panic!("Expected Call expression, got {:?}", program[0].expr);
             }
@@ -5871,7 +5872,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -5879,21 +5880,21 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Literal(Literal::Number(1.into())),
+                            pattern: Pattern::Literal(Box::new(Literal::Number(1.into()))),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("one".to_owned()))
+                                expr: Expr::Literal(Literal::String("one".into()))
                             })
                         },
                         MatchArm {
-                            pattern: Pattern::Literal(Literal::Number(2.into())),
+                            pattern: Pattern::Literal(Box::new(Literal::Number(2.into()))),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Expr::Literal(Literal::String("two".to_owned()))
+                                expr: Expr::Literal(Literal::String("two".into()))
                             })
                         },
                         MatchArm {
@@ -5901,7 +5902,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 11.into(),
-                                expr: Expr::Literal(Literal::String("other".to_owned()))
+                                expr: Expr::Literal(Literal::String("other".into()))
                             })
                         }
                     ]
@@ -5928,7 +5929,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -5936,13 +5937,13 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("value", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
                             pattern: Pattern::Type(Ident::new("string")),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("is string".to_owned()))
+                                expr: Expr::Literal(Literal::String("is string".into()))
                             })
                         },
                         MatchArm {
@@ -5950,7 +5951,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Expr::Literal(Literal::String("is number".to_owned()))
+                                expr: Expr::Literal(Literal::String("is number".into()))
                             })
                         }
                     ]
@@ -5975,7 +5976,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -5983,16 +5984,16 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Array(vec![
+                            pattern: Pattern::Array(thin_vec![
                                 Pattern::Ident(IdentWithToken::new("x")),
                                 Pattern::Ident(IdentWithToken::new("y"))
                             ]),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("two elements".to_owned()))
+                                expr: Expr::Literal(Literal::String("two elements".into()))
                             })
                         }
                     ]
@@ -6018,7 +6019,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6026,10 +6027,10 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
                             pattern: Pattern::ArrayRest(
-                                vec![Pattern::Ident(IdentWithToken::new("first"))],
+                                thin_vec![Pattern::Ident(IdentWithToken::new("first"))],
                                 IdentWithToken::new("rest")
                             ),
                             guard: None,
@@ -6060,7 +6061,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6068,9 +6069,9 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("obj", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Dict(vec![
+                            pattern: Pattern::Dict(thin_vec![
                                 (IdentWithToken::new("name"), Pattern::Ident(IdentWithToken::new("name"))),
                                 (IdentWithToken::new("age"), Pattern::Ident(IdentWithToken::new("age")))
                             ]),
@@ -6118,7 +6119,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6126,7 +6127,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("n", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
                             pattern: Pattern::Ident(IdentWithToken::new("x")),
                             guard: Some(Shared::new(Node {
@@ -6145,7 +6146,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             })),
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Expr::Literal(Literal::String("positive".to_owned()))
+                                expr: Expr::Literal(Literal::String("positive".into()))
                             })
                         },
                         MatchArm {
@@ -6166,7 +6167,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             })),
                             body: Shared::new(Node {
                                 token_id: 14.into(),
-                                expr: Expr::Literal(Literal::String("negative".to_owned()))
+                                expr: Expr::Literal(Literal::String("negative".into()))
                             })
                         },
                         MatchArm {
@@ -6174,7 +6175,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 17.into(),
-                                expr: Expr::Literal(Literal::String("zero".to_owned()))
+                                expr: Expr::Literal(Literal::String("zero".into()))
                             })
                         }
                     ]
@@ -6203,7 +6204,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof)
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6211,21 +6212,21 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Literal(Literal::Number(2.into()))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Literal(Literal::Number(1.into())),
+                            pattern: Pattern::Literal(Box::new(Literal::Number(1.into()))),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("one".to_owned()))
+                                expr: Expr::Literal(Literal::String("one".into()))
                             })
                         },
                         MatchArm {
-                            pattern: Pattern::Literal(Literal::Number(2.into())),
+                            pattern: Pattern::Literal(Box::new(Literal::Number(2.into()))),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Expr::Literal(Literal::String("two".to_owned()))
+                                expr: Expr::Literal(Literal::String("two".into()))
                             })
                         },
                         MatchArm {
@@ -6233,7 +6234,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 11.into(),
-                                expr: Expr::Literal(Literal::String("other".to_owned()))
+                                expr: Expr::Literal(Literal::String("other".into()))
                             })
                         }
                     ]
@@ -6264,7 +6265,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6272,16 +6273,16 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Or(vec![
-                                Pattern::Literal(Literal::Number(1.into())),
-                                Pattern::Literal(Literal::Number(2.into())),
+                            pattern: Pattern::Or(thin_vec![
+                                Pattern::Literal(Box::new(Literal::Number(1.into()))),
+                                Pattern::Literal(Box::new(Literal::Number(2.into()))),
                             ]),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("matched".to_owned()))
+                                expr: Expr::Literal(Literal::String("matched".into()))
                             })
                         },
                         MatchArm {
@@ -6289,7 +6290,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Expr::Literal(Literal::String("other".to_owned()))
+                                expr: Expr::Literal(Literal::String("other".into()))
                             })
                         },
                     ]
@@ -6316,7 +6317,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6324,16 +6325,16 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Or(vec![
-                                Pattern::Literal(Literal::String("a".to_owned())),
-                                Pattern::Literal(Literal::String("b".to_owned())),
+                            pattern: Pattern::Or(thin_vec![
+                                Pattern::Literal(Box::new(Literal::String("a".into()))),
+                                Pattern::Literal(Box::new(Literal::String("b".into()))),
                             ]),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("matched".to_owned()))
+                                expr: Expr::Literal(Literal::String("matched".into()))
                             })
                         },
                         MatchArm {
@@ -6341,7 +6342,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Expr::Literal(Literal::String("other".to_owned()))
+                                expr: Expr::Literal(Literal::String("other".into()))
                             })
                         },
                     ]
@@ -6366,7 +6367,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6374,16 +6375,16 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Or(vec![
+                            pattern: Pattern::Or(thin_vec![
                                 Pattern::Type(Ident::new("string")),
                                 Pattern::Type(Ident::new("number")),
                             ]),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("str or num".to_owned()))
+                                expr: Expr::Literal(Literal::String("str or num".into()))
                             })
                         },
                     ]
@@ -6412,7 +6413,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6420,17 +6421,17 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Or(vec![
-                                Pattern::Literal(Literal::Number(1.into())),
-                                Pattern::Literal(Literal::Number(2.into())),
-                                Pattern::Literal(Literal::Number(3.into())),
+                            pattern: Pattern::Or(thin_vec![
+                                Pattern::Literal(Box::new(Literal::Number(1.into()))),
+                                Pattern::Literal(Box::new(Literal::Number(2.into()))),
+                                Pattern::Literal(Box::new(Literal::Number(3.into()))),
                             ]),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("matched".to_owned()))
+                                expr: Expr::Literal(Literal::String("matched".into()))
                             })
                         },
                         MatchArm {
@@ -6438,7 +6439,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Expr::Literal(Literal::String("other".to_owned()))
+                                expr: Expr::Literal(Literal::String("other".into()))
                             })
                         },
                     ]
@@ -6461,7 +6462,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
             token(TokenKind::End),
             token(TokenKind::Eof),
         ],
-        Ok(vec![
+        Ok(thin_vec![
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Match(
@@ -6469,16 +6470,16 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
                         token_id: 1.into(),
                         expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(1.into())))
                     }),
-                    vec![
+                    thin_vec![
                         MatchArm {
-                            pattern: Pattern::Or(vec![
-                                Pattern::Literal(Literal::Bool(true)),
-                                Pattern::Literal(Literal::Bool(false)),
+                            pattern: Pattern::Or(thin_vec![
+                                Pattern::Literal(Box::new(Literal::Bool(true))),
+                                Pattern::Literal(Box::new(Literal::Bool(false))),
                             ]),
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Expr::Literal(Literal::String("bool".to_owned()))
+                                expr: Expr::Literal(Literal::String("bool".into()))
                             })
                         },
                     ]
@@ -6511,7 +6512,7 @@ fn test_parse_match(#[case] input: Vec<Token>, #[case] expected: Result<Program,
         2,
         |segments: &[StringSegment]| {
             matches!(&segments[0], StringSegment::Text(s) if s == "Result: ") &&
-            matches!(&segments[1], StringSegment::Expr(node) if matches!(&node.expr, Expr::Literal(Literal::String(s)) if s == "hello"))
+            matches!(&segments[1], StringSegment::Expr(node) if matches!(&node.expr, Expr::Literal(Literal::String(s)) if &**s == "hello"))
         }
     )]
 #[case::expr_call(

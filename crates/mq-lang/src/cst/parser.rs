@@ -7,10 +7,11 @@ use crate::{
     selector::Selector,
 };
 use smol_str::SmolStr;
+use thin_vec::thin_vec;
 
 use super::{
     error::ParseError,
-    node::{Node, NodeKind, Trivia, TriviaList},
+    node::{Blank, Node, NodeKind, Trivia, TriviaList},
 };
 use itertools::Itertools;
 use thiserror::Error;
@@ -132,9 +133,17 @@ enum ProgramKind {
     Block,
 }
 
+#[cfg(not(feature = "sync"))]
+type TokenCell = std::cell::OnceCell<Shared<Token>>;
+#[cfg(feature = "sync")]
+type TokenCell = std::sync::OnceLock<Shared<Token>>;
+
 /// Error-recovering parser that builds a lossless CST from tokens.
 pub struct Parser<'a> {
-    tokens: &'a [Shared<Token>],
+    tokens: &'a [Token],
+    /// A token wrapped for a node, filled the first time a node asks for it so that trivia the
+    /// tree does not keep never needs an allocation.
+    shared: Vec<TokenCell>,
     pos: usize,
     errors: ErrorReporter,
     /// Set while parsing the selector that follows an attribute selector, which ends the chain.
@@ -143,12 +152,31 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     /// Creates a parser over `tokens`.
-    pub fn new(tokens: &'a [Shared<Token>]) -> Self {
+    pub fn new(tokens: &'a [Token]) -> Self {
         Self {
             tokens,
+            shared: std::iter::repeat_with(TokenCell::default).take(tokens.len()).collect(),
             pos: 0,
             errors: ErrorReporter::new(100),
             in_selector_tail: false,
+        }
+    }
+
+    /// The token wrapped for a node. A token outside the input slice, such as one already held by
+    /// a node, is wrapped again.
+    fn shared(&self, token: &Token) -> Shared<Token> {
+        let size = std::mem::size_of::<Token>();
+        let offset = (token as *const Token as usize).wrapping_sub(self.tokens.as_ptr() as usize);
+        match self.shared.get(offset / size) {
+            Some(cell) if offset.is_multiple_of(size) => Shared::clone(cell.get_or_init(|| Shared::new(token.clone()))),
+            _ => Shared::new(token.clone()),
+        }
+    }
+
+    fn blank(token: &Token, len: usize) -> Blank {
+        Blank {
+            start: token.range.start,
+            len: len as u32,
         }
     }
 
@@ -160,13 +188,13 @@ impl<'a> Parser<'a> {
 
     /// Peeks at the current token without consuming it.
     #[inline(always)]
-    fn peek(&self) -> Option<&'a Shared<Token>> {
+    fn peek(&self) -> Option<&'a Token> {
         self.tokens.get(self.pos)
     }
 
     /// Consumes the current token and returns a reference to it with the slice lifetime.
     #[inline(always)]
-    fn advance(&mut self) -> Option<&'a Shared<Token>> {
+    fn advance(&mut self) -> Option<&'a Token> {
         let t = self.tokens.get(self.pos);
         if t.is_some() {
             self.pos += 1;
@@ -176,14 +204,14 @@ impl<'a> Parser<'a> {
 
     /// Consumes the current token, failing at end of input.
     #[inline(always)]
-    fn advance_or_eof(&mut self) -> Result<&'a Shared<Token>, ParseError> {
+    fn advance_or_eof(&mut self) -> Result<&'a Token, ParseError> {
         self.advance().ok_or(ParseError::UnexpectedEOFDetected)
     }
 
     /// Parses the tokens into top-level nodes and the errors found along the way.
     pub fn parse(&mut self) -> (Vec<Shared<Node>>, ErrorReporter) {
         let nodes = self.parse_program(ProgramKind::Root);
-        (nodes, std::mem::take(&mut self.errors))
+        (nodes.into_iter().collect(), std::mem::take(&mut self.errors))
     }
 
     #[inline(always)]
@@ -221,14 +249,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_program(&mut self, kind: ProgramKind) -> Vec<Shared<Node>> {
+    fn parse_program(&mut self, kind: ProgramKind) -> ArgList {
         let root = kind == ProgramKind::Root;
         // Nested programs usually contain only a few nodes. Reserving for the
         // entire remaining token stream at every nesting level wastes memory.
-        let mut nodes: Vec<Shared<Node>> = if root {
-            Vec::with_capacity((self.tokens.len() - self.pos) / 4)
+        let mut nodes: ArgList = if root {
+            ArgList::with_capacity((self.tokens.len() - self.pos) / 4)
         } else {
-            Vec::new()
+            ArgList::new()
         };
         let mut leading_trivia = self.parse_leading_trivia();
 
@@ -268,7 +296,7 @@ impl<'a> Parser<'a> {
             after_terminator = false;
 
             let token = match self.peek() {
-                Some(token) => Shared::clone(token),
+                Some(token) => self.shared(token),
                 None => break,
             };
 
@@ -318,7 +346,7 @@ impl<'a> Parser<'a> {
                         leading_trivia = self.parse_leading_trivia();
 
                         if let Some(next_token) = self.peek() {
-                            let next_token = Shared::clone(next_token);
+                            let next_token = self.shared(next_token);
                             if matches!(next_token.kind, TokenKind::Eof) {
                                 self.pos += 1;
 
@@ -383,7 +411,7 @@ impl<'a> Parser<'a> {
                         self.pos += 1;
                         nodes.push(Shared::new(Node {
                             kind: NodeKind::Eof,
-                            token: Some(Shared::clone(eof)),
+                            token: Some(self.shared(eof)),
                             leading_trivia,
                             trailing_trivia: TriviaList::new(),
                         }));
@@ -444,7 +472,7 @@ impl<'a> Parser<'a> {
             let leading_trivia = self.parse_leading_trivia();
             let operator_token = self.advance_or_eof()?;
             let binary_op = Self::token_kind_to_binary_op(&operator_token.kind)
-                .ok_or_else(|| ParseError::UnexpectedToken(Shared::clone(operator_token)))?;
+                .ok_or_else(|| ParseError::UnexpectedToken(self.shared(operator_token)))?;
             let is_assignment = binary_op.is_assignment();
             let op_trailing_trivia = self.parse_trailing_trivia();
 
@@ -470,9 +498,8 @@ impl<'a> Parser<'a> {
                         self.report_unexpected(operator_token);
                     }
                 } else if !Self::is_assignable(&lhs) {
-                    let found = lhs.token.as_ref().unwrap_or(operator_token);
-                    self.errors
-                        .report(ParseError::InvalidAssignmentTarget(Shared::clone(found)));
+                    let found = lhs.token.clone().unwrap_or_else(|| self.shared(operator_token));
+                    self.errors.report(ParseError::InvalidAssignmentTarget(found));
                 }
             }
 
@@ -492,7 +519,7 @@ impl<'a> Parser<'a> {
 
             lhs = Shared::new(Node {
                 kind: node_kind,
-                token: Some(Shared::clone(operator_token)),
+                token: Some(self.shared(operator_token)),
                 leading_trivia,
                 trailing_trivia: op_trailing_trivia,
             });
@@ -513,7 +540,7 @@ impl<'a> Parser<'a> {
             let name_leading_trivia = self.parse_leading_trivia();
             let name_node = match self.peek() {
                 Some(token) if matches!(token.kind, TokenKind::Ident(_)) => self.parse_ident(name_leading_trivia)?,
-                Some(token) => return Err(ParseError::UnexpectedToken(Shared::clone(token))),
+                Some(token) => return Err(ParseError::UnexpectedToken(self.shared(token))),
                 None => return Err(ParseError::UnexpectedEOFDetected),
             };
             // The bound name is a plain identifier, not a call or an access.
@@ -528,7 +555,7 @@ impl<'a> Parser<'a> {
                     expr: lhs,
                     name: name_node,
                 },
-                token: Some(Shared::clone(as_token)),
+                token: Some(self.shared(as_token)),
                 leading_trivia: as_leading_trivia,
                 trailing_trivia: as_trailing_trivia,
             };
@@ -594,7 +621,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let token = self.advance_or_eof()?;
-                Err(ParseError::UnexpectedToken(Shared::clone(token)))
+                Err(ParseError::UnexpectedToken(self.shared(token)))
             }
         }
     }
@@ -626,7 +653,7 @@ impl<'a> Parser<'a> {
     fn parse_ident(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
+        let mut children: ArgList = ArgList::with_capacity(6);
 
         // Check for qualified access (module::function, module::value, or module::module2::method)
         if let Some(next_token) = self.peek_non_trivia()
@@ -634,7 +661,7 @@ impl<'a> Parser<'a> {
         {
             let mut node = Node {
                 kind: NodeKind::QualifiedAccess { items: ArgList::new() },
-                token: Some(Shared::clone(token)),
+                token: Some(self.shared(token)),
                 leading_trivia,
                 trailing_trivia: TriviaList::new(),
             };
@@ -651,7 +678,7 @@ impl<'a> Parser<'a> {
                 {
                     // Kept as a node so completion works after `module::`, but it is still an error.
                     self.report_unexpected(next_token);
-                    node.kind = NodeKind::QualifiedAccess { items: children.into() };
+                    node.kind = NodeKind::QualifiedAccess { items: children };
                     return Ok(Shared::new(node));
                 }
 
@@ -675,7 +702,7 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            node.kind = NodeKind::QualifiedAccess { items: children.into() };
+            node.kind = NodeKind::QualifiedAccess { items: children };
             // Check for bracket access after qualified access (e.g., module::func()[:1])
             if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 return self.parse_bracket_access(node);
@@ -685,7 +712,7 @@ impl<'a> Parser<'a> {
 
         let mut node = Node {
             kind: NodeKind::Ident { attr: None },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         };
@@ -706,7 +733,7 @@ impl<'a> Parser<'a> {
                         .push(self.next_node(|token_kind| matches!(token_kind, TokenKind::Question), NodeKind::Token)?);
                 }
 
-                node.kind = NodeKind::Call { args: children.into() };
+                node.kind = NodeKind::Call { args: children };
 
                 // `f(x)?` ends the expression: no block, index or attribute follows it.
                 if has_question {
@@ -747,7 +774,7 @@ impl<'a> Parser<'a> {
         if let Some(peek_token) = self.peek_non_trivia()
             && matches!(&peek_token.kind, TokenKind::Selector(s) if s.len() > 1)
         {
-            let selector_token = Shared::clone(peek_token);
+            let selector_token = self.shared(peek_token);
 
             // Only attribute selectors (`.url`, `.level`) can follow a value.
             match Selector::try_from(&*selector_token) {
@@ -808,9 +835,9 @@ impl<'a> Parser<'a> {
         // The node may already be a `Call` (e.g. from `parse_postfix_chain`'s wrapper, or
         // a preceding bracket access being extended by another `[...]`), in which case its
         // existing children live in `args` rather than the legacy `children` field.
-        let mut children: Vec<Shared<Node>> = match &mut node.kind {
-            NodeKind::Call { args } => std::mem::take(args).into_vec(),
-            _ => Vec::new(),
+        let mut children: ArgList = match &mut node.kind {
+            NodeKind::Call { args } => std::mem::take(args),
+            _ => ArgList::new(),
         };
 
         // Parse bracket access: ident[key] -> get(ident, key) or ident[start:end] -> slice(ident, start, end)
@@ -850,7 +877,7 @@ impl<'a> Parser<'a> {
             "`]`",
         ));
 
-        node.kind = NodeKind::Call { args: children.into() };
+        node.kind = NodeKind::Call { args: children };
 
         // Attribute access after indexing (`arr[0].attr`), possibly followed by more postfix operations.
         if let Some(with_attr) = self.try_parse_attribute_access(&mut node)? {
@@ -874,7 +901,7 @@ impl<'a> Parser<'a> {
                 trailing_trivia: TriviaList::new(),
                 kind: NodeKind::CallDynamic {
                     callee: final_node,
-                    args: args.into(),
+                    args,
                 },
             };
             self.parse_postfix_chain(Shared::new(dynamic_call_node))
@@ -892,10 +919,7 @@ impl<'a> Parser<'a> {
                 let leading_trivia = current.leading_trivia.clone();
                 let args = self.parse_args()?;
                 current = Shared::new(Node {
-                    kind: NodeKind::CallDynamic {
-                        callee: current,
-                        args: args.into(),
-                    },
+                    kind: NodeKind::CallDynamic { callee: current, args },
                     token,
                     leading_trivia,
                     trailing_trivia: TriviaList::new(),
@@ -932,8 +956,8 @@ impl<'a> Parser<'a> {
         Ok(current)
     }
 
-    fn parse_args(&mut self) -> Result<Vec<Shared<Node>>, ParseError> {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(4);
+    fn parse_args(&mut self) -> Result<ArgList, ParseError> {
+        let mut nodes: ArgList = ArgList::with_capacity(4);
 
         nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
@@ -952,7 +976,7 @@ impl<'a> Parser<'a> {
 
     fn parse_arg(&mut self) -> Result<Shared<Node>, ParseError> {
         let leading_trivia = self.parse_leading_trivia();
-        let token = Shared::clone(self.peek_token()?);
+        let token = self.shared(self.peek_token()?);
 
         // Any expression can be an argument, including `let` and `match`.
         if !Self::starts_expression(&token.kind, false) {
@@ -971,7 +995,7 @@ impl<'a> Parser<'a> {
             return Ok(first_expr);
         }
 
-        let mut children: Vec<Shared<Node>> = vec![first_expr];
+        let mut children: ArgList = thin_vec![first_expr];
 
         while self.try_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
             let pipe_leading_trivia = self.parse_leading_trivia();
@@ -980,7 +1004,7 @@ impl<'a> Parser<'a> {
 
             children.push(Shared::new(Node {
                 kind: NodeKind::Token,
-                token: Some(Shared::clone(pipe_token)),
+                token: Some(self.shared(pipe_token)),
                 leading_trivia: pipe_leading_trivia,
                 trailing_trivia: pipe_trailing_trivia,
             }));
@@ -991,9 +1015,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Shared::new(Node {
-            kind: NodeKind::Block {
-                program: children.into(),
-            },
+            kind: NodeKind::Block { program: children },
             token: None,
             leading_trivia: TriviaList::new(),
             trailing_trivia: TriviaList::new(),
@@ -1012,7 +1034,7 @@ impl<'a> Parser<'a> {
         let params = if self.try_next_token(|kind| matches!(kind, TokenKind::Colon | TokenKind::Do)) {
             None
         } else {
-            Some(self.parse_params()?.into())
+            Some(self.parse_params()?)
         };
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
@@ -1024,9 +1046,9 @@ impl<'a> Parser<'a> {
                 name,
                 params,
                 colon_or_do,
-                program: program.into(),
+                program,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1039,7 +1061,7 @@ impl<'a> Parser<'a> {
         // `fn: body` has no parameter list.
         let params =
             if matches!(token.kind, TokenKind::Fn) && self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
-                Vec::new()
+                ArgList::new()
             } else {
                 self.parse_params()?
             };
@@ -1048,11 +1070,11 @@ impl<'a> Parser<'a> {
 
         let node = Node {
             kind: NodeKind::Fn {
-                params: params.into(),
+                params,
                 colon_or_do,
-                program: program.into(),
+                program,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         };
@@ -1067,10 +1089,8 @@ impl<'a> Parser<'a> {
         let program = self.parse_program(ProgramKind::Block);
 
         Ok(Shared::new(Node {
-            kind: NodeKind::Block {
-                program: program.into(),
-            },
-            token: Some(Shared::clone(token)),
+            kind: NodeKind::Block { program },
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1085,16 +1105,14 @@ impl<'a> Parser<'a> {
         {
             let mut node = Node {
                 kind: NodeKind::Self_ { attr: None },
-                token: Some(Shared::clone(token)),
+                token: Some(self.shared(token)),
                 leading_trivia,
                 trailing_trivia,
             };
 
             // `. .level` reads the attribute of the current node, like `.level`. Other selectors
             // after `.` are left for the descendant chain.
-            let attribute_follows = self
-                .peek_non_trivia()
-                .is_some_and(|next| Self::is_attribute_token(next));
+            let attribute_follows = self.peek_non_trivia().is_some_and(Self::is_attribute_token);
             if attribute_follows && let Some(with_attr) = self.try_parse_attribute_access(&mut node)? {
                 return Ok(with_attr);
             }
@@ -1119,36 +1137,36 @@ impl<'a> Parser<'a> {
                 leading_trivia: node.leading_trivia.clone(),
                 trailing_trivia: node.trailing_trivia.clone(),
                 kind: NodeKind::Block {
-                    program: vec![Shared::new(node), tail?].into(),
+                    program: thin_vec![Shared::new(node), tail?],
                 },
             }));
         }
 
         let mut node = Node {
             kind: NodeKind::Selector { items: ArgList::new() },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         };
 
         match &token.kind {
             TokenKind::Selector(s) if s == "." => {
-                let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
+                let mut children: ArgList = ArgList::with_capacity(6);
 
                 // []
                 self.parse_selector_bracket(&mut children)?;
 
-                let token = Shared::clone(self.peek_non_trivia().ok_or(ParseError::UnexpectedEOFDetected)?);
+                let token = self.shared(self.peek_non_trivia().ok_or(ParseError::UnexpectedEOFDetected)?);
 
                 // [][]
                 if token.kind == TokenKind::LBracket {
                     self.parse_selector_bracket(&mut children)?;
                 } else {
-                    node.kind = NodeKind::Selector { items: children.into() };
+                    node.kind = NodeKind::Selector { items: children };
                     return Ok(Shared::new(node));
                 }
 
-                node.kind = NodeKind::Selector { items: children.into() };
+                node.kind = NodeKind::Selector { items: children };
                 Ok(Shared::new(node))
             }
             TokenKind::DoubleDot => {
@@ -1167,7 +1185,7 @@ impl<'a> Parser<'a> {
                     name_kind,
                 )?;
 
-                let mut program = vec![Shared::new(node), name];
+                let mut program = thin_vec![Shared::new(node), name];
 
                 // `..h.level` and `..h .code`: an attribute or a descendant step continues the expression.
                 let tail_follows = !self.in_selector_tail
@@ -1189,16 +1207,14 @@ impl<'a> Parser<'a> {
                     module_id: token.module_id,
                 });
                 Ok(Shared::new(Node {
-                    kind: NodeKind::Block {
-                        program: program.into(),
-                    },
+                    kind: NodeKind::Block { program },
                     token: Some(marker),
                     leading_trivia: TriviaList::new(),
                     trailing_trivia: TriviaList::new(),
                 }))
             }
             _ => {
-                let selector = Selector::try_from(&**token).map_err(ParseError::UnknownSelector)?;
+                let selector = Selector::try_from(token).map_err(ParseError::UnknownSelector)?;
 
                 if selector.is_attribute_selector() {
                     node.kind = NodeKind::SelfAttr;
@@ -1225,18 +1241,18 @@ impl<'a> Parser<'a> {
                         leading_trivia: attribute.leading_trivia.clone(),
                         trailing_trivia: attribute.trailing_trivia.clone(),
                         kind: NodeKind::Block {
-                            program: vec![attribute, tail?].into(),
+                            program: thin_vec![attribute, tail?],
                         },
                     }));
                 }
 
                 // Check for selector call args: `.h(...)`, `.code(...)`
                 if self.try_next_token(|kind| matches!(kind, TokenKind::LParen)) {
-                    let mut args: ArgList = self.parse_args()?.into();
+                    let mut args: ArgList = self.parse_args()?;
                     // Check for attribute access after SelectorCall: `.h(1).level`
                     if let Some(peek_token) = self.peek()
                         && peek_token.is_selector()
-                        && Selector::try_from(&**peek_token)
+                        && Selector::try_from(peek_token)
                             .map_err(ParseError::UnknownSelector)?
                             .is_attribute_selector()
                     {
@@ -1254,15 +1270,15 @@ impl<'a> Parser<'a> {
                 if matches!(selector, Selector::Property(_))
                     && let Some(peek_token) = self.peek()
                     && peek_token.is_selector()
-                    && matches!(Selector::try_from(&**peek_token), Ok(Selector::Property(_)))
+                    && matches!(Selector::try_from(peek_token), Ok(Selector::Property(_)))
                 {
-                    let first_token = Shared::clone(token);
+                    let first_token = self.shared(token);
                     let block_leading = std::mem::take(&mut node.leading_trivia);
                     let block_trailing = node.trailing_trivia.clone();
-                    let mut nodes = vec![Shared::new(node)];
+                    let mut nodes = thin_vec![Shared::new(node)];
                     while let Some(peek_token) = self.peek()
                         && peek_token.is_selector()
-                        && matches!(Selector::try_from(&**peek_token), Ok(Selector::Property(_)))
+                        && matches!(Selector::try_from(peek_token), Ok(Selector::Property(_)))
                     {
                         nodes.push(self.next_node(
                             |kind| matches!(kind, TokenKind::Selector(_)),
@@ -1274,7 +1290,7 @@ impl<'a> Parser<'a> {
                         nodes.push(self.build_list_selector_node()?);
                     }
                     return Ok(Shared::new(Node {
-                        kind: NodeKind::Block { program: nodes.into() },
+                        kind: NodeKind::Block { program: nodes },
                         token: Some(first_token),
                         leading_trivia: block_leading,
                         trailing_trivia: block_trailing,
@@ -1285,13 +1301,13 @@ impl<'a> Parser<'a> {
                 if matches!(selector, Selector::Property(_))
                     && matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket))
                 {
-                    let first_token = Shared::clone(token);
+                    let first_token = self.shared(token);
                     let block_leading = std::mem::take(&mut node.leading_trivia);
                     let block_trailing = node.trailing_trivia.clone();
                     let list_node = self.build_list_selector_node()?;
                     return Ok(Shared::new(Node {
                         kind: NodeKind::Block {
-                            program: vec![Shared::new(node), list_node].into(),
+                            program: thin_vec![Shared::new(node), list_node],
                         },
                         token: Some(first_token),
                         leading_trivia: block_leading,
@@ -1301,34 +1317,33 @@ impl<'a> Parser<'a> {
 
                 if let Some(attr_token) = self.peek()
                     && attr_token.is_selector()
-                    && Selector::try_from(&**attr_token)
+                    && Selector::try_from(attr_token)
                         .map_err(ParseError::UnknownSelector)?
                         .is_attribute_selector()
                 {
                     node.kind = NodeKind::Selector {
-                        items: vec![self.next_node(
+                        items: thin_vec![self.next_node(
                             |kind| matches!(kind, TokenKind::Selector(_)),
                             NodeKind::Selector { items: ArgList::new() },
-                        )?]
-                        .into(),
+                        )?],
                     };
                     return Ok(Shared::new(node));
                 }
 
                 if let Some(next_token) = self.peek()
                     && next_token.is_selector()
-                    && matches!(Selector::try_from(&**next_token), Ok(sel) if !sel.is_attribute_selector())
+                    && matches!(Selector::try_from(next_token), Ok(sel) if !sel.is_attribute_selector())
                 {
-                    let first_token = Shared::clone(token);
+                    let first_token = self.shared(token);
                     let block_leading = std::mem::take(&mut node.leading_trivia);
-                    let mut nodes = vec![Shared::new(node)];
+                    let mut nodes = thin_vec![Shared::new(node)];
 
                     while let Some(step_token) = self.peek() {
                         if !step_token.is_selector() {
                             break;
                         }
 
-                        match Selector::try_from(&**step_token) {
+                        match Selector::try_from(step_token) {
                             Ok(sel) if sel.is_attribute_selector() => {
                                 nodes.push(self.next_node(
                                     |kind| matches!(kind, TokenKind::Selector(_)),
@@ -1348,7 +1363,7 @@ impl<'a> Parser<'a> {
                                 };
                                 if self.try_next_token(|kind| matches!(kind, TokenKind::LParen)) {
                                     step_node.kind = NodeKind::SelectorCall {
-                                        args: self.parse_args()?.into(),
+                                        args: self.parse_args()?,
                                     };
                                 }
                                 nodes.push(Shared::new(step_node));
@@ -1358,7 +1373,7 @@ impl<'a> Parser<'a> {
                     }
 
                     return Ok(Shared::new(Node {
-                        kind: NodeKind::Block { program: nodes.into() },
+                        kind: NodeKind::Block { program: nodes },
                         token: Some(first_token),
                         leading_trivia: block_leading,
                         trailing_trivia: TriviaList::new(),
@@ -1380,11 +1395,11 @@ impl<'a> Parser<'a> {
             range,
             module_id,
         });
-        let mut bracket_children: Vec<Shared<Node>> = Vec::new();
+        let mut bracket_children = ArgList::new();
         self.parse_selector_bracket(&mut bracket_children)?;
         Ok(Shared::new(Node {
             kind: NodeKind::Selector {
-                items: bracket_children.into(),
+                items: bracket_children,
             },
             token: Some(dot_token),
             leading_trivia: TriviaList::new(),
@@ -1393,7 +1408,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a single bracket index `[N]` for selector expressions, pushing tokens onto `children`.
-    fn parse_selector_bracket(&mut self, children: &mut Vec<Shared<Node>>) -> Result<(), ParseError> {
+    fn parse_selector_bracket(&mut self, children: &mut ArgList) -> Result<(), ParseError> {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?);
 
         // The index is any expression: `.[0]`, `.["key"]`, `.[n + 1]`.
@@ -1408,7 +1423,7 @@ impl<'a> Parser<'a> {
         if token.kind == TokenKind::RBracket {
             children.push(self.next_node(|kind| matches!(kind, TokenKind::RBracket), NodeKind::Token)?);
         } else {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+            return Err(ParseError::UnexpectedToken(self.shared(token)));
         }
 
         Ok(())
@@ -1421,7 +1436,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Include { path },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1446,7 +1461,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Import { path, as_token, alias },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1488,9 +1503,9 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Module {
                 name,
                 colon_or_do,
-                program: program.into(),
+                program,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1502,7 +1517,7 @@ impl<'a> Parser<'a> {
 
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+            return Err(ParseError::UnexpectedToken(self.shared(token)));
         }
 
         let colon = self.parse_colon_token_if_present()?;
@@ -1525,13 +1540,13 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::If {
-                args: args.into(),
+                args,
                 colon,
                 then_branch,
                 elifs,
                 else_branch,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1543,7 +1558,7 @@ impl<'a> Parser<'a> {
 
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+            return Err(ParseError::UnexpectedToken(self.shared(token)));
         }
 
         let colon = self.parse_colon_token_if_present()?;
@@ -1553,11 +1568,11 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Elif {
-                args: args.into(),
+                args,
                 colon,
                 then_branch,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1574,7 +1589,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Else { colon, then_branch },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1587,7 +1602,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: node_kind,
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1607,7 +1622,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Break { colon, value },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1627,7 +1642,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Yield { colon, value },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1645,14 +1660,14 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Spread { operand },
-            token: Some(Shared::clone(dots_token)),
+            token: Some(self.shared(dots_token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
     fn parse_array(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
+        let mut children: ArgList = ArgList::with_capacity(12);
 
         children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBracket), NodeKind::Token)?);
 
@@ -1671,7 +1686,7 @@ impl<'a> Parser<'a> {
         );
 
         let array_node = Shared::new(Node {
-            kind: NodeKind::Array { items: children.into() },
+            kind: NodeKind::Array { items: children },
             token: None,
             leading_trivia,
             trailing_trivia: TriviaList::new(),
@@ -1683,7 +1698,7 @@ impl<'a> Parser<'a> {
 
     #[inline]
     fn parse_dict_key(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
-        let token = Shared::clone(self.peek_token()?);
+        let token = self.shared(self.peek_token()?);
 
         match &token.kind {
             TokenKind::Ident(_) | TokenKind::StringLiteral(_) => {
@@ -1704,7 +1719,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_dict(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
+        let mut children: ArgList = ArgList::with_capacity(12);
 
         children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBrace), NodeKind::Token)?);
 
@@ -1734,9 +1749,7 @@ impl<'a> Parser<'a> {
         );
 
         let dict_node = Shared::new(Node {
-            kind: NodeKind::Dict {
-                entries: children.into(),
-            },
+            kind: NodeKind::Dict { entries: children },
             token: None,
             leading_trivia,
             trailing_trivia: TriviaList::new(),
@@ -1753,17 +1766,17 @@ impl<'a> Parser<'a> {
             self.validate_interpolations(token);
             Ok(Shared::new(Node {
                 kind: NodeKind::InterpolatedString,
-                token: Some(Shared::clone(token)),
+                token: Some(self.shared(token)),
                 leading_trivia,
                 trailing_trivia,
             }))
         } else {
-            Err(ParseError::UnexpectedToken(Shared::clone(token)))
+            Err(ParseError::UnexpectedToken(self.shared(token)))
         }
     }
 
     /// Parses each `${...}` expression of an interpolated string and reports its errors, as the AST parser does.
-    fn validate_interpolations(&mut self, token: &Shared<Token>) {
+    fn validate_interpolations(&mut self, token: &Token) {
         let TokenKind::InterpolatedString(segments) = &token.kind else {
             return;
         };
@@ -1801,7 +1814,6 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            let tokens: Vec<Shared<Token>> = tokens.into_iter().map(Shared::new).collect();
             let (nodes, errors) = Parser::new(&tokens).parse();
             for error in errors.to_vec() {
                 self.errors.report(error);
@@ -1872,7 +1884,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind,
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1884,7 +1896,7 @@ impl<'a> Parser<'a> {
 
         let mut node = Node {
             kind: NodeKind::Self_ { attr: None },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         };
@@ -1906,7 +1918,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Nodes,
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1924,12 +1936,12 @@ impl<'a> Parser<'a> {
                     let trailing_trivia = self.parse_trailing_trivia();
                     Shared::new(Node {
                         kind: NodeKind::Literal,
-                        token: Some(Shared::clone(token)),
+                        token: Some(self.shared(token)),
                         leading_trivia: name_leading_trivia,
                         trailing_trivia,
                     })
                 }
-                _ => return Err(ParseError::UnexpectedToken(Shared::clone(token))),
+                _ => return Err(ParseError::UnexpectedToken(self.shared(token))),
             },
             None => return Err(ParseError::UnexpectedEOFDetected),
         };
@@ -1967,9 +1979,9 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Foreach {
                 args,
                 colon_or_do,
-                program: program.into(),
+                program,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1994,19 +2006,20 @@ impl<'a> Parser<'a> {
     fn parse_cond_loop(
         &mut self,
     ) -> Result<(Shared<Token>, TriviaList, ArgList, Option<Shared<Node>>, ArgList), ParseError> {
-        let token = Shared::clone(self.advance_or_eof()?);
+        let token = self.advance_or_eof()?;
+        let token = self.shared(token);
         let trailing_trivia = self.parse_trailing_trivia();
 
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
             return Err(ParseError::UnexpectedToken(token));
         }
-        let args: ArgList = args.into();
+        let args: ArgList = args;
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
         let program = self.parse_program(ProgramKind::Block);
 
-        Ok((token, trailing_trivia, args, colon_or_do, program.into()))
+        Ok((token, trailing_trivia, args, colon_or_do, program))
     }
 
     fn parse_loop(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
@@ -2017,11 +2030,8 @@ impl<'a> Parser<'a> {
         let program = self.parse_program(ProgramKind::Block);
 
         Ok(Shared::new(Node {
-            kind: NodeKind::Loop {
-                colon_or_do,
-                program: program.into(),
-            },
-            token: Some(Shared::clone(token)),
+            kind: NodeKind::Loop { colon_or_do, program },
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -2047,7 +2057,7 @@ impl<'a> Parser<'a> {
 
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+            return Err(ParseError::UnexpectedToken(self.shared(token)));
         }
 
         let colon = self.parse_colon_token_if_present()?;
@@ -2057,11 +2067,11 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Unless {
-                args: args.into(),
+                args,
                 colon,
                 then_branch,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -2089,7 +2099,7 @@ impl<'a> Parser<'a> {
                 body,
                 catch,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -2121,7 +2131,7 @@ impl<'a> Parser<'a> {
                 }
                 _ => self.report_unexpected(token),
             }
-            Some(params.into())
+            Some(params)
         } else {
             None
         };
@@ -2137,7 +2147,7 @@ impl<'a> Parser<'a> {
                 colon_or_do,
                 body,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -2150,7 +2160,7 @@ impl<'a> Parser<'a> {
         // Parse (value)
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+            return Err(ParseError::UnexpectedToken(self.shared(token)));
         }
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
@@ -2185,12 +2195,12 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Match {
-                args: args.into(),
+                args,
                 colon_or_do,
                 arms,
                 end_token,
             },
-            token: Some(Shared::clone(token)),
+            token: Some(self.shared(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -2214,7 +2224,7 @@ impl<'a> Parser<'a> {
             {
                 self.report_unexpected(token);
             }
-            (Some(if_token), Some(guard_args.into()))
+            (Some(if_token), Some(guard_args))
         } else {
             (None, None)
         };
@@ -2247,7 +2257,7 @@ impl<'a> Parser<'a> {
             return Ok(first);
         }
 
-        let mut children: Vec<Shared<Node>> = vec![first];
+        let mut children: ArgList = thin_vec![first];
         while matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::Or)) {
             children.push(self.next_node(|kind| matches!(kind, TokenKind::Or), NodeKind::Token)?);
             let alt_leading_trivia = self.parse_leading_trivia();
@@ -2255,7 +2265,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Shared::new(Node {
-            kind: NodeKind::OrPattern { items: children.into() },
+            kind: NodeKind::OrPattern { items: children },
             token: None,
             leading_trivia: TriviaList::new(),
             trailing_trivia: TriviaList::new(),
@@ -2263,7 +2273,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_single_pattern(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
-        let token = Shared::clone(self.peek_token()?);
+        let token = self.shared(self.peek_token()?);
 
         match &token.kind {
             // Wildcard pattern: _
@@ -2279,7 +2289,7 @@ impl<'a> Parser<'a> {
             }
             // Type pattern: :type_name
             TokenKind::Colon => {
-                let children = vec![
+                let children = thin_vec![
                     self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?,
                     self.next_node(
                         |kind| matches!(kind, TokenKind::Ident(_)),
@@ -2288,7 +2298,7 @@ impl<'a> Parser<'a> {
                 ];
 
                 Ok(Shared::new(Node {
-                    kind: NodeKind::Pattern { items: children.into() },
+                    kind: NodeKind::Pattern { items: children },
                     token: None,
                     leading_trivia,
                     trailing_trivia: TriviaList::new(),
@@ -2332,7 +2342,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_array_pattern(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: ArgList = ArgList::with_capacity(10);
 
         // Parse [
         children.push(self.next_node(|kind| matches!(kind, TokenKind::LBracket), NodeKind::Token)?);
@@ -2357,7 +2367,7 @@ impl<'a> Parser<'a> {
                     if let Some(rest) = self.peek_non_trivia()
                         && !matches!(rest.kind, TokenKind::Ident(_))
                     {
-                        return Err(ParseError::UnexpectedToken(Shared::clone(rest)));
+                        return Err(ParseError::UnexpectedToken(self.shared(rest)));
                     }
                     children.push(self.parse_pattern(rest_leading_trivia)?);
 
@@ -2378,13 +2388,13 @@ impl<'a> Parser<'a> {
                     // Will be consumed in next iteration
                     continue;
                 } else {
-                    return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+                    return Err(ParseError::UnexpectedToken(self.shared(token)));
                 }
             }
         }
 
         Ok(Shared::new(Node {
-            kind: NodeKind::Pattern { items: children.into() },
+            kind: NodeKind::Pattern { items: children },
             token: None,
             leading_trivia,
             trailing_trivia: TriviaList::new(),
@@ -2392,7 +2402,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_dict_pattern(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
-        let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
+        let mut children: ArgList = ArgList::with_capacity(10);
 
         // Parse {
         children.push(self.next_node(|kind| matches!(kind, TokenKind::LBrace), NodeKind::Token)?);
@@ -2433,13 +2443,13 @@ impl<'a> Parser<'a> {
                     // Will be consumed in next iteration
                     continue;
                 } else {
-                    return Err(ParseError::UnexpectedToken(Shared::clone(token)));
+                    return Err(ParseError::UnexpectedToken(self.shared(token)));
                 }
             }
         }
 
         Ok(Shared::new(Node {
-            kind: NodeKind::Pattern { items: children.into() },
+            kind: NodeKind::Pattern { items: children },
             token: None,
             leading_trivia,
             trailing_trivia: TriviaList::new(),
@@ -2453,7 +2463,7 @@ impl<'a> Parser<'a> {
         let op = match &operator_token.kind {
             TokenKind::Not => UnaryOp::Not,
             TokenKind::Minus => UnaryOp::Negate,
-            _ => return Err(ParseError::UnexpectedToken(Shared::clone(operator_token))),
+            _ => return Err(ParseError::UnexpectedToken(self.shared(operator_token))),
         };
 
         // Parse the operand expression
@@ -2462,20 +2472,20 @@ impl<'a> Parser<'a> {
             && !matches!(next.kind, TokenKind::Eof)
             && !crate::AstParser::is_prefix_operand_start(&next.kind)
         {
-            return Err(ParseError::UnexpectedToken(Shared::clone(next)));
+            return Err(ParseError::UnexpectedToken(self.shared(next)));
         }
         let operand = self.parse_primary_expr(operand_leading_trivia, root)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::UnaryOp { op, operand },
-            token: Some(Shared::clone(operator_token)),
+            token: Some(self.shared(operator_token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_params(&mut self) -> Result<Vec<Shared<Node>>, ParseError> {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(4);
+    fn parse_params(&mut self) -> Result<ArgList, ParseError> {
+        let mut nodes: ArgList = ArgList::with_capacity(4);
 
         nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
@@ -2531,7 +2541,7 @@ impl<'a> Parser<'a> {
             let inner_leading_trivia = self.parse_leading_trivia();
             Some(Shared::new(Node {
                 kind: NodeKind::Token,
-                token: Some(Shared::clone(token)),
+                token: Some(self.shared(token)),
                 leading_trivia: inner_leading_trivia,
                 trailing_trivia: TriviaList::new(),
             }))
@@ -2540,8 +2550,11 @@ impl<'a> Parser<'a> {
         };
 
         let name_token = match self.peek() {
-            Some(token) if matches!(token.kind, TokenKind::Ident(_)) => Shared::clone(self.advance_or_eof()?),
-            Some(token) => return Err(ParseError::UnexpectedToken(Shared::clone(token))),
+            Some(token) if matches!(token.kind, TokenKind::Ident(_)) => {
+                self.pos += 1;
+                self.shared(token)
+            }
+            Some(token) => return Err(ParseError::UnexpectedToken(self.shared(token))),
             None => return Err(ParseError::UnexpectedEOFDetected),
         };
         let mut trailing_trivia = self.parse_trailing_trivia();
@@ -2554,7 +2567,7 @@ impl<'a> Parser<'a> {
             let eq_trailing_trivia = self.parse_trailing_trivia();
             let eq_token = Shared::new(Node {
                 kind: NodeKind::Token,
-                token: Some(Shared::clone(equal_token)),
+                token: Some(self.shared(equal_token)),
                 leading_trivia: eq_leading_trivia,
                 trailing_trivia: eq_trailing_trivia,
             });
@@ -2587,7 +2600,7 @@ impl<'a> Parser<'a> {
     /// delimiter becomes a `Missing` node, both reported to `self.errors`.
     fn parse_separated_list(
         &mut self,
-        nodes: &mut Vec<Shared<Node>>,
+        nodes: &mut ArgList,
         close_token: fn(&TokenKind) -> bool,
         close_label: &'static str,
         mut parse_item: impl FnMut(&mut Self) -> Result<Shared<Node>, ParseError>,
@@ -2612,7 +2625,7 @@ impl<'a> Parser<'a> {
                     let trailing_trivia = self.parse_trailing_trivia();
                     nodes.push(Shared::new(Node {
                         kind: NodeKind::Token,
-                        token: Some(Shared::clone(close)),
+                        token: Some(self.shared(close)),
                         leading_trivia,
                         trailing_trivia,
                     }));
@@ -2654,7 +2667,7 @@ impl<'a> Parser<'a> {
                         let trailing_trivia = self.parse_trailing_trivia();
                         nodes.push(Shared::new(Node {
                             kind: NodeKind::Token,
-                            token: Some(Shared::clone(token)),
+                            token: Some(self.shared(token)),
                             leading_trivia,
                             trailing_trivia,
                         }));
@@ -2667,7 +2680,7 @@ impl<'a> Parser<'a> {
                         // Junk between items: keep it and resume at the next separator.
                         self.errors.report(ParseError::Missing {
                             expected: close_label,
-                            found: Shared::clone(token),
+                            found: self.shared(token),
                         });
                         let start = self.pos;
                         nodes.extend(self.recover_error(start, leading_trivia, &|kind, _| {
@@ -2684,7 +2697,7 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn peek_token(&self) -> Result<&'a Shared<Token>, ParseError> {
+    fn peek_token(&self) -> Result<&'a Token, ParseError> {
         self.peek().ok_or(ParseError::UnexpectedEOFDetected)
     }
 
@@ -2694,9 +2707,9 @@ impl<'a> Parser<'a> {
 
         while let Some(token) = self.tokens.get(self.pos) {
             match &token.kind {
-                TokenKind::Whitespace(_) => trivia.push(Trivia::Whitespace(Shared::clone(token))),
-                TokenKind::Tab(_) => trivia.push(Trivia::Tab(Shared::clone(token))),
-                TokenKind::Comment(_) => trivia.push(Trivia::Comment(Shared::clone(token))),
+                TokenKind::Whitespace(len) => trivia.push(Trivia::Whitespace(Self::blank(token, *len))),
+                TokenKind::Tab(len) => trivia.push(Trivia::Tab(Self::blank(token, *len))),
+                TokenKind::Comment(_) => trivia.push(Trivia::Comment(self.shared(token))),
                 TokenKind::NewLine => trivia.push(Trivia::NewLine),
                 _ => break,
             };
@@ -2767,8 +2780,8 @@ impl<'a> Parser<'a> {
 
         while let Some(token) = self.tokens.get(self.pos) {
             match &token.kind {
-                TokenKind::Whitespace(_) => trivia.push(Trivia::Whitespace(Shared::clone(token))),
-                TokenKind::Tab(_) => trivia.push(Trivia::Tab(Shared::clone(token))),
+                TokenKind::Whitespace(len) => trivia.push(Trivia::Whitespace(Self::blank(token, *len))),
+                TokenKind::Tab(len) => trivia.push(Trivia::Tab(Self::blank(token, *len))),
                 _ => break,
             }
             self.pos += 1;
@@ -2923,7 +2936,7 @@ impl<'a> Parser<'a> {
     fn check_adjacent_statement(
         &mut self,
         previous: Option<&Shared<Node>>,
-        next: &Shared<Token>,
+        next: &Token,
         needs_separator: bool,
         after_chain_continuation: bool,
     ) -> bool {
@@ -3019,12 +3032,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Records an error for `token`, which is not allowed where it is.
-    fn report_unexpected(&mut self, token: &Shared<Token>) {
-        self.errors.report(ParseError::UnexpectedToken(Shared::clone(token)));
+    fn report_unexpected(&mut self, token: &Token) {
+        self.errors.report(ParseError::UnexpectedToken(self.shared(token)));
     }
 
     /// The first non-trivia token at or after the current position.
-    fn peek_non_trivia(&self) -> Option<&'a Shared<Token>> {
+    fn peek_non_trivia(&self) -> Option<&'a Token> {
         self.tokens[self.pos..].iter().find(|token| !token.kind.is_trivia())
     }
 
@@ -3059,7 +3072,7 @@ impl<'a> Parser<'a> {
             let trailing_trivia = self.parse_trailing_trivia();
             children.push(Shared::new(Node {
                 kind: NodeKind::Token,
-                token: Some(Shared::clone(token)),
+                token: Some(self.shared(token)),
                 leading_trivia,
                 trailing_trivia,
             }));
@@ -3086,7 +3099,7 @@ impl<'a> Parser<'a> {
             Some(token) if self.errors.has_error_at(&token.range) => {}
             Some(token) => self.errors.report(ParseError::Missing {
                 expected,
-                found: Shared::clone(token),
+                found: self.shared(token),
             }),
             None => self.errors.report(ParseError::UnexpectedEOFDetected),
         }
@@ -3115,7 +3128,7 @@ impl<'a> Parser<'a> {
                 let trailing_trivia = self.parse_trailing_trivia();
                 Shared::new(Node {
                     kind: node_kind,
-                    token: Some(Shared::clone(token)),
+                    token: Some(self.shared(token)),
                     leading_trivia,
                     trailing_trivia,
                 })
@@ -3129,11 +3142,11 @@ impl<'a> Parser<'a> {
         let token = self.peek().ok_or(ParseError::UnexpectedEOFDetected)?;
 
         if match_token_kind(&token.kind) {
-            let token = Shared::clone(token);
+            let token = self.shared(token);
             self.advance();
             Ok(token)
         } else {
-            Err(ParseError::UnexpectedToken(Shared::clone(token)))
+            Err(ParseError::UnexpectedToken(self.shared(token)))
         }
     }
 

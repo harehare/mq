@@ -6,7 +6,7 @@ use super::nodes_split::{
     immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes, split_at_nodes,
 };
 use super::{EngineRunContext, Error, VmEnv, compiler, interpreter, map_input_values, remaining_timeout};
-use crate::ast::Program;
+use crate::ast::node::Node;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{Ident, ModuleResolver, Shared, SharedCell};
 use std::fmt;
@@ -112,7 +112,7 @@ impl SplitProgram {
 
     /// Compiles `program`, baking module `let` values in as constants.
     pub(crate) fn compile<R: ModuleResolver>(
-        program: &Program,
+        program: &[Shared<Node>],
         context: &mut EngineRunContext<'_, R>,
         deadline: Option<Instant>,
     ) -> Result<Self, Error> {
@@ -127,12 +127,12 @@ impl SplitProgram {
             let immutable_let_names = immutable_let_names_before_nodes(before);
             // `after` re-declares these, so skip them per input.
             let per_input = if before.iter().all(|node| is_declaration(node)) {
-                Program::new()
+                &[]
             } else {
-                before.to_vec()
+                before
             };
             let program_before = compiler::compile_uninstrumented_program_for_engine(
-                &per_input,
+                per_input,
                 Shared::clone(&token_arena),
                 module_loader.clone(),
                 CompileSeeds {
@@ -260,7 +260,7 @@ impl SplitProgram {
     /// Compiles with a deadline from the context's timeout.
     #[cfg(feature = "mqc")]
     pub(crate) fn compile_standalone<R: ModuleResolver>(
-        program: &Program,
+        program: &[Shared<Node>],
         context: &mut EngineRunContext<'_, R>,
     ) -> Result<Self, Error> {
         let deadline = super::shared_deadline(context.timeout);
