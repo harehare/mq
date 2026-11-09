@@ -352,6 +352,16 @@ Run tests with code coverage reporting.
 cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|bench|wasm|web-api|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 ```
 
+## test-miri
+
+Run unit tests under Miri (nightly). Extra args go to cargo miri test.
+
+```bash
+export MIRIFLAGS="-Zmiri-env-forward=PROPTEST_DISABLE_FAILURE_PERSISTENCE -Zmiri-env-forward=PROPTEST_CASES"
+export PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 PROPTEST_CASES=4
+cargo +nightly miri test -p mq-lang -p mq-markdown --lib $MX_ARGS
+```
+
 ## test-fuzz
 
 Run fuzzing tests against the Tarn bytecode VM (targets: interpreter, mqc; pass the target after --).
