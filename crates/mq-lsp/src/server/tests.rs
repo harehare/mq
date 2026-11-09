@@ -2,6 +2,10 @@ use tower_lsp_server::ls_types::{self, TextDocumentIdentifier};
 
 use super::*;
 
+fn to_uri(uri: &Url) -> ls_types::Uri {
+    super::to_uri(uri).expect("valid test URI")
+}
+
 #[test]
 fn test_document_end_position() {
     for (text, expected) in [
@@ -2103,4 +2107,10 @@ async fn test_diagnostics_with_tuple_option() {
     assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
 
     backend.diagnostics(uri, None).await;
+}
+
+#[test]
+fn test_to_url_returns_error_for_uri_unsupported_by_url() {
+    let uri = ls_types::Uri::from_str("http://a:99999/").unwrap();
+    assert!(to_url(&uri).is_err());
 }

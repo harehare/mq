@@ -17,12 +17,14 @@ use crate::{
 };
 use tower_lsp_server::{Client, LanguageServer, LspService, Server, jsonrpc, ls_types};
 
-fn to_url(uri: &ls_types::Uri) -> Url {
-    Url::parse(&uri.to_string()).unwrap()
+/// Converts a client-supplied URI, rejecting ones `url::Url` cannot represent.
+fn to_url(uri: &ls_types::Uri) -> jsonrpc::Result<Url> {
+    Url::parse(uri.as_str())
+        .map_err(|e| jsonrpc::Error::invalid_params(format!("invalid document URI `{}`: {e}", uri.as_str())))
 }
 
-fn to_uri(uri: &Url) -> ls_types::Uri {
-    ls_types::Uri::from_str(uri.as_ref()).unwrap()
+fn to_uri(uri: &Url) -> Option<ls_types::Uri> {
+    ls_types::Uri::from_str(uri.as_ref()).ok()
 }
 
 /// End position of `text` in UTF-16 columns.
@@ -84,22 +86,26 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: ls_types::DidOpenTextDocumentParams) {
-        self.on_change(to_url(&params.text_document.uri), params.text_document.text)
-            .await;
-        self.diagnostics(to_url(&params.text_document.uri), Some(params.text_document.version))
-            .await;
+        let Some(url) = self.notification_url(&params.text_document.uri).await else {
+            return;
+        };
+        self.on_change(url.clone(), params.text_document.text).await;
+        self.diagnostics(url, Some(params.text_document.version)).await;
     }
 
     async fn did_change(&self, mut params: ls_types::DidChangeTextDocumentParams) {
-        self.on_change(
-            to_url(&params.text_document.uri),
-            std::mem::take(&mut params.content_changes[0].text),
-        )
-        .await
+        let Some(url) = self.notification_url(&params.text_document.uri).await else {
+            return;
+        };
+        self.on_change(url, std::mem::take(&mut params.content_changes[0].text))
+            .await
     }
 
     async fn did_save(&self, params: ls_types::DidSaveTextDocumentParams) {
-        self.diagnostics(to_url(&params.text_document.uri), None).await;
+        let Some(url) = self.notification_url(&params.text_document.uri).await else {
+            return;
+        };
+        self.diagnostics(url, None).await;
     }
 
     async fn did_close(&self, params: ls_types::DidCloseTextDocumentParams) {
@@ -127,7 +133,7 @@ impl LanguageServer for Backend {
 
         Ok(Some(ls_types::SemanticTokensResult::Tokens(ls_types::SemanticTokens {
             result_id: None,
-            data: semantic_tokens::response(Arc::clone(&self.hir), to_url(&uri)),
+            data: semantic_tokens::response(Arc::clone(&self.hir), to_url(&uri)?),
         })))
     }
 
@@ -140,7 +146,7 @@ impl LanguageServer for Backend {
         Ok(Some(ls_types::SemanticTokensRangeResult::Tokens(
             ls_types::SemanticTokens {
                 result_id: None,
-                data: semantic_tokens::response(Arc::clone(&self.hir), to_url(&url)),
+                data: semantic_tokens::response(Arc::clone(&self.hir), to_url(&url)?),
             },
         )))
     }
@@ -152,7 +158,11 @@ impl LanguageServer for Backend {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        Ok(goto_definition::response(Arc::clone(&self.hir), to_url(&url), position))
+        Ok(goto_definition::response(
+            Arc::clone(&self.hir),
+            to_url(&url)?,
+            position,
+        ))
     }
 
     async fn references(&self, params: ls_types::ReferenceParams) -> jsonrpc::Result<Option<Vec<ls_types::Location>>> {
@@ -162,7 +172,7 @@ impl LanguageServer for Backend {
         let source_map_guard = self.source_map.read().unwrap();
         Ok(references::response(
             Arc::clone(&self.hir),
-            to_url(&url),
+            to_url(&url)?,
             position,
             &source_map_guard,
         ))
@@ -181,7 +191,7 @@ impl LanguageServer for Backend {
 
         Ok(document_highlight::response(
             Arc::clone(&self.hir),
-            to_url(&url),
+            to_url(&url)?,
             &snapshot.lines,
             position,
         ))
@@ -201,7 +211,7 @@ impl LanguageServer for Backend {
 
         Ok(document_link::response(
             Arc::clone(&self.hir),
-            to_url(&params.text_document.uri),
+            to_url(&params.text_document.uri)?,
             &snapshot.lines,
         ))
     }
@@ -227,7 +237,7 @@ impl LanguageServer for Backend {
         let source_map_guard = self.source_map.read().unwrap();
         Ok(document_symbol::response(
             Arc::clone(&self.hir),
-            to_url(&uri),
+            to_url(&uri)?,
             &source_map_guard,
         ))
     }
@@ -264,7 +274,7 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::DocumentDiagnosticParams,
     ) -> jsonrpc::Result<ls_types::DocumentDiagnosticReportResult> {
-        let uri = to_url(&params.text_document.uri);
+        let uri = to_url(&params.text_document.uri)?;
         let items = self.compute_diagnostics(&uri);
 
         Ok(ls_types::DocumentDiagnosticReportResult::Report(
@@ -299,7 +309,7 @@ impl LanguageServer for Backend {
 
         Ok(hover::response(
             Arc::clone(&self.hir),
-            to_url(&url),
+            to_url(&url)?,
             type_env,
             position,
             &line,
@@ -319,7 +329,7 @@ impl LanguageServer for Backend {
 
         Ok(signature_help::response(
             Arc::clone(&self.hir),
-            to_url(&url),
+            to_url(&url)?,
             position,
             source_text.as_deref().map(String::as_str),
         ))
@@ -329,7 +339,7 @@ impl LanguageServer for Backend {
         if !self.config.enable_type_checking {
             return Ok(None);
         }
-        let url = to_url(&params.text_document.uri);
+        let url = to_url(&params.text_document.uri)?;
         let type_env = self.type_env_map.get(&url.to_string()).map(|e| e.clone());
         Ok(inlay_hints::response(
             Arc::clone(&self.hir),
@@ -355,7 +365,7 @@ impl LanguageServer for Backend {
         let source_map_guard = self.source_map.read().unwrap();
         Ok(completions::response(
             Arc::clone(&self.hir),
-            to_url(&uri),
+            to_url(&uri)?,
             position,
             &source_map_guard,
             &line_prefix,
@@ -374,7 +384,7 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::CodeActionParams,
     ) -> jsonrpc::Result<Option<ls_types::CodeActionResponse>> {
-        let url = to_url(&params.text_document.uri.clone());
+        let url = to_url(&params.text_document.uri.clone())?;
         let uri_string = params.text_document.uri.to_string();
 
         let source_id = self.source_map.read().unwrap().get_by_left(&uri_string).copied();
@@ -395,7 +405,7 @@ impl LanguageServer for Backend {
     }
 
     async fn rename(&self, params: ls_types::RenameParams) -> jsonrpc::Result<Option<ls_types::WorkspaceEdit>> {
-        let url = to_url(&params.text_document_position.text_document.uri);
+        let url = to_url(&params.text_document_position.text_document.uri)?;
         let position = params.text_document_position.position;
 
         let source_map_guard = self.source_map.read().unwrap();
@@ -413,7 +423,7 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::TextDocumentPositionParams,
     ) -> jsonrpc::Result<Option<ls_types::PrepareRenameResponse>> {
-        let url = to_url(&params.text_document.uri);
+        let url = to_url(&params.text_document.uri)?;
         Ok(rename::prepare(Arc::clone(&self.hir), url, params.position))
     }
 
@@ -639,8 +649,9 @@ impl Backend {
         let mut diagnostics = Vec::new();
 
         // Add parsing errors if they exist
-        if let Some(errors) = file_errors {
-            let document = to_uri(uri);
+        if let Some(errors) = file_errors
+            && let Some(document) = to_uri(uri)
+        {
             diagnostics.extend(errors.iter().map(|error| error.to_diagnostic(&document)));
         }
 
@@ -722,9 +733,20 @@ impl Backend {
     async fn diagnostics(&self, uri: Url, version: Option<i32>) {
         let diagnostics = self.compute_diagnostics(&uri);
 
-        self.client
-            .publish_diagnostics(to_uri(&uri), diagnostics, version)
-            .await;
+        if let Some(document) = to_uri(&uri) {
+            self.client.publish_diagnostics(document, diagnostics, version).await;
+        }
+    }
+
+    /// Converts a notification's URI, logging instead of replying since notifications have no response.
+    async fn notification_url(&self, uri: &ls_types::Uri) -> Option<Url> {
+        match to_url(uri) {
+            Ok(url) => Some(url),
+            Err(e) => {
+                self.client.log_message(ls_types::MessageType::ERROR, e.message).await;
+                None
+            }
+        }
     }
 }
 
