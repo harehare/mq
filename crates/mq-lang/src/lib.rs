@@ -117,6 +117,8 @@ pub use suggest::{suggest_name, suggest_selector};
 #[cfg(feature = "cst")]
 pub use cst::node::BinaryOp as CstBinaryOp;
 #[cfg(feature = "cst")]
+pub use cst::node::Blank as CstBlank;
+#[cfg(feature = "cst")]
 pub use cst::node::Node as CstNode;
 #[cfg(feature = "cst")]
 pub use cst::node::NodeKind as CstNodeKind;
@@ -187,8 +189,7 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
         }
     };
 
-    let token_vec: Vec<Shared<Token>> = tokens.into_iter().map(Shared::new).collect();
-    CstParser::new(&token_vec).parse()
+    CstParser::new(&tokens).parse()
 }
 
 /// Parses `code` into an AST program, allocating tokens in `token_arena`.
