@@ -2,6 +2,10 @@ use tower_lsp_server::ls_types::{self, TextDocumentIdentifier};
 
 use super::*;
 
+fn to_uri(uri: &Url) -> ls_types::Uri {
+    super::to_uri(uri).expect("valid test URI")
+}
+
 #[test]
 fn test_document_end_position() {
     for (text, expected) in [
@@ -18,6 +22,32 @@ fn test_document_end_position() {
             "text: {text:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn test_formatting_unopened_document_returns_none() {
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        config: LspConfig::default(),
+    });
+
+    let uri = Url::parse("file:///never_opened.mq").unwrap();
+    let edits = service
+        .inner()
+        .formatting(ls_types::DocumentFormattingParams {
+            text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+            options: Default::default(),
+            work_done_progress_params: Default::default(),
+        })
+        .await
+        .unwrap();
+
+    assert!(edits.is_none());
 }
 
 #[tokio::test]
@@ -2077,4 +2107,10 @@ async fn test_diagnostics_with_tuple_option() {
     assert!(backend.error_map.get(&uri.to_string()).unwrap().is_empty());
 
     backend.diagnostics(uri, None).await;
+}
+
+#[test]
+fn test_to_url_returns_error_for_uri_unsupported_by_url() {
+    let uri = ls_types::Uri::from_str("http://a:99999/").unwrap();
+    assert!(to_url(&uri).is_err());
 }
