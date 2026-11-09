@@ -1,1 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="flowGradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#2B5773" /><stop offset="100%" style="stop-color:#61AFEF" /></linearGradient></defs><!-- Mount arrow --><path d="M50 4 L50 20 M40 11 L50 21 L60 11" fill="none" stroke="url(#flowGradient)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" /><!-- Storage media (card with notched corner) --><path d="M34 30 L80 30 A6 6 0 0 1 86 36 L86 82 A6 6 0 0 1 80 88 L20 88 A6 6 0 0 1 14 82 L14 44 Z" fill="none" stroke="url(#flowGradient)" stroke-width="6" stroke-linejoin="round" /><!-- Markdown "M" --><path d="M28 76 L28 52 L38 52 L50 70 L62 52 L72 52 L72 76" fill="none" stroke="url(#flowGradient)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    path { stroke: #0891B2; }
+    @media (prefers-color-scheme: dark) { path { stroke: #22D3EE; } }
+  </style>
+  <!-- A folder: Markdown headings become directories -->
+  <path d="M8 18 L38 18 L46 28 L92 28 L92 82 L8 82 Z" fill="none" stroke-width="8" stroke-linejoin="miter" stroke-linecap="butt"/>
+  <!-- An "M" (Markdown) inside -->
+  <path d="M28 70 L28 44 L50 62 L72 44 L72 70" fill="none" stroke-width="8" stroke-linejoin="miter" stroke-miterlimit="6" stroke-linecap="butt"/>
+</svg>
