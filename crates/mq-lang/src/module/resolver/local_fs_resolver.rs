@@ -2,7 +2,8 @@ use crate::io::{Io, NativeIo};
 use crate::{ModuleError, ModuleResolver, Shared};
 use std::{borrow::Cow, path::PathBuf};
 
-pub(crate) const DEFAULT_PATHS: [&str; 5] = [
+pub(crate) const DEFAULT_PATHS: [&str; 6] = [
+    "$ORIGIN/vendor",
     "$HOME/.mq",
     "$HOME/.config/mq",
     "$ORIGIN/../lib/mq",
@@ -104,10 +105,12 @@ impl LocalFsModuleResolver {
             .collect())
     }
 
+    /// Looks for `<dir>/<name>.mq`, then `<dir>/<name>/<name>.mq`, in each search directory.
     fn search(&self, name: &str) -> Result<PathBuf, ModuleError> {
+        let file = Self::module_file_name(name);
         self.directories()?
             .into_iter()
-            .map(|dir| dir.join(Self::module_file_name(name)))
+            .flat_map(|dir| [dir.join(&file), dir.join(name).join(&file)])
             .find(|p| self.io.exists(p).unwrap_or(false))
             .ok_or_else(|| ModuleError::NotFound(Cow::Owned(Self::module_file_name(name))))
     }
@@ -119,9 +122,16 @@ impl LocalFsModuleResolver {
             .iter()
             .filter_map(|dir| self.io.read_dir(dir).ok())
             .flatten()
-            .filter(|(_, is_dir)| !is_dir)
-            .filter_map(|(path, _)| {
-                (path.extension()? == "mq").then(|| path.file_stem()?.to_str().map(str::to_string))?
+            .filter_map(|(path, is_dir)| {
+                if is_dir {
+                    let name = path.file_name()?.to_str()?.to_string();
+                    self.io
+                        .exists(&path.join(Self::module_file_name(&name)))
+                        .unwrap_or(false)
+                        .then_some(name)
+                } else {
+                    (path.extension()? == "mq").then(|| path.file_stem()?.to_str().map(str::to_string))?
+                }
             })
             .collect()
     }
@@ -178,6 +188,28 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let resolver = LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
         assert!(matches!(resolver.get_path(name), Err(ModuleError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_resolve_module_in_same_named_subdirectory() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join("pkg")).unwrap();
+        std::fs::write(dir.path().join("pkg/pkg.mq"), "def foo(): 1;").unwrap();
+
+        let resolver = LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
+        assert_eq!(resolver.resolve("pkg").unwrap(), "def foo(): 1;");
+        assert_eq!(resolver.module_names(), vec!["pkg".to_string()]);
+    }
+
+    #[test]
+    fn test_flat_file_wins_over_subdirectory() {
+        let dir = TempDir::new().unwrap();
+        write_module(&dir, "pkg", "flat");
+        std::fs::create_dir(dir.path().join("pkg")).unwrap();
+        std::fs::write(dir.path().join("pkg/pkg.mq"), "nested").unwrap();
+
+        let resolver = LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
+        assert_eq!(resolver.resolve("pkg").unwrap(), "flat");
     }
 
     #[test]

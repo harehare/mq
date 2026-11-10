@@ -70,10 +70,13 @@ The imported module is available with its defined name and can be accessed using
 
 The import directive searches for .mq files in the following locations:
 
+- `$ORIGIN/vendor` - Vendored modules in the current directory
 - `$HOME/.mq` - User's home directory mq folder
 - `$ORIGIN/../lib/mq` - Library directory relative to the source file
 - `$ORIGIN/../lib` - Parent lib directory relative to the source file
 - `$ORIGIN` - Current directory relative to the source file
+
+In each directory, `import "name"` resolves `name.mq` first, then `name/name.mq`.
 
 ```mq
 import "module_name"
