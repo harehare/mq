@@ -1242,9 +1242,10 @@ def group_by(arr, f):
             let v = get(arr, i)
             | i += 1
             | let key = to_string(f(v))
-            | let existing = get(groups, key)
-            | let new_group = if (is_none(existing)): [v] else: existing + [v]
-            | groups = set(groups, key, new_group);
+            | if (is_none(get(groups, key))):
+                groups[key] = [v]
+              else:
+                groups[key] += [v];
         | groups
       end
 end
@@ -1418,6 +1419,16 @@ end
 # Returns a dedup key for `v` that keeps types apart, so `1` and `"1"` differ.
 def _value_key(v): type(v) + ":" + to_string(v);
 
+# Builds a dict whose keys are the `_value_key` of each element, for O(1) membership checks.
+def _key_set(arr):
+  var set_ = dict()
+  | var i = 0
+  | while (i != len(arr)):
+      set_[_value_key(get(arr, i))] = true
+      | i += 1;
+  | set_
+end
+
 # Removes duplicate elements from the given array, keeping the first occurrence.
 #
 # Example:
@@ -1485,7 +1496,10 @@ def union(arr1, arr2): arr1 + arr2 | uniq();
 # ```
 #
 # Returns: array
-def intersection(arr1, arr2): arr1 | filter(fn(x): in(arr2, x);) | uniq();
+def intersection(arr1, arr2):
+  let keys = _key_set(arr2)
+  | arr1 | filter(fn(x): not(is_none(get(keys, _value_key(x))));) | uniq()
+end
 
 # Returns the difference of two arrays: the distinct elements of the first array that do not appear in the second.
 #
@@ -1496,7 +1510,10 @@ def intersection(arr1, arr2): arr1 | filter(fn(x): in(arr2, x);) | uniq();
 # ```
 #
 # Returns: array
-def difference(arr1, arr2): arr1 | filter(fn(x): !in(arr2, x);) | uniq();
+def difference(arr1, arr2):
+  let keys = _key_set(arr2)
+  | arr1 | filter(fn(x): is_none(get(keys, _value_key(x)));) | uniq()
+end
 
 # Returns the input value unchanged.
 #
