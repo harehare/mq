@@ -567,6 +567,12 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
             collect_soft_builtin_names(index, shadowed, names);
             collect_soft_builtin_names(value, shadowed, names);
         }
+        Expr::PathAssign(_, keys, value) => {
+            for key in keys {
+                collect_soft_builtin_names(key, shadowed, names);
+            }
+            collect_soft_builtin_names(value, shadowed, names);
+        }
         Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => {
             names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed));
         }
@@ -747,6 +753,38 @@ fn reads_path(node: &Shared<Node>, name: Ident, keys: &[&Shared<Node>]) -> bool 
         }
 }
 
+/// The `rhs` of `name[k1]...[kn] = name[k1]...[kn] + rhs`, whose keys are all pure so that
+/// reading them once gives what reading them twice does.
+fn path_add_operand<'a>(name: Ident, keys: &[Shared<Node>], value: &'a Shared<Node>) -> Option<&'a Shared<Node>> {
+    let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
+        return None;
+    };
+    let key_refs: Vec<&Shared<Node>> = keys.iter().collect();
+    (keys.iter().all(|key| is_path_key(key, name)) && reads_path(lhs, name, &key_refs)).then_some(rhs)
+}
+
+/// `name[k1] = set(name[k1], k2, set(name[k1][k2], k3, ... value))`, which reads each level of
+/// the path from the variable as it is when the assignment runs.
+fn set_chain(name: Ident, keys: &[Shared<Node>], value: &Shared<Node>, token_id: TokenId) -> Shared<Node> {
+    let node = |expr| Shared::new(Node { token_id, expr });
+    let mut acc = Shared::clone(value);
+    for depth in (1..keys.len()).rev() {
+        let read = keys[..depth].iter().fold(
+            node(Expr::Ident(IdentWithToken { name, token: None })),
+            |target, key| node(Expr::Index(target, Shared::clone(key))),
+        );
+        acc = node(Expr::Call(
+            IdentWithToken::new(builtins::SET),
+            smallvec::smallvec![read, Shared::clone(&keys[depth]), acc],
+        ));
+    }
+    node(Expr::IndexAssign(
+        IdentWithToken { name, token: None },
+        Shared::clone(&keys[0]),
+        acc,
+    ))
+}
+
 /// Collects the names used inside functions nested in `program`, which can read or write the
 /// enclosing function's locals. `try` and `catch` bodies compile to nested functions too.
 ///
@@ -833,6 +871,11 @@ impl NestedFunctionNames {
             Expr::IndexAssign(ident, index, value) => {
                 self.use_name(ident, nested);
                 self.node(index, nested);
+                self.node(value, nested);
+            }
+            Expr::PathAssign(ident, keys, value) => {
+                self.use_name(ident, nested);
+                self.nodes(keys, nested);
                 self.node(value, nested);
             }
             Expr::Call(ident, args) => {
@@ -952,6 +995,13 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
         Expr::IndexAssign(_, index, value) => {
             names.insert(builtins::SET.into());
             collect_referenced_names(index, names);
+            collect_referenced_names(value, names);
+        }
+        Expr::PathAssign(_, keys, value) => {
+            names.insert(builtins::SET.into());
+            for key in keys {
+                collect_referenced_names(key, names);
+            }
             collect_referenced_names(value, names);
         }
         Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => {
@@ -1085,6 +1135,7 @@ fn node_is_straight_line(node: &Shared<Node>, bindings: bool) -> bool {
         Expr::Let(_, value) | Expr::Var(_, value) => bindings && simple(value),
         Expr::Assign(_, value) | Expr::Paren(value) => simple(value),
         Expr::IndexAssign(_, index, value) => simple(index) && simple(value),
+        Expr::PathAssign(_, keys, value) => keys.iter().all(simple) && simple(value),
         Expr::Call(_, args) | Expr::Array(args) => args.iter().all(simple),
         Expr::BinaryOp(_, lhs, rhs) => simple(lhs) && simple(rhs),
         Expr::UnaryOp(_, operand) => simple(operand),
@@ -1116,6 +1167,9 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         | Expr::Assign(_, value)
         | Expr::Paren(value) => node_contains_direct_yield(value),
         Expr::IndexAssign(_, index, value) => node_contains_direct_yield(index) || node_contains_direct_yield(value),
+        Expr::PathAssign(_, keys, value) => {
+            keys.iter().any(node_contains_direct_yield) || node_contains_direct_yield(value)
+        }
         Expr::Block(body) | Expr::Loop(body) => program_contains_direct_yield(body),
         // Inline modules only declare names in their enclosing scope; their initializer code is
         // not part of the enclosing function body. A nested module checks its own boundary when
@@ -2846,6 +2900,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Let(pattern, value) => self.compile_let_or_var(pattern, value, false),
             Expr::Var(pattern, value) => self.compile_let_or_var(pattern, value, true),
             Expr::IndexAssign(ident, index, value) => self.compile_index_assign(ident.name, index, value),
+            Expr::PathAssign(ident, keys, value) => self.compile_path_assign_expr(ident.name, keys, value),
             Expr::Assign(ident, value) => {
                 if self.compile_add_assign_local(ident.name, value)?
                     || self.compile_add_assign_upvalue(ident.name, value)?
@@ -3353,8 +3408,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.set_call_token_id(token_id);
                     self.emit_call_builtin(builtins::SET.into(), 3);
                     self.emit(OpCode::SetLocal(slot));
-                } else if let Some((keys, leaf)) = self.nested_assign_path(name, index, value) {
-                    self.compile_path_assign(PathTarget::Local(slot), keys, leaf)?;
+                } else if let Some(operand) = path_add_operand(name, std::slice::from_ref(index), value) {
+                    self.compile_path_assign(PathTarget::Local(slot), vec![index], PathLeaf::Add(operand))?;
                 } else {
                     self.compile_expr(index)?;
                     self.compile_expr(value)?;
@@ -3370,8 +3425,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
                 }
                 if self.cannot_run_user_code_in(index, value) {
-                    if let Some((keys, leaf)) = self.nested_assign_path(name, index, value) {
-                        self.compile_path_assign(PathTarget::Upvalue(upvalue), keys, leaf)?;
+                    if let Some(operand) = path_add_operand(name, std::slice::from_ref(index), value) {
+                        self.compile_path_assign(PathTarget::Upvalue(upvalue), vec![index], PathLeaf::Add(operand))?;
                     } else {
                         self.compile_expr(index)?;
                         self.compile_expr(value)?;
@@ -3440,40 +3495,43 @@ impl<R: ModuleResolver> Compiler<R> {
         });
     }
 
-    /// Recognizes `name[k1]...[kn] = leaf` after the parser's `name[k1] = set(name[k1], k2, ...)`
-    /// expansion, so the containers along the path can be updated in place instead of each level
-    /// being read out (and thereby copied) and written back.
-    ///
-    /// Keys must be literals or identifiers, which is what lets them be evaluated once.
-    /// `leaf` is an `+ rhs` update of the same path when it has that form (any depth), and
-    /// otherwise the value to store (only for `n >= 2`, as `SetIndexLocal` covers one key).
-    fn nested_assign_path<'a>(
+    /// Compiles `name[k1]...[kn] = value` (n >= 2), updating the containers along the path in
+    /// place. When a nested function uses the variable and an operand can run user code, the
+    /// target is read before they run, so that case compiles as a chain of `set` calls instead.
+    fn compile_path_assign_expr(
         &mut self,
         name: Ident,
-        index: &'a Shared<Node>,
-        value: &'a Shared<Node>,
-    ) -> Option<(Vec<&'a Shared<Node>>, PathLeaf<'a>)> {
-        if !is_path_key(index, name) {
-            return None;
-        }
-        let mut keys = vec![index];
-        let mut leaf = value;
-        while keys.len() < usize::from(u8::MAX) {
-            let Some(args) = self.unshadowed_builtin_args(leaf, builtins::SET.into(), 3) else {
-                break;
-            };
-            if !is_path_key(&args[1], name) || !reads_path(&args[0], name, &keys) {
-                break;
+        keys: &[Shared<Node>],
+        value: &Shared<Node>,
+    ) -> CompileResult<()> {
+        let token_id = self.current_token_id;
+        let pure = keys.iter().all(|key| self.cannot_run_user_code(key)) && self.cannot_run_user_code(value);
+        let target = match self.resolve(name) {
+            Some(Resolved::Local(slot)) => {
+                if self.scope_mut().is_immutable(slot) {
+                    return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
+                }
+                (pure || !self.is_used_by_nested_function(name)).then_some(PathTarget::Local(slot))
             }
-            keys.push(&args[1]);
-            leaf = &args[2];
-        }
-        if let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &leaf.expr
-            && reads_path(lhs, name, &keys)
-        {
-            return Some((keys, PathLeaf::Add(rhs)));
-        }
-        (keys.len() >= 2).then_some((keys, PathLeaf::Set(leaf)))
+            Some(Resolved::Upvalue { index, immutable }) => {
+                if immutable {
+                    return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
+                }
+                pure.then_some(PathTarget::Upvalue(index))
+            }
+            None => return Err(CompileError::UndefinedIdent(name.to_string(), token_id)),
+        };
+        let Some(target) = target else {
+            return self.compile_expr(&set_chain(name, keys, value, token_id));
+        };
+        let key_refs = keys.iter().collect();
+        let leaf = match path_add_operand(name, keys, value) {
+            Some(operand) => PathLeaf::Add(operand),
+            None => PathLeaf::Set(value),
+        };
+        self.compile_path_assign(target, key_refs, leaf)?;
+        self.emit(OpCode::GetLocal(SELF_SLOT));
+        Ok(())
     }
 
     fn is_used_by_nested_function(&mut self, name: Ident) -> bool {

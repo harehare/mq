@@ -316,76 +316,63 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         lhs: &Shared<Node>,
         rhs: Shared<Node>,
         operator_token_id: TokenId,
-        operator_token: &Token,
         op: BinaryOp,
     ) -> Result<Shared<Node>, SyntaxError> {
         let compound_rhs = Shared::new(Node {
             token_id: operator_token_id,
             expr: Expr::BinaryOp(op, Shared::clone(lhs), rhs),
         });
-        self.create_assign(lhs, compound_rhs, operator_token_id, operator_token)
+        self.create_assign(lhs, compound_rhs, operator_token_id)
     }
 
     /// Creates an assignment node, handling both simple identifiers and indexed targets.
     ///
     /// - `x = rhs` → `Assign(x, rhs)`
     /// - `arr[idx] = rhs` (lhs is `Index(arr, idx)` or `get(arr, idx)`) → `IndexAssign(arr, idx, rhs)`
-    /// - `arr[i][j] = rhs` → `arr[i] = set(arr[i], j, rhs)`, applied recursively
+    /// - `arr[i][j]... = rhs` → `PathAssign(arr, [i, j, ...], rhs)`
     fn create_assign(
         &mut self,
         lhs: &Shared<Node>,
         rhs: Shared<Node>,
         operator_token_id: TokenId,
-        operator_token: &Token,
     ) -> Result<Shared<Node>, SyntaxError> {
-        match &lhs.expr {
-            Expr::Ident(ident) => Ok(Shared::new(Node {
+        if let Expr::Ident(ident) = &lhs.expr {
+            return Ok(Shared::new(Node {
                 token_id: operator_token_id,
                 expr: Expr::Assign(ident.clone(), rhs),
-            })),
-            Expr::Index(target, index) => {
-                self.create_index_assign(target, index, rhs, operator_token_id, operator_token)
-            }
-            Expr::Call(func_ident, args) if func_ident.name == constants::builtins::GET.into() && args.len() == 2 => {
-                self.create_index_assign(&args[0], &args[1], rhs, operator_token_id, operator_token)
-            }
-            _ => Err(SyntaxError::InvalidAssignmentTarget(
-                self.token_arena[lhs.token_id].clone(),
-            )),
+            }));
         }
+        let mut keys = SmallVec::<[Shared<Node>; 4]>::new();
+        let root = Self::collect_assign_path(lhs, &mut keys)
+            .map_err(|invalid| SyntaxError::InvalidAssignmentTarget(self.token_arena[invalid.token_id].clone()))?;
+        let expr = if keys.len() == 1 {
+            Expr::IndexAssign(root.clone(), keys.remove(0), rhs)
+        } else {
+            Expr::PathAssign(root.clone(), keys.into_iter().collect(), rhs)
+        };
+        Ok(Shared::new(Node {
+            token_id: operator_token_id,
+            expr,
+        }))
     }
 
-    /// `target[index] = rhs`, written either as brackets or as an explicit `get(target, index)`.
-    fn create_index_assign(
-        &mut self,
-        target: &Shared<Node>,
-        index: &Shared<Node>,
-        rhs: Shared<Node>,
-        operator_token_id: TokenId,
-        operator_token: &Token,
-    ) -> Result<Shared<Node>, SyntaxError> {
-        match &target.expr {
-            Expr::Ident(var_ident) => Ok(Shared::new(Node {
-                token_id: operator_token_id,
-                expr: Expr::IndexAssign(var_ident.clone(), Shared::clone(index), rhs),
-            })),
-            Expr::Call(..) | Expr::Index(..) | Expr::Slice(..) => {
-                let set_call = Shared::new(Node {
-                    token_id: operator_token_id,
-                    expr: Expr::Call(
-                        IdentWithToken::new_with_token(
-                            constants::builtins::SET,
-                            Some(self.alloc_ident_token(operator_token)),
-                        ),
-                        smallvec![Shared::clone(target), Shared::clone(index), rhs],
-                    ),
-                });
-                self.create_assign(target, set_call, operator_token_id, operator_token)
+    /// Walks `name[k1]...[kn]` (brackets or `get(target, key)`) down to `name`, pushing the keys
+    /// outermost last. Returns the node that is not a valid assignment target on failure.
+    fn collect_assign_path<'n>(
+        node: &'n Shared<Node>,
+        keys: &mut SmallVec<[Shared<Node>; 4]>,
+    ) -> Result<&'n IdentWithToken, &'n Shared<Node>> {
+        let (target, key) = match &node.expr {
+            Expr::Ident(ident) => return Ok(ident),
+            Expr::Index(target, key) => (target, key),
+            Expr::Call(func_ident, args) if func_ident.name == constants::builtins::GET.into() && args.len() == 2 => {
+                (&args[0], &args[1])
             }
-            _ => Err(SyntaxError::InvalidAssignmentTarget(
-                self.token_arena[target.token_id].clone(),
-            )),
-        }
+            _ => return Err(node),
+        };
+        let root = Self::collect_assign_path(target, keys);
+        keys.push(Shared::clone(key));
+        root
     }
 
     fn parse_binary_op(parser: &mut Parser, min_prec: u8, mut lhs: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
@@ -425,7 +412,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             lhs = match kind {
-                TokenKind::Equal => parser.create_assign(&lhs, rhs, operator_token_id, operator_token)?,
+                TokenKind::Equal => parser.create_assign(&lhs, rhs, operator_token_id)?,
                 TokenKind::And => {
                     if matches!(&lhs.expr, Expr::And(_)) {
                         let mut lhs = lhs;
@@ -460,20 +447,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         })
                     }
                 }
-                TokenKind::PlusEqual => {
-                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, BinaryOp::Add)?
-                }
-                TokenKind::MinusEqual => {
-                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, BinaryOp::Sub)?
-                }
-                TokenKind::StarEqual => {
-                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, BinaryOp::Mul)?
-                }
-                TokenKind::SlashEqual => {
-                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, BinaryOp::Div)?
-                }
+                TokenKind::PlusEqual => parser.create_compound_assign(&lhs, rhs, operator_token_id, BinaryOp::Add)?,
+                TokenKind::MinusEqual => parser.create_compound_assign(&lhs, rhs, operator_token_id, BinaryOp::Sub)?,
+                TokenKind::StarEqual => parser.create_compound_assign(&lhs, rhs, operator_token_id, BinaryOp::Mul)?,
+                TokenKind::SlashEqual => parser.create_compound_assign(&lhs, rhs, operator_token_id, BinaryOp::Div)?,
                 TokenKind::PercentEqual => {
-                    parser.create_compound_assign(&lhs, rhs, operator_token_id, operator_token, BinaryOp::Mod)?
+                    parser.create_compound_assign(&lhs, rhs, operator_token_id, BinaryOp::Mod)?
                 }
                 TokenKind::DoubleSlashEqual => {
                     let floor_div_rhs = Shared::new(Node {
@@ -489,7 +468,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             })],
                         ),
                     });
-                    parser.create_assign(&lhs, floor_div_rhs, operator_token_id, operator_token)?
+                    parser.create_assign(&lhs, floor_div_rhs, operator_token_id)?
                 }
                 _ => {
                     let expr = match Self::binary_op_kind(kind) {

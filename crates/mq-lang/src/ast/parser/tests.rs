@@ -7333,3 +7333,26 @@ fn test_interpolation_holds_a_single_expression(#[case] code: &str) {
         "expected an unexpected token error for {code:?}"
     );
 }
+
+#[rstest]
+#[case::two_keys("a[0][j] = 1", "a[0][j] = 1")]
+#[case::three_keys("a[i][f(x)][2] = 1", "a[i][f(x)][2] = 1")]
+#[case::get_form("get(get(a, 0), j) = 1", "a[0][j] = 1")]
+#[case::mixed_form("get(a[0], j) = 1", "a[0][j] = 1")]
+fn test_nested_index_assign_is_one_path_assign(#[case] code: &str, #[case] expected: &str) {
+    let program = parse_program_source(code).expect("should parse");
+    assert_eq!(program.len(), 1);
+    assert!(matches!(&program[0].expr, Expr::PathAssign(..)), "{code}");
+    assert_eq!(program[0].to_code(), expected);
+}
+
+#[rstest]
+#[case::call_root("f()[0][1] = 1")]
+#[case::literal_root("[1][0][1] = 1")]
+#[case::slice("a[0:1][0] = 1")]
+fn test_nested_index_assign_rejects_non_variable_root(#[case] code: &str) {
+    assert!(
+        matches!(parse_program_source(code), Err(SyntaxError::InvalidAssignmentTarget(_))),
+        "{code}"
+    );
+}
