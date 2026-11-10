@@ -354,12 +354,11 @@ cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 
 
 ## test-miri
 
-Run unit tests under Miri (nightly). Extra args go to cargo miri test.
+Run the FFI unit tests under Miri (nightly). Extra args go to cargo miri test.
 
 ```bash
-export MIRIFLAGS="-Zmiri-env-forward=PROPTEST_DISABLE_FAILURE_PERSISTENCE -Zmiri-env-forward=PROPTEST_CASES"
-export PROPTEST_DISABLE_FAILURE_PERSISTENCE=1 PROPTEST_CASES=4
-cargo +nightly miri test -p mq-lang -p mq-markdown --lib $MX_ARGS
+export MIRIFLAGS="-Zmiri-disable-isolation"
+cargo +nightly miri test -p mq-ffi --lib $MX_ARGS
 ```
 
 ## test-fuzz
