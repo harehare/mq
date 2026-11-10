@@ -194,9 +194,12 @@ unsafe fn c_str_array_to_strings(items: *const *const c_char, items_len: usize) 
         .collect()
 }
 
-// Creates an engine with the builtin module loaded.
+// Creates an engine with the builtin module loaded. Miri skips the load because parsing
+// builtin.mq under it takes minutes per engine.
 fn new_engine() -> *mut MqContext {
+    #[cfg_attr(miri, allow(unused_mut))]
     let mut engine = DefaultEngine::default();
+    #[cfg(not(miri))]
     engine.load_builtin_module();
     Box::into_raw(Box::new(engine)) as *mut MqContext
 }

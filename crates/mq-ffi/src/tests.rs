@@ -55,6 +55,7 @@ fn test_eval_with_null_engine() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "parses builtin.mq, too slow under Miri")]
 fn test_eval_with_text_input() {
     let engine = mq_create();
     let code = make_c_string(r#"select(contains("line"))"#);
@@ -165,23 +166,29 @@ fn test_eval_with_unsupported_format() {
 #[test]
 fn test_eval_with_null_parameters() {
     let engine = mq_create();
+    let (test, text, field) = (make_c_string("test"), make_c_string("text"), make_c_string(".a"));
 
     // Test with null code
-    let result = unsafe { mq_eval(engine, ptr::null(), make_c_string("test"), make_c_string("text")) };
+    let result = unsafe { mq_eval(engine, ptr::null(), test, text) };
     assert!(result.error_msg.is_null());
     mq_free_result(result);
 
     // Test with null input
-    let result = unsafe { mq_eval(engine, make_c_string(".a"), ptr::null(), make_c_string("text")) };
+    let result = unsafe { mq_eval(engine, field, ptr::null(), text) };
     assert!(!result.error_msg.is_null());
     mq_free_result(result);
 
     // Test with null format
-    let result = unsafe { mq_eval(engine, make_c_string(".a"), make_c_string("test"), ptr::null()) };
+    let result = unsafe { mq_eval(engine, field, test, ptr::null()) };
     assert!(!result.error_msg.is_null());
     mq_free_result(result);
 
     mq_destroy(engine);
+    unsafe {
+        mq_free_string(test as *mut c_char);
+        mq_free_string(text as *mut c_char);
+        mq_free_string(field as *mut c_char);
+    }
 }
 
 #[test]
@@ -257,6 +264,7 @@ fn test_empty_input() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "parses builtin.mq, too slow under Miri")]
 fn test_filter_query() {
     let engine = mq_create();
     let code = make_c_string("select(gt(len(), 5))");
@@ -353,6 +361,7 @@ fn test_to_c_string() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "scraper selectors (servo_arc) are rejected by Miri")]
 fn test_html_to_markdown_simple() {
     let html = make_c_string("<p>Hello, World!</p>");
     let options = MqConversionOptions::default();
@@ -373,6 +382,7 @@ fn test_html_to_markdown_simple() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "scraper selectors (servo_arc) are rejected by Miri")]
 fn test_html_to_markdown_with_options() {
     let html = make_c_string("<html><head><title>Test Page</title></head><body><p>Content</p></body></html>");
     let options = MqConversionOptions {
@@ -437,6 +447,7 @@ fn test_html_to_markdown_empty_input() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "scraper selectors (servo_arc) are rejected by Miri")]
 fn test_html_to_markdown_complex_html() {
     let html = make_c_string(
         r#"<html>
@@ -615,6 +626,7 @@ fn test_eval_result_with_nul_byte_has_no_null_value() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "parses builtin.mq, too slow under Miri")]
 fn test_eval_many_values_roundtrip_through_free() {
     // 5 values: a Vec would have grown to capacity 8, so len != capacity.
     let engine = mq_create();
@@ -1426,6 +1438,7 @@ unsafe fn html_to_markdown_ex(options: *const MqHtmlOptions) -> String {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "scraper selectors (servo_arc) are rejected by Miri")]
 fn test_html_options_setters_change_the_conversion() {
     unsafe {
         let defaults = html_to_markdown_ex(ptr::null());

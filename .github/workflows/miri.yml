@@ -1,0 +1,26 @@
+name: Miri
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  miri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.0
+        with:
+          toolchain: nightly
+          components: miri
+      - uses: extractions/setup-just@v4.0.0
+        with:
+          just-version: 1.58.0
+      - uses: Swatinem/rust-cache@v2.9.3
+      - name: Run tests under Miri
+        run: just test-miri
