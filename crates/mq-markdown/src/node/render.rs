@@ -221,7 +221,9 @@ impl Node {
                     let text = match text.rfind(|c: char| c != '#') {
                         Some(i) => {
                             let hash_start = i + text[i..].chars().next().map_or(1, char::len_utf8);
-                            if hash_start < text.len() {
+                            // An odd backslash run before the hashes already escapes the first one.
+                            let escaped = text[..hash_start].bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 1;
+                            if hash_start < text.len() && !escaped {
                                 format!("{}\\{}", &text[..hash_start], &text[hash_start..])
                             } else {
                                 text
