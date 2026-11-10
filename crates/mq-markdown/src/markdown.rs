@@ -755,6 +755,19 @@ mod tests {
         assert_eq!(rendered.parse::<Markdown>().unwrap().to_string(), rendered);
     }
 
+    #[test]
+    fn test_heading_literal_backslash_hash_constructed() {
+        let node = crate::Node::Heading(crate::Heading {
+            depth: crate::HeadingDepth::H2,
+            values: vec!["\\#".into()],
+            position: None,
+        });
+        let rendered = node.to_string();
+        assert_eq!(rendered, "## \\\\#");
+        let reparsed = rendered.parse::<Markdown>().unwrap();
+        assert_eq!(reparsed.to_html(), "<h2>\\#</h2>\n");
+    }
+
     #[rstest]
     #[case("## &#35;\n", "<h2>#</h2>\n")]
     #[case("### &#35;&#35;\n", "<h3>##</h3>\n")]
