@@ -1113,6 +1113,25 @@ fn nested_index_assignment_updates_inner_collection(#[case] code: &str) {
     assert_eq!(run(code), RuntimeValue::from(true), "{code}");
 }
 
+#[test]
+fn nested_assignment_calls_a_user_defined_set() {
+    assert_eq!(
+        run("def set(container, key, value): 42; | var a = [[1]] | a[0][0] = 7 | a"),
+        run("[42]")
+    );
+}
+
+#[rstest]
+#[case::at_limit(255, true)]
+#[case::over_limit(256, false)]
+fn assignment_path_depth_limit(#[case] depth: usize, #[case] ok: bool) {
+    // The innermost containers are missing, so a valid path fails at runtime too; only the
+    // compile-time rejection differs, so compare against the message.
+    let code = format!("var a = 0 | a{} = 1", "[0]".repeat(depth));
+    let message = format!("{:?}", run_result(&code));
+    assert_eq!(message.contains("deeper than 255"), !ok, "depth {depth}");
+}
+
 #[rstest]
 #[case::call_base("def f(): [1]; | f()[0] = 2")]
 #[case::literal_base("[[1]][0][0] = 2")]

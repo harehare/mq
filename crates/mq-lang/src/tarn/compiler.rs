@@ -3456,7 +3456,8 @@ impl<R: ModuleResolver> Compiler<R> {
         leaf: PathLeaf<'_>,
     ) -> CompileResult<()> {
         let token_id = self.current_token_id;
-        let depth = keys.len() as u8;
+        let depth = u8::try_from(keys.len())
+            .map_err(|_| CompileError::Unsupported("assignment path deeper than 255 levels", token_id))?;
         // The old chained form read the path before evaluating the operand, so an operand that
         // can fail or have effects must not run if that read fails.
         let (operand, checked, op) = match leaf {
@@ -3521,6 +3522,9 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             None => return Err(CompileError::UndefinedIdent(name.to_string(), token_id)),
         };
+        // The chained form calls `set` per inner level, so a user-defined `set` must still run.
+        let set_shadowed = self.set_is_shadowed();
+        let target = target.filter(|_| !set_shadowed);
         let Some(target) = target else {
             return self.compile_expr(&set_chain(name, keys, value, token_id));
         };
@@ -3532,6 +3536,16 @@ impl<R: ModuleResolver> Compiler<R> {
         self.compile_path_assign(target, key_refs, leaf)?;
         self.emit(OpCode::GetLocal(SELF_SLOT));
         Ok(())
+    }
+
+    fn set_is_shadowed(&mut self) -> bool {
+        let set: Ident = builtins::SET.into();
+        let is_self_call = self
+            .function_names
+            .last()
+            .and_then(|entry| *entry)
+            .is_some_and(|(function, _, _)| function == set);
+        is_self_call || self.scope_mut().shadowed_builtin == Some(set) || self.resolve(set).is_some()
     }
 
     fn is_used_by_nested_function(&mut self, name: Ident) -> bool {
