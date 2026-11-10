@@ -800,6 +800,7 @@ end
 #   [[1, 2], [3, 4], []],
 #   [[], [1, 2], []],
 #   [["a", "b"], ["b", "c"], ["b"]],
+#   [[1, "1"], ["1"], ["1"]],
 # ])
 def test_intersection(value1, value2, expected):
   let result = intersection(value1, value2)
@@ -811,6 +812,7 @@ end
 #   [[1, 2, 2, 3], [], [1, 2, 3]],
 #   [[], [1, 2], []],
 #   [["a", "b"], ["b", "c"], ["a"]],
+#   [[1, "1"], ["1"], [1]],
 # ])
 def test_difference(value1, value2, expected):
   let result = difference(value1, value2)
