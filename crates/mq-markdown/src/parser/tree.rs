@@ -24,7 +24,13 @@ pub(super) struct InlineSource {
     pub(super) lines: Vec<LineStart>,
     /// Whether this is the content of a table cell, where `\|` in code stands for `|`.
     pub(super) table: bool,
-    /// For each line, how many bytes of `text` before it are more than code units. Empty for ASCII.
+    /// Set unless `text` is ASCII, where bytes and code units are the same.
+    non_ascii: Option<Box<NonAscii>>,
+}
+
+#[derive(Clone)]
+struct NonAscii {
+    /// For each line, how many bytes of `text` before it are more than code units.
     line_extra: Vec<usize>,
     /// An offset in `text` and how many bytes before it are more than code units: positions are mostly
     /// asked for in order, or near each other.
@@ -51,8 +57,7 @@ impl InlineSource {
             text,
             lines: starts,
             table: false,
-            line_extra: Vec::new(),
-            cursor: std::cell::Cell::new((0, 0)),
+            non_ascii: None,
         };
         source.index_lines();
         source
@@ -60,30 +65,37 @@ impl InlineSource {
 
     /// Finds how far each line is in code units from its offset in bytes.
     fn index_lines(&mut self) {
-        self.line_extra.clear();
-        self.cursor.set((0, 0));
         if self.text.is_ascii() {
+            self.non_ascii = None;
             return;
         }
+        let mut line_extra = Vec::with_capacity(self.lines.len());
         let mut extra = 0;
         let mut from = 0;
         for line in &self.lines {
             extra += extra_bytes(&self.text.as_bytes()[from..line.offset]);
             from = line.offset;
-            self.line_extra.push(extra);
+            line_extra.push(extra);
         }
+        self.non_ascii = Some(Box::new(NonAscii {
+            line_extra,
+            cursor: std::cell::Cell::new((0, 0)),
+        }));
     }
 
     /// How many bytes of `text` before `offset` are more than UTF-16 code units.
     fn extra_before(&self, offset: usize) -> usize {
+        let Some(non_ascii) = &self.non_ascii else {
+            return 0;
+        };
         let bytes = self.text.as_bytes();
-        let (at, extra) = self.cursor.get();
+        let (at, extra) = non_ascii.cursor.get();
         let extra = if offset >= at {
             extra + extra_bytes(&bytes[at..offset])
         } else {
             extra - extra_bytes(&bytes[offset..at])
         };
-        self.cursor.set((offset, extra));
+        non_ascii.cursor.set((offset, extra));
         extra
     }
 
@@ -157,7 +169,11 @@ impl InlineSource {
     pub(super) fn point(&self, offset: usize) -> Point {
         let index = self.line_index(offset);
         let LineStart { offset: start, point } = &self.lines[index];
-        let extra = match self.line_extra.get(index) {
+        let extra = match self
+            .non_ascii
+            .as_ref()
+            .and_then(|non_ascii| non_ascii.line_extra.get(index))
+        {
             Some(before) => self.extra_before(offset) - before,
             None => 0,
         };
