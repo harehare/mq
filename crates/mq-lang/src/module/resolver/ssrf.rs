@@ -40,13 +40,35 @@ pub fn is_global_ip(ip: std::net::IpAddr) -> bool {
                 return is_global_ip(std::net::IpAddr::V4(mapped));
             }
             let segments = v6.segments();
+            let v4_from = |hi: u16, lo: u16| {
+                let [a, b] = hi.to_be_bytes();
+                let [c, d] = lo.to_be_bytes();
+                std::net::Ipv4Addr::new(a, b, c, d)
+            };
+            // Forms that embed an IPv4 address: judge the embedded address.
+            let embedded = if segments[..6] == [0; 6]
+                || (segments[0] == 0x64 && segments[1] == 0xff9b && segments[2..6] == [0; 4])
+            {
+                Some(v4_from(segments[6], segments[7])) // IPv4-compatible, NAT64
+            } else if segments[0] == 0x2002 {
+                Some(v4_from(segments[1], segments[2])) // 6to4
+            } else {
+                None
+            };
+            if let Some(v4) = embedded {
+                return is_global_ip(std::net::IpAddr::V4(v4));
+            }
             !(v6.is_loopback()
                 || v6.is_multicast()
                 || v6.is_unspecified()
                 || v6.is_unique_local()
                 || v6.is_unicast_link_local()
                 || (segments[0] & 0xffc0) == 0xfec0 // deprecated site-local
-                || (segments[0] == 0x2001 && segments[1] == 0x0db8)) // documentation
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8) // documentation
+                || (segments[0] == 0x2001 && segments[1] == 0) // Teredo
+                || (segments[0] == 0x2001 && segments[1] == 2 && segments[2] == 0) // benchmarking
+                || (segments[0] == 0x64 && segments[1] == 0xff9b && segments[2] == 1) // local-use NAT64
+                || (segments[0] == 0x100 && segments[1..4] == [0; 3])) // discard
         }
     }
 }
@@ -149,6 +171,17 @@ mod tests {
     #[case("::ffff:127.0.0.1", false)] // IPv4-mapped loopback bypass
     #[case("::ffff:8.8.8.8", true)]
     #[case("2001:4860:4860::8888", true)]
+    #[case("64:ff9b::7f00:1", false)] // NAT64 loopback
+    #[case("64:ff9b::a9fe:a9fe", false)] // NAT64 metadata endpoint
+    #[case("64:ff9b::808:808", true)]
+    #[case("64:ff9b:1::1", false)]
+    #[case("2002:7f00:1::", false)] // 6to4 loopback
+    #[case("2002:808:808::", true)]
+    #[case("2001:0:4136:e378:8000:63bf:3fff:fdd2", false)] // Teredo
+    #[case("100::1", false)]
+    #[case("2001:2::1", false)]
+    #[case("::127.0.0.1", false)] // IPv4-compatible
+    #[case("::8.8.8.8", true)]
     fn test_is_global_ip(#[case] ip: &str, #[case] expected: bool) {
         assert_eq!(is_global_ip(ip.parse().unwrap()), expected);
     }
