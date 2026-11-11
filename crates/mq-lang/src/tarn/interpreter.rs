@@ -1706,6 +1706,14 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let top = stack.last().expect("verified bytecode keeps an operand").clone();
                 stack.push(top);
             }
+            OpCode::RotateDown(n) => {
+                let at = stack.len() - 1 - *n as usize;
+                debug_assert!(
+                    at >= frame.stack_base as usize,
+                    "verified bytecode underflowed the stack"
+                );
+                stack[at..].rotate_right(1);
+            }
             OpCode::Jump(offset) => {
                 ip = (ip as i64 + *offset as i64) as usize;
             }

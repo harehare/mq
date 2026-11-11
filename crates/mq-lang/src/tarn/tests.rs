@@ -1917,6 +1917,36 @@ fn immutable_function_upvalue_calls_use_call_upvalue() {
     assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
 }
 
+#[rstest]
+#[case::len_in_bound("var a = [1, 2, 3] | a = slice(a, 0, len(a) - 1) | a", true, "[1, 2]")]
+#[case::bound_without_local("var a = [1, 2, 3] | a = slice(a, 0, 2) | a", false, "[1, 2]")]
+#[case::unrelated_local("var a = [1, 2, 3] | var n = 1 | a = slice(a, n, 3) | a", false, "[2, 3]")]
+#[case::keeps_later_read(
+    "var a = [1, 2, 3] | var b = slice(a, 0, len(a) - 1) | [a, b]",
+    true,
+    "[[1, 2, 3], [1, 2]]"
+)]
+fn first_local_arg_moves_after_pure_args_that_read_it(
+    #[case] source: &str,
+    #[case] reordered: bool,
+    #[case] expected: &str,
+) {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert_eq!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::RotateDown(2))),
+        reordered
+    );
+    assert_eq!(run(source).to_string(), expected);
+}
+
 #[test]
 fn local_array_accesses_use_compact_bytecode() {
     use super::bytecode::OpCode;

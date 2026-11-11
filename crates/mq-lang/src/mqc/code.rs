@@ -590,6 +590,10 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         }
         OpCode::Pop => writer.u8(tags::opcode::POP),
         OpCode::Dup => writer.u8(tags::opcode::DUP),
+        OpCode::RotateDown(n) => {
+            writer.u8(tags::opcode::ROTATE_DOWN);
+            writer.var_u16(*n);
+        }
         OpCode::Jump(offset) => {
             writer.u8(tags::opcode::JUMP);
             writer.var_i32(*offset);
@@ -1312,6 +1316,7 @@ impl Decoder<'_> {
             tags::opcode::MAKE_STATIC_CLOSURE => OpCode::MakeStaticClosure(r.var_u16()?),
             tags::opcode::POP => OpCode::Pop,
             tags::opcode::DUP => OpCode::Dup,
+            tags::opcode::ROTATE_DOWN => OpCode::RotateDown(r.var_u16()?),
             tags::opcode::JUMP => OpCode::Jump(r.var_i32()?),
             tags::opcode::JUMP_IF_FALSE => OpCode::JumpIfFalse(r.var_i32()?),
             tags::opcode::JUMP_IF_TRUE => OpCode::JumpIfTrue(r.var_i32()?),
