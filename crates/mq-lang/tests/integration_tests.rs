@@ -3994,6 +3994,9 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::mktime_wrong_length("mktime(array(1, 2))", vec![RuntimeValue::None],)]
 // strftime: first arg not a number → type error
 #[case::strftime_non_number(r#"strftime("string", "%Y")"#, vec![RuntimeValue::None],)]
+// strftime / to_date: unknown format specifier → runtime error, not panic
+#[case::strftime_invalid_format(r#"strftime(0, "%Q")"#, vec![RuntimeValue::None],)]
+#[case::to_date_invalid_format(r#"to_date(0, "%")"#, vec![RuntimeValue::None],)]
 // strptime: first arg not a string → type error
 #[case::strptime_non_string(r#"strptime(1, "%Y-%m-%d")"#, vec![RuntimeValue::None],)]
 // strptime: date string doesn't match format → runtime error

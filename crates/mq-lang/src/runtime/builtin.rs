@@ -422,9 +422,9 @@ fn strftime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
     match args.as_mut_slice() {
         [RuntimeValue::Number(secs), RuntimeValue::String(fmt)] => {
             let secs_val = secs.value() as i64;
-            DateTime::from_timestamp(secs_val, 0)
-                .map(|dt| RuntimeValue::String(Shared::new(dt.format(fmt.as_str()).to_string())))
-                .ok_or_else(|| Error::Runtime(format!("strftime: invalid timestamp: {}", secs_val)))
+            let dt = DateTime::from_timestamp(secs_val, 0)
+                .ok_or_else(|| Error::Runtime(format!("strftime: invalid timestamp: {}", secs_val)))?;
+            convert::format_datetime("strftime", &dt, fmt.as_str()).map(|s| RuntimeValue::String(Shared::new(s)))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
