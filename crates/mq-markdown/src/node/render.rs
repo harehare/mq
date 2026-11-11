@@ -218,18 +218,10 @@ impl Node {
                     // A trailing `#` run reads back as an ATX closing sequence and gets
                     // stripped as syntax rather than kept as heading text.
                     let text = text.replace('\n', " ");
-                    let text = match text.rfind(|c: char| c != '#') {
-                        Some(i) => {
-                            let hash_start = i + text[i..].chars().next().map_or(1, char::len_utf8);
-                            if hash_start < text.len() {
-                                format!("{}\\{}", &text[..hash_start], &text[hash_start..])
-                            } else {
-                                text
-                            }
-                        }
-                        None if !text.is_empty() => format!("\\{text}"),
-                        _ => text,
-                    };
+                    // Positioned text already escaped its hash; literal text keeps its own backslashes.
+                    let last_is_positioned_text =
+                        matches!(values.last(), Some(Self::Text(Text { position: Some(_), .. })));
+                    let text = escape_trailing_hashes(text, last_is_positioned_text);
                     format!("{}{} {}{}", hs, "#".repeat(usize::from(depth.get())), text, he)
                 }
             }
@@ -1053,7 +1045,21 @@ pub(crate) fn list_own_prefix_width(ordered: bool, index: usize, start: Option<u
     marker_len + 1
 }
 
-/// The length of the longest run of `ch` in `s`.
+fn escape_trailing_hashes(text: String, last_is_positioned_text: bool) -> String {
+    let body = text.trim_end_matches('#');
+    let has_trailing_hash = body.len() < text.len();
+
+    if !has_trailing_hash || (last_is_positioned_text && ends_with_escape(body)) {
+        return text;
+    }
+    format!("{body}\\{}", &text[body.len()..])
+}
+
+/// True if `s` ends with an odd run of backslashes, i.e. its last character is escaped.
+fn ends_with_escape(s: &str) -> bool {
+    s.bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 1
+}
+
 fn longest_run(s: &str, ch: char) -> usize {
     s.split('\n')
         .flat_map(|line| line.split(|c| c != ch).map(str::len))

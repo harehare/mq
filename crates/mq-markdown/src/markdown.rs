@@ -743,6 +743,45 @@ mod tests {
         assert_eq!(html, "<h1>Hello</h1>\n");
     }
 
+    #[rstest]
+    #[case("## &#35;\n", "## \\#\n")]
+    #[case("### &#35;&#35;\n", "### \\##\n")]
+    #[case("## a &#35;\n", "## a \\#\n")]
+    #[case("## \\\\&#35;\n", "## \\\\\\#\n")]
+    #[case("## \\\\&#35;&#35;\n", "## \\\\\\##\n")]
+    #[case("## あ &#35;\n", "## あ \\#\n")]
+    #[case("## あ\\\\&#35;\n", "## あ\\\\\\#\n")]
+    fn test_heading_hash_markdown_roundtrip(#[case] input: &str, #[case] expected: &str) {
+        let rendered = input.parse::<Markdown>().unwrap().to_string();
+        assert_eq!(rendered.trim_end(), expected.trim_end());
+        assert_eq!(rendered.parse::<Markdown>().unwrap().to_string(), rendered);
+    }
+
+    #[test]
+    fn test_heading_literal_backslash_hash_constructed() {
+        let node = crate::Node::Heading(crate::Heading {
+            depth: crate::HeadingDepth::H2,
+            values: vec!["\\#".into()],
+            position: None,
+        });
+        let rendered = node.to_string();
+        assert_eq!(rendered, "## \\\\#");
+        let reparsed = rendered.parse::<Markdown>().unwrap();
+        assert_eq!(reparsed.to_html(), "<h2>\\#</h2>\n");
+    }
+
+    #[rstest]
+    #[case("## &#35;\n", "<h2>#</h2>\n")]
+    #[case("### &#35;&#35;\n", "<h3>##</h3>\n")]
+    #[case("## a &#35;\n", "<h2>a #</h2>\n")]
+    #[case("## a &#35;&#35;\n", "<h2>a ##</h2>\n")]
+    #[case("# &#35; &#35;\n", "<h1># #</h1>\n")]
+    #[case("## \\\\&#35;\n", "<h2>\\#</h2>\n")]
+    #[case("## \\\\&#35;&#35;\n", "<h2>\\##</h2>\n")]
+    fn test_to_html_heading_hash_only(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(input.parse::<Markdown>().unwrap().to_html(), expected);
+    }
+
     #[test]
     fn test_to_html_gfm_table() {
         let md = "| A | B |\n|---|---|\n| 1 | 2 |".parse::<Markdown>().unwrap();
