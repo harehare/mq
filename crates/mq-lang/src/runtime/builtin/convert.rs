@@ -386,17 +386,25 @@ pub(super) fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
     }
 }
 
+/// Formats `dt` with a strftime `fmt`, returning an error for an unknown specifier.
+pub(super) fn format_datetime(name: &str, dt: &chrono::DateTime<chrono::Utc>, fmt: &str) -> Result<String, Error> {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+    write!(out, "{}", dt.format(fmt)).map_err(|_| Error::Runtime(format!("{}: invalid format {:?}", name, fmt)))?;
+    Ok(out)
+}
+
 /// convert from Unix timestamp (seconds) to date string
 #[inline(always)]
 pub(super) fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValue, Error> {
-    chrono::DateTime::from_timestamp(secs.value() as i64, 0)
-        .map(|dt| {
-            convert
-                .map(|f| dt.format(f).to_string())
-                .unwrap_or(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        })
-        .map(|s| RuntimeValue::String(s.into()))
-        .ok_or_else(|| Error::InvalidDateTimeFormat(convert.unwrap_or("").to_string()))
+    let dt = chrono::DateTime::from_timestamp(secs.value() as i64, 0)
+        .ok_or_else(|| Error::InvalidDateTimeFormat(convert.unwrap_or("").to_string()))?;
+    let s = match convert {
+        Some(f) => format_datetime("to_date", &dt, f)?,
+        None => dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    };
+    Ok(RuntimeValue::String(s.into()))
 }
 
 /// Encode to base64
