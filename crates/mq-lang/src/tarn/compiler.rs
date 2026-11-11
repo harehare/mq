@@ -765,24 +765,64 @@ fn path_add_operand<'a>(name: Ident, keys: &[Shared<Node>], value: &'a Shared<No
 
 /// `name[k1] = set(name[k1], k2, set(name[k1][k2], k3, ... value))`, which reads each level of
 /// the path from the variable as it is when the assignment runs.
+///
+/// Unless all keys are pure, the chain reads each key and path prefix once, in order, into
+/// temporaries, so that a key runs once and sees the target as it was before later keys ran.
 fn set_chain(name: Ident, keys: &[Shared<Node>], value: &Shared<Node>, token_id: TokenId) -> Shared<Node> {
     let node = |expr| Shared::new(Node { token_id, expr });
+    let ident = |name| node(Expr::Ident(IdentWithToken { name, token: None }));
+    let materialize = !keys.iter().all(|key| is_path_key(key, name));
+
+    let mut bindings = thin_vec![];
+    let mut bind = |temp: &str, expr: Shared<Node>| -> Shared<Node> {
+        let temp: Ident = temp.into();
+        bindings.push(node(Expr::Let(
+            Pattern::Ident(IdentWithToken {
+                name: temp,
+                token: None,
+            }),
+            expr,
+        )));
+        ident(temp)
+    };
+
+    let mut key_nodes: Vec<Shared<Node>> = Vec::with_capacity(keys.len());
+    let mut reads: Vec<Shared<Node>> = Vec::with_capacity(keys.len());
+    for (depth, key) in keys.iter().enumerate() {
+        if depth > 0 {
+            let read = key_nodes
+                .iter()
+                .fold(ident(name), |target, key| node(Expr::Index(target, Shared::clone(key))));
+            reads.push(if materialize {
+                bind(&format!("$path_read{depth}"), read)
+            } else {
+                read
+            });
+        }
+        key_nodes.push(if materialize && !matches!(key.expr, Expr::Literal(_)) {
+            bind(&format!("$path_key{depth}"), Shared::clone(key))
+        } else {
+            Shared::clone(key)
+        });
+    }
+
     let mut acc = Shared::clone(value);
-    for depth in (1..keys.len()).rev() {
-        let read = keys[..depth].iter().fold(
-            node(Expr::Ident(IdentWithToken { name, token: None })),
-            |target, key| node(Expr::Index(target, Shared::clone(key))),
-        );
+    for depth in (1..key_nodes.len()).rev() {
         acc = node(Expr::Call(
             IdentWithToken::new(builtins::SET),
-            smallvec::smallvec![read, Shared::clone(&keys[depth]), acc],
+            smallvec::smallvec![Shared::clone(&reads[depth - 1]), Shared::clone(&key_nodes[depth]), acc],
         ));
     }
-    node(Expr::IndexAssign(
+    let assign = node(Expr::IndexAssign(
         IdentWithToken { name, token: None },
-        Shared::clone(&keys[0]),
+        Shared::clone(&key_nodes[0]),
         acc,
-    ))
+    ));
+    if bindings.is_empty() {
+        return assign;
+    }
+    bindings.push(assign);
+    node(Expr::Block(bindings))
 }
 
 /// Collects the names used inside functions nested in `program`, which can read or write the
