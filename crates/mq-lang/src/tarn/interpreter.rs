@@ -943,8 +943,20 @@ fn run_chunk(
     result
 }
 
+/// Result of one dispatched step inside `run_frame_slice`.
 enum FrameOutcome {
     Enter(Frame),
+    /// A call followed immediately by `Return`; the callee can replace this frame.
+    TailEnter(Frame),
+    Complete(StackValue),
+    /// `OpCode::Yield`. Unlike `Complete`, nothing is popped; frames are left as-is for the
+    /// caller to detach into a `CoroutineState`.
+    Suspend(StackValue),
+}
+
+/// What `run_frame_slice` hands back to `drive_frames`. Plain calls and returns are handled
+/// inside its opcode loop, so `Enter` never leaves it.
+enum SliceExit {
     /// A call followed immediately by `Return`; the callee can replace this frame.
     TailEnter(Frame),
     Complete(StackValue),
@@ -1067,31 +1079,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
         );
 
         let value = match outcome {
-            Ok(FrameOutcome::Enter(new_frame)) => {
-                if let Err(e) = execution.limits.push_frame(
-                    frames,
-                    new_frame,
-                    operand_stack.len(),
-                    #[cfg(feature = "debugger")]
-                    debug,
-                ) {
-                    let e = locate_at_top(frames, root_chunks, e);
-                    match unwind_frames(
-                        e,
-                        frames,
-                        root_chunks,
-                        operand_stack,
-                        execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
-                    ) {
-                        Ok(()) => continue 'frames,
-                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
-                    }
-                }
-                continue 'frames;
-            }
-            Ok(FrameOutcome::TailEnter(mut new_frame)) => {
+            Ok(SliceExit::TailEnter(mut new_frame)) => {
                 let caller = frames.last().expect("the frame stack is never empty here");
                 new_frame.stack_base = caller.stack_base;
                 if let Err(e) = execution.limits.replace_top_frame(
@@ -1116,8 +1104,8 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 }
                 continue 'frames;
             }
-            Ok(FrameOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
-            Ok(FrameOutcome::Complete(value)) => value,
+            Ok(SliceExit::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
+            Ok(SliceExit::Complete(value)) => value,
             Err(e) => match unwind_frames(
                 e,
                 frames,
@@ -1145,17 +1133,15 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
             )
             .expect("just checked len() > 1");
         let pending = match continuation {
-            Continuation::Push => {
-                operand_stack.push(value);
-                continue 'frames;
-            }
             Continuation::Deferred(deferred) => match *deferred {
-                DeferredContinuation::TryBody(_) => {
-                    operand_stack.push(value);
-                    continue 'frames;
-                }
-                DeferredContinuation::ResumeBindParams(pending) => pending,
+                DeferredContinuation::ResumeBindParams(pending) => Some(pending),
+                DeferredContinuation::TryBody(_) => None,
             },
+            Continuation::Push => None,
+        };
+        let Some(pending) = pending else {
+            operand_stack.push(value);
+            continue 'frames;
         };
         let next = match apply_pending(pending, value, execution) {
             Ok(next) => next,
@@ -1360,7 +1346,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<FrameOutcome> {
+) -> VmResult<SliceExit> {
     'frames: loop {
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
@@ -2590,8 +2576,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         if let FrameOutcome::Complete(_) = &outcome {
             stack.truncate(frame.stack_base as usize);
         }
-        // Plain calls and returns switch frames here instead of leaving the opcode loop. Every
-        // other outcome is left to `drive_frames`.
+        // Plain calls and returns switch frames here instead of leaving the opcode loop.
         match outcome {
             FrameOutcome::Enter(new_frame) => {
                 if let Err(e) = execution.limits.push_frame(
@@ -2619,7 +2604,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(value);
                 continue 'frames;
             }
-            outcome => return Ok(outcome),
+            FrameOutcome::Complete(value) => return Ok(SliceExit::Complete(value)),
+            FrameOutcome::TailEnter(frame) => return Ok(SliceExit::TailEnter(frame)),
+            FrameOutcome::Suspend(value) => return Ok(SliceExit::Suspend(value)),
         }
     }
 }
@@ -2737,7 +2724,7 @@ fn flow_break_from_stack(
     chunks: &Shared<Vec<Chunk>>,
     chunk: &Chunk,
     ip: usize,
-) -> VmResult<FrameOutcome> {
+) -> VmResult<SliceExit> {
     let value = if has_value {
         Some(pop_value_from(stack, chunks, chunk, ip)?)
     } else {
@@ -2749,14 +2736,14 @@ fn flow_break_from_stack(
 /// Produces the control-flow error used to propagate a `continue` through a nested `try` body.
 #[cold]
 #[inline(never)]
-fn flow_continue_from(chunk: &Chunk, ip: usize) -> VmResult<FrameOutcome> {
+fn flow_continue_from(chunk: &Chunk, ip: usize) -> VmResult<SliceExit> {
     Err(locate(chunk, ip, VmError::FlowContinue))
 }
 
 /// Produces the internal error that drives destructuring-pattern fallback.
 #[cold]
 #[inline(never)]
-fn destructuring_failed_from(chunk: &Chunk, ip: usize) -> VmResult<FrameOutcome> {
+fn destructuring_failed_from(chunk: &Chunk, ip: usize) -> VmResult<SliceExit> {
     Err(locate(chunk, ip, VmError::DestructuringFailed))
 }
 
