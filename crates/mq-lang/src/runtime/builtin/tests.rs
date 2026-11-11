@@ -134,6 +134,12 @@ fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expect
         Error::Runtime("implode: expected an integer code point, got NaN".to_string()))]
 #[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".into()))]))].into(),
         Error::InvalidTypes("implode".to_string(), vec![RuntimeValue::String(Shared::new("a".into()))]))]
+#[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1114112.into())]))].into(),
+        Error::Runtime("implode: 1114112 is not a Unicode scalar value".to_string()))]
+#[case("repeat", vec![RuntimeValue::String(Shared::new("ab".into())), RuntimeValue::Number((-1).into())].into(),
+        Error::Runtime("repeat: count must be non-negative, got -1".to_string()))]
+#[case("word_wrap", vec![RuntimeValue::String(Shared::new("abc".into())), RuntimeValue::Number(0.into())].into(),
+        Error::Runtime("word_wrap: width must be a positive integer, got 0".to_string()))]
 #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())].into(),
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
 #[case("unicode_normalize", vec![RuntimeValue::String(Shared::new("abc".into())), RuntimeValue::String(Shared::new("bogus".into()))].into(),
