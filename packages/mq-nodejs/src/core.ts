@@ -5,8 +5,15 @@ import type {
   DefinedValue,
   InlayHint,
   HoverResult,
-  ConversionOptions,
 } from "./mq_wasm.js";
+
+/** Options for `htmlToMarkdown`. */
+export interface ConversionOptions {
+  extractScriptsAsCodeBlocks?: boolean;
+  generateFrontMatter?: boolean;
+  useTitleAsH1?: boolean;
+  baseUrl?: string;
+}
 
 // Type definitions for WASM module
 interface WasmModule {

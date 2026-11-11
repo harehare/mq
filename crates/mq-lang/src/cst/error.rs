@@ -7,7 +7,7 @@ use crate::{Shared, Token, TokenKind, selector};
 pub enum ParseError {
     #[error("Unexpected token `{0}`")]
     UnexpectedToken(Shared<Token>),
-    #[error("Unexpected EOF detected")]
+    #[error("unexpected end of input")]
     UnexpectedEOFDetected,
     #[error("Insufficient tokens `{0}`")]
     InsufficientTokens(Shared<Token>),
