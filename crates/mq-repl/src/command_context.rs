@@ -42,6 +42,8 @@ pub enum Command {
     Quit,
     Reset,
     SaveFile(String),
+    /// Known command with the wrong arguments; holds the usage line.
+    Usage(&'static str),
     Vars,
     Version,
 }
@@ -65,6 +67,7 @@ impl fmt::Display for Command {
             Command::Eval(_) => write!(f, "/eval"),
             Command::Version => write!(f, "/version"),
             Command::NotFound(_) => write!(f, "/not_found"),
+            Command::Usage(_) => write!(f, "/usage"),
         }
     }
 }
@@ -92,6 +95,7 @@ impl Command {
             Command::Vars => format!("{:<12}{}", "/vars", "List bound variables"),
             Command::Eval(_) => format!("{:<12}{}", "/eval", ""),
             Command::NotFound(_) => format!("{:<12}{}", "/not_found", ""),
+            Command::Usage(_) => format!("{:<12}{}", "/usage", ""),
             Command::Version => format!("{:<12}{}", "/version", "Print mq version"),
         }
     }
@@ -113,6 +117,9 @@ impl From<String> for Command {
                 Command::LoadFile(std::iter::once(first).chain(rest).map(|s| s.to_string()).collect())
             }
             ["/save", file_path] => Command::SaveFile(file_path.to_string()),
+            ["/load"] => Command::Usage("usage: /load <file>..."),
+            ["/env", ..] => Command::Usage("usage: /env <name> <value>"),
+            ["/save", ..] => Command::Usage("usage: /save <file>"),
             ["/reset"] => Command::Reset,
             ["/vars"] => Command::Vars,
             ["/version"] => Command::Version,
@@ -302,7 +309,7 @@ impl CommandContext {
 
         if word.starts_with('/') {
             for cmd in Command::iter() {
-                if matches!(cmd, Command::Eval(_) | Command::NotFound(_)) {
+                if matches!(cmd, Command::Eval(_) | Command::NotFound(_) | Command::Usage(_)) {
                     continue;
                 }
                 let cmd_str = cmd.to_string();
@@ -416,6 +423,9 @@ impl CommandContext {
             Command::Copy => {
                 #[cfg(all(feature = "clipboard", not(target_os = "android")))]
                 {
+                    if self.input.is_empty() {
+                        return Ok(CommandOutput::String(vec!["nothing to copy".to_string()]));
+                    }
                     let text = self
                         .input
                         .iter()
@@ -499,7 +509,7 @@ impl CommandContext {
 
                 let commands: Vec<String> = Command::iter()
                     .filter_map(|c| {
-                        if matches!(c, Command::Eval(_)) || matches!(c, Command::NotFound(_)) {
+                        if matches!(c, Command::Eval(_) | Command::NotFound(_) | Command::Usage(_)) {
                             None
                         } else {
                             Some(c.help().to_string())
@@ -516,6 +526,7 @@ impl CommandContext {
                 std::process::exit(0);
             }
             Command::NotFound(s) => Err(miette!(format!("Command not found: {}", s))),
+            Command::Usage(usage) => Err(miette!("{}", usage)),
             Command::LoadFile(paths) => {
                 let mut resolved_paths: Vec<PathBuf> = Vec::new();
 
@@ -549,6 +560,9 @@ impl CommandContext {
                 Ok(CommandOutput::None)
             }
             Command::SaveFile(file_path) => {
+                if self.input.is_empty() {
+                    return Ok(CommandOutput::String(vec!["nothing to save".to_string()]));
+                }
                 let content = self.input.iter().map(|v| v.to_string()).collect::<Vec<_>>().join("\n");
                 fs::write(file_path, content).into_diagnostic()?;
                 Ok(CommandOutput::None)
@@ -680,6 +694,27 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case("/load", "usage: /load <file>...")]
+    #[case("/env", "usage: /env <name> <value>")]
+    #[case("/env A", "usage: /env <name> <value>")]
+    #[case("/env A B C", "usage: /env <name> <value>")]
+    #[case("/save", "usage: /save <file>")]
+    #[case("/save a b", "usage: /save <file>")]
+    fn test_command_wrong_arity_reports_usage(#[case] line: &str, #[case] usage: &str) {
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), vec![]);
+        let err = ctx.execute(line).unwrap_err();
+        assert_eq!(err.to_string(), usage);
+    }
+
+    #[test]
+    fn test_save_without_result_reports_nothing_to_save() {
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), vec![]);
+        let out = ctx.execute("/save never_written.txt").unwrap();
+        assert!(matches!(out, CommandOutput::String(ref v) if v == &["nothing to save"]));
+        assert!(!std::path::Path::new("never_written.txt").exists());
+    }
+
     #[test]
     fn test_command_display() {
         assert_eq!(format!("{}", Command::All), "/all");
@@ -724,6 +759,7 @@ mod tests {
                 Command::Env(_, _) => assert!(help.contains("/env")),
                 Command::Eval(_) => assert!(help.contains("/eval")),
                 Command::NotFound(_) => assert!(help.contains("/not_found")),
+                Command::Usage(_) => assert!(help.contains("/usage")),
             }
         }
     }

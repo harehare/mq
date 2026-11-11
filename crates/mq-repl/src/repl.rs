@@ -11,7 +11,7 @@ use rustyline::{
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
-use std::{borrow::Cow, cell::RefCell, collections::VecDeque, fs, rc::Rc, sync::LazyLock};
+use std::{borrow::Cow, cell::RefCell, collections::VecDeque, fs, io::IsTerminal, rc::Rc, sync::LazyLock};
 
 type Paint = fn(&str) -> ColoredString;
 
@@ -19,7 +19,7 @@ type Paint = fn(&str) -> ColoredString;
 static HIGHLIGHT_PATTERNS: LazyLock<Vec<(Regex, Paint)>> = LazyLock::new(|| {
     const PATTERNS: [(&str, Paint); 5] = [
         (
-            r"^(/all|/clear|/copy|/edit|/env|/help|/history|/more|/quit|/load|/reset|/vars|/version)\b",
+            r"^(/all|/clear|/copy|/edit|/env|/help|/history|/more|/quit|/load|/save|/reset|/vars|/version)\b",
             |s| s.bright_green(),
         ),
         (r#""([^"\\]|\\.)*""#, |s| s.bright_green()),
@@ -521,7 +521,8 @@ impl Repl {
             Cmd::Insert(1, "/edit\n".to_string()),
         );
 
-        let config_dir = config_dir();
+        // Piped input must not read or modify the user's history file.
+        let config_dir = config_dir().filter(|_| std::io::stdin().is_terminal());
 
         if let Some(config_dir) = &config_dir {
             let history = config_dir.join("history.txt");
@@ -583,7 +584,7 @@ impl Repl {
                             if let Some(code) = e.downcast_ref::<mq_lang::Error>().and_then(mq_lang::Error::exit_code) {
                                 if let Some(config_dir) = &config_dir {
                                     let history = config_dir.join("history.txt");
-                                    editor.save_history(&history.to_string_lossy().to_string()).ok();
+                                    editor.save_history(&history).ok();
                                 }
                                 std::process::exit(code);
                             }
@@ -605,7 +606,7 @@ impl Repl {
 
             if let Some(config_dir) = &config_dir {
                 let history = config_dir.join("history.txt");
-                editor.save_history(&history.to_string_lossy().to_string()).unwrap();
+                editor.save_history(&history).ok();
             }
         }
 
