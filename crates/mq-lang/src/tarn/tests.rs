@@ -1926,6 +1926,11 @@ fn immutable_function_upvalue_calls_use_call_upvalue() {
     true,
     "[[1, 2, 3], [1, 2]]"
 )]
+#[case::shadowed_len_mutates_first_arg(
+    "var a = [1, 2] | def len(x): do a = [9] | 1 end; | a = slice(a, 0, len(a)) | a",
+    false,
+    "[1]"
+)]
 fn first_local_arg_moves_after_pure_args_that_read_it(
     #[case] source: &str,
     #[case] reordered: bool,

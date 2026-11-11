@@ -3306,18 +3306,13 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     /// Whether `node` only reads locals and constants, so evaluating it earlier is unobservable.
-    fn is_pure_local_expr(&self, node: &Shared<Node>) -> bool {
+    fn is_pure_local_expr(&mut self, node: &Shared<Node>) -> bool {
         match &node.expr {
             Expr::Literal(_) => true,
             Expr::Ident(_) => self.current_local_slot(node).is_some(),
-            Expr::Call(ident, args) => {
-                ident.name == builtins::LEN.into()
-                    && self
-                        .scopes
-                        .last()
-                        .is_some_and(|scope| scope.shadowed_builtin != Some(ident.name))
-                    && args.iter().all(|arg| self.is_pure_local_expr(arg))
-            }
+            Expr::Call(..) => self
+                .unshadowed_builtin_args(node, builtins::LEN.into(), 1)
+                .is_some_and(|args| args.iter().all(|arg| self.is_pure_local_expr(arg))),
             Expr::BinaryOp(_, lhs, rhs) => self.is_pure_local_expr(lhs) && self.is_pure_local_expr(rhs),
             Expr::UnaryOp(_, operand) | Expr::Paren(operand) => self.is_pure_local_expr(operand),
             _ => false,
