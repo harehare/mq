@@ -1057,9 +1057,8 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> DriveOutcome {
     'frames: loop {
-        let frame = frames.last_mut().expect("the frame stack is never empty here");
         let outcome = run_frame_slice::<CHECK_TIMEOUT>(
-            frame,
+            frames,
             root_chunks,
             operand_stack,
             execution,
@@ -1356,67 +1355,69 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
 // Inlining it into `drive_frames` also merges their native stack frames and code footprint.
 #[inline(never)]
 fn run_frame_slice<const CHECK_TIMEOUT: bool>(
-    frame: &mut Frame,
+    frames: &mut Vec<Frame>,
     root_chunks: &Shared<Vec<Chunk>>,
     stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<FrameOutcome> {
-    let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
-    let chunk = &chunks[frame.chunk_index as usize];
-    let locals = &mut frame.locals;
-    let upvalues = frame.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
-    let mut ip = frame.ip as usize;
+    'frames: loop {
+        let frame = frames.last_mut().expect("the frame stack is never empty here");
+        let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
+        let chunk = &chunks[frame.chunk_index as usize];
+        let locals = &mut frame.locals;
+        let upvalues = frame.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
+        let mut ip = frame.ip as usize;
 
-    macro_rules! pop {
-        () => {{
-            debug_assert!(
-                stack.len() > frame.stack_base as usize,
-                "verified bytecode underflowed the stack"
-            );
-            stack.pop().expect("verified bytecode keeps an operand")
-        }};
-    }
-    macro_rules! pop_value {
-        () => {{ into_runtime_value(pop!(), chunks) }};
-    }
-    // Most direct builtin calls have at most two arguments, which fit in `Args`' inline
-    // storage. Construct those in evaluation order directly; larger calls retain the compact
-    // generic pop-and-reverse path.
-    macro_rules! pop_call_args {
-        ($argc:expr) => {{
-            match $argc {
-                0 => Args::new(),
-                1 => {
-                    let mut args = Args::new();
-                    args.push(pop_value!());
-                    args
-                }
-                2 => {
-                    let second = pop_value!();
-                    let first = pop_value!();
-                    let mut args = Args::new();
-                    args.push(first);
-                    args.push(second);
-                    args
-                }
-                argc => {
-                    let mut args = Args::with_capacity(argc as usize);
-                    for _ in 0..argc {
+        macro_rules! pop {
+            () => {{
+                debug_assert!(
+                    stack.len() > frame.stack_base as usize,
+                    "verified bytecode underflowed the stack"
+                );
+                stack.pop().expect("verified bytecode keeps an operand")
+            }};
+        }
+        macro_rules! pop_value {
+            () => {{ into_runtime_value(pop!(), chunks) }};
+        }
+        // Most direct builtin calls have at most two arguments, which fit in `Args`' inline
+        // storage. Construct those in evaluation order directly; larger calls retain the compact
+        // generic pop-and-reverse path.
+        macro_rules! pop_call_args {
+            ($argc:expr) => {{
+                match $argc {
+                    0 => Args::new(),
+                    1 => {
+                        let mut args = Args::new();
                         args.push(pop_value!());
+                        args
                     }
-                    args.reverse();
-                    args
+                    2 => {
+                        let second = pop_value!();
+                        let first = pop_value!();
+                        let mut args = Args::new();
+                        args.push(first);
+                        args.push(second);
+                        args
+                    }
+                    argc => {
+                        let mut args = Args::with_capacity(argc as usize);
+                        for _ in 0..argc {
+                            args.push(pop_value!());
+                        }
+                        args.reverse();
+                        args
+                    }
                 }
-            }
-        }};
-    }
-    macro_rules! bail {
-        ($e:expr) => {
-            return Err(locate(chunk, ip, $e))
-        };
-    }
-    macro_rules! call_upvalue {
+            }};
+        }
+        macro_rules! bail {
+            ($e:expr) => {
+                return Err(locate(chunk, ip, $e))
+            };
+        }
+        macro_rules! call_upvalue {
         ($label:lifetime, $index:expr, $argc:expr) => {{
             let callee = read_cell(&upvalues[$index as usize]);
             if let StackValue::Closure(closure) = &callee
@@ -1472,857 +1473,704 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         }};
     }
 
-    // The instruction just run and the stack length before it.
-    #[cfg(debug_assertions)]
-    let mut effect_probe = frame.effect_probe.take();
-
-    let outcome = 'dispatch: loop {
+        // The instruction just run and the stack length before it.
         #[cfg(debug_assertions)]
-        if let Some((pc, before)) = effect_probe.take() {
-            check_stack_effect(&chunk.code[pc], before, stack.len());
-        }
-        if ip >= chunk.code.len() {
-            let value = if stack.len() > frame.stack_base as usize {
-                stack.pop().expect("verified bytecode keeps an operand")
-            } else {
-                StackValue::Value(RuntimeValue::None)
-            };
-            break 'dispatch FrameOutcome::Complete(value);
-        }
-        if CHECK_TIMEOUT {
-            execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
-        }
-        let op = &chunk.code[ip];
-        #[cfg(debug_assertions)]
-        {
-            effect_probe = Some((ip, stack.len()));
-        }
-        ip += 1;
-        #[cfg(feature = "vm-profile")]
-        if op.is_profiled_instruction() {
-            vm_profile::record_opcode(op.profile_name());
-        }
+        let mut effect_probe = frame.effect_probe.take();
 
-        match op {
-            #[cfg(feature = "debugger")]
-            OpCode::StmtBoundary(token_id) => {
-                let node = chunk
-                    .debug_nodes
-                    .iter()
-                    .rfind(|(candidate, _)| *candidate == *token_id)
-                    .map(|(_, node)| Shared::clone(node))
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
-                debug.current_node = Some(Shared::clone(&node));
-
-                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
-                if let Some(hook) = debug.hook.as_deref_mut() {
-                    hook.on_boundary(DebugEvent {
-                        token_id: *token_id,
-                        node,
-                        current_value: current_self(locals, chunks),
-                        bindings,
-                        vm_frame: vm_frame.clone(),
-                        call_stack: debug.call_stack.clone(),
-                        #[cfg(feature = "debug-trace")]
-                        operand_stack: stack
-                            .iter()
-                            .cloned()
-                            .map(|value| into_runtime_value(value, chunks))
-                            .collect(),
-                    })
-                    .map_err(|error| locate(chunk, ip, error))?;
-                }
-                apply_debug_updates(&vm_frame, locals, upvalues);
+        let outcome = 'dispatch: loop {
+            #[cfg(debug_assertions)]
+            if let Some((pc, before)) = effect_probe.take() {
+                check_stack_effect(&chunk.code[pc], before, stack.len());
             }
-            #[cfg(feature = "debugger")]
-            OpCode::SyncCallNode(token_id) => {
-                let node = chunk
-                    .debug_nodes
-                    .iter()
-                    .rfind(|(candidate, _)| *candidate == *token_id)
-                    .map(|(_, node)| Shared::clone(node))
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
-                debug.current_node = Some(node);
-            }
-            #[cfg(feature = "debugger")]
-            OpCode::Breakpoint(token_id) => {
-                let node = chunk
-                    .debug_nodes
-                    .iter()
-                    .rfind(|(candidate, _)| *candidate == *token_id)
-                    .map(|(_, node)| Shared::clone(node))
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
-                debug.current_node = Some(Shared::clone(&node));
-
-                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
-                if let Some(hook) = debug.hook.as_deref_mut() {
-                    hook.on_explicit_breakpoint(DebugEvent {
-                        token_id: *token_id,
-                        node,
-                        current_value: current_self(locals, chunks),
-                        bindings,
-                        vm_frame: vm_frame.clone(),
-                        call_stack: debug.call_stack.clone(),
-                        #[cfg(feature = "debug-trace")]
-                        operand_stack: stack
-                            .iter()
-                            .cloned()
-                            .map(|value| into_runtime_value(value, chunks))
-                            .collect(),
-                    })
-                    .map_err(|error| locate(chunk, ip, error))?;
-                }
-                apply_debug_updates(&vm_frame, locals, upvalues);
-            }
-            OpCode::Const(idx) => {
-                let value = chunk.constants[*idx as usize].clone();
-                stack.push(StackValue::Value(value));
-            }
-            OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
-            OpCode::GetLocal(slot) => {
-                stack.push(locals.get(*slot));
-            }
-            OpCode::TakeLocal(slot) => {
-                stack.push(locals.take(*slot));
-            }
-            OpCode::SetLocal(slot) => {
-                let v = pop!();
-                locals.set(*slot, v);
-            }
-            OpCode::SetIndexLocal(slot) => {
-                let value = pop_value!();
-                let key = pop_value!();
-                set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
-            }
-            OpCode::CheckPathLocal { slot, depth } => {
-                check_path_local(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
-            }
-            OpCode::SetPathLocal { slot, depth } => {
-                set_path_from_stack(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
-            }
-            OpCode::AddAssignPathLocal { slot, depth } => {
-                add_assign_path_from_stack(stack, locals, *slot, *depth, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-            }
-            OpCode::AddAssignLocal(slot) => {
-                let rhs = pop_value!();
-                if let RuntimeValue::Number(n) = &rhs
-                    && let Some(number) = locals.direct_number_mut(*slot)
-                    && let Some(result) = number_arithmetic(BinaryOp::Add, *number, *n)
-                {
-                    *number = result;
+            if ip >= chunk.code.len() {
+                let value = if stack.len() > frame.stack_base as usize {
+                    stack.pop().expect("verified bytecode keeps an operand")
                 } else {
-                    add_assign_local(locals, *slot, rhs, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
-                }
-            }
-            OpCode::SetLocalAndCopy { source, destination } => {
-                debug_assert!(
-                    stack.len() > frame.stack_base as usize,
-                    "verified bytecode underflowed the stack"
-                );
-                let copied = stack.last().expect("verified bytecode keeps an operand").clone();
-                locals.set(*source, copied);
-                let value = stack.pop().expect("verified bytecode keeps an operand");
-                locals.set(*destination, value);
-            }
-            OpCode::SetLocalAndCopyAndJump {
-                source,
-                destination,
-                offset,
-            } => {
-                debug_assert!(
-                    stack.len() > frame.stack_base as usize,
-                    "verified bytecode underflowed the stack"
-                );
-                let copied = stack.last().expect("verified bytecode keeps an operand").clone();
-                locals.set(*source, copied);
-                let value = stack.pop().expect("verified bytecode keeps an operand");
-                locals.set(*destination, value);
-                ip = (ip as i64 + *offset as i64) as usize;
-            }
-            OpCode::SetLocalConst { local, constant } => {
-                let value = chunk.constants[*constant as usize].clone();
-                locals.set(*local, StackValue::Value(value));
-            }
-            OpCode::TeeLocal(slot) => {
-                debug_assert!(
-                    stack.len() > frame.stack_base as usize,
-                    "verified bytecode underflowed the stack"
-                );
-                let top = stack.last().expect("verified bytecode keeps an operand").clone();
-                locals.set(*slot, top);
-            }
-            OpCode::CopyLocal { source, destination } => {
-                let value = locals.get(*source);
-                locals.set(*destination, value);
-            }
-            OpCode::MoveLocal { source, destination } => {
-                let value = locals.take(*source);
-                locals.set(*destination, value);
-            }
-            OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
-            OpCode::AddAssignUpvalue(idx) => {
-                let rhs = pop_value!();
-                add_assign_upvalue(&upvalues[*idx as usize], rhs, locals, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-            }
-            OpCode::SetUpvalue(idx) => {
-                let v = pop!();
-                write_cell(&upvalues[*idx as usize], v);
-            }
-            OpCode::MakeClosure(payload) => {
-                let (target_chunk, sources) = payload.as_ref();
-                let captured = capture_upvalues(
-                    sources,
-                    locals,
-                    SelfClosure {
-                        chunk_index: frame.chunk_index,
-                        chunk,
-                        upvalues: &frame.upvalues,
-                    },
-                );
-                stack.push(StackValue::Closure(Shared::new(Closure {
-                    chunk_index: *target_chunk,
-                    upvalues: (!captured.is_empty()).then(|| Shared::new(captured)),
-                })));
-            }
-            OpCode::MakeStaticClosure(index) => {
-                let closure = chunk
-                    .static_closures
-                    .get(*index as usize)
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("static closure index out of bounds")))?;
-                stack.push(StackValue::Closure(Shared::clone(closure)));
-            }
-            OpCode::Pop => {
-                pop!();
-            }
-            OpCode::Dup => {
-                debug_assert!(
-                    stack.len() > frame.stack_base as usize,
-                    "verified bytecode underflowed the stack"
-                );
-                let top = stack.last().expect("verified bytecode keeps an operand").clone();
-                stack.push(top);
-            }
-            OpCode::Jump(offset) => {
-                ip = (ip as i64 + *offset as i64) as usize;
-            }
-            OpCode::JumpIfFalse(offset) => {
-                let cond = pop_value!();
-                if !cond.is_truthy() {
-                    ip = (ip as i64 + *offset as i64) as usize;
-                }
-            }
-            OpCode::JumpIfTrue(offset) => {
-                let cond = pop_value!();
-                if cond.is_truthy() {
-                    ip = (ip as i64 + *offset as i64) as usize;
-                }
-            }
-            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod => {
-                if let Some(operation) = binary_op_from_opcode(op)
-                    && number_binop_on_stack(stack, operation)
-                {
-                    continue 'dispatch;
-                }
-                let b = pop_value!();
-                let a = pop_value!();
-                let Some(operation) = binary_op_from_opcode(op) else {
-                    bail!(VmError::Corrupt("missing arithmetic binary operation"));
+                    StackValue::Value(RuntimeValue::None)
                 };
-                stack.push(StackValue::Value(
-                    binop(operation, a, b, locals, chunks, execution.env, execution.host_functions)
-                        .map_err(|e| locate(chunk, ip, e))?,
-                ));
+                break 'dispatch FrameOutcome::Complete(value);
             }
-            OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge => {
-                if let Some(operation) = binary_op_from_opcode(op)
-                    && number_binop_on_stack(stack, operation)
-                {
-                    continue 'dispatch;
+            if CHECK_TIMEOUT {
+                execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
+            }
+            let op = &chunk.code[ip];
+            #[cfg(debug_assertions)]
+            {
+                effect_probe = Some((ip, stack.len()));
+            }
+            ip += 1;
+            #[cfg(feature = "vm-profile")]
+            if op.is_profiled_instruction() {
+                vm_profile::record_opcode(op.profile_name());
+            }
+
+            match op {
+                #[cfg(feature = "debugger")]
+                OpCode::StmtBoundary(token_id) => {
+                    let node = chunk
+                        .debug_nodes
+                        .iter()
+                        .rfind(|(candidate, _)| *candidate == *token_id)
+                        .map(|(_, node)| Shared::clone(node))
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
+                    debug.current_node = Some(Shared::clone(&node));
+
+                    let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
+                    if let Some(hook) = debug.hook.as_deref_mut() {
+                        hook.on_boundary(DebugEvent {
+                            token_id: *token_id,
+                            node,
+                            current_value: current_self(locals, chunks),
+                            bindings,
+                            vm_frame: vm_frame.clone(),
+                            call_stack: debug.call_stack.clone(),
+                            #[cfg(feature = "debug-trace")]
+                            operand_stack: stack
+                                .iter()
+                                .cloned()
+                                .map(|value| into_runtime_value(value, chunks))
+                                .collect(),
+                        })
+                        .map_err(|error| locate(chunk, ip, error))?;
+                    }
+                    apply_debug_updates(&vm_frame, locals, upvalues);
                 }
-                let b = pop_value!();
-                let a = pop_value!();
-                let Some(operation) = binary_op_from_opcode(op) else {
-                    bail!(VmError::Corrupt("missing comparison binary operation"));
-                };
-                stack.push(StackValue::Value(cmp_op(operation, &a, &b)));
-            }
-            OpCode::BinaryLocalLocal { op, left, right } => {
-                stack.push(StackValue::Value(
-                    eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
-                        .map_err(|e| locate(chunk, ip, e))?,
-                ));
-            }
-            OpCode::BinaryLocalConst { op, local, constant } => {
-                stack.push(StackValue::Value(
-                    eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
-                        .map_err(|e| locate(chunk, ip, e))?,
-                ));
-            }
-            OpCode::UpdateLocalConst { op, local, constant } => {
-                let appended = *op == BinaryOp::Add
-                    && append_to_string_local(locals, *local, &chunk.constants[*constant as usize]);
-                if !appended
-                    && !(*op == BinaryOp::Add
-                        && add_to_local_in_place(locals, *local, &chunk.constants[*constant as usize])
-                            .map_err(|e| locate(chunk, ip, e))?)
-                {
-                    let a = local_runtime_value(locals, *local, chunks)?;
-                    let b = chunk.constants[*constant as usize].clone();
-                    let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                #[cfg(feature = "debugger")]
+                OpCode::SyncCallNode(token_id) => {
+                    let node = chunk
+                        .debug_nodes
+                        .iter()
+                        .rfind(|(candidate, _)| *candidate == *token_id)
+                        .map(|(_, node)| Shared::clone(node))
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
+                    debug.current_node = Some(node);
+                }
+                #[cfg(feature = "debugger")]
+                OpCode::Breakpoint(token_id) => {
+                    let node = chunk
+                        .debug_nodes
+                        .iter()
+                        .rfind(|(candidate, _)| *candidate == *token_id)
+                        .map(|(_, node)| Shared::clone(node))
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
+                    debug.current_node = Some(Shared::clone(&node));
+
+                    let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
+                    if let Some(hook) = debug.hook.as_deref_mut() {
+                        hook.on_explicit_breakpoint(DebugEvent {
+                            token_id: *token_id,
+                            node,
+                            current_value: current_self(locals, chunks),
+                            bindings,
+                            vm_frame: vm_frame.clone(),
+                            call_stack: debug.call_stack.clone(),
+                            #[cfg(feature = "debug-trace")]
+                            operand_stack: stack
+                                .iter()
+                                .cloned()
+                                .map(|value| into_runtime_value(value, chunks))
+                                .collect(),
+                        })
+                        .map_err(|error| locate(chunk, ip, error))?;
+                    }
+                    apply_debug_updates(&vm_frame, locals, upvalues);
+                }
+                OpCode::Const(idx) => {
+                    let value = chunk.constants[*idx as usize].clone();
+                    stack.push(StackValue::Value(value));
+                }
+                OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
+                OpCode::GetLocal(slot) => {
+                    stack.push(locals.get(*slot));
+                }
+                OpCode::TakeLocal(slot) => {
+                    stack.push(locals.take(*slot));
+                }
+                OpCode::SetLocal(slot) => {
+                    let v = pop!();
+                    locals.set(*slot, v);
+                }
+                OpCode::SetIndexLocal(slot) => {
+                    let value = pop_value!();
+                    let key = pop_value!();
+                    set_index_local(locals, *slot, key, value, chunks).map_err(|e| locate(chunk, ip, e))?;
+                }
+                OpCode::CheckPathLocal { slot, depth } => {
+                    check_path_local(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
+                }
+                OpCode::SetPathLocal { slot, depth } => {
+                    set_path_from_stack(stack, locals, *slot, *depth, chunks).map_err(|e| locate(chunk, ip, e))?;
+                }
+                OpCode::AddAssignPathLocal { slot, depth } => {
+                    add_assign_path_from_stack(stack, locals, *slot, *depth, chunks, execution)
                         .map_err(|e| locate(chunk, ip, e))?;
+                }
+                OpCode::AddAssignLocal(slot) => {
+                    let rhs = pop_value!();
+                    if let RuntimeValue::Number(n) = &rhs
+                        && let Some(number) = locals.direct_number_mut(*slot)
+                        && let Some(result) = number_arithmetic(BinaryOp::Add, *number, *n)
+                    {
+                        *number = result;
+                    } else {
+                        add_assign_local(locals, *slot, rhs, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
+                    }
+                }
+                OpCode::SetLocalAndCopy { source, destination } => {
+                    debug_assert!(
+                        stack.len() > frame.stack_base as usize,
+                        "verified bytecode underflowed the stack"
+                    );
+                    let copied = stack.last().expect("verified bytecode keeps an operand").clone();
+                    locals.set(*source, copied);
+                    let value = stack.pop().expect("verified bytecode keeps an operand");
+                    locals.set(*destination, value);
+                }
+                OpCode::SetLocalAndCopyAndJump {
+                    source,
+                    destination,
+                    offset,
+                } => {
+                    debug_assert!(
+                        stack.len() > frame.stack_base as usize,
+                        "verified bytecode underflowed the stack"
+                    );
+                    let copied = stack.last().expect("verified bytecode keeps an operand").clone();
+                    locals.set(*source, copied);
+                    let value = stack.pop().expect("verified bytecode keeps an operand");
+                    locals.set(*destination, value);
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
+                OpCode::SetLocalConst { local, constant } => {
+                    let value = chunk.constants[*constant as usize].clone();
                     locals.set(*local, StackValue::Value(value));
                 }
-            }
-            OpCode::UpdateLocalNumberConst { op, local, constant } => {
-                let rhs = Number::new(*constant as f64);
-                let updated = if let Some(number) = locals.direct_number_mut(*local)
-                    && let Some(result) = number_arithmetic(*op, *number, rhs)
-                {
-                    *number = result;
-                    true
-                } else {
-                    *op == BinaryOp::Add && append_to_string_local(locals, *local, &RuntimeValue::Number(rhs))
-                };
-                if !updated
-                    && !(*op == BinaryOp::Add
-                        && add_to_local_in_place(locals, *local, &RuntimeValue::Number(rhs))
-                            .map_err(|e| locate(chunk, ip, e))?)
-                {
+                OpCode::TeeLocal(slot) => {
+                    debug_assert!(
+                        stack.len() > frame.stack_base as usize,
+                        "verified bytecode underflowed the stack"
+                    );
+                    let top = stack.last().expect("verified bytecode keeps an operand").clone();
+                    locals.set(*slot, top);
+                }
+                OpCode::CopyLocal { source, destination } => {
+                    let value = locals.get(*source);
+                    locals.set(*destination, value);
+                }
+                OpCode::MoveLocal { source, destination } => {
+                    let value = locals.take(*source);
+                    locals.set(*destination, value);
+                }
+                OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
+                OpCode::AddAssignUpvalue(idx) => {
+                    let rhs = pop_value!();
+                    add_assign_upvalue(&upvalues[*idx as usize], rhs, locals, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                }
+                OpCode::SetUpvalue(idx) => {
+                    let v = pop!();
+                    write_cell(&upvalues[*idx as usize], v);
+                }
+                OpCode::MakeClosure(payload) => {
+                    let (target_chunk, sources) = payload.as_ref();
+                    let captured = capture_upvalues(
+                        sources,
+                        locals,
+                        SelfClosure {
+                            chunk_index: frame.chunk_index,
+                            chunk,
+                            upvalues: &frame.upvalues,
+                        },
+                    );
+                    stack.push(StackValue::Closure(Shared::new(Closure {
+                        chunk_index: *target_chunk,
+                        upvalues: (!captured.is_empty()).then(|| Shared::new(captured)),
+                    })));
+                }
+                OpCode::MakeStaticClosure(index) => {
+                    let closure = chunk
+                        .static_closures
+                        .get(*index as usize)
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("static closure index out of bounds")))?;
+                    stack.push(StackValue::Closure(Shared::clone(closure)));
+                }
+                OpCode::Pop => {
+                    pop!();
+                }
+                OpCode::Dup => {
+                    debug_assert!(
+                        stack.len() > frame.stack_base as usize,
+                        "verified bytecode underflowed the stack"
+                    );
+                    let top = stack.last().expect("verified bytecode keeps an operand").clone();
+                    stack.push(top);
+                }
+                OpCode::Jump(offset) => {
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
+                OpCode::JumpIfFalse(offset) => {
+                    let cond = pop_value!();
+                    if !cond.is_truthy() {
+                        ip = (ip as i64 + *offset as i64) as usize;
+                    }
+                }
+                OpCode::JumpIfTrue(offset) => {
+                    let cond = pop_value!();
+                    if cond.is_truthy() {
+                        ip = (ip as i64 + *offset as i64) as usize;
+                    }
+                }
+                OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod => {
+                    if let Some(operation) = binary_op_from_opcode(op)
+                        && number_binop_on_stack(stack, operation)
+                    {
+                        continue 'dispatch;
+                    }
+                    let b = pop_value!();
+                    let a = pop_value!();
+                    let Some(operation) = binary_op_from_opcode(op) else {
+                        bail!(VmError::Corrupt("missing arithmetic binary operation"));
+                    };
+                    stack.push(StackValue::Value(
+                        binop(operation, a, b, locals, chunks, execution.env, execution.host_functions)
+                            .map_err(|e| locate(chunk, ip, e))?,
+                    ));
+                }
+                OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge => {
+                    if let Some(operation) = binary_op_from_opcode(op)
+                        && number_binop_on_stack(stack, operation)
+                    {
+                        continue 'dispatch;
+                    }
+                    let b = pop_value!();
+                    let a = pop_value!();
+                    let Some(operation) = binary_op_from_opcode(op) else {
+                        bail!(VmError::Corrupt("missing comparison binary operation"));
+                    };
+                    stack.push(StackValue::Value(cmp_op(operation, &a, &b)));
+                }
+                OpCode::BinaryLocalLocal { op, left, right } => {
+                    stack.push(StackValue::Value(
+                        eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
+                            .map_err(|e| locate(chunk, ip, e))?,
+                    ));
+                }
+                OpCode::BinaryLocalConst { op, local, constant } => {
+                    stack.push(StackValue::Value(
+                        eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
+                            .map_err(|e| locate(chunk, ip, e))?,
+                    ));
+                }
+                OpCode::UpdateLocalConst { op, local, constant } => {
+                    let appended = *op == BinaryOp::Add
+                        && append_to_string_local(locals, *local, &chunk.constants[*constant as usize]);
+                    if !appended
+                        && !(*op == BinaryOp::Add
+                            && add_to_local_in_place(locals, *local, &chunk.constants[*constant as usize])
+                                .map_err(|e| locate(chunk, ip, e))?)
+                    {
+                        let a = local_runtime_value(locals, *local, chunks)?;
+                        let b = chunk.constants[*constant as usize].clone();
+                        let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                            .map_err(|e| locate(chunk, ip, e))?;
+                        locals.set(*local, StackValue::Value(value));
+                    }
+                }
+                OpCode::UpdateLocalNumberConst { op, local, constant } => {
+                    let rhs = Number::new(*constant as f64);
+                    let updated = if let Some(number) = locals.direct_number_mut(*local)
+                        && let Some(result) = number_arithmetic(*op, *number, rhs)
+                    {
+                        *number = result;
+                        true
+                    } else {
+                        *op == BinaryOp::Add && append_to_string_local(locals, *local, &RuntimeValue::Number(rhs))
+                    };
+                    if !updated
+                        && !(*op == BinaryOp::Add
+                            && add_to_local_in_place(locals, *local, &RuntimeValue::Number(rhs))
+                                .map_err(|e| locate(chunk, ip, e))?)
+                    {
+                        let value =
+                            eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
+                                .map_err(|e| locate(chunk, ip, e))?;
+                        locals.set(*local, StackValue::Value(value));
+                    }
+                }
+                OpCode::UpdateLocalLocal { op, local, value } => {
+                    let b = local_runtime_value(locals, *value, chunks)?;
+                    let appended = *op == BinaryOp::Add && append_to_string_local(locals, *local, &b);
+                    if !appended
+                        && !(*op == BinaryOp::Add
+                            && add_to_local_in_place(locals, *local, &b).map_err(|e| locate(chunk, ip, e))?)
+                    {
+                        let a = local_runtime_value(locals, *local, chunks)?;
+                        let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                            .map_err(|e| locate(chunk, ip, e))?;
+                        locals.set(*local, StackValue::Value(result));
+                    }
+                }
+                OpCode::JumpIfFalseLocalLocal {
+                    op,
+                    left,
+                    right,
+                    offset,
+                } => {
+                    let cond = eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    if !cond.is_truthy() {
+                        ip = (ip as i64 + *offset as i64) as usize;
+                    }
+                }
+                OpCode::JumpIfFalseLocalConst {
+                    op,
+                    local,
+                    constant,
+                    offset,
+                } => {
+                    let cond = eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    if !cond.is_truthy() {
+                        ip = (ip as i64 + *offset as i64) as usize;
+                    }
+                }
+                OpCode::JumpIfFalseLocalNumberConst {
+                    op,
+                    local,
+                    constant,
+                    offset,
+                } => {
+                    let compared = match locals.direct_runtime_value(*local) {
+                        Some(RuntimeValue::Number(value)) => {
+                            compare_numbers(*op, *value, Number::new(*constant as f64))
+                        }
+                        _ => None,
+                    };
+                    let truthy = match compared {
+                        Some(truthy) => truthy,
+                        None => eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
+                            .map_err(|e| locate(chunk, ip, e))?
+                            .is_truthy(),
+                    };
+                    if !truthy {
+                        ip = (ip as i64 + *offset as i64) as usize;
+                    }
+                }
+                OpCode::Neg => {
+                    let a = pop_value!();
+                    stack.push(StackValue::Value(match a {
+                        RuntimeValue::Number(n) => RuntimeValue::Number(Number::new(-n.value())),
+                        other => call_builtin(
+                            negate_ident(),
+                            &[other],
+                            &current_self(locals, chunks),
+                            execution.env,
+                            execution.host_functions,
+                        )
+                        .map_err(|e| locate(chunk, ip, e))?,
+                    }));
+                }
+                OpCode::Not => {
+                    let value = pop_value!();
+                    stack.push(StackValue::Value(RuntimeValue::Boolean(!value.is_truthy())));
+                }
+                OpCode::ArrayNew => {
+                    stack.push(StackValue::Value(RuntimeValue::empty_array()));
+                }
+                OpCode::ArrayNewWithCapacityLocal(slot) => {
+                    let capacity = match local_runtime_value(locals, *slot, chunks)? {
+                        RuntimeValue::Array(array) => array.len(),
+                        _ => 0,
+                    };
+                    stack.push(StackValue::Value(RuntimeValue::array_with_capacity(capacity)));
+                }
+                OpCode::ArrayPush | OpCode::ToForeachIterable | OpCode::ArrayLen | OpCode::ArrayGetAt => {
+                    array_misc_op(op, stack, chunks, chunk, ip)?;
+                }
+                OpCode::ArraySpread => {
+                    let source = pop_value!();
+                    let arr = pop_value!();
+                    stack.push(StackValue::Value(array_spread(arr, source, chunk, ip)?));
+                }
+                OpCode::DictNew => {
+                    stack.push(StackValue::Value(RuntimeValue::new_dict()));
+                }
+                OpCode::DictInsert => {
+                    let value = pop_value!();
+                    let key = pop_value!();
+                    let dict = pop_value!();
+                    stack.push(StackValue::Value(dict_insert(dict, key, value, chunk, ip)?));
+                }
+                OpCode::DictSpread => {
+                    let source = pop_value!();
+                    let arr = pop_value!();
+                    stack.push(StackValue::Value(dict_spread(arr, source, chunk, ip)?));
+                }
+                OpCode::ArrayLenLocal(slot) => {
+                    let value = local_runtime_value(locals, *slot, chunks)?;
+                    let result = match value {
+                        RuntimeValue::Array(array) => RuntimeValue::Number(Number::new(array.len() as f64)),
+                        value => call_builtin(
+                            &LEN_IDENT,
+                            &[value],
+                            &current_self(locals, chunks),
+                            execution.env,
+                            execution.host_functions,
+                        )
+                        .map_err(|e| locate(chunk, ip, e))?,
+                    };
+                    stack.push(StackValue::Value(result));
+                }
+                OpCode::BinaryLocalNumberConst { op, local, constant } => {
+                    let result = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    stack.push(StackValue::Value(result));
+                }
+                OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
+                    let array = local_runtime_value(locals, *array_slot, chunks)?;
+                    let index = local_runtime_value(locals, *index_slot, chunks)?;
+                    let result = match (array, index) {
+                        (RuntimeValue::Array(array), RuntimeValue::Number(index)) => resolve_index(index, array.len())
+                            .and_then(|i| array.get(i))
+                            .cloned()
+                            .unwrap_or(RuntimeValue::None),
+                        (array, index) => call_builtin(
+                            &GET_IDENT,
+                            &[array, index],
+                            &current_self(locals, chunks),
+                            execution.env,
+                            execution.host_functions,
+                        )
+                        .map_err(|e| locate(chunk, ip, e))?,
+                    };
+                    stack.push(StackValue::Value(result));
+                }
+                OpCode::DictGetLocalOrFail {
+                    subject_slot,
+                    key,
+                    value_slot,
+                } => {
+                    let subject = local_runtime_value(locals, *subject_slot, chunks)?;
+                    let found = match subject {
+                        RuntimeValue::Dict(map) => map.get(key).cloned(),
+                        _ => None,
+                    };
+                    match found {
+                        Some(value) => {
+                            locals.set(*value_slot, StackValue::Value(value));
+                            stack.push(StackValue::Value(RuntimeValue::Boolean(true)));
+                        }
+                        None => stack.push(StackValue::Value(RuntimeValue::Boolean(false))),
+                    }
+                }
+                OpCode::ForeachNext {
+                    array_slot,
+                    index_slot,
+                    value_slot,
+                    exit_offset,
+                } => {
+                    let advanced = locals
+                        .advance_foreach(*array_slot, *index_slot, *value_slot, SELF_SLOT)
+                        .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
+                    if !advanced {
+                        ip = (ip as i64 + *exit_offset as i64) as usize;
+                        continue;
+                    }
+                }
+                OpCode::ForeachCollect(slot) => {
+                    let value = pop_value!();
+                    locals
+                        .append_to_array_at(*slot, value)
+                        .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
+                }
+                OpCode::ForeachCollectAndJump { slot, offset } => {
+                    let value = pop_value!();
+                    locals
+                        .append_to_array_at(*slot, value)
+                        .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
+                OpCode::ForeachBinaryLocalNumberConstAndJump {
+                    op,
+                    local,
+                    constant,
+                    accumulator_slot,
+                    offset,
+                } => {
                     let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                         .map_err(|e| locate(chunk, ip, e))?;
-                    locals.set(*local, StackValue::Value(value));
-                }
-            }
-            OpCode::UpdateLocalLocal { op, local, value } => {
-                let b = local_runtime_value(locals, *value, chunks)?;
-                let appended = *op == BinaryOp::Add && append_to_string_local(locals, *local, &b);
-                if !appended
-                    && !(*op == BinaryOp::Add
-                        && add_to_local_in_place(locals, *local, &b).map_err(|e| locate(chunk, ip, e))?)
-                {
-                    let a = local_runtime_value(locals, *local, chunks)?;
-                    let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
-                        .map_err(|e| locate(chunk, ip, e))?;
-                    locals.set(*local, StackValue::Value(result));
-                }
-            }
-            OpCode::JumpIfFalseLocalLocal {
-                op,
-                left,
-                right,
-                offset,
-            } => {
-                let cond = eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                if !cond.is_truthy() {
+                    locals
+                        .append_to_array_at(*accumulator_slot, value)
+                        .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
                     ip = (ip as i64 + *offset as i64) as usize;
                 }
-            }
-            OpCode::JumpIfFalseLocalConst {
-                op,
-                local,
-                constant,
-                offset,
-            } => {
-                let cond = eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                if !cond.is_truthy() {
-                    ip = (ip as i64 + *offset as i64) as usize;
+                OpCode::ArraySliceFrom => {
+                    array_misc_op(op, stack, chunks, chunk, ip)?;
                 }
-            }
-            OpCode::JumpIfFalseLocalNumberConst {
-                op,
-                local,
-                constant,
-                offset,
-            } => {
-                let compared = match locals.direct_runtime_value(*local) {
-                    Some(RuntimeValue::Number(value)) => compare_numbers(*op, *value, Number::new(*constant as f64)),
-                    _ => None,
-                };
-                let truthy = match compared {
-                    Some(truthy) => truthy,
-                    None => eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
-                        .map_err(|e| locate(chunk, ip, e))?
-                        .is_truthy(),
-                };
-                if !truthy {
-                    ip = (ip as i64 + *offset as i64) as usize;
+                OpCode::TypeCheck(type_name) => {
+                    let v = pop_value!();
+                    let matches = type_name.resolve_with(|type_str| type_check(&v, type_str));
+                    stack.push(StackValue::Value(RuntimeValue::Boolean(matches)));
                 }
-            }
-            OpCode::Neg => {
-                let a = pop_value!();
-                stack.push(StackValue::Value(match a {
-                    RuntimeValue::Number(n) => RuntimeValue::Number(Number::new(-n.value())),
-                    other => call_builtin(
-                        negate_ident(),
-                        &[other],
-                        &current_self(locals, chunks),
+                OpCode::SelectorMatch(_) | OpCode::SelectorMatchWithArgs(_) => {
+                    selector_op(op, stack, chunks, chunk, ip)?;
+                }
+                OpCode::SelectorMatchKind(kind) => {
+                    let subject = pop_value!();
+                    stack.push(StackValue::Value(eval_compact_selector_expr(
+                        &subject,
+                        kind.as_selector(),
+                    )));
+                }
+                OpCode::SelectorMatchHeading(level) => {
+                    let subject = pop_value!();
+                    stack.push(StackValue::Value(eval_compact_selector_expr(
+                        &subject,
+                        Selector::Heading((*level != 0).then_some(*level)),
+                    )));
+                }
+                OpCode::CallBuiltinLocal { func, builtin, local } => {
+                    let value = local_runtime_value(locals, *local, chunks)?;
+                    let mut args = Args::new();
+                    args.push(value);
+                    let result = builtin::eval_resolved_builtin(
+                        func,
+                        &borrow_self(locals, chunks),
+                        builtin,
+                        args,
                         execution.env,
-                        execution.host_functions,
                     )
-                    .map_err(|e| locate(chunk, ip, e))?,
-                }));
-            }
-            OpCode::Not => {
-                let value = pop_value!();
-                stack.push(StackValue::Value(RuntimeValue::Boolean(!value.is_truthy())));
-            }
-            OpCode::ArrayNew => {
-                stack.push(StackValue::Value(RuntimeValue::empty_array()));
-            }
-            OpCode::ArrayNewWithCapacityLocal(slot) => {
-                let capacity = match local_runtime_value(locals, *slot, chunks)? {
-                    RuntimeValue::Array(array) => array.len(),
-                    _ => 0,
-                };
-                stack.push(StackValue::Value(RuntimeValue::array_with_capacity(capacity)));
-            }
-            OpCode::ArrayPush | OpCode::ToForeachIterable | OpCode::ArrayLen | OpCode::ArrayGetAt => {
-                array_misc_op(op, stack, chunks, chunk, ip)?;
-            }
-            OpCode::ArraySpread => {
-                let source = pop_value!();
-                let arr = pop_value!();
-                stack.push(StackValue::Value(array_spread(arr, source, chunk, ip)?));
-            }
-            OpCode::DictNew => {
-                stack.push(StackValue::Value(RuntimeValue::new_dict()));
-            }
-            OpCode::DictInsert => {
-                let value = pop_value!();
-                let key = pop_value!();
-                let dict = pop_value!();
-                stack.push(StackValue::Value(dict_insert(dict, key, value, chunk, ip)?));
-            }
-            OpCode::DictSpread => {
-                let source = pop_value!();
-                let arr = pop_value!();
-                stack.push(StackValue::Value(dict_spread(arr, source, chunk, ip)?));
-            }
-            OpCode::ArrayLenLocal(slot) => {
-                let value = local_runtime_value(locals, *slot, chunks)?;
-                let result = match value {
-                    RuntimeValue::Array(array) => RuntimeValue::Number(Number::new(array.len() as f64)),
-                    value => call_builtin(
-                        &LEN_IDENT,
-                        &[value],
-                        &current_self(locals, chunks),
-                        execution.env,
-                        execution.host_functions,
-                    )
-                    .map_err(|e| locate(chunk, ip, e))?,
-                };
-                stack.push(StackValue::Value(result));
-            }
-            OpCode::BinaryLocalNumberConst { op, local, constant } => {
-                let result = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                stack.push(StackValue::Value(result));
-            }
-            OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
-                let array = local_runtime_value(locals, *array_slot, chunks)?;
-                let index = local_runtime_value(locals, *index_slot, chunks)?;
-                let result = match (array, index) {
-                    (RuntimeValue::Array(array), RuntimeValue::Number(index)) => resolve_index(index, array.len())
-                        .and_then(|i| array.get(i))
-                        .cloned()
-                        .unwrap_or(RuntimeValue::None),
-                    (array, index) => call_builtin(
-                        &GET_IDENT,
-                        &[array, index],
-                        &current_self(locals, chunks),
-                        execution.env,
-                        execution.host_functions,
-                    )
-                    .map_err(|e| locate(chunk, ip, e))?,
-                };
-                stack.push(StackValue::Value(result));
-            }
-            OpCode::DictGetLocalOrFail {
-                subject_slot,
-                key,
-                value_slot,
-            } => {
-                let subject = local_runtime_value(locals, *subject_slot, chunks)?;
-                let found = match subject {
-                    RuntimeValue::Dict(map) => map.get(key).cloned(),
-                    _ => None,
-                };
-                match found {
-                    Some(value) => {
-                        locals.set(*value_slot, StackValue::Value(value));
-                        stack.push(StackValue::Value(RuntimeValue::Boolean(true)));
-                    }
-                    None => stack.push(StackValue::Value(RuntimeValue::Boolean(false))),
+                    .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
+                    stack.push(StackValue::Value(result));
                 }
-            }
-            OpCode::ForeachNext {
-                array_slot,
-                index_slot,
-                value_slot,
-                exit_offset,
-            } => {
-                let advanced = locals
-                    .advance_foreach(*array_slot, *index_slot, *value_slot, SELF_SLOT)
-                    .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
-                if !advanced {
-                    ip = (ip as i64 + *exit_offset as i64) as usize;
-                    continue;
+                OpCode::GetEnvVar(name_idx) => {
+                    let value = get_env_var(*name_idx, chunk, ip)?;
+                    stack.push(StackValue::Value(value));
                 }
-            }
-            OpCode::ForeachCollect(slot) => {
-                let value = pop_value!();
-                locals
-                    .append_to_array_at(*slot, value)
-                    .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
-            }
-            OpCode::ForeachCollectAndJump { slot, offset } => {
-                let value = pop_value!();
-                locals
-                    .append_to_array_at(*slot, value)
-                    .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
-                ip = (ip as i64 + *offset as i64) as usize;
-            }
-            OpCode::ForeachBinaryLocalNumberConstAndJump {
-                op,
-                local,
-                constant,
-                accumulator_slot,
-                offset,
-            } => {
-                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                locals
-                    .append_to_array_at(*accumulator_slot, value)
-                    .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
-                ip = (ip as i64 + *offset as i64) as usize;
-            }
-            OpCode::ArraySliceFrom => {
-                array_misc_op(op, stack, chunks, chunk, ip)?;
-            }
-            OpCode::TypeCheck(type_name) => {
-                let v = pop_value!();
-                let matches = type_name.resolve_with(|type_str| type_check(&v, type_str));
-                stack.push(StackValue::Value(RuntimeValue::Boolean(matches)));
-            }
-            OpCode::SelectorMatch(_) | OpCode::SelectorMatchWithArgs(_) => {
-                selector_op(op, stack, chunks, chunk, ip)?;
-            }
-            OpCode::SelectorMatchKind(kind) => {
-                let subject = pop_value!();
-                stack.push(StackValue::Value(eval_compact_selector_expr(
-                    &subject,
-                    kind.as_selector(),
-                )));
-            }
-            OpCode::SelectorMatchHeading(level) => {
-                let subject = pop_value!();
-                stack.push(StackValue::Value(eval_compact_selector_expr(
-                    &subject,
-                    Selector::Heading((*level != 0).then_some(*level)),
-                )));
-            }
-            OpCode::CallBuiltinLocal { func, builtin, local } => {
-                let value = local_runtime_value(locals, *local, chunks)?;
-                let mut args = Args::new();
-                args.push(value);
-                let result =
-                    builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), builtin, args, execution.env)
-                        .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
-                stack.push(StackValue::Value(result));
-            }
-            OpCode::GetEnvVar(name_idx) => {
-                let value = get_env_var(*name_idx, chunk, ip)?;
-                stack.push(StackValue::Value(value));
-            }
-            OpCode::GetExternalGlobal(ident) => {
-                stack.push(StackValue::Value(get_external_global(
-                    *ident,
-                    chunk,
-                    ip,
-                    execution.env,
-                )?));
-            }
-            OpCode::InterpString(n) => {
-                let start = stack
-                    .len()
-                    .checked_sub(*n as usize)
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in InterpString")))?;
-                if start < frame.stack_base as usize {
-                    bail!(VmError::Corrupt("stack underflow in InterpString"));
-                }
-                let value = interp_string(&stack[start..], chunks);
-                stack.truncate(start);
-                stack.push(StackValue::Value(value));
-            }
-            OpCode::CallNative { func, ident, argc } => {
-                let args = pop_call_args!(*argc);
-                let result =
-                    builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), ident, args, execution.env)
-                        .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
-                stack.push(StackValue::Value(result));
-            }
-            OpCode::CallBuiltin(ident, argc) => {
-                let args = pop_call_args!(*argc);
-                let result = call_builtin_args(
-                    ident,
-                    args,
-                    &borrow_self(locals, chunks),
-                    execution.env,
-                    execution.host_functions,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
-                stack.push(StackValue::Value(result));
-            }
-            OpCode::CallStatic(chunk_index, argc) => {
-                let new_frame = call_static_chunk_from_stack(
-                    *chunk_index,
-                    *argc,
-                    stack,
-                    CallSite {
-                        locals,
+                OpCode::GetExternalGlobal(ident) => {
+                    stack.push(StackValue::Value(get_external_global(
+                        *ident,
                         chunk,
                         ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                )?;
-                if chunks[*chunk_index as usize].is_generator {
-                    stack.push(generator_coroutine(new_frame, chunks, &execution.token_arena));
-                } else {
+                        execution.env,
+                    )?));
+                }
+                OpCode::InterpString(n) => {
+                    let start = stack
+                        .len()
+                        .checked_sub(*n as usize)
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in InterpString")))?;
+                    if start < frame.stack_base as usize {
+                        bail!(VmError::Corrupt("stack underflow in InterpString"));
+                    }
+                    let value = interp_string(&stack[start..], chunks);
+                    stack.truncate(start);
+                    stack.push(StackValue::Value(value));
+                }
+                OpCode::CallNative { func, ident, argc } => {
+                    let args = pop_call_args!(*argc);
+                    let result =
+                        builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), ident, args, execution.env)
+                            .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
+                    stack.push(StackValue::Value(result));
+                }
+                OpCode::CallBuiltin(ident, argc) => {
+                    let args = pop_call_args!(*argc);
+                    let result = call_builtin_args(
+                        ident,
+                        args,
+                        &borrow_self(locals, chunks),
+                        execution.env,
+                        execution.host_functions,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?;
+                    stack.push(StackValue::Value(result));
+                }
+                OpCode::CallStatic(chunk_index, argc) => {
+                    let new_frame = call_static_chunk_from_stack(
+                        *chunk_index,
+                        *argc,
+                        stack,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                    )?;
+                    if chunks[*chunk_index as usize].is_generator {
+                        stack.push(generator_coroutine(new_frame, chunks, &execution.token_arena));
+                    } else {
+                        break 'dispatch FrameOutcome::Enter(new_frame);
+                    }
+                }
+                OpCode::CallStaticExact0(target) => {
+                    let new_frame = call_exact_fixed_chunk_0(
+                        ExactCallTarget {
+                            chunk_index: target.chunk_index,
+                            local_count: target.local_count,
+                            captured_local_slots: &[],
+                        },
+                        None,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        execution,
+                    );
                     break 'dispatch FrameOutcome::Enter(new_frame);
                 }
-            }
-            OpCode::CallStaticExact0(target) => {
-                let new_frame = call_exact_fixed_chunk_0(
-                    ExactCallTarget {
-                        chunk_index: target.chunk_index,
-                        local_count: target.local_count,
-                        captured_local_slots: &[],
-                    },
-                    None,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    execution,
-                );
-                break 'dispatch FrameOutcome::Enter(new_frame);
-            }
-            OpCode::CallStaticExact1(target) => {
-                let new_frame = call_exact_fixed_chunk_1(
-                    ExactCallTarget {
-                        chunk_index: target.chunk_index,
-                        local_count: target.local_count,
-                        captured_local_slots: &[],
-                    },
-                    None,
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    execution,
-                )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
-            }
-            OpCode::CallStaticExact2(target) => {
-                let new_frame = call_exact_fixed_chunk_2(
-                    ExactCallTarget {
-                        chunk_index: target.chunk_index,
-                        local_count: target.local_count,
-                        captured_local_slots: &[],
-                    },
-                    None,
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    execution,
-                )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
-            }
-            OpCode::CallStaticExact(chunk_index, argc) | OpCode::CallStaticImplicitSelf(chunk_index, argc) => {
-                let new_frame = call_known_fixed_chunk_from_stack(
-                    KnownFixedChunkCall {
-                        chunk_index: *chunk_index,
-                        upvalues: None,
-                        argc: *argc,
-                        uses_implicit_self: matches!(op, OpCode::CallStaticImplicitSelf(..)),
-                        remove_callee: false,
-                    },
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
-            }
-            OpCode::CallSelf(argc)
-                if chunks[frame.chunk_index as usize]
-                    .param_shape
-                    .fixed_required_arity()
-                    .is_none() =>
-            {
-                // Defaults and variadics need the general binder. The closure is rebuilt from
-                // the running frame rather than loaded from a defining cell that would cycle.
-                let callee = StackValue::Closure(Shared::new(Closure {
-                    chunk_index: frame.chunk_index,
-                    upvalues: frame.upvalues.clone(),
-                }));
-                let mut args = execution.limits.take_stack();
-                for _ in 0..*argc {
-                    args.push(pop!());
+                OpCode::CallStaticExact1(target) => {
+                    let new_frame = call_exact_fixed_chunk_1(
+                        ExactCallTarget {
+                            chunk_index: target.chunk_index,
+                            local_count: target.local_count,
+                            captured_local_slots: &[],
+                        },
+                        None,
+                        stack,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        execution,
+                    )?;
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 }
-                args.reverse();
-                let step = call_stack_value::<CHECK_TIMEOUT>(
-                    callee,
-                    &mut args,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                    #[cfg(feature = "debugger")]
-                    debug,
-                );
-                execution.limits.recycle_stack(args);
-                match step? {
-                    CallStep::Value(v) => stack.push(v),
-                    CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
+                OpCode::CallStaticExact2(target) => {
+                    let new_frame = call_exact_fixed_chunk_2(
+                        ExactCallTarget {
+                            chunk_index: target.chunk_index,
+                            local_count: target.local_count,
+                            captured_local_slots: &[],
+                        },
+                        None,
+                        stack,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        execution,
+                    )?;
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 }
-            }
-            OpCode::CallSelf(argc) => {
-                let step = call_self_chunk_from_stack(
-                    frame.chunk_index,
-                    frame.upvalues.clone(),
-                    *argc,
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                )?;
-                match step {
-                    CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
-                    CallStep::Value(v) => stack.push(v),
-                }
-            }
-            OpCode::CallSelfExact0 => {
-                let new_frame = call_exact_fixed_chunk_0(
-                    ExactCallTarget {
-                        chunk_index: frame.chunk_index,
-                        local_count: chunk.local_count,
-                        captured_local_slots: chunk.captured_local_slots(),
-                    },
-                    frame.upvalues.clone(),
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    execution,
-                );
-                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
-            }
-            OpCode::CallSelfExact1 => {
-                let new_frame = call_exact_fixed_chunk_1(
-                    ExactCallTarget {
-                        chunk_index: frame.chunk_index,
-                        local_count: chunk.local_count,
-                        captured_local_slots: chunk.captured_local_slots(),
-                    },
-                    frame.upvalues.clone(),
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    execution,
-                )?;
-                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
-            }
-            OpCode::CallSelfExact2 => {
-                let new_frame = call_exact_fixed_chunk_2(
-                    ExactCallTarget {
-                        chunk_index: frame.chunk_index,
-                        local_count: chunk.local_count,
-                        captured_local_slots: chunk.captured_local_slots(),
-                    },
-                    frame.upvalues.clone(),
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    execution,
-                )?;
-                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
-            }
-            OpCode::CallSelfExact(argc) | OpCode::CallSelfImplicitSelf(argc) => {
-                let new_frame = call_known_fixed_chunk_from_stack(
-                    KnownFixedChunkCall {
-                        chunk_index: frame.chunk_index,
-                        upvalues: frame.upvalues.clone(),
-                        argc: *argc,
-                        uses_implicit_self: matches!(op, OpCode::CallSelfImplicitSelf(..)),
-                        remove_callee: false,
-                    },
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                )?;
-                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
-            }
-            OpCode::CallLocal(slot, argc) => {
-                let callee = locals.get(*slot);
-                if let StackValue::Closure(closure) = &callee
-                    && chunks[closure.chunk_index as usize]
-                        .param_shape
-                        .fixed_required_arity()
-                        .is_some()
-                    && !chunks[closure.chunk_index as usize].is_generator
-                {
-                    let new_frame = call_fixed_closure_from_stack(
-                        FixedClosureCall {
-                            closure,
+                OpCode::CallStaticExact(chunk_index, argc) | OpCode::CallStaticImplicitSelf(chunk_index, argc) => {
+                    let new_frame = call_known_fixed_chunk_from_stack(
+                        KnownFixedChunkCall {
+                            chunk_index: *chunk_index,
+                            upvalues: None,
                             argc: *argc,
+                            uses_implicit_self: matches!(op, OpCode::CallStaticImplicitSelf(..)),
                             remove_callee: false,
                         },
                         stack,
@@ -2336,11 +2184,19 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         execution,
                     )?;
                     break 'dispatch FrameOutcome::Enter(new_frame);
-                } else {
-                    // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees,
-                    // variadic/optional params, `partial`-bound closures) runs often enough in
-                    // higher-order builtins that a fresh heap allocation per call is worth
-                    // avoiding.
+                }
+                OpCode::CallSelf(argc)
+                    if chunks[frame.chunk_index as usize]
+                        .param_shape
+                        .fixed_required_arity()
+                        .is_none() =>
+                {
+                    // Defaults and variadics need the general binder. The closure is rebuilt from
+                    // the running frame rather than loaded from a defining cell that would cycle.
+                    let callee = StackValue::Closure(Shared::new(Closure {
+                        chunk_index: frame.chunk_index,
+                        upvalues: frame.upvalues.clone(),
+                    }));
                     let mut args = execution.limits.take_stack();
                     for _ in 0..*argc {
                         args.push(pop!());
@@ -2363,26 +2219,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     execution.limits.recycle_stack(args);
                     match step? {
                         CallStep::Value(v) => stack.push(v),
-                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                        CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
                     }
                 }
-            }
-            OpCode::CallUpvalue(index, argc) => {
-                call_upvalue!('dispatch, *index, *argc);
-            }
-            OpCode::CallUpvalueLocal { index, local, take } => {
-                let argument = if *take { locals.take(*local) } else { locals.get(*local) };
-                let callee = read_cell(&upvalues[*index as usize]);
-                if let StackValue::Closure(closure) = &callee
-                    && chunks[closure.chunk_index as usize]
-                        .param_shape
-                        .fixed_required_arity()
-                        .is_some()
-                    && !chunks[closure.chunk_index as usize].is_generator
-                {
-                    let new_frame = call_fixed_closure_from_local(
-                        closure,
-                        argument,
+                OpCode::CallSelf(argc) => {
+                    let step = call_self_chunk_from_stack(
+                        frame.chunk_index,
+                        frame.upvalues.clone(),
+                        *argc,
+                        stack,
                         CallSite {
                             locals,
                             chunk,
@@ -2392,35 +2237,75 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    break 'dispatch FrameOutcome::Enter(new_frame);
+                    match step {
+                        CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
+                        CallStep::Value(v) => stack.push(v),
+                    }
                 }
-                stack.push(argument);
-                call_upvalue!('dispatch, *index, 1);
-            }
-            OpCode::CallValue(argc) => {
-                let callee_index = stack
-                    .len()
-                    .checked_sub(*argc as usize + 1)
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in CallValue")))?;
-                if callee_index < frame.stack_base as usize {
-                    bail!(VmError::Corrupt("stack underflow in CallValue"));
+                OpCode::CallSelfExact0 => {
+                    let new_frame = call_exact_fixed_chunk_0(
+                        ExactCallTarget {
+                            chunk_index: frame.chunk_index,
+                            local_count: chunk.local_count,
+                            captured_local_slots: chunk.captured_local_slots(),
+                        },
+                        frame.upvalues.clone(),
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        execution,
+                    );
+                    break 'dispatch tail_call_outcome(chunk, ip, new_frame);
                 }
-                if let StackValue::Closure(closure) = &stack[callee_index]
-                    && chunks[closure.chunk_index as usize]
-                        .param_shape
-                        .fixed_required_arity()
-                        .is_some()
-                    && !chunks[closure.chunk_index as usize].is_generator
-                {
-                    // Keep the callee below its arguments until the fixed-call binder has
-                    // popped them. This avoids `Vec::remove(callee_index)`, which shifts
-                    // every argument and is especially costly for large calls.
-                    let closure = Shared::clone(closure);
-                    let new_frame = call_fixed_closure_from_stack(
-                        FixedClosureCall {
-                            closure: &closure,
+                OpCode::CallSelfExact1 => {
+                    let new_frame = call_exact_fixed_chunk_1(
+                        ExactCallTarget {
+                            chunk_index: frame.chunk_index,
+                            local_count: chunk.local_count,
+                            captured_local_slots: chunk.captured_local_slots(),
+                        },
+                        frame.upvalues.clone(),
+                        stack,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        execution,
+                    )?;
+                    break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+                }
+                OpCode::CallSelfExact2 => {
+                    let new_frame = call_exact_fixed_chunk_2(
+                        ExactCallTarget {
+                            chunk_index: frame.chunk_index,
+                            local_count: chunk.local_count,
+                            captured_local_slots: chunk.captured_local_slots(),
+                        },
+                        frame.upvalues.clone(),
+                        stack,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        execution,
+                    )?;
+                    break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+                }
+                OpCode::CallSelfExact(argc) | OpCode::CallSelfImplicitSelf(argc) => {
+                    let new_frame = call_known_fixed_chunk_from_stack(
+                        KnownFixedChunkCall {
+                            chunk_index: frame.chunk_index,
+                            upvalues: frame.upvalues.clone(),
                             argc: *argc,
-                            remove_callee: true,
+                            uses_implicit_self: matches!(op, OpCode::CallSelfImplicitSelf(..)),
+                            remove_callee: false,
                         },
                         stack,
                         CallSite {
@@ -2432,56 +2317,202 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    break 'dispatch FrameOutcome::Enter(new_frame);
-                } else {
-                    // See the `CallLocal` non-fixed-arity path above for why this is pooled.
-                    let mut args = execution.limits.take_stack();
-                    for _ in 0..*argc {
-                        args.push(pop!());
-                    }
-                    args.reverse();
-                    let callee = pop!();
-                    let step = call_stack_value::<CHECK_TIMEOUT>(
-                        callee,
-                        &mut args,
-                        CallSite {
-                            locals,
-                            chunk,
-                            ip,
-                            frame_chunks: frame.chunks.clone(),
-                        },
-                        chunks,
-                        execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
-                    );
-                    execution.limits.recycle_stack(args);
-                    match step? {
-                        CallStep::Value(v) => stack.push(v),
-                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                    }
+                    break 'dispatch tail_call_outcome(chunk, ip, new_frame);
                 }
-            }
-            OpCode::MaybeAutoCall => {
-                let value = pop!();
-                let eligible = match &value {
-                    StackValue::Closure(closure) => chunks[closure.chunk_index as usize].param_shape.required <= 1,
-                    StackValue::Value(RuntimeValue::Closure(vc)) => {
-                        vc.chunks[vc.chunk_index as usize]
+                OpCode::CallLocal(slot, argc) => {
+                    let callee = locals.get(*slot);
+                    if let StackValue::Closure(closure) = &callee
+                        && chunks[closure.chunk_index as usize]
                             .param_shape
-                            .required
-                            .saturating_sub(vc.bound_args.len())
-                            <= 1
+                            .fixed_required_arity()
+                            .is_some()
+                        && !chunks[closure.chunk_index as usize].is_generator
+                    {
+                        let new_frame = call_fixed_closure_from_stack(
+                            FixedClosureCall {
+                                closure,
+                                argc: *argc,
+                                remove_callee: false,
+                            },
+                            stack,
+                            CallSite {
+                                locals,
+                                chunk,
+                                ip,
+                                frame_chunks: frame.chunks.clone(),
+                            },
+                            chunks,
+                            execution,
+                        )?;
+                        break 'dispatch FrameOutcome::Enter(new_frame);
+                    } else {
+                        // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees,
+                        // variadic/optional params, `partial`-bound closures) runs often enough in
+                        // higher-order builtins that a fresh heap allocation per call is worth
+                        // avoiding.
+                        let mut args = execution.limits.take_stack();
+                        for _ in 0..*argc {
+                            args.push(pop!());
+                        }
+                        args.reverse();
+                        let step = call_stack_value::<CHECK_TIMEOUT>(
+                            callee,
+                            &mut args,
+                            CallSite {
+                                locals,
+                                chunk,
+                                ip,
+                                frame_chunks: frame.chunks.clone(),
+                            },
+                            chunks,
+                            execution,
+                            #[cfg(feature = "debugger")]
+                            debug,
+                        );
+                        execution.limits.recycle_stack(args);
+                        match step? {
+                            CallStep::Value(v) => stack.push(v),
+                            CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                        }
                     }
-                    StackValue::Value(RuntimeValue::NativeFunction(ident)) => builtin::get_builtin_functions(ident)
-                        .is_some_and(|f| f.num_params.is_valid(0) || f.num_params.is_missing_one_params(0)),
-                    StackValue::Value(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Next)) => true,
-                    _ => false,
-                };
-                if eligible {
-                    match call_stack_value::<CHECK_TIMEOUT>(
-                        value,
-                        &mut Vec::new(),
+                }
+                OpCode::CallUpvalue(index, argc) => {
+                    call_upvalue!('dispatch, *index, *argc);
+                }
+                OpCode::CallUpvalueLocal { index, local, take } => {
+                    let argument = if *take { locals.take(*local) } else { locals.get(*local) };
+                    let callee = read_cell(&upvalues[*index as usize]);
+                    if let StackValue::Closure(closure) = &callee
+                        && chunks[closure.chunk_index as usize]
+                            .param_shape
+                            .fixed_required_arity()
+                            .is_some()
+                        && !chunks[closure.chunk_index as usize].is_generator
+                    {
+                        let new_frame = call_fixed_closure_from_local(
+                            closure,
+                            argument,
+                            CallSite {
+                                locals,
+                                chunk,
+                                ip,
+                                frame_chunks: frame.chunks.clone(),
+                            },
+                            chunks,
+                            execution,
+                        )?;
+                        break 'dispatch FrameOutcome::Enter(new_frame);
+                    }
+                    stack.push(argument);
+                    call_upvalue!('dispatch, *index, 1);
+                }
+                OpCode::CallValue(argc) => {
+                    let callee_index = stack
+                        .len()
+                        .checked_sub(*argc as usize + 1)
+                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in CallValue")))?;
+                    if callee_index < frame.stack_base as usize {
+                        bail!(VmError::Corrupt("stack underflow in CallValue"));
+                    }
+                    if let StackValue::Closure(closure) = &stack[callee_index]
+                        && chunks[closure.chunk_index as usize]
+                            .param_shape
+                            .fixed_required_arity()
+                            .is_some()
+                        && !chunks[closure.chunk_index as usize].is_generator
+                    {
+                        // Keep the callee below its arguments until the fixed-call binder has
+                        // popped them. This avoids `Vec::remove(callee_index)`, which shifts
+                        // every argument and is especially costly for large calls.
+                        let closure = Shared::clone(closure);
+                        let new_frame = call_fixed_closure_from_stack(
+                            FixedClosureCall {
+                                closure: &closure,
+                                argc: *argc,
+                                remove_callee: true,
+                            },
+                            stack,
+                            CallSite {
+                                locals,
+                                chunk,
+                                ip,
+                                frame_chunks: frame.chunks.clone(),
+                            },
+                            chunks,
+                            execution,
+                        )?;
+                        break 'dispatch FrameOutcome::Enter(new_frame);
+                    } else {
+                        // See the `CallLocal` non-fixed-arity path above for why this is pooled.
+                        let mut args = execution.limits.take_stack();
+                        for _ in 0..*argc {
+                            args.push(pop!());
+                        }
+                        args.reverse();
+                        let callee = pop!();
+                        let step = call_stack_value::<CHECK_TIMEOUT>(
+                            callee,
+                            &mut args,
+                            CallSite {
+                                locals,
+                                chunk,
+                                ip,
+                                frame_chunks: frame.chunks.clone(),
+                            },
+                            chunks,
+                            execution,
+                            #[cfg(feature = "debugger")]
+                            debug,
+                        );
+                        execution.limits.recycle_stack(args);
+                        match step? {
+                            CallStep::Value(v) => stack.push(v),
+                            CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                        }
+                    }
+                }
+                OpCode::MaybeAutoCall => {
+                    let value = pop!();
+                    let eligible = match &value {
+                        StackValue::Closure(closure) => chunks[closure.chunk_index as usize].param_shape.required <= 1,
+                        StackValue::Value(RuntimeValue::Closure(vc)) => {
+                            vc.chunks[vc.chunk_index as usize]
+                                .param_shape
+                                .required
+                                .saturating_sub(vc.bound_args.len())
+                                <= 1
+                        }
+                        StackValue::Value(RuntimeValue::NativeFunction(ident)) => builtin::get_builtin_functions(ident)
+                            .is_some_and(|f| f.num_params.is_valid(0) || f.num_params.is_missing_one_params(0)),
+                        StackValue::Value(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Next)) => true,
+                        _ => false,
+                    };
+                    if eligible {
+                        match call_stack_value::<CHECK_TIMEOUT>(
+                            value,
+                            &mut Vec::new(),
+                            CallSite {
+                                locals,
+                                chunk,
+                                ip,
+                                frame_chunks: frame.chunks.clone(),
+                            },
+                            chunks,
+                            execution,
+                            #[cfg(feature = "debugger")]
+                            debug,
+                        )? {
+                            CallStep::Value(v) => stack.push(v),
+                            CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                        }
+                    } else {
+                        stack.push(value);
+                    }
+                }
+                OpCode::TryCatch(info) => {
+                    let new_frame = try_catch_from_stack(
+                        info,
+                        stack,
                         CallSite {
                             locals,
                             chunk,
@@ -2490,98 +2521,107 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         },
                         chunks,
                         execution,
+                    )?;
+                    break 'dispatch FrameOutcome::Enter(new_frame);
+                }
+                OpCode::FlowBreak(has_value) => {
+                    return flow_break_from_stack(*has_value, stack, chunks, chunk, ip);
+                }
+                OpCode::FlowContinue => return flow_continue_from(chunk, ip),
+                OpCode::RaiseDestructuringFailed => {
+                    return destructuring_failed_from(chunk, ip);
+                }
+                OpCode::ReturnLocal(slot) => {
+                    break 'dispatch FrameOutcome::Complete(locals.get(*slot));
+                }
+                OpCode::ReturnBinaryLocalLocal { op, left, right } => {
+                    let value = eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
+                }
+                OpCode::ReturnBinaryLocalConst { op, local, constant } => {
+                    let value = eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
+                }
+                OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
+                    let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
+                }
+                OpCode::Return => {
+                    let v = pop!();
+                    break 'dispatch FrameOutcome::Complete(v);
+                }
+                OpCode::Yield => {
+                    let v = pop!();
+                    break 'dispatch FrameOutcome::Suspend(v);
+                }
+                OpCode::Resume(argc) => {
+                    // argc=2 is `send(stream, value)`; argc=1 is `next(stream)`.
+                    let resume_value = if *argc == 2 { Some(pop_value!()) } else { None };
+                    let arg = pop!();
+                    let handle = match into_runtime_value(arg, chunks) {
+                        RuntimeValue::Coroutine(handle) => handle,
+                        other => bail!(VmError::invalid_resume_target(*argc == 2, &other)),
+                    };
+                    let result = coroutine::resume::<CHECK_TIMEOUT>(
+                        &handle,
+                        resume_value,
+                        execution,
                         #[cfg(feature = "debugger")]
                         debug,
-                    )? {
-                        CallStep::Value(v) => stack.push(v),
-                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                    }
-                } else {
-                    stack.push(value);
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?;
+                    stack.push(StackValue::Value(result));
+                }
+                OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
+                    upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
                 }
             }
-            OpCode::TryCatch(info) => {
-                let new_frame = try_catch_from_stack(
-                    info,
-                    stack,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
-            }
-            OpCode::FlowBreak(has_value) => {
-                return flow_break_from_stack(*has_value, stack, chunks, chunk, ip);
-            }
-            OpCode::FlowContinue => return flow_continue_from(chunk, ip),
-            OpCode::RaiseDestructuringFailed => {
-                return destructuring_failed_from(chunk, ip);
-            }
-            OpCode::ReturnLocal(slot) => {
-                break 'dispatch FrameOutcome::Complete(locals.get(*slot));
-            }
-            OpCode::ReturnBinaryLocalLocal { op, left, right } => {
-                let value = eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
-            }
-            OpCode::ReturnBinaryLocalConst { op, local, constant } => {
-                let value = eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
-            }
-            OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
-                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
-            }
-            OpCode::Return => {
-                let v = pop!();
-                break 'dispatch FrameOutcome::Complete(v);
-            }
-            OpCode::Yield => {
-                let v = pop!();
-                break 'dispatch FrameOutcome::Suspend(v);
-            }
-            OpCode::Resume(argc) => {
-                // argc=2 is `send(stream, value)`; argc=1 is `next(stream)`.
-                let resume_value = if *argc == 2 { Some(pop_value!()) } else { None };
-                let arg = pop!();
-                let handle = match into_runtime_value(arg, chunks) {
-                    RuntimeValue::Coroutine(handle) => handle,
-                    other => bail!(VmError::invalid_resume_target(*argc == 2, &other)),
-                };
-                let result = coroutine::resume::<CHECK_TIMEOUT>(
-                    &handle,
-                    resume_value,
-                    execution,
+        };
+        // `verify_chunks` rejects chunks longer than i32::MAX and verifies all jump targets.
+        debug_assert!(u32::try_from(ip).is_ok());
+        frame.ip = ip as u32;
+        #[cfg(debug_assertions)]
+        {
+            frame.effect_probe = effect_probe.filter(|_| matches!(outcome, FrameOutcome::Enter(_)));
+        }
+        if let FrameOutcome::Complete(_) = &outcome {
+            stack.truncate(frame.stack_base as usize);
+        }
+        // Plain calls and returns switch frames here instead of leaving the opcode loop. Every
+        // other outcome is left to `drive_frames`.
+        match outcome {
+            FrameOutcome::Enter(new_frame) => {
+                if let Err(e) = execution.limits.push_frame(
+                    frames,
+                    new_frame,
+                    stack.len(),
                     #[cfg(feature = "debugger")]
                     debug,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
-                stack.push(StackValue::Value(result));
+                ) {
+                    return Err(locate_at_top(frames, root_chunks, e));
+                }
+                continue 'frames;
             }
-            OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
-                upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
+            FrameOutcome::Complete(value)
+                if frames.len() > 1
+                    && frames
+                        .last()
+                        .is_some_and(|frame| matches!(frame.on_complete, Continuation::Push)) =>
+            {
+                execution.limits.pop_frame(
+                    frames,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                );
+                stack.push(value);
+                continue 'frames;
             }
+            outcome => return Ok(outcome),
         }
-    };
-    // `verify_chunks` rejects chunks longer than i32::MAX and verifies all jump targets.
-    debug_assert!(u32::try_from(ip).is_ok());
-    frame.ip = ip as u32;
-    #[cfg(debug_assertions)]
-    {
-        frame.effect_probe = effect_probe.filter(|_| matches!(outcome, FrameOutcome::Enter(_)));
     }
-    if let FrameOutcome::Complete(_) = &outcome {
-        stack.truncate(frame.stack_base as usize);
-    }
-    Ok(outcome)
 }
 
 /// Marks a self call immediately followed by `Return` as a tail call.
