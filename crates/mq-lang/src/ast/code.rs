@@ -171,6 +171,16 @@ impl Node {
                 buf.push_str("] = ");
                 value.format_to_code(buf, indent);
             }
+            Expr::PathAssign(ident, keys, value) => {
+                write!(buf, "{}", ident).unwrap();
+                for key in keys {
+                    buf.push('[');
+                    key.format_to_code(buf, indent);
+                    buf.push(']');
+                }
+                buf.push_str(" = ");
+                value.format_to_code(buf, indent);
+            }
             Expr::If(branches) => {
                 for (i, (cond_opt, body)) in branches.iter().enumerate() {
                     if i == 0 {
@@ -968,6 +978,17 @@ mod tests {
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("value"))))
         ),
         "xs[0] = value"
+    )]
+    #[case::path_assign(
+        Expr::PathAssign(
+            IdentWithToken::new("xs"),
+            thin_vec![
+                Shared::new(create_node(Expr::Literal(Literal::Number(0.into())))),
+                Shared::new(create_node(Expr::Ident(IdentWithToken::new("j")))),
+            ],
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("value"))))
+        ),
+        "xs[0][j] = value"
     )]
     fn test_to_code_variables(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);

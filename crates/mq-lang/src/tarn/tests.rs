@@ -1113,6 +1113,25 @@ fn nested_index_assignment_updates_inner_collection(#[case] code: &str) {
     assert_eq!(run(code), RuntimeValue::from(true), "{code}");
 }
 
+#[test]
+fn nested_assignment_calls_a_user_defined_set() {
+    assert_eq!(
+        run("def set(container, key, value): 42; | var a = [[1]] | a[0][0] = 7 | a"),
+        run("[42]")
+    );
+}
+
+#[rstest]
+#[case::at_limit(255, true)]
+#[case::over_limit(256, false)]
+fn assignment_path_depth_limit(#[case] depth: usize, #[case] ok: bool) {
+    // The innermost containers are missing, so a valid path fails at runtime too; only the
+    // compile-time rejection differs, so compare against the message.
+    let code = format!("var a = 0 | a{} = 1", "[0]".repeat(depth));
+    let message = format!("{:?}", run_result(&code));
+    assert_eq!(message.contains("deeper than 255"), !ok, "depth {depth}");
+}
+
 #[rstest]
 #[case::call_base("def f(): [1]; | f()[0] = 2")]
 #[case::literal_base("[[1]][0][0] = 2")]
@@ -1399,6 +1418,8 @@ fn failed_add_assignment_keeps_local_intact() {
 #[case::right_operand_still_wins_when_called_first("var x = 1 | def f(): x = 10 | 0; | x = f() + x | x == 10")]
 #[case::index_assign("var a = [1, 2] | def f(): a = [9, 9] | 5; | a[0] = f() | a == [5, 2]")]
 #[case::index_assign_key("var a = [1, 2] | def f(): a = [9, 9] | 1; | a[f()] = 7 | a == [1, 7]")]
+#[case::path_assign_value("var a = [[1, 2]] | def f(): a = [[9, 9]] | 5; | a[0][1] = f() | a == [[1, 5]]")]
+#[case::path_assign_inner_key("var a = [[1, 2]] | def f(): a = [[9, 9]] | 1; | a[0][f()] = 7 | a == [[1, 7]]")]
 #[case::try_body("var x = 1 | x = x + (try: do x = 10 | 0 end catch: 0) | x == 1")]
 #[case::fn_literal("var a = [1, 2] | var g = fn(): a = [9, 9] | 5; | a[0] = g() | a == [5, 2]")]
 fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
@@ -1406,9 +1427,20 @@ fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
 }
 
 #[rstest]
+#[case::two_keys("var a = [[1, 2]] | var n = 0 | def k(): n = n + 1 | 0; | a[k()][1] = 7 | n == 1 && a == [[1, 7]]")]
+#[case::inner_key("var a = [[1, 2]] | var n = 0 | def k(): n = n + 1 | 1; | a[0][k()] = 7 | n == 1 && a == [[1, 7]]")]
+#[case::three_keys(
+    "var a = {\"x\": [[1, 2]]} | var n = 0 | def k(): n = n + 1 | 0; | a[\"x\"][k()][k()] = 7 | n == 2 && a == {\"x\": [[7, 2]]}"
+)]
+#[case::array_ref_key("var a = [[1, 2]] | var ix = [0] | a[ix[0]][1] = 7 | a == [[1, 7]]")]
+fn path_assign_evaluates_each_key_once(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
 #[case::nested_set_simple_operand_unchecked("var a = [[1]] | var i = 0 | a[0][0] = i", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { .. }))]
 #[case::path_add_simple_operand_unchecked("var d = {\"k\": []} | var i = 0 | d[\"k\"] += [i]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { .. }))]
-#[case::nested_set_impure_key("var a = [[1]] | def k(): 0; | a[k()][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
+#[case::nested_set_impure_key("var a = [[1]] | def k(): a = [[9]] | 0; | a[k()][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { .. }))]
 #[case::add_array_operand_calls_user_code("var a = [1] | def f(): a; | a += f()", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 #[case::set_assign_captured("var a = [1] | def f(): a; | a = set(a, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::set_assign_other_target("var a = [1] | var b = [2] | a = set(b, 0, 2)", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
@@ -1430,6 +1462,9 @@ fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected:
 
 #[rstest]
 #[case::index_set("var a = [1] | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::nested_set_array_key("var a = [[1]] | var ix = [0] | a[ix[0]][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 2, .. }))]
+#[case::nested_set_call_key("var a = [[1]] | var k = 0 | a[abs(k)][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 2, .. }))]
+#[case::nested_set_user_call_key("var a = [[1]] | def k(): 0; | a[k()][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 2, .. }))]
 #[case::nested_set("var a = [[1]] | a[0][0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetPathLocal { depth: 2, .. }))]
 #[case::nested_set_checked("var a = [[1]] | var f = fn(): 1; | a[0][0] = f()", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { depth: 1, .. }))]
 #[case::path_add_checked("var d = {\"k\": []} | var f = fn(): 1; | d[\"k\"] += [f()]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::CheckPathLocal { depth: 1, .. }))]

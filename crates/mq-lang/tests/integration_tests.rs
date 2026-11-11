@@ -37,6 +37,29 @@ fn index_and_slice_ignore_user_definitions(mut engine: DefaultEngine, #[case] pr
     assert_eq!(result.values()[0].to_string(), expected);
 }
 
+/// A captured target with a side-effectful key evaluates each key once.
+#[rstest]
+#[case::one_key(
+    "var a = [[0], [0]] | var n = 0 | def k(): a | n = n + 1 | n - 1; | a[k()][0] = 7 | [a, n]",
+    "[[[7], [0]], 1]"
+)]
+#[case::two_keys(
+    "var a = [[[0], [0]], [[0], [0]]] | var n = 0 | def k(): a | n = n + 1 | n - 1; | a[k()][k()][0] = 7 | [a, n]",
+    "[[[[0], [7]], [[0], [0]]], 2]"
+)]
+#[case::pure_key_after_impure(
+    "var a = [[0, 0], [0, 0]] | var n = 0 | var i = 0 | def k(): a | i = 1 | n = n + 1 | 0; | a[k()][i] = 7 | [a, n]",
+    "[[[0, 7], [0, 0]], 1]"
+)]
+#[case::nested_assign_in_later_key(
+    "var a = [[[0]], [[0]]] | var b = [[0], [0]] | var i = 0 | def k(): a | b | 1; | a[i][do b[k()][0] = 7 | 0 end][0] = 9 | [a, b]",
+    "[[[[9]], [[0]]], [[0], [7]]]"
+)]
+fn captured_path_assign_evaluates_keys_once(mut engine: DefaultEngine, #[case] program: &str, #[case] expected: &str) {
+    let result = engine.eval(program, vec![RuntimeValue::None].into_iter()).unwrap();
+    assert_eq!(result.values()[0].to_string(), expected);
+}
+
 /// A nested closure in a `var` function binds the mutable slot, not the original closure.
 #[rstest]
 #[case::sees_rebinding(
