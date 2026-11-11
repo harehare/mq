@@ -22,10 +22,10 @@ workflows:
         - 'extractions/setup-just@v4.0.0'
         - 'harehare/setup-mq@v1.1.6'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.90.0'
+        - 'taiki-e/install-action@v2.90.1'
     '.github/workflows/codeql.yml':
         - 'actions/checkout@v7.0.1'
-        - 'github/codeql-action@v4.39.2'
+        - 'github/codeql-action@v4.39.3'
     '.github/workflows/ffi-ci.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.1'
         - 'actions/checkout@v7.0.1'
@@ -35,7 +35,7 @@ workflows:
         - 'actions/checkout@v7.0.1'
         - 'extractions/setup-just@v4.0.0'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.90.0'
+        - 'taiki-e/install-action@v2.90.1'
     '.github/workflows/gfm-spec.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.1'
         - 'actions/checkout@v7.0.1'
@@ -45,7 +45,7 @@ workflows:
         - 'actions/checkout@v7.0.1'
     '.github/workflows/jetbrains-ci.yml':
         - 'actions/checkout@v7.0.1'
-        - 'actions/setup-java@v6.1.0'
+        - 'actions/setup-java@v6.2.0'
         - 'gradle/actions@v6.4.1'
     '.github/workflows/kani.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.1'
@@ -59,14 +59,14 @@ workflows:
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.1'
         - 'swatinem/rust-cache@v2.9.3'
-        - 'taiki-e/install-action@v2.90.0'
+        - 'taiki-e/install-action@v2.90.1'
     '.github/workflows/npm-publish.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.1'
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-node@v7.1.0'
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.1'
-        - 'taiki-e/install-action@v2.90.0'
+        - 'taiki-e/install-action@v2.90.1'
     '.github/workflows/pages.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.1'
         - 'actions/checkout@v7.0.1'
@@ -74,7 +74,7 @@ workflows:
         - 'cloudflare/wrangler-action@v4.1.3'
         - 'extractions/setup-just@v4.0.0'
         - 'pnpm/action-setup@v6.1.1'
-        - 'taiki-e/install-action@v2.90.0'
+        - 'taiki-e/install-action@v2.90.1'
     '.github/workflows/release.yml':
         - 'actions-rust-lang/setup-rust-toolchain@v2.0.1'
         - 'actions/checkout@v7.0.1'
@@ -85,10 +85,10 @@ workflows:
         - 'docker/metadata-action@v6.2.0'
         - 'docker/setup-buildx-action@v4.4.1'
         - 'extractions/setup-just@v4.0.0'
-        - 'taiki-e/install-action@v2.90.0'
+        - 'taiki-e/install-action@v2.90.1'
     '.github/workflows/typos.yml':
         - 'actions/checkout@v7.0.1'
-        - 'taiki-e/install-action@v2.90.0'
+        - 'taiki-e/install-action@v2.90.1'
     '.github/workflows/unused-deps.yml':
         - 'actions/checkout@v7.0.1'
         - 'bnjbvr/cargo-machete@main'
@@ -126,9 +126,9 @@ dependencies:
         commit: 'sha1-ed597411d8f924073f98dfc5c65a23a2325f34cd'
         owner_id: 44036562
         repo_id: 205262760
-    'actions/setup-java@v6.1.0':
-        ref: 'v6.1.0'
-        commit: 'sha1-b843ebf9b913146b38da2eaa7aeddf76074ae1ad'
+    'actions/setup-java@v6.2.0':
+        ref: 'v6.2.0'
+        commit: 'sha1-77dd5b2ce225ea11469928ac317850245a74ae78'
         owner_id: 44036562
         repo_id: 196057608
     'actions/setup-node@v7.1.0':
@@ -208,9 +208,9 @@ dependencies:
         commit: 'sha1-9b3254085494b55a0f7c4c2b3d2d52cc712ce370'
         owner_id: 9919
         repo_id: 259445878
-    'github/codeql-action@v4.39.2':
-        ref: 'v4.39.2'
-        commit: 'sha1-1fc58d04a4d4374f921bdac573c3811c240f9c26'
+    'github/codeql-action@v4.39.3':
+        ref: 'v4.39.3'
+        commit: 'sha1-33d7b85da1a04171e211befe2c739303b9a4c066'
         owner_id: 9919
         repo_id: 259445878
     'gradle/actions@v6.4.1':
@@ -243,9 +243,9 @@ dependencies:
         commit: 'sha1-d1527c8f67ef9af357290475d4af4b0fab8f12e0'
         owner_id: 580492
         repo_id: 298565987
-    'taiki-e/install-action@v2.90.0':
-        ref: 'v2.90.0'
-        commit: 'sha1-b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2'
+    'taiki-e/install-action@v2.90.1':
+        ref: 'v2.90.1'
+        commit: 'sha1-c509219cf42fba86913069efd0ade2458c59337b'
         owner_id: 43724913
         repo_id: 442947557
     'zizmorcore/zizmor-action@v0.8.1':
