@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6.1.0
+        uses: pnpm/action-setup@v6.1.1
         with:
           package_json_file: packages/mq-playground/package.json
       - name: Setup Node.js
@@ -36,7 +36,7 @@ jobs:
         with:
           cache: false
       - name: Install tools
-        uses: taiki-e/install-action@v2.89.1
+        uses: taiki-e/install-action@v2.90.0
         with:
           tool: wasm-pack,mdbook
       - uses: extractions/setup-just@v4.0.0
