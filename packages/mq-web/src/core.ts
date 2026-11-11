@@ -4,10 +4,17 @@ import init, {
   DefinedValue,
   InlayHint,
   HoverResult,
-  ConversionOptions,
 } from "./mq_wasm";
 
 // Type definitions for WASM module
+/** Options for `htmlToMarkdown`. */
+export interface ConversionOptions {
+  extractScriptsAsCodeBlocks?: boolean;
+  generateFrontMatter?: boolean;
+  useTitleAsH1?: boolean;
+  baseUrl?: string;
+}
+
 interface WasmModule {
   run: (code: string, content: string, options: Options) => Promise<string>;
   toAst: (code: string) => Promise<string>;

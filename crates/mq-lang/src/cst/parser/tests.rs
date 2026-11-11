@@ -7877,7 +7877,7 @@ fn test_error_reporter_display() {
     reporter.report(ParseError::UnexpectedToken(token));
 
     let display = format!("{}", reporter);
-    assert!(display.contains("Unexpected EOF detected"));
+    assert!(display.contains("unexpected end of input"));
     assert!(display.contains("Unexpected token"));
 }
 

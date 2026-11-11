@@ -242,9 +242,8 @@ impl FromStr for UrlSurroundStyle {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[wasm_bindgen]
-#[serde(rename_all = "camelCase")]
-/// Options for HTML to Markdown conversion.
+#[serde(rename_all = "camelCase", default)]
+/// Options for HTML to Markdown conversion, passed from JS as a plain object.
 pub struct ConversionOptions {
     /// Extract script tags as code blocks.
     pub extract_scripts_as_code_blocks: bool,
@@ -253,7 +252,6 @@ pub struct ConversionOptions {
     /// Use the `<title>` as the top-level heading.
     pub use_title_as_h1: bool,
     /// Base URL for resolving relative `href`/`src` values; empty falls back to `<base href>`.
-    #[wasm_bindgen(getter_with_clone)]
     pub base_url: String,
 }
 
@@ -770,8 +768,13 @@ pub async fn format(code: &str) -> Result<String, JsValue> {
 
 #[wasm_bindgen(js_name=htmlToMarkdown)]
 /// Converts HTML to Markdown.
-pub async fn html_to_markdown(html_input: &str, options: Option<ConversionOptions>) -> Result<String, JsValue> {
-    mq_markdown::convert_html_to_markdown(html_input, options.map(Into::into).unwrap_or_default())
+pub async fn html_to_markdown(html_input: &str, options: JsValue) -> Result<String, JsValue> {
+    let options: ConversionOptions = if options.is_null() || options.is_undefined() {
+        ConversionOptions::default()
+    } else {
+        serde_wasm_bindgen::from_value(options).map_err(|e| JsValue::from_str(&format!("Invalid options: {}", e)))?
+    };
+    mq_markdown::convert_html_to_markdown(html_input, options.into())
         .map_err(|e| JsValue::from_str(&format!("Failed to convert HTML to Markdown: {}", e)))
 }
 
@@ -784,15 +787,22 @@ pub async fn to_html(markdown_input: &str) -> String {
 #[wasm_bindgen(js_name=diagnostics, skip_typescript)]
 /// Returns syntax diagnostics, plus type errors when `enable_type_check` is set.
 pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue {
+    if code.lines().all(|line| {
+        let line = line.trim();
+        line.is_empty() || line.starts_with('#')
+    }) {
+        return serde_wasm_bindgen::to_value(&Vec::<Diagnostic>::new()).unwrap();
+    }
+
     let (_, errors) = mq_lang::parse_recovery(code);
     let mut errors = errors
         .error_ranges(code)
         .iter()
         .map(|(message, range)| Diagnostic {
-            start_line: range.start.line,
-            start_column: range.start.column,
-            end_line: range.end.line,
-            end_column: range.end.column,
+            start_line: range.start.line.max(1),
+            start_column: range.start.column.max(1),
+            end_line: range.end.line.max(1),
+            end_column: range.end.column.max(1),
             message: message.to_owned(),
         })
         .collect::<Vec<_>>();
@@ -2592,9 +2602,7 @@ mod tests {
     #[wasm_bindgen_test]
     async fn test_html_to_markdown() {
         let html = r#"<h1>Hello World</h1><p>This is a <strong>test</strong>.</p>"#;
-        let options = ConversionOptions::default();
-
-        let result = html_to_markdown(html, Some(options)).await;
+        let result = html_to_markdown(html, JsValue::UNDEFINED).await;
         assert!(result.is_ok());
         let markdown = result.unwrap();
         assert!(markdown.contains("# Hello World"));

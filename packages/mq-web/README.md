@@ -91,7 +91,7 @@ Returns: `Promise<ReadonlyArray<DefinedValue>>` - Array of defined values
 Convert HTML to markdown format.
 
 - `html`: string - The HTML content to convert
-- `options`: Partial<ConversionOptions> - Conversion options
+- `options`: `{ extractScriptsAsCodeBlocks?: boolean, generateFrontMatter?: boolean, useTitleAsH1?: boolean, baseUrl?: string }` - Conversion options (plain object)
 
 Returns: `Promise<string>` - The converted markdown content
 
