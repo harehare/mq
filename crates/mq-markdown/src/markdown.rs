@@ -749,6 +749,8 @@ mod tests {
     #[case("## a &#35;\n", "## a \\#\n")]
     #[case("## \\\\&#35;\n", "## \\\\\\#\n")]
     #[case("## \\\\&#35;&#35;\n", "## \\\\\\##\n")]
+    #[case("## あ &#35;\n", "## あ \\#\n")]
+    #[case("## あ\\\\&#35;\n", "## あ\\\\\\#\n")]
     fn test_heading_hash_markdown_roundtrip(#[case] input: &str, #[case] expected: &str) {
         let rendered = input.parse::<Markdown>().unwrap().to_string();
         assert_eq!(rendered.trim_end(), expected.trim_end());
