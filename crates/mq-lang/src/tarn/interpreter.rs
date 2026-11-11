@@ -956,7 +956,7 @@ enum FrameOutcome {
 
 /// What `run_frame_slice` hands back to `drive_frames`. Plain calls and returns are handled
 /// inside its opcode loop, so `Enter` never leaves it.
-enum SliceExit {
+enum FrameSliceOutcome {
     /// A call followed immediately by `Return`; the callee can replace this frame.
     TailEnter(Frame),
     Complete(StackValue),
@@ -1079,7 +1079,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
         );
 
         let value = match outcome {
-            Ok(SliceExit::TailEnter(mut new_frame)) => {
+            Ok(FrameSliceOutcome::TailEnter(mut new_frame)) => {
                 let caller = frames.last().expect("the frame stack is never empty here");
                 new_frame.stack_base = caller.stack_base;
                 if let Err(e) = execution.limits.replace_top_frame(
@@ -1104,8 +1104,8 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 }
                 continue 'frames;
             }
-            Ok(SliceExit::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
-            Ok(SliceExit::Complete(value)) => value,
+            Ok(FrameSliceOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
+            Ok(FrameSliceOutcome::Complete(value)) => value,
             Err(e) => match unwind_frames(
                 e,
                 frames,
@@ -1346,7 +1346,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<SliceExit> {
+) -> VmResult<FrameSliceOutcome> {
     'frames: loop {
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
@@ -2604,9 +2604,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(value);
                 continue 'frames;
             }
-            FrameOutcome::Complete(value) => return Ok(SliceExit::Complete(value)),
-            FrameOutcome::TailEnter(frame) => return Ok(SliceExit::TailEnter(frame)),
-            FrameOutcome::Suspend(value) => return Ok(SliceExit::Suspend(value)),
+            FrameOutcome::Complete(value) => return Ok(FrameSliceOutcome::Complete(value)),
+            FrameOutcome::TailEnter(frame) => return Ok(FrameSliceOutcome::TailEnter(frame)),
+            FrameOutcome::Suspend(value) => return Ok(FrameSliceOutcome::Suspend(value)),
         }
     }
 }
@@ -2724,7 +2724,7 @@ fn flow_break_from_stack(
     chunks: &Shared<Vec<Chunk>>,
     chunk: &Chunk,
     ip: usize,
-) -> VmResult<SliceExit> {
+) -> VmResult<FrameSliceOutcome> {
     let value = if has_value {
         Some(pop_value_from(stack, chunks, chunk, ip)?)
     } else {
@@ -2736,14 +2736,14 @@ fn flow_break_from_stack(
 /// Produces the control-flow error used to propagate a `continue` through a nested `try` body.
 #[cold]
 #[inline(never)]
-fn flow_continue_from(chunk: &Chunk, ip: usize) -> VmResult<SliceExit> {
+fn flow_continue_from(chunk: &Chunk, ip: usize) -> VmResult<FrameSliceOutcome> {
     Err(locate(chunk, ip, VmError::FlowContinue))
 }
 
 /// Produces the internal error that drives destructuring-pattern fallback.
 #[cold]
 #[inline(never)]
-fn destructuring_failed_from(chunk: &Chunk, ip: usize) -> VmResult<SliceExit> {
+fn destructuring_failed_from(chunk: &Chunk, ip: usize) -> VmResult<FrameSliceOutcome> {
     Err(locate(chunk, ip, VmError::DestructuringFailed))
 }
 
