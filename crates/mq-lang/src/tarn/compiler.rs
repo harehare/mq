@@ -160,6 +160,8 @@ struct Compiler<R: ModuleResolver> {
     unresolved_call_names: FxHashSet<Ident>,
     /// Bare names in `try`/`catch` must remain runtime failures.
     try_depth: usize,
+    /// Counter making the temporaries of each `set_chain` expansion unique.
+    path_chain_count: usize,
     /// Whether the chunk currently being compiled is lexically inside a `def`/`fn` body. A
     /// `try` body inherits this from its enclosing scope; a default-parameter expression does
     /// not (see the two call sites that toggle it). Gates `yield`.
@@ -768,7 +770,7 @@ fn path_add_operand<'a>(name: Ident, keys: &[Shared<Node>], value: &'a Shared<No
 ///
 /// Unless all keys are pure, the chain reads each key and path prefix once, in order, into
 /// temporaries, so that a key runs once and sees the target as it was before later keys ran.
-fn set_chain(name: Ident, keys: &[Shared<Node>], value: &Shared<Node>, token_id: TokenId) -> Shared<Node> {
+fn set_chain(name: Ident, keys: &[Shared<Node>], value: &Shared<Node>, token_id: TokenId, id: usize) -> Shared<Node> {
     let node = |expr| Shared::new(Node { token_id, expr });
     let ident = |name| node(Expr::Ident(IdentWithToken { name, token: None }));
     let materialize = !keys.iter().all(|key| is_path_key(key, name));
@@ -794,13 +796,13 @@ fn set_chain(name: Ident, keys: &[Shared<Node>], value: &Shared<Node>, token_id:
                 .iter()
                 .fold(ident(name), |target, key| node(Expr::Index(target, Shared::clone(key))));
             reads.push(if materialize {
-                bind(&format!("$path_read{depth}"), read)
+                bind(&format!("$path_read{id}_{depth}"), read)
             } else {
                 read
             });
         }
         key_nodes.push(if materialize && !matches!(key.expr, Expr::Literal(_)) {
-            bind(&format!("$path_key{depth}"), Shared::clone(key))
+            bind(&format!("$path_key{id}_{depth}"), Shared::clone(key))
         } else {
             Shared::clone(key)
         });
@@ -1298,6 +1300,7 @@ fn compile_program_impl<R: ModuleResolver>(
         prune_module_functions: true,
         unresolved_call_names: FxHashSet::default(),
         try_depth: 0,
+        path_chain_count: 0,
         in_fn_body: false,
         defer_undefined_identifiers: options.defer_undefined_identifiers,
         patterns: PatternState::default(),
@@ -3566,7 +3569,9 @@ impl<R: ModuleResolver> Compiler<R> {
         let set_shadowed = self.set_is_shadowed();
         let target = target.filter(|_| !set_shadowed);
         let Some(target) = target else {
-            return self.compile_expr(&set_chain(name, keys, value, token_id));
+            let id = self.path_chain_count;
+            self.path_chain_count += 1;
+            return self.compile_expr(&set_chain(name, keys, value, token_id, id));
         };
         let key_refs = keys.iter().collect();
         let leaf = match path_add_operand(name, keys, value) {
