@@ -22,7 +22,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install typos
-        uses: taiki-e/install-action@v2.90.0
+        uses: taiki-e/install-action@v2.90.1
         with:
           tool: typos-cli
       - name: Run spell check
