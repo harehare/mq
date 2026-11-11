@@ -218,20 +218,20 @@ impl Node {
                     // A trailing `#` run reads back as an ATX closing sequence and gets
                     // stripped as syntax rather than kept as heading text.
                     let text = text.replace('\n', " ");
-                    let text = match text.rfind(|c: char| c != '#') {
-                        Some(i) => {
-                            let hash_start = i + text[i..].chars().next().map_or(1, char::len_utf8);
-                            // Positioned text already escaped its hash; literal text keeps its own backslashes.
-                            let escaped = matches!(values.last(), Some(Self::Text(Text { position: Some(_), .. })))
-                                && text[..hash_start].bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 1;
-                            if hash_start < text.len() && !escaped {
-                                format!("{}\\{}", &text[..hash_start], &text[hash_start..])
-                            } else {
-                                text
-                            }
+                    let body = text.trim_end_matches('#');
+                    let text = if text.is_empty() || body.len() == text.len() {
+                        text
+                    } else if body.is_empty() {
+                        format!("\\{text}")
+                    } else {
+                        // Positioned text already escaped its hash; literal text keeps its own backslashes.
+                        let last_is_positioned_text =
+                            matches!(values.last(), Some(Self::Text(Text { position: Some(_), .. })));
+                        if last_is_positioned_text && ends_with_escape(body) {
+                            text
+                        } else {
+                            format!("{}\\{}", body, &text[body.len()..])
                         }
-                        None if !text.is_empty() => format!("\\{text}"),
-                        _ => text,
                     };
                     format!("{}{} {}{}", hs, "#".repeat(usize::from(depth.get())), text, he)
                 }
@@ -1057,6 +1057,11 @@ pub(crate) fn list_own_prefix_width(ordered: bool, index: usize, start: Option<u
 }
 
 /// The length of the longest run of `ch` in `s`.
+/// True if `s` ends with an odd run of backslashes, i.e. its last character is escaped.
+fn ends_with_escape(s: &str) -> bool {
+    s.bytes().rev().take_while(|&b| b == b'\\').count() % 2 == 1
+}
+
 fn longest_run(s: &str, ch: char) -> usize {
     s.split('\n')
         .flat_map(|line| line.split(|c| c != ch).map(str::len))
