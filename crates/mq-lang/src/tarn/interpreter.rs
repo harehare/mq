@@ -1347,7 +1347,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<FrameSliceOutcome> {
-    'frames: loop {
+    loop {
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
         let chunk = &chunks[frame.chunk_index as usize];
@@ -2577,37 +2577,60 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             stack.truncate(frame.stack_base as usize);
         }
         // Plain calls and returns switch frames here instead of leaving the opcode loop.
-        match outcome {
-            FrameOutcome::Enter(new_frame) => {
-                if let Err(e) = execution.limits.push_frame(
-                    frames,
-                    new_frame,
-                    stack.len(),
-                    #[cfg(feature = "debugger")]
-                    debug,
-                ) {
-                    return Err(locate_at_top(frames, root_chunks, e));
-                }
-                continue 'frames;
-            }
-            FrameOutcome::Complete(value)
-                if frames.len() > 1
-                    && frames
-                        .last()
-                        .is_some_and(|frame| matches!(frame.on_complete, Continuation::Push)) =>
-            {
-                execution.limits.pop_frame(
-                    frames,
-                    #[cfg(feature = "debugger")]
-                    debug,
-                );
-                stack.push(value);
-                continue 'frames;
-            }
-            FrameOutcome::Complete(value) => return Ok(FrameSliceOutcome::Complete(value)),
-            FrameOutcome::TailEnter(frame) => return Ok(FrameSliceOutcome::TailEnter(frame)),
-            FrameOutcome::Suspend(value) => return Ok(FrameSliceOutcome::Suspend(value)),
+        if let Some(done) = switch_frame(
+            outcome,
+            frames,
+            root_chunks,
+            stack,
+            execution,
+            #[cfg(feature = "debugger")]
+            debug,
+        ) {
+            return done;
         }
+    }
+}
+
+/// Handles a finished slice. `None` continues the opcode loop in the new top frame.
+#[inline(never)]
+fn switch_frame(
+    outcome: FrameOutcome,
+    frames: &mut Vec<Frame>,
+    root_chunks: &Shared<Vec<Chunk>>,
+    stack: &mut Vec<StackValue>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> Option<VmResult<FrameSliceOutcome>> {
+    match outcome {
+        FrameOutcome::Enter(new_frame) => {
+            if let Err(e) = execution.limits.push_frame(
+                frames,
+                new_frame,
+                stack.len(),
+                #[cfg(feature = "debugger")]
+                debug,
+            ) {
+                return Some(Err(locate_at_top(frames, root_chunks, e)));
+            }
+            None
+        }
+        FrameOutcome::Complete(value)
+            if frames.len() > 1
+                && frames
+                    .last()
+                    .is_some_and(|frame| matches!(frame.on_complete, Continuation::Push)) =>
+        {
+            execution.limits.pop_frame(
+                frames,
+                #[cfg(feature = "debugger")]
+                debug,
+            );
+            stack.push(value);
+            None
+        }
+        FrameOutcome::Complete(value) => Some(Ok(FrameSliceOutcome::Complete(value))),
+        FrameOutcome::TailEnter(frame) => Some(Ok(FrameSliceOutcome::TailEnter(frame))),
+        FrameOutcome::Suspend(value) => Some(Ok(FrameSliceOutcome::Suspend(value))),
     }
 }
 
