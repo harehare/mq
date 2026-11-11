@@ -140,7 +140,7 @@ let arr = [1, 2, 3] |
 
 ### Index Access with `.[...]`
 
-On arrays, strings and dicts, `.[expr]` reads the same as `self[expr]`: negative indices count from the end, and an out-of-range or non-integer index returns `None`.
+On arrays, strings and dicts, `.[expr]` reads the same as `self[expr]`: negative indices count from the end, and an out-of-range or non-integer index returns `None`. Assigning to an array index (`a[-1] = x`, `set`, `set_path`) counts negative indices from the end too, and a negative index before the first element is an error.
 
 ```mq
 [10, 20, 30] | .[-1]

@@ -1711,6 +1711,25 @@ def test_set_path(value, path, new_value, expected):
   | assert_eq(result, expected)
 end
 
+def test_set_negative_index():
+  assert_eq(set([1, 2, 3], -1, 9), [1, 2, 9])
+end
+
+def test_set_negative_index_out_of_range():
+  let result = try: set([1, 2, 3], -4, 9) catch(e): "error"
+  | assert_eq(result, "error")
+end
+
+def test_set_path_negative_index():
+  assert_eq(set_path({"a": [1, 2]}, ["a", -1], 5), {"a": [1, 5]})
+end
+
+def test_index_assign_negative_index():
+  var a = [1, 2, 3]
+  | a[-1] = 9
+  | assert_eq(a, [1, 2, 9])
+end
+
 def test_set_path_round_trip():
   # A round-trip through paths()/get_path() reconstructs every leaf via set_path()
   let v = {"a": {"b": 1, "c": 2}, "d": [3, 4]}
