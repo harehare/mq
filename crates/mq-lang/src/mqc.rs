@@ -45,7 +45,7 @@ pub const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
 const REQUIRED_FLAG: u16 = 1;
 
 /// Bumped whenever saved bytecode stops being valid for the VM.
-pub const MQC_VM_ABI: u32 = 3;
+pub const MQC_VM_ABI: u32 = 4;
 
 const META: [u8; 4] = *b"META";
 const CODE: [u8; 4] = *b"CODE";
