@@ -883,7 +883,9 @@ fn test_repl_with_allow_read_permits_read_file() -> Result<(), Box<dyn std::erro
 
     let path = mq_str_path(&temp_file_path);
 
+    let config_dir = tempfile::tempdir()?;
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path());
     let assert = cmd
         .arg("--allow-read")
         .arg("repl")
@@ -911,7 +913,9 @@ fn test_repl_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::E
 
     let path = mq_str_path(&temp_file_path);
 
+    let config_dir = tempfile::tempdir()?;
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path());
     let assert = cmd
         .arg("repl")
         .write_stdin(format!("read_file(\"{}\")\n", path))
@@ -948,7 +952,9 @@ fn test_repl_with_file_arg_loads_content() -> Result<(), Box<dyn std::error::Err
         }
     }
 
+    let config_dir = tempfile::tempdir()?;
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path());
     let assert = cmd.arg("repl").arg(&temp_file_path).write_stdin("self\n").assert();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
@@ -975,7 +981,9 @@ fn test_repl_with_multiple_file_args_combines_content() -> Result<(), Box<dyn st
         }
     }
 
+    let config_dir = tempfile::tempdir()?;
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path());
     let assert = cmd.arg("repl").arg(&path_a).arg(&path_b).write_stdin("self\n").assert();
 
     let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
@@ -985,8 +993,24 @@ fn test_repl_with_multiple_file_args_combines_content() -> Result<(), Box<dyn st
 }
 
 #[test]
-fn test_repl_no_files_still_seeds_empty() -> Result<(), Box<dyn std::error::Error>> {
+fn test_repl_piped_stdin_does_not_touch_history() -> Result<(), Box<dyn std::error::Error>> {
+    let config_dir = tempfile::tempdir()?;
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path())
+        .arg("repl")
+        .write_stdin("self\n")
+        .assert()
+        .success();
+
+    assert!(!config_dir.path().join("history.txt").exists());
+    Ok(())
+}
+
+#[test]
+fn test_repl_no_files_still_seeds_empty() -> Result<(), Box<dyn std::error::Error>> {
+    let config_dir = tempfile::tempdir()?;
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path());
     let assert = cmd.arg("repl").write_stdin("self\n").assert();
 
     assert.success();
@@ -1009,7 +1033,9 @@ fn test_repl_load_command_multiple_files() -> Result<(), Box<dyn std::error::Err
         }
     }
 
+    let config_dir = tempfile::tempdir()?;
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path());
     let assert = cmd
         .arg("repl")
         .write_stdin(format!(
@@ -1042,7 +1068,9 @@ fn test_repl_load_command_glob() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let pattern = temp_dir.join("test_repl_load_glob_*.md");
+    let config_dir = tempfile::tempdir()?;
     let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.env("MQ_CONFIG_DIR", config_dir.path());
     let assert = cmd
         .arg("repl")
         .write_stdin(format!("/load {}\nself\n", pattern.to_string_lossy()))
