@@ -637,10 +637,10 @@ fn vm_rejects_unbounded_builtin_allocations(#[case] code: &str) {
 }
 
 #[test]
-fn vm_mutating_negative_indices_saturate_to_zero() {
+fn vm_set_counts_negative_indices_from_the_end_and_insert_saturates_to_zero() {
     assert_eq!(
         run(r#"set(["a", "b"], -1, "z")"#),
-        RuntimeValue::Array(Shared::new(vec!["z".into(), "b".into()]))
+        RuntimeValue::Array(Shared::new(vec!["a".into(), "z".into()]))
     );
     assert_eq!(
         run(r#"insert(["a", "b"], -1, "z")"#),
@@ -1327,7 +1327,7 @@ fn add_assignment_respects_array_size_limit(#[case] code: &str) {
 #[case::three_levels("var m = {\"a\": [[1]]} | m[\"a\"][0][0] = 2 | m == {\"a\": [[2]]}")]
 #[case::dict_in_array("var m = [{\"k\": 1}] | m[0][\"k\"] = 2 | m[0][\"j\"] = 3 | m == [{\"k\": 2, \"j\": 3}]")]
 #[case::variable_keys("var m = [[1, 2]] | var i = 0 | var j = 1 | m[i][j] = 5 | m == [[1, 5]]")]
-#[case::negative_outer_index_follows_chained_set("var m = [[1, 2], [3, 4]] | m[-1][0] = 9 | m == [[9, 4], [3, 4]]")]
+#[case::negative_outer_index_counts_from_the_end("var m = [[1, 2], [3, 4]] | m[-1][0] = 9 | m == [[1, 2], [9, 4]]")]
 #[case::grows_inner_array("var m = [[1]] | m[0][2] = 5 | len(m[0]) == 3")]
 #[case::append_to_dict_array(
     "var d = {\"a\": []} | d[\"a\"] = d[\"a\"] + [1] | d[\"a\"] += [2, 3] | d == {\"a\": [1, 2, 3]}"
@@ -1357,7 +1357,7 @@ fn add_assignment_respects_array_size_limit(#[case] code: &str) {
 #[case::add_number_to_a_shared_copy_is_not_changed(
     "var a = [1, 2] | var b = a | var i = 0 | a[i + 1] += 1 | b == [1, 2] && a == [1, 3]"
 )]
-#[case::computed_negative_index("var a = [1, 2, 3] | var i = -1 | a[i + 0] += 1 | a == [4, 2, 3]")]
+#[case::computed_negative_index("var a = [1, 2, 3] | var i = -1 | a[i + 0] += 1 | a == [1, 2, 4]")]
 #[case::computed_string_key("var d = {\"ab\": 1} | var s = \"a\" | d[s + \"b\"] += 2 | d == {\"ab\": 3}")]
 #[case::computed_missing_key_is_created(
     "var d = {\"ab\": 1} | var s = \"a\" | d[s + \"z\"] += 2 | d == {\"ab\": 1, \"az\": 2}"

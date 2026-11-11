@@ -81,11 +81,35 @@ fn bounded_size(value: &number::Number, maximum: usize, parameter: &str) -> Resu
     Ok(raw as usize)
 }
 
-/// Validates an array or string index which may grow its target collection.
+/// Resolves the index `set` writes to in an array of length `len`, which may grow the array.
 ///
-/// Negative indices have historically been cast to `usize` by these mutators, which saturates
-/// them to zero. Preserve that public behavior while still rejecting non-finite, fractional,
-/// and excessively large positive values before they can cause an oversized allocation.
+/// A negative index counts from the end, and one before the first element is an error.
+/// Non-finite, fractional, and excessively large values are rejected before they can cause an
+/// oversized allocation.
+fn resolve_write_index(value: &number::Number, len: usize) -> Result<usize, Error> {
+    let raw = value.value();
+    if !raw.is_finite() || !value.is_int() || raw > (MAX_RANGE_SIZE - 1) as f64 {
+        return Err(Error::Runtime(format!(
+            "set index must be a finite integer no greater than {}",
+            MAX_RANGE_SIZE - 1
+        )));
+    }
+    if raw < 0.0 {
+        let from_end = len as f64 + raw;
+        if from_end < 0.0 {
+            return Err(Error::Runtime(format!(
+                "set index {raw} is out of range for array of length {len}"
+            )));
+        }
+        return Ok(from_end as usize);
+    }
+    Ok(raw as usize)
+}
+
+/// Validates an array or string index for `insert`, which may grow its target collection.
+///
+/// Negative indices saturate to zero. Non-finite, fractional, and excessively large values are
+/// rejected before they can cause an oversized allocation.
 fn bounded_growth_index(value: &number::Number, operation: &str) -> Result<usize, Error> {
     let raw = value.value();
     if !raw.is_finite() || !value.is_int() || raw > (MAX_RANGE_SIZE - 1) as f64 {
@@ -4029,7 +4053,7 @@ pub(crate) fn set_in_place(
             runtime_value::dict_mut(map).insert(*key, std::mem::take(value));
         }
         (RuntimeValue::Array(array), RuntimeValue::Number(index)) => {
-            let index = bounded_growth_index(index, "set")?;
+            let index = resolve_write_index(index, array.len())?;
             let array = runtime_value::array_mut(array);
             if index >= array.len() {
                 array.resize(index + 1, RuntimeValue::NONE);
