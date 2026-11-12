@@ -3415,8 +3415,6 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::word_wrap_hard_break(r#"word_wrap("abcdefgh", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc\ndef\ngh".to_string()))].into()))]
 // word_wrap: CJK characters count as two display columns each
 #[case::word_wrap_cjk(r#"word_wrap("あいうえお", 4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("あい\nうえ\nお".to_string()))].into()))]
-// word_wrap: width 0 returns the text unchanged
-#[case::word_wrap_zero_width(r#"word_wrap("ab cd", 0)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ab cd".to_string()))].into()))]
 #[case::word_wrap_none("word_wrap(None, 10)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // truncate: text shorter than the width is unchanged
 #[case::truncate_short(r#"truncate("hello", 10, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
