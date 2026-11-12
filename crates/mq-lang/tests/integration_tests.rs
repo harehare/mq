@@ -3232,6 +3232,11 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::markdown_escape_code(r#"markdown_escape("a `b` c", "code")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a `b` c".to_string()))].into()))]
 #[case::markdown_escape_markdown_type(r#"to_md_text("**bold**") | markdown_escape("text") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 #[case::markdown_escape_markdown_value(r#"to_md_text("**bold**") | markdown_escape("text") | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"\*\*bold\*\*".to_string()))].into()))]
+#[case::markdown_escape_roundtrip_heading(r##"to_md_text(markdown_escape("# not heading", "text")) | to_string | to_markdown | first | to_text"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"# not heading".to_string()))].into()))]
+#[case::markdown_escape_roundtrip_list(r#"to_md_text(markdown_escape("- x", "text")) | to_string | to_markdown | first | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"- x".to_string()))].into()))]
+#[case::markdown_escape_roundtrip_ordered(r#"to_md_text(markdown_escape("1. y", "text")) | to_string | to_markdown | first | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"1. y".to_string()))].into()))]
+#[case::markdown_escape_roundtrip_strong(r#"to_md_text(markdown_escape("a**b", "text")) | to_string | to_markdown | first | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"a**b".to_string()))].into()))]
+#[case::markdown_escape_roundtrip_html(r#"to_md_text(markdown_escape("<b>x</b>", "text")) | to_string | to_markdown | first | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"<b>x</b>".to_string()))].into()))]
 #[case::markdown_escape_parsed_markdown_no_double_escape(r#"to_markdown("a * b") | first() | markdown_escape("text") | to_string"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"a \* b".to_string()))].into()))]
 #[case::markdown_escape_keeps_get_location(r##"to_markdown("# title") | first() | markdown_escape("text") | get_location() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // strip_tags
