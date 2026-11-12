@@ -136,6 +136,10 @@ fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expect
         Error::InvalidTypes("implode".to_string(), vec![RuntimeValue::String(Shared::new("a".into()))]))]
 #[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1114112.into())]))].into(),
         Error::Runtime("implode: 1114112 is not a Unicode scalar value".to_string()))]
+#[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(55357.into())]))].into(),
+        Error::Runtime("implode: 55357 is not a Unicode scalar value".to_string()))]
+#[case("implode", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number((-1).into())]))].into(),
+        Error::Runtime("implode: -1 is not a Unicode scalar value".to_string()))]
 #[case("repeat", vec![RuntimeValue::String(Shared::new("ab".into())), RuntimeValue::Number((-1).into())].into(),
         Error::Runtime("repeat: count must be non-negative, got -1".to_string()))]
 #[case("word_wrap", vec![RuntimeValue::String(Shared::new("abc".into())), RuntimeValue::Number(0.into())].into(),
