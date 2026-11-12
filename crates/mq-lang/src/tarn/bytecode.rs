@@ -300,6 +300,8 @@ pub(crate) enum OpCode {
     MakeStaticClosure(u16),
     Pop,
     Dup,
+    /// Moves the top value below the `n` values beneath it.
+    RotateDown(u16),
     Jump(i32),
     JumpIfFalse(i32),
     /// Pops a value and jumps when it is truthy.
@@ -637,6 +639,7 @@ impl OpCode {
             | Self::MakeStaticClosure(_)
             | Self::Pop
             | Self::Dup
+            | Self::RotateDown(_)
             | Self::Jump(_)
             | Self::JumpIfFalse(_)
             | Self::JumpIfTrue(_)
@@ -734,6 +737,7 @@ impl OpCode {
             Self::MakeStaticClosure(_) => "MakeStaticClosure",
             Self::Pop => "Pop",
             Self::Dup => "Dup",
+            Self::RotateDown(_) => "RotateDown",
             Self::Jump(_) => "Jump",
             Self::JumpIfFalse(_) => "JumpIfFalse",
             Self::JumpIfTrue(_) => "JumpIfTrue",
@@ -1998,6 +2002,7 @@ pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
         OpCode::CheckPathLocal { depth, .. } => (*depth as usize, *depth as usize),
         OpCode::SetPathLocal { depth, .. } | OpCode::AddAssignPathLocal { depth, .. } => (*depth as usize + 1, 0),
         OpCode::Dup => (1, 2),
+        OpCode::RotateDown(n) => (*n as usize + 1, *n as usize + 1),
         OpCode::SetLocalConst { .. }
         | OpCode::CopyLocal { .. }
         | OpCode::MoveLocal { .. }

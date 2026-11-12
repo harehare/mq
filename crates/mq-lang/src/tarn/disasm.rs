@@ -255,6 +255,7 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::MakeStaticClosure(chunk) => format!("MakeStaticClosure chunk {chunk}"),
         bytecode::OpCode::Pop => "Pop".to_string(),
         bytecode::OpCode::Dup => "Dup".to_string(),
+        bytecode::OpCode::RotateDown(n) => format!("RotateDown {n}"),
         bytecode::OpCode::Jump(offset) => format!("Jump {}", jump_ref(pc, *offset)),
         bytecode::OpCode::JumpIfFalse(offset) => format!("JumpIfFalse {}", jump_ref(pc, *offset)),
         bytecode::OpCode::JumpIfTrue(offset) => format!("JumpIfTrue {}", jump_ref(pc, *offset)),
