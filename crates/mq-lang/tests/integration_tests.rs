@@ -2728,9 +2728,6 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::explode_simple(r##"explode("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(97.into()), RuntimeValue::Number(98.into()), RuntimeValue::Number(99.into())]))].into()))]
 #[case::implode_simple(r##"implode([97, 98, 99])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc".to_string()))].into()))]
 #[case::implode_emoji(r##"implode([128512])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("😀".to_string()))].into()))]
-#[case::implode_surrogate(r##"implode([97, 55357, 98])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a\u{FFFD}b".to_string()))].into()))]
-#[case::implode_above_max(r##"implode([1114112])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("\u{FFFD}".to_string()))].into()))]
-#[case::implode_negative(r##"implode([-1])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("\u{FFFD}".to_string()))].into()))]
 #[case::intern_simple(r##"intern("foo")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("foo".to_string()))].into()))]
 #[case::nan_builtin("nan() | is_nan()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::infinite_builtin("infinite() > 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
@@ -3418,8 +3415,6 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::word_wrap_hard_break(r#"word_wrap("abcdefgh", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc\ndef\ngh".to_string()))].into()))]
 // word_wrap: CJK characters count as two display columns each
 #[case::word_wrap_cjk(r#"word_wrap("あいうえお", 4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("あい\nうえ\nお".to_string()))].into()))]
-// word_wrap: width 0 returns the text unchanged
-#[case::word_wrap_zero_width(r#"word_wrap("ab cd", 0)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ab cd".to_string()))].into()))]
 #[case::word_wrap_none("word_wrap(None, 10)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // truncate: text shorter than the width is unchanged
 #[case::truncate_short(r#"truncate("hello", 10, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]

@@ -1715,6 +1715,10 @@ fn replace_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
 #[mq_macros::mq_fn(name = "repeat", params = Fixed(2))]
 fn repeat_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
+        [_, RuntimeValue::Number(n)] if n.value().is_nan() || n.value() < 0.0 => Err(Error::Runtime(format!(
+            "{ident}: count must be non-negative, got {}",
+            n.value()
+        ))),
         [v, RuntimeValue::Number(n)] => repeat(v, n.value() as usize),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -1727,6 +1731,13 @@ fn repeat_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 #[mq_macros::mq_fn(name = "word_wrap", params = Fixed(2))]
 fn word_wrap_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
+        [
+            RuntimeValue::String(_) | RuntimeValue::Markdown(_, _),
+            RuntimeValue::Number(width),
+        ] if width.value().is_nan() || width.value() < 1.0 => Err(Error::Runtime(format!(
+            "{ident}: width must be a positive integer, got {}",
+            width.value()
+        ))),
         [RuntimeValue::String(s), RuntimeValue::Number(width)] => Ok(word_wrap(s, width.value() as usize).into()),
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::Number(width)] => {
             let width = width.value() as usize;
@@ -1793,12 +1804,12 @@ fn explode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     }
 }
 
-/// Maps an integral value to a `char`, or U+FFFD if it is not a Unicode scalar value.
-fn code_point_to_char(value: f64) -> char {
+/// Maps an integral value to a `char`, or `None` if it is not a Unicode scalar value.
+fn code_point_to_char(value: f64) -> Option<char> {
     if (0.0..=u32::MAX as f64).contains(&value) {
-        char::from_u32(value as u32).unwrap_or(char::REPLACEMENT_CHARACTER)
+        char::from_u32(value as u32)
     } else {
-        char::REPLACEMENT_CHARACTER
+        None
     }
 }
 
@@ -1809,7 +1820,8 @@ fn implode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             let result = array
                 .iter()
                 .map(|o| match o {
-                    RuntimeValue::Number(n) if n.is_int() => Ok(code_point_to_char(n.value())),
+                    RuntimeValue::Number(n) if n.is_int() => code_point_to_char(n.value())
+                        .ok_or_else(|| Error::Runtime(format!("{ident}: {} is not a Unicode scalar value", n.value()))),
                     RuntimeValue::Number(n) => Err(Error::Runtime(format!(
                         "{ident}: expected an integer code point, got {}",
                         n.value()
