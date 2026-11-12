@@ -5140,6 +5140,17 @@ fn test_mkdir_capability_gate_and_nested_idempotent_create() {
 
 #[cfg(feature = "process-io")]
 #[test]
+fn test_system_whitespace_command_hint() {
+    let msg = |cmd: &str| match call("system", vec![RuntimeValue::String(Shared::new(cmd.into()))]) {
+        Err(Error::Runtime(m)) => m,
+        other => panic!("expected runtime error, got {other:?}"),
+    };
+    assert!(msg("echo hi").contains("pass arguments as an array"));
+    assert!(!msg("echo").contains("pass arguments as an array"));
+}
+
+#[cfg(feature = "process-io")]
+#[test]
 fn test_system_capability_gate_and_success() {
     assert!(
         call("system", vec![RuntimeValue::String(Shared::new("echo".into()))]).is_err(),

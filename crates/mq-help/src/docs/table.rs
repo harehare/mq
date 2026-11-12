@@ -3470,7 +3470,7 @@ x
     BuiltinDoc {
         name: "system",
         aliases: &[],
-        description: "Runs command as a child process, optionally passing an array of string args, and returns its captured stdout as a string. The command is never run through a shell, so shell metacharacters in args are never interpreted. A non-zero exit status is a runtime error that includes the process's stderr. Requires the --allow-run CLI flag; otherwise returns a runtime error.",
+        description: "Runs command as a child process, optionally passing an array of string args, and returns its captured stdout as a string. The command is never run through a shell, so it must be a single program name and arguments go in the array, e.g. system(\"echo\", [\"hi\"]). A non-zero exit status is a runtime error that includes the process's stderr. Requires the --allow-run CLI flag; otherwise returns a runtime error.",
         params: &["command", "args"],
         param_types: &["string", "array"],
         returns: "string",

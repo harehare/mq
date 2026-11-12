@@ -5617,7 +5617,14 @@ fn system_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         [RuntimeValue::String(command)] => io_context::current()
             .execute(command, &[])
             .map(|s| RuntimeValue::String(s.into()))
-            .map_err(|e| Error::Runtime(format!("Failed to execute {}: {}", command, e))),
+            .map_err(|e| {
+                let hint = if command.contains(char::is_whitespace) {
+                    "; pass arguments as an array: system(\"echo\", [\"hi\"])"
+                } else {
+                    ""
+                };
+                Error::Runtime(format!("Failed to execute {}: {}{}", command, e, hint))
+            }),
         [RuntimeValue::String(command), RuntimeValue::Array(arr)] => {
             let cmd_args = runtime_args_to_strings(command, arr)?;
             io_context::current()
