@@ -12,11 +12,7 @@ pub struct MqHtmlOptions(ConversionOptions);
 
 // Shared by `mq_html_to_markdown` and `mq_html_to_markdown_ex`.
 pub(crate) unsafe fn convert(html_input_c: *const c_char, options: ConversionOptions) -> Result<String, FfiError> {
-    if html_input_c.is_null() {
-        return Err(FfiError::invalid_argument("HTML input pointer is null"));
-    }
-    let html = unsafe { c_str_to_rust_str_slice(html_input_c) }
-        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in HTML input"))?;
+    let html = unsafe { c_str_to_rust_str_slice(html_input_c, "HTML input") }?;
 
     convert_html_to_markdown(html, options).map_err(|e| {
         FfiError::with_prefix(
@@ -96,7 +92,7 @@ pub unsafe extern "C" fn mq_html_options_set_use_title_as_h1(options: *mut MqHtm
 /// must be null or a null-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mq_html_options_set_base_url(options: *mut MqHtmlOptions, base_url: *const c_char) {
-    let base_url = unsafe { c_str_to_rust_str_slice(base_url) }
+    let base_url = unsafe { c_str_to_rust_str_slice(base_url, "base_url") }
         .ok()
         .filter(|s| !s.is_empty())
         .map(str::to_string);
