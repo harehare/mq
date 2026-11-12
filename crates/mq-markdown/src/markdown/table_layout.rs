@@ -1,6 +1,9 @@
 use crate::node::{ColorTheme, Node, RenderOptions, TableAlign, TableAlignKind, TableCell, render_cell_values};
 use unicode_width::UnicodeWidthStr;
 
+/// Columns past this index get no entry in the width table, so a bogus index cannot force a huge allocation.
+const MAX_LAYOUT_COLUMNS: usize = 65_536;
+
 /// Per-column widths and alignment of a single contiguous table, computed by
 /// scanning ahead over its `TableCell`/`TableAlign` nodes before the first
 /// row is emitted, so every row (including the header) pads to the same
@@ -36,7 +39,7 @@ impl TableLayout {
                         break;
                     }
                     if *row == 0 {
-                        header_columns = header_columns.max(*column + 1);
+                        header_columns = header_columns.max(column.saturating_add(1));
                     }
                     let width = if options.table_padding {
                         cell_display_width(values, options)
@@ -44,10 +47,12 @@ impl TableLayout {
                         0
                     };
                     cell_widths.insert((*row, *column), width);
-                    if *column >= widths.len() {
-                        widths.resize(*column + 1, 0);
+                    if *column < MAX_LAYOUT_COLUMNS {
+                        if *column >= widths.len() {
+                            widths.resize(*column + 1, 0);
+                        }
+                        widths[*column] = widths[*column].max(width);
                     }
-                    widths[*column] = widths[*column].max(width);
                     i += 1;
                 }
                 Node::TableAlign(TableAlign { align: a, .. }) => {
@@ -181,5 +186,23 @@ pub(super) fn write_padded_cell(
                 output.push(' ');
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_huge_column_index_does_not_overflow_or_allocate() {
+        let nodes = vec![Node::TableCell(TableCell {
+            row: 0,
+            column: usize::MAX,
+            values: vec![],
+            position: None,
+        })];
+        let layout = TableLayout::compute(&nodes, &RenderOptions::default(), 0);
+        assert!(layout.widths.len() <= MAX_LAYOUT_COLUMNS);
+        assert_eq!(layout.end, 1);
     }
 }
