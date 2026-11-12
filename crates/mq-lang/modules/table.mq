@@ -178,9 +178,9 @@ def num_cols(table): len(table[:header]);
 def get_cell(table, row_index, col):
   let col_index = if (is_number(col)): col else column_index(table, col)
   | if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
-    None
-  else:
-    to_string(table[:rows][row_index][col_index])
+      None
+    else:
+      to_string(table[:rows][row_index][col_index])
 end
 
 # Returns a new table with the data cell at `row_index` and column `col`
@@ -198,13 +198,13 @@ end
 def set_cell(table, row_index, col, value):
   let col_index = _resolve_column(table, col)
   | if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
-    error("Row or column index out of range.")
-  else: do
-      let old_cell = table[:rows][row_index][col_index]
-      | let new_cell = to_md_table_cell(to_string(value), old_cell.row, old_cell.column)
-      | let new_row = set(table[:rows][row_index], col_index, new_cell)
-      | set(table, :rows, set(table[:rows], row_index, new_row))
-    end
+      error("Row or column index out of range.")
+    else: do
+        let old_cell = table[:rows][row_index][col_index]
+        | let new_cell = to_md_table_cell(to_string(value), old_cell.row, old_cell.column)
+        | let new_row = set(table[:rows][row_index], col_index, new_cell)
+        | set(table, :rows, set(table[:rows], row_index, new_row))
+      end
 end
 
 # Returns the data values (as strings) of column `col` (a header name or
@@ -589,9 +589,9 @@ def sort_rows(table, keys = None, order = :asc, kind = :string):
   else:
     do
       let specs = if (is_array(keys)):
-            map(keys, fn(k): if (is_array(k)): k else: [k];)
-          else:
-            [[keys]]
+        map(keys, fn(k): if (is_array(k)): k else: [k];)
+      else:
+        [[keys]]
       | fold(reverse(specs), table[:rows], fn(rows, spec):
           let col = _resolve_column(table, spec[0])
           | let o = if (len(spec) > 1): spec[1] elif (is_array(keys)): :asc else: order
@@ -644,8 +644,7 @@ def transform_tables(md_nodes, f, only = None):
           | out += if (only == None || only(t[:header], t[:rows])): to_markdown(f(t)) else: run
           | run = []
           | seen_align = false
-        end
-    ;
+        end;
   | foreach (node, md_nodes):
       if (is_table_cell(node) || is_table_align(node)):
         do

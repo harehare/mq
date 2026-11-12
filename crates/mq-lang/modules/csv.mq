@@ -23,7 +23,7 @@ def _csv_field(field, delimiter):
     ""
   else:
     let s = to_string(field)
-    | if (csv_needs_quote(field, delimiter)): "\"" + replace(s, "\"", "\"\"") + "\"" else: s
+  | if (csv_needs_quote(field, delimiter)): "\"" + replace(s, "\"", "\"\"") + "\"" else: s
 end
 
 # Dict rows use the union of all keys, in first-seen order. Array rows use the first row.

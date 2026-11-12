@@ -466,7 +466,6 @@ def test_section_filters_never_return_more_than_their_input(src):
       len(section::title_contains(secs, "a")) <= len(secs),
       len(section::title_is(secs, "a")) <= len(secs),
       len(section::title_match(secs, "a")) <= len(secs),
-      len(section::by_level(secs, 1)) <= len(secs)
-    ]
+      len(section::by_level(secs, 1)) <= len(secs)]
   | assert_true(all(counts, fn(b): b;))
 end

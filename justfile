@@ -97,6 +97,16 @@ build-node: build-node-wasm
 fmt:
     cargo fmt --all -- --check
 
+# Check that crates/mq-lang .mq files are formatted (skipped if mq-fmt is not on PATH)
+fmt-mq:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if command -v mq-fmt >/dev/null; then
+        cd crates/mq-lang && mq-fmt --check
+    else
+        echo "mq-fmt not found, skipping .mq format check"
+    fi
+
 # Run bundled mq tests through the Tarn bytecode VM.
 test-mq:
     cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq crates/mq-test/modules/*_test.mq
@@ -151,7 +161,7 @@ test: test-lang-cached
     cargo nextest run --workspace
 
 # Run formatting, linting and all tests
-test-all: fmt lint test-mq test-doc test-all-features test
+test-all: fmt fmt-mq lint test-mq test-doc test-all-features test
 
 # Run tests with code coverage reporting
 test-cov:
