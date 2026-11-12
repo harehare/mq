@@ -335,10 +335,10 @@ end
 def _html_sel_compound_ok(comp, ctx):
   let el = ctx["el"]
   | (is_none(comp["tag"]) || el["tag"] == comp["tag"])
-    && (is_none(comp["id"]) || el["attributes"]["id"] == comp["id"])
-    && all(comp["classes"], fn(c): index(split(trim(el["attributes"]["class"] ?? ""), "\\s+"), c) != -1;)
-    && all(comp["attrs"], fn(a): _html_sel_attr_ok(a, el);)
-    && all(comp["pseudos"], fn(p): _html_sel_pseudo_ok(p, ctx);)
+   && (is_none(comp["id"]) || el["attributes"]["id"] == comp["id"])
+   && all(comp["classes"], fn(c): index(split(trim(el["attributes"]["class"] ?? ""), "\\s+"), c) != -1;)
+   && all(comp["attrs"], fn(a): _html_sel_attr_ok(a, el);)
+   && all(comp["pseudos"], fn(p): _html_sel_pseudo_ok(p, ctx);)
 end
 
 def _html_sel_prev_ctx(ctx):
@@ -398,9 +398,9 @@ def _html_sel_prune(tree, list):
     do
       let els = _html_sel_all(tree)
       | filter(list, fn(steps): all(steps, fn(step): do
-          let comp = set(step["comp"], "pseudos", [])
-          | any(els, fn(e): _html_sel_compound_ok(comp, {"el": e, "parent": None, "sibs": [], "idx": 0});)
-        end;);)
+            let comp = set(step["comp"], "pseudos", [])
+            | any(els, fn(e): _html_sel_compound_ok(comp, {"el": e, "parent": None, "sibs": [], "idx": 0});)
+          end;);)
     end
 end
 
@@ -409,9 +409,9 @@ def _html_sel_walk(ctx, list):
   | let own = if (_html_sel_match_list(list, ctx)): [ctx["el"]] else: []
   | let n = len(children)
   | own + if (n == 0):
-      []
-    else:
-      flat_map(range(0, n - 1), fn(i): _html_sel_walk({"el": children[i], "parent": ctx, "sibs": children, "idx": i}, list);)
+    []
+  else:
+    flat_map(range(0, n - 1), fn(i): _html_sel_walk({"el": children[i], "parent": ctx, "sibs": children, "idx": i}, list);)
 end
 
 # Returns every element of `data` (including `data` itself) matching the CSS selector, in

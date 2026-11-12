@@ -86,9 +86,9 @@ def test_yaml_to_markdown_table_escapes_pipe():
     "| k\\|1 |\n| --- |\n| x\\|y |"
   )
   | assert_eq(
-    yaml::yaml_to_markdown_table({"k|1": "v|2"}),
-    "| Key | Value |\n| --- | --- |\n| k\\|1 | v\\|2 |"
-  )
+      yaml::yaml_to_markdown_table({"k|1": "v|2"}),
+      "| Key | Value |\n| --- | --- |\n| k\\|1 | v\\|2 |"
+    )
 end
 
 def test_yaml_to_markdown_table_empty_array():
