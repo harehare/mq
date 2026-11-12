@@ -170,7 +170,7 @@ fn test_eval_with_null_parameters() {
 
     // Test with null code
     let result = unsafe { mq_eval(engine, ptr::null(), test, text) };
-    assert!(result.error_msg.is_null());
+    assert!(!result.error_msg.is_null());
     mq_free_result(result);
 
     // Test with null input
@@ -326,14 +326,12 @@ fn test_c_str_to_rust_str_slice() {
     // Test with valid C string
     let c_string = CString::new("test").unwrap();
     let c_ptr = c_string.as_ptr();
-    let result = unsafe { c_str_to_rust_str_slice(c_ptr) };
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), "test");
+    let result = unsafe { c_str_to_rust_str_slice(c_ptr, "arg") };
+    assert_eq!(result.ok(), Some("test"));
 
     // Test with null pointer
-    let result = unsafe { c_str_to_rust_str_slice(ptr::null()) };
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), "");
+    let result = unsafe { c_str_to_rust_str_slice(ptr::null(), "arg") };
+    assert_eq!(result.err().unwrap().legacy_message(), "arg pointer is null");
 }
 
 #[test]
@@ -1479,4 +1477,14 @@ fn test_html_to_markdown_ex_invalid_arguments() {
         mq_html_options_set_use_title_as_h1(ptr::null_mut(), true);
         mq_html_options_free(ptr::null_mut());
     }
+}
+
+#[test]
+fn test_module_null_name_returns_error() {
+    let engine = mq_create();
+    let import_err = unsafe { mq_import_module(engine, ptr::null()) };
+    assert_eq!(unsafe { owned_str(import_err) }, "module_name pointer is null");
+    let load_err = unsafe { mq_load_module(engine, ptr::null()) };
+    assert_eq!(unsafe { owned_str(load_err) }, "module_name pointer is null");
+    mq_destroy(engine);
 }

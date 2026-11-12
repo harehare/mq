@@ -118,7 +118,7 @@ impl From<MqConversionOptions> for ConversionOptions {
         let base_url = if options.base_url.is_null() {
             None
         } else {
-            unsafe { c_str_to_rust_str_slice(options.base_url) }
+            unsafe { c_str_to_rust_str_slice(options.base_url, "base_url") }
                 .ok()
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string())
@@ -168,15 +168,13 @@ fn guard_c_string(f: impl FnOnce() -> *mut c_char + std::panic::UnwindSafe) -> *
     std::panic::catch_unwind(f).unwrap_or_else(panic_to_c_string)
 }
 
-// Helper function to convert C string to Rust string slice
-unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char) -> Result<&'a str, std::str::Utf8Error> {
+// Converts a C string argument called `name`; null or invalid UTF-8 is `MQ_ERR_INVALID_ARGUMENT`.
+unsafe fn c_str_to_rust_str_slice<'a>(s: *const c_char, name: &str) -> Result<&'a str, FfiError> {
     if s.is_null() {
-        // This case should ideally be handled by the caller or return an error.
-        // For now, returning an empty string if null to avoid panics,
-        // but robust error handling would be better.
-        return Ok("");
+        return Err(FfiError::invalid_argument(format!("{name} pointer is null")));
     }
     unsafe { CStr::from_ptr(s).to_str() }
+        .map_err(|_| FfiError::invalid_argument(format!("Invalid UTF-8 sequence in {name}")))
 }
 
 // Helper function to convert a C array of C strings into a Vec<String>.
@@ -189,7 +187,7 @@ unsafe fn c_str_array_to_strings(items: *const *const c_char, items_len: usize) 
     let item_ptrs = unsafe { std::slice::from_raw_parts(items, items_len) };
     item_ptrs
         .iter()
-        .filter_map(|&p| unsafe { c_str_to_rust_str_slice(p) }.ok())
+        .filter_map(|&p| unsafe { c_str_to_rust_str_slice(p, "item") }.ok())
         .map(|s| s.to_string())
         .collect()
 }
@@ -315,21 +313,9 @@ unsafe fn eval_core(
     }
     let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
 
-    let code = unsafe { c_str_to_rust_str_slice(code_c) }
-        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in code"))?;
-
-    if input_c.is_null() {
-        return Err(FfiError::invalid_argument("Input pointer is null"));
-    }
-    let input_str = unsafe { c_str_to_rust_str_slice(input_c) }
-        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in input"))?;
-
-    if input_format_c.is_null() {
-        return Err(FfiError::invalid_argument("Input format pointer is null"));
-    }
-    let input_format_str = unsafe { c_str_to_rust_str_slice(input_format_c) }
-        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in input_format"))?
-        .to_lowercase();
+    let code = unsafe { c_str_to_rust_str_slice(code_c, "code") }?;
+    let input_str = unsafe { c_str_to_rust_str_slice(input_c, "input") }?;
+    let input_format_str = unsafe { c_str_to_rust_str_slice(input_format_c, "input_format") }?.to_lowercase();
 
     let (prefix, parsed) = match input_format_str.as_str() {
         "text" => (
@@ -579,11 +565,11 @@ pub unsafe extern "C" fn mq_define_string_value(
         }
         let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
 
-        let name = match unsafe { c_str_to_rust_str_slice(name_c) } {
+        let name = match unsafe { c_str_to_rust_str_slice(name_c, "name") } {
             Ok(s) => s,
             Err(_) => return,
         };
-        let value = match unsafe { c_str_to_rust_str_slice(value_c) } {
+        let value = match unsafe { c_str_to_rust_str_slice(value_c, "value") } {
             Ok(s) => s,
             Err(_) => return,
         };
@@ -603,8 +589,7 @@ unsafe fn module_core(
     }
     let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
 
-    let module_name = unsafe { c_str_to_rust_str_slice(module_name_c) }
-        .map_err(|_| FfiError::invalid_argument("Invalid UTF-8 sequence in module_name"))?;
+    let module_name = unsafe { c_str_to_rust_str_slice(module_name_c, "module_name") }?;
 
     f(engine, module_name)
 }
