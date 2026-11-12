@@ -627,17 +627,28 @@ fn render_emphasis(values: &[Node], delim: &str, options: &RenderOptions, theme:
     format!("{es}{delim}{}{delim}{ee}", render_values(values, options, theme))
 }
 
-/// Renders the content of a table cell. A pipe that is not escaped yet, as in code, would end the cell.
+/// Renders the content of a table cell on one line. A line break becomes `<br>`, and a pipe that is not
+/// escaped yet, as in code, would end the cell.
 pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
     let rendered = render_values(values, options, theme);
-    if !rendered.contains('|') {
+    if !rendered.contains(['|', '\n', '\r']) {
         return rendered;
     }
     let mut result = String::with_capacity(rendered.len() + 4);
     let mut escaped = false;
-    for c in rendered.chars() {
-        if c == '|' && !escaped {
-            result.push('\\');
+    let mut chars = rendered.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' | '\n' => {
+                if c == '\r' && chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                result.push_str("<br>");
+                escaped = false;
+                continue;
+            }
+            '|' if !escaped => result.push('\\'),
+            _ => {}
         }
         escaped = c == '\\' && !escaped;
         result.push(c);

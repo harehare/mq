@@ -788,6 +788,7 @@ fn test_is_msx_js_esm(#[case] node: Node, #[case] expected: bool) {
 #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
 #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
 #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "test")]
+#[case::table_cell_newline(Node::TableCell(TableCell{column: 0, row: 0, values: vec!["a\nb\r\nc".to_string().into()], position: None}), RenderOptions::default(), "a<br>b<br>c")]
 #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "test")]
 #[case::table_align(Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right, TableAlignKind::Center, TableAlignKind::None], position: None}), RenderOptions::default(), "|:---|---:|:---:|---|")]
 #[case::block_quote(Node::Blockquote(Blockquote{values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "> test")]
