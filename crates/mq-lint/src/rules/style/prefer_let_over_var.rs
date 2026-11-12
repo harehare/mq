@@ -17,17 +17,36 @@ impl LintRule for PreferLetOverVar {
     }
 
     fn check(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
-        // Collect names that appear as the LHS of an Assign node (re-assigned variables).
-        let reassigned_names: FxHashSet<&str> = ctx
-            .all_symbols()
-            .filter(|(_, s)| matches!(s.kind, SymbolKind::Assign))
-            .flat_map(|(assign_id, _)| {
-                ctx.children(assign_id)
-                    .filter(|(_, s)| matches!(s.kind, SymbolKind::Ident | SymbolKind::Ref))
-                    .filter_map(|(_, s)| s.value.as_deref())
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        // Names that are the root of an assignment target: `x = v`, `x[k] = v`, `x[a][b] += v`
+        // and `get(x, k) = v`. The target is the first Ident/Ref/Call child by source position.
+        let mut reassigned_names: FxHashSet<&str> = FxHashSet::default();
+        for (assign_id, _) in ctx.all_symbols().filter(|(_, s)| matches!(s.kind, SymbolKind::Assign)) {
+            let Some((target_id, target)) = ctx
+                .children(assign_id)
+                .filter(|(_, s)| matches!(s.kind, SymbolKind::Ident | SymbolKind::Ref | SymbolKind::Call))
+                .filter_map(|(id, s)| s.source.text_range.map(|r| (r.start.line, r.start.column, id, s)))
+                .min_by_key(|(line, column, _, _)| (*line, *column))
+                .map(|(_, _, id, s)| (id, s))
+            else {
+                continue;
+            };
+
+            match target.kind {
+                SymbolKind::Ident | SymbolKind::Ref => reassigned_names.extend(target.value.as_deref()),
+                SymbolKind::Call => {
+                    reassigned_names.extend(target.value.as_deref());
+                    if target.value.as_deref() == Some("get")
+                        && let Some((_, first_arg)) = ctx
+                            .children(target_id)
+                            .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref))
+                            .min_by_key(|(_, s)| s.source.text_range.map(|r| (r.start.line, r.start.column)))
+                    {
+                        reassigned_names.extend(first_arg.value.as_deref());
+                    }
+                }
+                _ => {}
+            }
+        }
 
         let mut diagnostics = Vec::new();
 
@@ -106,6 +125,25 @@ mod tests {
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[rstest]
+    #[case("var s = {} | s[1] = true | s")]
+    #[case("var s = {} | s[\"k\"] += 1 | s")]
+    #[case("var s = [[1]] | s[0][0] = 2 | s")]
+    #[case("var s = {} | s[a][b] = 1 | s")]
+    #[case("var s = {} | s[a][b] -= 1 | s")]
+    #[case("var s = [1] | get(s, 0) = 2 | s")]
+    #[case("var s = {} | foreach (x, [1]): s[x] = true end | s")]
+    #[case("var s = {} | if (true): s[1] = [2] else: s[1] += [2];")]
+    #[case("var s = {} | var i = 0 | while (i < 2): s[i] = true | i += 1 end | s")]
+    fn no_diagnostic_for_index_assign(#[case] code: &str) {
+        let diags = check(code);
+        assert!(
+            diags.iter().all(|d| !d.message().contains("`s`")),
+            "{code}: {:?}",
+            diags.iter().map(|d| d.message()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
