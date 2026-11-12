@@ -3730,6 +3730,9 @@ fn to_md_table_row_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) 
     ))
 }
 
+/// Upper bound for the `row` and `column` arguments of `to_md_table_cell`.
+const MAX_TABLE_INDEX: usize = 65_535;
+
 #[mq_macros::mq_fn(name = "to_md_table_cell", params = Fixed(3))]
 fn to_md_table_cell_impl(
     ident: &Ident,
@@ -3738,15 +3741,19 @@ fn to_md_table_cell_impl(
     _: &SharedEnv,
 ) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => Ok(RuntimeValue::Markdown(
-            Shared::new(mq_markdown::Node::TableCell(mq_markdown::TableCell {
-                row: row.value() as usize,
-                column: column.value() as usize,
-                values: vec![value.to_string().into()],
-                position: None,
-            })),
-            None,
-        )),
+        [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => {
+            let row = bounded_size(row, MAX_TABLE_INDEX, "row")?;
+            let column = bounded_size(column, MAX_TABLE_INDEX, "column")?;
+            Ok(RuntimeValue::Markdown(
+                Shared::new(mq_markdown::Node::TableCell(mq_markdown::TableCell {
+                    row,
+                    column,
+                    values: vec![value.to_string().into()],
+                    position: None,
+                })),
+                None,
+            ))
+        }
         [a, b, c] => Err(Error::InvalidTypes(
             "table_cell".to_string(),
             vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],

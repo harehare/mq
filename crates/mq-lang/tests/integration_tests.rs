@@ -4061,6 +4061,10 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::range_invalid_type("range(true)", vec![RuntimeValue::None],)]
 // to_md_table_cell: non-number row → type error
 #[case::to_md_table_cell_non_number(r#"to_md_table_cell("val", "not_number", 0)"#, vec![RuntimeValue::None],)]
+#[case::to_md_table_cell_negative(r#"to_md_table_cell("x", -1, -1)"#, vec![RuntimeValue::None],)]
+#[case::to_md_table_cell_fractional(r#"to_md_table_cell("x", 0.5, 0)"#, vec![RuntimeValue::None],)]
+#[case::to_md_table_cell_too_large(r#"to_md_table_cell("x", 1e19, 1e19)"#, vec![RuntimeValue::None],)]
+#[case::to_md_table_cell_huge_column(r#"to_md_table_cell("x", 0, 99999999999)"#, vec![RuntimeValue::None],)]
 // basename: non-string → type error
 #[case::basename_non_string("basename(42)", vec![RuntimeValue::None],)]
 // dirname: non-string → type error
