@@ -71,7 +71,7 @@ jobs:
         with:
           just-version: 1.58.0
       - uses: Swatinem/rust-cache@v2.9.3
-      - uses: harehare/setup-mq@v1.1.6
+      - uses: harehare/setup-mq@v1.1.7
         with:
           bins: fmt
       - name: Run format check
