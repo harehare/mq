@@ -31,6 +31,8 @@ use mq_help as help;
 #[cfg(feature = "debug-trace")]
 mod bytecode;
 mod exit_status;
+#[cfg(feature = "http-import")]
+mod module;
 mod mqc;
 mod text_input;
 
@@ -999,6 +1001,15 @@ enum Commands {
         #[arg(long)]
         markdown: bool,
     },
+    /// Manage HTTP modules saved to disk, pinned in `mq.lock`
+    ///
+    /// Saved modules are imported by name (`import "kdl"`) and need no `--allow-http-import`.
+    #[cfg(feature = "http-import")]
+    #[command(alias = "mod")]
+    Module {
+        #[command(subcommand)]
+        command: ModuleCommand,
+    },
     /// Compile a query to experimental `.mqc` bytecode.
     #[command(
         long_about = "Compile a query to a .mqc program. Run it with `mq PROGRAM.mqc [FILES]...`.\n\nThe .mqc format and CLI are experimental and may change. Recompile programs after upgrading mq."
@@ -1015,6 +1026,39 @@ enum Commands {
         output: Option<PathBuf>,
         #[clap(flatten)]
         program: Box<ProgramArgs>,
+    },
+}
+
+/// Actions of the `module` subcommand.
+#[cfg(feature = "http-import")]
+#[derive(Debug, Subcommand)]
+enum ModuleCommand {
+    /// Download modules into `./vendor` (or `~/.config/mq` with --global) and pin them in `mq.lock`
+    Add {
+        /// Modules to add, e.g. `github.com/harehare/kdl.mq@v1.0`
+        #[arg(value_name = "MODULE", required = true)]
+        modules: Vec<String>,
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
+        /// Also allow modules from DOMAIN (repeatable)
+        #[arg(long = "allow-domain", value_name = "DOMAIN")]
+        allow_domain: Vec<String>,
+    },
+    /// Download every module pinned in `mq.lock` again, e.g. after a fresh clone
+    Install {
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
+        /// Also allow modules from DOMAIN (repeatable)
+        #[arg(long = "allow-domain", value_name = "DOMAIN")]
+        allow_domain: Vec<String>,
+    },
+    /// Verify saved modules against `mq.lock` without fetching
+    Check {
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
     },
 }
 
@@ -2040,6 +2084,16 @@ impl Cli {
                 }
                 Some(Self::compile_bytecode(query, *from_file, output.as_deref(), program))
             }
+            #[cfg(feature = "http-import")]
+            Commands::Module { command } => Some(match command {
+                ModuleCommand::Add {
+                    modules,
+                    global,
+                    allow_domain,
+                } => Self::module_add(modules, *global, allow_domain),
+                ModuleCommand::Install { global, allow_domain } => Self::module_install(*global, allow_domain),
+                ModuleCommand::Check { global } => Self::module_check(*global),
+            }),
             #[cfg(feature = "debugger")]
             Commands::Dap => Some(mq_dap::start().map_err(|e| miette!(e.to_string()))),
             Commands::Repl { .. } => None,
