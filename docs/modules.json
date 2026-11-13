@@ -1,39 +1,15 @@
 {
   "version": 1,
-  "categories": [
-    {
-      "slug": "format-parsers",
-      "label": "Format Parsers"
-    },
-    {
-      "slug": "diagram-graph",
-      "label": "Diagram & Graph"
-    },
-    {
-      "slug": "devops-infrastructure",
-      "label": "DevOps & Infrastructure"
-    },
-    {
-      "slug": "terminal-text",
-      "label": "Terminal & Text"
-    },
-    {
-      "slug": "generators",
-      "label": "Generators"
-    },
-    {
-      "slug": "interpreters-examples",
-      "label": "Interpreters & Examples"
-    },
-    {
-      "slug": "data-algorithms",
-      "label": "Data Structures & Algorithms"
-    },
-    {
-      "slug": "libraries-toolkits",
-      "label": "Libraries & Toolkits"
-    }
-  ],
+  "categories": {
+    "format-parsers": "Format Parsers",
+    "diagram-graph": "Diagram & Graph",
+    "devops-infrastructure": "DevOps & Infrastructure",
+    "terminal-text": "Terminal & Text",
+    "generators": "Generators",
+    "interpreters-examples": "Interpreters & Examples",
+    "data-algorithms": "Data Structures & Algorithms",
+    "libraries-toolkits": "Libraries & Toolkits"
+  },
   "modules": [
     {
       "name": "json5",
