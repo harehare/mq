@@ -10,7 +10,10 @@ Documentation catalog for the mq language: builds the single, unified catalog of
 ## Usage
 
 ```rust
-use mq_help::{all_entries, lookup, lookup_module, suggest, render_human, render_module_human};
+use mq_help::{
+    all_entries, lookup, lookup_module, render_human, render_module_human, render_summary, search,
+    suggest, summary_name_width,
+};
 
 // Every documented function/selector.
 let entries = all_entries();
@@ -26,6 +29,13 @@ println!("{}", render_module_human(&section));
 
 // "Did you mean" suggestion for a typo (also matches module names).
 let suggestion = suggest("mpa"); // Some("map")
+
+// Find by word, best match first, one `name(params)  first sentence` line each.
+let hits = search("token");
+let width = summary_name_width(&hits);
+for entry in &hits {
+    println!("{}", render_summary(entry, "token", width));
+}
 
 for entry in &matches {
     println!("{}", render_human(entry));

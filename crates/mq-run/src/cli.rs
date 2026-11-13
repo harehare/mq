@@ -986,7 +986,11 @@ enum Commands {
     Help {
         /// Name of a function, selector, module, or `examples`, e.g. `map`, `.h1`, `csv_parse`,
         /// `section`, `examples`
+        #[arg(value_parser = HelpNameParser, hide_possible_values = true)]
         name: Option<String>,
+        /// List entries matching WORD in name or description, best match first
+        #[arg(short, long, value_name = "WORD", conflicts_with = "name")]
+        search: Option<String>,
         /// Print machine-readable JSON instead of formatted text
         #[arg(long, conflicts_with = "markdown")]
         json: bool,
@@ -1024,6 +1028,37 @@ enum CompletionShell {
     #[value(name = "powershell")]
     PowerShell,
     Zsh,
+}
+
+/// Accepts any `mq help` name so unknown ones still get a "did you mean", but exposes every
+/// documented name as a possible value so the generated shell completions offer them.
+#[derive(Clone)]
+struct HelpNameParser;
+
+impl clap::builder::TypedValueParser for HelpNameParser {
+    type Value = String;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<String, clap::Error> {
+        clap::builder::StringValueParser::new().parse_ref(cmd, arg, value)
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
+        let mut names = help::all_names();
+        names.extend(help::all_modules().into_iter().map(|m| m.name));
+        names.extend(help::qualified_names());
+        names.push(Cli::EXAMPLES_TOPIC.to_string());
+        names.sort_unstable();
+        names.dedup();
+        // clap needs `'static` names; this only runs while generating completions, once per process.
+        Some(Box::new(names.into_iter().map(|name| {
+            clap::builder::PossibleValue::new(clap::builder::Str::from(&*Box::leak(name.into_boxed_str())))
+        })))
+    }
 }
 
 /// Output mode for the `help` subcommand.
@@ -1399,6 +1434,35 @@ impl Cli {
         handle.flush().into_diagnostic()
     }
 
+    /// Prints `entries` one line each (`kind  name  first sentence`), or as JSON/Markdown.
+    /// An empty list is an error carrying `empty_message`, like `grep`'s non-zero exit.
+    fn run_help_list(
+        entries: Vec<help::HelpEntry>,
+        word: &str,
+        empty_message: String,
+        json: bool,
+        markdown: bool,
+    ) -> miette::Result<()> {
+        if entries.is_empty() {
+            return Err(miette!("{empty_message}"));
+        }
+        let out = if json {
+            serde_json::to_string_pretty(&entries).into_diagnostic()?
+        } else {
+            let prefix = if markdown { "- " } else { "" };
+            let width = help::summary_name_width(&entries);
+            entries
+                .iter()
+                .map(|e| format!("{prefix}{}", help::render_summary(e, word, width, !markdown)))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let mut handle = BufWriter::new(io::stdout().lock());
+        Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
+        Self::write_ignore_pipe(&mut handle, b"\n")?;
+        handle.flush().into_diagnostic()
+    }
+
     /// Sorted, deduped selector, top-level function, and keyword names for the `mq help`
     /// index. Cheap: uses `top_level_entries`, which never parses standard-module sources.
     fn help_index_names() -> (Vec<String>, Vec<String>, Vec<String>) {
@@ -1462,7 +1526,8 @@ impl Cli {
         let _ = write!(
             out,
             "\nRun `mq help <name>` for a function or selector, `mq help <module>` for a module \
-            overview, `mq help examples` for CLI usage examples."
+            overview, `mq help examples` for CLI usage examples, `mq help --search <word>` to find \
+            a function."
         );
 
         out
@@ -1939,9 +2004,23 @@ impl Cli {
                 Some(Self::run_commands(*json))
             }
             Commands::Completion { shell } => Some(Self::generate_completion(shell)),
-            Commands::Help { name, json, markdown } => {
+            Commands::Help {
+                name,
+                search,
+                json,
+                markdown,
+            } => {
                 colored::control::set_override(self.use_color());
-                Some(Self::run_help(name.as_deref(), *json, *markdown))
+                Some(match search {
+                    Some(word) => Self::run_help_list(
+                        help::search(word),
+                        word,
+                        format!("no entry matches `{word}`"),
+                        *json,
+                        *markdown,
+                    ),
+                    None => Self::run_help(name.as_deref(), *json, *markdown),
+                })
             }
             Commands::Compile {
                 query,
