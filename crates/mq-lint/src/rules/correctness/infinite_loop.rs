@@ -1,8 +1,9 @@
+use super::always_true_condition::condition_literal;
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::SymbolId;
 use mq_hir::SymbolKind;
 
-/// Reports `loop` expressions that contain no `break`.
+/// Reports `loop`, `while (true)` and `until (false)` expressions that contain no `break`.
 pub struct InfiniteLoop;
 
 impl LintRule for InfiniteLoop {
@@ -21,7 +22,12 @@ impl LintRule for InfiniteLoop {
         let loops: Vec<_> = ctx
             .hir
             .symbols_for_source(ctx.source_id())
-            .filter(|(_, s)| matches!(s.kind, SymbolKind::Loop))
+            .filter(|(id, s)| match s.kind {
+                SymbolKind::Loop => true,
+                SymbolKind::While => condition_literal(ctx, *id).as_deref() == Some("true"),
+                SymbolKind::Until => condition_literal(ctx, *id).as_deref() == Some("false"),
+                _ => false,
+            })
             .collect();
 
         for (loop_id, loop_sym) in loops {
@@ -78,6 +84,8 @@ mod tests {
     #[rstest]
     #[case("loop .h1 end")]
     #[case("loop .h1 | .h2 end")]
+    #[case("while (true): 1;")]
+    #[case("until (false): 1;")]
     fn detects_loop_without_break(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 1);
@@ -87,6 +95,10 @@ mod tests {
     #[case("loop break end")]
     #[case("loop if (true): break else: .h1 end")]
     #[case("while (.h1): .h1 end")]
+    #[case("while (false): 1;")]
+    #[case("until (true): 1;")]
+    #[case("until (.h1): 1;")]
+    #[case("while (true): break;")]
     #[case("def g(): loop yield: 1 | break end;")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
