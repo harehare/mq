@@ -160,6 +160,18 @@ pub fn all_names() -> Vec<String> {
     names
 }
 
+/// `module::function` for every module-defined entry, the names that open a function rather
+/// than its same-named module.
+pub fn qualified_names() -> Vec<String> {
+    let mut names: Vec<String> = all_entries()
+        .into_iter()
+        .filter_map(|e| e.related_module.map(|m| format!("{m}::{}", e.name)))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// A standard module's header doc (if any) plus the functions it defines.
 #[derive(Debug, Clone, Serialize)]
 pub struct HelpModule {
@@ -489,7 +501,7 @@ pub fn render_module_markdown(module: &HelpModule) -> String {
 /// substring, then whole-word description match. Ties are sorted by name.
 pub fn search(word: &str) -> Vec<HelpEntry> {
     let word = word.to_lowercase();
-    let mut hits: Vec<(u8, HelpEntry)> = all_entries()
+    let mut hits: Vec<(SearchRank, HelpEntry)> = all_entries()
         .into_iter()
         .filter_map(|e| {
             let rank = search_rank(&e, &word)?;
@@ -500,19 +512,31 @@ pub fn search(word: &str) -> Vec<HelpEntry> {
     hits.into_iter().map(|(_, e)| e).collect()
 }
 
-fn search_rank(entry: &HelpEntry, word: &str) -> Option<u8> {
+/// How a search word matched an entry. Variants are ordered best first, so the derived `Ord`
+/// is the result order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum SearchRank {
+    ExactName,
+    NamePrefix,
+    NameSubstring,
+    DescriptionWord,
+}
+
+fn search_rank(entry: &HelpEntry, word: &str) -> Option<SearchRank> {
+    let qualified = entry.related_module.as_ref().map(|m| format!("{m}::{}", entry.name));
     let names = std::iter::once(&entry.name)
+        .chain(&qualified)
         .chain(&entry.aliases)
         .map(|n| n.to_lowercase())
         .collect::<Vec<_>>();
     if names.iter().any(|n| n == word) {
-        Some(0)
+        Some(SearchRank::ExactName)
     } else if names.iter().any(|n| n.starts_with(word)) {
-        Some(1)
+        Some(SearchRank::NamePrefix)
     } else if names.iter().any(|n| n.contains(word)) {
-        Some(2)
+        Some(SearchRank::NameSubstring)
     } else if contains_word(&entry.description.to_lowercase(), word) {
-        Some(3)
+        Some(SearchRank::DescriptionWord)
     } else {
         None
     }
@@ -528,12 +552,12 @@ fn contains_word(text: &str, word: &str) -> bool {
 
 /// One search result line: `signature  first sentence`, with the signature padded to
 /// `name_width`. A module function is prefixed with `module::`, and the first occurrence of
-/// `word` in the name is highlighted.
-pub fn render_summary(entry: &HelpEntry, word: &str, name_width: usize) -> String {
+/// `word` in the name is highlighted when `highlight` is set.
+pub fn render_summary(entry: &HelpEntry, word: &str, name_width: usize, highlight: bool) -> String {
     let (name, params) = search_display_parts(entry);
     let padding = " ".repeat(name_width.saturating_sub(name.chars().count() + params.chars().count()));
     let shown = match name.to_lowercase().find(&word.to_lowercase()) {
-        Some(i) if name.is_char_boundary(i) && name.is_char_boundary(i + word.len()) => format!(
+        Some(i) if highlight && name.is_char_boundary(i) && name.is_char_boundary(i + word.len()) => format!(
             "{}{}{}",
             &name[..i],
             name[i..i + word.len()].yellow().bold(),
@@ -602,6 +626,31 @@ mod tests {
         assert_eq!(names[0], "map");
         let pos = |n: &str| names.iter().position(|x| x == n).unwrap();
         assert!(pos("map_values") < pos("flat_map"));
+    }
+
+    #[test]
+    fn test_search_matches_module_qualified_name() {
+        let has = |q: &str| {
+            search(q)
+                .iter()
+                .any(|e| e.name == "constant_fill" && e.related_module.as_deref() == Some("csv"))
+        };
+        assert!(has("csv"));
+        assert!(has("csv::constant_fill"));
+    }
+
+    #[test]
+    fn test_qualified_names_include_same_named_module_function() {
+        assert!(qualified_names().contains(&"section::section".to_string()));
+    }
+
+    #[test]
+    fn test_render_summary_plain_has_no_escapes() {
+        let entry = lookup("map").into_iter().find(|e| e.kind == "function").unwrap();
+        colored::control::set_override(true);
+        let plain = render_summary(&entry, "map", 0, false);
+        colored::control::unset_override();
+        assert!(!plain.contains('\x1b'));
     }
 
     #[test]

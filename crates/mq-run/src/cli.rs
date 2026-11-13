@@ -1050,6 +1050,7 @@ impl clap::builder::TypedValueParser for HelpNameParser {
     fn possible_values(&self) -> Option<Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
         let mut names = help::all_names();
         names.extend(help::all_modules().into_iter().map(|m| m.name));
+        names.extend(help::qualified_names());
         names.push(Cli::EXAMPLES_TOPIC.to_string());
         names.sort_unstable();
         names.dedup();
@@ -1452,7 +1453,7 @@ impl Cli {
             let width = help::summary_name_width(&entries);
             entries
                 .iter()
-                .map(|e| format!("{prefix}{}", help::render_summary(e, word, width)))
+                .map(|e| format!("{prefix}{}", help::render_summary(e, word, width, !markdown)))
                 .collect::<Vec<_>>()
                 .join("\n")
         };
