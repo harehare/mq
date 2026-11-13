@@ -418,9 +418,9 @@ mod tests {
     }
 
     /// Forces a compile error if a `builtin::Error` variant is missing a case above.
-    #[allow(dead_code)]
-    fn all_builtin_error_variants_are_covered(e: builtin::Error) {
-        match e {
+    #[test]
+    fn all_builtin_error_variants_are_covered() {
+        let _ = |e: builtin::Error| match e {
             builtin::Error::UserDefined(_)
             | builtin::Error::Thrown(_)
             | builtin::Error::InvalidBase64String(_)
@@ -433,7 +433,7 @@ mod tests {
             | builtin::Error::ZeroDivision
             | builtin::Error::InvalidConvert(_)
             | builtin::Error::Halt(_) => {}
-        }
+        };
     }
 
     // One case per bare `VmError` variant; see `all_vm_error_variants_are_covered`.
@@ -487,9 +487,9 @@ mod tests {
     }
 
     /// Forces a compile error if a `VmError` variant is missing a case above.
-    #[allow(dead_code)]
-    fn all_vm_error_variants_are_covered(e: VmError) {
-        match e {
+    #[test]
+    fn all_vm_error_variants_are_covered() {
+        let _ = |e: VmError| match e {
             VmError::StackTrace(_) => {}
             #[cfg(feature = "debugger")]
             VmError::Debugger(_) => {}
@@ -513,7 +513,7 @@ mod tests {
             | VmError::CoroutineReentrant
             | VmError::CoroutineFailed(_, _)
             | VmError::Located(_, _) => {}
-        }
+        };
     }
 
     /// Guards against the two error-message paths drifting apart again: the VM's own

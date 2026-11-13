@@ -228,6 +228,14 @@ fn foreign_literal(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Help text for a parse stopped before end of input.
+pub(crate) const UNPARSED_SOURCE_HELP: &str = "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.";
+
+/// Help text for an `end` with no open block.
+pub(crate) const UNMATCHED_END_HELP: &str = "This `end` keyword does not match any open block. \
+    Note: single-line `if` expressions do not require `end`. \
+    Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.";
+
 // help() text for an unknown selector, with a "did you mean" hint when available.
 #[cold]
 pub(crate) fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str> {
@@ -335,9 +343,7 @@ impl Diagnostic for Error {
         let msg: Option<Cow<'static, str>> = match &self.cause {
             InnerError::Runtime(RuntimeError::WithStackTrace { .. }) => None,
             InnerError::Syntax(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::Eof => {
-                Some(Cow::Borrowed(
-                    "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.",
-                ))
+                Some(Cow::Borrowed(UNPARSED_SOURCE_HELP))
             }
             InnerError::Syntax(SyntaxError::UnexpectedToken(token)) => Some(
                 unexpected_token_hint(self.source_code.inner(), self.location.offset(), token).unwrap_or(
@@ -383,11 +389,7 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::TooDeeplyNested(_, _))) => Some(Cow::Borrowed(
                 "Reduce the nesting of parentheses, brackets, or blocks in this expression.",
             )),
-            InnerError::Syntax(SyntaxError::UnmatchedEnd(_)) => Some(Cow::Borrowed(
-                "This `end` keyword does not match any open block. \
-                Note: single-line `if` expressions do not require `end`. \
-                Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.",
-            )),
+            InnerError::Syntax(SyntaxError::UnmatchedEnd(_)) => Some(Cow::Borrowed(UNMATCHED_END_HELP)),
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
             }
@@ -463,9 +465,7 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(token)))
                 if token.kind == TokenKind::Eof =>
             {
-                Some(Cow::Borrowed(
-                    "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.",
-                ))
+                Some(Cow::Borrowed(UNPARSED_SOURCE_HELP))
             }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedToken(_))) => Some(Cow::Borrowed(
                 "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.",
@@ -508,11 +508,9 @@ impl Diagnostic for Error {
                     "An expression was expected here. Check for incomplete expressions after operators or keywords.",
                 ))
             }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnmatchedEnd(_))) => Some(Cow::Borrowed(
-                "This `end` keyword does not match any open block. \
-                Note: single-line `if` expressions do not require `end`. \
-                Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.",
-            )),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnmatchedEnd(_))) => {
+                Some(Cow::Borrowed(UNMATCHED_END_HELP))
+            }
             InnerError::Runtime(RuntimeError::DestructuringFailed(_)) => Some(Cow::Borrowed(
                 "Destructuring pattern did not match the value. Check that the pattern structure matches the value.",
             )),

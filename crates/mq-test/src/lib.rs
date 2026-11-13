@@ -8,4 +8,4 @@ mod runner;
 mod snapshot;
 
 pub use coverage::{CoverageFormat, FileCoverage};
-pub use runner::TestRunner;
+pub use runner::{OutputFormat, TestRunner};

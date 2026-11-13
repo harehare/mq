@@ -172,8 +172,6 @@ impl TestRunner {
 
     /// Calls `handler` before every statement the tests execute, including those in the modules
     /// they use. Ignored when coverage is on, which needs the same hook.
-    // Used by library consumers (the type checker's conformance test), not by the binary.
-    #[allow(dead_code)]
     pub fn with_step_handler(mut self, handler: std::sync::Arc<dyn mq_lang::DebuggerHandler>) -> Self {
         self.step_handler = Some(handler);
         self
