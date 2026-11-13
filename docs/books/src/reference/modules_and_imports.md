@@ -531,6 +531,18 @@ mq module search toml --json                # machine-readable
 
 The index is cached for 24 hours; `--refresh` fetches it again, and a stale cache is used when the fetch fails.
 
+Move modules pinned to a version tag to their latest tag with `update`:
+
+```sh
+mq module update --dry-run   # list available updates
+mq module update             # update every module in mq.lock
+mq module update kdl ini     # only these
+```
+
+Latest means the highest `vX.Y.Z` tag of the GitHub repository, so pre-releases and non-version tags are ignored.
+Modules that track a branch (`HEAD`, `main`) are skipped. The tag list comes from the GitHub API, which limits
+unauthenticated requests per hour.
+
 Import a saved module by name:
 
 ```mq

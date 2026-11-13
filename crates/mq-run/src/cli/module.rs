@@ -6,9 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Where vendored modules and their lock file live.
-struct Target {
-    dir: PathBuf,
-    lockfile: PathBuf,
+pub(super) struct Target {
+    pub(super) dir: PathBuf,
+    pub(super) lockfile: PathBuf,
 }
 
 impl Target {
@@ -31,11 +31,11 @@ impl Target {
         })
     }
 
-    fn select(global: bool) -> miette::Result<Self> {
+    pub(super) fn select(global: bool) -> miette::Result<Self> {
         if global { Self::global() } else { Ok(Self::project()) }
     }
 
-    fn create_dir(&self) -> miette::Result<()> {
+    pub(super) fn create_dir(&self) -> miette::Result<()> {
         fs::create_dir_all(&self.dir)
             .into_diagnostic()
             .wrap_err_with(|| format!("Failed to create {}", self.dir.display()))
@@ -47,7 +47,7 @@ impl Target {
 }
 
 /// The file stem a module is stored under, e.g. `kdl` for `github.com/harehare/kdl.mq@v1.0`.
-fn module_name(spec: &str) -> miette::Result<&str> {
+pub(super) fn module_name(spec: &str) -> miette::Result<&str> {
     let name = http_import::extract_module_name(spec);
     if name.is_empty() || name.starts_with('.') || name.contains(['/', '\\']) {
         bail!("Cannot derive a module name from `{spec}`");
@@ -56,7 +56,7 @@ fn module_name(spec: &str) -> miette::Result<&str> {
 }
 
 /// Locked entries as `(url, name, hash)`, rejecting two different contents stored under one name.
-fn locked_modules(lock: &ModuleLock) -> miette::Result<Vec<(String, String, String)>> {
+pub(super) fn locked_modules(lock: &ModuleLock) -> miette::Result<Vec<(String, String, String)>> {
     let mut modules: Vec<(String, String, String)> = Vec::new();
     for (url, hash) in lock.entries() {
         let name = module_name(url)?.to_string();
@@ -84,7 +84,7 @@ fn check_modules(target: &Target, lock: &ModuleLock) -> miette::Result<Vec<Strin
     Ok(problems)
 }
 
-fn read_lock(path: &Path) -> miette::Result<ModuleLock> {
+pub(super) fn read_lock(path: &Path) -> miette::Result<ModuleLock> {
     let content = fs::read_to_string(path)
         .into_diagnostic()
         .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
@@ -106,9 +106,20 @@ fn prune_replaced(lockfile: &Path, name: &str, hash: &str) -> miette::Result<()>
     for url in &stale {
         lock.remove(url);
     }
-    fs::write(lockfile, lock.to_json())
+    write_lock(lockfile, &lock)
+}
+
+fn write_lock(path: &Path, lock: &ModuleLock) -> miette::Result<()> {
+    fs::write(path, lock.to_json())
         .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to write {}", lockfile.display()))
+        .wrap_err_with(|| format!("Failed to write {}", path.display()))
+}
+
+/// Drops the lock entry for `url`.
+pub(super) fn remove_lock_entry(lockfile: &Path, url: &str) -> miette::Result<()> {
+    let mut lock = read_lock(lockfile)?;
+    lock.remove(url);
+    write_lock(lockfile, &lock)
 }
 
 impl Cli {
@@ -157,7 +168,11 @@ impl Cli {
         bail!("{} module(s) are out of date", problems.len());
     }
 
-    fn module_resolver(target: &Target, domains: &[String], frozen: bool) -> HttpModuleResolver<UreqFetcher> {
+    pub(super) fn module_resolver(
+        target: &Target,
+        domains: &[String],
+        frozen: bool,
+    ) -> HttpModuleResolver<UreqFetcher> {
         let mut fetcher = UreqFetcher::default();
         fetcher.set_lockfile_path(target.lockfile.clone());
         fetcher.set_lockfile_frozen(frozen);
@@ -167,7 +182,7 @@ impl Cli {
     }
 
     /// Fetches `spec` through the lock-checked resolver and writes it as `<name>.mq`, returning its hash.
-    fn fetch_module(
+    pub(super) fn fetch_module(
         resolver: &HttpModuleResolver<UreqFetcher>,
         target: &Target,
         spec: &str,

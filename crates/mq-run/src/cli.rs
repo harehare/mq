@@ -35,6 +35,8 @@ mod exit_status;
 mod module;
 #[cfg(feature = "http-import")]
 mod module_search;
+#[cfg(feature = "http-import")]
+mod module_update;
 mod mqc;
 mod text_input;
 
@@ -1061,6 +1063,21 @@ enum ModuleCommand {
         /// Use `~/.config/mq` and its `mq.lock` instead of the project
         #[arg(long)]
         global: bool,
+    },
+    /// Move modules pinned to a version tag to their latest tag (modules tracking a branch are skipped)
+    Update {
+        /// Modules to update [default: every module in `mq.lock`]
+        #[arg(value_name = "NAME")]
+        names: Vec<String>,
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
+        /// Print the available updates without changing anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Also allow modules from DOMAIN (repeatable)
+        #[arg(long = "allow-domain", value_name = "DOMAIN")]
+        allow_domain: Vec<String>,
     },
     /// Search the published module index (https://mqlang.org/modules.json)
     Search {
@@ -2110,6 +2127,12 @@ impl Cli {
                 } => Self::module_add(modules, *global, allow_domain),
                 ModuleCommand::Install { global, allow_domain } => Self::module_install(*global, allow_domain),
                 ModuleCommand::Check { global } => Self::module_check(*global),
+                ModuleCommand::Update {
+                    names,
+                    global,
+                    dry_run,
+                    allow_domain,
+                } => Self::module_update(names, *global, *dry_run, allow_domain),
                 ModuleCommand::Search {
                     terms,
                     category,
