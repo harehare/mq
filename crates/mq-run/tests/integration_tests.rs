@@ -147,10 +147,24 @@ fn test_help_search_lists_name_and_description_matches() -> Result<(), Box<dyn s
     let assert = cmd.arg("help").arg("--search").arg("token").assert().success();
     let output = String::from_utf8(assert.get_output().stdout.clone())?;
 
-    // Name matches come first; each line is `name(params): first sentence`.
+    // Name matches come first; each line is `name(params)  first sentence`.
     let first = output.lines().next().unwrap_or_default();
     assert!(first.starts_with("token_"), "{first}");
-    assert!(output.contains("token_count(text: string, model?: string): "));
+    assert!(output.contains("token_count(text, model?)  "));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_search_ranks_exact_name_first_and_skips_partial_words() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("--search").arg("map").assert().success();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.lines().next().unwrap_or_default().starts_with("map(v, f)  "));
+    // `table::constant_fill` only mentions "maps" in prose, which is not a whole-word match.
+    assert!(!output.contains("constant_fill"));
 
     Ok(())
 }

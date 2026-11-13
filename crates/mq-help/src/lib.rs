@@ -25,7 +25,7 @@ pub mod reference;
 pub use catalog::{
     HelpEntry, HelpExample, HelpModule, HelpParam, all_entries, all_modules, all_names, lookup, lookup_module,
     render_human, render_markdown, render_module_human, render_module_markdown, render_summary, search, suggest,
-    top_level_entries,
+    summary_name_width, top_level_entries,
 };
 pub use docs::{BUILTIN_DOC, BuiltinDoc, BuiltinExample, DocKind, DocTable};
 #[cfg(feature = "catalog")]

@@ -485,44 +485,93 @@ pub fn render_module_markdown(module: &HelpModule) -> String {
     out
 }
 
-/// Entries whose name, alias or description contains `word` (case-insensitive). Name matches
-/// come first, then description matches, each sorted by name.
+/// Entries matching `word` (case-insensitive), best first: exact name, name prefix, name
+/// substring, then whole-word description match. Ties are sorted by name.
 pub fn search(word: &str) -> Vec<HelpEntry> {
     let word = word.to_lowercase();
-    let mut hits: Vec<(bool, HelpEntry)> = all_entries()
+    let mut hits: Vec<(u8, HelpEntry)> = all_entries()
         .into_iter()
         .filter_map(|e| {
-            let in_name =
-                e.name.to_lowercase().contains(&word) || e.aliases.iter().any(|a| a.to_lowercase().contains(&word));
-            (in_name || e.description.to_lowercase().contains(&word)).then_some((!in_name, e))
+            let rank = search_rank(&e, &word)?;
+            Some((rank, e))
         })
         .collect();
-    hits.sort_by(|(a_desc, a), (b_desc, b)| a_desc.cmp(b_desc).then_with(|| a.name.cmp(&b.name)));
+    hits.sort_by(|(a_rank, a), (b_rank, b)| a_rank.cmp(b_rank).then_with(|| a.name.cmp(&b.name)));
     hits.into_iter().map(|(_, e)| e).collect()
 }
 
-/// One plain-text line, `name(param: type, ...): first sentence`, stable for scripts. A
-/// module function is prefixed with `module::`.
-pub fn render_summary(entry: &HelpEntry) -> String {
-    let params = entry
-        .params
-        .iter()
-        .map(|p| format!("{}: {}", p.name, p.type_name))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let qualifier = entry
-        .related_module
-        .as_ref()
-        .map(|m| format!("{m}::"))
-        .unwrap_or_default();
-    let description = entry.description.split_whitespace().collect::<Vec<_>>().join(" ");
-    let sentence = first_sentence(&description);
-    let head = format!("{qualifier}{}({params})", entry.name);
-    if sentence.is_empty() {
-        head
+fn search_rank(entry: &HelpEntry, word: &str) -> Option<u8> {
+    let names = std::iter::once(&entry.name)
+        .chain(&entry.aliases)
+        .map(|n| n.to_lowercase())
+        .collect::<Vec<_>>();
+    if names.iter().any(|n| n == word) {
+        Some(0)
+    } else if names.iter().any(|n| n.starts_with(word)) {
+        Some(1)
+    } else if names.iter().any(|n| n.contains(word)) {
+        Some(2)
+    } else if contains_word(&entry.description.to_lowercase(), word) {
+        Some(3)
     } else {
-        format!("{head}: {sentence}")
+        None
     }
+}
+
+/// Whether `word` occurs in `text` not adjacent to another word character, so `map` does not
+/// match `maps`.
+fn contains_word(text: &str, word: &str) -> bool {
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    text.match_indices(word)
+        .any(|(i, m)| !text[..i].ends_with(is_word) && !text[i + m.len()..].starts_with(is_word))
+}
+
+/// One search result line: `signature  first sentence`, with the signature padded to
+/// `name_width`. A module function is prefixed with `module::`, and the first occurrence of
+/// `word` in the name is highlighted.
+pub fn render_summary(entry: &HelpEntry, word: &str, name_width: usize) -> String {
+    let (name, params) = search_display_parts(entry);
+    let padding = " ".repeat(name_width.saturating_sub(name.chars().count() + params.chars().count()));
+    let shown = match name.to_lowercase().find(&word.to_lowercase()) {
+        Some(i) if name.is_char_boundary(i) && name.is_char_boundary(i + word.len()) => format!(
+            "{}{}{}",
+            &name[..i],
+            name[i..i + word.len()].yellow().bold(),
+            &name[i + word.len()..]
+        ),
+        _ => name,
+    };
+    let description = entry.description.split_whitespace().collect::<Vec<_>>().join(" ");
+    format!("{shown}{params}{padding}  {}", first_sentence(&description))
+        .trim_end()
+        .to_string()
+}
+
+/// Display width of the signature column for `entries`, to align [`render_summary`] lines.
+pub fn summary_name_width(entries: &[HelpEntry]) -> usize {
+    entries
+        .iter()
+        .map(|e| {
+            let (name, params) = search_display_parts(e);
+            name.chars().count() + params.chars().count()
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Qualified name and parameter list without types (`(v, f)`); selectors have no list.
+fn search_display_parts(entry: &HelpEntry) -> (String, String) {
+    let name = match &entry.related_module {
+        Some(m) => format!("{m}::{}", entry.name),
+        None => entry.name.clone(),
+    };
+    let params = if entry.kind == "function" {
+        let names = entry.params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>();
+        format!("({})", names.join(", "))
+    } else {
+        String::new()
+    };
+    (name, params)
 }
 
 /// Up to the first `. ` followed by an uppercase letter, so `e.g. x` does not end a sentence.
@@ -548,10 +597,19 @@ mod tests {
     }
 
     #[test]
-    fn test_search_ranks_name_matches_first() {
-        let names: Vec<_> = search("token").into_iter().map(|e| e.name).collect();
-        assert!(names[0].contains("token"));
-        assert!(names.contains(&"token_count".to_string()));
+    fn test_search_ranks_exact_then_prefix_then_substring() {
+        let names: Vec<_> = search("map").into_iter().map(|e| e.name).collect();
+        assert_eq!(names[0], "map");
+        let pos = |n: &str| names.iter().position(|x| x == n).unwrap();
+        assert!(pos("map_values") < pos("flat_map"));
+    }
+
+    #[test]
+    fn test_contains_word_respects_boundaries() {
+        assert!(contains_word("applies map to each", "map"));
+        assert!(contains_word("(map)", "map"));
+        assert!(!contains_word("maps over", "map"));
+        assert!(!contains_word("a bitmap", "map"));
     }
 
     #[test]

@@ -988,7 +988,7 @@ enum Commands {
         /// `section`, `examples`
         #[arg(value_parser = HelpNameParser, hide_possible_values = true)]
         name: Option<String>,
-        /// List entries whose name or description contains WORD, one line each
+        /// List entries matching WORD in name or description, best match first
         #[arg(long, value_name = "WORD", conflicts_with = "name")]
         search: Option<String>,
         /// Print machine-readable JSON instead of formatted text
@@ -1433,10 +1433,11 @@ impl Cli {
         handle.flush().into_diagnostic()
     }
 
-    /// Prints `entries` one line each (`name(params): first sentence`), or as JSON/Markdown.
+    /// Prints `entries` one line each (`kind  name  first sentence`), or as JSON/Markdown.
     /// An empty list is an error carrying `empty_message`, like `grep`'s non-zero exit.
     fn run_help_list(
         entries: Vec<help::HelpEntry>,
+        word: &str,
         empty_message: String,
         json: bool,
         markdown: bool,
@@ -1448,9 +1449,10 @@ impl Cli {
             serde_json::to_string_pretty(&entries).into_diagnostic()?
         } else {
             let prefix = if markdown { "- " } else { "" };
+            let width = help::summary_name_width(&entries);
             entries
                 .iter()
-                .map(|e| format!("{prefix}{}", help::render_summary(e)))
+                .map(|e| format!("{prefix}{}", help::render_summary(e, word, width)))
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -2011,6 +2013,7 @@ impl Cli {
                 Some(match search {
                     Some(word) => Self::run_help_list(
                         help::search(word),
+                        word,
                         format!("no entry matches `{word}`"),
                         *json,
                         *markdown,
