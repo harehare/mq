@@ -45,6 +45,8 @@ pub struct Hir {
     pub(crate) bracket_key_counts: FxHashMap<SymbolId, usize>,
     /// For each call `a[0][1]`, how many bracket groups it has. A slice `a[0:1]` is one group.
     pub(crate) bracket_group_counts: FxHashMap<SymbolId, usize>,
+    /// `Variable` symbols declared with `var`.
+    pub(crate) mutable_variables: FxHashSet<SymbolId>,
     pub(crate) scope_name_index: FxHashMap<ScopeId, FxHashMap<SmolStr, Vec<SymbolId>>>,
 }
 
@@ -98,6 +100,7 @@ impl Hir {
             leaking_scopes: FxHashMap::default(),
             bracket_key_counts: FxHashMap::default(),
             bracket_group_counts: FxHashMap::default(),
+            mutable_variables: FxHashSet::default(),
             scope_name_index: FxHashMap::default(),
         }
     }
@@ -293,6 +296,7 @@ impl Hir {
             .retain(|symbol_id| symbols.contains_key(*symbol_id));
         self.bracket_key_counts.retain(|call, _| symbols.contains_key(*call));
         self.bracket_group_counts.retain(|call, _| symbols.contains_key(*call));
+        self.mutable_variables.retain(|id| symbols.contains_key(*id));
         self.references
             .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
         let references = &self.references;
