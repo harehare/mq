@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{Shared, Token, TokenKind, selector};
+use crate::{Shared, Token, TokenKind, error, selector};
 
 #[derive(Error, Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
 #[non_exhaustive]
@@ -55,33 +55,34 @@ impl ParseError {
     pub fn hint(&self) -> Option<String> {
         match self {
             ParseError::UnknownSelector(sel) => Some(crate::error::selector_help(sel).into_owned()),
-            ParseError::UnexpectedToken(token) if token.kind == TokenKind::Eof => Some(
-                "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.".to_string(),
-            ),
+            ParseError::UnexpectedToken(token) if token.kind == TokenKind::Eof => {
+                Some(error::UNPARSED_SOURCE_HELP.to_string())
+            }
             ParseError::UnexpectedToken(_) => Some(
-                "This token is not valid here. Check for typos, missing operators, or misplaced punctuation.".to_string(),
+                "This token is not valid here. Check for typos, missing operators, or misplaced punctuation."
+                    .to_string(),
             ),
             ParseError::UnexpectedEOFDetected => Some(
-                "Unexpected end of input. Check for missing closing brackets, parentheses, or incomplete expressions.".to_string(),
+                "Unexpected end of input. Check for missing closing brackets, parentheses, or incomplete expressions."
+                    .to_string(),
             ),
             ParseError::InsufficientTokens(_) => Some(
-                "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.".to_string(),
+                "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters."
+                    .to_string(),
             ),
-            ParseError::InvalidAssignmentTarget(_) => Some(
-                "Only a variable or an indexed variable such as `x[0]` can be assigned to.".to_string(),
-            ),
+            ParseError::InvalidAssignmentTarget(_) => {
+                Some("Only a variable or an indexed variable such as `x[0]` can be assigned to.".to_string())
+            }
             ParseError::ParameterWithoutDefaultAfterDefault(_) => {
                 Some("Give this parameter a default value, or move it before the parameters with defaults.".to_string())
             }
             ParseError::VariadicParameterMustBeLast(_) | ParseError::MultipleVariadicParameters(_) => {
                 Some("A function can have a single variadic parameter, and it must come last.".to_string())
             }
-            ParseError::Missing { .. } => Some(
-                "A token is missing here. Check for unclosed brackets, parentheses, or blocks.".to_string(),
-            ),
-            ParseError::UnmatchedEnd(_) => Some(
-                "This `end` keyword does not match any open block. Note: single-line `if` expressions do not require `end`. Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.".to_string(),
-            ),
+            ParseError::Missing { .. } => {
+                Some("A token is missing here. Check for unclosed brackets, parentheses, or blocks.".to_string())
+            }
+            ParseError::UnmatchedEnd(_) => Some(error::UNMATCHED_END_HELP.to_string()),
         }
     }
 }
