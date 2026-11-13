@@ -1,5 +1,5 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
-use mq_hir::SymbolKind;
+use mq_hir::{SymbolId, SymbolKind};
 
 /// Reports `if` conditions that are a `true` or `false` literal.
 pub struct AlwaysTrueCondition;
@@ -14,8 +14,6 @@ impl LintRule for AlwaysTrueCondition {
     }
 
     fn check(&self, ctx: &LintContext<'_>) -> Vec<Diagnostic> {
-        // Find If symbols whose condition child is a literal `true` or `false`.
-        // The condition is the first child of the If node by source position.
         let mut diagnostics = Vec::new();
 
         let if_ids: Vec<_> = ctx
@@ -25,31 +23,11 @@ impl LintRule for AlwaysTrueCondition {
             .collect();
 
         for (if_id, if_sym) in if_ids {
-            // Sort children by source position and take the first one (the condition).
-            let mut children: Vec<_> = ctx
-                .children(if_id)
-                .filter_map(|(id, s)| s.source.text_range.map(|r| (id, r, s)))
-                .collect();
-            children.sort_by_key(|(_, r, _)| (r.start.line, r.start.column));
-
-            let Some((_, _, cond_sym)) = children.first() else {
+            let Some(value) = condition_literal(ctx, if_id) else {
                 continue;
             };
 
-            let Some(value) = cond_sym.value.as_deref() else {
-                continue;
-            };
-
-            if !matches!(cond_sym.kind, SymbolKind::Boolean) {
-                continue;
-            }
-
-            let mut d = Diagnostic::new(
-                LintMessage::AlwaysTrueCondition {
-                    value: value.to_string(),
-                },
-                self.severity(),
-            );
+            let mut d = Diagnostic::new(LintMessage::AlwaysTrueCondition { value }, self.severity());
             if let Some(range) = if_sym.source.text_range {
                 d = d.with_range(range);
             }
@@ -58,6 +36,19 @@ impl LintRule for AlwaysTrueCondition {
 
         diagnostics
     }
+}
+
+/// Returns the `true`/`false` literal used as the condition (first child by position) of `id`.
+pub(crate) fn condition_literal(ctx: &LintContext<'_>, id: SymbolId) -> Option<String> {
+    let (_, cond_sym) = ctx
+        .children(id)
+        .filter_map(|(_, s)| s.source.text_range.map(|r| (r, s)))
+        .min_by_key(|(r, _)| (r.start.line, r.start.column))?;
+
+    if !matches!(cond_sym.kind, SymbolKind::Boolean) {
+        return None;
+    }
+    cond_sym.value.as_deref().map(str::to_string)
 }
 
 #[cfg(test)]
