@@ -55,6 +55,20 @@ fn test_cli_halt_exits_with_code(#[case] query: &str, #[case] code: i32, #[case]
         .stderr("");
 }
 
+#[rstest]
+#[case::text("text", ".h", "T\nS\n")]
+#[case::csv("csv", ".h", "value\n# T\n## S\n")]
+#[case::csv_list("csv", ".list", "value\n- a\n- b\n")]
+fn test_unmatched_nodes_are_skipped(#[case] format: &str, #[case] query: &str, #[case] expected: &str) {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.args(["-F", format, query])
+        .write_stdin("# T\n\npara\n\n## S\n\n- a\n- b\n\n```\ncode\n```\n")
+        .assert()
+        .success()
+        .stdout(expected.to_string());
+}
+
 #[test]
 fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
