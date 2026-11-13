@@ -7261,6 +7261,11 @@ fn test_adjacent_statements_without_pipe_are_rejected(#[case] code: &str) {
 #[case::interpolated_pipeline("s\"${a | b}\"", 1)]
 #[case::index_attr("x[0].row", 1)]
 #[case::index_attr_chain("x[0].row[1].column", 1)]
+#[case::self_index_attr("self[0].depth", 1)]
+#[case::self_index_attr_chain("self[0].depth[1].column", 1)]
+#[case::self_index_attr_in_array("[self[0].depth]", 1)]
+#[case::self_index_attr_in_dict("{\"a\": self[0].depth}", 1)]
+#[case::paren_self_index_attr("[(self[0]).depth]", 1)]
 fn test_statement_boundaries_that_remain_valid(#[case] code: &str, #[case] len: usize) {
     assert_eq!(parse_program_source(code).map(|p| p.len()), Ok(len), "{code:?}");
 }
