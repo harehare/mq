@@ -108,6 +108,13 @@ fn send_http_request(
     Ok(response)
 }
 
+/// Responses to HEAD, and 204 responses, carry no body. Reading one would make the
+/// decoder fail on a `Content-Encoding: gzip` header describing an empty payload.
+#[cfg(feature = "http")]
+fn response_has_no_body(method: &str, status: ureq::http::StatusCode) -> bool {
+    method.eq_ignore_ascii_case("HEAD") || status == ureq::http::StatusCode::NO_CONTENT
+}
+
 impl Io for NativeIo {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError> {
         std::fs::read_to_string(path).map_err(|e| io_err(e, path))
@@ -240,7 +247,12 @@ impl Io for NativeIo {
         /// Matches the `http()` builtin's existing limits.
         const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
 
-        send_http_request(method, url, body, headers)?
+        let response = send_http_request(method, url, body, headers)?;
+        if response_has_no_body(method, response.status()) {
+            return Ok(String::new());
+        }
+
+        response
             .into_body()
             .into_with_config()
             .limit(MAX_RESPONSE_SIZE)
@@ -272,6 +284,10 @@ impl Io for NativeIo {
         headers: &[(String, String)],
     ) -> Result<Box<dyn IoReader>, IoError> {
         let response = send_http_request(method, url, body, headers)?;
+        if response_has_no_body(method, response.status()) {
+            return Ok(Box::new(std::io::empty()));
+        }
+
         Ok(Box::new(std::io::BufReader::new(response.into_body().into_reader())))
     }
 
@@ -331,6 +347,18 @@ impl Io for NativeIo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "http")]
+    #[rstest::rstest]
+    #[case("HEAD", 200, true)]
+    #[case("head", 200, true)]
+    #[case("GET", 204, true)]
+    #[case("GET", 200, false)]
+    #[case("POST", 200, false)]
+    fn test_response_has_no_body(#[case] method: &str, #[case] status: u16, #[case] expected: bool) {
+        let status = ureq::http::StatusCode::from_u16(status).unwrap();
+        assert_eq!(response_has_no_body(method, status), expected);
+    }
 
     #[test]
     fn test_read_write_round_trip() {
