@@ -521,6 +521,16 @@ mq module add --global github.com/harehare/kdl.mq@v1.0   # ~/.config/mq/kdl.mq a
 
 `install` and `check` also take `--global`. `mq mod` is an alias of `mq module`.
 
+Find modules with `search`, which queries the index published at <https://mqlang.org/modules.json>:
+
+```sh
+mq module search yaml                       # every word must match the name, category or description
+mq module search --category format-parsers  # list one category
+mq module search toml --json                # machine-readable
+```
+
+The index is cached for 24 hours; `--refresh` fetches it again, and a stale cache is used when the fetch fails.
+
 Import a saved module by name:
 
 ```mq

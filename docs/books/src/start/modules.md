@@ -34,6 +34,8 @@ import "github.com/harehare/<module-name>"
 
 Type to search by name or description, or click a category to filter.
 
+The same list is available from the command line with `mq module search`.
+
 <div class="module-toolbar">
   <input type="text" id="module-search-input" class="module-search-input" placeholder="Search modules…" aria-label="Search extension modules">
   <span id="module-count" class="module-count"></span>

@@ -33,6 +33,8 @@ mod bytecode;
 mod exit_status;
 #[cfg(feature = "http-import")]
 mod module;
+#[cfg(feature = "http-import")]
+mod module_search;
 mod mqc;
 mod text_input;
 
@@ -1059,6 +1061,21 @@ enum ModuleCommand {
         /// Use `~/.config/mq` and its `mq.lock` instead of the project
         #[arg(long)]
         global: bool,
+    },
+    /// Search the published module index (https://mqlang.org/modules.json)
+    Search {
+        /// Words that must all appear in a module's name, category or description
+        #[arg(value_name = "QUERY")]
+        terms: Vec<String>,
+        /// Only modules in this category, e.g. `format-parsers`
+        #[arg(long, value_name = "SLUG")]
+        category: Option<String>,
+        /// Print machine-readable JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+        /// Fetch the index again instead of using the 24 hour cache
+        #[arg(long)]
+        refresh: bool,
     },
 }
 
@@ -2093,6 +2110,15 @@ impl Cli {
                 } => Self::module_add(modules, *global, allow_domain),
                 ModuleCommand::Install { global, allow_domain } => Self::module_install(*global, allow_domain),
                 ModuleCommand::Check { global } => Self::module_check(*global),
+                ModuleCommand::Search {
+                    terms,
+                    category,
+                    json,
+                    refresh,
+                } => {
+                    colored::control::set_override(self.use_color());
+                    Self::module_search(terms, category.as_deref(), *json, *refresh)
+                }
             }),
             #[cfg(feature = "debugger")]
             Commands::Dap => Some(mq_dap::start().map_err(|e| miette!(e.to_string()))),

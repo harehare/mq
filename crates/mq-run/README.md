@@ -124,7 +124,7 @@ Pass a value (`--allow-read=./docs`) to restrict a permission to those paths, do
 
 ## Modules
 
-`-L DIR` adds a module search directory, `-M FILE` loads a module file, and `-m NAME` imports a module so its functions are called as `name::fn()`. Modules can be imported over HTTP with `--allow-http-import`, which is off by default. Fetched modules are pinned in `mq.lock` and checked on each run (`--frozen` fails instead of recording a new entry, for CI). `mq module add MODULE` saves a module to `./vendor` (or `~/.config/mq` with `--global`) so it can be imported by name offline; `mq module install` restores everything in `mq.lock` and `mq module check` verifies it. See the [module guide](https://mqlang.org/book/start/modules.html).
+`-L DIR` adds a module search directory, `-M FILE` loads a module file, and `-m NAME` imports a module so its functions are called as `name::fn()`. Modules can be imported over HTTP with `--allow-http-import`, which is off by default. Fetched modules are pinned in `mq.lock` and checked on each run (`--frozen` fails instead of recording a new entry, for CI). `mq module add MODULE` saves a module to `./vendor` (or `~/.config/mq` with `--global`) so it can be imported by name offline; `mq module install` restores everything in `mq.lock` `mq module check` verifies it, and `mq module search` looks modules up in the published index. See the [module guide](https://mqlang.org/book/start/modules.html).
 
 ## Subcommands
 

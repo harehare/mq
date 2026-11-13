@@ -203,6 +203,56 @@ impl UreqFetcher {
         }
     }
 
+    /// Downloads `url` over HTTPS with the SSRF-safe agent and size limit, bypassing the module
+    /// cache and `mq.lock`. For data that must be fresh, such as the published module index.
+    pub fn fetch_uncached(&self, url: &str) -> Result<String, ModuleError> {
+        if !super::ssrf::is_https(url) {
+            return Err(ModuleError::IOError(
+                format!("Only HTTPS URLs are allowed: {}", url).into(),
+            ));
+        }
+        self.download(url)
+    }
+
+    fn download(&self, url: &str) -> Result<String, ModuleError> {
+        let agent = super::ssrf::ssrf_safe_agent(self.timeout, true);
+
+        let mut response = agent
+            .get(url)
+            .call()
+            .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+
+        if response.status() != 200 {
+            return Err(ModuleError::IOError(
+                format!("Failed to fetch module: {} (status: {})", url, response.status()).into(),
+            ));
+        }
+
+        let is_html = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.contains("text/html"))
+            .unwrap_or(false);
+        if is_html {
+            return Err(ModuleError::IOError(
+                format!(
+                    "URL returned HTML instead of the expected file: {}. Check that the URL points directly to the file.",
+                    url
+                )
+                .into(),
+            ));
+        }
+
+        let content = response
+            .body_mut()
+            .with_config()
+            .limit(MAX_MODULE_SIZE)
+            .read_to_string()
+            .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        Ok(content)
+    }
+
     /// Enables or disables the `mq.lock` integrity check/update. The path is unaffected.
     pub fn set_lockfile_enabled(&mut self, enabled: bool) {
         self.lockfile_enabled = enabled;
@@ -454,41 +504,7 @@ impl HttpFetcher for UreqFetcher {
             return Ok(cached.content);
         }
 
-        let agent = super::ssrf::ssrf_safe_agent(self.timeout, true);
-
-        let mut response = agent
-            .get(url)
-            .call()
-            .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
-
-        if response.status() != 200 {
-            return Err(ModuleError::IOError(
-                format!("Failed to fetch module: {} (status: {})", url, response.status()).into(),
-            ));
-        }
-
-        let is_html = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.contains("text/html"))
-            .unwrap_or(false);
-        if is_html {
-            return Err(ModuleError::IOError(
-                format!(
-                    "URL returned HTML instead of mq source code: {}. Check that the URL points directly to a .mq file.",
-                    url
-                )
-                .into(),
-            ));
-        }
-
-        let content = response
-            .body_mut()
-            .with_config()
-            .limit(MAX_MODULE_SIZE)
-            .read_to_string()
-            .map_err(|e| ModuleError::IOError(e.to_string().into()))?;
+        let content = self.download(url)?;
         let hash = lockfile::compute_hash(&content);
 
         self.check_lock(url, &hash)?;
