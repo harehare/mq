@@ -1,15 +1,7 @@
 //! Command-line runner for `.mq` tests.
 
-mod coverage;
-mod highlight;
-mod html;
-mod resolver;
-mod runner;
-mod snapshot;
-
 use clap::Parser;
-use coverage::CoverageFormat;
-use runner::OutputFormat;
+use mq_test::{CoverageFormat, OutputFormat, TestRunner};
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser, Debug)]
@@ -108,7 +100,7 @@ struct Cli {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    match runner::TestRunner::new(cli.files)
+    match TestRunner::new(cli.files)
         .with_coverage(cli.coverage)
         .with_coverage_format(cli.coverage_format)
         .with_coverage_output(cli.coverage_output)
