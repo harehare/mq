@@ -1767,6 +1767,21 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "絵文字テスト🎉です **太字😀** 終わり"
 )]
+#[case::heading_with_link(
+    "<h2><a href=\"https://example.com\">text</a></h2>",
+    ConversionOptions::default(),
+    "## [text](https://example.com)"
+)]
+#[case::heading_with_image(
+    "<h3><img src=\"a.png\" alt=\"alt\"></h3>",
+    ConversionOptions::default(),
+    "### ![alt](a.png)"
+)]
+#[case::heading_with_text_and_link(
+    "<h1>See <a href=\"/docs\">docs</a> now</h1>",
+    ConversionOptions::default(),
+    "# See [docs](/docs) now"
+)]
 fn test_html_to_markdown(#[case] html: &str, #[case] options: ConversionOptions, #[case] expected: &str) {
     assert_conversion_with_options(html, expected, options);
 }
@@ -1941,8 +1956,6 @@ fn test_no_base_url_leaves_relative_links_unresolved() {
     let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
     assert!(md.contains("[link](/relative/path)"));
 }
-
-// TODO: Add tests for headings with links, images etc. once those elements are supported.
 
 // Test for parsing error on malformed heading (illustrative, might need adjustment based on parser behavior)
 // At this stage, the generic "parsing not yet fully implemented" error is expected for unhandled valid tags,
