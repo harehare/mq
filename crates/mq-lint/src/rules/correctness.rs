@@ -1,5 +1,7 @@
 /// The `always_true_condition` rule.
 pub mod always_true_condition;
+/// The `assign_to_immutable` rule.
+pub mod assign_to_immutable;
 /// The `deprecated_function_call` rule.
 pub mod deprecated_function_call;
 /// The `duplicate_import` rule.
@@ -40,5 +42,6 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(shadow_variable::ShadowVariable),
         Box::new(missing_else_in_expr::MissingElseInExpr),
         Box::new(always_true_condition::AlwaysTrueCondition),
+        Box::new(assign_to_immutable::AssignToImmutable),
     ]
 }

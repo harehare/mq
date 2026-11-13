@@ -35,6 +35,8 @@ pub enum RuleId {
     MissingElseInExpr,
     /// An `if` condition that is a constant.
     AlwaysTrueCondition,
+    /// An assignment to a `let` binding.
+    AssignToImmutable,
     /// A function body longer than the configured line limit.
     FunctionTooLong,
     /// A function with more parameters than the configured limit.
@@ -99,6 +101,7 @@ impl RuleId {
         RuleId::ShadowVariable,
         RuleId::MissingElseInExpr,
         RuleId::AlwaysTrueCondition,
+        RuleId::AssignToImmutable,
         RuleId::FunctionTooLong,
         RuleId::TooManyParams,
         RuleId::DeeplyNested,
@@ -138,6 +141,7 @@ impl RuleId {
             RuleId::ShadowVariable => "shadow_variable",
             RuleId::MissingElseInExpr => "missing_else_in_expr",
             RuleId::AlwaysTrueCondition => "always_true_condition",
+            RuleId::AssignToImmutable => "assign_to_immutable",
             RuleId::FunctionTooLong => "function_too_long",
             RuleId::TooManyParams => "too_many_params",
             RuleId::DeeplyNested => "deeply_nested",
@@ -233,6 +237,11 @@ pub enum LintMessage {
     },
     /// An `if` expression without an `else` branch.
     MissingElseInExpr,
+    /// An assignment to a `let` binding.
+    AssignToImmutable {
+        /// Name of the offending item.
+        name: String,
+    },
     /// An `if` condition that is a constant.
     AlwaysTrueCondition {
         /// The constant condition value.
@@ -379,6 +388,7 @@ impl LintMessage {
             LintMessage::ShadowVariable { .. } => RuleId::ShadowVariable,
             LintMessage::MissingElseInExpr => RuleId::MissingElseInExpr,
             LintMessage::AlwaysTrueCondition { .. } => RuleId::AlwaysTrueCondition,
+            LintMessage::AssignToImmutable { .. } => RuleId::AssignToImmutable,
             LintMessage::FunctionTooLong { .. } => RuleId::FunctionTooLong,
             LintMessage::TooManyParams { .. } => RuleId::TooManyParams,
             LintMessage::DeeplyNested { .. } => RuleId::DeeplyNested,
@@ -429,6 +439,7 @@ impl LintMessage {
                 "deprecated function `{name}`; consider using an alternative or removing the call"
             )),
             LintMessage::ShadowVariable { .. } => Some("consider renaming to avoid confusion".to_string()),
+            LintMessage::AssignToImmutable { name } => Some(format!("declare `{name}` with `var` instead of `let`")),
             LintMessage::MissingElseInExpr => {
                 Some("add `else: <expr>` to provide a value for the false branch".to_string())
             }
@@ -530,6 +541,7 @@ impl fmt::Display for LintMessage {
             LintMessage::ShadowVariable { name } => {
                 write!(f, "variable `{name}` shadows a variable in an outer scope")
             }
+            LintMessage::AssignToImmutable { name } => write!(f, "cannot assign to immutable variable `{name}`"),
             LintMessage::MissingElseInExpr => {
                 write!(
                     f,

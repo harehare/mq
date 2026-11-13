@@ -751,6 +751,9 @@ impl Hir {
                     parent,
                     insertion_order: 0,
                 });
+                if matches!(node.kind, mq_lang::CstNodeKind::Var { .. }) {
+                    self.mutable_variables.insert(symbol_id);
+                }
 
                 self.add_expr(rhs, source_id, scope_id, Some(symbol_id));
             }

@@ -93,6 +93,11 @@ impl Hir {
         self.bracket_group_counts.get(&call).copied().unwrap_or(0)
     }
 
+    /// Whether `symbol_id` is a `var` binding. `let` and `as` bindings are not.
+    pub fn is_mutable_variable(&self, symbol_id: SymbolId) -> bool {
+        self.mutable_variables.contains(&symbol_id)
+    }
+
     /// Returns the symbol with the given id.
     pub fn symbol(&self, symbol_id: SymbolId) -> Option<&Symbol> {
         self.symbols.get(symbol_id)

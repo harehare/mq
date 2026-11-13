@@ -136,6 +136,7 @@ config.complexity.max_interpolation_exprs = 4;
 | `shadow_variable`       | warn     |         | Variable re-declared in an inner scope with the same name as an outer variable |
 | `missing_else_in_expr`  | warn     |         | `if` expression with no `else` branch (evaluates to `none` on false)           |
 | `always_true_condition` | warn     |         | `if` condition is a literal `true` or `false`                                  |
+| `assign_to_immutable`   | error    |         | Assignment (`=`, `+=`, `x[k] = ...`) to a `let` binding                        |
 
 "Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
