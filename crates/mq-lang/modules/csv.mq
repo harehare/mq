@@ -53,6 +53,8 @@ end
 def csv_parse_with_delimiter(input, delimiter, has_header): _csv_parse(input, delimiter, has_header);
 
 # Parses CSV content using a comma as the delimiter.
+# With a header, duplicate header names and rows longer than the header are
+# errors. Shorter rows are padded with "".
 #
 # Example:
 # ```

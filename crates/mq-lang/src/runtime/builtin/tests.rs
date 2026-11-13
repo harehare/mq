@@ -1905,21 +1905,30 @@ fn test_csv_parse_no_header(#[case] csv: &str, #[case] expected: Result<RuntimeV
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
         }
     )]
-#[case::ragged_rows_with_header(
-        "a,b,c\n1,2\n3,4,5,6",
+#[case::short_row_padded_with_header(
+        "a,b,c\n1,2",
         {
-            let mut short_row = DictMap::default();
-            short_row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("1".to_string())));
-            short_row.insert(Ident::new("b"), RuntimeValue::String(Shared::new("2".to_string())));
-            short_row.insert(Ident::new("c"), RuntimeValue::String(Shared::new("".to_string())));
-            let mut long_row = DictMap::default();
-            long_row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("3".to_string())));
-            long_row.insert(Ident::new("b"), RuntimeValue::String(Shared::new("4".to_string())));
-            long_row.insert(Ident::new("c"), RuntimeValue::String(Shared::new("5".to_string())));
-            Ok(RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::Dict(Shared::new(short_row)),
-                RuntimeValue::Dict(Shared::new(long_row)),
-            ])))
+            let mut row = DictMap::default();
+            row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("1".to_string())));
+            row.insert(Ident::new("b"), RuntimeValue::String(Shared::new("2".to_string())));
+            row.insert(Ident::new("c"), RuntimeValue::String(Shared::new("".to_string())));
+            Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
+        }
+    )]
+#[case::duplicate_header(
+        "a,a\n1,2",
+        Err(Error::Runtime("Failed to parse CSV: duplicate header \"a\"".to_string()))
+    )]
+#[case::long_row(
+        "a,b\n1,2\n1,2,3",
+        Err(Error::Runtime("Failed to parse CSV: line 3 has 3 fields, but the header has 2".to_string()))
+    )]
+#[case::mid_field_quote_is_literal(
+        "a\nx\"y",
+        {
+            let mut row = DictMap::default();
+            row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("x\"y".to_string())));
+            Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
         }
     )]
 fn test_csv_parse_with_header(#[case] csv: &str, #[case] expected: Result<RuntimeValue, Error>) {
