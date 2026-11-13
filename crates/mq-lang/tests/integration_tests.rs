@@ -2775,6 +2775,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 1, values: vec!["b".to_string().into()], position: None}),
 ], position: None}))].into()))]
 #[case::to_md_table_cell_simple(r##"to_md_table_cell("val", 1, 2)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 1, column: 2, values: vec!["val".to_string().into()], position: None}))].into()))]
+#[case::to_md_table_cell_row_beyond_u16(r#"to_md_table_cell("x", 65536, 0) | .row"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(65536.into())].into()))]
 #[case::to_md_name_simple(r##"to_markdown("# title") | first() | to_md_name()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("h1".to_string()))].into()))]
 #[case::to_footnote_simple(r##"to_footnote("text", "1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Footnote(mq_markdown::Footnote{ident: "1".to_string(), values: vec!["text".to_string().into()], position: None}))].into()))]
 #[case::to_footnote_ref_simple(r##"to_footnote_ref("1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "1".to_string(), label: Some("1".to_string()), position: None}))].into()))]

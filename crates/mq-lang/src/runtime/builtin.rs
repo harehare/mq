@@ -3730,8 +3730,18 @@ fn to_md_table_row_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) 
     ))
 }
 
-/// Upper bound for the `row` and `column` arguments of `to_md_table_cell`.
-const MAX_TABLE_INDEX: usize = 65_535;
+/// Upper bound for the `column` argument of `to_md_table_cell`, which sizes layout width arrays.
+const MAX_TABLE_COLUMN: usize = 65_535;
+
+/// Validates the `row` argument of `to_md_table_cell`. Rows allocate nothing, so only
+/// finiteness, integrality and `usize` range are checked.
+fn table_row_index(value: &number::Number) -> Result<usize, Error> {
+    let raw = value.value();
+    if !raw.is_finite() || !value.is_int() || raw < 0.0 || raw >= usize::MAX as f64 {
+        return Err(Error::Runtime("row must be a finite, non-negative integer".to_string()));
+    }
+    Ok(raw as usize)
+}
 
 #[mq_macros::mq_fn(name = "to_md_table_cell", params = Fixed(3))]
 fn to_md_table_cell_impl(
@@ -3742,8 +3752,8 @@ fn to_md_table_cell_impl(
 ) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => {
-            let row = bounded_size(row, MAX_TABLE_INDEX, "row")?;
-            let column = bounded_size(column, MAX_TABLE_INDEX, "column")?;
+            let row = table_row_index(row)?;
+            let column = bounded_size(column, MAX_TABLE_COLUMN, "column")?;
             Ok(RuntimeValue::Markdown(
                 Shared::new(mq_markdown::Node::TableCell(mq_markdown::TableCell {
                     row,
