@@ -3218,3 +3218,62 @@ fn test_color_choice_standalone_commands(
 
     Ok(())
 }
+
+#[cfg(feature = "http-import")]
+mod module {
+    use assert_cmd::cargo;
+
+    /// A lock file pinning `ok.mq` to the SHA-256 of `def a(): 1;`.
+    fn lock_for(content_hash: &str) -> String {
+        format!(
+            r#"{{"version":"1","remote":{{"https://raw.githubusercontent.com/harehare/ok.mq/v1/ok.mq":"{content_hash}"}}}}"#
+        )
+    }
+
+    #[test]
+    fn test_module_check_passes_for_matching_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "def a(): 1;";
+        std::fs::create_dir(dir.path().join("vendor")).unwrap();
+        std::fs::write(dir.path().join("vendor/ok.mq"), content).unwrap();
+        std::fs::write(dir.path().join("mq.lock"), lock_for(&mq_lang::compute_hash(content))).unwrap();
+
+        cargo::cargo_bin_cmd!("mq")
+            .current_dir(dir.path())
+            .args(["module", "check"])
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn test_module_check_fails_for_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("mq.lock"),
+            lock_for(&mq_lang::compute_hash("def a(): 1;")),
+        )
+        .unwrap();
+
+        let output = cargo::cargo_bin_cmd!("mq")
+            .current_dir(dir.path())
+            .args(["module", "check"])
+            .assert()
+            .failure()
+            .get_output()
+            .stderr
+            .clone();
+
+        assert!(String::from_utf8_lossy(&output).contains("ok.mq is missing"));
+    }
+
+    #[test]
+    fn test_module_add_rejects_non_url_module() {
+        let dir = tempfile::tempdir().unwrap();
+
+        cargo::cargo_bin_cmd!("mq")
+            .current_dir(dir.path())
+            .args(["module", "add", "csv"])
+            .assert()
+            .failure();
+    }
+}

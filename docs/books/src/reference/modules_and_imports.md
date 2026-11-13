@@ -508,6 +508,32 @@ Commit `mq.lock` alongside scripts that use HTTP imports so CI and teammates fet
 content you locked, the same way `package-lock.json`/`deno.lock` work.
 
 
+### Saving modules to disk
+
+`mq module` saves HTTP modules to disk so they can be imported by name without `--allow-http-import`.
+
+```sh
+mq module add github.com/harehare/kdl.mq@v1.0   # writes vendor/kdl.mq and records it in mq.lock
+mq module install                               # fetch every URL in mq.lock again (e.g. after a fresh clone)
+mq module check                                 # offline: verify vendor/ against mq.lock
+mq module add --global github.com/harehare/kdl.mq@v1.0   # ~/.config/mq/kdl.mq and ~/.config/mq/mq.lock
+```
+
+`install` and `check` also take `--global`. `mq mod` is an alias of `mq module`.
+
+Import a saved module by name:
+
+```mq
+import "kdl"
+```
+
+`./vendor` is searched before `~/.config/mq`, so a project can pin a version that differs from the global one.
+Prefer `./vendor` with a committed `mq.lock` for anything a team must reproduce. Imports of global modules are
+not checked against `~/.config/mq/mq.lock` at run time; use `mq module check --global`.
+
+Modules outside the default domain need `--allow-domain DOMAIN`. Adding a new version of a module replaces
+its old `mq.lock` entry, and two different URLs cannot share one module name.
+
 ### CLI options
 
 | Flag                        | Description                                                                                                                             |
