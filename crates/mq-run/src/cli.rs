@@ -989,7 +989,7 @@ enum Commands {
         #[arg(value_parser = HelpNameParser, hide_possible_values = true)]
         name: Option<String>,
         /// List entries matching WORD in name or description, best match first
-        #[arg(long, value_name = "WORD", conflicts_with = "name")]
+        #[arg(short, long, value_name = "WORD", conflicts_with = "name")]
         search: Option<String>,
         /// Print machine-readable JSON instead of formatted text
         #[arg(long, conflicts_with = "markdown")]
