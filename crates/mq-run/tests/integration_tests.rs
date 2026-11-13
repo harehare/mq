@@ -141,6 +141,46 @@ fn test_help_json_and_markdown_conflict() {
 }
 
 #[test]
+fn test_help_search_lists_name_and_description_matches() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("--search").arg("token").assert().success();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    // Name matches come first; each line is `name(params): first sentence`.
+    let first = output.lines().next().unwrap_or_default();
+    assert!(first.starts_with("token_"), "{first}");
+    assert!(output.contains("token_count(text: string, model?: string): "));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_search_without_match_fails() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("help").arg("--search").arg("zzzznomatch").assert().failure();
+}
+
+#[test]
+fn test_help_search_conflicts_with_name() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("help").arg("map").arg("--search").arg("x").assert().failure();
+}
+
+#[test]
+fn test_completion_offers_help_names() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("completion").arg("bash").assert().success();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+    assert!(output.contains("token_count"));
+
+    Ok(())
+}
+
+#[test]
 fn test_help_examples_topic_human() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
 

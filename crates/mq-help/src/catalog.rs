@@ -485,9 +485,74 @@ pub fn render_module_markdown(module: &HelpModule) -> String {
     out
 }
 
+/// Entries whose name, alias or description contains `word` (case-insensitive). Name matches
+/// come first, then description matches, each sorted by name.
+pub fn search(word: &str) -> Vec<HelpEntry> {
+    let word = word.to_lowercase();
+    let mut hits: Vec<(bool, HelpEntry)> = all_entries()
+        .into_iter()
+        .filter_map(|e| {
+            let in_name =
+                e.name.to_lowercase().contains(&word) || e.aliases.iter().any(|a| a.to_lowercase().contains(&word));
+            (in_name || e.description.to_lowercase().contains(&word)).then_some((!in_name, e))
+        })
+        .collect();
+    hits.sort_by(|(a_desc, a), (b_desc, b)| a_desc.cmp(b_desc).then_with(|| a.name.cmp(&b.name)));
+    hits.into_iter().map(|(_, e)| e).collect()
+}
+
+/// One plain-text line, `name(param: type, ...): first sentence`, stable for scripts. A
+/// module function is prefixed with `module::`.
+pub fn render_summary(entry: &HelpEntry) -> String {
+    let params = entry
+        .params
+        .iter()
+        .map(|p| format!("{}: {}", p.name, p.type_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let qualifier = entry
+        .related_module
+        .as_ref()
+        .map(|m| format!("{m}::"))
+        .unwrap_or_default();
+    let description = entry.description.split_whitespace().collect::<Vec<_>>().join(" ");
+    let sentence = first_sentence(&description);
+    let head = format!("{qualifier}{}({params})", entry.name);
+    if sentence.is_empty() {
+        head
+    } else {
+        format!("{head}: {sentence}")
+    }
+}
+
+/// Up to the first `. ` followed by an uppercase letter, so `e.g. x` does not end a sentence.
+fn first_sentence(text: &str) -> &str {
+    let end = text
+        .match_indices(". ")
+        .find(|(i, _)| text[i + 2..].starts_with(|c: char| c.is_uppercase()))
+        .map_or(text.len(), |(i, _)| i);
+    text[..end].trim_end_matches('.')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_first_sentence_skips_abbreviations() {
+        assert_eq!(
+            first_sentence("Parses a date (e.g. today). Then more."),
+            "Parses a date (e.g. today)"
+        );
+        assert_eq!(first_sentence("Only one."), "Only one");
+    }
+
+    #[test]
+    fn test_search_ranks_name_matches_first() {
+        let names: Vec<_> = search("token").into_iter().map(|e| e.name).collect();
+        assert!(names[0].contains("token"));
+        assert!(names.contains(&"token_count".to_string()));
+    }
 
     #[test]
     fn test_lookup_native_function() {

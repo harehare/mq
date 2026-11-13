@@ -131,7 +131,7 @@ Pass a value (`--allow-read=./docs`) to restrict a permission to those paths, do
 | Command               | Description                                                             |
 | --------------------- | ----------------------------------------------------------------------- |
 | `mq repl`             | Interactive session, see [`mq-repl`](https://crates.io/crates/mq-repl)  |
-| `mq help`             | Documentation of a builtin, selector or standard module (`mq help map`) |
+| `mq help`             | Docs for a builtin, selector or module (`mq help map`, `--search`)      |
 | `mq compile`          | Compile a query to experimental `.mqc` bytecode                         |
 | `mq completion SHELL` | Print a shell completion script                                         |
 | `mq commands`         | List built-in and external subcommands                                  |

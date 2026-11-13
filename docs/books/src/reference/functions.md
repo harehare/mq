@@ -320,4 +320,5 @@ map(["a", "b"], upcase)   # upcase is NOT auto-called here; it's passed as a cal
 - `mq help <module>` - Overview and function list for a standard module, e.g. `mq help section`
   or `mq help table`. Use `module::function` (e.g. `mq help section::section`) for a function
   whose name collides with its own module.
+- `mq help --search <word>` - One line per function or selector whose name or description contains the word, `name(params): first sentence`, e.g. `mq help --search token`. Accepts `--json`/`--markdown`. `mq completion <shell>` completes names after `mq help` in bash, zsh and nushell.
 - [Builtin selectors and functions](../builtins.html) - Complete list of available selectors and functions
