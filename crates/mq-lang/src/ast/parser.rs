@@ -967,7 +967,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let node = self.parse_attribute_access(self_node)?;
 
         match self.tokens.peek().map(|t| &t.kind) {
-            Some(TokenKind::LBracket) => self.parse_bracket_access(node, token),
+            Some(TokenKind::LBracket) => {
+                let result = self.parse_bracket_access(node, token)?;
+                self.parse_postfix_ops(result, token)
+            }
             _ => Ok(node),
         }
     }
