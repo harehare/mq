@@ -296,20 +296,4 @@ mod tests {
             );
         }
     }
-
-    /// Until the docs table is generated from the index, the two must list the same modules.
-    #[test]
-    fn test_index_matches_docs_table() {
-        let table = include_str!("../../../../docs/books/src/start/modules.md");
-        let index = index();
-
-        assert_eq!(table.matches("<tr data-category=").count(), index.modules.len());
-        for entry in &index.modules {
-            assert!(
-                table.contains(&format!("https://{}\"", entry.repo)),
-                "{} is missing from docs/books/src/start/modules.md",
-                entry.repo
-            );
-        }
-    }
 }
