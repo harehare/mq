@@ -45,10 +45,10 @@ fn parse_index(text: &str) -> miette::Result<Index> {
         other => return Err(miette!("Unsupported module index version {other:?}, upgrade mq")),
     }
     let categories = value["categories"]
-        .as_object()
-        .map(|map| {
-            map.iter()
-                .filter_map(|(slug, label)| Some((slug.clone(), label.as_str()?.to_string())))
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|c| Some((c["slug"].as_str()?.to_string(), c["label"].as_str()?.to_string())))
                 .collect()
         })
         .unwrap_or_default();
@@ -292,22 +292,6 @@ mod tests {
                 entry.repo.starts_with("github.com/"),
                 "{} has repo {}",
                 entry.name,
-                entry.repo
-            );
-        }
-    }
-
-    /// Until the docs table is generated from the index, the two must list the same modules.
-    #[test]
-    fn test_index_matches_docs_table() {
-        let table = include_str!("../../../../docs/books/src/start/modules.md");
-        let index = index();
-
-        assert_eq!(table.matches("<tr data-category=").count(), index.modules.len());
-        for entry in &index.modules {
-            assert!(
-                table.contains(&format!("https://{}\"", entry.repo)),
-                "{} is missing from docs/books/src/start/modules.md",
                 entry.repo
             );
         }

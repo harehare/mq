@@ -3277,3 +3277,29 @@ mod module {
             .failure();
     }
 }
+
+/// `docs/books/src/start/modules.md` embeds a table generated from `docs/modules.json`;
+/// regenerate it with `just modules-table`.
+#[test]
+fn test_modules_table_is_up_to_date() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let table = "docs/books/src/start/modules.md";
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs/books/src/start")).unwrap();
+    std::fs::copy(root.join("docs/modules.json"), dir.path().join("docs/modules.json")).unwrap();
+    std::fs::copy(root.join(table), dir.path().join(table)).unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(dir.path())
+        .args(["--allow-read", "--allow-write", "-I", "null", "-f"])
+        .arg(root.join("scripts/modules_table.mq"))
+        .assert()
+        .success();
+
+    let normalize = |text: String| text.replace("\r\n", "\n");
+    assert_eq!(
+        normalize(std::fs::read_to_string(root.join(table)).unwrap()),
+        normalize(std::fs::read_to_string(dir.path().join(table)).unwrap()),
+        "modules.md is out of date, run `just modules-table`"
+    );
+}

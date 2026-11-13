@@ -1,0 +1,28 @@
+# Regenerates the category chips and module table in docs/books/src/start/modules.md
+# from docs/modules.json. Run with `just modules-table`.
+import "json"
+
+def esc(s):
+  gsub(gsub(gsub(gsub(s, "&", "&amp;"), "<", "&lt;"), ">", "&gt;"), "\"", "&quot;")
+end
+
+def inline(markdown):
+  trim(gsub(gsub(to_html(markdown), "^<p>", ""), "</p>\\s*$", ""))
+end
+
+def chip(slug, label, active):
+  "  <button type=\"button\" class=\"module-chip" + active + "\" data-category=\"" + slug + "\">" + label + "</button>"
+end
+
+def row(m, labels):
+  "<tr data-category=\"" + m["category"] + "\"><td><a href=\"https://" + m["repo"] + "\">" + m["name"] + ".mq</a></td><td><span class=\"module-category-badge\">" + esc(labels[m["category"]]) + "</span></td><td>" + inline(m["description"]) + "</td></tr>"
+end
+
+let data = json::json_parse(read_file("docs/modules.json"))
+| let labels = fold(data["categories"], {}, fn(acc, c): set(acc, c["slug"], c["label"]);)
+| let chips = [chip("all", "All", " active")] + map(data["categories"], fn(c): chip(c["slug"], esc(c["label"]), "");)
+| let rows = map(data["modules"], fn(m): row(m, labels);)
+| let table = "<table id=\"modules-table\">\n<thead>\n<tr><th>Module</th><th>Category</th><th>Description</th></tr>\n</thead>\n<tbody>\n" + join(rows, "\n") + "\n</tbody>\n</table>"
+| let block = "<!-- modules:begin -->\n<div id=\"module-category-filters\" class=\"module-category-chips\">\n" + join(chips, "\n") + "\n</div>\n\n" + table + "\n<!-- modules:end -->"
+| let doc = read_file("docs/books/src/start/modules.md")
+| write_file("docs/books/src/start/modules.md", split(doc, "<!-- modules:begin -->")[0] + block + split(doc, "<!-- modules:end -->")[1])

@@ -107,6 +107,10 @@ fmt-mq:
         echo "mq-fmt not found, skipping .mq format check"
     fi
 
+# Regenerate the module table in docs/books/src/start/modules.md from docs/modules.json.
+modules-table:
+    cargo run -q -p mq-run -- --allow-read --allow-write -I null -f scripts/modules_table.mq
+
 # Run bundled mq tests through the Tarn bytecode VM.
 test-mq:
     cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq crates/mq-test/modules/*_test.mq
