@@ -48,6 +48,8 @@ mod runtime;
 mod selector;
 pub mod suggest;
 mod tarn;
+#[doc(hidden)]
+pub mod text_diff;
 #[cfg(feature = "vm-profile")]
 pub mod vm_profile;
 
