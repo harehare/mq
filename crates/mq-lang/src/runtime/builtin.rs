@@ -41,9 +41,7 @@ use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
-use rustc_hash::FxHashMap;
-#[cfg(feature = "file-io")]
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use thiserror::Error;
@@ -4507,12 +4505,26 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             .map(|s| s.to_string())
             .collect();
 
-        // Rows with fewer fields than the header are padded with empty strings;
-        // fields beyond the header count are dropped, since there is no key for them.
+        let mut seen = FxHashSet::default();
+        if let Some(dup) = headers.iter().find(|h| !seen.insert(h.as_str())) {
+            return Err(Error::Runtime(format!(
+                "Failed to parse CSV: duplicate header \"{dup}\""
+            )));
+        }
+
+        // Rows with fewer fields than the header are padded with empty strings.
         let rows: Result<Vec<RuntimeValue>, Error> = reader
             .records()
             .map(|record| {
                 let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
+                if record.len() > headers.len() {
+                    let line = record.position().map_or(0, |p| p.line());
+                    return Err(Error::Runtime(format!(
+                        "Failed to parse CSV: line {line} has {} fields, but the header has {}",
+                        record.len(),
+                        headers.len()
+                    )));
+                }
                 let map: DictMap = headers
                     .iter()
                     .enumerate()
