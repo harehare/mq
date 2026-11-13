@@ -12,3 +12,12 @@ pub(crate) mod toml;
 pub(crate) mod toon;
 pub(crate) mod xml;
 pub(crate) mod yaml;
+
+/// Returns `true` for values a selector produced when nothing matched.
+pub(crate) fn is_unmatched(value: &mq_lang::RuntimeValue) -> bool {
+    match value {
+        mq_lang::RuntimeValue::None => true,
+        mq_lang::RuntimeValue::Markdown(node, _) => node.is_empty() || node.is_empty_fragment(),
+        _ => false,
+    }
+}

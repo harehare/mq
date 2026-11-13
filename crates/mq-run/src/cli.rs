@@ -3556,6 +3556,10 @@ impl Cli {
                 buf.extend_from_slice(markdown.to_html().as_bytes());
             }
             OutputFormat::Text => {
+                let runtime_values = runtime_values
+                    .into_iter()
+                    .filter(|v| !crate::output::is_unmatched(v))
+                    .collect();
                 let markdown = self.build_markdown(runtime_values, mdx);
                 buf.extend_from_slice(markdown.to_text().as_bytes());
             }
@@ -3583,6 +3587,10 @@ impl Cli {
             }
             OutputFormat::Csv => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
+                let runtime_values: Vec<_> = runtime_values
+                    .into_iter()
+                    .filter(|v| !crate::output::is_unmatched(v))
+                    .collect();
                 let csv_str = crate::output::csv::runtime_values_to_csv(&runtime_values, theme.as_ref())?;
                 buf.extend_from_slice(csv_str.as_bytes());
             }
