@@ -35,6 +35,7 @@ use crate::runtime::reader_handle::{HandleKind, ReaderHandle};
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
 use crate::tarn::interpreter::coroutine;
+use crate::text_diff::{self, ChangeTag};
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
@@ -43,7 +44,6 @@ use itertools::Itertools;
 use rustc_hash::FxHashMap;
 #[cfg(feature = "file-io")]
 use rustc_hash::FxHashSet;
-use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use thiserror::Error;
@@ -4888,10 +4888,10 @@ fn shift_right_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
 }
 
 fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<RuntimeValue>) {
-    let char_diff = TextDiff::from_chars(s1, s2);
+    let char_changes = text_diff::changes(&text_diff::chars(s1), &text_diff::chars(s2));
     let mut del_inline: Vec<RuntimeValue> = Vec::new();
     let mut ins_inline: Vec<RuntimeValue> = Vec::new();
-    for c in char_diff.iter_all_changes() {
+    for c in char_changes {
         let val = RuntimeValue::String(Shared::new(c.value().to_string()));
         match c.tag() {
             ChangeTag::Delete => {
@@ -4930,8 +4930,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
             let a2_debug: Vec<String> = a2.iter().map(|v| format!("{:?}", v)).collect();
             let a1_slices: Vec<&str> = a1_debug.iter().map(|s| s.as_str()).collect();
             let a2_slices: Vec<&str> = a2_debug.iter().map(|s| s.as_str()).collect();
-            let diff = TextDiff::from_slices(&a1_slices, &a2_slices);
-            let changes: Vec<_> = diff.iter_all_changes().collect();
+            let changes = text_diff::changes(&a1_slices, &a2_slices);
             let mut result = Vec::new();
             let mut i = 0;
             while i < changes.len() {
@@ -4988,8 +4987,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
         [a1, a2] => {
             let s1 = a1.to_string();
             let s2 = a2.to_string();
-            let line_diff = TextDiff::from_lines(&s1, &s2);
-            let changes: Vec<_> = line_diff.iter_all_changes().collect();
+            let changes = text_diff::changes(&text_diff::lines(&s1), &text_diff::lines(&s2));
             let mut result = Vec::new();
             let mut i = 0;
             while i < changes.len() {

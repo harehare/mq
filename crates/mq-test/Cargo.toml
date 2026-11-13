@@ -22,7 +22,6 @@ mq-lang = {workspace = true, features = ["cst", "html-parse", "debugger", "file-
 rayon = {workspace = true}
 rustc-hash = {workspace = true}
 serde_json = {workspace = true}
-similar = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}

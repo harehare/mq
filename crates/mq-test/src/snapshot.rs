@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use mq_lang::text_diff::{self, ChangeTag};
 use mq_lang::{DictMap, Ident, RuntimeValue, Shared};
-use similar::{ChangeTag, TextDiff};
 
 use crate::html;
 
@@ -122,8 +122,8 @@ struct DiffLine {
 }
 
 fn diff_lines(expected: &str, actual: &str) -> Vec<DiffLine> {
-    TextDiff::from_lines(expected, actual)
-        .iter_all_changes()
+    text_diff::changes(&text_diff::lines(expected), &text_diff::lines(actual))
+        .into_iter()
         .map(|change| DiffLine {
             tag: change.tag(),
             text: change.value().trim_end_matches('\n').to_string(),

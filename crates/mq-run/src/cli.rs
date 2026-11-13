@@ -3720,10 +3720,7 @@ impl Cli {
             .map(|f| f.display().to_string())
             .unwrap_or_else(|| "<stdin>".to_string());
 
-        let diff_text = similar::TextDiff::from_lines(original, rendered)
-            .unified_diff()
-            .header(&label, &label)
-            .to_string();
+        let diff_text = mq_lang::text_diff::unified(original, rendered, &label);
 
         // Raw ANSI, not `colored::Colorize`; it auto-disables on non-tty stdout, but -C should force color.
         let colorize = self.use_color();
