@@ -487,8 +487,12 @@ proptest! {
             "{href:?} from {url:?}"
         );
         let lowered = href.to_ascii_lowercase();
-        let protocol = lowered.split([':', '/', '?', '#']).next().filter(|_| {
-            lowered.find(':').is_some_and(|colon| lowered.find(['/', '?', '#']).is_none_or(|end| colon < end))
+        // A prefix that is not a valid scheme (e.g. `%20`) makes the URL relative.
+        let protocol = lowered.split([':', '/', '?', '#']).next().filter(|candidate| {
+            let mut chars = candidate.chars();
+            let is_scheme = chars.next().is_some_and(|char| char.is_ascii_alphabetic())
+                && chars.all(|char| char.is_ascii_alphanumeric() || matches!(char, '+' | '-' | '.'));
+            is_scheme && lowered.find(':').is_some_and(|colon| lowered.find(['/', '?', '#']).is_none_or(|end| colon < end))
         });
         if let Some(protocol) = protocol {
             prop_assert!(["http", "https", "irc", "ircs", "mailto", "xmpp"].contains(&protocol), "{href:?}");

@@ -712,6 +712,14 @@ fn sanitize(value: &str) -> String {
     result
 }
 
+/// Whether `s` is a valid URI scheme: 1 to 32 ASCII letters, digits, `+`, `-` or `.`, starting with a letter.
+fn is_scheme(s: &str) -> bool {
+    (1..=32).contains(&s.len())
+        && s.starts_with(|c: char| c.is_ascii_alphabetic())
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
 /// Like [`sanitize`], and empty when the URL has a protocol that is not in `protocols`.
 fn sanitize_with_protocols(value: &str, protocols: &[&str]) -> String {
     let value = sanitize(value);
@@ -725,6 +733,7 @@ fn sanitize_with_protocols(value: &str, protocols: &[&str]) -> String {
         colon = None;
     }
     if let Some(colon) = colon
+        && is_scheme(&value[..colon])
         && !protocols.contains(&value[..colon].to_lowercase().as_str())
     {
         return String::new();
