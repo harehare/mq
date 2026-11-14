@@ -36,6 +36,8 @@ mod module;
 #[cfg(feature = "http-import")]
 mod module_search;
 #[cfg(feature = "http-import")]
+mod module_ui;
+#[cfg(feature = "http-import")]
 mod module_update;
 mod mqc;
 mod text_input;
@@ -2119,30 +2121,34 @@ impl Cli {
                 Some(Self::compile_bytecode(query, *from_file, output.as_deref(), program))
             }
             #[cfg(feature = "http-import")]
-            Commands::Module { command } => Some(match command {
-                ModuleCommand::Add {
-                    modules,
-                    global,
-                    allow_domain,
-                } => Self::module_add(modules, *global, allow_domain),
-                ModuleCommand::Install { global, allow_domain } => Self::module_install(*global, allow_domain),
-                ModuleCommand::Check { global } => Self::module_check(*global),
-                ModuleCommand::Update {
-                    names,
-                    global,
-                    dry_run,
-                    allow_domain,
-                } => Self::module_update(names, *global, *dry_run, allow_domain),
-                ModuleCommand::Search {
-                    terms,
-                    category,
-                    json,
-                    refresh,
-                } => {
-                    colored::control::set_override(self.use_color());
-                    Self::module_search(terms, category.as_deref(), *json, *refresh)
-                }
-            }),
+            Commands::Module { command } => {
+                // Progress goes to stderr; `search` switches to the stdout decision below.
+                colored::control::set_override(self.use_stderr_color());
+                Some(match command {
+                    ModuleCommand::Add {
+                        modules,
+                        global,
+                        allow_domain,
+                    } => Self::module_add(modules, *global, allow_domain),
+                    ModuleCommand::Install { global, allow_domain } => Self::module_install(*global, allow_domain),
+                    ModuleCommand::Check { global } => Self::module_check(*global),
+                    ModuleCommand::Update {
+                        names,
+                        global,
+                        dry_run,
+                        allow_domain,
+                    } => Self::module_update(names, *global, *dry_run, allow_domain),
+                    ModuleCommand::Search {
+                        terms,
+                        category,
+                        json,
+                        refresh,
+                    } => {
+                        colored::control::set_override(self.use_color());
+                        Self::module_search(terms, category.as_deref(), *json, *refresh)
+                    }
+                })
+            }
             #[cfg(feature = "debugger")]
             Commands::Dap => Some(mq_dap::start().map_err(|e| miette!(e.to_string()))),
             Commands::Repl { .. } => None,
@@ -3550,6 +3556,17 @@ impl Cli {
                     && io::stdout().is_terminal()
                     && std::env::var("TERM").map_or(true, |t| t != "dumb")
             }
+        }
+    }
+
+    /// Like `use_color`, for output written to stderr.
+    #[cfg(feature = "http-import")]
+    fn use_stderr_color(&self) -> bool {
+        match self.output.color {
+            ColorChoice::Never => false,
+            _ if Self::is_no_color() => false,
+            ColorChoice::Always => true,
+            ColorChoice::Auto => io::stderr().is_terminal() && std::env::var("TERM").map_or(true, |t| t != "dumb"),
         }
     }
 

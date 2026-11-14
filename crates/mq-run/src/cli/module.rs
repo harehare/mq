@@ -1,9 +1,12 @@
 //! `mq module`: copy HTTP modules into a local module directory.
 use super::Cli;
+use super::module_ui::{self as ui, Change, Pending};
+use colored::Colorize;
 use miette::{IntoDiagnostic, WrapErr, bail, miette};
 use mq_lang::{HttpModuleResolver, LOCKFILE_NAME, ModuleLock, ModuleResolver, UreqFetcher, compute_hash, http_import};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 /// Where vendored modules and their lock file live.
 pub(super) struct Target {
@@ -41,7 +44,7 @@ impl Target {
             .wrap_err_with(|| format!("Failed to create {}", self.dir.display()))
     }
 
-    fn module_path(&self, name: &str) -> PathBuf {
+    pub(super) fn module_path(&self, name: &str) -> PathBuf {
         self.dir.join(format!("{name}.mq"))
     }
 }
@@ -70,18 +73,26 @@ pub(super) fn locked_modules(lock: &ModuleLock) -> miette::Result<Vec<(String, S
     Ok(modules)
 }
 
-/// Compares vendored files with `lock`, returning one message per problem.
-fn check_modules(target: &Target, lock: &ModuleLock) -> miette::Result<Vec<String>> {
-    let mut problems = Vec::new();
+/// One locked module and whether its vendored file still matches the lock.
+struct Checked {
+    name: String,
+    path: PathBuf,
+    problem: Option<String>,
+}
+
+/// Compares vendored files with `lock`.
+fn check_modules(target: &Target, lock: &ModuleLock) -> miette::Result<Vec<Checked>> {
+    let mut checked = Vec::new();
     for (url, name, hash) in locked_modules(lock)? {
         let path = target.module_path(&name);
-        match fs::read_to_string(&path) {
-            Ok(content) if compute_hash(&content) == hash => {}
-            Ok(_) => problems.push(format!("{} does not match the locked content of {url}", path.display())),
-            Err(_) => problems.push(format!("{} is missing (locked as {url})", path.display())),
-        }
+        let problem = match fs::read_to_string(&path) {
+            Ok(content) if compute_hash(&content) == hash => None,
+            Ok(_) => Some(format!("does not match the locked content of {url}")),
+            Err(_) => Some(format!("is missing (locked as {url})")),
+        };
+        checked.push(Checked { name, path, problem });
     }
-    Ok(problems)
+    Ok(checked)
 }
 
 pub(super) fn read_lock(path: &Path) -> miette::Result<ModuleLock> {
@@ -125,22 +136,53 @@ pub(super) fn remove_lock_entry(lockfile: &Path, url: &str) -> miette::Result<()
 impl Cli {
     /// `mq module add [--global] MODULE...`
     pub(super) fn module_add(specs: &[String], global: bool, domains: &[String]) -> miette::Result<()> {
+        let started = Instant::now();
         let target = Target::select(global)?;
-        target.create_dir()?;
-        let resolver = Self::module_resolver(&target, domains, false);
         for spec in specs {
             if !(http_import::is_github_url(spec) || http_import::is_remote_url(spec)) {
                 bail!("`{spec}` is not a github.com/OWNER/REPO[@VERSION] or https:// module");
             }
+            module_name(spec)?;
+        }
+        target.create_dir()?;
+        let resolver = Self::module_resolver(&target, domains, false);
+
+        ui::header(&format!(
+            "Adding {} to {}",
+            ui::count(specs.len()),
+            target.dir.display()
+        ));
+        let width = specs
+            .iter()
+            .filter_map(|s| module_name(s).ok())
+            .map(str::len)
+            .max()
+            .unwrap_or(0);
+        let mut names = Vec::new();
+        let mut counts = Counts::default();
+        for (i, spec) in specs.iter().enumerate() {
             let name = module_name(spec)?;
-            let hash = Self::fetch_module(&resolver, &target, spec, name)?;
-            prune_replaced(&target.lockfile, name, &hash)?;
+            let fetched = Self::fetch_step(&resolver, &target, spec, name, i + 1, specs.len(), width)?;
+            prune_replaced(&target.lockfile, name, &fetched.hash)?;
+            counts.record(fetched.change);
+            names.push(name);
+        }
+
+        ui::header(&format!(
+            "Done in {}: {}. Pinned in {}",
+            ui::format_duration(started.elapsed()),
+            counts.summary(),
+            target.lockfile.display()
+        ));
+        if let [name] = names.as_slice() {
+            ui::hint(&format!("Use it with `import \"{name}\"`"));
         }
         Ok(())
     }
 
     /// `mq module install [--global]`
     pub(super) fn module_install(global: bool, domains: &[String]) -> miette::Result<()> {
+        let started = Instant::now();
         let target = Target::select(global)?;
         let modules = locked_modules(&read_lock(&target.lockfile)?)?;
         if modules.is_empty() {
@@ -149,23 +191,59 @@ impl Cli {
         target.create_dir()?;
         // The lock file already pins every URL, so an install must never record new content.
         let resolver = Self::module_resolver(&target, domains, true);
-        for (url, name, _) in modules {
-            Self::fetch_module(&resolver, &target, &url, &name)?;
+
+        ui::header(&format!(
+            "Installing {} from {} into {}",
+            ui::count(modules.len()),
+            target.lockfile.display(),
+            target.dir.display()
+        ));
+        let width = modules.iter().map(|(_, n, _)| n.len()).max().unwrap_or(0);
+        let mut counts = Counts::default();
+        for (i, (url, name, _)) in modules.iter().enumerate() {
+            let fetched = Self::fetch_step(&resolver, &target, url, name, i + 1, modules.len(), width)?;
+            counts.record(fetched.change);
         }
+
+        ui::header(&format!(
+            "Done in {}: {}",
+            ui::format_duration(started.elapsed()),
+            counts.summary()
+        ));
         Ok(())
     }
 
     /// `mq module check [--global]`
     pub(super) fn module_check(global: bool) -> miette::Result<()> {
         let target = Target::select(global)?;
-        let problems = check_modules(&target, &read_lock(&target.lockfile)?)?;
-        if problems.is_empty() {
+        let checked = check_modules(&target, &read_lock(&target.lockfile)?)?;
+
+        ui::header(&format!(
+            "Checking {} against {}",
+            ui::count(checked.len()),
+            target.lockfile.display()
+        ));
+        let width = checked.iter().map(|c| c.name.len()).max().unwrap_or(0);
+        for c in &checked {
+            let name = format!("{:<width$}", c.name);
+            match &c.problem {
+                None => eprintln!(
+                    "  {} {}  {}",
+                    ui::ok_mark(),
+                    name.bold(),
+                    c.path.display().to_string().dimmed()
+                ),
+                Some(problem) => eprintln!("  {} {}  {} {problem}", ui::fail_mark(), name.bold(), c.path.display()),
+            }
+        }
+
+        let problems = checked.iter().filter(|c| c.problem.is_some()).count();
+        if problems == 0 {
+            ui::header(&format!("All {} match the lock file", ui::count(checked.len())));
             return Ok(());
         }
-        for problem in &problems {
-            eprintln!("{problem}");
-        }
-        bail!("{} module(s) are out of date", problems.len());
+        ui::hint("Run `mq module install` to restore them from the lock file");
+        bail!("{} out of date", ui::count(problems));
     }
 
     pub(super) fn module_resolver(
@@ -181,20 +259,110 @@ impl Cli {
         resolver
     }
 
-    /// Fetches `spec` through the lock-checked resolver and writes it as `<name>.mq`, returning its hash.
+    /// Fetches `spec` through the lock-checked resolver and writes it as `<name>.mq`.
     pub(super) fn fetch_module(
         resolver: &HttpModuleResolver<UreqFetcher>,
         target: &Target,
         spec: &str,
         name: &str,
-    ) -> miette::Result<String> {
+    ) -> miette::Result<Fetched> {
         let content = resolver.resolve(spec).map_err(|e| miette!(e.to_string()))?;
         let path = target.module_path(name);
-        fs::write(&path, &content)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to write {}", path.display()))?;
-        println!("{}", path.display());
-        Ok(compute_hash(&content))
+        let hash = compute_hash(&content);
+        let change = match fs::read_to_string(&path) {
+            Ok(old) if compute_hash(&old) == hash => Change::Unchanged,
+            Ok(_) => Change::Updated,
+            Err(_) => Change::Added,
+        };
+        if change != Change::Unchanged {
+            fs::write(&path, &content)
+                .into_diagnostic()
+                .wrap_err_with(|| format!("Failed to write {}", path.display()))?;
+        }
+        Ok(Fetched {
+            hash,
+            path,
+            bytes: content.len(),
+            change,
+        })
+    }
+
+    /// `fetch_module` with a `[i/n]` progress line and a one-line result.
+    fn fetch_step(
+        resolver: &HttpModuleResolver<UreqFetcher>,
+        target: &Target,
+        spec: &str,
+        name: &str,
+        index: usize,
+        total: usize,
+        width: usize,
+    ) -> miette::Result<Fetched> {
+        let pending = Pending::start(index, total, name);
+        match Self::fetch_module(resolver, target, spec, name) {
+            Ok(fetched) => {
+                let change = match fetched.change {
+                    Change::Added => fetched.change.label().green(),
+                    Change::Updated => fetched.change.label().yellow(),
+                    Change::Unchanged => fetched.change.label().dimmed(),
+                };
+                pending.finish(&format!(
+                    "  {} {}  {change:<9}  {}  {}  {}",
+                    ui::ok_mark(),
+                    format!("{name:<width$}").bold(),
+                    fetched.path.display(),
+                    ui::format_size(fetched.bytes).dimmed(),
+                    format!("sha256:{}", ui::short_hash(&fetched.hash)).dimmed()
+                ));
+                Ok(fetched)
+            }
+            Err(e) => {
+                pending.finish(&format!(
+                    "  {} {}  {spec}",
+                    ui::fail_mark(),
+                    format!("{name:<width$}").bold()
+                ));
+                Err(e)
+            }
+        }
+    }
+}
+
+/// The result of writing one module to disk.
+pub(super) struct Fetched {
+    pub(super) hash: String,
+    pub(super) path: PathBuf,
+    pub(super) bytes: usize,
+    pub(super) change: Change,
+}
+
+#[derive(Default)]
+struct Counts {
+    added: usize,
+    updated: usize,
+    unchanged: usize,
+}
+
+impl Counts {
+    fn record(&mut self, change: Change) {
+        match change {
+            Change::Added => self.added += 1,
+            Change::Updated => self.updated += 1,
+            Change::Unchanged => self.unchanged += 1,
+        }
+    }
+
+    /// `2 added, 1 unchanged`, leaving out zero counts.
+    fn summary(&self) -> String {
+        [
+            (self.added, "added"),
+            (self.updated, "updated"),
+            (self.unchanged, "unchanged"),
+        ]
+        .iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, label)| format!("{n} {label}"))
+        .collect::<Vec<_>>()
+        .join(", ")
     }
 }
 
@@ -251,9 +419,10 @@ mod tests {
             ("https://raw.githubusercontent.com/harehare/gone.mq/v1/gone.mq", "00"),
         ]);
 
-        let problems = check_modules(&target, &lock).unwrap();
+        let checked = check_modules(&target, &lock).unwrap();
 
-        assert_eq!(problems.len(), 2);
+        assert_eq!(checked.len(), 3);
+        assert_eq!(checked.iter().filter(|c| c.problem.is_some()).count(), 2);
     }
 
     #[test]

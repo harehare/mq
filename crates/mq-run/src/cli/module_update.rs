@@ -1,9 +1,12 @@
 //! `mq module update`: move tag-pinned modules to their latest tag.
 use super::Cli;
 use super::module::{Target, locked_modules, read_lock, remove_lock_entry};
+use super::module_ui::{self as ui, Pending};
+use colored::Colorize;
 use miette::{IntoDiagnostic, WrapErr, miette};
 use mq_lang::UreqFetcher;
 use serde_json::Value;
+use std::time::Instant;
 
 const RAW_PREFIX: &str = "https://raw.githubusercontent.com/";
 
@@ -65,46 +68,118 @@ impl Cli {
             return Err(miette!("`{unknown}` is not in {}", target.lockfile.display()));
         }
 
+        let started = Instant::now();
         let fetcher = UreqFetcher::default();
         let resolver = Self::module_resolver(&target, domains, false);
-        for (url, name, _) in modules {
-            if !names.is_empty() && !names.contains(&name) {
-                continue;
-            }
-            let Some(raw) = parse_raw_url(&url) else {
-                println!("{name}: not a GitHub module, skipped");
+        let selected: Vec<_> = modules
+            .into_iter()
+            .filter(|(_, name, _)| names.is_empty() || names.contains(name))
+            .collect();
+
+        ui::header(&format!(
+            "Checking {} for updates in {}",
+            ui::count(selected.len()),
+            target.lockfile.display()
+        ));
+        let width = selected.iter().map(|(_, n, _)| n.len()).max().unwrap_or(0);
+        let line = |mark: String, name: &str, detail: String| {
+            eprintln!("  {mark} {}  {detail}", format!("{name:<width$}").bold());
+        };
+        let (mut updated, mut current, mut skipped) = (0, 0, 0);
+        for (i, (url, name, _)) in selected.iter().enumerate() {
+            let Some(raw) = parse_raw_url(url) else {
+                line(
+                    ui::skip_mark(),
+                    name,
+                    "not a GitHub module, skipped".dimmed().to_string(),
+                );
+                skipped += 1;
                 continue;
             };
-            let Some(current) = parse_version(raw.git_ref) else {
-                println!("{name}: tracks `{}`, skipped", raw.git_ref);
+            let Some(current_version) = parse_version(raw.git_ref) else {
+                line(
+                    ui::skip_mark(),
+                    name,
+                    format!("tracks `{}`, skipped", raw.git_ref).dimmed().to_string(),
+                );
+                skipped += 1;
                 continue;
             };
 
+            let pending = Pending::start(i + 1, selected.len(), name);
             let tags_url = format!(
                 "https://api.github.com/repos/{}/{}/tags?per_page=100",
                 raw.owner, raw.repo
             );
-            let tags = fetcher
+            let latest = fetcher
                 .fetch_uncached(&tags_url)
-                .map_err(|e| miette!("Could not list the tags of {}/{}: {e}", raw.owner, raw.repo))?;
-            let Some((latest, tag)) = latest_tag(&tags)? else {
-                println!("{name}: no version tags found, skipped");
+                .map_err(|e| miette!("Could not list the tags of {}/{}: {e}", raw.owner, raw.repo))
+                .and_then(|tags| latest_tag(&tags));
+            let latest = match latest {
+                Ok(latest) => latest,
+                Err(e) => {
+                    pending.abort();
+                    return Err(e);
+                }
+            };
+            let Some((latest, tag)) = latest else {
+                pending.finish(&format!(
+                    "  {} {}  {}",
+                    ui::skip_mark(),
+                    format!("{name:<width$}").bold(),
+                    "no version tags found, skipped".dimmed()
+                ));
+                skipped += 1;
                 continue;
             };
-            if latest <= current {
-                println!("{name}: {} is up to date", raw.git_ref);
+            if latest <= current_version {
+                pending.finish(&format!(
+                    "  {} {}  {}",
+                    ui::ok_mark(),
+                    format!("{name:<width$}").bold(),
+                    format!("{} is up to date", raw.git_ref).dimmed()
+                ));
+                current += 1;
                 continue;
             }
 
+            let change = format!("{} -> {}", raw.git_ref, tag.green().bold());
             if dry_run {
-                println!("{name}: {} -> {tag} (dry run)", raw.git_ref);
+                pending.finish(&format!(
+                    "  {} {}  {change} {}",
+                    "↑".yellow().bold(),
+                    format!("{name:<width$}").bold(),
+                    "(dry run)".dimmed()
+                ));
+                updated += 1;
                 continue;
             }
             let new_url = format!("{RAW_PREFIX}{}/{}/{tag}/{}", raw.owner, raw.repo, raw.file);
             target.create_dir()?;
-            Self::fetch_module(&resolver, &target, &new_url, &name)?;
-            remove_lock_entry(&target.lockfile, &url)?;
-            println!("{name}: {} -> {tag}", raw.git_ref);
+            let fetched = match Self::fetch_module(&resolver, &target, &new_url, name) {
+                Ok(fetched) => fetched,
+                Err(e) => {
+                    pending.abort();
+                    return Err(e);
+                }
+            };
+            remove_lock_entry(&target.lockfile, url)?;
+            pending.finish(&format!(
+                "  {} {}  {change}  {}",
+                ui::ok_mark(),
+                format!("{name:<width$}").bold(),
+                ui::format_size(fetched.bytes).dimmed()
+            ));
+            updated += 1;
+        }
+
+        let verb = if dry_run { "available" } else { "updated" };
+        ui::header(&format!(
+            "Done in {}: {updated} {verb}, {current} up to date, {skipped} skipped",
+            ui::format_duration(started.elapsed())
+        ));
+        if dry_run && updated > 0 {
+            ui::hint("Run without --dry-run to apply");
         }
         Ok(())
     }
