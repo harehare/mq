@@ -419,9 +419,8 @@ impl LintMessage {
     /// Suggested fix text, if the rule has one.
     pub fn help(&self) -> Option<String> {
         match self {
-            LintMessage::UnusedVariable { name } | LintMessage::UnusedFunction { name } => {
-                Some(format!("if this is intentional, prefix with `_`: `_{name}`"))
-            }
+            LintMessage::UnusedVariable { name } => Some(format!("if this is intentional, prefix with `_`: `_{name}`")),
+            LintMessage::UnusedFunction { .. } => Some("remove it if it is not needed".to_string()),
             LintMessage::UnusedImport { name } => {
                 Some(format!("remove `import \"{name}\"` or use it with `{name}::function`"))
             }

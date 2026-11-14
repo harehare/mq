@@ -97,6 +97,14 @@ mod tests {
         assert!(diags[0].message().contains(msg));
     }
 
+    #[rstest]
+    #[case("def _helper(): 1;")]
+    #[case("def foo(): .h1; | .h1")]
+    fn help_does_not_suggest_underscore_prefix(#[case] code: &str) {
+        let help = check(code)[0].help().unwrap();
+        assert!(!help.contains("prefix"), "{help}");
+    }
+
     #[test]
     fn annotation_counts_as_use() {
         let code = "def _helper(): 1;\n# @parametrize([[_helper()]])\ndef test_a(x): assert_eq(x, 1);";
