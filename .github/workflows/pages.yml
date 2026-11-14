@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+    paths:
+      - docs/modules.json
   workflow_dispatch:
 
 permissions:
