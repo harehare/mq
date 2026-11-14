@@ -94,6 +94,12 @@ def test_semver_bump(f, expected_major, expected_minor, expected_patch):
   | assert_eq(bumped["pre"], "")
 end
 
+# @parametrize([["01.0.0"], ["1e0.0.0"], ["1.0.0-"], ["1.0.0-01"], ["1.2.3+"], ["1.2.3++x"], ["1.2.3-+x"], ["1.2"], ["1.2.3.4"], ["-1.0.0"]])
+def test_semver_parse_rejects_invalid(version):
+  let r = try: semver::semver_parse(version) catch(e): "error"
+  | assert_eq(r, "error")
+end
+
 def test_semver_bump_clears_pre():
   let v = semver::semver_parse("1.2.3-alpha")
   | let bumped = semver::semver_bump_patch(v)
