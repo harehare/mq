@@ -647,7 +647,7 @@ fn upvalue_update(
         OpCode::PathUpvalue { index, depth, op } => {
             path_upvalue(stack, &upvalues[index as usize], depth, op, locals, chunks, execution)
         }
-        _ => unreachable!("only upvalue update opcodes reach upvalue_update"),
+        _ => Err(VmError::Corrupt("non-upvalue-update opcode in upvalue_update")),
     }
 }
 
@@ -1055,8 +1055,8 @@ fn yield_outside_generator(
             debug,
         );
     }
-    let finished = frames.pop().expect("the frame stack is never empty here");
-    (Err(VmError::Corrupt("yield outside a generator")), finished.locals)
+    let locals = frames.pop().map_or_else(|| Locals::flat(0), |finished| finished.locals);
+    (Err(VmError::Corrupt("yield outside a generator")), locals)
 }
 
 /// Shared by `drive_initial_frame` (seeds a single fresh frame) and `OpCode::Resume` (restores a
@@ -1080,7 +1080,9 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
 
         let value = match outcome {
             Ok(FrameSliceOutcome::TailEnter(mut new_frame)) => {
-                let caller = frames.last().expect("the frame stack is never empty here");
+                let Some(caller) = frames.last() else {
+                    break 'frames empty_frame_stack();
+                };
                 new_frame.stack_base = caller.stack_base;
                 if let Err(e) = execution.limits.replace_top_frame(
                     frames,
@@ -1121,17 +1123,18 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
         };
 
         if frames.len() == 1 {
-            let finished = frames.pop().expect("just checked len() == 1");
+            let Some(finished) = frames.pop() else {
+                break 'frames empty_frame_stack();
+            };
             break 'frames DriveOutcome::Completed(value, finished.locals);
         }
-        let continuation = execution
-            .limits
-            .pop_frame(
-                frames,
-                #[cfg(feature = "debugger")]
-                debug,
-            )
-            .expect("just checked len() > 1");
+        let Some(continuation) = execution.limits.pop_frame(
+            frames,
+            #[cfg(feature = "debugger")]
+            debug,
+        ) else {
+            break 'frames empty_frame_stack();
+        };
         let pending = match continuation {
             Continuation::Deferred(deferred) => match *deferred {
                 DeferredContinuation::ResumeBindParams(pending) => Some(pending),
@@ -1194,9 +1197,22 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
     }
 }
 
+#[cold]
+fn empty_frame_stack_error() -> (VmError, Locals) {
+    (VmError::Corrupt("frame stack is empty"), Locals::flat(0))
+}
+
+#[cold]
+fn empty_frame_stack() -> DriveOutcome {
+    let (e, locals) = empty_frame_stack_error();
+    DriveOutcome::Failed(e, locals)
+}
+
 /// `locate`s `e` at the still-suspended calling frame's own chunk/`ip`.
 fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError) -> VmError {
-    let caller = frames.last().expect("the frame stack is never empty here");
+    let Some(caller) = frames.last() else {
+        return e;
+    };
     let chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
     locate(&chunks[caller.chunk_index as usize], caller.ip as usize, e)
 }
@@ -1224,18 +1240,21 @@ fn unwind_frames(
                     frames: stack_trace,
                 }));
             }
-            let finished = frames.pop().expect("just checked len() == 1");
+            let Some(finished) = frames.pop() else {
+                return Err(empty_frame_stack_error());
+            };
             return Err((e, finished.locals));
         }
-        let failed_stack_base = frames.last().expect("just checked len() > 1").stack_base as usize;
-        let continuation = execution
-            .limits
-            .pop_frame(
-                frames,
-                #[cfg(feature = "debugger")]
-                debug,
-            )
-            .expect("just checked len() > 1");
+        let Some(failed_stack_base) = frames.last().map(|frame| frame.stack_base as usize) else {
+            return Err(empty_frame_stack_error());
+        };
+        let Some(continuation) = execution.limits.pop_frame(
+            frames,
+            #[cfg(feature = "debugger")]
+            debug,
+        ) else {
+            return Err(empty_frame_stack_error());
+        };
         // Discard partial operands the failed frame left above its own stack_base (e.g. an
         // in-progress array/dict literal), matching the truncation `run_frame_slice` does
         // on success so a catch frame, or the next frame up the chain, starts clean.
@@ -1262,7 +1281,9 @@ fn unwind_frames(
                     let (Some(acc_slot), Some(offset)) = (break_acc_slot, break_offset) else {
                         continue;
                     };
-                    let parent = frames.last_mut().expect("just checked len() > 1");
+                    let Some(parent) = frames.last_mut() else {
+                        return Err(empty_frame_stack_error());
+                    };
                     if let Some(value) = value {
                         parent.locals.set(acc_slot, StackValue::Value(value));
                         if let Some(slot) = break_completed_iteration_slot {
@@ -1280,11 +1301,15 @@ fn unwind_frames(
                     let Some(offset) = continue_offset else {
                         continue;
                     };
-                    let parent = frames.last_mut().expect("just checked len() > 1");
+                    let Some(parent) = frames.last_mut() else {
+                        return Err(empty_frame_stack_error());
+                    };
                     parent.ip = (parent.ip as i64 + offset as i64) as u32;
                     return Ok(());
                 }
-                let parent = frames.last().expect("just checked len() > 1");
+                let Some(parent) = frames.last() else {
+                    return Err(empty_frame_stack_error());
+                };
                 let catch_chunks = parent.chunks.as_ref().unwrap_or(root_chunks);
                 let catch_chunk = &catch_chunks[catch_closure.chunk_index as usize];
                 let mut catch_locals = execution
@@ -2949,7 +2974,7 @@ fn array_misc_op(
                 arr[start..].to_vec(),
             ))));
         }
-        _ => unreachable!("array_misc_op called with a non-array-misc opcode"),
+        _ => return Err(locate(chunk, ip, VmError::Corrupt("non-array opcode in array_misc_op"))),
     }
     Ok(())
 }
@@ -2980,7 +3005,13 @@ fn selector_op(
                 &subject, selector, &args,
             )));
         }
-        _ => unreachable!("selector_op called with a non-selector opcode"),
+        _ => {
+            return Err(locate(
+                chunk,
+                ip,
+                VmError::Corrupt("non-selector opcode in selector_op"),
+            ));
+        }
     }
     Ok(())
 }
