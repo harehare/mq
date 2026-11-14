@@ -629,13 +629,12 @@ fn test_from_date_invalid(#[case] input: &str) {
 
 // Test to_date
 #[rstest]
-#[case(1704067200, None, "2024-01-01T00:00:00Z")]
-#[case(1704067200, Some("%Y-%m-%d"), "2024-01-01")]
-#[case(1718454645, Some("%Y/%m/%d %H:%M"), "2024/06/15 12:30")]
-#[case(1704067200, Some("%d/%m/%Y"), "01/01/2024")]
-#[case(1704067200, Some("%H:%M:%S"), "00:00:00")]
-#[case(1704067200, Some("%Y"), "2024")]
-fn test_to_date(#[case] secs: i64, #[case] convert: Option<&str>, #[case] expected: &str) {
+#[case(1704067200, "%Y-%m-%d", "2024-01-01")]
+#[case(1718454645, "%Y/%m/%d %H:%M", "2024/06/15 12:30")]
+#[case(1704067200, "%d/%m/%Y", "01/01/2024")]
+#[case(1704067200, "%H:%M:%S", "00:00:00")]
+#[case(1704067200, "%Y", "2024")]
+fn test_to_date(#[case] secs: i64, #[case] convert: &str, #[case] expected: &str) {
     let result = to_date(secs.into(), convert).unwrap();
     assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
 }

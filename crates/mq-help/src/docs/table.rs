@@ -3661,7 +3661,7 @@ x = 1
     BuiltinDoc {
         name: "to_date",
         aliases: &[],
-        description: "Converts a timestamp to a date string with the given format.",
+        description: "Deprecated: use `strftime` instead.",
         params: &["timestamp", "format"],
         param_types: &["number", "string"],
         returns: "string",

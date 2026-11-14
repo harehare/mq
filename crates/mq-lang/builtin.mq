@@ -427,7 +427,7 @@ def scalars(v): select(v, !(is_array(v) || is_dict(v)));
 # ```
 #
 # Returns: string
-def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
+def to_date_iso8601(d): strftime(d, "%Y-%m-%dT%H:%M:%SZ");
 
 # Lazily applies `f` to every value yielded by `stream`.
 #

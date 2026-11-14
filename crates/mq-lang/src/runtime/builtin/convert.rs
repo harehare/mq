@@ -395,16 +395,12 @@ pub(super) fn format_datetime(name: &str, dt: &chrono::DateTime<chrono::Utc>, fm
     Ok(out)
 }
 
-/// convert from Unix timestamp (seconds) to date string
+/// Formats a Unix timestamp (seconds) with a strftime `fmt`.
 #[inline(always)]
-pub(super) fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValue, Error> {
+pub(super) fn to_date(secs: Number, fmt: &str) -> Result<RuntimeValue, Error> {
     let dt = chrono::DateTime::from_timestamp(secs.value() as i64, 0)
-        .ok_or_else(|| Error::InvalidDateTimeFormat(convert.unwrap_or("").to_string()))?;
-    let s = match convert {
-        Some(f) => format_datetime("to_date", &dt, f)?,
-        None => dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-    };
-    Ok(RuntimeValue::String(s.into()))
+        .ok_or_else(|| Error::InvalidDateTimeFormat(fmt.to_string()))?;
+    Ok(RuntimeValue::String(format_datetime("to_date", &dt, fmt)?.into()))
 }
 
 /// Encode to base64

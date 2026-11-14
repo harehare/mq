@@ -338,10 +338,11 @@ fn from_date_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
+/// Deprecated: use `strftime` instead.
 #[mq_macros::mq_fn(name = "to_date", params = Fixed(2))]
 fn to_date_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Number(ms), RuntimeValue::String(format)] => convert::to_date(*ms, Some(format.as_str())),
+        [RuntimeValue::Number(secs), RuntimeValue::String(format)] => convert::to_date(*secs, format.as_str()),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
