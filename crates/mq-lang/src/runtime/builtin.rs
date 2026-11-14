@@ -4356,6 +4356,24 @@ fn is_nan_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+#[mq_macros::mq_fn(name = "is_infinite", params = Fixed(1))]
+fn is_infinite_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Boolean(n.is_infinite())),
+        [_] => Ok(RuntimeValue::FALSE),
+        _ => Err(invalid_arity(ident, 1, args.len())),
+    }
+}
+
+#[mq_macros::mq_fn(name = "is_finite", params = Fixed(1))]
+fn is_finite_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Boolean(n.is_finite())),
+        [_] => Ok(RuntimeValue::FALSE),
+        _ => Err(invalid_arity(ident, 1, args.len())),
+    }
+}
+
 #[mq_macros::mq_fn(name = "infinite", params = None)]
 fn infinite_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::Number(number::INFINITE))
@@ -6194,6 +6212,8 @@ mq_macros::builtin_dispatch! {
     INTERN,
     NAN,
     IS_NAN,
+    IS_INFINITE,
+    IS_FINITE,
     INFINITE,
     COALESCE,
     INPUT,

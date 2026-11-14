@@ -58,6 +58,16 @@ impl Number {
     pub fn is_nan(&self) -> bool {
         self.0.is_nan()
     }
+
+    /// Returns `true` if the number is positive or negative infinity.
+    pub fn is_infinite(&self) -> bool {
+        self.0.is_infinite()
+    }
+
+    /// Returns `true` if the number is neither infinite nor NaN.
+    pub fn is_finite(&self) -> bool {
+        self.0.is_finite()
+    }
 }
 
 impl Default for Number {

@@ -328,7 +328,7 @@ fn register_logical(ctx: &mut InferenceContext) {
     register_unary(ctx, "negate", Type::Number, Type::Number);
 }
 
-/// Mathematical functions: abs, ceil, floor, round, trunc, min, max, nan, infinite, is_nan
+/// Mathematical functions: abs, ceil, floor, round, trunc, min, max, nan, infinite, is_nan, is_infinite, is_finite
 fn register_math(ctx: &mut InferenceContext) {
     // Unary math: number -> number
     register_many(
@@ -357,6 +357,10 @@ fn register_math(ctx: &mut InferenceContext) {
     // is_nan: any value -> bool (only a number can be nan)
     let a = ctx.fresh_var();
     register_unary(ctx, "is_nan", Type::Var(a), Type::Bool);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "is_infinite", Type::Var(a), Type::Bool);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "is_finite", Type::Var(a), Type::Bool);
 
     // Human-readable byte size formatting: number -> string
     register_unary(ctx, "human_bytes", Type::Number, Type::String);
