@@ -86,7 +86,7 @@ impl Command {
             Command::LoadFile(_) => {
                 format!(
                     "{:<12}{}",
-                    "/load", "Load one or more markdown files (supports globs, e.g. /load *.md)"
+                    "/load", "Replace the input with one or more markdown files (globs ok; all or none are loaded)"
                 )
             }
             Command::More => format!("{:<12}{}", "/more", "Show the next page of truncated output"),
@@ -547,11 +547,16 @@ impl CommandContext {
                     }
                 }
 
+                let mut seen = std::collections::HashSet::new();
+                resolved_paths.retain(|p| seen.insert(p.clone()));
+
                 let mut combined_input = Vec::new();
 
                 for path in &resolved_paths {
-                    let markdown_content = fs::read_to_string(path).into_diagnostic()?;
-                    let markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content)?;
+                    let markdown_content =
+                        fs::read_to_string(path).map_err(|e| miette!("{}: {}", path.display(), e))?;
+                    let markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content)
+                        .map_err(|e| miette!("{}: {}", path.display(), e))?;
                     combined_input.extend(markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from));
                 }
 
@@ -991,6 +996,39 @@ mod tests {
 
         let result = ctx.execute(&format!("/load {}", pattern.to_str().unwrap()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_execute_load_file_error_names_file_and_keeps_input() {
+        let (_, good) = create_file("test_load_named_good.md", "# Good");
+        let bad = good.with_file_name("test_load_named_bad.md");
+        std::fs::write(&bad, [0xff, 0xfe, 0xfd]).unwrap();
+        let (good_c, bad_c) = (good.clone(), bad.clone());
+        defer! {
+            let _ = std::fs::remove_file(&good_c);
+            let _ = std::fs::remove_file(&bad_c);
+        }
+
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), vec!["".to_string().into()]);
+        let err = ctx
+            .execute(&format!("/load {} {}", good.to_str().unwrap(), bad.to_str().unwrap()))
+            .expect_err("load should fail");
+        assert!(err.to_string().contains("test_load_named_bad.md"));
+        assert!(!ctx.input.iter().any(|v| v.to_string().contains("Good")));
+    }
+
+    #[test]
+    fn test_execute_load_file_skips_duplicate_paths() {
+        let (_, path) = create_file("test_load_dedup.md", "# Once");
+        let path_c = path.clone();
+        defer! {
+            let _ = std::fs::remove_file(&path_c);
+        }
+
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), vec!["".to_string().into()]);
+        let p = path.to_str().unwrap();
+        ctx.execute(&format!("/load {p} {p}")).unwrap();
+        assert_eq!(ctx.input.iter().filter(|v| v.to_string().contains("Once")).count(), 1);
     }
 
     #[test]
