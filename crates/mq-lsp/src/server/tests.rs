@@ -641,6 +641,158 @@ async fn test_code_action_using_real_diagnostics_from_pipeline() {
     }));
 }
 
+/// Opens `text`, feeds the diagnostics `compute_diagnostics` publishes into a code-action
+/// request, and returns the quick fixes.
+async fn quick_fixes_for_published_diagnostics(text: &str, enable_lint: bool) -> Vec<ls_types::CodeAction> {
+    let config = LspConfig::new(
+        Vec::new(),
+        false,
+        mq_check::TypeCheckerOptions::default(),
+        enable_lint,
+        mq_lint::LintConfig::default(),
+    );
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        config,
+    });
+    let backend = service.inner();
+    let uri = Url::parse("file:///test.mq").unwrap();
+
+    backend
+        .did_open(ls_types::DidOpenTextDocumentParams {
+            text_document: ls_types::TextDocumentItem {
+                uri: to_uri(&uri),
+                language_id: "mq".to_string(),
+                version: 1,
+                text: text.to_string(),
+            },
+        })
+        .await;
+
+    let diagnostics = backend.compute_diagnostics(&uri);
+    assert!(!diagnostics.is_empty(), "expected published diagnostics");
+
+    let actions = backend
+        .code_action(ls_types::CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
+            range: diagnostics[0].range,
+            context: ls_types::CodeActionContext {
+                diagnostics,
+                only: None,
+                trigger_kind: None,
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        })
+        .await
+        .unwrap()
+        .unwrap_or_default();
+
+    actions
+        .into_iter()
+        .filter_map(|action| match action {
+            ls_types::CodeActionOrCommand::CodeAction(action)
+                if action.kind == Some(ls_types::CodeActionKind::QUICKFIX) =>
+            {
+                Some(action)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn test_include_quick_fix_after_non_bmp_character() {
+    let fixes = quick_fixes_for_published_diagnostics("\"😀\" | csv_parse(\"a,b\", false)", false).await;
+
+    assert!(fixes.iter().any(|fix| fix.title.contains("csv")), "{fixes:?}");
+}
+
+#[tokio::test]
+async fn test_lint_quick_fix_range_after_non_bmp_character() {
+    let fixes = quick_fixes_for_published_diagnostics("\"😀\" | .checked == true", true).await;
+
+    let fix = fixes
+        .iter()
+        .find(|fix| fix.title.starts_with("Fix:"))
+        .expect("expected a lint quick fix");
+    let edit = fix
+        .edit
+        .as_ref()
+        .unwrap()
+        .changes
+        .as_ref()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap();
+    // `"😀" | ` is 7 UTF-16 units wide and the replaced `.checked == true` is 16.
+    assert_eq!(
+        edit[0].range,
+        ls_types::Range::new(ls_types::Position::new(0, 7), ls_types::Position::new(0, 23))
+    );
+    assert_eq!(edit[0].new_text, ".checked");
+}
+
+#[tokio::test]
+async fn test_import_quick_fix_after_non_bmp_character() {
+    let fixes = quick_fixes_for_published_diagnostics("\"😀\" | csv::csv_parse(\"a,b\", false)", false).await;
+
+    assert!(fixes.iter().any(|fix| fix.title.contains("import")), "{fixes:?}");
+}
+
+#[tokio::test]
+async fn test_include_quick_fix_on_second_line_after_non_bmp_character() {
+    let fixes = quick_fixes_for_published_diagnostics("\"😀😀\"\n| \"😀\" | csv_parse(\"a,b\", false)", false).await;
+
+    assert!(fixes.iter().any(|fix| fix.title.contains("csv")), "{fixes:?}");
+}
+
+#[tokio::test]
+async fn test_published_warning_range_uses_utf16_columns() {
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        config: LspConfig::default(),
+    });
+    let backend = service.inner();
+    let uri = Url::parse("file:///test.mq").unwrap();
+    let text = "def test(): \"😀\" | halt(1) | let x = 42";
+
+    backend
+        .did_open(ls_types::DidOpenTextDocumentParams {
+            text_document: ls_types::TextDocumentItem {
+                uri: to_uri(&uri),
+                language_id: "mq".to_string(),
+                version: 1,
+                text: text.to_string(),
+            },
+        })
+        .await;
+
+    let warning = backend
+        .compute_diagnostics(&uri)
+        .into_iter()
+        .find(|d| d.severity == Some(ls_types::DiagnosticSeverity::WARNING))
+        .expect("expected an unreachable code warning");
+    let scalar_start = backend.hir.read().unwrap().warning_ranges()[0].1.start;
+    // The emoji precedes the warning on the same line, so it is one unit wider than in scalars.
+    assert_eq!(
+        warning.range.start.character,
+        scalar_start.column - 1 + 1,
+        "{warning:?}"
+    );
+}
+
 #[tokio::test]
 async fn test_code_action_no_actions_for_clean_file() {
     let (service, _) = LspService::new(|client| Backend {

@@ -113,7 +113,7 @@ pub(crate) fn response(
     }
 
     let hir_guard = hir.read().unwrap();
-    let cursor = mq_lang::Position::new(position.line + 1, position.character + 1);
+    let cursor = mq_lang::Position::new(position.line + 1, line_prefix.chars().count() as u32 + 1);
 
     let scope_id = hir_guard
         .find_scope_in_position(*source_id, cursor)

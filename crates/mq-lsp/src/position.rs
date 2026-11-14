@@ -17,6 +17,17 @@ struct Line {
     lead: usize,
 }
 
+/// Converts to UTF-16 columns via `lines`, or to plain scalar columns without document text.
+pub(crate) fn lsp_range(lines: Option<&LineIndex>, range: mq_lang::Range) -> Range {
+    match lines {
+        Some(lines) => lines.to_lsp_range(range),
+        None => Range::new(
+            Position::new(range.start.line.saturating_sub(1), range.start.column.saturating_sub(1)),
+            Position::new(range.end.line.saturating_sub(1), range.end.column.saturating_sub(1)),
+        ),
+    }
+}
+
 /// Line boundaries of a document, built once per text.
 #[derive(Debug, Clone)]
 pub(crate) struct LineIndex {

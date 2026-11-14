@@ -9,7 +9,7 @@ use tower_lsp_server::ls_types::DocumentRangeFormattingParams;
 use url::Url;
 
 use crate::error::LspError;
-use crate::position::LineIndex;
+use crate::position::{LineIndex, lsp_range};
 use crate::{
     capabilities, code_action, completions, document_highlight, document_link, document_symbol, execute_command,
     folding_range, goto_definition, hover, inlay_hints, references, rename, selection_range, semantic_tokens,
@@ -644,6 +644,11 @@ impl Backend {
     /// (`textDocument/diagnostic`) flows so they can't drift apart.
     fn compute_diagnostics(&self, uri: &Url) -> Vec<ls_types::Diagnostic> {
         let uri_string = uri.to_string();
+        let snapshot = self
+            .documents
+            .get(&uri_string)
+            .map(|snapshot| Arc::clone(snapshot.value()));
+        let lines = snapshot.as_ref().map(|snapshot| &snapshot.lines);
 
         // Get errors for this specific file
         let file_errors = self.error_map.get(&uri_string);
@@ -653,7 +658,7 @@ impl Backend {
         if let Some(errors) = file_errors
             && let Some(document) = to_uri(uri)
         {
-            diagnostics.extend(errors.iter().map(|error| error.to_diagnostic(&document)));
+            diagnostics.extend(errors.iter().map(|error| error.to_diagnostic(&document, lines)));
         }
 
         let source_map_guard = self.source_map.read().unwrap();
@@ -675,19 +680,7 @@ impl Backend {
             // Filter HIR errors to only include ones from this specific source
             diagnostics.extend(hir_guard.error_ranges().into_iter().filter_map(|(message, item)| {
                 if range_set.contains(&item) {
-                    Some(ls_types::Diagnostic::new_simple(
-                        ls_types::Range::new(
-                            ls_types::Position {
-                                line: item.start.line - 1,
-                                character: (item.start.column - 1),
-                            },
-                            ls_types::Position {
-                                line: item.end.line - 1,
-                                character: (item.end.column - 1),
-                            },
-                        ),
-                        message,
-                    ))
+                    Some(ls_types::Diagnostic::new_simple(lsp_range(lines, item), message))
                 } else {
                     None
                 }
@@ -696,19 +689,7 @@ impl Backend {
             // Add HIR warnings (including unreachable code warnings)
             diagnostics.extend(hir_guard.warning_ranges().into_iter().filter_map(|(message, item)| {
                 if range_set.contains(&item) {
-                    let mut diagnostic = ls_types::Diagnostic::new_simple(
-                        ls_types::Range::new(
-                            ls_types::Position {
-                                line: item.start.line - 1,
-                                character: (item.start.column - 1),
-                            },
-                            ls_types::Position {
-                                line: item.end.line - 1,
-                                character: (item.end.column - 1),
-                            },
-                        ),
-                        message,
-                    );
+                    let mut diagnostic = ls_types::Diagnostic::new_simple(lsp_range(lines, item), message);
                     diagnostic.severity = Some(ls_types::DiagnosticSeverity::WARNING);
                     Some(diagnostic)
                 } else {
@@ -717,10 +698,6 @@ impl Backend {
             }));
 
             if self.config.enable_lint {
-                let snapshot = self
-                    .documents
-                    .get(&uri_string)
-                    .map(|snapshot| Arc::clone(snapshot.value()));
                 let mut lint_ctx = mq_lint::LintContext::new(&hir_guard, *source_id, &self.config.lint_config);
                 if let Some(snapshot) = snapshot.as_ref() {
                     lint_ctx = lint_ctx.with_source_text(&snapshot.text);
@@ -730,7 +707,7 @@ impl Backend {
                     linter
                         .run(&lint_ctx)
                         .into_iter()
-                        .map(|d| (&LspError::LintWarning(d)).into()),
+                        .map(|d| LspError::LintWarning(d).to_lsp_diagnostic(lines)),
                 );
             }
         }
