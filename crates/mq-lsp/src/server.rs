@@ -170,13 +170,13 @@ impl LanguageServer for Backend {
         let position = params.text_document_position.position;
 
         let source_map_guard = self.source_map.read().unwrap();
-        Ok(references::response(
+        Ok(Some(references::response(
             Arc::clone(&self.hir),
             to_url(&url)?,
             position,
             params.context.include_declaration,
             &source_map_guard,
-        ))
+        )))
     }
 
     async fn document_highlight(
