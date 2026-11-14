@@ -1337,6 +1337,101 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
         .collect()
 }
 
+#[cfg(feature = "debugger")]
+#[derive(Clone, Copy)]
+enum DebugStop {
+    Boundary,
+    Breakpoint,
+}
+
+#[cfg(feature = "debugger")]
+fn find_debug_node(chunk: &Chunk, token_id: TokenId, ip: usize) -> VmResult<Shared<Node>> {
+    chunk
+        .debug_nodes
+        .iter()
+        .rfind(|(candidate, _)| *candidate == token_id)
+        .map(|(_, node)| Shared::clone(node))
+        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))
+}
+
+/// Reports a statement boundary or explicit breakpoint to the debug hook.
+#[cfg(feature = "debugger")]
+#[cold]
+#[inline(never)]
+#[allow(clippy::too_many_arguments)]
+fn debug_stop(
+    kind: DebugStop,
+    token_id: TokenId,
+    chunk: &Chunk,
+    ip: usize,
+    locals: &mut Locals,
+    upvalues: &[Cell],
+    chunks: &Shared<Vec<Chunk>>,
+    stack: &[StackValue],
+    debug: &mut DebugRuntime<'_>,
+) -> VmResult<()> {
+    let node = find_debug_node(chunk, token_id, ip)?;
+    debug.current_node = Some(Shared::clone(&node));
+
+    let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
+        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
+    if let Some(hook) = debug.hook.as_deref_mut() {
+        let event = DebugEvent {
+            token_id,
+            node,
+            current_value: current_self(locals, chunks),
+            bindings,
+            vm_frame: vm_frame.clone(),
+            call_stack: debug.call_stack.clone(),
+            #[cfg(feature = "debug-trace")]
+            operand_stack: stack
+                .iter()
+                .cloned()
+                .map(|value| into_runtime_value(value, chunks))
+                .collect(),
+        };
+        match kind {
+            DebugStop::Boundary => hook.on_boundary(event),
+            DebugStop::Breakpoint => hook.on_explicit_breakpoint(event),
+        }
+        .map_err(|error| locate(chunk, ip, error))?;
+    }
+    apply_debug_updates(&vm_frame, locals, upvalues);
+    Ok(())
+}
+
+/// Runs `next(stream)` (argc 1) or `send(stream, value)` (argc 2) and returns the yielded value.
+#[cold]
+#[inline(never)]
+fn resume_op<const CHECK_TIMEOUT: bool>(
+    argc: u8,
+    stack: &mut Vec<StackValue>,
+    chunks: &Shared<Vec<Chunk>>,
+    chunk: &Chunk,
+    ip: usize,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> VmResult<RuntimeValue> {
+    let pop = |stack: &mut Vec<StackValue>| stack.pop().expect("verified bytecode keeps an operand");
+    let resume_value = if argc == 2 {
+        Some(into_runtime_value(pop(stack), chunks))
+    } else {
+        None
+    };
+    let handle = match into_runtime_value(pop(stack), chunks) {
+        RuntimeValue::Coroutine(handle) => handle,
+        other => return Err(locate(chunk, ip, VmError::invalid_resume_target(argc == 2, &other))),
+    };
+    coroutine::resume::<CHECK_TIMEOUT>(
+        &handle,
+        resume_value,
+        execution,
+        #[cfg(feature = "debugger")]
+        debug,
+    )
+    .map_err(|e| locate(chunk, ip, e))
+}
+
 // Keep the opcode loop separate from the trampoline's continuation and unwinding paths.
 // Inlining it into `drive_frames` also merges their native stack frames and code footprint.
 #[inline(never)]
@@ -1493,75 +1588,35 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             match op {
                 #[cfg(feature = "debugger")]
                 OpCode::StmtBoundary(token_id) => {
-                    let node = chunk
-                        .debug_nodes
-                        .iter()
-                        .rfind(|(candidate, _)| *candidate == *token_id)
-                        .map(|(_, node)| Shared::clone(node))
-                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
-                    debug.current_node = Some(Shared::clone(&node));
-
-                    let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
-                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
-                    if let Some(hook) = debug.hook.as_deref_mut() {
-                        hook.on_boundary(DebugEvent {
-                            token_id: *token_id,
-                            node,
-                            current_value: current_self(locals, chunks),
-                            bindings,
-                            vm_frame: vm_frame.clone(),
-                            call_stack: debug.call_stack.clone(),
-                            #[cfg(feature = "debug-trace")]
-                            operand_stack: stack
-                                .iter()
-                                .cloned()
-                                .map(|value| into_runtime_value(value, chunks))
-                                .collect(),
-                        })
-                        .map_err(|error| locate(chunk, ip, error))?;
-                    }
-                    apply_debug_updates(&vm_frame, locals, upvalues);
+                    debug_stop(
+                        DebugStop::Boundary,
+                        *token_id,
+                        chunk,
+                        ip,
+                        locals,
+                        upvalues,
+                        chunks,
+                        stack,
+                        debug,
+                    )?;
                 }
                 #[cfg(feature = "debugger")]
                 OpCode::SyncCallNode(token_id) => {
-                    let node = chunk
-                        .debug_nodes
-                        .iter()
-                        .rfind(|(candidate, _)| *candidate == *token_id)
-                        .map(|(_, node)| Shared::clone(node))
-                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
-                    debug.current_node = Some(node);
+                    debug.current_node = Some(find_debug_node(chunk, *token_id, ip)?);
                 }
                 #[cfg(feature = "debugger")]
                 OpCode::Breakpoint(token_id) => {
-                    let node = chunk
-                        .debug_nodes
-                        .iter()
-                        .rfind(|(candidate, _)| *candidate == *token_id)
-                        .map(|(_, node)| Shared::clone(node))
-                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
-                    debug.current_node = Some(Shared::clone(&node));
-
-                    let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
-                        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
-                    if let Some(hook) = debug.hook.as_deref_mut() {
-                        hook.on_explicit_breakpoint(DebugEvent {
-                            token_id: *token_id,
-                            node,
-                            current_value: current_self(locals, chunks),
-                            bindings,
-                            vm_frame: vm_frame.clone(),
-                            call_stack: debug.call_stack.clone(),
-                            #[cfg(feature = "debug-trace")]
-                            operand_stack: stack
-                                .iter()
-                                .cloned()
-                                .map(|value| into_runtime_value(value, chunks))
-                                .collect(),
-                        })
-                        .map_err(|error| locate(chunk, ip, error))?;
-                    }
-                    apply_debug_updates(&vm_frame, locals, upvalues);
+                    debug_stop(
+                        DebugStop::Breakpoint,
+                        *token_id,
+                        chunk,
+                        ip,
+                        locals,
+                        upvalues,
+                        chunks,
+                        stack,
+                        debug,
+                    )?;
                 }
                 OpCode::Const(idx) => {
                     let value = chunk.constants[*idx as usize].clone();
@@ -2544,21 +2599,16 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     break 'dispatch FrameOutcome::Suspend(v);
                 }
                 OpCode::Resume(argc) => {
-                    // argc=2 is `send(stream, value)`; argc=1 is `next(stream)`.
-                    let resume_value = if *argc == 2 { Some(pop_value!()) } else { None };
-                    let arg = pop!();
-                    let handle = match into_runtime_value(arg, chunks) {
-                        RuntimeValue::Coroutine(handle) => handle,
-                        other => bail!(VmError::invalid_resume_target(*argc == 2, &other)),
-                    };
-                    let result = coroutine::resume::<CHECK_TIMEOUT>(
-                        &handle,
-                        resume_value,
+                    let result = resume_op::<CHECK_TIMEOUT>(
+                        *argc,
+                        stack,
+                        chunks,
+                        chunk,
+                        ip,
                         execution,
                         #[cfg(feature = "debugger")]
                         debug,
-                    )
-                    .map_err(|e| locate(chunk, ip, e))?;
+                    )?;
                     stack.push(StackValue::Value(result));
                 }
                 OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
