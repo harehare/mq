@@ -2302,7 +2302,11 @@ impl Cli {
             #[cfg(not(feature = "debug-trace"))]
             let handler = DebuggerHandler::new(engine.clone(), self.stop_on_error);
             engine.set_debugger_handler(Box::new(handler));
-            engine.debugger().write().unwrap().activate();
+            engine
+                .debugger()
+                .write()
+                .map_err(|e| miette!("failed to lock the debugger: {e}"))?
+                .activate();
         }
 
         Ok(engine)
