@@ -1,3 +1,4 @@
+use crate::position::{LineIndex, lsp_range};
 use tower_lsp_server::ls_types;
 use tower_lsp_server::ls_types::NumberOrString;
 
@@ -14,19 +15,6 @@ pub enum LspError {
     LintWarning(mq_lint::Diagnostic),
 }
 
-fn lsp_range(range: mq_lang::Range) -> ls_types::Range {
-    ls_types::Range::new(
-        ls_types::Position {
-            line: range.start.line.saturating_sub(1),
-            character: range.start.column.saturating_sub(1),
-        },
-        ls_types::Position {
-            line: range.end.line.saturating_sub(1),
-            character: range.end.column.saturating_sub(1),
-        },
-    )
-}
-
 fn lint_severity(severity: mq_lint::Severity) -> ls_types::DiagnosticSeverity {
     match severity {
         mq_lint::Severity::Error => ls_types::DiagnosticSeverity::ERROR,
@@ -38,8 +26,9 @@ fn lint_severity(severity: mq_lint::Severity) -> ls_types::DiagnosticSeverity {
 
 impl LspError {
     /// The diagnostic for a document at `uri`, with the places that explain it.
-    pub fn to_diagnostic(&self, uri: &ls_types::Uri) -> ls_types::Diagnostic {
-        let mut diagnostic: ls_types::Diagnostic = self.into();
+    /// Columns are UTF-16 via `lines`, or scalar columns without document text.
+    pub(crate) fn to_diagnostic(&self, uri: &ls_types::Uri, lines: Option<&LineIndex>) -> ls_types::Diagnostic {
+        let mut diagnostic = self.to_lsp_diagnostic(lines);
         if let LspError::TypeError(_, related) | LspError::UncertainTypeError(_, related) = self
             && !related.is_empty()
         {
@@ -47,7 +36,7 @@ impl LspError {
                 related
                     .iter()
                     .map(|related| ls_types::DiagnosticRelatedInformation {
-                        location: ls_types::Location::new(uri.clone(), lsp_range(related.range)),
+                        location: ls_types::Location::new(uri.clone(), lsp_range(lines, related.range)),
                         message: related.message.clone(),
                     })
                     .collect(),
@@ -57,11 +46,13 @@ impl LspError {
     }
 }
 
-impl From<&LspError> for ls_types::Diagnostic {
-    fn from(error: &LspError) -> Self {
+impl LspError {
+    /// The diagnostic without related information.
+    pub(crate) fn to_lsp_diagnostic(&self, lines: Option<&LineIndex>) -> ls_types::Diagnostic {
+        let error = self;
         match error {
             LspError::SyntaxError(diagnostic) => {
-                let range = diagnostic.range.map(lsp_range).unwrap_or_else(|| {
+                let range = diagnostic.range.map(|r| lsp_range(lines, r)).unwrap_or_else(|| {
                     ls_types::Range::new(
                         ls_types::Position { line: 0, character: 0 },
                         ls_types::Position { line: 0, character: 1 },
@@ -75,7 +66,7 @@ impl From<&LspError> for ls_types::Diagnostic {
                 ls_types::Diagnostic::new_simple(range, message)
             }
             LspError::TypeError(type_error, _) | LspError::UncertainTypeError(type_error, _) => {
-                let range = type_error.location().map(lsp_range).unwrap_or_else(|| {
+                let range = type_error.location().map(|r| lsp_range(lines, r)).unwrap_or_else(|| {
                     ls_types::Range::new(
                         ls_types::Position { line: 0, character: 0 },
                         ls_types::Position { line: 0, character: 1 },
@@ -105,7 +96,7 @@ impl From<&LspError> for ls_types::Diagnostic {
                 diagnostic
             }
             LspError::LintWarning(diagnostic) => {
-                let range = diagnostic.range.map(lsp_range).unwrap_or_else(|| {
+                let range = diagnostic.range.map(|r| lsp_range(lines, r)).unwrap_or_else(|| {
                     ls_types::Range::new(
                         ls_types::Position { line: 0, character: 0 },
                         ls_types::Position { line: 0, character: 1 },
@@ -144,7 +135,7 @@ mod tests {
             end: mq_lang::Position { line: 1, column: 6 },
         });
 
-        let lsp_diagnostic: ls_types::Diagnostic = (&LspError::LintWarning(diagnostic)).into();
+        let lsp_diagnostic = LspError::LintWarning(diagnostic).to_lsp_diagnostic(None);
 
         assert_eq!(lsp_diagnostic.severity, Some(ls_types::DiagnosticSeverity::WARNING));
         assert_eq!(
@@ -167,7 +158,7 @@ mod tests {
             mq_lint::Severity::Error,
         );
 
-        let lsp_diagnostic: ls_types::Diagnostic = (&LspError::LintWarning(diagnostic)).into();
+        let lsp_diagnostic = LspError::LintWarning(diagnostic).to_lsp_diagnostic(None);
 
         assert_eq!(lsp_diagnostic.severity, Some(ls_types::DiagnosticSeverity::ERROR));
         assert_eq!(lsp_diagnostic.range.start.line, 0);
@@ -189,7 +180,7 @@ mod tests {
             context: Some("in argument 1 to 'abs'".to_string()),
         };
 
-        let diagnostic: ls_types::Diagnostic = (&LspError::TypeError(error, Vec::new())).into();
+        let diagnostic = LspError::TypeError(error, Vec::new()).to_lsp_diagnostic(None);
 
         assert_eq!(diagnostic.severity, Some(ls_types::DiagnosticSeverity::ERROR));
         assert_eq!(
@@ -213,7 +204,7 @@ mod tests {
             location: range(),
         };
 
-        let diagnostic: ls_types::Diagnostic = (&LspError::UncertainTypeError(error, Vec::new())).into();
+        let diagnostic = LspError::UncertainTypeError(error, Vec::new()).to_lsp_diagnostic(None);
 
         assert_eq!(diagnostic.severity, Some(ls_types::DiagnosticSeverity::WARNING));
         assert_eq!(diagnostic.message, "Undefined field `x` in record type {}");
@@ -226,7 +217,7 @@ mod tests {
             location: range(),
         };
 
-        let diagnostic: ls_types::Diagnostic = (&LspError::UncertainTypeError(error, Vec::new())).into();
+        let diagnostic = LspError::UncertainTypeError(error, Vec::new()).to_lsp_diagnostic(None);
 
         assert_eq!(diagnostic.tags, Some(vec![ls_types::DiagnosticTag::UNNECESSARY]));
     }
@@ -244,12 +235,115 @@ mod tests {
         }];
         let uri: ls_types::Uri = "file:///a.mq".parse().unwrap();
 
-        let diagnostic = LspError::TypeError(error, related).to_diagnostic(&uri);
+        let diagnostic = LspError::TypeError(error, related).to_diagnostic(&uri, None);
 
         let information = diagnostic.related_information.unwrap();
         assert_eq!(information.len(), 1);
         assert_eq!(information[0].message, "`x` is `string`");
         assert_eq!(information[0].location.uri, uri);
         assert_eq!(information[0].location.range.start.line, 1);
+    }
+
+    fn index(text: &str) -> LineIndex {
+        LineIndex::new(std::sync::Arc::new(text.to_string()))
+    }
+
+    fn mq_range(start: (u32, u32), end: (u32, u32)) -> mq_lang::Range {
+        mq_lang::Range {
+            start: mq_lang::Position {
+                line: start.0,
+                column: start.1,
+            },
+            end: mq_lang::Position {
+                line: end.0,
+                column: end.1,
+            },
+        }
+    }
+
+    // Each case is `(text, mq range, expected LSP range)`: a non-BMP character before the range,
+    // inside it, on an earlier line only, and as the only thing shifting the end.
+    #[rstest::rstest]
+    #[case::before("\"😀\" | x", ((1, 7), (1, 8)), ((0, 7), (0, 8)))]
+    #[case::inside("f(\"😀\")", ((1, 1), (1, 7)), ((0, 0), (0, 7)))]
+    #[case::earlier_line_only("\"😀\"\nx", ((2, 1), (2, 2)), ((1, 0), (1, 1)))]
+    #[case::two_characters("\"😀😀\" | x", ((1, 8), (1, 9)), ((0, 9), (0, 10)))]
+    fn diagnostics_use_utf16_columns(
+        #[case] text: &str,
+        #[case] range: ((u32, u32), (u32, u32)),
+        #[case] expected: ((u32, u32), (u32, u32)),
+    ) {
+        let lines = index(text);
+        let range = mq_range(range.0, range.1);
+        let expected = ls_types::Range::new(
+            ls_types::Position::new(expected.0.0, expected.0.1),
+            ls_types::Position::new(expected.1.0, expected.1.1),
+        );
+
+        let syntax = LspError::SyntaxError(mq_lang::Diagnostic {
+            message: "m".to_string(),
+            range: Some(range),
+            hints: Vec::new(),
+        });
+        let type_error = LspError::TypeError(
+            mq_check::TypeError::UnreachableCode {
+                reason: "r".to_string(),
+                location: Some(range),
+            },
+            Vec::new(),
+        );
+        let lint = LspError::LintWarning(
+            mq_lint::Diagnostic::new(
+                mq_lint::LintMessage::UnusedVariable { name: "x".to_string() },
+                mq_lint::Severity::Warn,
+            )
+            .with_range(range),
+        );
+
+        for error in [syntax, type_error, lint] {
+            assert_eq!(error.to_lsp_diagnostic(Some(&lines)).range, expected, "{error:?}");
+        }
+    }
+
+    #[test]
+    fn related_information_uses_utf16_columns() {
+        let lines = index("\"😀\" | x");
+        let range = mq_range((1, 7), (1, 8));
+        let error = mq_check::TypeError::UndefinedField {
+            field: "x".to_string(),
+            record_ty: "{}".to_string(),
+            location: Some(range),
+        };
+        let related = vec![mq_check::Related {
+            range,
+            message: "m".to_string(),
+        }];
+        let uri: ls_types::Uri = "file:///a.mq".parse().unwrap();
+
+        let diagnostic = LspError::TypeError(error, related).to_diagnostic(&uri, Some(&lines));
+
+        assert_eq!(diagnostic.range.start.character, 7);
+        assert_eq!(
+            diagnostic.related_information.unwrap()[0]
+                .location
+                .range
+                .start
+                .character,
+            7
+        );
+    }
+
+    #[test]
+    fn without_document_text_columns_stay_scalar() {
+        let range = mq_range((1, 8), (1, 9));
+        let lint = LspError::LintWarning(
+            mq_lint::Diagnostic::new(
+                mq_lint::LintMessage::UnusedVariable { name: "x".to_string() },
+                mq_lint::Severity::Warn,
+            )
+            .with_range(range),
+        );
+
+        assert_eq!(lint.to_lsp_diagnostic(None).range.start.character, 7);
     }
 }

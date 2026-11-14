@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
-use crate::position::LineIndex;
+use crate::position::{LineIndex, lsp_range as to_range};
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 use tower_lsp_server::ls_types::{
@@ -30,17 +30,6 @@ static STD_MODULE_EXPORTS: LazyLock<FxHashMap<SmolStr, Vec<SmolStr>>> = LazyLock
 
     exports
 });
-
-/// Converts to UTF-16 columns via `lines`, or to plain scalar columns without document text.
-fn to_range(lines: Option<&LineIndex>, text_range: mq_lang::Range) -> Range {
-    match lines {
-        Some(lines) => lines.to_lsp_range(text_range),
-        None => Range::new(
-            Position::new(text_range.start.line - 1, text_range.start.column - 1),
-            Position::new(text_range.end.line - 1, text_range.end.column - 1),
-        ),
-    }
-}
 
 /// Builds a quick fix that inserts `keyword "module_name";` at the top of the file.
 fn add_module_statement_action(
