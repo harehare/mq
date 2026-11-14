@@ -1,5 +1,6 @@
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{ScopeId, ScopeKind};
+use mq_lang::Range;
 
 /// Reports code nested deeper than the configured limit.
 pub struct DeeplyNested;
@@ -32,16 +33,7 @@ impl LintRule for DeeplyNested {
                 continue;
             }
 
-            // Report at the symbol that owns this scope
-            let range = match &scope.kind {
-                ScopeKind::Function(sym_id)
-                | ScopeKind::Block(sym_id)
-                | ScopeKind::Loop(sym_id)
-                | ScopeKind::MatchArm(sym_id)
-                | ScopeKind::DefaultParam(sym_id)
-                | ScopeKind::Let(sym_id) => ctx.hir.symbol(*sym_id).and_then(|s| s.source.text_range),
-                ScopeKind::Module(_) => None,
-            };
+            let range = scope_range(ctx, scope_id);
 
             let mut d = Diagnostic::new(LintMessage::DeeplyNested { depth, max_depth }, self.severity());
             if let Some(r) = range {
@@ -52,6 +44,28 @@ impl LintRule for DeeplyNested {
 
         diagnostics
     }
+}
+
+/// Range of the owning symbol, else of the scope, else of the nearest ancestor that has one.
+fn scope_range(ctx: &LintContext<'_>, scope_id: ScopeId) -> Option<Range> {
+    let mut current = Some(scope_id);
+    while let Some(sid) = current {
+        let scope = ctx.hir.scope(sid)?;
+        let owner = match &scope.kind {
+            ScopeKind::Function(id)
+            | ScopeKind::Block(id)
+            | ScopeKind::Loop(id)
+            | ScopeKind::MatchArm(id)
+            | ScopeKind::DefaultParam(id)
+            | ScopeKind::Let(id) => ctx.hir.symbol(*id).and_then(|s| s.source.text_range),
+            ScopeKind::Module(_) => None,
+        };
+        if let Some(r) = owner.or(scope.source.text_range) {
+            return Some(r);
+        }
+        current = scope.parent_id;
+    }
+    None
 }
 
 /// Returns the nesting depth of `scope_id`, counting non-module parent scopes.
@@ -102,5 +116,13 @@ mod tests {
     fn no_diagnostic_for_shallow_code(#[case] code: &str, #[case] max: usize) {
         let diags = check_with_max(code, max);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn builtin_diagnostics_have_ranges() {
+        let code = include_str!("../../../../mq-lang/builtin.mq");
+        let diags = check_with_max(code, 0);
+        assert!(!diags.is_empty());
+        assert!(diags.iter().all(|d| d.range.is_some()));
     }
 }
