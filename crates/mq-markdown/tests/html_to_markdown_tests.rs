@@ -1534,6 +1534,21 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "[Vimeo Video](https://vimeo.com/987654321)"
 )]
+#[case::iframe_srcdoc(
+    "<iframe srcdoc=\"&lt;h2&gt;Title&lt;/h2&gt;&lt;p&gt;Hello &lt;b&gt;world&lt;/b&gt;&lt;/p&gt;\"></iframe>",
+    ConversionOptions::default(),
+    "## Title\n\nHello **world**"
+)]
+#[case::iframe_srcdoc_over_src(
+    "<iframe src=\"https://example.com/embed\" srcdoc=\"&lt;p&gt;inline&lt;/p&gt;\"></iframe>",
+    ConversionOptions::default(),
+    "inline"
+)]
+#[case::iframe_srcdoc_empty_falls_back_to_src(
+    "<iframe src=\"https://example.com/embed\" srcdoc=\"\"></iframe>",
+    ConversionOptions::default(),
+    "[Embedded Iframe](https://example.com/embed)"
+)]
 #[case::iframe_instagram(
     "<iframe src=\"https://www.instagram.com/p/B1BKr9Wo8YX/embed/\"></iframe>",
     ConversionOptions::default(),
