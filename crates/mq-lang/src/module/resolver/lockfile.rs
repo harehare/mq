@@ -87,6 +87,16 @@ impl ModuleLock {
         self.remote.retain(|url, _| is_versioned_url(url));
     }
 
+    /// Removes the entry for `url`, if any.
+    pub fn remove(&mut self, url: &str) {
+        self.remote.remove(url);
+    }
+
+    /// Iterates over the recorded `(url, sha256)` entries in URL order.
+    pub fn entries(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.remote.iter().map(|(url, hash)| (url.as_str(), hash.as_str()))
+    }
+
     /// Returns `true` if there are no recorded entries.
     pub fn is_empty(&self) -> bool {
         self.remote.is_empty()

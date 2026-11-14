@@ -31,6 +31,14 @@ use mq_help as help;
 #[cfg(feature = "debug-trace")]
 mod bytecode;
 mod exit_status;
+#[cfg(feature = "http-import")]
+mod module;
+#[cfg(feature = "http-import")]
+mod module_search;
+#[cfg(feature = "http-import")]
+mod module_ui;
+#[cfg(feature = "http-import")]
+mod module_update;
 mod mqc;
 mod text_input;
 
@@ -999,6 +1007,15 @@ enum Commands {
         #[arg(long)]
         markdown: bool,
     },
+    /// Manage HTTP modules saved to disk, pinned in `mq.lock`
+    ///
+    /// Saved modules are imported by name (`import "kdl"`) and need no `--allow-http-import`.
+    #[cfg(feature = "http-import")]
+    #[command(alias = "mod")]
+    Module {
+        #[command(subcommand)]
+        command: ModuleCommand,
+    },
     /// Compile a query to experimental `.mqc` bytecode.
     #[command(
         long_about = "Compile a query to a .mqc program. Run it with `mq PROGRAM.mqc [FILES]...`.\n\nThe .mqc format and CLI are experimental and may change. Recompile programs after upgrading mq."
@@ -1015,6 +1032,69 @@ enum Commands {
         output: Option<PathBuf>,
         #[clap(flatten)]
         program: Box<ProgramArgs>,
+    },
+}
+
+/// Actions of the `module` subcommand.
+#[cfg(feature = "http-import")]
+#[derive(Debug, Subcommand)]
+enum ModuleCommand {
+    /// Download modules into `./vendor` (or `~/.config/mq` with --global) and pin them in `mq.lock`
+    Add {
+        /// Modules to add, e.g. `github.com/harehare/kdl.mq@v1.0`
+        #[arg(value_name = "MODULE", required = true)]
+        modules: Vec<String>,
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
+        /// Also allow modules from DOMAIN (repeatable)
+        #[arg(long = "allow-domain", value_name = "DOMAIN")]
+        allow_domain: Vec<String>,
+    },
+    /// Download every module pinned in `mq.lock` again, e.g. after a fresh clone
+    Install {
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
+        /// Also allow modules from DOMAIN (repeatable)
+        #[arg(long = "allow-domain", value_name = "DOMAIN")]
+        allow_domain: Vec<String>,
+    },
+    /// Verify saved modules against `mq.lock` without fetching
+    Check {
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
+    },
+    /// Move modules pinned to a version tag to their latest tag (modules tracking a branch are skipped)
+    Update {
+        /// Modules to update [default: every module in `mq.lock`]
+        #[arg(value_name = "NAME")]
+        names: Vec<String>,
+        /// Use `~/.config/mq` and its `mq.lock` instead of the project
+        #[arg(long)]
+        global: bool,
+        /// Print the available updates without changing anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Also allow modules from DOMAIN (repeatable)
+        #[arg(long = "allow-domain", value_name = "DOMAIN")]
+        allow_domain: Vec<String>,
+    },
+    /// Search the published module index (https://mqlang.org/modules.json)
+    Search {
+        /// Words that must all appear in a module's name, category or description
+        #[arg(value_name = "QUERY")]
+        terms: Vec<String>,
+        /// Only modules in this category, e.g. `format-parsers`
+        #[arg(long, value_name = "SLUG")]
+        category: Option<String>,
+        /// Print machine-readable JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+        /// Fetch the index again instead of using the 24 hour cache
+        #[arg(long)]
+        refresh: bool,
     },
 }
 
@@ -2039,6 +2119,35 @@ impl Cli {
                     )));
                 }
                 Some(Self::compile_bytecode(query, *from_file, output.as_deref(), program))
+            }
+            #[cfg(feature = "http-import")]
+            Commands::Module { command } => {
+                // Progress goes to stderr; `search` switches to the stdout decision below.
+                colored::control::set_override(self.use_stderr_color());
+                Some(match command {
+                    ModuleCommand::Add {
+                        modules,
+                        global,
+                        allow_domain,
+                    } => Self::module_add(modules, *global, allow_domain),
+                    ModuleCommand::Install { global, allow_domain } => Self::module_install(*global, allow_domain),
+                    ModuleCommand::Check { global } => Self::module_check(*global),
+                    ModuleCommand::Update {
+                        names,
+                        global,
+                        dry_run,
+                        allow_domain,
+                    } => Self::module_update(names, *global, *dry_run, allow_domain),
+                    ModuleCommand::Search {
+                        terms,
+                        category,
+                        json,
+                        refresh,
+                    } => {
+                        colored::control::set_override(self.use_color());
+                        Self::module_search(terms, category.as_deref(), *json, *refresh)
+                    }
+                })
             }
             #[cfg(feature = "debugger")]
             Commands::Dap => Some(mq_dap::start().map_err(|e| miette!(e.to_string()))),
@@ -3447,6 +3556,17 @@ impl Cli {
                     && io::stdout().is_terminal()
                     && std::env::var("TERM").map_or(true, |t| t != "dumb")
             }
+        }
+    }
+
+    /// Like `use_color`, for output written to stderr.
+    #[cfg(feature = "http-import")]
+    fn use_stderr_color(&self) -> bool {
+        match self.output.color {
+            ColorChoice::Never => false,
+            _ if Self::is_no_color() => false,
+            ColorChoice::Always => true,
+            ColorChoice::Auto => io::stderr().is_terminal() && std::env::var("TERM").map_or(true, |t| t != "dumb"),
         }
     }
 

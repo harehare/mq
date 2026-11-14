@@ -34,10 +34,14 @@ import "github.com/harehare/<module-name>"
 
 Type to search by name or description, or click a category to filter.
 
+The same list is available from the command line with `mq module search`.
+
 <div class="module-toolbar">
   <input type="text" id="module-search-input" class="module-search-input" placeholder="Search modules…" aria-label="Search extension modules">
   <span id="module-count" class="module-count"></span>
 </div>
+<!-- Generated from docs/modules.json by `just modules-table`. Edit the JSON, not the table. -->
+<!-- modules:begin -->
 <div id="module-category-filters" class="module-category-chips">
   <button type="button" class="module-chip active" data-category="all">All</button>
   <button type="button" class="module-chip" data-category="format-parsers">Format Parsers</button>
@@ -76,7 +80,7 @@ Type to search by name or description, or click a category to filter.
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/feed.mq">feed.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td>RSS 2.0 / Atom feed parser</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/gitignore.mq">gitignore.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://git-scm.com/docs/gitignore">.gitignore</a> pattern parser and matcher</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/asciidoc.mq">asciidoc.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://docs.asciidoctor.org/asciidoc/latest/">AsciiDoc</a> to Markdown converter</td></tr>
-<tr data-category="format-parsers"><td><a href="https://github.com/harehare/jsonld.mq">jsonld.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://www.w3.org/TR/json-ld11/">JSON-LD</a> <code>&lt;script type="application/ld+json"&gt;</code> extractor</td></tr>
+<tr data-category="format-parsers"><td><a href="https://github.com/harehare/jsonld.mq">jsonld.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://www.w3.org/TR/json-ld11/">JSON-LD</a> <code>&lt;script type=&quot;application/ld+json&quot;&gt;</code> extractor</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/typst.mq">typst.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://typst.app">Typst</a> markup parser, headings and single-line function-call statements</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/gomod.mq">gomod.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://go.dev/ref/mod">Typst</a> A Go module manifest (go.mod/go.sum) parser implemented as an mq module</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/sbom.mq">sbom.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td>SPDX and CycloneDX SBOM (Software Bill of Materials) parser</td></tr>
@@ -105,7 +109,7 @@ Type to search by name or description, or click a category to filter.
 <tr data-category="interpreters-examples"><td><a href="https://github.com/harehare/bf.mq">bf.mq</a></td><td><span class="module-category-badge">Interpreters &amp; Examples</span></td><td>Brainfuck interpreter</td></tr>
 <tr data-category="interpreters-examples"><td><a href="https://github.com/harehare/jq.mq">jq.mq</a></td><td><span class="module-category-badge">Interpreters &amp; Examples</span></td><td>Implementation of the <a href="https://jqlang.org">jq</a> JSON processor, written in mq</td></tr>
 <tr data-category="data-algorithms"><td><a href="https://github.com/harehare/ds.mq">ds.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Data structures: min-heap, trie, union-find, sorted collections</td></tr>
-<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/bloom.mq">bloom.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Bloom filter, a compact set answering "definitely not" or "probably in the set"</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/bloom.mq">bloom.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Bloom filter, a compact set answering &quot;definitely not&quot; or &quot;probably in the set&quot;</td></tr>
 <tr data-category="data-algorithms"><td><a href="https://github.com/harehare/sketch.mq">sketch.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Probabilistic stream summaries with fixed memory and mergeable results</td></tr>
 <tr data-category="data-algorithms"><td><a href="https://github.com/harehare/consistenthash.mq">consistenthash.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Consistent hash ring for sharding keys over nodes</td></tr>
 <tr data-category="data-algorithms"><td><a href="https://github.com/harehare/simhash.mq">simhash.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>SimHash fingerprints for near-duplicate detection</td></tr>
@@ -118,3 +122,4 @@ Type to search by name or description, or click a category to filter.
 <tr data-category="libraries-toolkits"><td><a href="https://github.com/harehare/docset.mq">docset.mq</a></td><td><span class="module-category-badge">Libraries &amp; Toolkits</span></td><td>Treats a directory of Markdown docs as one documentation set</td></tr>
 </tbody>
 </table>
+<!-- modules:end -->

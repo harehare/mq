@@ -3218,3 +3218,88 @@ fn test_color_choice_standalone_commands(
 
     Ok(())
 }
+
+#[cfg(feature = "http-import")]
+mod module {
+    use assert_cmd::cargo;
+
+    /// A lock file pinning `ok.mq` to the SHA-256 of `def a(): 1;`.
+    fn lock_for(content_hash: &str) -> String {
+        format!(
+            r#"{{"version":"1","remote":{{"https://raw.githubusercontent.com/harehare/ok.mq/v1/ok.mq":"{content_hash}"}}}}"#
+        )
+    }
+
+    #[test]
+    fn test_module_check_passes_for_matching_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "def a(): 1;";
+        std::fs::create_dir(dir.path().join("vendor")).unwrap();
+        std::fs::write(dir.path().join("vendor/ok.mq"), content).unwrap();
+        std::fs::write(dir.path().join("mq.lock"), lock_for(&mq_lang::compute_hash(content))).unwrap();
+
+        cargo::cargo_bin_cmd!("mq")
+            .current_dir(dir.path())
+            .args(["module", "check"])
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn test_module_check_fails_for_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("mq.lock"),
+            lock_for(&mq_lang::compute_hash("def a(): 1;")),
+        )
+        .unwrap();
+
+        let output = cargo::cargo_bin_cmd!("mq")
+            .current_dir(dir.path())
+            .args(["module", "check"])
+            .assert()
+            .failure()
+            .get_output()
+            .stderr
+            .clone();
+
+        assert!(String::from_utf8_lossy(&output).contains("ok.mq is missing"));
+    }
+
+    #[test]
+    fn test_module_add_rejects_non_url_module() {
+        let dir = tempfile::tempdir().unwrap();
+
+        cargo::cargo_bin_cmd!("mq")
+            .current_dir(dir.path())
+            .args(["module", "add", "csv"])
+            .assert()
+            .failure();
+    }
+}
+
+/// `docs/books/src/start/modules.md` embeds a table generated from `docs/modules.json`;
+/// regenerate it with `just modules-table`.
+#[test]
+fn test_modules_table_is_up_to_date() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let table = "docs/books/src/start/modules.md";
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs/books/src/start")).unwrap();
+    std::fs::copy(root.join("docs/modules.json"), dir.path().join("docs/modules.json")).unwrap();
+    std::fs::copy(root.join(table), dir.path().join(table)).unwrap();
+
+    cargo::cargo_bin_cmd!("mq")
+        .current_dir(dir.path())
+        .args(["--allow-read", "--allow-write", "-I", "null", "-f"])
+        .arg(root.join("scripts/modules_table.mq"))
+        .assert()
+        .success();
+
+    let normalize = |text: String| text.replace("\r\n", "\n");
+    assert_eq!(
+        normalize(std::fs::read_to_string(root.join(table)).unwrap()),
+        normalize(std::fs::read_to_string(dir.path().join(table)).unwrap()),
+        "modules.md is out of date, run `just modules-table`"
+    );
+}

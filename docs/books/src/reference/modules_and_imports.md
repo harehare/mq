@@ -508,6 +508,54 @@ Commit `mq.lock` alongside scripts that use HTTP imports so CI and teammates fet
 content you locked, the same way `package-lock.json`/`deno.lock` work.
 
 
+### Saving modules to disk
+
+`mq module` saves HTTP modules to disk so they can be imported by name without `--allow-http-import`.
+
+```sh
+mq module add github.com/harehare/kdl.mq@v1.0   # writes vendor/kdl.mq and records it in mq.lock
+mq module install                               # fetch every URL in mq.lock again (e.g. after a fresh clone)
+mq module check                                 # offline: verify vendor/ against mq.lock
+mq module add --global github.com/harehare/kdl.mq@v1.0   # ~/.config/mq/kdl.mq and ~/.config/mq/mq.lock
+```
+
+`install` and `check` also take `--global`. `mq mod` is an alias of `mq module`.
+
+Find modules with `search`, which queries the index published at <https://mqlang.org/modules.json>:
+
+```sh
+mq module search yaml                       # every word must match the name, category or description
+mq module search --category format-parsers  # list one category
+mq module search toml --json                # machine-readable
+```
+
+The index is cached for 24 hours; `--refresh` fetches it again, and a stale cache is used when the fetch fails.
+
+Move modules pinned to a version tag to their latest tag with `update`:
+
+```sh
+mq module update --dry-run   # list available updates
+mq module update             # update every module in mq.lock
+mq module update kdl ini     # only these
+```
+
+Latest means the highest `vX.Y.Z` tag of the GitHub repository, so pre-releases and non-version tags are ignored.
+Modules that track a branch (`HEAD`, `main`) are skipped. The tag list comes from the GitHub API, which limits
+unauthenticated requests per hour.
+
+Import a saved module by name:
+
+```mq
+import "kdl"
+```
+
+`./vendor` is searched before `~/.config/mq`, so a project can pin a version that differs from the global one.
+Prefer `./vendor` with a committed `mq.lock` for anything a team must reproduce. Imports of global modules are
+not checked against `~/.config/mq/mq.lock` at run time; use `mq module check --global`.
+
+Modules outside the default domain need `--allow-domain DOMAIN`. Adding a new version of a module replaces
+its old `mq.lock` entry, and two different URLs cannot share one module name.
+
 ### CLI options
 
 | Flag                        | Description                                                                                                                             |
