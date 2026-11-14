@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
+use crate::position::LineIndex;
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 use tower_lsp_server::ls_types::{
@@ -30,11 +31,15 @@ static STD_MODULE_EXPORTS: LazyLock<FxHashMap<SmolStr, Vec<SmolStr>>> = LazyLock
     exports
 });
 
-fn to_range(text_range: mq_lang::Range) -> Range {
-    Range::new(
-        Position::new(text_range.start.line - 1, text_range.start.column - 1),
-        Position::new(text_range.end.line - 1, text_range.end.column - 1),
-    )
+/// Converts to UTF-16 columns via `lines`, or to plain scalar columns without document text.
+fn to_range(lines: Option<&LineIndex>, text_range: mq_lang::Range) -> Range {
+    match lines {
+        Some(lines) => lines.to_lsp_range(text_range),
+        None => Range::new(
+            Position::new(text_range.start.line - 1, text_range.start.column - 1),
+            Position::new(text_range.end.line - 1, text_range.end.column - 1),
+        ),
+    }
 }
 
 /// Builds a quick fix that inserts `keyword "module_name";` at the top of the file.
@@ -68,6 +73,7 @@ fn add_module_statement_action(
 /// Builds a quick fix from a resolved `mq-lint` [`Fix`](mq_lint::Fix), replacing the diagnostic's
 /// span with the fix's suggested text.
 fn lint_fix_action(
+    lines: Option<&LineIndex>,
     uri: &ls_types::Uri,
     diagnostic: &ls_types::Diagnostic,
     title: String,
@@ -78,7 +84,7 @@ fn lint_fix_action(
     changes.insert(
         uri.clone(),
         vec![TextEdit {
-            range: to_range(range),
+            range: to_range(lines, range),
             new_text: replacement,
         }],
     );
@@ -107,6 +113,8 @@ pub(crate) fn response(
     let hir_guard = hir.read().unwrap();
     let doc_source_id = hir_guard.source_by_url(&url)?;
     let uri = &params.text_document.uri;
+    let lines = source_text.map(|text| LineIndex::new(Arc::new(text.to_string())));
+    let lines = lines.as_ref();
 
     // For a `module::func()` call, the unresolved error is reported on the `func`
     // `Ref` symbol, whose parent is the `QualifiedAccess` symbol holding the
@@ -117,7 +125,7 @@ pub(crate) fn response(
         .filter_map(|error| match error {
             mq_hir::HirError::UnresolvedSymbol { symbol, .. } => {
                 let name = symbol.value?;
-                let range = to_range(symbol.source.text_range?);
+                let range = to_range(lines, symbol.source.text_range?);
                 let qualified_module = symbol.parent.and_then(|parent_id| {
                     hir_guard.symbol(parent_id).and_then(|parent| match &parent.kind {
                         mq_hir::SymbolKind::QualifiedAccess => parent.value.clone(),
@@ -159,10 +167,10 @@ pub(crate) fn response(
             let Some(NumberOrString::String(rule_id)) = &diagnostic.code else {
                 continue;
             };
-            let Some(matched) = lint_diagnostics
-                .iter()
-                .find(|d| d.rule_id().as_str() == rule_id.as_str() && d.range.map(to_range) == Some(diagnostic.range))
-            else {
+            let Some(matched) = lint_diagnostics.iter().find(|d| {
+                d.rule_id().as_str() == rule_id.as_str()
+                    && d.range.map(|r| to_range(lines, r)) == Some(diagnostic.range)
+            }) else {
                 continue;
             };
             let Some(fix) = matched.fix.as_ref() else { continue };
@@ -171,7 +179,7 @@ pub(crate) fn response(
             };
 
             let title = format!("Fix: {}", matched.help().unwrap_or_else(|| matched.message()));
-            actions.push(lint_fix_action(uri, diagnostic, title, range, replacement));
+            actions.push(lint_fix_action(lines, uri, diagnostic, title, range, replacement));
         }
     }
 
@@ -195,6 +203,10 @@ pub(crate) fn response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn to_range(range: mq_lang::Range) -> Range {
+        super::to_range(None, range)
+    }
     use std::str::FromStr;
     use tower_lsp_server::ls_types::{CodeActionContext, TextDocumentIdentifier, WorkDoneProgressParams};
 
