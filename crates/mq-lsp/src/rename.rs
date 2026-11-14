@@ -15,6 +15,15 @@ fn to_range(text_range: mq_lang::Range) -> Range {
     )
 }
 
+/// Only user-declared names can be renamed, not keywords or literals.
+fn is_renamable(symbol: &mq_hir::Symbol) -> bool {
+    symbol.is_function()
+        || symbol.is_variable()
+        || symbol.is_parameter()
+        || symbol.is_pattern_variable()
+        || symbol.is_module()
+}
+
 /// Validates that the symbol at `position` can be renamed, without performing the rename itself.
 ///
 /// Returns the range of the identifier under the cursor together with its current text as a
@@ -45,6 +54,10 @@ pub(crate) fn prepare(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Positio
 
     let def_symbol = hir_guard.symbol(def_id)?;
     if hir_guard.is_builtin_symbol(def_symbol) {
+        return None;
+    }
+
+    if !is_renamable(def_symbol) {
         return None;
     }
 
@@ -116,6 +129,13 @@ fn rename(
     };
     if hir_guard.is_builtin_symbol(def_symbol) {
         return Ok(None);
+    }
+
+    if !is_renamable(def_symbol) {
+        return Err(format!(
+            "cannot rename `{}`",
+            def_symbol.value.as_deref().unwrap_or_default()
+        ));
     }
 
     let collides = def_symbol.value.as_deref() != Some(new_name)
@@ -337,6 +357,22 @@ mod tests {
             }
             other => panic!("expected RangeWithPlaceholder, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_prepare_rename_rejects_keyword() {
+        let (hir, url, _) = setup("let x = 1 | x");
+        assert!(prepare(hir, url, Position::new(0, 1)).is_none());
+    }
+
+    #[rstest::rstest]
+    #[case("let x = 1 | x", 1)]
+    #[case("def f(): 1; | f()", 1)]
+    #[case("if (true): 1 else: 2", 1)]
+    #[case("let x = 1 | x", 8)]
+    fn test_rename_rejects_non_identifier(#[case] code: &str, #[case] col: u32) {
+        let (hir, url, source_map) = setup(code);
+        assert!(response(hir, url, Position::new(0, col), "renamed", &source_map).is_err());
     }
 
     #[test]
