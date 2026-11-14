@@ -45,6 +45,8 @@ pub struct Hir {
     pub(crate) leaking_scopes: FxHashMap<ScopeId, Vec<ScopeId>>,
     /// For each call `f(x)[k]`, how many of its trailing arguments are bracket-access keys.
     pub(crate) bracket_key_counts: FxHashMap<SymbolId, usize>,
+    /// For each `a::b::c` access, its path segments after the first, in order.
+    pub(crate) qualified_segments: FxHashMap<SymbolId, Vec<SymbolId>>,
     /// For each call `a[0][1]`, how many bracket groups it has. A slice `a[0:1]` is one group.
     pub(crate) bracket_group_counts: FxHashMap<SymbolId, usize>,
     /// `Variable` symbols declared with `var`.
@@ -102,6 +104,7 @@ impl Hir {
             name_index: FxHashMap::default(),
             leaking_scopes: FxHashMap::default(),
             bracket_key_counts: FxHashMap::default(),
+            qualified_segments: FxHashMap::default(),
             bracket_group_counts: FxHashMap::default(),
             mutable_variables: FxHashSet::default(),
             scope_name_index: FxHashMap::default(),
@@ -299,6 +302,8 @@ impl Hir {
             .retain(|symbol_id| symbols.contains_key(*symbol_id));
         self.import_aliases.retain(|import, _| symbols.contains_key(*import));
         self.bracket_key_counts.retain(|call, _| symbols.contains_key(*call));
+        self.qualified_segments
+            .retain(|access, _| symbols.contains_key(*access));
         self.bracket_group_counts.retain(|call, _| symbols.contains_key(*call));
         self.mutable_variables.retain(|id| symbols.contains_key(*id));
         self.references
@@ -863,6 +868,80 @@ end"#;
 
         let member = code.rsplit("::").next().unwrap().split('(').next().unwrap();
         assert_eq!(qualified_target(&hir, member), None);
+    }
+
+    #[test]
+    fn test_qualified_member_of_included_module() {
+        let mut hir = hir_with_modules(
+            "qualified-include",
+            &[
+                ("outer", "include \"leaf\"\ndef top(): 1;"),
+                ("leaf", "module tree: def flatten(n): n; end"),
+                ("unrelated", "module tree: def flatten(n): n; end"),
+            ],
+        );
+        hir.add_code(None, "include \"outer\" | tree::flatten(1)");
+
+        let (url, _) = qualified_target(&hir, "flatten").expect("member resolves");
+        assert_eq!(url.as_deref(), Some("leaf.mq"));
+    }
+
+    #[test]
+    fn test_qualified_member_of_stdlib_section_tree() {
+        let mut hir = Hir::default();
+        hir.add_builtin();
+        hir.add_code(None, "include \"section\" | nodes | tree(.) | tree::flatten(.) | len()");
+
+        assert!(qualified_target(&hir, "flatten").is_some());
+    }
+
+    #[test]
+    fn test_qualified_member_ignores_unincluded_module() {
+        let mut hir = hir_with_modules(
+            "qualified-isolated",
+            &[
+                ("a", "def top(): 1;"),
+                ("unrelated", "module tree: def flatten(n): n; end"),
+            ],
+        );
+        hir.add_code(None, "include \"a\" | tree::flatten(1)");
+
+        assert_eq!(qualified_target(&hir, "flatten"), None);
+    }
+
+    #[rstest]
+    #[case::array("module m: let [x, y] = [1, 2] end | m::y", "y")]
+    #[case::rest("module m: let [x, ..rest] = [1, 2] end | m::rest", "rest")]
+    #[case::dict("module m: let {a, b: c} = {a: 1, b: 2} end | m::c", "c")]
+    #[case::nested("module m: let [[x], y] = [[1], 2] end | m::x", "x")]
+    fn test_qualified_destructured_export(#[case] code: &str, #[case] member: &str) {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+
+        let (_, kind) = qualified_target(&hir, member).expect("member resolves");
+        assert!(matches!(kind, SymbolKind::PatternVariable { .. }));
+    }
+
+    #[test]
+    fn test_qualified_member_ignores_local_pattern_variable() {
+        let mut hir = Hir::default();
+        hir.add_code(None, "module m: def f(v): let [x] = v | x; end | m::x");
+
+        assert_eq!(qualified_target(&hir, "x"), None);
+    }
+
+    #[rstest]
+    #[case::grouped("module m: def f(v): v; end | let x = 1 | m::f((x))")]
+    #[case::space("module m: def f(v): v; end | let x = 1 | m::f( x)")]
+    #[case::nested_group("module m: def f(v): v; end | let x = 1 | m::f(((x)))")]
+    fn test_qualified_call_argument_is_not_a_path_segment(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+
+        let (_, kind) = qualified_target(&hir, "f").expect("member resolves");
+        assert!(matches!(kind, SymbolKind::Function(_)));
+        let (_, kind) = qualified_target(&hir, "x").expect("argument resolves");
+        assert!(matches!(kind, SymbolKind::Variable));
     }
 
     #[test]
