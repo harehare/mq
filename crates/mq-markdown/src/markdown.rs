@@ -793,6 +793,41 @@ mod tests {
         assert!(html.contains("<td>1</td>"), "expected <td>1</td> in: {html}");
     }
 
+    fn cell_source(values: Vec<Node>) -> String {
+        let cell = Node::TableCell(crate::node::TableCell {
+            column: 0,
+            row: 0,
+            values,
+            position: None,
+        });
+        format!("| h |\n|---|\n|{}|", cell)
+    }
+
+    #[test]
+    fn test_table_cell_break_html_roundtrip() {
+        let src = cell_source(vec![
+            "a".to_string().into(),
+            Node::Break(crate::node::Break { position: None }),
+            "b".to_string().into(),
+        ]);
+        let html = src.parse::<Markdown>().unwrap().to_html();
+        assert!(html.contains("<td>a<br"), "expected a real line break in: {html}");
+        assert!(!html.contains("&lt;br"), "<br> must not be escaped in: {html}");
+    }
+
+    #[test]
+    fn test_table_cell_code_newline_html_roundtrip() {
+        let src = cell_source(vec![Node::CodeInline(crate::node::CodeInline {
+            value: "a\nb".into(),
+            position: None,
+        })]);
+        let html = src.parse::<Markdown>().unwrap().to_html();
+        assert!(
+            html.contains("<code>a b</code>"),
+            "expected code with a space in: {html}"
+        );
+    }
+
     #[test]
     fn test_to_html_gfm_table_alignment() {
         let md = "| L | C | R |\n|:---|:---:|---:|\n| a | b | c |"
