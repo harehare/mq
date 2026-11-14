@@ -42,6 +42,7 @@ impl LintRule for UnusedFunction {
             .symbols()
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Call | SymbolKind::Ref | SymbolKind::Ident))
             .filter_map(|(_, s)| s.value.as_deref())
+            .chain(ctx.annotation_names().iter().map(String::as_str))
             .collect();
 
         let is_module_file = is_definitions_only(ctx);
@@ -94,6 +95,17 @@ mod tests {
         let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains(msg));
+    }
+
+    #[test]
+    fn annotation_counts_as_use() {
+        let code = "def _helper(): 1;\n# @parametrize([[_helper()]])\ndef test_a(x): assert_eq(x, 1);";
+        let mut hir = Hir::default();
+        let (source_id, _, _) = hir.add_code(None, code);
+        let config = LintConfig::default();
+        let ctx = LintContext::new(&hir, source_id, &config).with_source_text(code);
+        assert!(UnusedFunction.check(&ctx).is_empty());
+        assert_eq!(check(code).len(), 1);
     }
 
     #[rstest]

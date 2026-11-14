@@ -30,7 +30,7 @@ pub use message::{LintMessage, RuleId};
 use std::sync::OnceLock;
 
 use mq_hir::{Hir, SourceId};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Severity level for a lint diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -115,7 +115,46 @@ pub struct LintContext<'a> {
     source_id: SourceId,
     /// Linter configuration.
     pub config: &'a LintConfig,
+    source_text: Option<&'a str>,
     index: OnceLock<SymbolIndex>,
+    annotation_names: OnceLock<FxHashSet<String>>,
+}
+
+/// Collects identifiers from `# @name(...)` comments, following an annotation across comment
+/// lines until its parentheses close. Names inside string literals are collected too, which
+/// only errs toward treating a name as used.
+fn collect_annotation_names(text: &str) -> FxHashSet<String> {
+    let mut names = FxHashSet::default();
+    let mut depth = 0i32;
+    for line in text.lines() {
+        let Some(comment) = line.trim_start().strip_prefix('#') else {
+            depth = 0;
+            continue;
+        };
+        let comment = comment.trim_start();
+        if depth == 0 && !comment.starts_with('@') {
+            continue;
+        }
+        let mut ident = String::new();
+        for c in comment.chars().chain(std::iter::once(' ')) {
+            if c.is_alphanumeric() || c == '_' {
+                ident.push(c);
+                continue;
+            }
+            if !ident.is_empty() {
+                if !ident.starts_with(|d: char| d.is_ascii_digit()) {
+                    names.insert(std::mem::take(&mut ident));
+                }
+                ident.clear();
+            }
+            match c {
+                '(' => depth += 1,
+                ')' => depth = (depth - 1).max(0),
+                _ => {}
+            }
+        }
+    }
+    names
 }
 
 /// This source's symbols and their children, built once so rules need not rescan the HIR.
@@ -131,8 +170,25 @@ impl<'a> LintContext<'a> {
             hir,
             source_id,
             config,
+            source_text: None,
             index: OnceLock::new(),
+            annotation_names: OnceLock::new(),
         }
+    }
+
+    /// Provides the source text so rules can see comments, which the HIR does not keep.
+    pub fn with_source_text(mut self, text: &'a str) -> Self {
+        self.source_text = Some(text);
+        self
+    }
+
+    /// Identifiers in test annotation comments such as `# @parametrize(...)`.
+    ///
+    /// `mq-test` evaluates these expressions, so the names they use count as referenced.
+    /// Empty unless the source text was given with [`LintContext::with_source_text`].
+    pub fn annotation_names(&self) -> &FxHashSet<String> {
+        self.annotation_names
+            .get_or_init(|| self.source_text.map(collect_annotation_names).unwrap_or_default())
     }
 
     /// The source being linted.

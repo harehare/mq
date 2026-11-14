@@ -197,7 +197,7 @@ fn fix_source(code: &str, linter: &Linter, config: &LintConfig) -> Result<(Strin
     if !errors.is_empty() {
         return Err(errors);
     }
-    let ctx = LintContext::new(&hir, source_id, config);
+    let ctx = LintContext::new(&hir, source_id, config).with_source_text(code);
 
     let edits: Vec<(mq_lang::Range, String)> = linter
         .run(&ctx)
@@ -231,7 +231,7 @@ pub(crate) fn collect_diagnostics(
     if !errors.is_empty() {
         return Err(errors);
     }
-    let ctx = LintContext::new(&hir, source_id, config);
+    let ctx = LintContext::new(&hir, source_id, config).with_source_text(code);
 
     let mut diagnostics: Vec<_> = linter
         .run(&ctx)

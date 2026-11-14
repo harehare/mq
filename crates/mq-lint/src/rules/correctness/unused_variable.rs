@@ -22,6 +22,7 @@ impl LintRule for UnusedVariable {
             .all_symbols()
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Ref | SymbolKind::Ident | SymbolKind::Call))
             .filter_map(|(_, s)| s.value.as_deref())
+            .chain(ctx.annotation_names().iter().map(String::as_str))
             .collect();
 
         ctx.all_symbols()
@@ -86,6 +87,17 @@ mod tests {
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn multiline_annotation_counts_as_use() {
+        let code = "let table = 1\n# @parametrize([\n#   [table]\n# ])\ndef test_a(x): x;";
+        let mut hir = Hir::default();
+        let (source_id, _, _) = hir.add_code(None, code);
+        let config = LintConfig::default();
+        let ctx = LintContext::new(&hir, source_id, &config).with_source_text(code);
+        assert!(UnusedVariable.check(&ctx).is_empty());
+        assert_eq!(check(code).len(), 1);
     }
 
     #[test]
