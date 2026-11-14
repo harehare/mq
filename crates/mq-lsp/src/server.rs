@@ -174,6 +174,7 @@ impl LanguageServer for Backend {
             Arc::clone(&self.hir),
             to_url(&url)?,
             position,
+            params.context.include_declaration,
             &source_map_guard,
         ))
     }

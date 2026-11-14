@@ -154,10 +154,8 @@ fn hir_hover(
     let source = hir.read().unwrap().source_by_url(&url);
 
     if let Some(source) = source {
-        if let Some((symbol_id, symbol)) = hir.read().unwrap().find_symbol_in_position(
-            source,
-            mq_lang::Position::new(position.line + 1, position.character + 1),
-        ) {
+        let lsp_position = mq_lang::Position::new(position.line + 1, position.character + 1);
+        if let Some((symbol_id, symbol)) = hir.read().unwrap().find_symbol_in_position(source, lsp_position) {
             match &symbol.kind {
                 mq_hir::SymbolKind::Function(_)
                 | mq_hir::SymbolKind::Variable
@@ -211,12 +209,18 @@ fn hir_hover(
                                 &examples,
                             ),
                         }),
-                        range: symbol.source.text_range.map(|text_range| {
-                            Range::new(
-                                Position::new(text_range.start.line - 1, text_range.start.column - 1),
-                                Position::new(text_range.end.line - 1, text_range.end.column - 1),
-                            )
-                        }),
+                        // The text under the cursor, which may be a reference to a symbol
+                        // declared in another source.
+                        range: hir
+                            .read()
+                            .unwrap()
+                            .find_range_in_position(source, lsp_position)
+                            .map(|text_range| {
+                                Range::new(
+                                    Position::new(text_range.start.line - 1, text_range.start.column - 1),
+                                    Position::new(text_range.end.line - 1, text_range.end.column - 1),
+                                )
+                            }),
                     })
                 }
                 _ => None,
@@ -540,5 +544,26 @@ def old_func(x): x + 1;"#;
     #[test]
     fn test_hover_unknown_word_is_none() {
         assert!(hover_text("zzz_unknown", Position::new(0, 2)).is_none());
+    }
+
+    #[test]
+    fn test_hover_qualified_member_shadowing_builtin_shows_module_function() {
+        let (hir, url) =
+            crate::test_support::hir_with_lib("hover-fn", "import \"lib\"\n| lib::add(1, 2)\n| lib::exported");
+        let hover = response(hir, url, None, Position::new(1, 8), "| lib::add(1, 2)").expect("hover");
+        let HoverContents::Markup(content) = hover.contents else {
+            panic!("Expected markup");
+        };
+        assert!(content.value.contains("add(a, b)"), "{}", content.value);
+        assert!(content.value.contains("Adds numbers"), "{}", content.value);
+        assert!(!content.value.contains("Adds two values"), "{}", content.value);
+    }
+
+    #[test]
+    fn test_hover_qualified_variable_range_is_in_the_hovered_document() {
+        let (hir, url) =
+            crate::test_support::hir_with_lib("hover-var", "import \"lib\"\n| lib::add(1, 2)\n| lib::exported");
+        let hover = response(hir, url, None, Position::new(2, 8), "| lib::exported").expect("hover");
+        assert_eq!(hover.range, Some(Range::new(Position::new(2, 7), Position::new(2, 15))));
     }
 }

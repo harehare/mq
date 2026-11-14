@@ -41,6 +41,8 @@ pub mod semantic_tokens;
 pub mod server;
 /// Signature help.
 pub mod signature_help;
+#[cfg(test)]
+mod test_support;
 mod virtual_document;
 /// Workspace symbols.
 pub mod workspace_symbol;

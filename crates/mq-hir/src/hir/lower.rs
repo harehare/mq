@@ -246,11 +246,56 @@ impl Hir {
         mq_lang::CstNodeKind::UnaryOp { .. },
         SymbolKind::UnaryOp
     );
-    simple_expr!(
-        add_qualified_access_expr,
-        mq_lang::CstNodeKind::QualifiedAccess { .. },
-        SymbolKind::QualifiedAccess
-    );
+
+    /// Lowers `a::b::f(args)`, recording the `::` separated members apart from the arguments.
+    fn add_qualified_access_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if !matches!(node.kind, mq_lang::CstNodeKind::QualifiedAccess { .. }) {
+            return;
+        }
+        let symbol_id = self.add_symbol(Symbol {
+            value: node.name(),
+            kind: SymbolKind::QualifiedAccess,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+            insertion_order: 0,
+        });
+
+        let mut segments = Vec::new();
+        let mut in_path = true;
+        let mut after_separator = false;
+        for child in node.children() {
+            if in_path {
+                if child.is_token() {
+                    after_separator = child
+                        .token
+                        .as_ref()
+                        .is_some_and(|token| matches!(token.kind, mq_lang::TokenKind::DoubleColon));
+                    in_path = after_separator;
+                    if after_separator {
+                        continue;
+                    }
+                } else if after_separator && matches!(child.kind, mq_lang::CstNodeKind::Ident { .. }) {
+                    segments.extend(self.add_ident_expr(child, source_id, scope_id, Some(symbol_id)));
+                    after_separator = false;
+                    continue;
+                } else {
+                    in_path = false;
+                }
+            }
+            if !child.is_token() {
+                self.add_expr(child, source_id, scope_id, Some(symbol_id));
+            }
+        }
+        self.qualified_segments.insert(symbol_id, segments);
+    }
     simple_expr!(add_try_expr, mq_lang::CstNodeKind::Try { .. }, SymbolKind::Try);
     simple_expr!(add_array_expr, mq_lang::CstNodeKind::Array { .. }, SymbolKind::Array);
     simple_expr!(add_spread_expr, mq_lang::CstNodeKind::Spread { .. }, SymbolKind::Spread);
@@ -555,6 +600,9 @@ impl Hir {
                     // `import "path" as alias` also binds a plain Ident symbol for the
                     // alias, mirroring how `module` registers its name (see add_module_expr).
                     if let Some(alias_node) = alias {
+                        if let Some(alias_name) = alias_node.name() {
+                            self.import_aliases.insert(symbol_id, alias_name);
+                        }
                         self.add_symbol(Symbol {
                             value: alias_node.name(),
                             kind: SymbolKind::Ident,
@@ -800,7 +848,7 @@ impl Hir {
         source_id: SourceId,
         scope_id: ScopeId,
         parent: Option<SymbolId>,
-    ) {
+    ) -> Option<SymbolId> {
         if let mq_lang::CstNode {
             kind: mq_lang::CstNodeKind::Ident { .. },
             ..
@@ -822,6 +870,9 @@ impl Hir {
                     self.add_selector_expr(child, source_id, scope_id, Some(symbol_id));
                 }
             }
+            Some(symbol_id)
+        } else {
+            None
         }
     }
 
