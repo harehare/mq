@@ -67,23 +67,22 @@ end
 def semver_parse(s):
   let raw = to_string(s)
   | let v = ltrimstr(ltrimstr(raw, "v"), "V")
-  | let build_parts = split(v, "\\+")
-  | let build = if (len(build_parts) > 1): build_parts[1] else: ""
-  | let pre_parts = split(build_parts[0], "-")
-  | let pre = if (len(pre_parts) > 1): join(pre_parts[1:len(pre_parts)], "-") else: ""
-  | let core = pre_parts[0]
-  | let parts = split(core, "\\.")
-  | if (len(parts) != 3):
+  | let num = "(0|[1-9][0-9]*)"
+  | let pre_id = "(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)"
+  | let build_id = "[0-9a-zA-Z-]+"
+  | let core_re = num + "\\." + num + "\\." + num
+  | let pre_re = "(-" + pre_id + "(\\." + pre_id + ")*)?"
+  | let build_re = "(\\+" + build_id + "(\\." + build_id + ")*)?"
+  | if (!is_regex_match(v, "^" + core_re + pre_re + build_re + "$")):
       error("semver: invalid version string: " + v)
     else:
       do
-        let major = to_number(parts[0])
-        | let minor = to_number(parts[1])
-        | let patch = to_number(parts[2])
-        | if (major < 0 || minor < 0 || patch < 0):
-            error("semver: version components must be non-negative: " + v)
-          else:
-            {type: "semver", major: major, minor: minor, patch: patch, pre: pre, build: build}
+        let build_parts = split(v, "\\+")
+        | let build = if (len(build_parts) > 1): build_parts[1] else: ""
+        | let pre_parts = split(build_parts[0], "-")
+        | let pre = if (len(pre_parts) > 1): join(pre_parts[1:len(pre_parts)], "-") else: ""
+        | let parts = split(pre_parts[0], "\\.")
+        | {type: "semver", major: to_number(parts[0]), minor: to_number(parts[1]), patch: to_number(parts[2]), pre: pre, build: build}
       end
 end
 
