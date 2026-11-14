@@ -166,6 +166,7 @@ fn inline(#[case] input: &str, #[case] expected: &str) {
 #[case::link_http("[a](HTTP://b)\n", "<p><a href=\"HTTP://b\">a</a></p>\n")]
 #[case::link_mailto("[a](mailto:b@c)\n", "<p><a href=\"mailto:b@c\">a</a></p>\n")]
 #[case::link_javascript_dropped("[a](javascript:b)\n", "<p><a href=\"\">a</a></p>\n")]
+#[case::link_invalid_scheme_kept("[link](foo\\)\\:)\n", "<p><a href=\"foo):\">link</a></p>\n")]
 #[case::link_javascript_mixed_case_dropped("[a](JaVaScRiPt:b)\n", "<p><a href=\"\">a</a></p>\n")]
 #[case::link_data_dropped("[a](data:text/html,b)\n", "<p><a href=\"\">a</a></p>\n")]
 #[case::link_colon_after_path_is_relative("[a](b/c:d)\n", "<p><a href=\"b/c:d\">a</a></p>\n")]
