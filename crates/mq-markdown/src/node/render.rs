@@ -630,8 +630,11 @@ fn render_emphasis(values: &[Node], delim: &str, options: &RenderOptions, theme:
 /// Renders the content of a table cell on one line. A line break becomes `<br>`, and a pipe that is not
 /// escaped yet, as in code, would end the cell.
 pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
-    let flattened: Vec<Node> = values.iter().map(flatten_inline_code_lines).collect();
-    let rendered = render_values(&flattened, options, theme);
+    let mut rendered = render_values(values, options, theme);
+    if rendered.contains(['\n', '\r']) {
+        let flattened: Vec<Node> = values.iter().map(flatten_inline_code_lines).collect();
+        rendered = render_values(&flattened, options, theme);
+    }
     if !rendered.contains(['|', '\n', '\r']) {
         return rendered;
     }
