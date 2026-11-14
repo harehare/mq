@@ -30,7 +30,7 @@ pub use message::{LintMessage, RuleId};
 use std::sync::OnceLock;
 
 use mq_hir::{Hir, SourceId};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Severity level for a lint diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -115,7 +115,55 @@ pub struct LintContext<'a> {
     source_id: SourceId,
     /// Linter configuration.
     pub config: &'a LintConfig,
+    source_text: Option<&'a str>,
     index: OnceLock<SymbolIndex>,
+    annotation_names: OnceLock<FxHashSet<String>>,
+}
+
+/// Annotations whose arguments `mq-test` evaluates as mq expressions. Others, like `@tags`,
+/// take labels.
+const EXPR_ANNOTATIONS: [&str; 3] = ["parametrize", "property", "small_scope"];
+
+/// Collects identifiers from the expression-bearing `# @name(...)` comments, following an
+/// annotation across comment lines until its parentheses close. Names inside string literals
+/// are collected too, which only errs toward treating a name as used.
+fn collect_annotation_names(text: &str) -> FxHashSet<String> {
+    let mut names = FxHashSet::default();
+    let mut depth = 0i32;
+    let mut collecting = false;
+    for line in text.lines() {
+        let Some(comment) = line.trim_start().strip_prefix('#') else {
+            depth = 0;
+            continue;
+        };
+        let comment = comment.trim_start();
+        if depth == 0 {
+            let Some(annotation) = comment.strip_prefix('@') else {
+                continue;
+            };
+            let name = annotation.split('(').next().unwrap_or_default().trim();
+            collecting = EXPR_ANNOTATIONS.contains(&name);
+        }
+        let mut ident = String::new();
+        for c in comment.chars().chain(std::iter::once(' ')) {
+            if c.is_alphanumeric() || c == '_' {
+                ident.push(c);
+                continue;
+            }
+            if !ident.is_empty() {
+                if collecting && !ident.starts_with(|d: char| d.is_ascii_digit()) {
+                    names.insert(std::mem::take(&mut ident));
+                }
+                ident.clear();
+            }
+            match c {
+                '(' => depth += 1,
+                ')' => depth = (depth - 1).max(0),
+                _ => {}
+            }
+        }
+    }
+    names
 }
 
 /// This source's symbols and their children, built once so rules need not rescan the HIR.
@@ -131,8 +179,36 @@ impl<'a> LintContext<'a> {
             hir,
             source_id,
             config,
+            source_text: None,
             index: OnceLock::new(),
+            annotation_names: OnceLock::new(),
         }
+    }
+
+    /// Provides the source text so rules can see comments, which the HIR does not keep.
+    pub fn with_source_text(mut self, text: &'a str) -> Self {
+        self.source_text = Some(text);
+        self
+    }
+
+    /// Identifiers in test annotation comments such as `# @parametrize(...)`.
+    ///
+    /// `mq-test` evaluates these expressions at file level, so the names they use count as
+    /// referenced by top-level declarations only (see [`LintContext::is_annotation_used`]).
+    /// Empty unless the source text was given with [`LintContext::with_source_text`].
+    pub fn annotation_names(&self) -> &FxHashSet<String> {
+        self.annotation_names
+            .get_or_init(|| self.source_text.map(collect_annotation_names).unwrap_or_default())
+    }
+
+    /// Whether `symbol` is a top-level declaration named in a test annotation. Locals are not
+    /// visible to the expressions the test runner evaluates.
+    pub fn is_annotation_used(&self, symbol: &mq_hir::Symbol) -> bool {
+        symbol.parent.is_none()
+            && symbol
+                .value
+                .as_deref()
+                .is_some_and(|name| self.annotation_names().contains(name))
     }
 
     /// The source being linted.

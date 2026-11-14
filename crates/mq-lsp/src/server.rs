@@ -717,7 +717,14 @@ impl Backend {
             }));
 
             if self.config.enable_lint {
-                let lint_ctx = mq_lint::LintContext::new(&hir_guard, *source_id, &self.config.lint_config);
+                let snapshot = self
+                    .documents
+                    .get(&uri_string)
+                    .map(|snapshot| Arc::clone(snapshot.value()));
+                let mut lint_ctx = mq_lint::LintContext::new(&hir_guard, *source_id, &self.config.lint_config);
+                if let Some(snapshot) = snapshot.as_ref() {
+                    lint_ctx = lint_ctx.with_source_text(&snapshot.text);
+                }
                 let linter = mq_lint::Linter::with_default_rules();
                 diagnostics.extend(
                     linter

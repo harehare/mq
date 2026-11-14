@@ -152,7 +152,7 @@ pub(crate) fn response(
     }
 
     if let (Some(source_id), Some(lint_config), Some(source_text)) = (source_id, lint_config, source_text) {
-        let ctx = mq_lint::LintContext::new(&hir_guard, source_id, lint_config);
+        let ctx = mq_lint::LintContext::new(&hir_guard, source_id, lint_config).with_source_text(source_text);
         let lint_diagnostics = mq_lint::Linter::with_default_rules().run(&ctx);
 
         for diagnostic in &params.context.diagnostics {

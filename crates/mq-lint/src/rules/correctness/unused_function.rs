@@ -55,7 +55,7 @@ impl LintRule for UnusedFunction {
                     .and_then(|id| ctx.hir.symbol(id))
                     .is_some_and(|p| matches!(p.kind, SymbolKind::Module(_)));
                 let exported = (is_module_file || in_module_block) && !name.starts_with('_');
-                if exported || used_names.contains(name) {
+                if exported || used_names.contains(name) || ctx.is_annotation_used(sym) {
                     return None;
                 }
                 let mut d = Diagnostic::new(LintMessage::UnusedFunction { name: name.to_string() }, self.severity());
@@ -94,6 +94,25 @@ mod tests {
         let diags = check(code);
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message().contains(msg));
+    }
+
+    #[rstest]
+    #[case("def _helper(): 1;")]
+    #[case("def foo(): .h1; | .h1")]
+    fn help_does_not_suggest_underscore_prefix(#[case] code: &str) {
+        let help = check(code)[0].help().unwrap();
+        assert!(!help.contains("prefix"), "{help}");
+    }
+
+    #[test]
+    fn annotation_counts_as_use() {
+        let code = "def _helper(): 1;\n# @parametrize([[_helper()]])\ndef test_a(x): assert_eq(x, 1);";
+        let mut hir = Hir::default();
+        let (source_id, _, _) = hir.add_code(None, code);
+        let config = LintConfig::default();
+        let ctx = LintContext::new(&hir, source_id, &config).with_source_text(code);
+        assert!(UnusedFunction.check(&ctx).is_empty());
+        assert_eq!(check(code).len(), 1);
     }
 
     #[rstest]

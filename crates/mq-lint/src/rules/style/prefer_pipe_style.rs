@@ -19,12 +19,18 @@ impl LintRule for PreferPipeStyle {
         ctx.all_symbols()
             .filter(|(_, sym)| matches!(sym.kind, SymbolKind::Call | SymbolKind::CallDynamic))
             .filter_map(|(outer_id, outer_sym)| {
+                // `a[i]` is a call named after the variable in the HIR, not a function call.
+                if ctx.hir.bracket_group_count(outer_id) > 0 {
+                    return None;
+                }
                 let mut args = ctx.children(outer_id);
-                let (_, arg) = args.next()?;
+                let (arg_id, arg) = args.next()?;
                 if args.next().is_some() {
                     return None;
                 }
-                if !matches!(arg.kind, SymbolKind::Call | SymbolKind::CallDynamic) {
+                if !matches!(arg.kind, SymbolKind::Call | SymbolKind::CallDynamic)
+                    || ctx.hir.bracket_group_count(arg_id) > 0
+                {
                     return None;
                 }
 
@@ -69,6 +75,9 @@ mod tests {
     #[case("add(foo(x), y)")]
     #[case("to_text(x)")]
     #[case("x | to_upper() | to_text()")]
+    #[case("let s = dict() | let arr = [1] | s[to_string(arr[0])]")]
+    #[case("let a = [1] | let b = [0] | a[b[0]]")]
+    #[case("let a = [1] | f(a[0])")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);

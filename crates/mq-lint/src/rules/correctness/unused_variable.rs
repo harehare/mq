@@ -37,7 +37,7 @@ impl LintRule for UnusedVariable {
                 if is_interpolation_embed(ctx, sym) {
                     return None;
                 }
-                if used_names.contains(name) {
+                if used_names.contains(name) || ctx.is_annotation_used(sym) {
                     return None;
                 }
                 let mut d = Diagnostic::new(LintMessage::UnusedVariable { name: name.to_string() }, self.severity());
@@ -86,6 +86,28 @@ mod tests {
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn multiline_annotation_counts_as_use() {
+        let code = "let table = 1\n# @parametrize([\n#   [table]\n# ])\ndef test_a(x): x;";
+        let mut hir = Hir::default();
+        let (source_id, _, _) = hir.add_code(None, code);
+        let config = LintConfig::default();
+        let ctx = LintContext::new(&hir, source_id, &config).with_source_text(code);
+        assert!(UnusedVariable.check(&ctx).is_empty());
+        assert_eq!(check(code).len(), 1);
+    }
+
+    #[rstest]
+    #[case("let helper = 1\n# @tags(helper)\ndef test_a(): 1;")]
+    #[case("let data = 1\ndef f(): let data = 2 | 0;\n# @parametrize([[data]])\ndef test_a(x): x;")]
+    fn annotation_does_not_hide_unused(#[case] code: &str) {
+        let mut hir = Hir::default();
+        let (source_id, _, _) = hir.add_code(None, code);
+        let config = LintConfig::default();
+        let ctx = LintContext::new(&hir, source_id, &config).with_source_text(code);
+        assert_eq!(UnusedVariable.check(&ctx).len(), 1);
     }
 
     #[test]
