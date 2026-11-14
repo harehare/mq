@@ -6,6 +6,9 @@ use super::iframe::detect_embed;
 use super::node::HtmlElement;
 use super::node::HtmlNode;
 use super::options::ConversionOptions;
+use super::parser::map_nodes_to_html_nodes;
+use scraper::Html;
+use scraper::Selector;
 
 type MarkdownInline = bool;
 type MarkdownBlock = (String, MarkdownInline);
@@ -837,22 +840,25 @@ fn handle_iframe_srcdoc(element: &HtmlElement, options: &ConversionOptions) -> m
     if element.tag_name != "iframe" {
         return Ok(None);
     }
+
     let Some(Some(srcdoc)) = element.attributes.get("srcdoc") else {
         return Ok(None);
     };
+
     if srcdoc.trim().is_empty() {
         return Ok(None);
     }
-    let doc = scraper::Html::parse_document(srcdoc);
-    let root = match scraper::Selector::parse("body")
-        .ok()
-        .and_then(|sel| doc.select(&sel).next())
-    {
+
+    let doc = Html::parse_document(srcdoc);
+
+    let root = match Selector::parse("body").ok().and_then(|sel| doc.select(&sel).next()) {
         Some(body) => body,
         None => doc.root_element(),
     };
-    let nodes = super::parser::map_nodes_to_html_nodes(root.children().collect())?;
+
+    let nodes = map_nodes_to_html_nodes(root.children().collect())?;
     let md = convert_nodes_to_markdown(&nodes, options)?;
+
     Ok(if md.trim().is_empty() { None } else { Some(md) })
 }
 

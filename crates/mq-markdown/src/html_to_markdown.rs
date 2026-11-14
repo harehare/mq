@@ -9,13 +9,14 @@ mod scoring;
 
 use miette::miette;
 pub use options::ConversionOptions;
+use scraper::ElementRef;
 use scraper::Html;
 use scraper::Selector;
 use std::collections::BTreeMap;
 use yaml_rust2::Yaml;
 use yaml_rust2::yaml::Hash;
 
-fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::ElementRef<'a>> {
+fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<ElementRef<'a>> {
     Selector::parse(selector_str)
         .ok()
         .and_then(|sel| html.select(&sel).next())

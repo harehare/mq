@@ -4,6 +4,7 @@
 //! The candidate is only used when no heading/paragraph exists outside its subtree
 //! (see [`has_heading_or_prose_outside`]) so it can never discard real content.
 
+use super::find_element;
 use rustc_hash::FxHashMap;
 use scraper::{ElementRef, Html, Selector};
 
@@ -133,7 +134,7 @@ pub(super) fn find_best_candidate(html: &Html) -> Option<ElementRef<'_>> {
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
         .map(|(el, _)| el)?;
 
-    let body = super::find_element(html, "body")?;
+    let body = find_element(html, "body")?;
     if has_heading_or_prose_outside(body, best.id()) {
         return None;
     }
