@@ -1207,3 +1207,32 @@ fn test_filter_over_a_dict_gives_each_entry_as_a_pair(#[case] code: &str, #[case
     let errors = check_types_with_builtins(code);
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }
+
+#[rstest]
+#[case::string_else(r#"def f(x): if (is_string(x)): upcase(x) else: x + 1; | f(true)"#, false)]
+#[case::string_else_number_ok(r#"def f(x): if (is_string(x)): upcase(x) else: x + 1; | f(len("a"))"#, true)]
+#[case::string_then(r#"def f(x): if (is_string(x)): x - 1 else: x; | f("a")"#, false)]
+#[case::string_guarded_branch_skipped(r#"def f(x): if (is_string(x)): upcase(x) else: x + 1; | f("a")"#, true)]
+#[case::string_negated(r#"def f(x): if (!is_string(x)): x + 1 else: upcase(x); | f(true)"#, false)]
+#[case::guard_on_field_not_param(r#"def f(r): if (is_none(r["v"])): 0 else: r["v"] + 1; | f({v: 1})"#, true)]
+#[case::number_else(r#"def f(x): if (is_number(x)): x + 1 else: upcase(x); | f(true)"#, false)]
+#[case::number_ok(r#"def f(x): if (is_number(x)): x + 1 else: upcase(x); | f(1)"#, true)]
+#[case::bool_else(r#"def f(x): if (is_bool(x)): 1 else: x - 1; | f("a")"#, false)]
+#[case::bool_ok(r#"def f(x): if (is_bool(x)): 1 else: x - 1; | f(false)"#, true)]
+#[case::none_else(r#"def f(x): if (is_none(x)): 0 else: x - 1; | f("a")"#, false)]
+#[case::none_ok(r#"def f(x): if (is_none(x)): 0 else: x - 1; | f(none)"#, true)]
+#[case::array_else(r#"def f(x): if (is_array(x)): len(x) else: x - 1; | f("a")"#, false)]
+#[case::array_ok(r#"def f(x): if (is_array(x)): len(x) else: x - 1; | f([1])"#, true)]
+#[case::dict_else(r#"def f(x): if (is_dict(x)): 0 else: x - 1; | f("a")"#, false)]
+#[case::dict_ok(r#"def f(x): if (is_dict(x)): 0 else: x - 1; | f({"a": 1})"#, true)]
+#[case::elif_reached(
+    r#"def f(x): if (is_string(x)): 0 elif (is_number(x)): 1 else: x - 1; | f(true)"#,
+    false
+)]
+#[case::elif_ok(r#"def f(x): if (is_string(x)): 0 elif (is_number(x)): 1 else: x - 1; | f(1)"#, true)]
+#[case::or_guard(r#"def f(x): if (is_string(x) || is_number(x)): 0 else: x - 1; | f(true)"#, false)]
+#[case::unknown_arg_not_decided(r#"def f(x): if (is_string(x)): 0 else: x + 1; | f(first([1]))"#, true)]
+fn test_each_type_guard_selects_the_branch_run_by_a_call(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}

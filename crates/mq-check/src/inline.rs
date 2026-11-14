@@ -182,6 +182,26 @@ pub(crate) fn assigned_variables(hir: &Hir, children: &ChildrenIndex) -> FxHashS
         .collect()
 }
 
+/// Whether `name(value)` holds for a type predicate, when the type of the value decides it.
+fn kind_predicate(name: &str, ty: &Type) -> Option<bool> {
+    let ty = match ty {
+        Type::Lit(Lit::Bool(_)) => &Type::Bool,
+        Type::Lit(Lit::Str(_)) => &Type::String,
+        other => other,
+    };
+    let is = match name {
+        "is_string" => matches!(ty, Type::String),
+        "is_number" => matches!(ty, Type::Number),
+        "is_bool" => matches!(ty, Type::Bool),
+        "is_none" => matches!(ty, Type::None),
+        "is_bytes" => matches!(ty, Type::Bytes),
+        "is_array" => matches!(ty, Type::Array(_)),
+        "is_dict" => matches!(ty, Type::Dict(..) | Type::Record(..)),
+        _ => return None,
+    };
+    Some(is)
+}
+
 struct Inliner<'a> {
     hir: &'a Hir,
     ctx: &'a InferenceContext,
@@ -352,6 +372,17 @@ impl Inliner<'_> {
     /// Runs the branch of an `if` that the condition selects, when the tags of the record
     /// arguments decide it. A condition that is not decided leaves the whole `if` unknown.
     fn eval_if(&mut self, id: SymbolId, piped: Option<&Type>, scope: &mut Scope) -> Option<Type> {
+        self.eval_arm(id, &[], piped, scope)
+    }
+
+    /// One arm of an `if`, followed by the `elif` and `else` arms that come after it.
+    fn eval_arm(
+        &mut self,
+        id: SymbolId,
+        following: &[SymbolId],
+        piped: Option<&Type>,
+        scope: &mut Scope,
+    ) -> Option<Type> {
         let hir = self.hir;
         let children: Vec<SymbolId> = get_children(self.children, id)
             .iter()
@@ -364,13 +395,14 @@ impl Inliner<'_> {
                 .is_some_and(|s| matches!(s.kind, SymbolKind::Elif | SymbolKind::Else))
         };
         let split = rest.iter().position(is_branch).unwrap_or(rest.len());
-        let (then, others) = rest.split_at(split);
+        let (then, own) = rest.split_at(split);
         if self.decide(cond, scope)? {
             return self.eval_stages(then, piped, scope);
         }
+        let others: Vec<SymbolId> = own.iter().chain(following).copied().collect();
         let next = others.first()?;
         match hir.symbol(*next)?.kind {
-            SymbolKind::Elif => self.eval_if(*next, piped, scope),
+            SymbolKind::Elif => self.eval_arm(*next, &others[1..], piped, scope),
             _ => {
                 let body: Vec<SymbolId> = get_children(self.children, *next)
                     .iter()
@@ -438,6 +470,13 @@ impl Inliner<'_> {
             }
             (SymbolKind::Call, Some("not"), [inner]) if hir.bracket_group_count(cond) == 0 => {
                 self.decide(*inner, scope).map(|b| !b)
+            }
+            (SymbolKind::Call, Some(name), [arg]) if hir.bracket_group_count(cond) == 0 => {
+                if hir.symbol(*arg)?.kind != SymbolKind::Ref {
+                    return None;
+                }
+                let ty = scope.get(&hir.resolve_reference_symbol(*arg)?)?;
+                kind_predicate(name, ty)
             }
             (SymbolKind::Call, _, _) => match self.record_field(cond, scope)? {
                 Type::Lit(Lit::Bool(b)) => Some(b),
