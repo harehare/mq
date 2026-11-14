@@ -1367,7 +1367,7 @@ fn debug_stop(
     locals: &mut Locals,
     upvalues: &[Cell],
     chunks: &Shared<Vec<Chunk>>,
-    stack: &[StackValue],
+    #[cfg(feature = "debug-trace")] stack: &[StackValue],
     debug: &mut DebugRuntime<'_>,
 ) -> VmResult<()> {
     let node = find_debug_node(chunk, token_id, ip)?;
@@ -1596,6 +1596,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         locals,
                         upvalues,
                         chunks,
+                        #[cfg(feature = "debug-trace")]
                         stack,
                         debug,
                     )?;
@@ -1614,6 +1615,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         locals,
                         upvalues,
                         chunks,
+                        #[cfg(feature = "debug-trace")]
                         stack,
                         debug,
                     )?;
