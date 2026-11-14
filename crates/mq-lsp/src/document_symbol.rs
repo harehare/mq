@@ -28,8 +28,10 @@ fn kind_of(hir: &mq_hir::Hir, symbol: &mq_hir::Symbol) -> Option<SymbolKind> {
             let mut parent = symbol.parent;
             while let Some(id) = parent {
                 let ancestor = hir.symbol(id)?;
-                if matches!(ancestor.kind, mq_hir::SymbolKind::DestructuringBinding) {
-                    return Some(SymbolKind::VARIABLE);
+                match ancestor.kind {
+                    mq_hir::SymbolKind::DestructuringBinding => return Some(SymbolKind::VARIABLE),
+                    mq_hir::SymbolKind::MatchArm { .. } => return None,
+                    _ => {}
                 }
                 parent = ancestor.parent;
             }
@@ -37,6 +39,11 @@ fn kind_of(hir: &mq_hir::Hir, symbol: &mq_hir::Symbol) -> Option<SymbolKind> {
         }
         _ => None,
     }
+}
+
+/// Tokenless CST nodes lower to the zero-width default range, which is not a real extent.
+fn is_placeholder(range: mq_lang::Range) -> bool {
+    range == mq_lang::Range::default()
 }
 
 fn extend(range: &mut mq_lang::Range, other: mq_lang::Range) {
@@ -101,7 +108,7 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, lines: &LineInde
         nodes.get_mut(&id).unwrap().parent = parent;
     }
     for (_, symbol) in &in_source {
-        let Some(range) = symbol.source.text_range else {
+        let Some(range) = symbol.source.text_range.filter(|r| !is_placeholder(*r)) else {
             continue;
         };
         let mut parent = symbol.parent;
@@ -228,6 +235,23 @@ z Variable 5:26-5:31 sel 5:26-5:27
 g Function 6:4-6:10 sel 6:4-6:5
 "
         );
+    }
+
+    #[test]
+    fn test_tokenless_descendants_do_not_move_range_start() {
+        for body in ["[2]", "{\"k\": 2}", "1 | [2]"] {
+            let code = format!("def first(): 1;\ndef second(): {body};");
+            let symbols = symbols(&code);
+            assert_eq!(symbols[1].range.start.line, 1, "{body}");
+            assert_eq!(symbols[1].range.start.character, 4, "{body}");
+        }
+    }
+
+    #[test]
+    fn test_match_arm_variables_are_not_outlined() {
+        let symbols = symbols("let [a] = match ([1]): | [b]: [b] end");
+        let names = symbols.iter().map(|s| s.name.as_str()).collect::<Vec<_>>();
+        assert_eq!(names, ["a"]);
     }
 
     #[test]
