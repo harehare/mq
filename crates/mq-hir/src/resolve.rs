@@ -30,10 +30,22 @@ impl Hir {
             })
             .collect();
 
-        // Built once per module and per qualified-ness.
-        let mut source_ids_by_module: FxHashMap<(Option<SymbolId>, bool), Vec<SourceId>> = FxHashMap::default();
+        // Built once per module.
+        let mut source_ids_by_module: FxHashMap<Option<SymbolId>, Vec<SourceId>> = FxHashMap::default();
 
         for (ref_symbol_id, scope, ref_name) in symbols_to_resolve {
+            // `module::member` looks only inside `module`, never at builtins or the local scope.
+            if let Some(path) = self.qualified_path(ref_symbol_id) {
+                if let Some(symbol_id) = self.resolve_qualified_member(ref_symbol_id, &path, &ref_name) {
+                    self.references.insert(ref_symbol_id, symbol_id);
+                    self.fallback_references.insert(ref_symbol_id);
+                } else {
+                    self.references.remove(&ref_symbol_id);
+                    self.fallback_references.remove(&ref_symbol_id);
+                }
+                continue;
+            }
+
             let module = self.enclosing_inline_module(ref_symbol_id);
             if let Some(symbol_id) = self.resolve_ref_symbol_of_scope(scope, &ref_name, ref_symbol_id, module) {
                 self.references.insert(ref_symbol_id, symbol_id);
@@ -41,10 +53,9 @@ impl Hir {
                 continue;
             }
 
-            let qualified = self.is_qualified_member(ref_symbol_id);
             let source_ids = source_ids_by_module
-                .entry((module, qualified))
-                .or_insert_with(|| self.include_source_ids(module, qualified));
+                .entry(module)
+                .or_insert_with(|| self.include_source_ids(module));
             if let Some(symbol_id) = self.resolve_ref_symbol_of_source(source_ids, &ref_name) {
                 self.references.insert(ref_symbol_id, symbol_id);
                 self.fallback_references.insert(ref_symbol_id);
@@ -86,24 +97,141 @@ impl Hir {
         false
     }
 
-    /// Whether `symbol_id` is the member part of `module::member`.
-    fn is_qualified_member(&self, symbol_id: SymbolId) -> bool {
-        self.symbols
-            .get(symbol_id)
-            .and_then(|symbol| symbol.parent)
-            .and_then(|parent| self.symbols.get(parent))
-            .is_some_and(|parent| matches!(parent.kind, SymbolKind::QualifiedAccess))
+    /// The module path before `symbol_id` in `a::b::member`, and whether it is the last segment.
+    /// `None` when `symbol_id` is not a path segment, such as a call argument.
+    fn qualified_path(&self, symbol_id: SymbolId) -> Option<(Vec<SmolStr>, bool)> {
+        let parent_id = self.symbols.get(symbol_id)?.parent?;
+        let parent = self.symbols.get(parent_id)?;
+        if !matches!(parent.kind, SymbolKind::QualifiedAccess) {
+            return None;
+        }
+        let first = parent.value.clone()?;
+        let range = parent.source.text_range?;
+
+        let mut candidates = self
+            .symbols
+            .iter()
+            .filter(|(_, sibling)| {
+                sibling.parent == Some(parent_id)
+                    && matches!(
+                        sibling.kind,
+                        SymbolKind::Ref | SymbolKind::Call | SymbolKind::CallDynamic
+                    )
+            })
+            .filter_map(|(id, sibling)| Some((id, sibling.source.text_range?, sibling.value.clone()?)))
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|(_, range, _)| range.start);
+
+        // Segments are joined by `::`, with no gap.
+        let mut path = vec![first.clone()];
+        let mut next_column = range.start.column + first.chars().count() as u32 + 2;
+        let mut segments = Vec::new();
+        for (id, segment_range, value) in candidates {
+            if segment_range.start.line != range.start.line || segment_range.start.column != next_column {
+                break;
+            }
+            next_column = segment_range.end.column + 2;
+            segments.push((id, value));
+        }
+
+        let index = segments.iter().position(|(id, _)| *id == symbol_id)?;
+        path.extend(segments[..index].iter().map(|(_, value)| value.clone()));
+        Some((path, index + 1 == segments.len()))
+    }
+
+    /// Resolves the last segment of `path::name` to a top-level declaration of the imported or
+    /// inline module `path` names (an import alias counts), as seen from the reference.
+    fn resolve_qualified_member(
+        &self,
+        ref_symbol_id: SymbolId,
+        (path, is_last): &(Vec<SmolStr>, bool),
+        name: &SmolStr,
+    ) -> Option<SymbolId> {
+        let ref_source = self.symbols.get(ref_symbol_id)?.source.source_id?;
+        let ref_module = self.enclosing_inline_module(ref_symbol_id);
+        let (first, rest) = path.split_first()?;
+
+        let mut source_ids = Vec::new();
+        let mut inline_modules = Vec::new();
+        for (symbol_id, symbol) in &self.symbols {
+            if symbol.source.source_id != Some(ref_source) {
+                continue;
+            }
+            match symbol.kind {
+                SymbolKind::Import(source_id)
+                    if (symbol.value.as_deref() == Some(first.as_str())
+                        || self.import_aliases.get(&symbol_id).is_some_and(|alias| alias == first))
+                        && ref_module.is_none_or(|module| self.is_inside(symbol_id, module)) =>
+                {
+                    source_ids.push(source_id);
+                }
+                SymbolKind::Module(_) if symbol.value.as_deref() == Some(first.as_str()) => {
+                    inline_modules.push(symbol_id);
+                }
+                _ => {}
+            }
+        }
+
+        // Members of an imported module include what it `include`s.
+        let mut index = 0;
+        while let Some(&source_id) = source_ids.get(index) {
+            index += 1;
+            for symbol in self.symbols.values() {
+                if let SymbolKind::Include(included) = symbol.kind
+                    && symbol.source.source_id == Some(source_id)
+                    && symbol.parent.is_none()
+                    && !source_ids.contains(&included)
+                {
+                    source_ids.push(included);
+                }
+            }
+        }
+
+        let is_member = |symbol: &Symbol, source_ids: &[SourceId], inline_modules: &[SymbolId]| match symbol.parent {
+            None => symbol.source.source_id.is_some_and(|id| source_ids.contains(&id)),
+            Some(parent) => inline_modules.contains(&parent),
+        };
+
+        // Descend into modules declared inside the current ones.
+        for segment in rest {
+            inline_modules = self
+                .symbols
+                .iter()
+                .filter(|(_, symbol)| {
+                    matches!(symbol.kind, SymbolKind::Module(_))
+                        && symbol.value.as_deref() == Some(segment.as_str())
+                        && is_member(symbol, &source_ids, &inline_modules)
+                })
+                .map(|(id, _)| id)
+                .collect();
+            source_ids.clear();
+        }
+
+        self.name_index
+            .get(name)
+            .into_iter()
+            .flatten()
+            .filter_map(|&symbol_id| {
+                let symbol = self.symbols.get(symbol_id)?;
+                let wanted = if *is_last {
+                    symbol.is_function() || symbol.is_variable()
+                } else {
+                    symbol.is_ident()
+                };
+                (wanted && is_member(symbol, &source_ids, &inline_modules))
+                    .then(|| (self.get_symbol_priority_for_cross_source(&symbol.kind), symbol_id))
+            })
+            .min_by_key(|(priority, _)| *priority)
+            .map(|(_, symbol_id)| symbol_id)
     }
 
     /// Sources a reference can see; inside an inline module, only its own includes.
-    /// Imported sources are visible only to qualified members, as at runtime.
-    fn include_source_ids(&self, module: Option<SymbolId>, qualified: bool) -> Vec<SourceId> {
+    fn include_source_ids(&self, module: Option<SymbolId>) -> Vec<SourceId> {
         let mut source_ids = Vec::new();
 
         for (symbol_id, symbol) in &self.symbols {
             let source_id = match &symbol.kind {
                 SymbolKind::Include(source_id) => source_id,
-                SymbolKind::Import(source_id) if qualified => source_id,
                 SymbolKind::Module(source_id) if module.is_none() => source_id,
                 _ => continue,
             };
@@ -147,7 +275,8 @@ impl Hir {
     }
 
     #[inline(always)]
-    pub(crate) fn is_resolvable_target(symbol: &Symbol) -> bool {
+    /// Whether references can resolve to `symbol`.
+    pub fn is_resolvable_target(symbol: &Symbol) -> bool {
         symbol.is_function()
             || symbol.is_parameter()
             || symbol.is_variable()

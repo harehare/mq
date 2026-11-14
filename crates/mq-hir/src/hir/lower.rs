@@ -555,6 +555,9 @@ impl Hir {
                     // `import "path" as alias` also binds a plain Ident symbol for the
                     // alias, mirroring how `module` registers its name (see add_module_expr).
                     if let Some(alias_node) = alias {
+                        if let Some(alias_name) = alias_node.name() {
+                            self.import_aliases.insert(symbol_id, alias_name);
+                        }
                         self.add_symbol(Symbol {
                             value: alias_node.name(),
                             kind: SymbolKind::Ident,

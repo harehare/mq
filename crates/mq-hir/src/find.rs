@@ -9,33 +9,41 @@ use crate::{
 
 impl Hir {
     /// Finds the symbol at `position` in the given source.
+    ///
+    /// A reference (`Ref` or `Call`) yields the declaration it resolves to; use
+    /// [`Hir::find_range_in_position`] for the range of the text under the cursor.
     pub fn find_symbol_in_position(
         &self,
         source_id: SourceId,
         position: mq_lang::Position,
     ) -> Option<(SymbolId, Symbol)> {
-        let source = self.sources.get(source_id);
+        let (symbol_id, symbol) = self.symbol_at(source_id, position)?;
+        match symbol.kind {
+            SymbolKind::Ref | SymbolKind::Call => {
+                let target_symbol_id = *self.references.get(&symbol_id)?;
+                self.symbols
+                    .get(target_symbol_id)
+                    .map(|symbol| (target_symbol_id, symbol.clone()))
+            }
+            _ => Some((symbol_id, symbol.clone())),
+        }
+    }
 
-        source.and_then(|_| {
-            self.symbols
-                .iter()
-                .find(|(_, symbol)| {
-                    symbol.source.source_id.is_some()
-                        && symbol.source.text_range.is_some()
-                        && symbol.source.source_id.unwrap() == source_id
-                        && symbol.source.text_range.as_ref().unwrap().contains(&position)
-                })
-                .and_then(|(symbol_id, symbol)| match symbol.kind {
-                    SymbolKind::Ref | SymbolKind::Call => {
-                        let target_symbol_id = self.references.get(&symbol_id);
-                        target_symbol_id.and_then(|target_symbol_id| {
-                            self.symbols
-                                .get(*target_symbol_id)
-                                .map(|symbol| (*target_symbol_id, symbol.clone()))
-                        })
-                    }
-                    _ => Some((symbol_id, symbol.clone())),
-                })
+    /// Finds the range of the symbol written at `position`, even for a reference that
+    /// resolves to a declaration in another source.
+    pub fn find_range_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<mq_lang::Range> {
+        self.symbol_at(source_id, position)?.1.source.text_range
+    }
+
+    fn symbol_at(&self, source_id: SourceId, position: mq_lang::Position) -> Option<(SymbolId, &Symbol)> {
+        self.sources.get(source_id)?;
+        self.symbols.iter().find(|(_, symbol)| {
+            symbol.source.source_id == Some(source_id)
+                && symbol
+                    .source
+                    .text_range
+                    .as_ref()
+                    .is_some_and(|range| range.contains(&position))
         })
     }
 

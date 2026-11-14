@@ -35,6 +35,8 @@ pub struct Hir {
     pub(crate) loading_sources: Vec<Url>,
     /// `include` and `import` symbols whose module is already being loaded.
     pub(crate) circular_modules: FxHashSet<SymbolId>,
+    /// The alias of each `import "path" as alias` symbol.
+    pub(crate) import_aliases: FxHashMap<SymbolId, SmolStr>,
     pub(crate) symbol_insertion_counter: u32,
     /// Declarations a reference can resolve to, by name.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
@@ -95,6 +97,7 @@ impl Hir {
             opened_sources: FxHashSet::default(),
             loading_sources: Vec::new(),
             circular_modules: FxHashSet::default(),
+            import_aliases: FxHashMap::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
             leaking_scopes: FxHashMap::default(),
@@ -294,6 +297,7 @@ impl Hir {
         let symbols = &self.symbols;
         self.circular_modules
             .retain(|symbol_id| symbols.contains_key(*symbol_id));
+        self.import_aliases.retain(|import, _| symbols.contains_key(*import));
         self.bracket_key_counts.retain(|call, _| symbols.contains_key(*call));
         self.bracket_group_counts.retain(|call, _| symbols.contains_key(*call));
         self.mutable_variables.retain(|id| symbols.contains_key(*id));
@@ -802,6 +806,63 @@ end"#;
         hir.add_code(None, "include \"left\" | include \"right\" | fleft() + fright()");
 
         assert!(hir.errors().is_empty());
+    }
+
+    /// The declaration that the member of `module::member` resolves to, as (source url, name).
+    fn qualified_target(hir: &Hir, member: &str) -> Option<(Option<String>, SymbolKind)> {
+        let (ref_id, _) = hir.symbols().find(|(id, symbol)| {
+            symbol.value.as_deref() == Some(member)
+                && matches!(symbol.kind, SymbolKind::Call | SymbolKind::Ref)
+                && hir.symbol(*id).and_then(|s| s.parent).is_some_and(|parent| {
+                    hir.symbol(parent)
+                        .is_some_and(|p| matches!(p.kind, SymbolKind::QualifiedAccess))
+                })
+        })?;
+        let target = hir.symbol(hir.resolve_reference_symbol(ref_id)?)?;
+        let url = target
+            .source
+            .source_id
+            .and_then(|source_id| hir.url_by_source(&source_id))
+            .map(|url| url.path().rsplit('/').next().unwrap_or_default().to_string());
+        Some((url, target.kind.clone()))
+    }
+
+    #[rstest]
+    #[case::function_shadowing_builtin("import \"lib\" | lib::add(1, 2)", "add")]
+    #[case::alias("import \"lib\" as l | l::add(1, 2)", "add")]
+    #[case::variable("import \"lib\" | lib::exported", "exported")]
+    fn test_qualified_member_resolves_in_its_module(#[case] code: &str, #[case] member: &str) {
+        let mut hir = hir_with_modules("qualified", &[("lib", "def add(a, b): a + b;\nlet exported = 5")]);
+        hir.builtin.disabled = false;
+        hir.add_builtin();
+        hir.add_code(None, code);
+
+        let (url, _) = qualified_target(&hir, member).expect("member resolves");
+        assert_eq!(url.as_deref(), Some("lib.mq"));
+    }
+
+    #[test]
+    fn test_qualified_member_of_inline_module_shadowing_builtin() {
+        let mut hir = Hir::default();
+        hir.add_builtin();
+        hir.add_code(None, "module m: def len(): 1; end | m::len()");
+
+        let (_, kind) = qualified_target(&hir, "len").expect("member resolves");
+        assert!(matches!(kind, SymbolKind::Function(params) if params.is_empty()));
+    }
+
+    #[rstest]
+    #[case::not_imported("lib::add(1, 2)")]
+    #[case::missing_member("import \"lib\" | lib::len(\"a\")")]
+    #[case::other_module("import \"lib\" | other::add(1, 2)")]
+    fn test_qualified_member_does_not_fall_back_to_builtin(#[case] code: &str) {
+        let mut hir = hir_with_modules("qualified-none", &[("lib", "def add(a, b): a + b;")]);
+        hir.builtin.disabled = false;
+        hir.add_builtin();
+        hir.add_code(None, code);
+
+        let member = code.rsplit("::").next().unwrap().split('(').next().unwrap();
+        assert_eq!(qualified_target(&hir, member), None);
     }
 
     #[test]

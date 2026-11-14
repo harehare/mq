@@ -152,4 +152,15 @@ mod tests {
         let location = goto(code, Position::new(0, 29)).expect("module member definition");
         assert_eq!(location.uri.as_str(), "mq-std:/section.mq");
     }
+
+    #[test]
+    fn test_goto_definition_qualified_member_shadowing_builtin_opens_module_file() {
+        let (hir, url) = crate::test_support::hir_with_lib("goto", "import \"lib\"\n| lib::add(1, 2)\n| lib::exported");
+        let GotoDefinitionResponse::Scalar(location) = response(hir, url, Position::new(1, 8)).expect("definition")
+        else {
+            panic!("Expected Scalar response");
+        };
+        assert!(location.uri.as_str().ends_with("/lib.mq"), "{}", location.uri.as_str());
+        assert_eq!(location.range.start, Position::new(1, 4));
+    }
 }
