@@ -107,7 +107,7 @@ fn main() -> ExitCode {
 
     if cli.doc {
         if cli.files.is_empty() {
-            eprintln!("--doc needs at least one file");
+            eprintln!("{:?}", miette::miette!("--doc needs at least one file"));
             return ExitCode::FAILURE;
         }
         return if run_doc_examples(&cli.files, &cli.module_directories) {
