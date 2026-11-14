@@ -2399,6 +2399,46 @@ key: 1
         kind: DocKind::Internal,
     },
     BuiltinDoc {
+        name: "is_finite",
+        aliases: &[],
+        description: "Returns true if the given number is neither infinite nor NaN.",
+        params: &["value"],
+        param_types: &["number"],
+        returns: "boolean",
+        examples: &[
+            BuiltinExample {
+                code: r#"is_finite(1)"#,
+                expected: r#"true"#,
+            },
+            BuiltinExample {
+                code: r#"is_finite(infinite())"#,
+                expected: r#"false"#,
+            },
+        ],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
+        name: "is_infinite",
+        aliases: &[],
+        description: "Returns true if the given number is positive or negative infinity.",
+        params: &["value"],
+        param_types: &["number"],
+        returns: "boolean",
+        examples: &[
+            BuiltinExample {
+                code: r#"is_infinite(infinite())"#,
+                expected: r#"true"#,
+            },
+            BuiltinExample {
+                code: r#"is_infinite(1)"#,
+                expected: r#"false"#,
+            },
+        ],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "is_nan",
         aliases: &[],
         description: "Returns true if the given number is NaN.",

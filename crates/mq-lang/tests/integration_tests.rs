@@ -3128,6 +3128,14 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::intern_non_string("intern(42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("42".to_string()))].into()))]
 // is_nan: non-number returns false
 #[case::is_nan_non_number("is_nan(\"not a number\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::is_infinite_pos("is_infinite(infinite())", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::is_infinite_neg("is_infinite(-infinite())", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::is_infinite_nan("is_infinite(nan())", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::is_infinite_non_number("is_infinite(\"x\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::is_finite_number("is_finite(1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
+#[case::is_finite_infinite("is_finite(infinite())", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::is_finite_nan("is_finite(nan())", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
+#[case::is_finite_non_number("is_finite(\"x\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 // to_markdown: returns array of markdown nodes
 #[case::to_markdown_call(r##"to_markdown("# title") | len"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // to_mdx: returns array
