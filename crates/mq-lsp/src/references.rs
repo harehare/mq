@@ -42,24 +42,36 @@ pub(crate) fn response(
     position: Position,
     include_declaration: bool,
     source_map: &BiMap<String, mq_hir::SourceId>,
-) -> Option<Vec<Location>> {
+) -> Vec<Location> {
     let hir_guard = hir.read().unwrap();
-    let source = hir_guard.source_by_url(&url)?;
-    let (symbol_id, symbol) = hir_guard.find_symbol_in_position(
+    let Some(source) = hir_guard.source_by_url(&url) else {
+        return Vec::new();
+    };
+    let Some((symbol_id, symbol)) = hir_guard.find_symbol_in_position(
         source,
         mq_lang::Position::new(position.line + 1, position.character + 1),
-    )?;
+    ) else {
+        return Vec::new();
+    };
 
-    let declaration = (include_declaration && mq_hir::Hir::is_resolvable_target(&symbol)).then_some(&symbol);
-    let references = hir_guard.references(symbol_id);
-    let locations = declaration
+    // On a reference, collect from the declaration it resolves to.
+    let (target_id, target) = match hir_guard.resolve_reference_symbol(symbol_id) {
+        Some(id) => match hir_guard.symbol(id) {
+            Some(declaration) => (id, declaration.clone()),
+            None => (symbol_id, symbol),
+        },
+        None => (symbol_id, symbol),
+    };
+
+    let declaration = (include_declaration && mq_hir::Hir::is_resolvable_target(&target)).then_some(&target);
+    let references = hir_guard.references(target_id);
+    declaration
         .into_iter()
         .chain(references.iter().map(|(_, reference)| reference))
         .filter_map(|symbol| to_location(&hir_guard, source_map, symbol))
-        .collect::<Vec<_>>();
-
-    if locations.is_empty() { None } else { Some(locations) }
+        .collect()
 }
+
 #[cfg(test)]
 mod tests {
     use mq_hir::{Hir, SourceId};
@@ -79,7 +91,7 @@ mod tests {
         let position = Position::new(0, 0);
 
         let result = response(hir, url, position, false, &source_map);
-        assert!(result.is_none());
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -95,8 +107,7 @@ mod tests {
         let position = Position::new(0, 5);
         let result = response(hir, url, position, false, &source_map);
 
-        assert!(result.is_some());
-        let locations = result.unwrap();
+        let locations = result;
         assert_eq!(locations.len(), 1);
     }
 
@@ -109,12 +120,29 @@ mod tests {
         let mut source_map = BiMap::new();
         source_map.insert(url.to_string(), source);
 
-        let locations = response(hir, url.clone(), Position::new(1, 8), include_declaration, &source_map).unwrap();
+        let locations = response(hir, url.clone(), Position::new(1, 8), include_declaration, &source_map);
         assert_eq!(locations.len(), count);
         assert!(locations.iter().any(|l| l.uri.as_str() == url.as_str()));
         assert_eq!(
             locations.iter().any(|l| l.uri.as_str().ends_with("/lib.mq")),
             include_declaration
         );
+    }
+
+    #[rstest::rstest]
+    #[case::without_declaration(false, 1)]
+    #[case::with_declaration(true, 2)]
+    fn test_references_from_reference_site(#[case] include_declaration: bool, #[case] count: usize) {
+        let (hir, mut source_map) = setup();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let (source_id, _, _) = hir
+            .write()
+            .unwrap()
+            .add_code(Some(url.clone()), "def func1(): 1; | let x = func1()");
+        source_map.insert(url.to_string(), source_id);
+
+        // Cursor on the `func1` call.
+        let locations = response(hir, url, Position::new(0, 27), include_declaration, &source_map);
+        assert_eq!(locations.len(), count);
     }
 }
