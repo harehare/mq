@@ -19,7 +19,7 @@ pub(super) struct CallSite<'a> {
     pub(super) chunk: &'a Chunk,
     pub(super) ip: usize,
     /// `None` represents the root chunk pool held by the active trampoline.
-    pub(super) frame_chunks: Option<Shared<Vec<Chunk>>>,
+    pub(super) frame_chunks: &'a Option<Shared<Vec<Chunk>>>,
 }
 
 /// Static properties of a direct fixed-arity closure call.
@@ -223,7 +223,7 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
             chunks,
             closure.chunk_index,
             closure.upvalues.clone(),
-            call_site.frame_chunks,
+            call_site.frame_chunks.clone(),
         ),
         StackValue::Value(RuntimeValue::Closure(vc)) => {
             if !vc.bound_args.is_empty() {
@@ -331,7 +331,7 @@ pub(super) fn call_fixed_closure_from_local(
     }
     Ok(Frame::new(
         closure.chunk_index,
-        call_site.frame_chunks,
+        call_site.frame_chunks.clone(),
         callee_locals,
         closure.upvalues.clone(),
         !callee_chunk.captures_local_slots(),
@@ -487,7 +487,7 @@ pub(super) fn call_known_fixed_chunk_from_stack(
     }
     Ok(Frame::new(
         call.chunk_index,
-        call_site.frame_chunks,
+        call_site.frame_chunks.clone(),
         callee_locals,
         call.upvalues,
         !callee_chunk.captures_local_slots(),
@@ -507,7 +507,7 @@ pub(super) fn call_exact_fixed_chunk_0(
         .limits
         .take_locals(target.local_count, target.captured_local_slots);
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
-    exact_fixed_frame(target, call_site.frame_chunks, callee_locals, upvalues)
+    exact_fixed_frame(target, call_site.frame_chunks.clone(), callee_locals, upvalues)
 }
 
 /// Builds a frame for a verified one-argument direct call without a parameter-binding loop.
@@ -532,7 +532,7 @@ pub(super) fn call_exact_fixed_chunk_1(
     callee_locals.set(SELF_SLOT + 1, argument);
     Ok(exact_fixed_frame(
         target,
-        call_site.frame_chunks,
+        call_site.frame_chunks.clone(),
         callee_locals,
         upvalues,
     ))
@@ -569,7 +569,7 @@ pub(super) fn call_exact_fixed_chunk_2(
     callee_locals.set(SELF_SLOT + 2, second_argument);
     Ok(exact_fixed_frame(
         target,
-        call_site.frame_chunks,
+        call_site.frame_chunks.clone(),
         callee_locals,
         upvalues,
     ))
