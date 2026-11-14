@@ -832,6 +832,30 @@ fn handle_script_element(element: &HtmlElement, options: &ConversionOptions) -> 
     }
 }
 
+/// Converts an iframe's `srcdoc` HTML to Markdown. Browsers prefer `srcdoc` over `src`.
+fn handle_iframe_srcdoc(element: &HtmlElement, options: &ConversionOptions) -> miette::Result<Option<String>> {
+    if element.tag_name != "iframe" {
+        return Ok(None);
+    }
+    let Some(Some(srcdoc)) = element.attributes.get("srcdoc") else {
+        return Ok(None);
+    };
+    if srcdoc.trim().is_empty() {
+        return Ok(None);
+    }
+    let doc = scraper::Html::parse_document(srcdoc);
+    let root = match scraper::Selector::parse("body")
+        .ok()
+        .and_then(|sel| doc.select(&sel).next())
+    {
+        Some(body) => body,
+        None => doc.root_element(),
+    };
+    let nodes = super::parser::map_nodes_to_html_nodes(root.children().collect())?;
+    let md = convert_nodes_to_markdown(&nodes, options)?;
+    Ok(if md.trim().is_empty() { None } else { Some(md) })
+}
+
 fn handle_embedded_content_element(element: &HtmlElement) -> miette::Result<Option<String>> {
     let tag_name = element.tag_name.as_str();
     let mut src_url: Option<String> = None;
@@ -1505,7 +1529,9 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
                     }
                     "style" | "title" => { /* Metadata tags are ignored; title is handled at the top level */ }
                     "iframe" | "video" | "audio" | "embed" | "object" => {
-                        if let Some(embed_md) = handle_embedded_content_element(element)? {
+                        if let Some(srcdoc_md) = handle_iframe_srcdoc(element, options)? {
+                            markdown_blocks.push((srcdoc_md, false));
+                        } else if let Some(embed_md) = handle_embedded_content_element(element)? {
                             markdown_blocks.push((embed_md, false));
                         }
                     }
