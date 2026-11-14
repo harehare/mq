@@ -338,7 +338,7 @@ fn from_date_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
-/// Formats a Unix timestamp (seconds) as a date string using the given strftime format.
+/// Deprecated: use `strftime` instead.
 #[mq_macros::mq_fn(name = "to_date", params = Fixed(2))]
 fn to_date_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {

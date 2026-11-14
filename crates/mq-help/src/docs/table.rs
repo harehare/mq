@@ -3621,7 +3621,7 @@ x = 1
     BuiltinDoc {
         name: "to_date",
         aliases: &[],
-        description: "Formats a Unix timestamp (seconds) as a date string using the given strftime format.",
+        description: "Deprecated: use `strftime` instead.",
         params: &["timestamp", "format"],
         param_types: &["number", "string"],
         returns: "string",
