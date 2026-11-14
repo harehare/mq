@@ -630,7 +630,8 @@ fn render_emphasis(values: &[Node], delim: &str, options: &RenderOptions, theme:
 /// Renders the content of a table cell on one line. A line break becomes `<br>`, and a pipe that is not
 /// escaped yet, as in code, would end the cell.
 pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
-    let rendered = render_values(values, options, theme);
+    let flattened: Vec<Node> = values.iter().map(flatten_inline_code_lines).collect();
+    let rendered = render_values(&flattened, options, theme);
     if !rendered.contains(['|', '\n', '\r']) {
         return rendered;
     }
@@ -643,6 +644,10 @@ pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme
                 if c == '\r' && chars.peek() == Some(&'\n') {
                     chars.next();
                 }
+                // The backslash of a hard break would escape the `<`.
+                if escaped {
+                    result.pop();
+                }
                 result.push_str("<br>");
                 escaped = false;
                 continue;
@@ -654,6 +659,43 @@ pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme
         result.push(c);
     }
     result
+}
+
+/// Replaces line endings in inline code and math with spaces, as HTML does, so `<br>` never lands inside a span.
+fn flatten_inline_code_lines(node: &Node) -> Node {
+    let flat = |value: &SmolStr| -> Option<SmolStr> {
+        value
+            .contains(['\n', '\r'])
+            .then(|| value.replace("\r\n", " ").replace(['\n', '\r'], " ").into())
+    };
+    let flat_all = |values: &[Node]| values.iter().map(flatten_inline_code_lines).collect::<Vec<_>>();
+    match node {
+        Node::CodeInline(n) => match flat(&n.value) {
+            Some(value) => Node::CodeInline(CodeInline { value, ..n.clone() }),
+            None => node.clone(),
+        },
+        Node::MathInline(n) => match flat(&n.value) {
+            Some(value) => Node::MathInline(MathInline { value, ..n.clone() }),
+            None => node.clone(),
+        },
+        Node::Strong(n) => Node::Strong(Strong {
+            values: flat_all(&n.values),
+            ..n.clone()
+        }),
+        Node::Emphasis(n) => Node::Emphasis(Emphasis {
+            values: flat_all(&n.values),
+            ..n.clone()
+        }),
+        Node::Delete(n) => Node::Delete(Delete {
+            values: flat_all(&n.values),
+            ..n.clone()
+        }),
+        Node::Link(n) => Node::Link(Link {
+            values: flat_all(&n.values),
+            ..n.clone()
+        }),
+        _ => node.clone(),
+    }
 }
 
 fn ends_with_word_char(node: &Node) -> bool {

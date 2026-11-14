@@ -100,6 +100,8 @@ assert_eq!(doc.nodes[0].name(), "Horizontal_rule");
 
 ### Rendering options
 
+A line break inside a table cell is written as `<br>` so the row stays on one line. Newlines in inline code become spaces.
+
 `RenderOptions` controls how the document is written back as Markdown: the list bullet (`-`, `*` or `+`), how link destinations are wrapped (`<url>` or bare), how titles are quoted and whether table cells are padded to a common column width (`table_padding`, on by default). The default keeps what each element had in the source.
 
 ```rust
