@@ -1012,8 +1012,7 @@ mod tests {
         let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), vec!["".to_string().into()]);
         let err = ctx
             .execute(&format!("/load {} {}", good.to_str().unwrap(), bad.to_str().unwrap()))
-            .err()
-            .expect("load should fail");
+            .expect_err("load should fail");
         assert!(err.to_string().contains("test_load_named_bad.md"));
         assert!(!ctx.input.iter().any(|v| v.to_string().contains("Good")));
     }
