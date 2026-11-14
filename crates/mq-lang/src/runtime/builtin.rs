@@ -4637,10 +4637,91 @@ fn _json_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Deepest block nesting accepted, so the parser and the resulting value tree cannot overflow the stack.
+const YAML_MAX_DEPTH: usize = if cfg!(debug_assertions) { 128 } else { 512 };
+
+/// Returns the net change in flow nesting (`[` and `{` minus `]` and `}`) over `text`,
+/// ignoring quoted scalars and comments, along with the deepest level reached relative to the start.
+fn yaml_flow_delta(text: &str, flow: usize) -> (usize, usize) {
+    let mut flow = flow;
+    let mut peak = flow;
+    let mut quote: Option<char> = None;
+    let mut prev = ' ';
+
+    for c in text.chars() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '"' | '\'' if matches!(prev, ' ' | '[' | '{' | ',' | ':' | '-') => quote = Some(c),
+                '#' if prev == ' ' => break,
+                '[' | '{' => {
+                    flow += 1;
+                    peak = peak.max(flow);
+                }
+                ']' | '}' => flow = flow.saturating_sub(1),
+                _ => {}
+            },
+        }
+        prev = c;
+    }
+
+    (flow, peak)
+}
+
+/// Returns the deepest nesting, counting indentation levels, each leading `- ` and each open flow
+/// collection (`[` or `{`) as a level.
+fn yaml_block_depth(input: &str) -> usize {
+    let mut columns: Vec<usize> = Vec::new();
+    let mut max_depth = 0;
+    let mut flow = 0;
+
+    for line in input.lines() {
+        let content = line.trim_start_matches(' ');
+        if content.is_empty() || content.starts_with('#') {
+            continue;
+        }
+
+        let mut column = line.len() - content.len();
+        let mut rest = content;
+        loop {
+            while columns.last().is_some_and(|&c| c >= column) {
+                columns.pop();
+            }
+            columns.push(column);
+            max_depth = max_depth.max(columns.len());
+
+            match rest.strip_prefix("- ") {
+                Some(tail) => {
+                    let inner = tail.trim_start_matches(' ');
+                    column += 2 + (tail.len() - inner.len());
+                    rest = inner;
+                }
+                None => break,
+            }
+        }
+
+        let (next_flow, peak) = yaml_flow_delta(rest, flow);
+        max_depth = max_depth.max(columns.len() + peak);
+        flow = next_flow;
+    }
+
+    max_depth
+}
+
 #[mq_macros::mq_fn(name = "_yaml_parse", params = Fixed(1))]
 fn _yaml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => {
+            if yaml_block_depth(s) > YAML_MAX_DEPTH {
+                return Err(Error::Runtime(format!(
+                    "Failed to parse YAML: nested deeper than {YAML_MAX_DEPTH} levels"
+                )));
+            }
+
             let mut docs = yaml_rust2::YamlLoader::load_from_str(s)
                 .map_err(|e| Error::Runtime(format!("Failed to parse YAML: {}", e)))?
                 .into_iter();

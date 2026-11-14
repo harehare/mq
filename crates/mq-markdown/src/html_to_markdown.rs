@@ -9,6 +9,7 @@ mod scoring;
 
 use miette::miette;
 pub use options::ConversionOptions;
+pub use parser::check_raw_depth as check_html_depth;
 use scraper::Html;
 use scraper::Selector;
 use std::collections::BTreeMap;
@@ -254,6 +255,7 @@ pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) ->
         return Ok("".to_string());
     }
 
+    parser::check_raw_depth(html_input)?;
     let html = Html::parse_document(html_input);
 
     let mut front_matter_str = String::new();
