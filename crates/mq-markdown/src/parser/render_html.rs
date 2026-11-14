@@ -712,9 +712,9 @@ fn sanitize(value: &str) -> String {
     result
 }
 
-/// Whether `s` is a valid URI scheme: 2 to 32 ASCII letters, digits, `+`, `-` or `.`, starting with a letter.
+/// Whether `s` is a valid URI scheme: 1 to 32 ASCII letters, digits, `+`, `-` or `.`, starting with a letter.
 fn is_scheme(s: &str) -> bool {
-    (2..=32).contains(&s.len())
+    (1..=32).contains(&s.len())
         && s.starts_with(|c: char| c.is_ascii_alphabetic())
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
