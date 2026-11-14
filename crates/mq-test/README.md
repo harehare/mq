@@ -189,14 +189,18 @@ MIT
 in `.mq` files it reads fenced blocks inside `#` comments. A query is the code since the last blank
 line or expectation, followed by its `# =>` line(s):
 
-````markdown
 ```mq
 [1, 2, 3] | map(fn(x): x * 2;)
 # => [2, 4, 6]
 ```
-````
 
 An expectation passes when it equals the printed result or evaluates to the same value. A `def` or
 `module` segment without `# =>` stays in scope for the later examples of its block. Put
 `<!-- doc-test: skip -->` on the line before a fence (inside the comment for `.mq`) to exclude a
 block that needs external input.
+
+An expectation passes when it equals the printed output (all values, one per line) or, for a
+single value, evaluates to the same value. The run fails when no example is found.
+
+Examples run against an in-memory file system, so only the standard modules can be imported. Pass
+`-L <dir>` to import local modules from the file's directory and the given directories.

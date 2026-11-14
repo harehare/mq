@@ -150,7 +150,7 @@ test-doc:
 
 # Run the `# =>` examples in the docs, README and `.mq` doc comments. Opt a block out with `<!-- doc-test: skip -->` on the line before its fence.
 test-doc-examples:
-    cargo run -p mq-test -- --doc $(find docs/books/src -name '*.md') README.md crates/mq-lang/builtin.mq crates/mq-lang/modules/*.mq
+    cargo run -p mq-test -- --doc $(find docs/books/src -name '*.md') README.md crates/mq-test/README.md crates/mq-lang/builtin.mq crates/mq-lang/modules/*.mq
 
 test-all-features:
     cargo nextest run --workspace --all-features

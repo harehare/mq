@@ -97,7 +97,7 @@ struct Cli {
     format: OutputFormat,
 
     /// Run the `# => expected` examples in the given `.md` (```mq blocks) and `.mq` (fenced
-    /// blocks in comments) files instead of test functions. Add `skip` to a fence to opt out.
+    /// blocks in comments) files instead of test functions. Local modules resolve only with -L.
     #[arg(long, conflicts_with_all = ["coverage", "list"])]
     doc: bool,
 }
@@ -106,7 +106,11 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.doc {
-        return if run_doc_examples(&cli.files) {
+        if cli.files.is_empty() {
+            eprintln!("--doc needs at least one file");
+            return ExitCode::FAILURE;
+        }
+        return if run_doc_examples(&cli.files, &cli.module_directories) {
             ExitCode::SUCCESS
         } else {
             ExitCode::FAILURE
