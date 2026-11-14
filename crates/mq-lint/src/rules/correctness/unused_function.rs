@@ -42,7 +42,6 @@ impl LintRule for UnusedFunction {
             .symbols()
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Call | SymbolKind::Ref | SymbolKind::Ident))
             .filter_map(|(_, s)| s.value.as_deref())
-            .chain(ctx.annotation_names().iter().map(String::as_str))
             .collect();
 
         let is_module_file = is_definitions_only(ctx);
@@ -56,7 +55,7 @@ impl LintRule for UnusedFunction {
                     .and_then(|id| ctx.hir.symbol(id))
                     .is_some_and(|p| matches!(p.kind, SymbolKind::Module(_)));
                 let exported = (is_module_file || in_module_block) && !name.starts_with('_');
-                if exported || used_names.contains(name) {
+                if exported || used_names.contains(name) || ctx.is_annotation_used(sym) {
                     return None;
                 }
                 let mut d = Diagnostic::new(LintMessage::UnusedFunction { name: name.to_string() }, self.severity());

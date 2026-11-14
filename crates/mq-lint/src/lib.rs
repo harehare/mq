@@ -120,20 +120,29 @@ pub struct LintContext<'a> {
     annotation_names: OnceLock<FxHashSet<String>>,
 }
 
-/// Collects identifiers from `# @name(...)` comments, following an annotation across comment
-/// lines until its parentheses close. Names inside string literals are collected too, which
-/// only errs toward treating a name as used.
+/// Annotations whose arguments `mq-test` evaluates as mq expressions. Others, like `@tags`,
+/// take labels.
+const EXPR_ANNOTATIONS: [&str; 3] = ["parametrize", "property", "small_scope"];
+
+/// Collects identifiers from the expression-bearing `# @name(...)` comments, following an
+/// annotation across comment lines until its parentheses close. Names inside string literals
+/// are collected too, which only errs toward treating a name as used.
 fn collect_annotation_names(text: &str) -> FxHashSet<String> {
     let mut names = FxHashSet::default();
     let mut depth = 0i32;
+    let mut collecting = false;
     for line in text.lines() {
         let Some(comment) = line.trim_start().strip_prefix('#') else {
             depth = 0;
             continue;
         };
         let comment = comment.trim_start();
-        if depth == 0 && !comment.starts_with('@') {
-            continue;
+        if depth == 0 {
+            let Some(annotation) = comment.strip_prefix('@') else {
+                continue;
+            };
+            let name = annotation.split('(').next().unwrap_or_default().trim();
+            collecting = EXPR_ANNOTATIONS.contains(&name);
         }
         let mut ident = String::new();
         for c in comment.chars().chain(std::iter::once(' ')) {
@@ -142,7 +151,7 @@ fn collect_annotation_names(text: &str) -> FxHashSet<String> {
                 continue;
             }
             if !ident.is_empty() {
-                if !ident.starts_with(|d: char| d.is_ascii_digit()) {
+                if collecting && !ident.starts_with(|d: char| d.is_ascii_digit()) {
                     names.insert(std::mem::take(&mut ident));
                 }
                 ident.clear();
@@ -184,11 +193,22 @@ impl<'a> LintContext<'a> {
 
     /// Identifiers in test annotation comments such as `# @parametrize(...)`.
     ///
-    /// `mq-test` evaluates these expressions, so the names they use count as referenced.
+    /// `mq-test` evaluates these expressions at file level, so the names they use count as
+    /// referenced by top-level declarations only (see [`LintContext::is_annotation_used`]).
     /// Empty unless the source text was given with [`LintContext::with_source_text`].
     pub fn annotation_names(&self) -> &FxHashSet<String> {
         self.annotation_names
             .get_or_init(|| self.source_text.map(collect_annotation_names).unwrap_or_default())
+    }
+
+    /// Whether `symbol` is a top-level declaration named in a test annotation. Locals are not
+    /// visible to the expressions the test runner evaluates.
+    pub fn is_annotation_used(&self, symbol: &mq_hir::Symbol) -> bool {
+        symbol.parent.is_none()
+            && symbol
+                .value
+                .as_deref()
+                .is_some_and(|name| self.annotation_names().contains(name))
     }
 
     /// The source being linted.
