@@ -235,11 +235,13 @@ impl LanguageServer for Backend {
         params: ls_types::DocumentSymbolParams,
     ) -> jsonrpc::Result<Option<ls_types::DocumentSymbolResponse>> {
         let uri = params.text_document.uri;
-        let source_map_guard = self.source_map.read().unwrap();
+        let Some(snapshot) = self.documents.get(&uri.to_string()).map(|s| Arc::clone(s.value())) else {
+            return Ok(None);
+        };
         Ok(document_symbol::response(
             Arc::clone(&self.hir),
             to_url(&uri)?,
-            &source_map_guard,
+            &snapshot.lines,
         ))
     }
 

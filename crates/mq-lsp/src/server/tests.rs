@@ -916,6 +916,10 @@ async fn test_document_symbol() {
     let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.documents.insert(
+        uri.to_string(),
+        Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
+    );
 
     let result = backend
         .document_symbol(ls_types::DocumentSymbolParams {
