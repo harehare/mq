@@ -1364,6 +1364,18 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.pop().expect("verified bytecode keeps an operand")
             }};
         }
+        // Moves the top `argc` operands into `args` in evaluation order, without pop-and-reverse.
+        macro_rules! pop_args_in_order {
+            ($args:expr, $argc:expr) => {{
+                let argc = $argc as usize;
+                debug_assert!(
+                    stack.len() >= frame.stack_base as usize + argc,
+                    "verified bytecode underflowed the stack"
+                );
+                let start = stack.len() - argc;
+                $args.extend(stack.drain(start..));
+            }};
+        }
         macro_rules! pop_value {
             () => {{ into_runtime_value(pop!(), chunks) }};
         }
@@ -1424,7 +1436,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         locals,
                         chunk,
                         ip,
-                        frame_chunks: frame.chunks.clone(),
+                        frame_chunks: &frame.chunks,
                     },
                     chunks,
                     execution,
@@ -1432,10 +1444,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break $label FrameOutcome::Enter(new_frame);
             } else {
                 let mut args = execution.limits.take_stack();
-                for _ in 0..$argc {
-                    args.push(pop!());
-                }
-                args.reverse();
+                pop_args_in_order!(args, $argc);
                 let step = call_stack_value::<CHECK_TIMEOUT>(
                     callee,
                     &mut args,
@@ -1443,7 +1452,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         locals,
                         chunk,
                         ip,
-                        frame_chunks: frame.chunks.clone(),
+                        frame_chunks: &frame.chunks,
                     },
                     chunks,
                     execution,
@@ -2083,7 +2092,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         chunks,
                         execution,
@@ -2106,7 +2115,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         execution,
                     );
@@ -2125,7 +2134,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         execution,
                     )?;
@@ -2144,7 +2153,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         execution,
                     )?;
@@ -2164,7 +2173,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         chunks,
                         execution,
@@ -2184,10 +2193,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         upvalues: frame.upvalues.clone(),
                     }));
                     let mut args = execution.limits.take_stack();
-                    for _ in 0..*argc {
-                        args.push(pop!());
-                    }
-                    args.reverse();
+                    pop_args_in_order!(args, *argc);
                     let step = call_stack_value::<CHECK_TIMEOUT>(
                         callee,
                         &mut args,
@@ -2195,7 +2201,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         chunks,
                         execution,
@@ -2218,7 +2224,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         chunks,
                         execution,
@@ -2240,7 +2246,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         execution,
                     );
@@ -2259,7 +2265,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         execution,
                     )?;
@@ -2278,7 +2284,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         execution,
                     )?;
@@ -2298,7 +2304,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         chunks,
                         execution,
@@ -2325,7 +2331,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                                 locals,
                                 chunk,
                                 ip,
-                                frame_chunks: frame.chunks.clone(),
+                                frame_chunks: &frame.chunks,
                             },
                             chunks,
                             execution,
@@ -2337,10 +2343,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         // higher-order builtins that a fresh heap allocation per call is worth
                         // avoiding.
                         let mut args = execution.limits.take_stack();
-                        for _ in 0..*argc {
-                            args.push(pop!());
-                        }
-                        args.reverse();
+                        pop_args_in_order!(args, *argc);
                         let step = call_stack_value::<CHECK_TIMEOUT>(
                             callee,
                             &mut args,
@@ -2348,7 +2351,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                                 locals,
                                 chunk,
                                 ip,
-                                frame_chunks: frame.chunks.clone(),
+                                frame_chunks: &frame.chunks,
                             },
                             chunks,
                             execution,
@@ -2382,7 +2385,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                                 locals,
                                 chunk,
                                 ip,
-                                frame_chunks: frame.chunks.clone(),
+                                frame_chunks: &frame.chunks,
                             },
                             chunks,
                             execution,
@@ -2422,7 +2425,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                                 locals,
                                 chunk,
                                 ip,
-                                frame_chunks: frame.chunks.clone(),
+                                frame_chunks: &frame.chunks,
                             },
                             chunks,
                             execution,
@@ -2431,10 +2434,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     } else {
                         // See the `CallLocal` non-fixed-arity path above for why this is pooled.
                         let mut args = execution.limits.take_stack();
-                        for _ in 0..*argc {
-                            args.push(pop!());
-                        }
-                        args.reverse();
+                        pop_args_in_order!(args, *argc);
                         let callee = pop!();
                         let step = call_stack_value::<CHECK_TIMEOUT>(
                             callee,
@@ -2443,7 +2443,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                                 locals,
                                 chunk,
                                 ip,
-                                frame_chunks: frame.chunks.clone(),
+                                frame_chunks: &frame.chunks,
                             },
                             chunks,
                             execution,
@@ -2481,7 +2481,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                                 locals,
                                 chunk,
                                 ip,
-                                frame_chunks: frame.chunks.clone(),
+                                frame_chunks: &frame.chunks,
                             },
                             chunks,
                             execution,
@@ -2503,7 +2503,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             locals,
                             chunk,
                             ip,
-                            frame_chunks: frame.chunks.clone(),
+                            frame_chunks: &frame.chunks,
                         },
                         chunks,
                         execution,
@@ -2696,7 +2696,7 @@ fn try_catch_from_stack(
     try_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
     Ok(Frame::new(
         try_closure.chunk_index,
-        frame_chunks,
+        frame_chunks.clone(),
         try_locals,
         try_closure.upvalues.clone(),
         !try_chunk.captures_local_slots(),
