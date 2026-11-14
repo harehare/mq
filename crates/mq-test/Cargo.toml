@@ -16,6 +16,7 @@ workspace = true
 
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
+colored = {workspace = true}
 glob = {workspace = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-lang = {workspace = true, features = ["cst", "html-parse", "debugger", "file-io", "http", "mock-io"]}

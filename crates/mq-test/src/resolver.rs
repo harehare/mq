@@ -25,6 +25,13 @@ pub(crate) struct TestModuleResolver {
     fallback: DefaultModuleResolver,
 }
 
+impl TestModuleResolver {
+    /// Serves the bundled modules and defers every other module to `fallback`.
+    pub(crate) fn new(fallback: DefaultModuleResolver) -> Self {
+        Self { fallback }
+    }
+}
+
 impl ModuleResolver for TestModuleResolver {
     fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
         if let Some(source) = bundled(module_name) {
