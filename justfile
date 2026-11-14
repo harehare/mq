@@ -148,6 +148,10 @@ test-spec:
 test-doc:
     cargo test --doc --workspace
 
+# Run the `# =>` examples in the docs, README and `.mq` doc comments. Opt a block out with `<!-- doc-test: skip -->` on the line before its fence.
+test-doc-examples:
+    cargo run -p mq-test -- --doc $(find docs/books/src -name '*.md') README.md crates/mq-lang/builtin.mq crates/mq-lang/modules/*.mq
+
 test-all-features:
     cargo nextest run --workspace --all-features
 
@@ -161,7 +165,7 @@ test: test-lang-cached
     cargo nextest run --workspace
 
 # Run formatting, linting and all tests
-test-all: fmt fmt-mq lint test-mq test-doc test-all-features test
+test-all: fmt fmt-mq lint test-mq test-doc test-doc-examples test-all-features test
 
 # Run tests with code coverage reporting
 test-cov:

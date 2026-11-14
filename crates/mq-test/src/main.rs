@@ -1,7 +1,7 @@
 //! Command-line runner for `.mq` tests.
 
 use clap::Parser;
-use mq_test::{CoverageFormat, OutputFormat, TestRunner};
+use mq_test::{CoverageFormat, OutputFormat, TestRunner, run_doc_examples};
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser, Debug)]
@@ -95,10 +95,23 @@ struct Cli {
     /// Output format for both --list and a normal test run.
     #[arg(long, value_enum, default_value = "text")]
     format: OutputFormat,
+
+    /// Run the `# => expected` examples in the given `.md` (```mq blocks) and `.mq` (fenced
+    /// blocks in comments) files instead of test functions. Add `skip` to a fence to opt out.
+    #[arg(long, conflicts_with_all = ["coverage", "list"])]
+    doc: bool,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    if cli.doc {
+        return if run_doc_examples(&cli.files) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
 
     match TestRunner::new(cli.files)
         .with_coverage(cli.coverage)

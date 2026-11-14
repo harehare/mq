@@ -20,6 +20,7 @@ mq-test -P 4                 # run files in parallel once more than 4 are found
 mq-test --update-snapshots   # accept current assert_snapshot output as golden
 mq-test --list               # list tests without running (honors -k/--tag)
 mq-test --format json        # JSON for --list and runs, for editors and CI
+mq-test --doc docs/guide.md lib.mq  # run `# =>` examples in ```mq blocks and `.mq` comments
 mq-test --coverage           # line coverage of included/imported modules
 ```
 
@@ -181,3 +182,21 @@ cargo build -p mq-test
 ## License
 
 MIT
+
+## Doc examples
+
+`--doc` runs the examples in the given files like a doc test. In Markdown it reads ` ```mq ` blocks,
+in `.mq` files it reads fenced blocks inside `#` comments. A query is the code since the last blank
+line or expectation, followed by its `# =>` line(s):
+
+````markdown
+```mq
+[1, 2, 3] | map(fn(x): x * 2;)
+# => [2, 4, 6]
+```
+````
+
+An expectation passes when it equals the printed result or evaluates to the same value. A `def` or
+`module` segment without `# =>` stays in scope for the later examples of its block. Put
+`<!-- doc-test: skip -->` on the line before a fence (inside the comment for `.mq`) to exclude a
+block that needs external input.

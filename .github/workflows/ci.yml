@@ -44,7 +44,7 @@ jobs:
         run: |
           echo "RUSTFLAGS=${RUSTFLAGS} -C link-args=/STACK:8388608" >> $GITHUB_ENV
       - name: Run tests
-        run: just test-mq test-doc test-all-features test
+        run: just test-mq test-doc test-doc-examples test-all-features test
         env:
           NEXTEST_RETRIES: 3
       - name: Generate code coverage
