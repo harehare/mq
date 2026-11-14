@@ -1,0 +1,405 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "slug": "format-parsers",
+      "label": "Format Parsers"
+    },
+    {
+      "slug": "diagram-graph",
+      "label": "Diagram & Graph"
+    },
+    {
+      "slug": "devops-infrastructure",
+      "label": "DevOps & Infrastructure"
+    },
+    {
+      "slug": "terminal-text",
+      "label": "Terminal & Text"
+    },
+    {
+      "slug": "generators",
+      "label": "Generators"
+    },
+    {
+      "slug": "interpreters-examples",
+      "label": "Interpreters & Examples"
+    },
+    {
+      "slug": "data-algorithms",
+      "label": "Data Structures & Algorithms"
+    },
+    {
+      "slug": "libraries-toolkits",
+      "label": "Libraries & Toolkits"
+    }
+  ],
+  "modules": [
+    {
+      "name": "json5",
+      "repo": "github.com/harehare/json5.mq",
+      "category": "format-parsers",
+      "description": "[JSON5](https://json5.org): comments, trailing commas, unquoted keys"
+    },
+    {
+      "name": "hcl",
+      "repo": "github.com/harehare/hcl.mq",
+      "category": "format-parsers",
+      "description": "[HCL](https://github.com/hashicorp/hcl) (HashiCorp Configuration Language), blocks, labels, attributes"
+    },
+    {
+      "name": "pkl",
+      "repo": "github.com/harehare/pkl.mq",
+      "category": "format-parsers",
+      "description": "[PKL](https://pkl-lang.org): Apple's configuration language, with type annotations and collection literals"
+    },
+    {
+      "name": "kdl",
+      "repo": "github.com/harehare/kdl.mq",
+      "category": "format-parsers",
+      "description": "[KDL](https://kdl.dev) document language"
+    },
+    {
+      "name": "ini",
+      "repo": "github.com/harehare/ini.mq",
+      "category": "format-parsers",
+      "description": "INI file parser and serializer"
+    },
+    {
+      "name": "ndjson",
+      "repo": "github.com/harehare/ndjson.mq",
+      "category": "format-parsers",
+      "description": "[NDJSON](https://ndjson.org) / [JSON Lines](https://jsonlines.org)"
+    },
+    {
+      "name": "logfmt",
+      "repo": "github.com/harehare/logfmt.mq",
+      "category": "format-parsers",
+      "description": "logfmt structured log lines (`key=value`)"
+    },
+    {
+      "name": "ltsv",
+      "repo": "github.com/harehare/ltsv.mq",
+      "category": "format-parsers",
+      "description": "[LTSV](http://ltsv.org/) (Labeled Tab-Separated Values) parser"
+    },
+    {
+      "name": "cron",
+      "repo": "github.com/harehare/cron.mq",
+      "category": "format-parsers",
+      "description": "Cron expression parser and human-readable descriptions"
+    },
+    {
+      "name": "jwt",
+      "repo": "github.com/harehare/jwt.mq",
+      "category": "format-parsers",
+      "description": "JWT decoder: inspect header and payload without verification"
+    },
+    {
+      "name": "okf",
+      "repo": "github.com/harehare/okf.mq",
+      "category": "format-parsers",
+      "description": "[OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) (Open Knowledge Format) reader/writer, concept documents, cross-links, citations, log/index entries"
+    },
+    {
+      "name": "url",
+      "repo": "github.com/harehare/url.mq",
+      "category": "format-parsers",
+      "description": "URL parsing, building, and relative-resolution utilities for mq."
+    },
+    {
+      "name": "changelog",
+      "repo": "github.com/harehare/changelog.mq",
+      "category": "format-parsers",
+      "description": "[Keep a Changelog](https://keepachangelog.com) Markdown parser and serializer"
+    },
+    {
+      "name": "dotenv",
+      "repo": "github.com/harehare/dotenv.mq",
+      "category": "format-parsers",
+      "description": "`.env` file parser and serializer, quotes, comments, and escape sequences"
+    },
+    {
+      "name": "jsonpath",
+      "repo": "github.com/harehare/jsonpath.mq",
+      "category": "format-parsers",
+      "description": "[JSONPath](https://en.wikipedia.org/wiki/JSONPath) ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)-style) query engine for mq's parsed JSON values"
+    },
+    {
+      "name": "jsonschema",
+      "repo": "github.com/harehare/jsonschema.mq",
+      "category": "format-parsers",
+      "description": "[JSON Schema](https://json-schema.org) validator"
+    },
+    {
+      "name": "xpath",
+      "repo": "github.com/harehare/xpath.mq",
+      "category": "format-parsers",
+      "description": "Abbreviated [XPath](https://www.w3.org/TR/1999/REC-xpath-19991116/) query engine for `xml.mq`'s parsed value tree"
+    },
+    {
+      "name": "codeowners",
+      "repo": "github.com/harehare/codeowners.mq",
+      "category": "format-parsers",
+      "description": "GitHub [CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners) parser and matcher"
+    },
+    {
+      "name": "feed",
+      "repo": "github.com/harehare/feed.mq",
+      "category": "format-parsers",
+      "description": "RSS 2.0 / Atom feed parser"
+    },
+    {
+      "name": "gitignore",
+      "repo": "github.com/harehare/gitignore.mq",
+      "category": "format-parsers",
+      "description": "[.gitignore](https://git-scm.com/docs/gitignore) pattern parser and matcher"
+    },
+    {
+      "name": "asciidoc",
+      "repo": "github.com/harehare/asciidoc.mq",
+      "category": "format-parsers",
+      "description": "[AsciiDoc](https://docs.asciidoctor.org/asciidoc/latest/) to Markdown converter"
+    },
+    {
+      "name": "jsonld",
+      "repo": "github.com/harehare/jsonld.mq",
+      "category": "format-parsers",
+      "description": "[JSON-LD](https://www.w3.org/TR/json-ld11/) `<script type=\"application/ld+json\">` extractor"
+    },
+    {
+      "name": "typst",
+      "repo": "github.com/harehare/typst.mq",
+      "category": "format-parsers",
+      "description": "[Typst](https://typst.app) markup parser, headings and single-line function-call statements"
+    },
+    {
+      "name": "gomod",
+      "repo": "github.com/harehare/gomod.mq",
+      "category": "format-parsers",
+      "description": "[Typst](https://go.dev/ref/mod) A Go module manifest (go.mod/go.sum) parser implemented as an mq module"
+    },
+    {
+      "name": "sbom",
+      "repo": "github.com/harehare/sbom.mq",
+      "category": "format-parsers",
+      "description": "SPDX and CycloneDX SBOM (Software Bill of Materials) parser"
+    },
+    {
+      "name": "fixedwidth",
+      "repo": "github.com/harehare/fixedwidth.mq",
+      "category": "format-parsers",
+      "description": "Fixed-width (fixed-length) text parser"
+    },
+    {
+      "name": "justfile",
+      "repo": "github.com/harehare/justfile.mq",
+      "category": "format-parsers",
+      "description": "[justfile](https://just.systems) syntax parser"
+    },
+    {
+      "name": "cedar",
+      "repo": "github.com/harehare/cedar.mq",
+      "category": "format-parsers",
+      "description": "[Cedar](https://www.cedarpolicy.com) policy language parser"
+    },
+    {
+      "name": "mermaid",
+      "repo": "github.com/harehare/mermaid.mq",
+      "category": "diagram-graph",
+      "description": "[Mermaid](https://mermaid.js.org) diagrams, flowchart, sequence, pie, class"
+    },
+    {
+      "name": "dot",
+      "repo": "github.com/harehare/dot.mq",
+      "category": "diagram-graph",
+      "description": "[Graphviz DOT](https://graphviz.org), nodes, edges, attributes"
+    },
+    {
+      "name": "graphql",
+      "repo": "github.com/harehare/graphql.mq",
+      "category": "diagram-graph",
+      "description": "GraphQL SDL, types, enums, interfaces, unions"
+    },
+    {
+      "name": "tree",
+      "repo": "github.com/harehare/tree.mq",
+      "category": "diagram-graph",
+      "description": "A tree-rendering utility module for mq"
+    },
+    {
+      "name": "graph",
+      "repo": "github.com/harehare/graph.mq",
+      "category": "diagram-graph",
+      "description": "Generic graph algorithms"
+    },
+    {
+      "name": "dockerfile",
+      "repo": "github.com/harehare/dockerfile.mq",
+      "category": "devops-infrastructure",
+      "description": "Dockerfile instruction parser"
+    },
+    {
+      "name": "k8s",
+      "repo": "github.com/harehare/k8s.mq",
+      "category": "devops-infrastructure",
+      "description": "[Kubernetes](https://kubernetes.io) manifest parser, metadata, containers, images, ports, resources"
+    },
+    {
+      "name": "gha",
+      "repo": "github.com/harehare/gha.mq",
+      "category": "devops-infrastructure",
+      "description": "[GitHub Actions](https://docs.github.com/en/actions) workflow parser, jobs, steps, triggers, matrix"
+    },
+    {
+      "name": "openapi",
+      "repo": "github.com/harehare/openapi.mq",
+      "category": "devops-infrastructure",
+      "description": "[OpenAPI 3.x](https://spec.openapis.org/oas/v3.1.0) spec parser, paths, operations, schemas, security schemes"
+    },
+    {
+      "name": "aws",
+      "repo": "github.com/harehare/aws.mq",
+      "category": "devops-infrastructure",
+      "description": "AWS CLI / SDK JSON response processor, filter, extract, and render Markdown tables for EC2, S3, IAM, Lambda, RDS, ECS, EKS, and 50+ other services"
+    },
+    {
+      "name": "ansi",
+      "repo": "github.com/harehare/ansi.mq",
+      "category": "terminal-text",
+      "description": "ANSI terminal escape code utilities"
+    },
+    {
+      "name": "case",
+      "repo": "github.com/harehare/case.mq",
+      "category": "terminal-text",
+      "description": "String case conversion utilities implemented as an mq module"
+    },
+    {
+      "name": "emoji",
+      "repo": "github.com/harehare/emoji.mq",
+      "category": "terminal-text",
+      "description": "GitHub-style emoji shortcode <-> Unicode emoji conversion"
+    },
+    {
+      "name": "cmd",
+      "repo": "github.com/harehare/cmd.mq",
+      "category": "terminal-text",
+      "description": "Command output parsers (`ps`, `df`, `ls -l`, `git log`, ...) that turn CLI output into structured data"
+    },
+    {
+      "name": "kana",
+      "repo": "github.com/harehare/kana.mq",
+      "category": "terminal-text",
+      "description": "Fullwidth/halfwidth conversion, in both directions and limited to selected character classes"
+    },
+    {
+      "name": "qrcode",
+      "repo": "github.com/harehare/qrcode.mq",
+      "category": "generators",
+      "description": "[QR Code](https://www.qrcode.com/en/about/standards.html) (ISO/IEC 18004) encoder, ASCII-art and SVG rendering"
+    },
+    {
+      "name": "badge",
+      "repo": "github.com/harehare/badge.mq",
+      "category": "generators",
+      "description": "[shields.io](https://shields.io) badge generator"
+    },
+    {
+      "name": "sparkline",
+      "repo": "github.com/harehare/sparkline.mq",
+      "category": "generators",
+      "description": "A pure Unicode sparkline renderer"
+    },
+    {
+      "name": "lisp",
+      "repo": "github.com/harehare/lisp.mq",
+      "category": "interpreters-examples",
+      "description": "Scheme-like Lisp interpreter"
+    },
+    {
+      "name": "bf",
+      "repo": "github.com/harehare/bf.mq",
+      "category": "interpreters-examples",
+      "description": "Brainfuck interpreter"
+    },
+    {
+      "name": "jq",
+      "repo": "github.com/harehare/jq.mq",
+      "category": "interpreters-examples",
+      "description": "Implementation of the [jq](https://jqlang.org) JSON processor, written in mq"
+    },
+    {
+      "name": "ds",
+      "repo": "github.com/harehare/ds.mq",
+      "category": "data-algorithms",
+      "description": "Data structures: min-heap, trie, union-find, sorted collections"
+    },
+    {
+      "name": "bloom",
+      "repo": "github.com/harehare/bloom.mq",
+      "category": "data-algorithms",
+      "description": "Bloom filter, a compact set answering \"definitely not\" or \"probably in the set\""
+    },
+    {
+      "name": "sketch",
+      "repo": "github.com/harehare/sketch.mq",
+      "category": "data-algorithms",
+      "description": "Probabilistic stream summaries with fixed memory and mergeable results"
+    },
+    {
+      "name": "consistenthash",
+      "repo": "github.com/harehare/consistenthash.mq",
+      "category": "data-algorithms",
+      "description": "Consistent hash ring for sharding keys over nodes"
+    },
+    {
+      "name": "simhash",
+      "repo": "github.com/harehare/simhash.mq",
+      "category": "data-algorithms",
+      "description": "SimHash fingerprints for near-duplicate detection"
+    },
+    {
+      "name": "tfidf",
+      "repo": "github.com/harehare/tfidf.mq",
+      "category": "data-algorithms",
+      "description": "Full-text ranking: BM25 search and TF-IDF keyword extraction"
+    },
+    {
+      "name": "vector",
+      "repo": "github.com/harehare/vector.mq",
+      "category": "data-algorithms",
+      "description": "Vector math and nearest-neighbour search"
+    },
+    {
+      "name": "parser_combinator",
+      "repo": "github.com/harehare/parser_combinator.mq",
+      "category": "libraries-toolkits",
+      "description": "A small parser-combinator toolkit, in the spirit of Rust's [nom](https://github.com/rust-bakery/nom)"
+    },
+    {
+      "name": "diff",
+      "repo": "github.com/harehare/diff.mq",
+      "category": "libraries-toolkits",
+      "description": "Text and array diffing utilities, built on mq's native Myers-diff engine"
+    },
+    {
+      "name": "returns",
+      "repo": "github.com/harehare/returns.mq",
+      "category": "libraries-toolkits",
+      "description": "Result and Maybe types for railway-oriented error handling, inspired by [dry-python/returns](https://github.com/dry-python/returns)"
+    },
+    {
+      "name": "markl",
+      "repo": "github.com/harehare/markl.mq",
+      "category": "libraries-toolkits",
+      "description": "Markdown template engine with `{{ expression }}` tags, layouts, and per-site themes"
+    },
+    {
+      "name": "docset",
+      "repo": "github.com/harehare/docset.mq",
+      "category": "libraries-toolkits",
+      "description": "Treats a directory of Markdown docs as one documentation set"
+    }
+  ]
+}
