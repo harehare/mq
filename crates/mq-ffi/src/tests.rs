@@ -1540,16 +1540,8 @@ fn test_eval_raw_and_null_input() {
 }
 
 #[test]
-fn test_eval_json_input() {
-    assert_eq!(
-        eval_format(c"get(., \"a\")", c"{\"a\": 1}", c"JSON").unwrap(),
-        vec!["1".to_string()]
-    );
-}
-
-#[test]
-fn test_eval_binary_formats_unsupported() {
-    for format in [c"bytes", c"cbor"] {
+fn test_eval_structured_formats_unsupported() {
+    for format in [c"bytes", c"cbor", c"json", c"YAML"] {
         assert_eq!(eval_format(c".", c"x", format), Err(MqStatus::MQ_ERR_UNSUPPORTED));
     }
 }
