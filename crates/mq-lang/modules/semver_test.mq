@@ -258,3 +258,30 @@ end
 def test_semver_compare_returns_only_minus_one_zero_or_one(a, b):
   assert_true(contains([-1, 0, 1], _sv_compare(a, b)))
 end
+
+# @parametrize([["1.0.0", "2.0.0", -1], ["2.0.0", "1.0.0", 1], ["1.0.0", "1.0.0", 0], ["1.0.0-alpha", "1.0.0", -1]])
+def test_semver_compare_strings(a, b, expected):
+  assert_eq(semver::semver_compare(a, b), expected)
+end
+
+def test_semver_compare_mixed():
+  assert_eq(semver::semver_compare("1.0.0", semver::semver_parse("2.0.0")), -1)
+end
+
+def test_semver_predicates_strings():
+  assert_eq(semver::semver_gt("2.0.0", "1.0.0"), true)
+  | assert_eq(semver::semver_lt("1.0.0", "2.0.0"), true)
+  | assert_eq(semver::semver_eq("1.0.0", "1.0.0"), true)
+  | assert_eq(semver::semver_gte("1.0.0", "1.0.0"), true)
+  | assert_eq(semver::semver_lte("1.0.0", "2.0.0"), true)
+end
+
+def test_semver_sort_max_min_strings():
+  assert_eq(map(semver::semver_sort(["2.0.0", "1.0.0", "1.5.0"]), semver::semver_to_string), ["1.0.0", "1.5.0", "2.0.0"])
+  | assert_eq(semver::semver_to_string(semver::semver_max(["1.0.0", "2.0.0"])), "2.0.0")
+  | assert_eq(semver::semver_to_string(semver::semver_min(["1.0.0", "2.0.0"])), "1.0.0")
+end
+
+def test_semver_compare_invalid_string():
+  assert_eq(try: semver::semver_compare("nope", "1.0.0") catch: "err", "err")
+end

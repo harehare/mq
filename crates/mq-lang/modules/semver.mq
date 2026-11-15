@@ -55,6 +55,11 @@ def _semver_compare_pre(a_pre, b_pre):
       end
 end
 
+# Accepts a version string or an already parsed SemVer dict and returns the dict.
+def _semver_coerce(v):
+  if (is_string(v)): semver_parse(v) else: v
+end
+
 # Parses a SemVer string into a dict with major, minor, patch, pre, and build fields.
 #
 # Example:
@@ -101,7 +106,7 @@ def semver_to_string(v):
   | if (is_empty(v[:build])): with_pre else: with_pre + "+" + v[:build]
 end
 
-# Compares two parsed SemVer dicts. Returns -1 if a < b, 0 if a == b, 1 if a > b.
+# Compares two SemVer values (version strings or parsed dicts). Returns -1 if a < b, 0 if a == b, 1 if a > b.
 #
 # Example:
 # ```
@@ -111,7 +116,9 @@ end
 #
 # Returns: number
 def semver_compare(a, b):
-  let major_cmp = _semver_compare_int(a[:major], b[:major])
+  let a = _semver_coerce(a)
+  | let b = _semver_coerce(b)
+  | let major_cmp = _semver_compare_int(a[:major], b[:major])
   | if (major_cmp != 0): major_cmp
     else:
       do
@@ -229,8 +236,9 @@ end
 # ```
 #
 # Returns: array
-def semver_sort(versions):
-  let n = len(versions)
+def semver_sort(input):
+  let versions = map(input, _semver_coerce)
+  | let n = len(versions)
   | if (n <= 1): versions
     else:
       do
@@ -268,8 +276,9 @@ end
 # ```
 #
 # Returns: dict
-def semver_max(versions):
-  fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_gt(v, acc)): v else: acc;)
+def semver_max(input):
+  let versions = map(input, _semver_coerce)
+  | fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_gt(v, acc)): v else: acc;)
 end
 
 # Returns the minimum version from an array of parsed SemVer dicts.
@@ -281,8 +290,9 @@ end
 # ```
 #
 # Returns: dict
-def semver_min(versions):
-  fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_lt(v, acc)): v else: acc;)
+def semver_min(input):
+  let versions = map(input, _semver_coerce)
+  | fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_lt(v, acc)): v else: acc;)
 end
 
 # Parses a single non-range version comparator (e.g. ">=1.0.0") into a dict with op and parsed version fields.
