@@ -58,8 +58,8 @@ impl RobotsTxt {
 
         let policy = match http_client.fetch_with(robots_url, Default::default()).await {
             Ok(response) => {
-                tracing::debug!("robots.txt content for {}:\n{}", origin, response);
-                Policy::Rules(response)
+                tracing::debug!("robots.txt content for {}:\n{}", origin, response.content);
+                Policy::Rules(response.content)
             }
             Err(e) => match e.kind {
                 FetchErrorKind::Status(code) if (400..500).contains(&code) && code != 429 => {
