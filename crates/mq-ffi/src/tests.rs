@@ -1588,6 +1588,11 @@ fn test_define_value_ex_validates_name_and_json() {
     assert_eq!(ok("a", "x", false), MqStatus::MQ_OK);
     assert_eq!(ok("def", "x", false), MqStatus::MQ_ERR_INVALID_ARGUMENT);
     assert_eq!(ok("a-b", "x", false), MqStatus::MQ_ERR_INVALID_ARGUMENT);
+    // Whitespace, comments and a byte-order mark are skipped by the lexer, so they must be rejected.
+    for bad in [" greeting ", "greeting#comment", "\u{feff}greeting", "greeting\n"] {
+        assert_eq!(ok(bad, "x", false), MqStatus::MQ_ERR_INVALID_ARGUMENT, "{bad:?}");
+        assert_eq!(ok(bad, "1", true), MqStatus::MQ_ERR_INVALID_ARGUMENT, "{bad:?}");
+    }
     assert_eq!(ok("j", "{\"k\": [1, 2]}", true), MqStatus::MQ_OK);
     assert_eq!(ok("j", "{oops", true), MqStatus::MQ_ERR_INVALID_ARGUMENT);
     assert_eq!(
