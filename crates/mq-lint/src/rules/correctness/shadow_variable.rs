@@ -33,6 +33,9 @@ impl LintRule for ShadowVariable {
                 Some(n) => n,
                 None => continue,
             };
+            if name.starts_with('_') {
+                continue;
+            }
 
             if shadows_outer_variable(ctx, &declared, sym.scope, name) {
                 let mut d = Diagnostic::new(LintMessage::ShadowVariable { name: name.to_string() }, self.severity());
@@ -95,6 +98,8 @@ mod tests {
     #[rstest]
     #[case("let x = 1 | def f(): let y = 2; y; end")]
     #[case("let x = 1 | x")]
+    #[case("let _ = 1 | def f(): let _ = 2; 1; end")]
+    #[case("let _a = 1 | def f(): let _a = 2; 1; end")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
