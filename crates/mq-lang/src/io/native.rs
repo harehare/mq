@@ -184,6 +184,10 @@ impl Io for NativeIo {
         std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
     }
 
+    fn read_link(&self, path: &Path) -> Option<PathBuf> {
+        std::fs::read_link(path).ok()
+    }
+
     fn env_var(&self, name: &str) -> Result<String, IoError> {
         std::env::var(name).map_err(|_| IoError::NotFound(Cow::Owned(format!("env var `{name}`"))))
     }

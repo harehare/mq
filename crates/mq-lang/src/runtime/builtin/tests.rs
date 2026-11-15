@@ -5048,6 +5048,88 @@ fn test_walk_files_rejects_symlink_escape_outside_allowed_paths() {
     );
 }
 
+/// Every way of naming a path outside the `--allow-read` grant (`..` variants and file/dir
+/// symlinks) must be denied by each filesystem builtin, and legitimate access stays allowed.
+#[cfg(all(feature = "file-io", unix))]
+#[rstest]
+#[case::file_exists("file_exists")]
+#[case::file_size("file_size")]
+#[case::file_info("file_info")]
+#[case::open_file("open_file")]
+#[case::read_file("read_file")]
+#[case::read_file_bytes("read_file_bytes")]
+fn test_file_builtins_reject_path_escapes(#[case] name: &str) {
+    let root = tempfile::tempdir().expect("failed to create temp dir");
+    let allowed = root.path().join("allowed");
+    let outside = root.path().join("outside");
+    std::fs::create_dir(&allowed).expect("failed to create dir");
+    std::fs::create_dir(&outside).expect("failed to create dir");
+    std::fs::write(outside.join("secret.md"), "secret").expect("failed to write");
+    std::fs::write(allowed.join("ok.md"), "ok").expect("failed to write");
+    std::os::unix::fs::symlink(outside.join("secret.md"), allowed.join("file_link.md")).expect("failed to symlink");
+    std::os::unix::fs::symlink(&outside, allowed.join("dir_link")).expect("failed to symlink");
+
+    let a = allowed.to_string_lossy().into_owned();
+    let escapes = [
+        format!("{a}/../outside/secret.md"),
+        format!("{a}//../outside/secret.md"),
+        format!("{a}/./../outside/secret.md"),
+        format!("{a}/file_link.md"),
+        format!("{a}/dir_link/secret.md"),
+    ];
+
+    let _guard = io_context::scoped(Shared::new(
+        SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.clone()]),
+    ));
+    let arg = |p: &str| vec![RuntimeValue::String(Shared::new(p.to_string()))];
+
+    for path in &escapes {
+        assert!(call(name, arg(path)).is_err(), "{name} must deny escape via {path}");
+    }
+    assert!(
+        call(name, arg(&format!("{a}/ok.md"))).is_ok(),
+        "{name} must allow {a}/ok.md"
+    );
+}
+
+/// Same escape routes for the directory-taking builtins.
+#[cfg(all(feature = "file-io", unix))]
+#[rstest]
+#[case::walk_files("walk_files")]
+#[case::collection("collection")]
+fn test_dir_builtins_reject_path_escapes(#[case] name: &str) {
+    let root = tempfile::tempdir().expect("failed to create temp dir");
+    let allowed = root.path().join("allowed");
+    let outside = root.path().join("outside");
+    std::fs::create_dir(&allowed).expect("failed to create dir");
+    std::fs::create_dir(&outside).expect("failed to create dir");
+    std::fs::write(outside.join("secret.md"), "secret").expect("failed to write");
+    std::fs::create_dir(allowed.join("sub")).expect("failed to create dir");
+    std::fs::write(allowed.join("sub/ok.md"), "ok").expect("failed to write");
+    std::os::unix::fs::symlink(&outside, allowed.join("dir_link")).expect("failed to symlink");
+
+    let a = allowed.to_string_lossy().into_owned();
+    let escapes = [
+        format!("{a}/../outside"),
+        format!("{a}//../outside"),
+        format!("{a}/./../outside"),
+        format!("{a}/dir_link"),
+    ];
+
+    let _guard = io_context::scoped(Shared::new(
+        SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.clone()]),
+    ));
+    let arg = |p: &str| vec![RuntimeValue::String(Shared::new(p.to_string()))];
+
+    for path in &escapes {
+        assert!(call(name, arg(path)).is_err(), "{name} must deny escape via {path}");
+    }
+    assert!(
+        call(name, arg(&format!("{a}/sub"))).is_ok(),
+        "{name} must allow {a}/sub"
+    );
+}
+
 #[cfg(feature = "file-io")]
 #[rstest]
 // Invalid root argument type.
