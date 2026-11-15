@@ -1951,6 +1951,17 @@ fn test_explicit_base_url_takes_priority_over_base_href_tag() {
 }
 
 #[test]
+fn test_relative_base_href_joins_onto_explicit_base_url() {
+    let html = r#"<html><head><base href="/docs/"></head><body><p><a href="a.html">x</a></p></body></html>"#;
+    let options = ConversionOptions {
+        base_url: Some("https://example.com/blog/".to_string()),
+        ..Default::default()
+    };
+    let md = convert_html_to_markdown(html, options).unwrap();
+    assert!(md.contains("https://example.com/docs/a.html"), "{md}");
+}
+
+#[test]
 fn test_no_base_url_leaves_relative_links_unresolved() {
     let html = r#"<p><a href="/relative/path">link</a></p>"#;
     let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();

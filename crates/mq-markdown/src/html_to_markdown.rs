@@ -21,13 +21,16 @@ fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::Eleme
         .and_then(|sel| html.select(&sel).next())
 }
 
-/// Resolves the base URL: `options.base_url` takes priority over a `<base href>` in `<head>`.
+/// `options.base_url` takes priority over the first `<base href>`; a relative href is joined onto it.
 fn resolve_base_url(html: &Html, options_base: Option<&str>) -> Option<url::Url> {
-    if let Some(explicit) = options_base {
-        return url::Url::parse(explicit).ok();
+    let explicit = options_base.and_then(|b| url::Url::parse(b).ok());
+    let base_href = find_element(html, "base[href]").and_then(|el| el.value().attr("href"));
+    match (explicit, base_href) {
+        (Some(e), Some(h)) if url::Url::parse(h).is_err() => e.join(h).ok().or(Some(e)),
+        (Some(e), _) => Some(e),
+        (None, Some(h)) => url::Url::parse(h).ok(),
+        (None, None) => None,
     }
-    let base_href = find_element(html, "base").and_then(|el| el.value().attr("href"))?;
-    url::Url::parse(base_href).ok()
 }
 
 /// Rewrites relative `href`/`src` on link/image/embed elements into absolute URLs against `base`.
