@@ -832,8 +832,7 @@ impl RuntimeValue {
                 } else if n.is_int() && v >= 0.0 && v < u64::MAX as f64 {
                     serde_json::Value::Number(serde_json::Number::from(v as u64))
                 } else {
-                    // jq compatible: infinities clamp to the largest finite f64, NaN is null.
-                    let v = if v.is_infinite() { f64::MAX.copysign(v) } else { v };
+                    // Non-finite numbers have no JSON form, so every structured output writes null.
                     serde_json::Number::from_f64(v)
                         .map(serde_json::Value::Number)
                         .unwrap_or(serde_json::Value::Null)
@@ -1068,6 +1067,14 @@ mod tests {
     use proptest::prelude::*;
     use rstest::rstest;
     use serde::Deserialize;
+
+    #[rstest]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    #[case(f64::NAN)]
+    fn non_finite_number_is_json_null(#[case] v: f64) {
+        assert_eq!(RuntimeValue::Number(v.into()).to_json_value(), serde_json::Value::Null);
+    }
 
     #[test]
     fn runtime_value_is_16_bytes() {

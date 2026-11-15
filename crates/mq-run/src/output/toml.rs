@@ -28,7 +28,7 @@ fn child_key_path(path: &str, key: &str) -> String {
 /// Returns whether a non-container value has a JSON (and so TOML) representation.
 fn is_representable(value: &RuntimeValue) -> bool {
     match value {
-        RuntimeValue::Number(n) => !n.is_nan(),
+        RuntimeValue::Number(n) => n.is_finite(),
         RuntimeValue::Boolean(_)
         | RuntimeValue::String(_)
         | RuntimeValue::Symbol(_)
@@ -40,7 +40,7 @@ fn is_representable(value: &RuntimeValue) -> bool {
 
 /// Checks that every value TOML must hold is representable. `None` dict values are allowed
 /// (see [`strip_json_nulls`]); a `None` inside an array or a value with no JSON form
-/// (e.g. `nan()`, functions) is an error naming its path.
+/// (e.g. `nan()`, `infinite()`, functions) is an error naming its path.
 fn check_representable(value: &RuntimeValue, path: &str) -> Result<(), String> {
     match value {
         RuntimeValue::Dict(map) => map
@@ -193,15 +193,10 @@ mod tests {
     }
 
     #[test]
-    fn test_infinity_is_clamped() {
-        let top = dict(vec![
-            ("a", RuntimeValue::Number(f64::INFINITY.into())),
-            ("b", RuntimeValue::Number(f64::NEG_INFINITY.into())),
-        ]);
-        let result = runtime_values_to_toml(&[top]).unwrap();
-        let parsed: toml::Value = toml::from_str(&result).unwrap();
-        assert_eq!(parsed["a"].as_float(), Some(f64::MAX));
-        assert_eq!(parsed["b"].as_float(), Some(f64::MIN));
+    fn test_infinity_errors() {
+        let top = dict(vec![("a", RuntimeValue::Number(f64::INFINITY.into()))]);
+        let err = runtime_values_to_toml(&[top]).unwrap_err();
+        assert!(err.to_string().contains("a"), "{err}");
     }
 
     #[test]
