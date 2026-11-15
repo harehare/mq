@@ -314,10 +314,23 @@ impl TestRunner {
                     return;
                 }
             };
-            let tests: Vec<DiscoveredTest> = Self::discover_tests(&content)
-                .into_iter()
-                .filter(|test| self.matches(test))
-                .collect();
+            let discovered = Self::discover_tests(&content);
+            if let Some(name) = Self::find_duplicate_name(&discovered) {
+                any_failed.store(true, Ordering::Relaxed);
+                let message = format!("duplicate test function `{name}`");
+                file_errors
+                    .lock()
+                    .unwrap()
+                    .push((file.clone(), format!("# {}\n\n❌ {message}\n\n---\n", file.display())));
+                if self.format == OutputFormat::Json {
+                    json_results.lock().unwrap().push(serde_json::json!({
+                        "file": file.display().to_string(),
+                        "error": message,
+                    }));
+                }
+                return;
+            }
+            let tests: Vec<DiscoveredTest> = discovered.into_iter().filter(|test| self.matches(test)).collect();
             if tests.is_empty() {
                 return;
             }
@@ -660,6 +673,12 @@ impl TestRunner {
     /// Strips the `test_` prefix used for the reported display name.
     fn display_name(name: &str) -> &str {
         name.strip_prefix("test_").unwrap_or(name)
+    }
+
+    /// Returns the first test function name defined more than once.
+    fn find_duplicate_name(tests: &[DiscoveredTest]) -> Option<&str> {
+        let mut seen = std::collections::HashSet::new();
+        tests.iter().map(|t| t.name()).find(|name| !seen.insert(*name))
     }
 
     fn discover_tests(content: &str) -> Vec<DiscoveredTest> {

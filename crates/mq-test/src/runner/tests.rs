@@ -1559,3 +1559,11 @@ fn test_small_scope_rejects_a_tier_larger_than_the_limit() {
     assert_eq!(failures.len(), 1, "{failures:?}");
     assert!(failures[0].1.contains("limit 100000"), "{}", failures[0].1);
 }
+
+#[rstest]
+#[case("def test_a(): 1;\ndef test_b(): 2;", None)]
+#[case("def test_a(): 1;\ndef test_b(): 2;\ndef test_a(): 3;", Some("test_a"))]
+fn test_find_duplicate_name(#[case] content: &str, #[case] expected: Option<&str>) {
+    let tests = TestRunner::discover_tests(content);
+    assert_eq!(TestRunner::find_duplicate_name(&tests), expected);
+}
