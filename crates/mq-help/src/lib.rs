@@ -29,4 +29,6 @@ pub use catalog::{
 };
 pub use docs::{BUILTIN_DOC, BuiltinDoc, BuiltinExample, DocKind, DocTable};
 #[cfg(feature = "catalog")]
-pub use reference::{ModuleDoc, MqExample, MqFnDoc, extract_functions_from_cst, extract_module, extract_module_doc};
+pub use reference::{
+    ModuleDoc, MqExample, MqFnDoc, MqParam, extract_functions_from_cst, extract_module, extract_module_doc,
+};

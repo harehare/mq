@@ -11,6 +11,15 @@ pub struct MqExample {
     pub expected: String,
 }
 
+/// A parameter of an mq-defined function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MqParam {
+    /// Parameter name.
+    pub name: String,
+    /// Whether the parameter has a default value.
+    pub optional: bool,
+}
+
 /// Documentation for a single mq-defined function (from `builtin.mq` or a standard module),
 /// extracted from its CST and leading `#` doc-comment.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,7 +27,7 @@ pub struct MqFnDoc {
     /// Function name.
     pub name: String,
     /// Parameter names.
-    pub params: Vec<String>,
+    pub params: Vec<MqParam>,
     /// Description text.
     pub description: String,
     /// Return type name.
@@ -185,13 +194,18 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool, skip_comment_lines: usize
         return None;
     }
 
-    let params: Vec<String> = match &node.kind {
+    let params: Vec<MqParam> = match &node.kind {
         CstNodeKind::Def {
             params: Some(params), ..
         } => params
             .iter()
-            .filter(|c| matches!(c.kind, CstNodeKind::Param { .. }))
-            .filter_map(ident_text)
+            .filter_map(|c| match &c.kind {
+                CstNodeKind::Param { default, .. } => ident_text(c).map(|name| MqParam {
+                    name,
+                    optional: default.is_some(),
+                }),
+                _ => None,
+            })
             .collect(),
         _ => Vec::new(),
     };
@@ -308,6 +322,12 @@ fn ident_text(node: &Shared<CstNode>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::MqParam;
+
+    fn param_names(params: &[MqParam]) -> Vec<&str> {
+        params.iter().map(|p| p.name.as_str()).collect()
+    }
+
     #[test]
     fn test_extract_module_includes_functions_of_nested_module_blocks() {
         let src = "# Adds one.\n# Returns: number\ndef add1(x): x + 1;\n\nmodule inner:\n  # Doubles.\n  # Example:\n  # ```\n  # inner::double(2)\n  # #=> 4\n  # ```\n  def double(x): x * 2;\n  def _private(x): x;\n  def flatten(x): x;\nend\n";
@@ -316,7 +336,7 @@ mod tests {
         assert_eq!(names, vec!["add1", "inner::double", "inner::flatten"]);
         let double = functions.iter().find(|f| f.name == "inner::double").unwrap();
         assert_eq!(double.description, "Doubles.");
-        assert_eq!(double.params, vec!["x".to_string()]);
+        assert_eq!(param_names(&double.params), vec!["x"]);
         assert_eq!(double.examples.len(), 1);
     }
 
@@ -342,7 +362,7 @@ mod tests {
     fn test_extract_functions_captures_params() {
         let src = "def csv_parse(input, has_header): expr;";
         let fns = extract_functions_from_cst(src, false);
-        assert_eq!(fns[0].params, vec!["input", "has_header"]);
+        assert_eq!(param_names(&fns[0].params), vec!["input", "has_header"]);
     }
 
     #[test]
@@ -352,7 +372,11 @@ mod tests {
         let src = "def section(items, pattern, depth = false): items;";
         let fns = extract_functions_from_cst(src, false);
         assert!(!fns.is_empty(), "should parse function with default param");
-        assert_eq!(fns[0].params, vec!["items", "pattern", "depth"]);
+        assert_eq!(param_names(&fns[0].params), vec!["items", "pattern", "depth"]);
+        assert_eq!(
+            fns[0].params.iter().map(|p| p.optional).collect::<Vec<_>>(),
+            vec![false, false, true]
+        );
     }
 
     #[test]

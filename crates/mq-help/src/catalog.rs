@@ -15,6 +15,19 @@ pub struct HelpParam {
     #[serde(rename = "type")]
     /// Parameter type name.
     pub type_name: String,
+    /// Whether the parameter has a default value and may be omitted.
+    pub optional: bool,
+}
+
+impl HelpParam {
+    /// Parameter name, suffixed with `?` when optional.
+    fn label(&self) -> String {
+        if self.optional {
+            format!("{}?", self.name)
+        } else {
+            self.name.clone()
+        }
+    }
 }
 
 /// A runnable example paired with its verified expected output.
@@ -241,9 +254,10 @@ fn from_mq_fn_doc(fdoc: reference::MqFnDoc, related_module: Option<String>) -> H
         params: fdoc
             .params
             .into_iter()
-            .map(|name| HelpParam {
-                name,
+            .map(|p| HelpParam {
+                name: p.name,
                 type_name: "dynamic".to_string(),
+                optional: p.optional,
             })
             .collect(),
         returns: fdoc.returns.unwrap_or_else(|| "dynamic".to_string()),
@@ -269,6 +283,7 @@ fn zip_params(names: &[&'static str], types: &[&'static str]) -> Vec<HelpParam> 
         .map(|(i, name)| HelpParam {
             name: name.to_string(),
             type_name: types.get(i).copied().unwrap_or("dynamic").to_string(),
+            optional: false,
         })
         .collect()
 }
@@ -280,7 +295,7 @@ pub fn render_human(entry: &HelpEntry) -> String {
     let params = entry
         .params
         .iter()
-        .map(|p| format!("{}: {}", p.name, p.type_name))
+        .map(|p| format!("{}: {}", p.label(), p.type_name))
         .collect::<Vec<_>>()
         .join(", ");
     out.push_str(&format!(
@@ -369,7 +384,7 @@ pub fn render_module_human(module: &HelpModule) -> String {
             let params = f
                 .params
                 .iter()
-                .map(|p| format!("{}: {}", p.name, p.type_name))
+                .map(|p| format!("{}: {}", p.label(), p.type_name))
                 .collect::<Vec<_>>()
                 .join(", ");
             let summary = f.description.split(". ").next().unwrap_or_default();
@@ -404,7 +419,7 @@ fn entry_markdown(entry: &HelpEntry, level: usize) -> String {
     let params = entry
         .params
         .iter()
-        .map(|p| format!("{}: {}", p.name, p.type_name))
+        .map(|p| format!("{}: {}", p.label(), p.type_name))
         .collect::<Vec<_>>()
         .join(", ");
     let _ = writeln!(out, "{h} `{}` ({})", entry.name, entry.kind);
@@ -590,7 +605,7 @@ fn search_display_parts(entry: &HelpEntry) -> (String, String) {
         None => entry.name.clone(),
     };
     let params = if entry.kind == "function" {
-        let names = entry.params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>();
+        let names = entry.params.iter().map(HelpParam::label).collect::<Vec<_>>();
         format!("({})", names.join(", "))
     } else {
         String::new()
@@ -610,6 +625,13 @@ fn first_sentence(text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_default_param_shown_as_optional() {
+        let entry = lookup("slugify").into_iter().next().expect("slugify is documented");
+        assert!(entry.params[1].optional);
+        assert!(render_human(&entry).contains("separator?: dynamic"));
+    }
 
     #[test]
     fn test_first_sentence_skips_abbreviations() {
