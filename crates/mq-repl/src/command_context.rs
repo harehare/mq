@@ -498,18 +498,10 @@ impl CommandContext {
                 }
             }
             Command::Env(name, value) => {
-                let previous = std::env::var_os(&name);
-                unsafe { std::env::set_var(&name, &value) };
-                let probe = format!("env({name:?})");
-                if let Err(e) = self.session.eval(&probe, std::iter::once(mq_lang::RuntimeValue::NONE)) {
-                    unsafe {
-                        match previous {
-                            Some(v) => std::env::set_var(&name, v),
-                            None => std::env::remove_var(&name),
-                        }
-                    }
-                    return Err(miette::miette!("/env requires --allow-env ({e})"));
+                if !self.session.engine().is_env_allowed() {
+                    return Err(miette::miette!("/env requires --allow-env"));
                 }
+                unsafe { std::env::set_var(&name, &value) };
                 Ok(CommandOutput::None)
             }
             Command::Help => {
