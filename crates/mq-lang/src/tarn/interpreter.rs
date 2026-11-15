@@ -131,6 +131,78 @@ pub(crate) fn capture_slots(chunk: &Chunk, names: &[Ident]) -> Vec<CaptureSlot> 
         .collect()
 }
 
+/// What to read back from the top-level locals after execution.
+#[derive(Clone, Copy, Default)]
+pub(crate) enum Capture<'a> {
+    #[default]
+    None,
+    /// Names resolved to slots on each run.
+    Names(&'a [Ident]),
+    /// Slots resolved ahead of time with [`capture_slots`].
+    Slots(&'a [CaptureSlot]),
+}
+
+/// Everything a run needs beyond the program and its input.
+pub(crate) struct Run<'a> {
+    options: RunOptions<'a>,
+    env: Option<&'a VmEnv>,
+    bindings: &'a [RuntimeValue],
+    capture: Capture<'a>,
+    pools: ExecutionPools,
+    #[cfg(feature = "debugger")]
+    hook: Option<&'a mut dyn DebugHook>,
+}
+
+impl<'a> Run<'a> {
+    pub(crate) fn new(options: RunOptions<'a>) -> Self {
+        Self {
+            options,
+            env: None,
+            bindings: &[],
+            capture: Capture::None,
+            pools: ExecutionPools::default(),
+            #[cfg(feature = "debugger")]
+            hook: None,
+        }
+    }
+
+    /// Uses a prebuilt environment instead of building one from `options.global_bindings`.
+    pub(crate) fn env(mut self, env: &'a VmEnv) -> Self {
+        self.env = Some(env);
+        self
+    }
+
+    /// Predeclared top-level locals, assigned from slot 1.
+    pub(crate) fn bindings(mut self, bindings: &'a [RuntimeValue]) -> Self {
+        self.bindings = bindings;
+        self
+    }
+
+    pub(crate) fn capture(mut self, capture: Capture<'a>) -> Self {
+        self.capture = capture;
+        self
+    }
+
+    pub(crate) fn pools(mut self, pools: ExecutionPools) -> Self {
+        self.pools = pools;
+        self
+    }
+
+    #[cfg(feature = "debugger")]
+    pub(crate) fn hook(mut self, hook: &'a mut dyn DebugHook) -> Self {
+        self.hook = Some(hook);
+        self
+    }
+}
+
+/// Result of [`run`].
+pub(crate) struct RunOutput {
+    pub(crate) result: VmResult<RuntimeValue>,
+    /// Final values of the requested locals; empty when capture is off or the run failed early.
+    pub(crate) captured: Vec<(Ident, RuntimeValue)>,
+    pub(crate) pools: ExecutionPools,
+}
+
 /// Runs a compiled program with Engine-defined globals.
 pub(crate) fn run_with_globals(
     compiled: &CompiledProgram,
@@ -140,219 +212,84 @@ pub(crate) fn run_with_globals(
     max_call_stack_depth: u32,
     global_bindings: &[(Ident, RuntimeValue)],
 ) -> VmResult<RuntimeValue> {
-    run_with_globals_and_pools(
+    run(
         compiled,
         input,
-        host_functions,
-        timeout,
-        max_call_stack_depth,
-        global_bindings,
-        ExecutionPools::default(),
-    )
-    .0
-}
-
-/// Runs a compiled program and returns reusable execution pools.
-pub(crate) fn run_with_globals_and_pools(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    global_bindings: &[(Ident, RuntimeValue)],
-    pools: ExecutionPools,
-) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let env = VmEnv::from_bindings(global_bindings, Shared::clone(&compiled.token_arena));
-    run_with_env_and_pools(
-        compiled,
-        input,
-        RunOptions {
+        Run::new(RunOptions {
             host_functions,
             timeout,
             max_call_stack_depth,
             capture_stack_trace: false,
-            global_bindings: &[],
-        },
-        &env,
-        pools,
+            global_bindings,
+        }),
     )
+    .result
 }
 
-/// Runs a compiled program with a prebuilt external environment and reusable execution pools.
-///
-/// Callers that evaluate multiple inputs with the same globals should construct the environment
-/// once and use this entry point to avoid rebuilding its lookup table per input.
-pub(crate) fn run_with_env_and_pools(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    options: RunOptions<'_>,
-    env: &VmEnv,
-    pools: ExecutionPools,
-) -> (VmResult<RuntimeValue>, ExecutionPools) {
+/// Runs a compiled program. The single entry point; see [`Run`] for the knobs.
+pub(crate) fn run(compiled: &CompiledProgram, input: RuntimeValue, run: Run<'_>) -> RunOutput {
+    let Run {
+        options,
+        env,
+        bindings,
+        capture,
+        pools,
+        #[cfg(feature = "debugger")]
+        hook,
+    } = run;
     #[cfg(feature = "debugger")]
     let mut debug = DebugRuntime {
-        hook: None,
+        hook,
         call_stack: Vec::new(),
         current_node: None,
     };
-    run_impl_with_env(
+    let owned_env;
+    let env = match env {
+        Some(env) => env,
+        None => {
+            owned_env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
+            &owned_env
+        }
+    };
+    let resolved_slots;
+    let slots = match capture {
+        Capture::None => {
+            let (result, pools) = run_impl_with_bindings(
+                compiled,
+                input,
+                bindings,
+                options,
+                env,
+                pools,
+                #[cfg(feature = "debugger")]
+                &mut debug,
+            );
+            return RunOutput {
+                result,
+                captured: Vec::new(),
+                pools,
+            };
+        }
+        Capture::Names(names) => {
+            resolved_slots = capture_slots(&compiled.chunks[0], names);
+            &resolved_slots[..]
+        }
+        Capture::Slots(slots) => slots,
+    };
+    let (result, captured, pools) = run_impl_capturing_locals_with_env(
         compiled,
-        input,
+        CapturingRun { input, bindings, slots },
         options,
         env,
         pools,
         #[cfg(feature = "debugger")]
-        &mut debug,
-    )
-}
-
-/// Runs with predeclared bindings and captures selected locals.
-pub(crate) fn run_with_globals_capturing_locals(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    bindings: &[RuntimeValue],
-    options: RunOptions<'_>,
-    capture_names: &[Ident],
-    pools: ExecutionPools,
-) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
-    run_with_env_capturing_locals(compiled, input, bindings, options, &env, capture_names, pools)
-}
-
-/// Runs with a prebuilt external environment and captures selected locals.
-pub(crate) fn run_with_env_capturing_locals(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    bindings: &[RuntimeValue],
-    options: RunOptions<'_>,
-    env: &VmEnv,
-    capture_names: &[Ident],
-    pools: ExecutionPools,
-) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
-    let capture_slots = capture_slots(&compiled.chunks[0], capture_names);
-    run_with_env_capturing_slots(compiled, input, bindings, options, env, &capture_slots, pools)
-}
-
-/// Runs with precomputed top-level local slots and captures their final values.
-///
-/// [`capture_slots`] lets cached callers resolve names once at compilation time rather than
-/// scanning the chunk's local names for every input value.
-pub(crate) fn run_with_env_capturing_slots(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    bindings: &[RuntimeValue],
-    options: RunOptions<'_>,
-    env: &VmEnv,
-    capture_slots: &[CaptureSlot],
-    pools: ExecutionPools,
-) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
-    #[cfg(feature = "debugger")]
-    let mut debug = DebugRuntime {
-        hook: None,
-        call_stack: Vec::new(),
-        current_node: None,
-    };
-    run_impl_capturing_locals_with_env(
-        compiled,
-        CapturingRun {
-            input,
-            bindings,
-            slots: capture_slots,
-        },
-        options,
-        env,
-        pools,
-        #[cfg(feature = "debugger")]
-        &mut debug,
-    )
-}
-
-#[cfg(feature = "debugger")]
-/// Runs a program with debugger callbacks.
-pub(crate) fn run_with_debug_hook_and_globals(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    options: RunOptions<'_>,
-    hook: &mut dyn DebugHook,
-) -> VmResult<RuntimeValue> {
-    let mut debug = DebugRuntime {
-        hook: Some(hook),
-        call_stack: Vec::new(),
-        current_node: None,
-    };
-    run_impl(compiled, input, options, ExecutionPools::default(), &mut debug).0
-}
-
-/// Captures locals while reporting debugger events.
-#[cfg(feature = "debugger")]
-pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    bindings: &[RuntimeValue],
-    options: RunOptions<'_>,
-    capture_names: &[Ident],
-    hook: &mut dyn DebugHook,
-) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>) {
-    let mut debug = DebugRuntime {
-        hook: Some(hook),
-        call_stack: Vec::new(),
-        current_node: None,
-    };
-    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
-    let capture_slots = capture_slots(&compiled.chunks[0], capture_names);
-    let (result, captured, _) = run_impl_capturing_locals_with_env(
-        compiled,
-        CapturingRun {
-            input,
-            bindings,
-            slots: &capture_slots,
-        },
-        options,
-        &env,
-        ExecutionPools::default(),
         &mut debug,
     );
-    (result, captured)
-}
-
-#[cfg(feature = "debugger")]
-fn run_impl(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    options: RunOptions<'_>,
-    pools: ExecutionPools,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
-    run_impl_with_env(
-        compiled,
-        input,
-        options,
-        &env,
+    RunOutput {
+        result,
+        captured,
         pools,
-        #[cfg(feature = "debugger")]
-        debug,
-    )
-}
-
-fn run_impl_with_env(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    options: RunOptions<'_>,
-    env: &VmEnv,
-    pools: ExecutionPools,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    run_impl_with_bindings(
-        compiled,
-        input,
-        &[],
-        options,
-        env,
-        pools,
-        #[cfg(feature = "debugger")]
-        debug,
-    )
+    }
 }
 
 #[cfg(feature = "debugger")]
@@ -405,10 +342,7 @@ fn run_impl_with_bindings(
         if !captures_local_slots {
             limits.recycle_locals(locals);
         }
-        return (
-            Err(VmError::Corrupt("too many initial debug bindings")),
-            limits.into_pools(),
-        );
+        return (Err(VmError::Corrupt("too many initial bindings")), limits.into_pools());
     }
     for (slot, value) in initial_bindings.iter().cloned().enumerate() {
         locals.set(slot as u16 + 1, StackValue::Value(value));
