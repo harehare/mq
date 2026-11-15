@@ -170,7 +170,7 @@ pub(crate) fn response(
                 Some(CompletionItem {
                     label: symbol.value.clone().unwrap_or_default().to_string(),
                     kind: Some(CompletionItemKind::FUNCTION),
-                    detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                    detail: Some(detail_for(symbol)),
                     insert_text: Some(format!(
                         "{}({})",
                         symbol.value.clone().unwrap_or_default(),
@@ -183,7 +183,7 @@ pub(crate) fn response(
                     insert_text_format: Some(InsertTextFormat::SNIPPET),
                     documentation: Some(Documentation::MarkupContent(MarkupContent {
                         kind: MarkupKind::Markdown,
-                        value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                        value: doc_markdown(&symbol.doc),
                     })),
                     deprecated: Some(deprecated),
                     ..Default::default()
@@ -197,10 +197,10 @@ pub(crate) fn response(
                 Some(CompletionItem {
                     label: symbol.value.clone().unwrap_or_default().to_string(),
                     kind: Some(CompletionItemKind::VARIABLE),
-                    detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                    detail: Some(detail_for(symbol)),
                     documentation: Some(Documentation::MarkupContent(MarkupContent {
                         kind: MarkupKind::Markdown,
-                        value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                        value: doc_markdown(&symbol.doc),
                     })),
                     deprecated: Some(deprecated),
                     ..Default::default()
@@ -211,12 +211,12 @@ pub(crate) fn response(
                 Some(CompletionItem {
                     label: symbol.value.clone().unwrap_or_default().to_string(),
                     kind: Some(CompletionItemKind::METHOD),
-                    detail: Some(symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                    detail: Some(detail_for(symbol)),
                     insert_text: Some(symbol.value.clone().unwrap_or_default().into()),
                     insert_text_format: Some(InsertTextFormat::SNIPPET),
                     documentation: Some(Documentation::MarkupContent(MarkupContent {
                         kind: MarkupKind::Markdown,
-                        value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
+                        value: doc_markdown(&symbol.doc),
                     })),
                     deprecated: Some(deprecated),
                     ..Default::default()
@@ -247,6 +247,23 @@ pub(crate) fn response(
     Some(CompletionResponse::Array(items))
 }
 
+/// Doc comment text as Markdown, dropping the single space after `#` and the deprecation marker.
+fn doc_markdown(docs: &[mq_hir::Doc]) -> String {
+    docs.iter()
+        .filter(|(_, text)| !mq_hir::is_deprecation_marker(text))
+        .map(|(_, text)| text.strip_prefix(' ').unwrap_or(text))
+        .join("\n")
+}
+
+/// One-line signature shown next to the completion label.
+fn detail_for(symbol: &mq_hir::Symbol) -> String {
+    let name = symbol.value.as_deref().unwrap_or_default();
+    match &symbol.kind {
+        mq_hir::SymbolKind::Function(params) => format!("{}({})", name, params.iter().join(", ")),
+        _ => name.to_string(),
+    }
+}
+
 fn is_completable(kind: &mq_hir::SymbolKind) -> bool {
     matches!(
         kind,
@@ -261,6 +278,13 @@ fn is_completable(kind: &mq_hir::SymbolKind) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_doc_markdown_strips_leading_space() {
+        let range = mq_lang::Range::default();
+        let docs = vec![(range, " first".to_string()), (range, " second".to_string())];
+        assert_eq!(doc_markdown(&docs), "first\nsecond");
+    }
+
     use mq_hir::Hir;
 
     use super::*;

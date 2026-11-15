@@ -80,8 +80,9 @@ fn format_hover_content(
     sections.join("\n\n")
 }
 
-/// Returns the word under the cursor, keeping a selector's leading `.`.
-fn word_at(line: &str, character: u32) -> Option<String> {
+/// Returns the word under the cursor, keeping a selector's leading `.`, with its
+/// UTF-16 column span in the line.
+fn word_at(line: &str, character: u32) -> Option<(String, u32, u32)> {
     let chars = line.chars().collect::<Vec<_>>();
     let mut units = 0;
     let cursor = chars
@@ -114,10 +115,18 @@ fn word_at(line: &str, character: u32) -> Option<String> {
     {
         start -= 1;
     }
-    (start < end).then(|| chars[start..end].iter().collect())
+    let utf16 = |chars: &[char]| chars.iter().map(|c| c.len_utf16() as u32).sum::<u32>();
+    (start < end).then(|| {
+        let from = utf16(&chars[..start]);
+        (
+            chars[start..end].iter().collect(),
+            from,
+            from + utf16(&chars[start..end]),
+        )
+    })
 }
 
-fn help_hover(name: &str) -> Option<Hover> {
+fn help_hover(name: &str, range: Range) -> Option<Hover> {
     let entries = mq_help::lookup(name);
     let value = if entries.is_empty() {
         mq_help::render_module_markdown(&mq_help::lookup_module(name)?)
@@ -129,7 +138,7 @@ fn help_hover(name: &str) -> Option<Hover> {
             kind: MarkupKind::Markdown,
             value,
         }),
-        range: None,
+        range: Some(range),
     })
 }
 
@@ -142,7 +151,13 @@ pub(crate) fn response(
     position: Position,
     line: &str,
 ) -> Option<Hover> {
-    hir_hover(hir, url, type_env, position).or_else(|| help_hover(&word_at(line, position.character)?))
+    hir_hover(hir, url, type_env, position).or_else(|| {
+        let (word, start, end) = word_at(line, position.character)?;
+        help_hover(
+            &word,
+            Range::new(Position::new(position.line, start), Position::new(position.line, end)),
+        )
+    })
 }
 
 fn hir_hover(
@@ -514,7 +529,7 @@ def old_func(x): x + 1;"#;
     #[case("あ | upcase", 7, Some("upcase"))]
     #[case("a | b", 3, None)]
     fn test_word_at(#[case] line: &str, #[case] character: u32, #[case] expected: Option<&str>) {
-        assert_eq!(word_at(line, character).as_deref(), expected);
+        assert_eq!(word_at(line, character).as_ref().map(|(w, ..)| w.as_str()), expected);
     }
 
     fn hover_text(code: &str, position: Position) -> Option<String> {

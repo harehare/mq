@@ -31,7 +31,7 @@ fn visit(node: &Shared<CstNode>, ranges: &mut Vec<FoldingRange>) {
                 start_character: None,
                 end_line: span.end.line - 1,
                 end_character: None,
-                kind: Some(FoldingRangeKind::Region),
+                kind: None,
                 collapsed_text: None,
             });
         }
@@ -131,9 +131,7 @@ mod tests {
         let code = "def foo(a):\n  let b = a + 1\n  | b;\n| foo(1)";
         let result = response(Some(code)).unwrap();
 
-        let def_fold = result
-            .iter()
-            .find(|r| r.kind == Some(FoldingRangeKind::Region) && r.start_line == 0);
+        let def_fold = result.iter().find(|r| r.kind.is_none() && r.start_line == 0);
         assert!(
             def_fold.is_some(),
             "expected a folding range starting at the `def` line"
@@ -146,7 +144,7 @@ mod tests {
         let code = "let xs = [\n  1,\n  2,\n  3\n] | xs";
         let result = response(Some(code)).unwrap();
 
-        let array_fold = result.iter().find(|r| r.kind == Some(FoldingRangeKind::Region));
+        let array_fold = result.iter().find(|r| r.kind.is_none());
         assert!(array_fold.is_some());
         assert_eq!(array_fold.unwrap().start_line, 0);
         assert_eq!(array_fold.unwrap().end_line, 4);

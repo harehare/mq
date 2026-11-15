@@ -415,7 +415,7 @@ async fn test_folding_range() {
     assert!(
         ranges
             .iter()
-            .any(|r| r.kind == Some(ls_types::FoldingRangeKind::Region) && r.start_line == 0 && r.end_line == 2)
+            .any(|r| r.kind.is_none() && r.start_line == 0 && r.end_line == 2)
     );
 }
 

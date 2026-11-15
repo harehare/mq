@@ -22,7 +22,7 @@ pub(crate) fn response(
     let (nodes, _) = mq_lang::parse_recovery(source_text);
     let call = find_enclosing_call(&nodes, cursor)?;
 
-    let (_, target) = hir_guard.find_symbol_in_position(source_id, call.range().start)?;
+    let (_, target) = hir_guard.find_symbol_in_position(source_id, callee_position(&call)?)?;
     let params = match &target.kind {
         mq_hir::SymbolKind::Function(params) => params.clone(),
         _ => return None,
@@ -72,12 +72,40 @@ fn visit(node: &Shared<CstNode>, position: mq_lang::Position, best: &mut Option<
     if matches!(
         node.kind,
         mq_lang::CstNodeKind::Call { .. } | mq_lang::CstNodeKind::CallDynamic { .. }
-    ) {
+    ) || is_qualified_call(node)
+    {
         *best = Some(node.clone());
     }
     for child in node.children() {
         visit(child, position, best);
     }
+}
+
+/// A `module::func(...)` node: a qualified access that carries its own argument list.
+fn is_qualified_call(node: &CstNode) -> bool {
+    matches!(node.kind, mq_lang::CstNodeKind::QualifiedAccess { .. }) && lparen_index(node).is_some()
+}
+
+fn lparen_index(node: &CstNode) -> Option<usize> {
+    node.children().position(|child| {
+        child
+            .token
+            .as_deref()
+            .is_some_and(|token| child.is_token() && matches!(token.kind, TokenKind::LParen))
+    })
+}
+
+/// Where the called function's name starts: the call itself, or the last identifier
+/// before the `(` of a qualified call.
+fn callee_position(call: &CstNode) -> Option<mq_lang::Position> {
+    if !is_qualified_call(call) {
+        return Some(call.range().start);
+    }
+    call.children()
+        .take(lparen_index(call)?)
+        .filter(|child| matches!(child.kind, mq_lang::CstNodeKind::Ident { .. }))
+        .last()
+        .map(|ident| ident.range().start)
 }
 
 /// Counts the call's own top-level `,` children that fall before `position`. Only direct
@@ -251,5 +279,18 @@ mod tests {
             assert_eq!(help.signatures[0].label, "foo(a, b)", "{code:?}");
             assert_eq!(help.active_parameter, Some(active), "{code:?} at {cursor:?}");
         }
+    }
+
+    #[test]
+    fn test_signature_help_qualified_call() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let code = "module m: def foo(a, b): a + b; end | m::foo(1, 2)";
+        hir.add_code(Some(url.clone()), code);
+
+        let help = response(Arc::new(RwLock::new(hir)), url, Position::new(0, 47), Some(code)).expect(code);
+
+        assert_eq!(help.signatures[0].label, "foo(a, b)");
+        assert_eq!(help.active_parameter, Some(1));
     }
 }
