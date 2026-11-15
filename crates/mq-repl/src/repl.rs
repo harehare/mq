@@ -4,14 +4,23 @@ use miette::IntoDiagnostic;
 use mq_lang::RuntimeValue;
 use regex::Regex;
 use rustyline::{
-    At, Cmd, CompletionType, Config, Context, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
+    At, Cmd, CompletionType, ConditionalEventHandler, Config, Context, EditMode, Editor, Event, EventContext,
+    EventHandler, Helper, KeyCode, KeyEvent, Modifiers, Movement, RepeatCount, Word,
     completion::{Completer, FilenameCompleter, Pair},
     error::ReadlineError,
     highlight::{CmdKind, Highlighter},
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
-use std::{borrow::Cow, cell::RefCell, collections::VecDeque, fs, io::IsTerminal, rc::Rc, sync::LazyLock};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    collections::VecDeque,
+    fs,
+    io::IsTerminal,
+    rc::Rc,
+    sync::{Arc, LazyLock, Mutex},
+};
 
 type Paint = fn(&str) -> ColoredString;
 
@@ -324,6 +333,16 @@ fn is_char_available() -> bool {
     false
 }
 
+/// Alt+O: hands the current line over to `/edit` and submits it.
+struct OpenEditorHandler(Arc<Mutex<Option<String>>>);
+
+impl ConditionalEventHandler for OpenEditorHandler {
+    fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
+        *self.0.lock().ok()? = Some(ctx.line().to_string());
+        Some(Cmd::AcceptLine)
+    }
+}
+
 pub struct MqLineHelper {
     command_context: Rc<RefCell<CommandContext>>,
     file_completer: FilenameCompleter,
@@ -516,9 +535,10 @@ impl Repl {
             Cmd::Kill(Movement::WholeBuffer),
         );
         // Bind Esc+O (Alt+O) to open editor
+        let pending_edit = Arc::new(Mutex::new(None));
         editor.bind_sequence(
             KeyEvent(KeyCode::Char('o'), Modifiers::ALT),
-            Cmd::Insert(1, "/edit\n".to_string()),
+            EventHandler::Conditional(Box::new(OpenEditorHandler(Arc::clone(&pending_edit)))),
         );
 
         // Piped input must not read or modify the user's history file.
@@ -542,6 +562,13 @@ impl Repl {
 
             match readline {
                 Ok(line) => {
+                    let line = match pending_edit.lock().ok().and_then(|mut p| p.take()) {
+                        Some(buffer) => {
+                            self.command_context.borrow_mut().edit_buffer = Some(buffer);
+                            "/edit".to_string()
+                        }
+                        None => line,
+                    };
                     editor.add_history_entry(&line).unwrap();
 
                     match self.command_context.borrow_mut().execute(&line) {
