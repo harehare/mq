@@ -300,8 +300,6 @@ pub(crate) enum OpCode {
     MakeStaticClosure(u16),
     Pop,
     Dup,
-    /// Moves the top value below the `n` values beneath it.
-    RotateDown(u16),
     Jump(i32),
     JumpIfFalse(i32),
     /// Pops a value and jumps when it is truthy.
@@ -528,6 +526,8 @@ pub(crate) enum OpCode {
         depth: u8,
         op: PathOp,
     },
+    /// Moves the top value below the `n` values beneath it.
+    RotateDown(u16),
 }
 
 /// The update a [`OpCode::PathUpvalue`] performs.

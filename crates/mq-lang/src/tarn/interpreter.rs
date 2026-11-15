@@ -1364,9 +1364,8 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
 
 /// Moves the top value below the `n` values beneath it.
 #[inline(never)]
-fn rotate_down(stack: &mut [StackValue], stack_base: usize, n: usize) {
+fn rotate_down(stack: &mut [StackValue], n: usize) {
     let at = stack.len() - 1 - n;
-    debug_assert!(at >= stack_base, "verified bytecode underflowed the stack");
     stack[at..].rotate_right(1);
 }
 
@@ -1735,7 +1734,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     let top = stack.last().expect("verified bytecode keeps an operand").clone();
                     stack.push(top);
                 }
-                OpCode::RotateDown(n) => rotate_down(stack, frame.stack_base as usize, *n as usize),
                 OpCode::Jump(offset) => {
                     ip = (ip as i64 + *offset as i64) as usize;
                 }
@@ -2598,6 +2596,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
                     upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
                 }
+                OpCode::RotateDown(n) => rotate_down(stack, *n as usize),
             }
         };
         // `verify_chunks` rejects chunks longer than i32::MAX and verifies all jump targets.
