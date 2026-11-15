@@ -310,13 +310,13 @@ module a: def foo(): 1; end
 
 | Rule ID                      | Severity | Description                                                                                |
 | ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| `dangerous_capability_call`  | warn     | Call to a capability-gated builtin (`http`, `read_file`, `read_file_bytes`, `open_file`, `write_file`, `mkdir`) |
+| `dangerous_capability_call`  | warn     | Call to a capability-gated builtin (`http`, `read_file`, `read_file_bytes`, `open_file`, `file_size`, `write_file`, `mkdir`, `system`, `env`) |
 
 **Example: `dangerous_capability_call`**
 
 ```mq
 # warn: call to capability-gated function `http` (requires `--allow-net` at runtime)
-http("https://example.com", "GET")
+http(:get, "https://example.com")
 ```
 
 This rule is especially useful for reviewing HTTP-imported third-party modules before enabling
