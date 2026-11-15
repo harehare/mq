@@ -138,7 +138,8 @@ pub(crate) enum Capture<'a> {
     None,
     /// Names resolved to slots on each run.
     Names(&'a [Ident]),
-    /// Slots resolved ahead of time with [`capture_slots`].
+    /// Slots resolved ahead of time with [`capture_slots`]. Unused by the debugger build.
+    #[cfg_attr(feature = "debugger", allow(dead_code))]
     Slots(&'a [CaptureSlot]),
 }
 
@@ -167,6 +168,7 @@ impl<'a> Run<'a> {
     }
 
     /// Uses a prebuilt environment instead of building one from `options.global_bindings`.
+    #[cfg_attr(feature = "debugger", allow(dead_code))]
     pub(crate) fn env(mut self, env: &'a VmEnv) -> Self {
         self.env = Some(env);
         self
@@ -183,6 +185,7 @@ impl<'a> Run<'a> {
         self
     }
 
+    #[cfg_attr(feature = "debugger", allow(dead_code))]
     pub(crate) fn pools(mut self, pools: ExecutionPools) -> Self {
         self.pools = pools;
         self
@@ -200,6 +203,7 @@ pub(crate) struct RunOutput {
     pub(crate) result: VmResult<RuntimeValue>,
     /// Final values of the requested locals; empty when capture is off or the run failed early.
     pub(crate) captured: Vec<(Ident, RuntimeValue)>,
+    #[cfg_attr(feature = "debugger", allow(dead_code))]
     pub(crate) pools: ExecutionPools,
 }
 
