@@ -165,6 +165,11 @@ The format name is case-insensitive.
 | `"mdx"` | MDX (Markdown with JSX) |
 | `"html"` | HTML, converted to Markdown |
 | `"text"` | Plain text, one value per line |
+| `"raw"` | The whole input as a single string |
+| `"null"` | No input (the input text is ignored) |
+| `"json"`, `"yaml"`, `"toml"`, `"toon"`, `"xml"`, `"gron"`, `"csv"`, `"tsv"`, `"psv"` | Parsed by the matching module before the query runs |
+
+`"html"` needs the `html-to-markdown` feature. `"bytes"` and `"cbor"` need binary input, which the C string API cannot carry. Formats the build does not support return `MQ_ERR_UNSUPPORTED`; unknown names return `MQ_ERR_INVALID_ARGUMENT`.
 
 ## Support
 

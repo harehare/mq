@@ -259,7 +259,7 @@ pub unsafe extern "C" fn mq_eval(
     engine_ptr: *mut MqContext,
     code_c: *const c_char,
     input_c: *const c_char,
-    input_format_c: *const c_char, // "markdown" or "mdx" or "text"
+    input_format_c: *const c_char, // "markdown", "mdx", "html", "text", "null", "raw", "json", ...
 ) -> MqResult {
     std::panic::catch_unwind(move || unsafe { mq_eval_inner(engine_ptr, code_c, input_c, input_format_c) })
         .unwrap_or_else(|payload| MqResult {
@@ -317,6 +317,20 @@ unsafe fn eval_core(
     let input_str = unsafe { c_str_to_rust_str_slice(input_c, "input") }?;
     let input_format_str = unsafe { c_str_to_rust_str_slice(input_format_c, "input_format") }?.to_lowercase();
 
+    // Module-backed formats pass the text raw and parse it with a query prefix.
+    let module_prefix = match input_format_str.as_str() {
+        "csv" => Some(r#"import "csv" | csv::csv_parse(true)"#),
+        "gron" => Some(r#"import "gron" | gron::gron_parse()"#),
+        "json" => Some(r#"import "json" | json::json_parse()"#),
+        "psv" => Some(r#"import "csv" | csv::psv_parse(true)"#),
+        "toml" => Some(r#"import "toml" | toml::toml_parse()"#),
+        "toon" => Some(r#"import "toon" | toon::toon_parse()"#),
+        "tsv" => Some(r#"import "csv" | csv::tsv_parse(true)"#),
+        "xml" => Some(r#"import "xml" | xml::xml_parse()"#),
+        "yaml" => Some(r#"import "yaml" | yaml::yaml_parse()"#),
+        _ => None,
+    };
+
     let (prefix, parsed) = match input_format_str.as_str() {
         "text" => (
             "Text parsing error: ",
@@ -330,10 +344,28 @@ unsafe fn eval_core(
             "Markdown parsing error: ",
             mq_lang::parse_mdx_input(input_str).map_err(|e| e.to_string()),
         ),
+        #[cfg(feature = "html-to-markdown")]
         "html" => (
             "Html parsing error: ",
             mq_lang::parse_html_input(input_str).map_err(|e| e.to_string()),
         ),
+        #[cfg(not(feature = "html-to-markdown"))]
+        "html" => {
+            return Err(FfiError::new(
+                MqStatus::MQ_ERR_UNSUPPORTED,
+                "This library was built without the html-to-markdown feature",
+            ));
+        }
+        "null" => ("", Ok(mq_lang::null_input())),
+        "raw" => ("", Ok(mq_lang::raw_input(input_str))),
+        _ if module_prefix.is_some() => ("", Ok(mq_lang::raw_input(input_str))),
+        // The C string input cannot carry arbitrary bytes.
+        "bytes" | "cbor" => {
+            return Err(FfiError::new(
+                MqStatus::MQ_ERR_UNSUPPORTED,
+                format!("Input format {input_format_str} needs binary input, which the C API does not support"),
+            ));
+        }
         _ => {
             return Err(FfiError::invalid_argument(format!(
                 "Unsupported input format: {}",
@@ -343,8 +375,13 @@ unsafe fn eval_core(
     };
     let mq_input_values = parsed.map_err(|message| FfiError::input_parse(prefix, message))?;
 
+    let code = match module_prefix {
+        Some(module_prefix) => std::borrow::Cow::Owned(format!("{module_prefix} | {code}")),
+        None => std::borrow::Cow::Borrowed(code),
+    };
+
     engine
-        .eval(code, mq_input_values.into_iter())
+        .eval(&code, mq_input_values.into_iter())
         .map(|values| values.into_iter().collect())
         .map_err(FfiError::from_eval)
 }

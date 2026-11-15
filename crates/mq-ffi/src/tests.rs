@@ -142,7 +142,7 @@ fn test_eval_with_unsupported_format() {
     let engine = mq_create();
     let code = make_c_string(".h");
     let input = make_c_string("test");
-    let format = make_c_string("json");
+    let format = make_c_string("bogus");
 
     let result = unsafe { mq_eval(engine, code, input, format) };
 
@@ -151,7 +151,7 @@ fn test_eval_with_unsupported_format() {
     assert!(!result.error_msg.is_null());
 
     let error_msg = unsafe { c_string_to_rust_string(result.error_msg) };
-    assert!(error_msg.contains("Unsupported input format: json"));
+    assert!(error_msg.contains("Unsupported input format: bogus"));
 
     mq_free_result(result);
     mq_destroy(engine);
@@ -1144,8 +1144,8 @@ fn test_eval_ex_invalid_arguments() {
             "Engine pointer is null",
         ),
         (
-            eval_ex_with(engine, ".h", "x", "yaml"),
-            "Unsupported input format: yaml",
+            eval_ex_with(engine, ".h", "x", "bogus"),
+            "Unsupported input format: bogus",
         ),
     ] {
         assert_eq!(outcome.status, MqStatus::MQ_ERR_INVALID_ARGUMENT);
@@ -1487,4 +1487,69 @@ fn test_module_null_name_returns_error() {
     let load_err = unsafe { mq_load_module(engine, ptr::null()) };
     assert_eq!(unsafe { owned_str(load_err) }, "module_name pointer is null");
     mq_destroy(engine);
+}
+
+fn eval_format(code: &CStr, input: &CStr, format: &CStr) -> Result<Vec<String>, MqStatus> {
+    let engine = mq_create();
+    let result = unsafe { mq_eval_ex_values(engine, code, input, format) };
+    mq_destroy(engine);
+    result
+}
+
+unsafe fn mq_eval_ex_values(
+    engine: *mut MqContext,
+    code: &CStr,
+    input: &CStr,
+    format: &CStr,
+) -> Result<Vec<String>, MqStatus> {
+    let mut out: *mut MqValues = ptr::null_mut();
+    let mut err: *mut MqError = ptr::null_mut();
+    let status = unsafe {
+        mq_eval_ex(
+            engine,
+            code.as_ptr(),
+            input.as_ptr(),
+            format.as_ptr(),
+            &mut out,
+            &mut err,
+        )
+    };
+    unsafe { mq_error_free(err) };
+    if status != MqStatus::MQ_OK {
+        return Err(status);
+    }
+    let len = unsafe { mq_values_len(out) };
+    let values = (0..len)
+        .map(|i| {
+            unsafe { CStr::from_ptr(mq_value_string(out, i)) }
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    unsafe { mq_values_free(out) };
+    Ok(values)
+}
+
+#[test]
+fn test_eval_raw_and_null_input() {
+    assert_eq!(
+        eval_format(c".", c"# a\nb", c"raw").unwrap(),
+        vec!["# a\nb".to_string()]
+    );
+    assert_eq!(eval_format(c".", c"ignored", c"null").unwrap(), vec![String::new()]);
+}
+
+#[test]
+fn test_eval_json_input() {
+    assert_eq!(
+        eval_format(c"get(., \"a\")", c"{\"a\": 1}", c"JSON").unwrap(),
+        vec!["1".to_string()]
+    );
+}
+
+#[test]
+fn test_eval_binary_formats_unsupported() {
+    for format in [c"bytes", c"cbor"] {
+        assert_eq!(eval_format(c".", c"x", format), Err(MqStatus::MQ_ERR_UNSUPPORTED));
+    }
 }
