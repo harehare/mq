@@ -14,6 +14,7 @@
   - [External Subcommands](start/external_subcommands.md)
   - [Language Bindings](start/language_bindings.md)
   - [Embed mq in Rust](start/embedding-rust.md)
+  - [Coming from jq](start/from-jq.md)
   - [Example](start/example.md)
   - [Input and Output Behavior](start/input-and-output.md)
   - [Evaluation Model](start/evaluation-model.md)

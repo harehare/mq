@@ -65,6 +65,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/start/from-jq</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/start/example</loc>
     <priority>1.0</priority>
   </url>
