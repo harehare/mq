@@ -813,7 +813,17 @@ impl InferenceContext {
         range: Option<mq_lang::Range>,
     ) {
         let args_str = format_arguments(arg_tys, implicit_input);
-        let context = self.format_available_overloads(op_name);
+        let explicit = match arg_tys.split_first() {
+            Some((first, rest)) if implicit_input && first.is_dynamic() => rest,
+            _ => arg_tys,
+        };
+        let context = if matches!(op_name, "min" | "max") && matches!(explicit, [Type::Array(_)]) {
+            Some(format!(
+                "`{op_name}` compares two values. To pick an element of an array, use `{op_name}_by(arr, f)`."
+            ))
+        } else {
+            self.format_available_overloads(op_name)
+        };
         self.add_error(TypeError::UnificationError {
             left: format!("{} with arguments ({})", op_name, args_str),
             right: "no matching overload".to_string(),

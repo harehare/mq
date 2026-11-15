@@ -1027,6 +1027,15 @@ fn test_no_overload_message_leaves_out_the_unknown_query_input(#[case] code: &st
 }
 
 #[rstest]
+#[case::min("min([1, 2])", "min_by")]
+#[case::max("max([1, 2])", "max_by")]
+fn test_min_max_of_a_single_array_points_to_by_variant(#[case] code: &str, #[case] by: &str) {
+    let errors = check_types_with_builtins(code);
+    let hint = errors.first().and_then(|e| e.hint()).unwrap_or_default();
+    assert!(hint.contains(by), "{errors:?}");
+}
+
+#[rstest]
 #[case::known_reference(r#"var x = "a" | let y = 1 | x = y | x | abs()"#, true)]
 #[case::known_reference_old_type_gone(r#"var x = "a" | let y = 1 | x = y | x | upcase()"#, false)]
 #[case::unknown_parameter_keeps_previous_type(r#"def f(p): var x = "a" | x = p | x | upcase();"#, true)]
