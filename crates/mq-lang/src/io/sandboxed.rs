@@ -137,8 +137,15 @@ impl<Inner: Io> SandboxedIo<Inner> {
     }
 
     /// Resolves `path`'s real, symlink-free location. Falls back to canonicalizing the parent
-    /// when `path` itself doesn't exist yet (e.g. a write target).
+    /// when `path` itself doesn't exist yet (e.g. a write target), following a dangling
+    /// symlink to where it would be created.
     fn real_path(&self, path: &Path) -> PathBuf {
+        self.real_path_at(path, 0)
+    }
+
+    fn real_path_at(&self, path: &Path, depth: u8) -> PathBuf {
+        const MAX_LINK_DEPTH: u8 = 40;
+
         let canonical = self.inner.canonicalize(path);
         if canonical != path {
             return canonical;
@@ -147,6 +154,12 @@ impl<Inner: Io> SandboxedIo<Inner> {
             (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
                 let mut real_parent = self.inner.canonicalize(parent);
                 real_parent.push(name);
+                if depth < MAX_LINK_DEPTH
+                    && let Some(target) = self.inner.read_link(&real_parent)
+                {
+                    let target = real_parent.parent().unwrap_or(Path::new("")).join(target);
+                    return self.real_path_at(&target, depth + 1);
+                }
                 real_parent
             }
             _ => path.to_path_buf(),
@@ -708,5 +721,36 @@ mod tests {
         let io = SandboxedIo::new(NativeIo::default()).allow_read(vec![link_root.clone()]);
 
         assert_eq!(io.read_to_string(&link_root.join("ok.txt")).unwrap(), "ok");
+    }
+
+    /// `-o`/`--output` goes through `check_write`: `..` forms and symlinks leaving the
+    /// `--allow-write` grant must be denied, including for not-yet-existing targets.
+    #[cfg(unix)]
+    #[test]
+    fn test_check_write_rejects_path_escapes() {
+        let root = tempfile::tempdir().expect("failed to create temp dir");
+        let allowed = root.path().join("allowed");
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&allowed).expect("failed to create dir");
+        std::fs::create_dir(&outside).expect("failed to create dir");
+        std::os::unix::fs::symlink(&outside, allowed.join("dir_link")).expect("failed to symlink");
+        std::os::unix::fs::symlink(outside.join("new.md"), allowed.join("file_link.md")).expect("failed to symlink");
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_write(vec![allowed.clone()]);
+        let a = allowed.to_string_lossy().into_owned();
+
+        for path in [
+            format!("{a}/../outside/new.md"),
+            format!("{a}//../outside/new.md"),
+            format!("{a}/./../outside/new.md"),
+            format!("{a}/dir_link/new.md"),
+            format!("{a}/file_link.md"),
+        ] {
+            assert!(
+                matches!(io.check_write(Path::new(&path)), Err(IoError::PermissionDenied(_))),
+                "write must be denied for {path}"
+            );
+        }
+        assert!(io.check_write(&allowed.join("new.md")).is_ok());
     }
 }

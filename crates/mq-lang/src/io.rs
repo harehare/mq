@@ -146,6 +146,11 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     /// Falls back to the original path unchanged if canonicalization fails.
     fn canonicalize(&self, path: &Path) -> PathBuf;
 
+    /// Target of the symlink at `path`, or `None` if it is not a symlink.
+    fn read_link(&self, _path: &Path) -> Option<PathBuf> {
+        None
+    }
+
     /// Value of the environment variable `name`.
     fn env_var(&self, name: &str) -> Result<String, IoError>;
 
