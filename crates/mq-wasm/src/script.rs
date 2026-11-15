@@ -36,16 +36,18 @@ export interface HoverResult {
 }
 
 export interface Options {
-    isUpdate: boolean,
-    inputFormat: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | 'raw' | null,
-    listStyle: 'dash' | 'plus' | 'star' | null,
-    linkTitleStyle: 'double' | 'single' | 'paren' | null,
-    linkUrlStyle: 'angle' | 'none' | null,
+    /** Output the whole document with the query applied to matching nodes. Default: false. */
+    isUpdate?: boolean,
+    /** Default: 'markdown'. */
+    inputFormat?: 'markdown' | 'text' | 'mdx' | 'html' | 'null' | 'raw' | null,
+    listStyle?: 'dash' | 'plus' | 'star' | null,
+    linkTitleStyle?: 'double' | 'single' | 'paren' | null,
+    linkUrlStyle?: 'angle' | 'none' | null,
     /** Domains permitted for HTTP module imports in addition to github.com/harehare (always allowed). */
     allowedDomains?: string[],
     /** Enables HTTP/GitHub module imports. Off by default, mirroring the CLI's `--allow-http-import`. */
     allowHttpImport?: boolean,
-    /** Maximum time in milliseconds a query may run before evaluation is aborted. Disabled (no timeout) if omitted. */
+    /** Maximum time in milliseconds a query may run before evaluation is aborted. Disabled if omitted or 0. */
     timeoutMs?: number,
 }
 
@@ -110,8 +112,8 @@ pub struct HoverResult {
     content: String,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 #[wasm_bindgen(js_name=RunOptions, skip_typescript)]
 struct Options {
     is_update: bool,
@@ -669,8 +671,12 @@ pub async fn clear_all_http_cache() -> Result<(), JsValue> {
 #[wasm_bindgen(js_name=run, skip_typescript)]
 /// Runs `code` against `content` and returns the output.
 pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, JsValue> {
-    let options: Options = serde_wasm_bindgen::from_value(options)
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?;
+    let options: Options = if options.is_undefined() || options.is_null() {
+        Options::default()
+    } else {
+        serde_wasm_bindgen::from_value(options)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse options: {}", e)))?
+    };
 
     let resolver = WasmModuleResolver::new();
     resolver.initialize().await;
@@ -685,7 +691,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
     let mut engine = mq_lang::Engine::new(resolver);
 
     engine.load_builtin_module();
-    if let Some(timeout_ms) = options.timeout_ms {
+    if let Some(timeout_ms) = options.timeout_ms.filter(|ms| *ms > 0) {
         engine.set_timeout(std::time::Duration::from_millis(timeout_ms as u64));
     }
 
@@ -1448,9 +1454,7 @@ mod tests {
                 link_url_style: None,
                 allowed_domains: None,
                 allow_http_import: None,
-                // A zero timeout guarantees the deadline is already passed by the first
-                // periodic check, regardless of how fast the machine running this test is.
-                timeout_ms: Some(0),
+                timeout_ms: Some(1),
             })
             .unwrap(),
         );
