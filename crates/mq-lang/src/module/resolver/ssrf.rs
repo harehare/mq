@@ -6,9 +6,9 @@
 //! require a concrete `ureq` transport, so they're gated behind `http-import-ureq` (HTTP module
 //! imports) or `http` (the `http` builtin): either one pulls in `ureq`.
 
-/// Returns `true` if `url` uses the `https://` scheme.
+/// Returns `true` if `url` uses the `https://` scheme (case-insensitive).
 pub fn is_https(url: &str) -> bool {
-    url.starts_with("https://")
+    url.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://"))
 }
 
 /// Returns `true` if `ip` is publicly routable.
@@ -136,6 +136,18 @@ pub(crate) fn ssrf_safe_agent(timeout: std::time::Duration, https_only: bool) ->
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[rstest]
+    #[case("https://example.com", true)]
+    #[case("HTTPS://example.com", true)]
+    #[case("HtTpS://example.com", true)]
+    #[case("http://example.com", false)]
+    #[case("HTTP://example.com", false)]
+    #[case("https:/", false)]
+    #[case("", false)]
+    fn is_https_is_case_insensitive(#[case] url: &str, #[case] expected: bool) {
+        assert_eq!(is_https(url), expected);
+    }
 
     #[test]
     #[cfg(any(feature = "http-import-ureq", feature = "http"))]
