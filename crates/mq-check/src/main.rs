@@ -275,15 +275,19 @@ fn check_syntax(w: &mut impl Write, diagnostics: &[format::CheckDiagnostic]) -> 
     writeln!(w)?;
     let error_count = errors.len();
     let warning_count = warnings.len();
+    let syntax_count = errors.iter().filter(|d| d.code == "mq::syntax").count();
 
-    if error_count > 0 {
-        writeln!(
-            w,
-            "{}  {} syntax error{} found.",
-            "✗".bright_red().bold(),
-            error_count.to_string().bright_red().bold(),
-            if error_count == 1 { "" } else { "s" },
-        )?;
+    for (count, kind) in [(syntax_count, "syntax"), (error_count - syntax_count, "resolve")] {
+        if count > 0 {
+            writeln!(
+                w,
+                "{}  {} {} error{} found.",
+                "✗".bright_red().bold(),
+                count.to_string().bright_red().bold(),
+                kind,
+                if count == 1 { "" } else { "s" },
+            )?;
+        }
     }
     if warning_count > 0 {
         writeln!(
@@ -717,6 +721,20 @@ mod tests {
         };
         assert!(check_file(&mut out, code, None, &opts).unwrap());
         assert!(String::from_utf8(out).unwrap().contains("syntax error"));
+    }
+
+    #[test]
+    fn test_unresolved_import_is_counted_as_resolve_error() {
+        let mut out = Vec::new();
+        let opts = CheckOptions {
+            show_types: false,
+            label: None,
+            type_checker_options: TypeCheckerOptions::default(),
+        };
+        assert!(check_file(&mut out, "import \"no_such_module_xyz\" | 1", None, &opts).unwrap());
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("resolve error"), "{text}");
+        assert!(!text.contains("syntax error"), "{text}");
     }
 
     #[rstest]
