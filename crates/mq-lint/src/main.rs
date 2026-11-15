@@ -15,7 +15,7 @@ use mq_lint::{Diagnostic, LintConfig, LintContext, LintMessage, Linter, RuleId, 
 
 /// Static analysis linter for mq programs
 #[derive(Parser)]
-#[command(name = "mq-lint", about = "Lint mq programs")]
+#[command(name = "mq-lint", version, about = "Lint mq programs")]
 struct Cli {
     /// Paths to .mq files to lint (reads from stdin if omitted)
     files: Vec<PathBuf>,
