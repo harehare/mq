@@ -251,6 +251,28 @@ impl From<mq_markdown::AttrValue> for RuntimeValue {
     }
 }
 
+/// Renders a YAML mapping key as a string. Composite keys use flow notation (`[1, 2]`, `{a: 1}`).
+fn yaml_key_to_string(key: &yaml_rust2::Yaml) -> String {
+    use yaml_rust2::Yaml;
+    match key {
+        Yaml::String(s) | Yaml::Real(s) => s.clone(),
+        Yaml::Integer(i) => i.to_string(),
+        Yaml::Boolean(b) => b.to_string(),
+        Yaml::Null | Yaml::BadValue | Yaml::Alias(_) => "null".to_string(),
+        Yaml::Array(arr) => format!(
+            "[{}]",
+            arr.iter().map(yaml_key_to_string).collect::<Vec<_>>().join(", ")
+        ),
+        Yaml::Hash(map) => format!(
+            "{{{}}}",
+            map.iter()
+                .map(|(k, v)| format!("{}: {}", yaml_key_to_string(k), yaml_key_to_string(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
 impl From<yaml_rust2::Yaml> for RuntimeValue {
     fn from(value: yaml_rust2::Yaml) -> Self {
         match value {
@@ -269,13 +291,7 @@ impl From<yaml_rust2::Yaml> for RuntimeValue {
             yaml_rust2::Yaml::Hash(map) => {
                 let mut btree = DictMap::default();
                 for (k, v) in map {
-                    let key = match k {
-                        yaml_rust2::Yaml::String(s) | yaml_rust2::Yaml::Real(s) => s,
-                        yaml_rust2::Yaml::Integer(i) => i.to_string(),
-                        yaml_rust2::Yaml::Boolean(b) => b.to_string(),
-                        yaml_rust2::Yaml::Null => "null".to_string(),
-                        other => format!("{other:?}"),
-                    };
+                    let key = yaml_key_to_string(&k);
                     btree.insert(Ident::new(&key), RuntimeValue::from(v));
                 }
                 RuntimeValue::Dict(Shared::new(btree))
@@ -1076,6 +1092,21 @@ mod tests {
             "RuntimeValue grew to {} bytes; box the new payload instead of widening it",
             std::mem::size_of::<RuntimeValue>()
         );
+    }
+
+    #[rstest]
+    #[case("1: x", "1")]
+    #[case("true: x", "true")]
+    #[case("null: x", "null")]
+    #[case("1.5: x", "1.5")]
+    #[case("? [1, 2]\n: x", "[1, 2]")]
+    #[case("? {a: 1, b: [x, y]}\n: x", "{a: 1, b: [x, y]}")]
+    fn yaml_mapping_key_string(#[case] src: &str, #[case] expected: &str) {
+        let doc = yaml_rust2::YamlLoader::load_from_str(src).unwrap().remove(0);
+        let RuntimeValue::Dict(d) = RuntimeValue::from(doc) else {
+            panic!("expected dict");
+        };
+        assert_eq!(d.keys().map(|k| k.to_string()).collect::<Vec<_>>(), vec![expected]);
     }
 
     fn dict(entries: &[(&str, RuntimeValue)]) -> RuntimeValue {
