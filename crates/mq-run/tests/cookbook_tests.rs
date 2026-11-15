@@ -1216,3 +1216,37 @@ fn cookbook_scan_large_files_lazily() {
         in_dir(r#"stream_lines("app.log") | fold(0, fn(n, line): if (contains(line, " ERROR ")): n + 1 else: n;)"#);
     assert_eq!(error_count.trim(), "3");
 }
+
+#[test]
+fn cookbook_dates_and_timestamps() {
+    let a = write_temp(
+        "cookbook_dates_a.md",
+        "---\ntitle: Release notes\ndate: 2026-11-10T09:00:00Z\n---\n\n# Notes\n",
+    );
+    let b = write_temp(
+        "cookbook_dates_b.md",
+        "---\ntitle: Old plan\ndate: 2026-10-01T09:00:00Z\n---\n\n# Plan\n",
+    );
+    let (a, b) = (a.to_str().unwrap(), b.to_str().unwrap());
+
+    let fmt = run(&[
+        r#".yaml | frontmatter | if (is_string(get("date"))): strftime(from_date(get("date")), "%b %d, %Y") else: None"#,
+        a,
+        b,
+    ]);
+    assert_eq!(fmt.trim(), "Nov 10, 2026\nOct 01, 2026");
+
+    let recent = run(&[
+        r#".yaml | frontmatter | if (is_string(get("date"))): do let t = from_date(get("date")) | if (t >= date_relative(from_date("2026-11-15T00:00:00Z"), "7 days ago")): get("title") else: None end else: None"#,
+        a,
+        b,
+    ]);
+    assert_eq!(recent.trim(), "Release notes");
+
+    let base = run(&[
+        "-I",
+        "null",
+        r#"strftime(date_relative(from_date("2026-11-15T00:00:00Z"), "7 days ago"), "%Y-%m-%d")"#,
+    ]);
+    assert_eq!(base.trim(), "2026-11-08");
+}

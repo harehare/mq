@@ -72,6 +72,7 @@
   - [Select HTML elements with CSS selectors](cookbook/select-html-with-css-selectors.md)
   - [Sort versions and find the latest release](cookbook/find-latest-version-with-semver.md)
   - [Find the closest heading to a misspelled name](cookbook/fuzzy-match-headings.md)
+  - [Work with dates and timestamps](cookbook/dates-and-timestamps.md)
   - [Parse LTSV logs](cookbook/parse-ltsv-logs.md)
   - [Turn command output into structured data](cookbook/parse-command-output.md)
   - [Fetch a web page and filter it](cookbook/fetch-and-filter-a-web-page.md)

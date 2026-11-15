@@ -56,6 +56,7 @@ Every recipe follows the same four parts:
 - [Inline local images as base64](inline-local-images-as-base64.md)
 - [Sort versions and find the latest release](find-latest-version-with-semver.md)
 - [Find the closest heading to a misspelled name](fuzzy-match-headings.md)
+- [Work with dates and timestamps](dates-and-timestamps.md)
 
 ## Working with data formats
 

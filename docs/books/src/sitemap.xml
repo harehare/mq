@@ -297,6 +297,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/dates-and-timestamps</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/parse-ltsv-logs</loc>
     <priority>1.0</priority>
   </url>
