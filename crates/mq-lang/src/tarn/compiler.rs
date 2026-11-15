@@ -3335,17 +3335,6 @@ impl<R: ModuleResolver> Compiler<R> {
             });
             return Ok(());
         }
-        // Fast-path bytecode for an explicit, unshadowed `array(...)`/`dict(...)` call. The
-        // `direct_self_call`/`resolve()` checks above already returned for any call a
-        // user-defined function of that name should handle instead. Equivalent to, but cheaper
-        // than, falling through to `CallBuiltin` and dispatching to the native `array`/`dict`
-        // builtins.
-        if ident == builtins::ARRAY.into() {
-            return self.compile_array_call(args);
-        }
-        if ident == builtins::DICT.into() {
-            return self.compile_dict_call(args, call_token_id);
-        }
         if ident == builtins::NEXT.into() {
             if args.len() <= 1 {
                 if let Some(arg) = args.first() {
