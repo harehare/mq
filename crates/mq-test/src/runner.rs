@@ -151,7 +151,7 @@ impl mq_lang::DebuggerHandler for SharedStepHandler {
 
 impl TestRunner {
     /// Creates a `TestRunner` for the given files.
-    /// If `files` is empty, globs `**/*.mq` in the current directory.
+    /// A directory expands to the `**/*.mq` files under it; if `files` is empty, the current directory is used.
     pub fn new(files: Vec<PathBuf>) -> Self {
         Self {
             files,
@@ -260,6 +260,17 @@ impl TestRunner {
         self
     }
 
+    /// Collects `**/*.mq` files under `dir`, sorted.
+    fn discover(dir: impl AsRef<std::path::Path>) -> miette::Result<Vec<PathBuf>> {
+        let pattern = dir.as_ref().join("**/*.mq");
+        let mut found = glob(&pattern.to_string_lossy())
+            .into_diagnostic()?
+            .collect::<Result<Vec<_>, _>>()
+            .into_diagnostic()?;
+        found.sort();
+        Ok(found)
+    }
+
     /// Discovers and executes all test functions.
     ///
     /// A file that fails to read, parse, or evaluate is reported in place but does not
@@ -268,12 +279,17 @@ impl TestRunner {
     /// Returns `Ok(true)` if every executed test passed and every file ran.
     pub fn run(self) -> miette::Result<bool> {
         let test_files: Vec<PathBuf> = if self.files.is_empty() {
-            glob("./**/*.mq")
-                .into_diagnostic()?
-                .collect::<Result<Vec<_>, _>>()
-                .into_diagnostic()?
+            Self::discover("./")?
         } else {
-            self.files.clone()
+            let mut expanded = Vec::new();
+            for path in &self.files {
+                if path.is_dir() {
+                    expanded.extend(Self::discover(path)?);
+                } else {
+                    expanded.push(path.clone());
+                }
+            }
+            expanded
         };
 
         if self.list {
