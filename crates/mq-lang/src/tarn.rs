@@ -771,7 +771,7 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
             }),
             Shared::new(Node {
                 token_id: TokenId::new(0),
-                expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
+                expr: Expr::Array(probe_args),
             }),
         ];
 
