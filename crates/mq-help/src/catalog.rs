@@ -254,11 +254,10 @@ fn from_mq_fn_doc(fdoc: reference::MqFnDoc, related_module: Option<String>) -> H
         params: fdoc
             .params
             .into_iter()
-            .zip(fdoc.optional)
-            .map(|(name, optional)| HelpParam {
-                name,
+            .map(|p| HelpParam {
+                name: p.name,
                 type_name: "dynamic".to_string(),
-                optional,
+                optional: p.optional,
             })
             .collect(),
         returns: fdoc.returns.unwrap_or_else(|| "dynamic".to_string()),
