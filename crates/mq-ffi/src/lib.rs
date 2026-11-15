@@ -478,11 +478,12 @@ pub extern "C" fn mq_version() -> *const c_char {
 }
 
 /// Sets the maximum call stack depth for function calls, to guard against
-/// runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null.
+/// runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null
+/// or `max_call_stack_depth` is 0 (the current limit is kept).
 #[unsafe(no_mangle)]
 pub extern "C" fn mq_set_max_call_stack_depth(engine_ptr: *mut MqContext, max_call_stack_depth: u32) {
     guard(move || {
-        if engine_ptr.is_null() {
+        if engine_ptr.is_null() || max_call_stack_depth == 0 {
             return;
         }
         let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
