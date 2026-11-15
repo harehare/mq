@@ -75,7 +75,7 @@ mq-crawl [OPTIONS] <URL>
 | `--checkpoint-interval-pages <N>` | Pages crawled between checkpoint saves (requires `--checkpoint-path`) | `20` |
 | `--resume-from <PATH>` | Resume a crawl from a checkpoint file written via `--checkpoint-path` | - |
 | `-q, --mq-query <QUERY>` | mq-lang query for processing content | - |
-| `--robots-path <PATH>` | Custom robots.txt file path | - |
+| `--robots-path <PATH>` | Custom robots.txt: local path, `file://` or `http(s)` URL | - |
 | `--allowed-domains <DOMAINS>` | Comma-separated list of extra domains to crawl; the start URL's domain is always included | start domain only |
 | `--sitemap <SITEMAP_URL>` | URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from | - |
 | `--max-retries <N>` | Maximum retry attempts for failed requests (network errors, 429, 5xx) | `3` |

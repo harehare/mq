@@ -183,8 +183,9 @@ mq-crawl --bearer-token eyJhbGciOi... https://example.com
 ### Custom Robots.txt
 
 ```bash
-# Use custom robots.txt file
+# Use custom robots.txt file (local path, file:// URL or http(s) URL)
 mq-crawl --robots-path ./custom-robots.txt https://example.com
+mq-crawl --robots-path file:///etc/robots.txt https://example.com
 ```
 
 robots.txt is fetched per origin (scheme, host and port) and follows RFC 9309: a `4xx` response (except `429`) allows everything, while an unreachable file or a `5xx`/`429` response disallows everything.
