@@ -208,6 +208,37 @@ body
 
 `--no-frontmatter` applies to Markdown and MDX input.
 
+## Limiting results
+
+`--count` prints only the number of non-empty results. With several files it prints `file: N` per file and `total: N` at the end. `--skip N` drops the first N results and `--limit N` keeps at most N, so together they page through results.
+
+```sh
+$ mq --count '.h2' a.md b.md
+a.md: 3
+b.md: 1
+total: 4
+$ mq --skip 1 --limit 1 '.h2' a.md
+## Three
+```
+
+## Large inputs
+
+`--stream` processes a large file line by line instead of loading it whole. `-P` / `--parallel-threshold N` sets how many files are processed before mq switches to parallel processing (default 10).
+
+```sh
+mq --stream '.h2' large.md
+mq -P 1 '.h2' *.md  # parallel from the second file on
+```
+
+## Error format
+
+An uncaught error is printed in a human-readable form by default. `--error-format json` writes it as a JSON object with `message`, `code`, `severity`, `help` and `labels`, for use by other tools. The exit code is unchanged.
+
+```sh
+$ mq --error-format json 'error("boom")' a.md
+{"message": "boom","code": "mq::runtime","severity": "error", ...}
+```
+
 ## Exit codes
 
 Exit codes follow jq. `halt(code)` exits with `code`.
