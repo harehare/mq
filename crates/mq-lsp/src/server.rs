@@ -68,13 +68,35 @@ struct Backend {
     error_map: DashMap<String, Vec<LspError>>,
     documents: DocumentMap,
     config: LspConfig,
+    workspace_roots: RwLock<Vec<PathBuf>>,
+}
+
+/// Workspace folders, falling back to `root_uri` and then the legacy `root_path`.
+fn workspace_roots(params: &ls_types::InitializeParams) -> Vec<PathBuf> {
+    let roots = params
+        .workspace_folders
+        .iter()
+        .flatten()
+        .filter_map(|f| Url::parse(f.uri.as_str()).ok()?.to_file_path().ok())
+        .collect::<Vec<_>>();
+    if !roots.is_empty() {
+        return roots;
+    }
+    #[allow(deprecated)]
+    let (root_uri, root_path) = (params.root_uri.as_ref(), params.root_path.as_ref());
+    root_uri
+        .and_then(|u| Url::parse(u.as_str()).ok()?.to_file_path().ok())
+        .or_else(|| root_path.map(PathBuf::from))
+        .into_iter()
+        .collect()
 }
 
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: ls_types::InitializeParams) -> jsonrpc::Result<ls_types::InitializeResult> {
+    async fn initialize(&self, params: ls_types::InitializeParams) -> jsonrpc::Result<ls_types::InitializeResult> {
         self.client
             .log_message(ls_types::MessageType::INFO, "Server initialized")
             .await;
+        *self.workspace_roots.write().unwrap() = workspace_roots(&params);
         Ok(ls_types::InitializeResult {
             capabilities: capabilities::server_capabilities(),
             ..Default::default()
@@ -265,12 +287,31 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::WorkspaceSymbolParams,
     ) -> jsonrpc::Result<Option<ls_types::WorkspaceSymbolResponse>> {
-        let source_map_guard = self.source_map.read().unwrap();
-        Ok(workspace_symbol::response(
-            Arc::clone(&self.hir),
-            &params.query,
-            &source_map_guard,
-        ))
+        let (open_symbols, open) = {
+            let source_map = self.source_map.read().unwrap();
+            let hir = self.hir.read().unwrap();
+            (
+                workspace_symbol::collect(&hir, &params.query, &source_map),
+                source_map.left_values().cloned().collect::<FxHashSet<_>>(),
+            )
+        };
+        let mut roots = self.workspace_roots.read().unwrap().clone();
+        roots.extend(self.config.module_paths.iter().cloned());
+        let query = params.query;
+        let remaining = if query.is_empty() {
+            1000usize.saturating_sub(open_symbols.len())
+        } else {
+            usize::MAX
+        };
+        let disk = {
+            let (query, open) = (query.clone(), open);
+            tokio::task::spawn_blocking(move || workspace_symbol::disk_symbols(&roots, &open, &query, remaining))
+                .await
+                .unwrap_or_default()
+        };
+        Ok(Some(ls_types::WorkspaceSymbolResponse::Nested(
+            workspace_symbol::merge(open_symbols, disk, &query),
+        )))
     }
 
     async fn diagnostic(
@@ -805,6 +846,7 @@ pub async fn start(config: LspConfig) {
         error_map: DashMap::new(),
         documents: DashMap::new(),
         config,
+        workspace_roots: RwLock::new(Vec::new()),
     })
     .custom_method("mq/virtualDocument", Backend::virtual_document)
     .finish();
