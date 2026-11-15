@@ -194,7 +194,7 @@ Every diagnostic has a stable code, available as `TypeError::error_code`, and a 
 
 ## CLI Options
 
-When used as a command-line tool (`mq-typecheck`), the following options are available:
+When used as a command-line tool (`mq-check`), the following options are available:
 
 | Option           | Description                                                        |
 | ---------------- | ------------------------------------------------------------------ |

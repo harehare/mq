@@ -15,7 +15,7 @@ use url::Url;
 
 /// Type checker for mq programs
 #[derive(Parser)]
-#[command(name = "mq-typecheck", about = "Type check mq programs")]
+#[command(name = "mq-check", version, about = "Type check mq programs")]
 struct Cli {
     /// Paths to .mq files to type check (reads from stdin if omitted)
     files: Vec<PathBuf>,
