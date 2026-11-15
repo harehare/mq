@@ -1362,6 +1362,15 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
         .collect()
 }
 
+/// Moves the top value below the `n` values beneath it.
+#[cold]
+#[inline(never)]
+fn rotate_down(stack: &mut [StackValue], stack_base: usize, n: usize) {
+    let at = stack.len() - 1 - n;
+    debug_assert!(at >= stack_base, "verified bytecode underflowed the stack");
+    stack[at..].rotate_right(1);
+}
+
 // Keep the opcode loop separate from the trampoline's continuation and unwinding paths.
 // Inlining it into `drive_frames` also merges their native stack frames and code footprint.
 #[inline(never)]
@@ -1727,14 +1736,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     let top = stack.last().expect("verified bytecode keeps an operand").clone();
                     stack.push(top);
                 }
-                OpCode::RotateDown(n) => {
-                    let at = stack.len() - 1 - *n as usize;
-                    debug_assert!(
-                        at >= frame.stack_base as usize,
-                        "verified bytecode underflowed the stack"
-                    );
-                    stack[at..].rotate_right(1);
-                }
+                OpCode::RotateDown(n) => rotate_down(stack, frame.stack_base as usize, *n as usize),
                 OpCode::Jump(offset) => {
                     ip = (ip as i64 + *offset as i64) as usize;
                 }
