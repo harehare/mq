@@ -75,6 +75,7 @@ fn fits(shape: &Shape, ty: &Type) -> bool {
     match (ty, shape) {
         (Type::Var(_) | Type::Dynamic | Type::Never | Type::RowEmpty, _) => true,
         (Type::Union(members), _) => members.iter().any(|member| fits(shape, member)),
+        (Type::Lit(lit), _) => fits(shape, &lit.base()),
         (Type::Int | Type::Float | Type::Number, Shape::Number)
         | (Type::String, Shape::String)
         | (Type::Bool, Shape::Bool)
