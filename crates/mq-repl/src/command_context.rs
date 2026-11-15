@@ -508,7 +508,10 @@ impl CommandContext {
                 }
             }
             Command::Env(name, value) => {
-                unsafe { std::env::set_var(name, value) };
+                if !self.session.engine().is_env_allowed() {
+                    return Err(miette::miette!("/env requires --allow-env"));
+                }
+                unsafe { std::env::set_var(&name, &value) };
                 Ok(CommandOutput::None)
             }
             Command::Help => {
@@ -847,12 +850,27 @@ mod tests {
 
     #[test]
     fn test_execute_env() {
-        let engine = mq_lang::DefaultEngine::default();
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.set_io(mq_lang::Shared::new(
+            mq_lang::SandboxedIo::new(mq_lang::NativeIo::default()).allow_env(true),
+        ));
         let mut ctx = CommandContext::new(engine, Vec::new());
 
         let result = ctx.execute("/env TEST_VAR test_value");
         assert!(matches!(result, Ok(CommandOutput::None)));
         assert_eq!(std::env::var("TEST_VAR").unwrap(), "test_value");
+    }
+
+    #[test]
+    fn test_execute_env_denied_without_allow_env() {
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.set_io(mq_lang::Shared::new(mq_lang::SandboxedIo::new(
+            mq_lang::NativeIo::default(),
+        )));
+        let mut ctx = CommandContext::new(engine, Vec::new());
+
+        assert!(ctx.execute("/env MQ_REPL_DENIED_VAR x").is_err());
+        assert!(std::env::var("MQ_REPL_DENIED_VAR").is_err());
     }
 
     #[test]

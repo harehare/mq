@@ -139,6 +139,13 @@ impl<IO: Io> Engine<DefaultModuleResolver, IO> {
     }
 }
 
+impl<T: ModuleResolver, Inner: Io> Engine<T, SandboxedIo<Inner>> {
+    /// Whether any environment-variable access is granted (fully or restricted to an allowlist).
+    pub fn is_env_allowed(&self) -> bool {
+        self.vm.io.is_env_allowed()
+    }
+}
+
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Like the [`SandboxedIo<NativeIo>`]-pinned [`Engine::new`], but generic over `IO` and
     /// takes the [`Io`] value up front, for hosts that need to select the `Io` *type* at
