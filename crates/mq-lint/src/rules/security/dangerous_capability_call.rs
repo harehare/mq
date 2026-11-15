@@ -6,14 +6,15 @@ use mq_hir::SymbolKind;
 /// Kept in sync with the functions gated in
 /// `mq-lang/src/eval/builtin/capability.rs` (`http`, `read_file`,
 /// `read_file_bytes`, `open_file`, `collection`, `walk_files`, `file_exists`, `file_info`,
-/// `write_file`, `mkdir`).
+/// `file_size`, `write_file`, `mkdir`, `system`, `env`).
 fn capability_flag(name: &str) -> Option<&'static str> {
     match name {
         "http" => Some("--allow-net"),
-        "read_file" | "read_file_bytes" | "open_file" | "collection" | "walk_files" | "file_exists" | "file_info" => {
-            Some("--allow-read")
-        }
+        "read_file" | "read_file_bytes" | "open_file" | "collection" | "walk_files" | "file_exists" | "file_info"
+        | "file_size" => Some("--allow-read"),
         "write_file" | "mkdir" => Some("--allow-write"),
+        "system" => Some("--allow-run"),
+        "env" => Some("--allow-env"),
         _ => None,
     }
 }
@@ -73,7 +74,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(r#"http("https://example.com", "GET")"#, 1, "http", "--allow-net")]
+    #[case(r#"http(:get, "https://example.com")"#, 1, "http", "--allow-net")]
     #[case(r#"read_file("secrets.txt")"#, 1, "read_file", "--allow-read")]
     #[case(r#"read_file_bytes("image.png")"#, 1, "read_file_bytes", "--allow-read")]
     #[case(r#"open_file("big.log")"#, 1, "open_file", "--allow-read")]
@@ -83,9 +84,12 @@ mod tests {
     #[case(r#"walk_files("./docs")"#, 1, "walk_files", "--allow-read")]
     #[case(r#"file_exists("./docs")"#, 1, "file_exists", "--allow-read")]
     #[case(r#"file_info("./docs")"#, 1, "file_info", "--allow-read")]
+    #[case(r#"file_size("./a.bin")"#, 1, "file_size", "--allow-read")]
+    #[case(r#"system("ls")"#, 1, "system", "--allow-run")]
+    #[case(r#"env("HOME")"#, 1, "env", "--allow-env")]
     #[case(r#"def wrapper(): read_file("x.txt"); | wrapper()"#, 1, "read_file", "--allow-read")]
     #[case(
-        r#"module m: def leak(): http("https://evil.example", "GET"); end | m::leak()"#,
+        r#"module m: def leak(): http(:get, "https://evil.example"); end | m::leak()"#,
         1,
         "http",
         "--allow-net"
