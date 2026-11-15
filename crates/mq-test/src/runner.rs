@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
@@ -296,6 +296,18 @@ impl TestRunner {
             return self.run_list(&test_files);
         }
 
+        if let Some(path) = &self.coverage_output {
+            let dir = path.parent().filter(|p| *p != Path::new("")).unwrap_or(Path::new("."));
+            if !dir.is_dir() {
+                return Err(miette::miette!(
+                    "cannot write coverage report to {}: directory {} does not exist",
+                    path.display(),
+                    dir.display()
+                ));
+            }
+        }
+
+        let matched_tests = AtomicUsize::new(0);
         // Merged across all test files, so a shared module gets combined coverage.
         let coverage_data = CoverageData::default();
         // Resolved module-name -> file path, filled in as each engine resolves imports.
@@ -330,7 +342,9 @@ impl TestRunner {
                     return;
                 }
             };
+
             let discovered = Self::discover_tests(&content);
+
             if let Some(name) = Self::find_duplicate_name(&discovered) {
                 any_failed.store(true, Ordering::Relaxed);
                 let message = format!("duplicate test function `{name}`");
@@ -346,7 +360,13 @@ impl TestRunner {
                 }
                 return;
             }
-            let tests: Vec<DiscoveredTest> = discovered.into_iter().filter(|test| self.matches(test)).collect();
+
+            let tests: Vec<DiscoveredTest> = Self::discover_tests(&content)
+                .into_iter()
+                .filter(|test| self.matches(test))
+                .collect();
+            matched_tests.fetch_add(tests.len(), Ordering::Relaxed);
+
             if tests.is_empty() {
                 return;
             }
@@ -359,6 +379,7 @@ impl TestRunner {
                 crate::resolver::TestModuleResolver::default(),
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
             );
+
             engine.load_builtin_module();
 
             // Resolve relative `include` statements in the test file, then fall back to `-L` dirs.
@@ -414,6 +435,7 @@ impl TestRunner {
             };
 
             let input = mq_lang::null_input();
+
             match engine.eval(&query, input.into_iter()) {
                 Ok(result) => {
                     match self.format {
@@ -514,7 +536,8 @@ impl TestRunner {
 
             match &self.coverage_output {
                 Some(path) => {
-                    fs::write(path, report).into_diagnostic()?;
+                    fs::write(path, report)
+                        .map_err(|e| miette::miette!("failed to write coverage report to {}: {e}", path.display()))?;
                     if self.open {
                         open_in_default_app(path)?;
                     }
@@ -524,6 +547,13 @@ impl TestRunner {
         }
 
         let mut file_errors = file_errors.into_inner().unwrap();
+        if (self.filter.is_some() || !self.tags.is_empty())
+            && matched_tests.load(Ordering::Relaxed) == 0
+            && file_errors.is_empty()
+        {
+            eprintln!("error: no tests matched the given --filter/--tag");
+            any_failed.store(true, Ordering::Relaxed);
+        }
         let mut failed_files = failed_files.into_inner().unwrap();
         // Parallel runs finish in arbitrary order; sort so the output is stable.
         file_errors.sort_by(|a, b| a.0.cmp(&b.0));
