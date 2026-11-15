@@ -71,23 +71,13 @@ struct Backend {
     workspace_roots: RwLock<Vec<PathBuf>>,
 }
 
-/// Workspace folders, falling back to `root_uri` and then the legacy `root_path`.
+/// Local paths of the workspace folders.
 fn workspace_roots(params: &ls_types::InitializeParams) -> Vec<PathBuf> {
-    let roots = params
+    params
         .workspace_folders
         .iter()
         .flatten()
         .filter_map(|f| Url::parse(f.uri.as_str()).ok()?.to_file_path().ok())
-        .collect::<Vec<_>>();
-    if !roots.is_empty() {
-        return roots;
-    }
-    #[allow(deprecated)]
-    let (root_uri, root_path) = (params.root_uri.as_ref(), params.root_path.as_ref());
-    root_uri
-        .and_then(|u| Url::parse(u.as_str()).ok()?.to_file_path().ok())
-        .or_else(|| root_path.map(PathBuf::from))
-        .into_iter()
         .collect()
 }
 

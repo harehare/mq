@@ -2318,9 +2318,9 @@ fn test_to_url_returns_error_for_uri_unsupported_by_url() {
 }
 
 #[tokio::test]
-async fn test_root_uri_only_client_indexes_unopened_files() {
+async fn test_workspace_folder_indexes_unopened_files() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("helpers.mq"), "def root_uri_helper(): 1;").unwrap();
+    std::fs::write(dir.path().join("helpers.mq"), "def workspace_folder_helper(): 1;").unwrap();
 
     let (service, _) = LspService::new(|client| Backend {
         client,
@@ -2336,7 +2336,7 @@ async fn test_root_uri_only_client_indexes_unopened_files() {
     let root = Url::from_directory_path(dir.path()).unwrap();
     let params: ls_types::InitializeParams = serde_json::from_value(serde_json::json!({
         "capabilities": {},
-        "rootUri": root.as_str(),
+        "workspaceFolders": [{ "uri": root.as_str(), "name": "ws" }],
     }))
     .unwrap();
     service.inner().initialize(params).await.unwrap();
@@ -2344,7 +2344,7 @@ async fn test_root_uri_only_client_indexes_unopened_files() {
     let response = service
         .inner()
         .symbol(ls_types::WorkspaceSymbolParams {
-            query: "root_uri_helper".to_string(),
+            query: "workspace_folder_helper".to_string(),
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),
         })
