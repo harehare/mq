@@ -1,4 +1,3 @@
-use super::interpreter::ExecutionPools;
 use super::*;
 use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::parse;
@@ -3377,14 +3376,16 @@ fn try_depth_limit_returns_its_unstarted_frame_to_the_pool() {
     let program = crate::parse("try: 1 catch(e): 2;", Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
-    let (result, pools) = interpreter::run_with_globals_and_pools(
+    let interpreter::RunOutput { result, pools, .. } = interpreter::run(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        0,
-        &[],
-        ExecutionPools::default(),
+        interpreter::Run::new(interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: 0,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        }),
     );
 
     assert!(
@@ -3479,18 +3480,19 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
 
-    let result = interpreter::run_with_debug_hook_and_globals(
+    let result = interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut recorder,
+        })
+        .hook(&mut recorder),
     )
+    .result
     .unwrap();
 
     assert_eq!(result, RuntimeValue::Number(12.0.into()));
@@ -3538,18 +3540,19 @@ fn debugger_boundary_fires_once_per_call_with_a_literal_argument() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
 
-    interpreter::run_with_debug_hook_and_globals(
+    interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut recorder,
+        })
+        .hook(&mut recorder),
     )
+    .result
     .unwrap();
 
     let call_boundaries = recorder
@@ -3588,18 +3591,19 @@ fn dynamic_call_caller_node_is_the_call_expression_not_the_last_argument() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
 
-    interpreter::run_with_debug_hook_and_globals(
+    interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut recorder,
+        })
+        .hook(&mut recorder),
     )
+    .result
     .unwrap();
 
     let inside_function = recorder
@@ -3638,18 +3642,19 @@ fn debugger_hook_exposes_closure_bindings() {
     let program = crate::parse("let f = fn(x): x; | breakpoint() | f(1)", Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
-    interpreter::run_with_debug_hook_and_globals(
+    interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut recorder,
+        })
+        .hook(&mut recorder),
     )
+    .result
     .unwrap();
 
     assert!(recorder.0.iter().any(|event| {
@@ -3742,18 +3747,19 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
         host_functions,
     );
 
-    interpreter::run_with_debug_hook_and_globals(
+    interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut hook,
+        })
+        .hook(&mut hook),
     )
+    .result
     .unwrap();
 
     assert!(inner_values.lock().unwrap().contains(&RuntimeValue::Number(2.0.into())));
@@ -3834,18 +3840,19 @@ fn vm_debugger_hook_applies_live_frame_writes(
         HostFunctions::default(),
     );
 
-    let result = interpreter::run_with_debug_hook_and_globals(
+    let result = interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut hook,
+        })
+        .hook(&mut hook),
     )
+    .result
     .unwrap();
 
     assert_eq!(result, RuntimeValue::Number(expected.into()));
@@ -3896,18 +3903,19 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
         HostFunctions::default(),
     );
 
-    let result = interpreter::run_with_debug_hook_and_globals(
+    let result = interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut hook,
+        })
+        .hook(&mut hook),
     )
+    .result
     .unwrap();
 
     assert_eq!(result, RuntimeValue::Number(11.0.into()));
@@ -3973,18 +3981,19 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
         HostFunctions::default(),
     );
 
-    interpreter::run_with_debug_hook_and_globals(
+    interpreter::run(
         &compiled,
         RuntimeValue::None,
-        interpreter::RunOptions {
+        interpreter::Run::new(interpreter::RunOptions {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
-        },
-        &mut hook,
+        })
+        .hook(&mut hook),
     )
+    .result
     .unwrap();
 
     assert!(
@@ -5789,14 +5798,16 @@ fn pooled_frames_do_not_keep_arguments_alive() {
     .unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
-    let (result, pools) = interpreter::run_with_globals_and_pools(
+    let interpreter::RunOutput { result, pools, .. } = interpreter::run(
         &compiled,
         RuntimeValue::Array(Shared::clone(&array)),
-        &HostFunctions::default(),
-        None,
-        1000,
-        &[],
-        ExecutionPools::default(),
+        interpreter::Run::new(interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: 1000,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        }),
     );
 
     drop(result);
