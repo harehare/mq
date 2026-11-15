@@ -12,6 +12,15 @@ use tower_lsp_server::ls_types::{
 };
 use url::Url;
 
+/// (name, range, qualified module, scope, position) of an unresolved symbol.
+type UnresolvedSymbol = (
+    SmolStr,
+    Range,
+    Option<SmolStr>,
+    mq_hir::ScopeId,
+    Option<mq_lang::Position>,
+);
+
 static STD_MODULE_EXPORTS: LazyLock<FxHashMap<SmolStr, Vec<SmolStr>>> = LazyLock::new(|| {
     let mut exports: FxHashMap<SmolStr, Vec<SmolStr>> = FxHashMap::default();
 
@@ -197,13 +206,7 @@ pub(crate) fn response(
     // For a `module::func()` call, the unresolved error is reported on the `func`
     // `Ref` symbol, whose parent is the `QualifiedAccess` symbol holding the
     // already-written module name (see hir/lower.rs::add_qualified_access_expr).
-    let unresolved: Vec<(
-        SmolStr,
-        Range,
-        Option<SmolStr>,
-        mq_hir::ScopeId,
-        Option<mq_lang::Position>,
-    )> = hir_guard
+    let unresolved: Vec<UnresolvedSymbol> = hir_guard
         .errors()
         .into_iter()
         .filter_map(|error| match error {
