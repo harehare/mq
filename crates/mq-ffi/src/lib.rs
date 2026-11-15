@@ -259,7 +259,7 @@ pub unsafe extern "C" fn mq_eval(
     engine_ptr: *mut MqContext,
     code_c: *const c_char,
     input_c: *const c_char,
-    input_format_c: *const c_char, // "markdown" or "mdx" or "text"
+    input_format_c: *const c_char, // "markdown", "mdx", "html", "text", "null" or "raw"
 ) -> MqResult {
     std::panic::catch_unwind(move || unsafe { mq_eval_inner(engine_ptr, code_c, input_c, input_format_c) })
         .unwrap_or_else(|payload| MqResult {
@@ -330,10 +330,26 @@ unsafe fn eval_core(
             "Markdown parsing error: ",
             mq_lang::parse_mdx_input(input_str).map_err(|e| e.to_string()),
         ),
+        #[cfg(feature = "html-to-markdown")]
         "html" => (
             "Html parsing error: ",
             mq_lang::parse_html_input(input_str).map_err(|e| e.to_string()),
         ),
+        #[cfg(not(feature = "html-to-markdown"))]
+        "html" => {
+            return Err(FfiError::new(
+                MqStatus::MQ_ERR_UNSUPPORTED,
+                "This library was built without the html-to-markdown feature",
+            ));
+        }
+        "null" => ("", Ok(mq_lang::null_input())),
+        "raw" => ("", Ok(mq_lang::raw_input(input_str))),
+        "bytes" | "cbor" | "csv" | "gron" | "json" | "jsonl" | "psv" | "toml" | "toon" | "tsv" | "xml" | "yaml" => {
+            return Err(FfiError::new(
+                MqStatus::MQ_ERR_UNSUPPORTED,
+                format!("Input format {input_format_str} is not supported by the C API"),
+            ));
+        }
         _ => {
             return Err(FfiError::invalid_argument(format!(
                 "Unsupported input format: {}",

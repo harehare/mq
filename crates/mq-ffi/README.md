@@ -165,6 +165,10 @@ The format name is case-insensitive.
 | `"mdx"` | MDX (Markdown with JSX) |
 | `"html"` | HTML, converted to Markdown |
 | `"text"` | Plain text, one value per line |
+| `"raw"` | The whole input as a single string |
+| `"null"` | No input (the input text is ignored) |
+
+`"html"` needs the `html-to-markdown` feature. Structured and binary formats (`json`, `yaml`, `csv`, `cbor`, ...) are not supported and return `MQ_ERR_UNSUPPORTED`; use `"raw"` and parse in the query. Unknown names return `MQ_ERR_INVALID_ARGUMENT`.
 
 ## Support
 
