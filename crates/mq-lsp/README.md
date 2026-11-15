@@ -70,6 +70,14 @@ mq-lsp
 | `-L, --enable-lint`              | Enable `mq-lint` diagnostics                                 |
 | `--disable-lint-rule <RULE_ID>`  | Disable a specific lint rule by ID (repeatable, requires `--enable-lint`) |
 
+### Module search order
+
+`import`/`include` resolve in this order: the opened file's directory, the workspace folders (`workspaceFolders`, or `rootUri`), `modulePaths` from `initializationOptions` (array of directories), then `-M`.
+
+```json
+{ "initializationOptions": { "modulePaths": ["/path/to/modules"] } }
+```
+
 ## Development
 
 ### Building from Source

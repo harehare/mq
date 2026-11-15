@@ -216,6 +216,11 @@ impl Hir {
         }
     }
 
+    /// Sets the directories searched when resolving modules.
+    pub fn set_module_search_paths(&mut self, paths: Vec<std::path::PathBuf>) {
+        self.module_loader.set_search_paths(paths);
+    }
+
     /// Adds an already parsed source, replacing the contents of any source with the same URL.
     pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
         let (source_id, scope_id) = self.load_nodes(url, nodes);

@@ -68,10 +68,13 @@ struct Backend {
     error_map: DashMap<String, Vec<LspError>>,
     documents: DocumentMap,
     config: LspConfig,
+    /// Workspace roots, then `modulePaths` from `initializationOptions`; set by `initialize`.
+    client_module_paths: RwLock<Vec<PathBuf>>,
 }
 
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: ls_types::InitializeParams) -> jsonrpc::Result<ls_types::InitializeResult> {
+    async fn initialize(&self, params: ls_types::InitializeParams) -> jsonrpc::Result<ls_types::InitializeResult> {
+        *self.client_module_paths.write().unwrap() = client_module_paths(&params);
         self.client
             .log_message(ls_types::MessageType::INFO, "Server initialized")
             .await;
@@ -372,7 +375,7 @@ impl LanguageServer for Backend {
             position,
             &source_map_guard,
             &line_prefix,
-            &self.config.module_paths,
+            &self.module_search_paths(&to_url(&uri)?),
         ))
     }
 
@@ -588,7 +591,11 @@ impl Backend {
         } else {
             mq_lang::parse_recovery(&text)
         };
-        let (source_id, _) = self.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+        let (source_id, _) = {
+            let mut hir = self.hir.write().unwrap();
+            hir.set_module_search_paths(self.module_search_paths(&uri));
+            hir.add_nodes(uri.clone(), &nodes)
+        };
         let nodes = Arc::new(nodes);
 
         let uri_string = uri.to_string();
@@ -782,7 +789,46 @@ pub struct VirtualDocumentParams {
     pub uri: String,
 }
 
+/// Workspace roots, then `modulePaths` from `initializationOptions`.
+fn client_module_paths(params: &ls_types::InitializeParams) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let to_path = |uri: &ls_types::Uri| Url::parse(uri.as_str()).ok().and_then(|u| u.to_file_path().ok());
+    if let Some(folders) = &params.workspace_folders {
+        paths.extend(folders.iter().filter_map(|folder| to_path(&folder.uri)));
+    }
+    #[allow(deprecated)]
+    if paths.is_empty()
+        && let Some(root) = params.root_uri.as_ref().and_then(to_path)
+    {
+        paths.push(root);
+    }
+    if let Some(extra) = params
+        .initialization_options
+        .as_ref()
+        .and_then(|options| options.get("modulePaths"))
+        .and_then(|value| value.as_array())
+    {
+        paths.extend(extra.iter().filter_map(|v| v.as_str()).map(PathBuf::from));
+    }
+    paths
+}
+
 impl Backend {
+    /// Module search order: the document's directory, workspace roots, `initializationOptions`
+    /// `modulePaths`, then `-M`.
+    fn module_search_paths(&self, uri: &Url) -> Vec<PathBuf> {
+        let mut paths: Vec<PathBuf> = uri
+            .to_file_path()
+            .ok()
+            .and_then(|path| path.parent().map(PathBuf::from))
+            .into_iter()
+            .collect();
+        paths.extend(self.client_module_paths.read().unwrap().iter().cloned());
+        paths.extend(self.config.module_paths.iter().cloned());
+        paths.dedup();
+        paths
+    }
+
     /// Handles `mq/virtualDocument`: the text of `builtin.mq` or a standard module.
     async fn virtual_document(&self, params: VirtualDocumentParams) -> jsonrpc::Result<Option<String>> {
         Ok(virtual_document::content(&params.uri))
@@ -805,6 +851,7 @@ pub async fn start(config: LspConfig) {
         error_map: DashMap::new(),
         documents: DashMap::new(),
         config,
+        client_module_paths: RwLock::default(),
     })
     .custom_method("mq/virtualDocument", Backend::virtual_document)
     .finish();

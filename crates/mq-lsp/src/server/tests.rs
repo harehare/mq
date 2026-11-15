@@ -33,6 +33,7 @@ async fn test_formatting_unopened_document_returns_none() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -59,6 +60,7 @@ async fn test_formatting_edit_covers_removed_trailing_lines() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -93,6 +95,7 @@ async fn test_did_open() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -133,6 +136,7 @@ async fn test_formatting_and_folding_use_cached_cst() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -201,6 +205,7 @@ async fn test_formatting() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -249,6 +254,7 @@ async fn test_completion() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -279,6 +285,7 @@ async fn test_goto_definition() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -308,6 +315,7 @@ async fn test_hover() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -336,6 +344,7 @@ async fn test_signature_help() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -383,6 +392,7 @@ async fn test_folding_range() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -428,6 +438,7 @@ async fn test_semantic_tokens() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -488,6 +499,7 @@ async fn test_references() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -526,6 +538,7 @@ async fn test_code_action_suggests_include() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -578,6 +591,7 @@ async fn test_code_action_using_real_diagnostics_from_pipeline() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -658,6 +672,7 @@ async fn quick_fixes_for_published_diagnostics(text: &str, enable_lint: bool) ->
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config,
     });
     let backend = service.inner();
@@ -762,6 +777,7 @@ async fn test_published_warning_range_uses_utf16_columns() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
     let backend = service.inner();
@@ -802,6 +818,7 @@ async fn test_code_action_no_actions_for_clean_file() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -872,6 +889,7 @@ async fn test_rename() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -911,6 +929,7 @@ async fn test_prepare_rename_valid_symbol() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -948,6 +967,7 @@ async fn test_prepare_rename_rejects_builtin() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -980,6 +1000,7 @@ async fn test_rename_across_two_tracked_sources() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1057,6 +1078,7 @@ async fn test_document_symbol() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1105,6 +1127,7 @@ async fn test_workspace_symbol() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1178,6 +1201,7 @@ async fn test_did_change() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1223,6 +1247,7 @@ async fn test_did_close() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1270,6 +1295,7 @@ async fn test_did_save() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1319,6 +1345,7 @@ async fn test_initialize_shutdown() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1354,6 +1381,7 @@ async fn test_semantic_tokens_range() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1391,6 +1419,7 @@ async fn test_diagnostics_with_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1427,6 +1456,7 @@ async fn test_pull_diagnostics_returns_syntax_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1481,6 +1511,7 @@ async fn test_pull_diagnostics_syntax_error_includes_did_you_mean_hint() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1538,6 +1569,7 @@ async fn test_pull_diagnostics_empty_for_unknown_document() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1573,6 +1605,7 @@ async fn test_unused_function_warnings() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1620,6 +1653,7 @@ async fn test_lint_diagnostics_enabled() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::new(
             vec![],
             false,
@@ -1676,6 +1710,7 @@ async fn test_lint_diagnostics_disabled_by_default() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1714,6 +1749,7 @@ async fn test_formatting_with_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1762,6 +1798,7 @@ async fn test_unreachable_code_warnings() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
 
@@ -1816,6 +1853,7 @@ async fn test_range_formatting_single_line() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
     let backend = service.inner();
@@ -1860,6 +1898,7 @@ async fn test_range_formatting_multi_line() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
     let backend = service.inner();
@@ -1903,6 +1942,7 @@ async fn test_range_formatting_with_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::default(),
     });
     let backend = service.inner();
@@ -1996,6 +2036,7 @@ async fn test_diagnostics_with_type_checking_disabled() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::new(
             vec![],
             false,
@@ -2041,6 +2082,7 @@ async fn test_diagnostics_with_type_checking_enabled_no_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::new(
             vec![],
             true,
@@ -2087,6 +2129,7 @@ async fn test_diagnostics_with_type_checking_enabled_type_error() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::new(
             vec![],
             true,
@@ -2132,6 +2175,7 @@ async fn test_diagnostics_type_checking_skipped_when_parse_errors_exist() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::new(
             vec![],
             true,
@@ -2178,6 +2222,7 @@ async fn test_diagnostics_with_strict_array_option() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::new(
             vec![],
             true,
@@ -2226,6 +2271,7 @@ async fn test_diagnostics_with_tuple_option() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        client_module_paths: Default::default(),
         config: LspConfig::new(
             vec![],
             true,
@@ -2269,4 +2315,43 @@ async fn test_diagnostics_with_tuple_option() {
 fn test_to_url_returns_error_for_uri_unsupported_by_url() {
     let uri = ls_types::Uri::from_str("http://a:99999/").unwrap();
     assert!(to_url(&uri).is_err());
+}
+
+#[test]
+fn test_client_module_paths_order() {
+    let params: ls_types::InitializeParams = serde_json::from_value(serde_json::json!({
+        "capabilities": {},
+        "workspaceFolders": [{"uri": "file:///ws/a", "name": "a"}],
+        "initializationOptions": {"modulePaths": ["/opt/mods"]}
+    }))
+    .unwrap();
+    assert_eq!(
+        client_module_paths(&params),
+        vec![PathBuf::from("/ws/a"), PathBuf::from("/opt/mods")]
+    );
+}
+
+#[test]
+fn test_module_search_paths_document_dir_first() {
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        config: LspConfig::new(
+            vec![PathBuf::from("/cli")],
+            false,
+            Default::default(),
+            false,
+            Default::default(),
+        ),
+        client_module_paths: RwLock::new(vec![PathBuf::from("/ws")]),
+    });
+    let uri = Url::parse("file:///proj/sub/main.mq").unwrap();
+    assert_eq!(
+        service.inner().module_search_paths(&uri),
+        vec![PathBuf::from("/proj/sub"), PathBuf::from("/ws"), PathBuf::from("/cli")]
+    );
 }
