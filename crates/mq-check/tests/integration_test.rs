@@ -754,6 +754,11 @@ fn test_binary_op_type_errors(#[case] code: &str, #[case] should_succeed: bool, 
 // Comparison Operator Type Errors
 
 #[rstest]
+#[case::gt_union_array_number(
+    "filter([[4, 5], 6, 4], fn(x): x > 1;)",
+    true,
+    "array|number union ordered against number"
+)]
 #[case::lt_number_string(r#"1 < "hello""#, false, "number < string")]
 #[case::gt_string_number(r#""a" > 1"#, false, "string > number")]
 #[case::lte_number_bool("1 <= true", false, "number <= bool")]

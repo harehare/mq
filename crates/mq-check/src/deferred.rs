@@ -612,6 +612,24 @@ fn check_union_members(
     }
 }
 
+fn is_ordering_op(op_name: &str) -> bool {
+    matches!(op_name, "<" | ">" | "<=" | ">=" | "lt" | "gt" | "lte" | "gte")
+}
+
+/// Whether some member of a union operand resolves to an overload.
+fn any_union_member_supported(ctx: &mut InferenceContext, op_name: &str, resolved_operands: &[types::Type]) -> bool {
+    resolved_operands.iter().enumerate().any(|(i, arg_ty)| {
+        let types::Type::Union(members) = arg_ty else {
+            return false;
+        };
+        members.iter().any(|member| {
+            let mut test_args = resolved_operands.to_vec();
+            test_args[i] = member.clone();
+            ctx.resolve_overload(op_name, &test_args).is_some()
+        })
+    })
+}
+
 /// Resolves an operation whose single operand is a union of arrays with different return types
 /// by treating that operand as one array of the union of the members' element types.
 ///
@@ -939,6 +957,14 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         continue;
                     }
                     UnionCheckResult::MemberUnsupported(bad_member) => {
+                        // Ordering across unrelated types is `false` at runtime, not an error,
+                        // so a union is fine as long as one member pairing is ordered.
+                        if is_ordering_op(&d.op_name) && any_union_member_supported(ctx, &d.op_name, &resolved_operands)
+                        {
+                            settle_result(ctx, d, types::Type::Bool);
+                            unify::solve_constraints(ctx);
+                            continue;
+                        }
                         let args_str = resolved_operands
                             .iter()
                             .map(|t| t.display_renumbered())
