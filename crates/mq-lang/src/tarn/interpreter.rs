@@ -1363,7 +1363,6 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
 }
 
 /// Moves the top value below the `n` values beneath it.
-#[cold]
 #[inline(never)]
 fn rotate_down(stack: &mut [StackValue], stack_base: usize, n: usize) {
     let at = stack.len() - 1 - n;
