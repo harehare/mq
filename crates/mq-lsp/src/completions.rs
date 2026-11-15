@@ -6,8 +6,8 @@ use std::{
 use bimap::BiMap;
 use itertools::Itertools;
 use tower_lsp_server::ls_types::{
-    CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit, Documentation, InsertTextFormat,
-    MarkupContent, MarkupKind, Position, Range, TextEdit,
+    CompletionItem, CompletionItemKind, CompletionItemTag, CompletionResponse, CompletionTextEdit, Documentation,
+    InsertTextFormat, MarkupContent, MarkupKind, Position, Range, TextEdit,
 };
 use url::Url;
 
@@ -185,7 +185,7 @@ pub(crate) fn response(
                         kind: MarkupKind::Markdown,
                         value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
                     })),
-                    deprecated: Some(deprecated),
+                    tags: deprecated.then(|| vec![CompletionItemTag::DEPRECATED]),
                     ..Default::default()
                 })
             }
@@ -202,7 +202,7 @@ pub(crate) fn response(
                         kind: MarkupKind::Markdown,
                         value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
                     })),
-                    deprecated: Some(deprecated),
+                    tags: deprecated.then(|| vec![CompletionItemTag::DEPRECATED]),
                     ..Default::default()
                 })
             }
@@ -218,7 +218,7 @@ pub(crate) fn response(
                         kind: MarkupKind::Markdown,
                         value: format!("```md\n{}\n```", symbol.doc.iter().map(|(_, doc)| doc).join("\n")),
                     })),
-                    deprecated: Some(deprecated),
+                    tags: deprecated.then(|| vec![CompletionItemTag::DEPRECATED]),
                     ..Default::default()
                 })
             }
@@ -617,7 +617,11 @@ def old_func(x): x + 1;"#;
             assert!(old_func_item.is_some(), "Should include 'old_func'");
 
             if let Some(item) = old_func_item {
-                assert_eq!(item.deprecated, Some(true), "old_func should be marked as deprecated");
+                assert_eq!(
+                    item.tags,
+                    Some(vec![CompletionItemTag::DEPRECATED]),
+                    "old_func should be marked as deprecated"
+                );
             }
         }
     }

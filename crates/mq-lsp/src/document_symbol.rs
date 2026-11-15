@@ -153,8 +153,7 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, lines: &LineInde
                 let node = &nodes[id];
                 let is_deprecated = node.symbol.is_deprecated();
                 let nested = build(Some(*id), nodes, children, lines);
-                // `deprecated` is superseded by `tags`, but still set for
-                // clients that predate tag support (LSP < 3.15).
+                // The struct has no `Default`, so the deprecated field must be named.
                 #[allow(deprecated)]
                 DocumentSymbol {
                     name: node.symbol.value.as_ref().map(|n| n.to_string()).unwrap_or_default(),
@@ -164,7 +163,7 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, lines: &LineInde
                     range: lines.to_lsp_range(node.full),
                     selection_range: lines.to_lsp_range(node.selection),
                     children: (!nested.is_empty()).then_some(nested),
-                    deprecated: Some(is_deprecated),
+                    deprecated: None,
                 }
             })
             .collect()
