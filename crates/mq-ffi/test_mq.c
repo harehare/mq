@@ -514,7 +514,7 @@ void test_eval_ex() {
 
     // The error details are optional.
     status = mq_eval_ex(ctx, ".h", "x", "yaml", &values, NULL);
-    assert_equals(status, MQ_ERR_INVALID_ARGUMENT, "Unsupported format");
+    assert_equals(status, MQ_ERR_UNSUPPORTED, "Unsupported format");
 
     mq_destroy(ctx);
     printf("PASS\n");
