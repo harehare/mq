@@ -587,7 +587,7 @@ impl mq_lang::ModuleResolver for WasmModuleResolver {
 
         #[cfg(feature = "opfs")]
         return Err(mq_lang::ModuleError::NotFound(std::borrow::Cow::Owned(format!(
-            "Module '{}' not found in cache. Use preload_modules() to load it first.",
+            "Module '{}' not found. Only HTTP(S) and GitHub imports are supported in this environment.",
             module_name
         ))));
         #[cfg(not(feature = "opfs"))]
@@ -761,9 +761,18 @@ pub async fn to_ast(code: &str) -> Result<String, JsValue> {
 #[wasm_bindgen(js_name=format)]
 /// Formats `code`.
 pub async fn format(code: &str) -> Result<String, JsValue> {
-    mq_formatter::Formatter::default()
-        .format(code)
-        .map_err(|e| JsValue::from_str(&format!("{:?}", e)))
+    mq_formatter::Formatter::default().format(code).map_err(|e| {
+        let errors = e.error_ranges(code);
+        if errors.is_empty() {
+            return JsValue::from_str("Failed to format code");
+        }
+        let msg = errors
+            .iter()
+            .map(|(message, range)| format!("{} (line {}, column {})", message, range.start.line, range.start.column))
+            .collect::<Vec<_>>()
+            .join("\n");
+        JsValue::from_str(&msg)
+    })
 }
 
 #[wasm_bindgen(js_name=htmlToMarkdown)]
