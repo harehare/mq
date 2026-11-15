@@ -2366,7 +2366,7 @@ fn test_set_children(#[case] mut node: Node, #[case] children: Vec<Node>, #[case
     Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None})
 )]
 fn test_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
-    node.set_attr(attr, value);
+    let _ = node.set_attr(attr, value);
     assert_eq!(node, expected);
 }
 
@@ -2479,7 +2479,7 @@ fn test_callout_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: O
     Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None })
 )]
 fn test_callout_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
-    node.set_attr(attr, value);
+    let _ = node.set_attr(attr, value);
     assert_eq!(node, expected);
 }
 
@@ -2609,7 +2609,7 @@ fn test_embed_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Opt
     Node::Embed(Embed { target: "note".to_string(), display: None, position: None })
 )]
 fn test_embed_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
-    node.set_attr(attr, value);
+    let _ = node.set_attr(attr, value);
     assert_eq!(node, expected);
 }
 
@@ -2903,18 +2903,30 @@ fn heading_depth_saturating_sub(#[case] depth: HeadingDepth, #[case] levels: u8,
 #[rstest]
 #[case::integer(AttrValue::Integer(3), HeadingDepth::H3)]
 #[case::string(AttrValue::String("4".to_string()), HeadingDepth::H4)]
-#[case::too_deep(AttrValue::Integer(7), HeadingDepth::H2)]
-#[case::wraps_as_byte(AttrValue::Integer(257), HeadingDepth::H2)]
-#[case::negative(AttrValue::Integer(-1), HeadingDepth::H2)]
-#[case::zero_string(AttrValue::String("0".to_string()), HeadingDepth::H2)]
-fn set_attr_keeps_heading_depth_in_range(#[case] value: AttrValue, #[case] expected: HeadingDepth) {
+#[case::too_deep(AttrValue::Integer(7), HeadingDepth::H6)]
+#[case::large(AttrValue::Integer(257), HeadingDepth::H6)]
+#[case::negative(AttrValue::Integer(-1), HeadingDepth::H1)]
+#[case::zero_string(AttrValue::String("0".to_string()), HeadingDepth::H1)]
+fn set_attr_clamps_heading_depth(#[case] value: AttrValue, #[case] expected: HeadingDepth) {
     let mut node = Node::Heading(Heading {
         depth: HeadingDepth::H2,
         values: vec!["a".to_string().into()],
         position: None,
     });
-    node.set_attr(attr_keys::DEPTH, value);
+    node.set_attr(attr_keys::DEPTH, value).unwrap();
     assert!(matches!(node, Node::Heading(Heading { depth, .. }) if depth == expected));
+}
+
+#[rstest]
+#[case::unknown_attr(Node::Text(Text { value: "a".into(), position: None }), "lang", AttrValue::String("x".into()))]
+#[case::read_only(Node::Text(Text { value: "a".into(), position: None }), "line", AttrValue::Integer(1))]
+#[case::bad_integer(Node::Heading(Heading { depth: HeadingDepth::H1, values: Vec::new(), position: None }), "depth", AttrValue::String("deep".into()))]
+#[case::bad_bool(Node::Code(Code { value: "a".into(), lang: None, meta: None, fence: true, position: None }), "fence", AttrValue::String("yes".into()))]
+#[case::negative_index(Node::List(List { values: Vec::new(), ordered: false, level: 0, index: 0, checked: None, marker: None, spread: false, start: None, position: None }), "index", AttrValue::Integer(-1))]
+fn set_attr_rejects_invalid(#[case] mut node: Node, #[case] attr: &str, #[case] value: AttrValue) {
+    let before = node.clone();
+    assert!(node.set_attr(attr, value).is_err());
+    assert_eq!(node, before);
 }
 
 #[cfg(feature = "json")]

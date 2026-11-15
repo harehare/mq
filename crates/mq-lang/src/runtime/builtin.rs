@@ -3266,7 +3266,9 @@ fn set_attr_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
                     ));
                 }
             };
-            runtime_value::markdown_mut(&mut new_node).set_attr(attr, value);
+            runtime_value::markdown_mut(&mut new_node)
+                .set_attr(attr, value)
+                .map_err(|e| Error::Runtime(format!("set_attr: {e}")))?;
             Ok(RuntimeValue::Markdown(new_node, selector.take()))
         }
         [a, ..] => Ok(std::mem::take(a)),

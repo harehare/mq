@@ -94,7 +94,7 @@ pub use node::{
     Heading, HeadingDepth, HorizontalRule, HorizontalRuleMarker, Html, Image, ImageRef, Link, LinkRef, List,
     ListMarker, ListStyle, Math, MathInline, MdxAttributeContent, MdxAttributeValue, MdxFlowExpression, MdxJsEsm,
     MdxJsxAttribute, MdxJsxFlowElement, MdxJsxTextElement, MdxTextExpression, Node, Point, Position, RenderOptions,
-    Strong, TableAlign, TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url,
+    SetAttrError, Strong, TableAlign, TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url,
     UrlSurroundStyle, Yaml, attr_value::AttrValue,
 };
 pub use node_kind::{AttrSpec, AttrType, NodeKind};

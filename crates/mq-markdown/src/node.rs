@@ -12,6 +12,7 @@ use std::{
 type ColorPair<'a> = (Cow<'a, str>, Cow<'a, str>);
 
 mod attr;
+pub use attr::SetAttrError;
 pub mod attr_value;
 mod render;
 pub(crate) use render::{
