@@ -104,6 +104,8 @@ $ docker run --rm ghcr.io/harehare/mq:0.10.1
 
 The mq Language Server provides IDE features like completion, hover, and diagnostics for mq query files.
 
+Code actions include adding a missing `include`/`import`, a spelling quick fix for unresolved names (builtins and the function, variable, and parameter names visible at that position), and a `source.fixAll.mq-lint` action that applies all auto-fixable lint diagnostics. The fix-all action requires starting the server with `--enable-lint`.
+
 #### Quick Install
 
 ```bash

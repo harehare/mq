@@ -169,6 +169,17 @@ fn fix_all_action(
 }
 
 /// Builds quick fixes for diagnostics in the request range:
+/// `start` and its ancestors as `(id, is_module)`.
+fn ancestors(
+    hir: &mq_hir::Hir,
+    start: Option<mq_hir::SymbolId>,
+) -> impl Iterator<Item = (mq_hir::SymbolId, bool)> + Clone + '_ {
+    std::iter::successors(start, move |id| hir.symbol(*id).and_then(|s| s.parent)).map(move |id| {
+        let is_module = hir.symbol(id).is_some_and(|s| s.is_module());
+        (id, is_module)
+    })
+}
+
 pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
     url: Url,
@@ -186,7 +197,13 @@ pub(crate) fn response(
     // For a `module::func()` call, the unresolved error is reported on the `func`
     // `Ref` symbol, whose parent is the `QualifiedAccess` symbol holding the
     // already-written module name (see hir/lower.rs::add_qualified_access_expr).
-    let unresolved: Vec<(SmolStr, Range, Option<SmolStr>)> = hir_guard
+    let unresolved: Vec<(
+        SmolStr,
+        Range,
+        Option<SmolStr>,
+        mq_hir::ScopeId,
+        Option<mq_lang::Position>,
+    )> = hir_guard
         .errors()
         .into_iter()
         .filter_map(|error| match error {
@@ -199,7 +216,8 @@ pub(crate) fn response(
                         _ => None,
                     })
                 });
-                Some((name, range, qualified_module))
+                let position = symbol.source.text_range.map(|range| range.start);
+                Some((name, range, qualified_module, symbol.scope, position))
             }
             _ => None,
         })
@@ -208,7 +226,8 @@ pub(crate) fn response(
     let mut actions = Vec::new();
 
     for diagnostic in &params.context.diagnostics {
-        let Some((name, _, qualified_module)) = unresolved.iter().find(|(_, range, _)| *range == diagnostic.range)
+        let Some((name, _, qualified_module, scope_id, position)) =
+            unresolved.iter().find(|(_, range, ..)| *range == diagnostic.range)
         else {
             continue;
         };
@@ -224,8 +243,19 @@ pub(crate) fn response(
                     .map(|module_name| add_module_statement_action(uri, diagnostic, "include", module_name)),
             );
         } else {
-            let local_names = hir_guard.symbols().filter_map(|(_, symbol)| {
-                (symbol.source.source_id == Some(doc_source_id) && (symbol.is_function() || symbol.is_variable()))
+            // Inline module members are reachable from outside only as `module::name`, so
+            // skip those declared in a module that does not enclose the reference.
+            let enclosing =
+                position.and_then(|position| hir_guard.find_inline_module_in_position(doc_source_id, position));
+            let enclosing_chain = ancestors(&hir_guard, enclosing);
+            let visible = position
+                .map(|position| hir_guard.find_visible_symbols_in_scope(*scope_id, doc_source_id, position))
+                .unwrap_or_default();
+            let local_names = visible.iter().filter_map(|symbol| {
+                let in_foreign_module = ancestors(&hir_guard, symbol.parent).any(|(id, kind_is_module)| {
+                    kind_is_module && !enclosing_chain.clone().any(|(enclosing_id, _)| enclosing_id == id)
+                });
+                (!in_foreign_module && (symbol.is_function() || symbol.is_variable() || symbol.is_parameter()))
                     .then_some(symbol.value.as_deref())
                     .flatten()
             });
@@ -726,6 +756,39 @@ mod tests {
             .unwrap();
         assert_eq!(edits[0].new_text, "upcase");
         assert_eq!(edits[0].range, range);
+    }
+
+    fn spelling_suggestion(code: &str, typo: &str) -> Option<String> {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        hir.add_code(Some(url.clone()), code);
+        let range = unresolved_range(&hir, typo);
+        let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
+        let params = params_for(&uri, range, &format!("Unresolved symbol: {typo}"));
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None)?;
+        actions.into_iter().find_map(|a| match a {
+            CodeActionOrCommand::CodeAction(a) => a
+                .title
+                .strip_prefix("Change to `")
+                .map(|t| t.trim_end_matches('`').to_string()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_spelling_suggests_parameter() {
+        assert_eq!(
+            spelling_suggestion("def f(customer_record): customer_recor;", "customer_recor").as_deref(),
+            Some("customer_record")
+        );
+    }
+
+    #[test]
+    fn test_spelling_ignores_names_inside_inline_module() {
+        assert_eq!(
+            spelling_suggestion("module m: def my_func(): 1; end | my_fnc()", "my_fnc"),
+            None
+        );
     }
 
     #[test]
