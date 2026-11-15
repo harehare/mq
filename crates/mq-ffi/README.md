@@ -125,9 +125,13 @@ mq_status_t mq_engine_new(mq_context_t **out, mq_error_t **err);
 
 mq_status_t mq_import_module_ex(mq_context_t *ctx, const char *name, mq_error_t **err);
 mq_status_t mq_load_module_ex(mq_context_t *ctx, const char *name, mq_error_t **err);
+mq_status_t mq_define_string_value_ex(mq_context_t *ctx, const char *name, const char *value, mq_error_t **err);
+mq_status_t mq_define_json_value_ex(mq_context_t *ctx, const char *name, const char *json, mq_error_t **err);
 mq_status_t mq_clear_http_cache_ex(mq_context_t *ctx, mq_error_t **err);
 mq_status_t mq_clear_http_cache_all_ex(mq_context_t *ctx, mq_error_t **err);
 ```
+
+`mq_define_string_value` returns nothing and ignores invalid input silently, so prefer the `_ex` functions. `name` must be a valid mq identifier and not a keyword, and `json` must be valid JSON, otherwise `MQ_ERR_INVALID_ARGUMENT` is returned.
 
 HTML to Markdown takes its options through an opaque object, so options can be added without breaking the ABI. `options` may be `NULL` for the defaults.
 

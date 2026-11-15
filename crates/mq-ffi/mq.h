@@ -365,7 +365,7 @@ void mq_set_search_paths(struct mq_context_t *engine_ptr,
  * Defines a string variable that can be referenced from mq code evaluated
  * afterwards by `mq_eval`, allowing values from the host environment to be
  * injected without building query strings by hand.
- * Has no effect if `engine_ptr` is null.
+ * Invalid input is ignored without notice; use `mq_define_string_value_ex` to detect it.
  *
  * # Safety
  *
@@ -377,6 +377,37 @@ void mq_set_search_paths(struct mq_context_t *engine_ptr,
 void mq_define_string_value(struct mq_context_t *engine_ptr,
                             const char *name_c,
                             const char *value_c);
+
+/**
+ * Defines a string variable like `mq_define_string_value`, reporting failure as a status
+ * plus an `mq_error_t`. `name_c` must be a valid mq identifier and not a keyword, otherwise
+ * `MQ_ERR_INVALID_ARGUMENT` is returned. On failure, if `err` is non-null, an error is stored
+ * in `*err`, to be freed with `mq_error_free`.
+ *
+ * # Safety
+ *
+ * `err` must be null or valid for writes. The other arguments are as for
+ * `mq_define_string_value`.
+ */
+enum mq_status_t mq_define_string_value_ex(struct mq_context_t *engine_ptr,
+                                           const char *name_c,
+                                           const char *value_c,
+                                           struct mq_error_t **err);
+
+/**
+ * Defines a variable from a JSON string: `null`, booleans, numbers, strings, arrays and
+ * objects (as dicts). Reports failure like `mq_define_string_value_ex`; malformed JSON is
+ * `MQ_ERR_INVALID_ARGUMENT`.
+ *
+ * # Safety
+ *
+ * `err` must be null or valid for writes. The other arguments are as for
+ * `mq_define_string_value`, with `json_c` a null-terminated C string holding JSON.
+ */
+enum mq_status_t mq_define_json_value_ex(struct mq_context_t *engine_ptr,
+                                         const char *name_c,
+                                         const char *json_c,
+                                         struct mq_error_t **err);
 
 /**
  * Imports an external module by name, searched for in the paths configured via
