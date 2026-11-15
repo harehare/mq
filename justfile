@@ -164,8 +164,23 @@ test-lang-cached:
 test: test-lang-cached
     cargo nextest run --workspace
 
+# Lint and type check all tracked .mq files, run per directory so sibling modules resolve (skipped if mq-lint/mq-check are not on PATH)
+lint-mq:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v mq-lint >/dev/null || ! command -v mq-check >/dev/null; then
+        echo "mq-lint/mq-check not found, skipping .mq lint"
+        exit 0
+    fi
+    status=0
+    for dir in $(git ls-files '*.mq' | xargs -n1 dirname | sort -u); do
+        files=$(git ls-files "$dir/*.mq" | grep -v "^$dir/.*/" | xargs -n1 basename)
+        (cd "$dir" && mq-lint --min-severity error $files && mq-check $files) || status=1
+    done
+    exit $status
+
 # Run formatting, linting and all tests
-test-all: fmt fmt-mq lint test-mq test-doc test-doc-examples test-all-features test
+test-all: fmt fmt-mq lint-mq lint test-mq test-doc test-doc-examples test-all-features test
 
 # Run tests with code coverage reporting
 test-cov:
