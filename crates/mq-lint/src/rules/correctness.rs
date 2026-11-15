@@ -2,6 +2,8 @@
 pub mod always_true_condition;
 /// The `assign_to_immutable` rule.
 pub mod assign_to_immutable;
+/// The `bare_pipe_in_branch` rule.
+pub mod bare_pipe_in_branch;
 /// The `deprecated_function_call` rule.
 pub mod deprecated_function_call;
 /// The `duplicate_import` rule.
@@ -43,5 +45,6 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(missing_else_in_expr::MissingElseInExpr),
         Box::new(always_true_condition::AlwaysTrueCondition),
         Box::new(assign_to_immutable::AssignToImmutable),
+        Box::new(bare_pipe_in_branch::BarePipeInBranch),
     ]
 }

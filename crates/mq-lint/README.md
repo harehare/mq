@@ -137,6 +137,7 @@ config.complexity.max_interpolation_exprs = 4;
 | `missing_else_in_expr`  | warn     |         | `if` expression with no `else` branch (evaluates to `none` on false)           |
 | `always_true_condition` | warn     |         | `if` condition is a literal `true` or `false`                                  |
 | `assign_to_immutable`   | error    |         | Assignment (`=`, `+=`, `x[k] = ...`) to a `let` binding                        |
+| `bare_pipe_in_branch`   | warn     |         | `if`/`elif`/`else` branch starting with `let`/`var` without `do ... end`, so a following `\|` applies to the whole `if` |
 
 "Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
