@@ -43,6 +43,8 @@ pub enum RuleId {
     TooManyParams,
     /// Nesting deeper than the configured limit.
     DeeplyNested,
+    /// A branch starting with `let`/`var` without `do ... end`.
+    BarePipeInBranch,
     /// A match with more arms than the configured limit.
     TooManyMatchArms,
     /// An interpolated string with more expressions than the configured limit.
@@ -102,6 +104,7 @@ impl RuleId {
         RuleId::MissingElseInExpr,
         RuleId::AlwaysTrueCondition,
         RuleId::AssignToImmutable,
+        RuleId::BarePipeInBranch,
         RuleId::FunctionTooLong,
         RuleId::TooManyParams,
         RuleId::DeeplyNested,
@@ -142,6 +145,7 @@ impl RuleId {
             RuleId::MissingElseInExpr => "missing_else_in_expr",
             RuleId::AlwaysTrueCondition => "always_true_condition",
             RuleId::AssignToImmutable => "assign_to_immutable",
+            RuleId::BarePipeInBranch => "bare_pipe_in_branch",
             RuleId::FunctionTooLong => "function_too_long",
             RuleId::TooManyParams => "too_many_params",
             RuleId::DeeplyNested => "deeply_nested",
@@ -242,6 +246,8 @@ pub enum LintMessage {
         /// Name of the offending item.
         name: String,
     },
+    /// A branch starting with `let`/`var` without `do ... end`.
+    BarePipeInBranch,
     /// An `if` condition that is a constant.
     AlwaysTrueCondition {
         /// The constant condition value.
@@ -389,6 +395,7 @@ impl LintMessage {
             LintMessage::MissingElseInExpr => RuleId::MissingElseInExpr,
             LintMessage::AlwaysTrueCondition { .. } => RuleId::AlwaysTrueCondition,
             LintMessage::AssignToImmutable { .. } => RuleId::AssignToImmutable,
+            LintMessage::BarePipeInBranch => RuleId::BarePipeInBranch,
             LintMessage::FunctionTooLong { .. } => RuleId::FunctionTooLong,
             LintMessage::TooManyParams { .. } => RuleId::TooManyParams,
             LintMessage::DeeplyNested { .. } => RuleId::DeeplyNested,
@@ -439,6 +446,7 @@ impl LintMessage {
             )),
             LintMessage::ShadowVariable { .. } => Some("consider renaming to avoid confusion".to_string()),
             LintMessage::AssignToImmutable { name } => Some(format!("declare `{name}` with `var` instead of `let`")),
+            LintMessage::BarePipeInBranch => Some("wrap the branch in `do ... end` so `|` stays inside it".to_string()),
             LintMessage::MissingElseInExpr => {
                 Some("add `else: <expr>` to provide a value for the false branch".to_string())
             }
@@ -541,6 +549,10 @@ impl fmt::Display for LintMessage {
                 write!(f, "variable `{name}` shadows a variable in an outer scope")
             }
             LintMessage::AssignToImmutable { name } => write!(f, "cannot assign to immutable variable `{name}`"),
+            LintMessage::BarePipeInBranch => write!(
+                f,
+                "branch binds a variable without `do ... end`, so a following `|` applies to the whole `if`"
+            ),
             LintMessage::MissingElseInExpr => {
                 write!(
                     f,
