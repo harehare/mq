@@ -785,7 +785,7 @@ pub async fn to_html(markdown_input: &str) -> String {
 }
 
 #[wasm_bindgen(js_name=diagnostics, skip_typescript)]
-/// Returns syntax diagnostics, plus type errors when `enable_type_check` is set.
+/// Returns syntax and unresolved-symbol diagnostics, plus type errors when `enable_type_check` is set.
 pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue {
     if code.lines().all(|line| {
         let line = line.trim();
@@ -807,22 +807,30 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
         })
         .collect::<Vec<_>>();
 
-    if enable_type_check.unwrap_or(false) && errors.is_empty() {
+    if errors.is_empty() {
         let mut hir = mq_hir::Hir::default();
         hir.add_code(None, code);
 
-        let mut checker = mq_check::TypeChecker::default();
-        let type_errors = checker.check(&hir);
+        errors.extend(hir.error_ranges().into_iter().map(|(message, range)| Diagnostic {
+            start_line: range.start.line.max(1),
+            start_column: range.start.column.max(1),
+            end_line: range.end.line.max(1),
+            end_column: range.end.column.max(1),
+            message,
+        }));
 
-        for error in type_errors {
-            if let Some(range) = error.location() {
-                errors.push(Diagnostic {
-                    start_line: range.start.line,
-                    start_column: range.start.column,
-                    end_line: range.end.line,
-                    end_column: range.end.column,
-                    message: error.to_string(),
-                });
+        if enable_type_check.unwrap_or(false) && errors.is_empty() {
+            let mut checker = mq_check::TypeChecker::default();
+            for error in checker.check(&hir) {
+                if let Some(range) = error.location() {
+                    errors.push(Diagnostic {
+                        start_line: range.start.line,
+                        start_column: range.start.column,
+                        end_line: range.end.line,
+                        end_column: range.end.column,
+                        message: error.to_string(),
+                    });
+                }
             }
         }
     }
