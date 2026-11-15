@@ -261,6 +261,9 @@ pub struct CommandContext {
     pub(crate) source_id: mq_hir::SourceId,
     pub(crate) scope_id: mq_hir::ScopeId,
     document_index: DocumentIndex,
+    last_query: Option<String>,
+    /// Line being typed when `/edit` was triggered by the key binding.
+    pub(crate) edit_buffer: Option<String>,
 }
 
 impl CommandContext {
@@ -280,6 +283,8 @@ impl CommandContext {
             source_id,
             scope_id,
             document_index,
+            last_query: None,
+            edit_buffer: None,
         }
     }
 
@@ -455,14 +460,19 @@ impl CommandContext {
                     .tempfile()
                     .into_diagnostic()?;
 
-                // Write current buffer to temp file (empty for now)
-                temp_file.write_all(b"").into_diagnostic()?;
+                // Seed with the typed buffer, or the previous query when it is empty
+                let initial = self
+                    .edit_buffer
+                    .take()
+                    .filter(|b| !b.trim().is_empty())
+                    .or_else(|| self.last_query.clone())
+                    .unwrap_or_default();
+                temp_file.write_all(initial.as_bytes()).into_diagnostic()?;
                 temp_file.flush().into_diagnostic()?;
 
-                let temp_path = temp_file.path().to_path_buf();
-
-                // Close the file before opening in editor
-                drop(temp_file);
+                // Close the handle but keep the file until the edit is read back
+                let temp_guard = temp_file.into_temp_path();
+                let temp_path = temp_guard.to_path_buf();
 
                 // Launch the editor
                 let status = ProcessCommand::new(&editor)
@@ -477,14 +487,14 @@ impl CommandContext {
                 // Read the edited content
                 let edited_content = fs::read_to_string(&temp_path).into_diagnostic()?;
 
-                // Clean up temp file
-                fs::remove_file(&temp_path).ok();
+                drop(temp_guard);
 
                 // Evaluate the edited content
                 let code = edited_content.trim();
                 if code.is_empty() {
                     Ok(CommandOutput::None)
                 } else {
+                    self.last_query = Some(code.to_string());
                     let eval_result = self
                         .session
                         .eval(code, self.input.clone().into_iter())
@@ -618,6 +628,7 @@ impl CommandContext {
                     return Ok(CommandOutput::None);
                 }
 
+                self.last_query = Some(code.clone());
                 let result = self.session.eval(&code, self.input.clone().into_iter());
 
                 let output = result
@@ -1159,5 +1170,40 @@ mod tests {
 
         let result = ctx.execute("").unwrap();
         assert!(matches!(result, CommandOutput::None));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_execute_edit_seeds_buffer_and_last_query() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let seen = dir.path().join("seen");
+        let script = dir.path().join("editor.sh");
+        // Records the initial content, then replaces it with a new query.
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncat \"$1\" > {}\nprintf 'add(1, 2)' > \"$1\"\n",
+                seen.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        unsafe { std::env::set_var("EDITOR", &script) };
+
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), vec!["".to_string().into()]);
+
+        ctx.edit_buffer = Some("add(10, 1)".to_string());
+        let result = ctx.execute("/edit").unwrap();
+        assert_eq!(fs::read_to_string(&seen).unwrap(), "add(10, 1)");
+        match result {
+            CommandOutput::Value(values) => assert_eq!(values[0].to_string(), "3"),
+            _ => panic!("Expected Value output"),
+        }
+
+        // Empty buffer falls back to the previous query.
+        ctx.execute("/edit").unwrap();
+        assert_eq!(fs::read_to_string(&seen).unwrap(), "add(1, 2)");
     }
 }
