@@ -1,5 +1,6 @@
 use crate::http_client::{FetchErrorKind, HttpClient};
 use robots_txt::{Robots, matcher::SimpleMatcher};
+use std::path::Path;
 use url::Url;
 
 /// What a site's robots.txt permits.
@@ -25,7 +26,8 @@ pub(crate) fn origin_key(url: &Url) -> Option<String> {
 
 impl RobotsTxt {
     /// Fetches robots.txt for the origin of `target_url`.
-    /// If a custom_robots_path is provided and is a valid URL, it fetches from there.
+    /// If a custom_robots_path is an http(s) URL it fetches from there; a `file://` URL or
+    /// plain path is read from disk.
     /// Otherwise, it uses `/robots.txt` on the same scheme, host and port.
     ///
     /// Follows RFC 9309: a `4xx` response (other than `429`) means no rules apply,
@@ -38,17 +40,18 @@ impl RobotsTxt {
         let origin =
             origin_key(target_url).ok_or_else(|| format!("Target URL {} does not have a valid host.", target_url))?;
 
-        let robots_url_str = if let Some(path) = custom_robots_path {
-            if let Ok(custom_url) = Url::parse(path) {
-                custom_url.to_string()
-            } else {
-                return Err(format!(
-                    "Custom robots_path '{}' is not a valid URL. Local file paths are not yet supported for robots.txt.",
-                    path
-                ));
-            }
-        } else {
-            format!("{}/robots.txt", origin)
+        let robots_url_str = match custom_robots_path {
+            Some(path) => match Url::parse(path) {
+                Ok(url) if matches!(url.scheme(), "http" | "https") => url.to_string(),
+                Ok(url) if url.scheme() == "file" => {
+                    let file = url
+                        .to_file_path()
+                        .map_err(|_| format!("Invalid file URL for robots_path '{}'.", path))?;
+                    return Self::from_file(&file, origin);
+                }
+                _ => return Self::from_file(Path::new(path), origin),
+            },
+            None => format!("{}/robots.txt", origin),
         };
 
         let robots_url =
@@ -74,6 +77,16 @@ impl RobotsTxt {
         };
 
         Ok(RobotsTxt { policy, origin })
+    }
+
+    fn from_file(path: &Path, origin: String) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read robots.txt file '{}': {}", path.display(), e))?;
+        tracing::info!("Using robots.txt from local file: {}", path.display());
+        Ok(RobotsTxt {
+            policy: Policy::Rules(text),
+            origin,
+        })
     }
 
     /// Checks if a URL is allowed to be crawled by a specific user-agent.
@@ -129,6 +142,31 @@ mod tests {
 
     fn no_retry_client() -> HttpClient {
         HttpClient::new_reqwest_with_options(30.0, 3, RetryConfig::disabled(), HeaderMap::new(), None).unwrap()
+    }
+
+    #[test]
+    fn test_fetch_local_file_path_and_file_url() {
+        let dir = std::env::temp_dir().join(format!("mq_robots_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("robots.txt");
+        std::fs::write(&file, "User-agent: *\nDisallow: /private/").unwrap();
+        let url_str = Url::from_file_path(&file).unwrap().to_string();
+        let target = Url::parse("http://example.com/private/x").unwrap();
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            for p in [file.to_str().unwrap(), url_str.as_str()] {
+                let r = RobotsTxt::fetch(&no_retry_client(), &target, Some(p)).await.unwrap();
+                assert!(!r.is_allowed(&target, "bot"));
+                assert!(r.is_allowed(&Url::parse("http://example.com/ok").unwrap(), "bot"));
+            }
+            let missing = dir.join("nope.txt");
+            assert!(
+                RobotsTxt::fetch(&no_retry_client(), &target, missing.to_str())
+                    .await
+                    .is_err()
+            );
+        });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -281,19 +319,6 @@ mod tests {
 
             assert!(matches!(&robots.policy, Policy::Rules(text) if text == robots_body));
             mock.assert_async().await;
-        });
-    }
-
-    #[test]
-    fn test_fetch_invalid_custom_path() {
-        init_tracing();
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            let http_client = HttpClient::new_reqwest(30.0).unwrap();
-            let url = Url::parse("http://example.com").unwrap();
-            let result = RobotsTxt::fetch(&http_client, &url, Some("/not/a/url")).await;
-            assert!(result.is_err());
-            assert!(result.unwrap_err().contains("not a valid URL"));
         });
     }
 
