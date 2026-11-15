@@ -328,7 +328,8 @@ const char *mq_version(void);
 
 /**
  * Sets the maximum call stack depth for function calls, to guard against
- * runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null.
+ * runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null
+ * or `max_call_stack_depth` is 0 (the current limit is kept).
  */
 void mq_set_max_call_stack_depth(struct mq_context_t *engine_ptr, uint32_t max_call_stack_depth);
 
