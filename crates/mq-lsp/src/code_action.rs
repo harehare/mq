@@ -90,6 +90,84 @@ fn lint_fix_action(
     })
 }
 
+/// Kind of the whole-document lint fix action.
+pub(crate) const FIX_ALL_LINT: CodeActionKind = CodeActionKind::new("source.fixAll.mq-lint");
+
+/// Builds a quick fix replacing an unresolved name with a similarly spelled one.
+fn spelling_action(uri: &ls_types::Uri, diagnostic: &ls_types::Diagnostic, suggestion: String) -> CodeActionOrCommand {
+    let mut changes = HashMap::new();
+    changes.insert(
+        uri.clone(),
+        vec![TextEdit {
+            range: diagnostic.range,
+            new_text: suggestion.clone(),
+        }],
+    );
+
+    CodeActionOrCommand::CodeAction(CodeAction {
+        title: format!("Change to `{suggestion}`"),
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diagnostic.clone()]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+}
+
+/// Whether the client asked for `kind` (no `only` filter means everything is wanted).
+fn kind_requested(only: Option<&[CodeActionKind]>, kind: &CodeActionKind) -> bool {
+    only.is_none_or(|only| {
+        only.iter()
+            .any(|k| kind.as_str() == k.as_str() || kind.as_str().starts_with(&format!("{}.", k.as_str())))
+    })
+}
+
+/// Builds a `source.fixAll.mq-lint` action applying every non-overlapping lint fix.
+fn fix_all_action(
+    lines: Option<&LineIndex>,
+    uri: &ls_types::Uri,
+    diagnostics: &[mq_lint::Diagnostic],
+    source_text: &str,
+) -> Option<CodeActionOrCommand> {
+    let mut fixes: Vec<(mq_lang::Range, String)> = diagnostics
+        .iter()
+        .filter_map(|d| d.fix.as_ref()?.resolve(source_text))
+        .collect();
+    fixes.sort_by_key(|(range, _)| (range.start.line, range.start.column));
+
+    let mut edits: Vec<TextEdit> = Vec::new();
+    let mut last_end: Option<(u32, u32)> = None;
+    for (range, text) in fixes {
+        let start = (range.start.line, range.start.column);
+        if last_end.is_some_and(|end| start < end) {
+            continue;
+        }
+        last_end = Some((range.end.line, range.end.column));
+        edits.push(TextEdit {
+            range: to_range(lines, range),
+            new_text: text,
+        });
+    }
+
+    if edits.is_empty() {
+        return None;
+    }
+
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), edits);
+    Some(CodeActionOrCommand::CodeAction(CodeAction {
+        title: "Fix all auto-fixable lint problems".to_string(),
+        kind: Some(FIX_ALL_LINT),
+        edit: Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }))
+}
+
 /// Builds quick fixes for diagnostics in the request range:
 pub(crate) fn response(
     hir: Arc<RwLock<mq_hir::Hir>>,
@@ -145,6 +223,15 @@ pub(crate) fn response(
                     .iter()
                     .map(|module_name| add_module_statement_action(uri, diagnostic, "include", module_name)),
             );
+        } else {
+            let local_names = hir_guard.symbols().filter_map(|(_, symbol)| {
+                (symbol.source.source_id == Some(doc_source_id) && (symbol.is_function() || symbol.is_variable()))
+                    .then_some(symbol.value.as_deref())
+                    .flatten()
+            });
+            if let Some(suggestion) = mq_lang::suggest_name(name, local_names) {
+                actions.push(spelling_action(uri, diagnostic, suggestion));
+            }
         }
     }
 
@@ -169,6 +256,10 @@ pub(crate) fn response(
 
             let title = format!("Fix: {}", matched.help().unwrap_or_else(|| matched.message()));
             actions.push(lint_fix_action(lines, uri, diagnostic, title, range, replacement));
+        }
+
+        if kind_requested(params.context.only.as_deref(), &FIX_ALL_LINT) {
+            actions.extend(fix_all_action(lines, uri, &lint_diagnostics, source_text));
         }
     }
 
@@ -607,5 +698,83 @@ mod tests {
         // No `source_id`/`lint_config`/`source_text` supplied (mirrors `enable_lint: false`).
         let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None);
         assert!(actions.is_none());
+    }
+
+    #[test]
+    fn test_suggests_spelling_for_misspelled_builtin() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        hir.add_code(Some(url.clone()), "upcas(\"a\")");
+
+        let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
+        let range = Range::new(Position::new(0, 0), Position::new(0, 5));
+        let params = params_for(&uri, range, "Unresolved symbol: upcas");
+
+        let actions = response(Arc::new(RwLock::new(hir)), url, params, None, None, None).unwrap();
+        let CodeActionOrCommand::CodeAction(action) = &actions[0] else {
+            panic!("expected a CodeAction");
+        };
+        assert_eq!(action.title, "Change to `upcase`");
+        let edits = action
+            .edit
+            .as_ref()
+            .unwrap()
+            .changes
+            .as_ref()
+            .unwrap()
+            .get(&uri)
+            .unwrap();
+        assert_eq!(edits[0].new_text, "upcase");
+        assert_eq!(edits[0].range, range);
+    }
+
+    #[test]
+    fn test_fix_all_only_when_requested() {
+        let mut hir = mq_hir::Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let code = ".checked == true";
+        let (source_id, _, _) = hir.add_code(Some(url.clone()), code);
+        let uri = ls_types::Uri::from_str(url.as_str()).unwrap();
+        let range = Range::new(Position::new(0, 0), Position::new(0, code.len() as u32));
+        let lint_config = mq_lint::LintConfig::default();
+        let hir = Arc::new(RwLock::new(hir));
+
+        let mut params = lint_diagnostic_params(&uri, range, mq_lint::RuleId::BooleanComparison);
+        params.context.only = Some(vec![CodeActionKind::SOURCE_FIX_ALL]);
+        let actions = response(
+            hir.clone(),
+            url.clone(),
+            params,
+            Some(source_id),
+            Some(&lint_config),
+            Some(code),
+        )
+        .unwrap();
+        let fix_all = actions
+            .iter()
+            .find_map(|a| match a {
+                CodeActionOrCommand::CodeAction(a) if a.kind == Some(FIX_ALL_LINT) => Some(a),
+                _ => None,
+            })
+            .expect("expected fix-all action");
+        let edits = fix_all
+            .edit
+            .as_ref()
+            .unwrap()
+            .changes
+            .as_ref()
+            .unwrap()
+            .get(&uri)
+            .unwrap();
+        assert_eq!(edits[0].new_text, ".checked");
+
+        let mut params = lint_diagnostic_params(&uri, range, mq_lint::RuleId::BooleanComparison);
+        params.context.only = Some(vec![CodeActionKind::QUICKFIX]);
+        let actions = response(hir, url, params, Some(source_id), Some(&lint_config), Some(code)).unwrap();
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, CodeActionOrCommand::CodeAction(a) if a.kind == Some(FIX_ALL_LINT)))
+        );
     }
 }

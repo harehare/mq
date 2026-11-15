@@ -63,6 +63,7 @@ pub(crate) fn server_capabilities() -> ServerCapabilities {
                 CodeActionKind::QUICKFIX,
                 CodeActionKind::REFACTOR_EXTRACT,
                 CodeActionKind::REFACTOR_INLINE,
+                crate::code_action::FIX_ALL_LINT,
             ]),
             resolve_provider: Some(false),
             ..Default::default()
