@@ -19,6 +19,8 @@ pub struct MqFnDoc {
     pub name: String,
     /// Parameter names.
     pub params: Vec<String>,
+    /// Whether each parameter in `params` has a default value.
+    pub optional: Vec<bool>,
     /// Description text.
     pub description: String,
     /// Return type name.
@@ -185,15 +187,17 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool, skip_comment_lines: usize
         return None;
     }
 
-    let params: Vec<String> = match &node.kind {
+    let (params, optional): (Vec<String>, Vec<bool>) = match &node.kind {
         CstNodeKind::Def {
             params: Some(params), ..
         } => params
             .iter()
-            .filter(|c| matches!(c.kind, CstNodeKind::Param { .. }))
-            .filter_map(ident_text)
-            .collect(),
-        _ => Vec::new(),
+            .filter_map(|c| match &c.kind {
+                CstNodeKind::Param { default, .. } => ident_text(c).map(|n| (n, default.is_some())),
+                _ => None,
+            })
+            .unzip(),
+        _ => (Vec::new(), Vec::new()),
     };
 
     let comments = node.comments().into_iter().map(|(_, s)| s).skip(skip_comment_lines);
@@ -202,6 +206,7 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool, skip_comment_lines: usize
     Some(MqFnDoc {
         name,
         params,
+        optional,
         description,
         returns,
         examples,
@@ -353,6 +358,7 @@ mod tests {
         let fns = extract_functions_from_cst(src, false);
         assert!(!fns.is_empty(), "should parse function with default param");
         assert_eq!(fns[0].params, vec!["items", "pattern", "depth"]);
+        assert_eq!(fns[0].optional, vec![false, false, true]);
     }
 
     #[test]
