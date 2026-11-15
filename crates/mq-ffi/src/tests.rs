@@ -532,6 +532,27 @@ fn test_set_max_call_stack_depth() {
 }
 
 #[test]
+fn test_set_max_call_stack_depth_zero_is_ignored() {
+    let engine = mq_create();
+    mq_set_max_call_stack_depth(engine, 0);
+
+    let code = make_c_string("def f(x): x + 1; | f(1)");
+    let input = make_c_string("test");
+    let format = make_c_string("text");
+    let result = unsafe { mq_eval(engine, code, input, format) };
+
+    assert!(result.error_msg.is_null());
+
+    mq_free_result(result);
+    mq_destroy(engine);
+    unsafe {
+        mq_free_string(code as *mut c_char);
+        mq_free_string(input as *mut c_char);
+        mq_free_string(format as *mut c_char);
+    }
+}
+
+#[test]
 fn test_set_max_call_stack_depth_enforced() {
     let engine = mq_create();
     mq_set_max_call_stack_depth(engine, 2);
