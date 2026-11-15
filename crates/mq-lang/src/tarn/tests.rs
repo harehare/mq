@@ -2344,18 +2344,18 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 #[case::while_continue("var x = 0 | while(x < 4): x += 1 | if(x == 3): continue else: x;", 4.0)]
 #[case::loop_break_with_value("loop: break: 42;", 42.0)]
 #[case::builtin_shadow_recursion_calls_builtin("def add(a, b): add(a, b) + 1; | add(1, 2)", 4.0)]
-#[case::foreach_sums_elements("var total = 0 | foreach(x, array(1, 2, 3, 4)): total = total + x; | total", 10.0)]
+#[case::foreach_sums_elements("var total = 0 | foreach(x, [1, 2, 3, 4]): total = total + x; | total", 10.0)]
 #[case::foreach_continue_skips_element(
-    "var total = 0 | foreach(x, array(1, 2, 3, 4)): if (x == 2): continue else: total = total + x; | total",
+    "var total = 0 | foreach(x, [1, 2, 3, 4]): if (x == 2): continue else: total = total + x; | total",
     8.0
 )]
 #[case::foreach_break_stops_early(
-    "var total = 0 | foreach(x, array(1, 2, 3, 4)): if (x == 3): break else: total = total + x; | total",
+    "var total = 0 | foreach(x, [1, 2, 3, 4]): if (x == 3): break else: total = total + x; | total",
     3.0
 )]
-#[case::foreach_collects_results_array("len(foreach(x, array(10, 20, 30)): x * 2;)", 3.0)]
-#[case::foreach_results_array_last_elem("get(foreach(x, array(10, 20, 30)): x * 2;, 2)", 60.0)]
-#[case::foreach_break_with_value_bypasses_array("foreach(x, array(1, 2, 3)): if (x == 2): break: 999 else: x;", 999.0)]
+#[case::foreach_collects_results_array("len(foreach(x, [10, 20, 30]): x * 2;)", 3.0)]
+#[case::foreach_results_array_last_elem("get(foreach(x, [10, 20, 30]): x * 2;, 2)", 60.0)]
+#[case::foreach_break_with_value_bypasses_array("foreach(x, [1, 2, 3]): if (x == 2): break: 999 else: x;", 999.0)]
 #[case::try_without_error("try: 5 catch: 99;", 5.0)]
 #[case::try_bare_catch_on_error("try: 1 / 0 catch: 99;", 99.0)]
 #[case::try_catches_mod_by_zero("try: 10 % 0 catch: 99;", 99.0)]
@@ -2696,7 +2696,7 @@ fn dict_literal_instructions_preserve_entries(#[case] source: &str, #[case] expe
 #[case::arithmetic_and_assignment("var total = 1 | foreach(x, [2, 3, 4]): total += x; | total")]
 #[case::recursive_closure("let make = fn(x): fn(y): x + y;; | let add_two = make(2) | add_two(40)")]
 #[case::defaults_and_variadic("def f(first, rest = 2, *tail): first + rest + len(tail); | f(10, 20, 1, 2)")]
-#[case::try_continue("var total = 0 | foreach(x, array(1, 2, 3)) do try: continue catch: 0 end | total")]
+#[case::try_continue("var total = 0 | foreach(x, [1, 2, 3]) do try: continue catch: 0 end | total")]
 #[case::match_and_destructuring(
     "let [first, ..rest] = [10, 20, 30] | match(rest) do | [a, b]: first + a + b | _: 0 end"
 )]
@@ -2832,7 +2832,7 @@ fn programs_with_number_input_yield_number(#[case] code: &str, #[case] expected:
 #[case::string_interpolation_number(r#"let n = 1 + 2 | s"sum=${n}""#, "sum=3")]
 #[case::match_literal_arm("match (2) do | 1: \"one\" | 2: \"two\" | _: \"other\" end", "two")]
 #[case::match_type_pattern(
-    "match (array(1, 2, 3)) do | :array: \"is_array\" | :number: \"is_number\" | _: \"other\" end",
+    "match ([1, 2, 3]) do | :array: \"is_array\" | :number: \"is_number\" | _: \"other\" end",
     "is_array"
 )]
 #[case::let_dict_destruct(r#"let {name: n} = {"name": "Alice"} | n"#, "Alice")]
@@ -4260,7 +4260,7 @@ fn break_crossing_a_try_boundary_exits_the_enclosing_loop() {
 #[rstest]
 #[case::while_loop("var x = 0 | while(x < 4) do x += 1 | try: continue catch: 0 end | x", 4.0)]
 #[case::foreach_loop(
-    "var total = 0 | foreach(x, array(1, 2, 3, 4)) do try: continue catch: 0 end | total",
+    "var total = 0 | foreach(x, [1, 2, 3, 4]) do try: continue catch: 0 end | total",
     0.0
 )]
 fn continue_crossing_try_boundary_reaches_the_enclosing_loop(#[case] code: &str, #[case] expected: f64) {
@@ -5043,7 +5043,7 @@ fn recursively_resumed_generators_respect_call_stack_depth(#[case] max_depth: u3
 
 #[test]
 fn yield_inside_foreach_suspends_once_per_element() {
-    let def = "def g(): foreach (x, array(10, 20, 30)): yield: x;; | let stream = g()";
+    let def = "def g(): foreach (x, [10, 20, 30]): yield: x;; | let stream = g()";
     assert_eq!(
         dict_field(&run_yield_source(def, 2), "value"),
         RuntimeValue::Number(20.into())
