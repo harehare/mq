@@ -513,10 +513,15 @@ impl Hir {
     }
 
     /// Loads the source of an `include` or `import`. A module already being loaded further up
-    /// the chain is not loaded again, and the flag reports that.
+    /// the chain, or open in an editor, is not loaded again, and the flag reports that.
     fn load_directive_source(&mut self, module_name: &str, url: Url) -> (SourceId, bool) {
         if self.loading_sources.contains(&url)
             && let Some(source_id) = self.source_by_url(&url)
+        {
+            return (source_id, true);
+        }
+        if let Some(source_id) = self.source_by_url(&url)
+            && self.opened_sources.contains(&source_id)
         {
             return (source_id, true);
         }

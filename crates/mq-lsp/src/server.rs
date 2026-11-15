@@ -81,6 +81,31 @@ impl LanguageServer for Backend {
         })
     }
 
+    async fn initialized(&self, _: ls_types::InitializedParams) {
+        let watchers = vec![ls_types::FileSystemWatcher {
+            glob_pattern: ls_types::GlobPattern::String("**/*.mq".to_string()),
+            kind: None,
+        }];
+        let registration = ls_types::Registration {
+            id: "mq-watch-files".to_string(),
+            method: "workspace/didChangeWatchedFiles".to_string(),
+            register_options: serde_json::to_value(ls_types::DidChangeWatchedFilesRegistrationOptions { watchers })
+                .ok(),
+        };
+        if let Err(e) = self.client.register_capability(vec![registration]).await {
+            self.client
+                .log_message(
+                    ls_types::MessageType::WARNING,
+                    format!("file watcher registration failed: {e}"),
+                )
+                .await;
+        }
+    }
+
+    async fn did_change_watched_files(&self, _: ls_types::DidChangeWatchedFilesParams) {
+        self.reanalyze_open_documents().await;
+    }
+
     async fn shutdown(&self) -> jsonrpc::Result<()> {
         Ok(())
     }
@@ -638,6 +663,20 @@ impl Backend {
             Arc::new(DocumentSnapshot::new(Arc::new(text), Some(nodes))),
         );
         self.error_map.insert(uri_string, errors);
+    }
+
+    /// Re-parses every open buffer so imports pick up changed files on disk, then republishes.
+    async fn reanalyze_open_documents(&self) {
+        let open: Vec<(String, Arc<String>)> = self
+            .documents
+            .iter()
+            .map(|entry| (entry.key().clone(), Arc::clone(&entry.value().text)))
+            .collect();
+        for (uri_string, text) in open {
+            let Ok(url) = Url::parse(&uri_string) else { continue };
+            self.on_change(url.clone(), text.to_string()).await;
+            self.diagnostics(url, None).await;
+        }
     }
 
     /// Computes the full diagnostic set for a document: cached parse/type errors from
