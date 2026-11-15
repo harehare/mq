@@ -13,6 +13,8 @@ use std::{path::PathBuf, process::ExitCode};
     mq-test tests.mq\n\n\
     ## Run tests across multiple files:\n\
     mq-test tests.mq other_tests.mq\n\n\
+    ## Run all *.mq files under a directory:\n\
+    mq-test tests/\n\n\
     ## Discover and run all *.mq files in the current directory:\n\
     mq-test\n\n\
     ## Resolve `include`/`import` from an extra module directory:\n\
@@ -42,7 +44,7 @@ use std::{path::PathBuf, process::ExitCode};
     ## Run tests and print per-test results as JSON instead of a Markdown report:\n\
     mq-test --format json")]
 struct Cli {
-    /// Path(s) to mq test files.
+    /// Path(s) to mq test files or directories (searched for **/*.mq).
     /// Defaults to **/*.mq in the current directory when omitted.
     files: Vec<PathBuf>,
 
