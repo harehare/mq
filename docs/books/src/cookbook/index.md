@@ -42,6 +42,7 @@ Every recipe follows the same four parts:
 - [Convert a Markdown table to CSV](convert-table-to-csv.md)
 - [Convert CSV to a Markdown table](convert-csv-to-markdown-table.md)
 - [Fill blank cells in a CSV column](fill-blank-csv-cells.md)
+- [Sort CSV rows by column](sort-csv-rows.md)
 - [Fill blank cells in a Markdown table](fill-blank-table-cells.md)
 - [Reshape a table between wide and long form](reshape-table-pivot.md)
 
@@ -71,6 +72,7 @@ Every recipe follows the same four parts:
 - [Compact JSON with TOON for LLM prompts](compact-json-with-toon.md)
 - [Decode a CBOR payload](decode-cbor-payload.md)
 - [Extract links from an HTML page](extract-links-from-html.md)
+- [Select HTML elements with CSS selectors](select-html-with-css-selectors.md)
 
 ## Parsing text formats and command output
 
