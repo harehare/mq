@@ -781,7 +781,7 @@ mod tests {
     #[test]
     fn test_spelling_suggests_parameter() {
         assert_eq!(
-            spelling_suggestion("def f(customer_record): customer_recor;", "customer_recor").as_deref(),
+            spelling_suggestion("def f(customer_record): customer_recrd;", "customer_recrd").as_deref(),
             Some("customer_record")
         );
     }
