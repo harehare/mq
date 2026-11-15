@@ -149,6 +149,15 @@ pub struct ChromiumWaitConfig {
     pub strategy_timeout: Duration,
 }
 
+/// A fetched page body and the URL it was served from after redirects.
+#[derive(Debug, Clone)]
+pub struct Fetched {
+    /// Response body.
+    pub content: String,
+    /// URL after following redirects.
+    pub final_url: Url,
+}
+
 /// Enum for different HTTP client implementations
 #[derive(Debug, Clone)]
 pub enum HttpClient {
@@ -302,11 +311,12 @@ impl HttpClient {
     pub async fn fetch(&self, url: Url) -> Result<String, String> {
         self.fetch_with(url, FetchOptions::default())
             .await
+            .map(|f| f.content)
             .map_err(|e| e.message)
     }
 
     /// Like [`HttpClient::fetch`], with `options` applied and a typed error.
-    pub async fn fetch_with(&self, url: Url, options: FetchOptions) -> Result<String, FetchError> {
+    pub async fn fetch_with(&self, url: Url, options: FetchOptions) -> Result<Fetched, FetchError> {
         let retry_config = self.retry_config().clone();
         let mut backoff = retry_config.initial_backoff;
         let mut attempt: u32 = 0;
@@ -332,16 +342,16 @@ impl HttpClient {
         }
     }
 
-    async fn fetch_once(&self, url: Url, options: FetchOptions) -> Result<String, FetchError> {
-        let content = self.fetch_raw(url.clone(), options).await?;
+    async fn fetch_once(&self, url: Url, options: FetchOptions) -> Result<Fetched, FetchError> {
+        let fetched = self.fetch_raw(url.clone(), options).await?;
         match (self, options.max_bytes) {
-            (HttpClient::Reqwest(..), _) | (_, None) => Ok(content),
-            (_, Some(max)) if content.len() <= max => Ok(content),
+            (HttpClient::Reqwest(..), _) | (_, None) => Ok(fetched),
+            (_, Some(max)) if fetched.content.len() <= max => Ok(fetched),
             (_, Some(max)) => Err(too_large(&url, max)),
         }
     }
 
-    async fn fetch_raw(&self, url: Url, options: FetchOptions) -> Result<String, FetchError> {
+    async fn fetch_raw(&self, url: Url, options: FetchOptions) -> Result<Fetched, FetchError> {
         match self {
             HttpClient::Reqwest(client, _) => {
                 let mut response = client
@@ -350,6 +360,7 @@ impl HttpClient {
                     .await
                     .map_err(|e| FetchError::network(format!("Failed to fetch URL {}: {}", url, e)))?;
 
+                let final_url = response.url().clone();
                 let status = response.status();
                 if !status.is_success() {
                     return Err(FetchError::new(
@@ -394,7 +405,10 @@ impl HttpClient {
                     body.extend_from_slice(&chunk);
                 }
 
-                Ok(decode_body(&body, content_type.as_deref()))
+                Ok(Fetched {
+                    content: decode_body(&body, content_type.as_deref()),
+                    final_url,
+                })
             }
             HttpClient::Fantoccini(client, _) => {
                 let url_str = url.as_str();
@@ -409,7 +423,11 @@ impl HttpClient {
                     .await
                     .map_err(|e| FetchError::network(format!("Fantoccini failed to get page source: {}", e)))?;
 
-                Ok(page_source)
+                let final_url = client.current_url().await.unwrap_or(url);
+                Ok(Fetched {
+                    content: page_source,
+                    final_url,
+                })
             }
             HttpClient::Chromium(browser, config, _, _) => {
                 // Open a blank page first so we can register event listeners
@@ -488,9 +506,18 @@ impl HttpClient {
                         tokio::time::sleep(config.fixed_delay).await;
                     }
 
-                    page.content()
+                    let content = page
+                        .content()
                         .await
-                        .map_err(|e| format!("Chrome failed to get content from {}: {}", url, e))
+                        .map_err(|e| format!("Chrome failed to get content from {}: {}", url, e))?;
+                    let final_url = page
+                        .url()
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|u| Url::parse(&u).ok())
+                        .unwrap_or_else(|| url.clone());
+                    Ok::<_, String>(Fetched { content, final_url })
                 }
                 .await;
 
@@ -636,7 +663,10 @@ mod tests {
 
         let err = client.fetch_with(url.clone(), options(Some(999))).await.unwrap_err();
         assert_eq!(err.kind, FetchErrorKind::TooLarge);
-        assert_eq!(client.fetch_with(url, options(Some(1000))).await.unwrap().len(), 1000);
+        assert_eq!(
+            client.fetch_with(url, options(Some(1000))).await.unwrap().content.len(),
+            1000
+        );
     }
 
     #[test]

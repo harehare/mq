@@ -618,8 +618,20 @@ impl Crawler {
             html_only: true,
             max_bytes: self.max_response_bytes,
         };
+        let requested_url = current_url.clone();
         match self.http_client.fetch_with(current_url.clone(), fetch_options).await {
-            Ok(html_content) => {
+            Ok(fetched) => {
+                let html_content = fetched.content;
+                // Resolve links and name output after the URL actually served, not the requested one.
+                let current_url = fetched.final_url;
+                if current_url != requested_url && !self.visited.insert(current_url.clone()) {
+                    tracing::info!(
+                        "Skipping {}: redirected to already visited {}",
+                        requested_url,
+                        current_url
+                    );
+                    return;
+                }
                 tracing::info!("Applying mq query to content from {}", current_url);
 
                 let query = self.mq_query.clone();
@@ -1199,6 +1211,49 @@ mod tests {
         assert_eq!(result.pages_crawled, 1);
         assert_eq!(result.pages_skipped_non_html, 1);
         assert_eq!(result.pages_failed, 0);
+    }
+
+    #[tokio::test]
+    async fn test_crawl_resolves_links_against_redirect_target() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/old");
+                then.status(301).header("location", "/new/index.html");
+            })
+            .await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/new/index.html");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body(r#"<html><body><a href="page2.html">next</a></body></html>"#);
+            })
+            .await;
+        let target = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/new/page2.html");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body("<html><body>ok</body></html>");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/old", port)).unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions::default(),
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        target.assert_async().await;
+        let final_url = Url::parse(&format!("http://localhost:{}/new/index.html", port)).unwrap();
+        assert!(crawler.visited.contains(&final_url));
     }
 
     #[tokio::test]
