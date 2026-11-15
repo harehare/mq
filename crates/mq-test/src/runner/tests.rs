@@ -1567,3 +1567,16 @@ fn test_find_duplicate_name(#[case] content: &str, #[case] expected: Option<&str
     let tests = TestRunner::discover_tests(content);
     assert_eq!(TestRunner::find_duplicate_name(&tests), expected);
 }
+
+#[rstest]
+#[case("# @parametrize([[1]])\ndef test_pair(a, b):\n  assert_true(is_none(b))\nend\n")]
+#[case("# @parametrize([[1, 2, 3]])\ndef test_pair(a, b):\n  assert_true(true)\nend\n")]
+fn test_a_parametrize_case_with_wrong_argument_count_fails_the_run(#[case] body: &str) {
+    let dir = temp_project_dir("parametrize_arity_mismatch");
+    let test_file = dir.join("tests.mq");
+    fs::write(&test_file, format!("include \"test\"\n|\n{body}")).unwrap();
+
+    assert!(!TestRunner::new(vec![test_file]).run().unwrap());
+
+    fs::remove_dir_all(&dir).ok();
+}

@@ -1080,7 +1080,9 @@ impl TestRunner {
                         "  map(\
                             zip(range(0, len({params_expr})), {params_expr}), \
                             fn(__ic): test_case(\"{display}[\" + to_string(__ic[0]) + \"]\", \
-                            fn(): {name}({arg_list}) ;) ;)"
+                            fn(): if (len(__ic[1]) != {arity}): \
+                              error(\"@parametrize: expected {arity} argument(s) for '{name}', got \" + to_string(len(__ic[1]))) \
+                              else: {name}({arg_list}) ;) ;)"
                     )
                 }
                 DiscoveredTest::Property {
