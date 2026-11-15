@@ -1971,17 +1971,15 @@ fn first_local_arg_moves_after_pure_args_that_read_it(
     #[case] reordered: bool,
     #[case] expected: &str,
 ) {
-    use super::bytecode::OpCode;
-
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
     assert_eq!(
         compiled.chunks[0]
-            .code
+            .local_names
             .iter()
-            .any(|op| matches!(op, OpCode::RotateDown(2))),
+            .any(|name| name.to_string().starts_with("$arg")),
         reordered
     );
     assert_eq!(run(source).to_string(), expected);

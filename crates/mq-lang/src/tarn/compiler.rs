@@ -162,6 +162,8 @@ struct Compiler<R: ModuleResolver> {
     try_depth: usize,
     /// Counter making the temporaries of each `set_chain` expansion unique.
     path_chain_count: usize,
+    /// Counter making the hidden argument locals of `compile_call` unique.
+    hidden_arg_count: usize,
     /// Whether the chunk currently being compiled is lexically inside a `def`/`fn` body. A
     /// `try` body inherits this from its enclosing scope; a default-parameter expression does
     /// not (see the two call sites that toggle it). Gates `yield`.
@@ -1301,6 +1303,7 @@ fn compile_program_impl<R: ModuleResolver>(
         unresolved_call_names: FxHashSet::default(),
         try_depth: 0,
         path_chain_count: 0,
+        hidden_arg_count: 0,
         in_fn_body: false,
         defer_undefined_identifiers: options.defer_undefined_identifiers,
         patterns: PatternState::default(),
@@ -3375,12 +3378,29 @@ impl<R: ModuleResolver> Compiler<R> {
             && args[1..].iter().any(|arg| self.reads_local(arg, slot))
         {
             // Read the first local after the pure arguments that also read it, so its last use
-            // can move the value into the call instead of cloning it.
+            // can move the value into the call instead of cloning it. The later arguments are
+            // evaluated first and parked in hidden locals, so the call stack order is unchanged.
+            let mut parked = Vec::with_capacity(args.len() - 1);
             for arg in &args[1..] {
+                if matches!(arg.expr, Expr::Literal(_)) {
+                    parked.push(None);
+                    continue;
+                }
                 self.compile_expr(arg)?;
+                let name: Ident = format!("$arg{}", self.hidden_arg_count).as_str().into();
+                self.hidden_arg_count += 1;
+                let hidden = self.scope_mut().declare(name);
+                self.emit(OpCode::SetLocal(hidden));
+                parked.push(Some(hidden));
             }
             self.compile_expr(&args[0])?;
-            self.emit(OpCode::RotateDown(self.arg_count(args.len() - 1)?));
+            for (arg, hidden) in args[1..].iter().zip(parked) {
+                if let Some(slot) = hidden {
+                    self.emit(OpCode::GetLocal(slot));
+                } else {
+                    self.compile_expr(arg)?;
+                }
+            }
         } else {
             for arg in args {
                 self.compile_expr(arg)?;

@@ -1362,13 +1362,6 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
         .collect()
 }
 
-/// Moves the top value below the `n` values beneath it.
-#[inline(never)]
-fn rotate_down(stack: &mut [StackValue], n: usize) {
-    let at = stack.len() - 1 - n;
-    stack[at..].rotate_right(1);
-}
-
 // Keep the opcode loop separate from the trampoline's continuation and unwinding paths.
 // Inlining it into `drive_frames` also merges their native stack frames and code footprint.
 #[inline(never)]
@@ -2596,7 +2589,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
                     upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
                 }
-                OpCode::RotateDown(n) => rotate_down(stack, *n as usize),
             }
         };
         // `verify_chunks` rejects chunks longer than i32::MAX and verifies all jump targets.
