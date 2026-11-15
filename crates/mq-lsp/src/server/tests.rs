@@ -866,6 +866,7 @@ fn test_capabilities_advertise_code_action_and_rename_shape() {
                     ls_types::CodeActionKind::QUICKFIX,
                     ls_types::CodeActionKind::REFACTOR_EXTRACT,
                     ls_types::CodeActionKind::REFACTOR_INLINE,
+                    crate::code_action::FIX_ALL_LINT,
                 ])
             );
         }
