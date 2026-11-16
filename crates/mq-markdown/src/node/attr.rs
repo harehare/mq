@@ -286,7 +286,9 @@ impl Node {
             },
             Node::Heading(h) => match attr {
                 attr_keys::DEPTH | attr_keys::LEVEL => {
-                    h.depth = HeadingDepth::saturating(to_int(attr, &value)?);
+                    h.depth = HeadingDepth::saturating(
+                        to_int(attr, &value)?.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64,
+                    );
                 }
                 _ => return Err(unknown()),
             },
@@ -398,16 +400,17 @@ fn to_bool(attr: &str, value: &AttrValue) -> Result<bool, SetAttrError> {
     }
 }
 
-fn to_int(attr: &str, value: &AttrValue) -> Result<i64, SetAttrError> {
+fn to_int(attr: &str, value: &AttrValue) -> Result<i128, SetAttrError> {
     match value {
-        AttrValue::Integer(i) => Some(*i),
-        AttrValue::Number(n) if n.fract() == 0.0 => Some(*n as i64),
+        AttrValue::Integer(i) => Some(i128::from(*i)),
+        // Integral floats are exact in i128 up to 2^127; larger ones saturate and fail range checks.
+        AttrValue::Number(n) if n.is_finite() && n.fract() == 0.0 => Some(*n as i128),
         AttrValue::String(s) => s.parse().ok(),
         _ => None,
     }
     .ok_or_else(|| invalid(attr, "an integer", value))
 }
 
-fn to_uint<T: TryFrom<i64>>(attr: &str, value: &AttrValue) -> Result<T, SetAttrError> {
+fn to_uint<T: TryFrom<i128>>(attr: &str, value: &AttrValue) -> Result<T, SetAttrError> {
     T::try_from(to_int(attr, value)?).map_err(|_| invalid(attr, "an integer in range", value))
 }

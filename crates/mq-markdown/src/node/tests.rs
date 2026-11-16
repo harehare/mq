@@ -2907,6 +2907,8 @@ fn heading_depth_saturating_sub(#[case] depth: HeadingDepth, #[case] levels: u8,
 #[case::large(AttrValue::Integer(257), HeadingDepth::H6)]
 #[case::negative(AttrValue::Integer(-1), HeadingDepth::H1)]
 #[case::zero_string(AttrValue::String("0".to_string()), HeadingDepth::H1)]
+#[case::huge_float(AttrValue::Number(1e20), HeadingDepth::H6)]
+#[case::huge_negative_float(AttrValue::Number(-1e20), HeadingDepth::H1)]
 fn set_attr_clamps_heading_depth(#[case] value: AttrValue, #[case] expected: HeadingDepth) {
     let mut node = Node::Heading(Heading {
         depth: HeadingDepth::H2,
@@ -2923,10 +2925,31 @@ fn set_attr_clamps_heading_depth(#[case] value: AttrValue, #[case] expected: Hea
 #[case::bad_integer(Node::Heading(Heading { depth: HeadingDepth::H1, values: Vec::new(), position: None }), "depth", AttrValue::String("deep".into()))]
 #[case::bad_bool(Node::Code(Code { value: "a".into(), lang: None, meta: None, fence: true, position: None }), "fence", AttrValue::String("yes".into()))]
 #[case::negative_index(Node::List(List { values: Vec::new(), ordered: false, level: 0, index: 0, checked: None, marker: None, spread: false, start: None, position: None }), "index", AttrValue::Integer(-1))]
+#[case::float_beyond_usize(Node::List(List { values: Vec::new(), ordered: false, level: 0, index: 0, checked: None, marker: None, spread: false, start: None, position: None }), "index", AttrValue::Number(1e20))]
+#[case::float_beyond_usize_cell(Node::TableCell(TableCell { values: Vec::new(), row: 0, column: 0, position: None }), "row", AttrValue::Number(1e20))]
+#[case::nan(Node::Heading(Heading { depth: HeadingDepth::H1, values: Vec::new(), position: None }), "depth", AttrValue::Number(f64::NAN))]
 fn set_attr_rejects_invalid(#[case] mut node: Node, #[case] attr: &str, #[case] value: AttrValue) {
     let before = node.clone();
     assert!(node.set_attr(attr, value).is_err());
     assert_eq!(node, before);
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn set_attr_accepts_float_above_i64_max_within_usize() {
+    let mut node = Node::List(List {
+        values: Vec::new(),
+        ordered: false,
+        level: 0,
+        index: 0,
+        checked: None,
+        marker: None,
+        spread: false,
+        start: None,
+        position: None,
+    });
+    node.set_attr(attr_keys::INDEX, AttrValue::Number(1e19)).unwrap();
+    assert!(matches!(node, Node::List(List { index, .. }) if index == 10_000_000_000_000_000_000usize));
 }
 
 #[cfg(feature = "json")]
