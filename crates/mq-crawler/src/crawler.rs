@@ -40,6 +40,8 @@ pub struct CrawlResult {
     pub pages_skipped_robots: usize,
     /// Pages skipped because the response was not HTML.
     pub pages_skipped_non_html: usize,
+    /// URLs skipped without a request because of a non-HTML file extension.
+    pub pages_skipped_extension: usize,
     /// Pages that failed to fetch or process.
     pub pages_failed: usize,
     /// Links found across all pages.
@@ -58,6 +60,9 @@ pub struct CrawlResultStats {
     /// Pages skipped because the response was not HTML.
     #[serde(default)]
     pub pages_skipped_non_html: usize,
+    /// URLs skipped without a request because of a non-HTML file extension.
+    #[serde(default)]
+    pub pages_skipped_extension: usize,
     /// Pages that failed to fetch or process.
     pub pages_failed: usize,
     /// Links found across all pages.
@@ -84,6 +89,7 @@ impl CrawlResult {
             pages_crawled: self.pages_crawled,
             pages_skipped_robots: self.pages_skipped_robots,
             pages_skipped_non_html: self.pages_skipped_non_html,
+            pages_skipped_extension: self.pages_skipped_extension,
             pages_failed: self.pages_failed,
             links_discovered: self.links_discovered,
             total_pages_visited: self.total_pages_visited,
@@ -102,6 +108,7 @@ impl CrawlResult {
                 let _ = writeln!(handle, "Pages crawled successfully: {}", self.pages_crawled);
                 let _ = writeln!(handle, "Pages skipped (robots.txt): {}", self.pages_skipped_robots);
                 let _ = writeln!(handle, "Pages skipped (non-HTML): {}", self.pages_skipped_non_html);
+                let _ = writeln!(handle, "URLs skipped (extension): {}", self.pages_skipped_extension);
                 let _ = writeln!(handle, "Pages failed: {}", self.pages_failed);
                 let _ = writeln!(handle, "Total pages visited: {}", self.total_pages_visited);
                 let _ = writeln!(handle, "Links discovered: {}", self.links_discovered);
@@ -159,6 +166,22 @@ fn sanitize_filename_component(component: &str, max_len: usize) -> String {
 }
 
 // Replace the placeholder extract_links function with this:
+/// Extensions that are never HTML, so the URL is not requested at all.
+const NON_HTML_EXTENSIONS: &[&str] = &[
+    "7z", "aac", "apk", "avi", "bin", "bmp", "bz2", "css", "csv", "dmg", "doc", "docx", "eot", "epub", "exe", "flac",
+    "gif", "gz", "ico", "iso", "jpeg", "jpg", "js", "json", "m4a", "mkv", "mov", "mp3", "mp4", "ogg", "otf", "pdf",
+    "png", "ppt", "pptx", "rar", "svg", "tar", "tgz", "ttf", "wav", "webm", "webp", "woff", "woff2", "xls", "xlsx",
+    "xml", "xz", "zip",
+];
+
+fn has_non_html_extension(url: &Url) -> bool {
+    let Some(name) = url.path().rsplit('/').next() else {
+        return false;
+    };
+    name.rsplit_once('.')
+        .is_some_and(|(_, ext)| NON_HTML_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(ext)))
+}
+
 fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
     if html_content.is_empty() {
         return Vec::new();
@@ -208,6 +231,7 @@ pub struct Crawler {
     initial_domain: String,
     max_pages: Option<usize>,
     max_response_bytes: Option<usize>,
+    skip_extensions: bool,
     mq_query: String,
     output_path: Option<String>,
     result: Arc<RwLock<CrawlResult>>,
@@ -245,6 +269,8 @@ pub struct CrawlerOptions {
     pub max_pages: Option<usize>,
     /// Largest page body accepted, in bytes. Unlimited when unset.
     pub max_response_bytes: Option<usize>,
+    /// Skip URLs with a known non-HTML extension without requesting them.
+    pub skip_extensions: bool,
     /// File the crawl progress is periodically saved to.
     pub checkpoint_path: Option<String>,
     /// Pages crawled between checkpoint saves. Values below 1 are treated as 1.
@@ -269,6 +295,7 @@ impl Crawler {
             additional_seed_urls,
             max_pages,
             max_response_bytes,
+            skip_extensions,
             checkpoint_path,
             checkpoint_interval_pages,
             resume_checkpoint,
@@ -298,6 +325,7 @@ impl Crawler {
             initial_result.pages_crawled = checkpoint.stats.pages_crawled;
             initial_result.pages_skipped_robots = checkpoint.stats.pages_skipped_robots;
             initial_result.pages_skipped_non_html = checkpoint.stats.pages_skipped_non_html;
+            initial_result.pages_skipped_extension = checkpoint.stats.pages_skipped_extension;
             initial_result.pages_failed = checkpoint.stats.pages_failed;
             initial_result.links_discovered = checkpoint.stats.links_discovered;
         } else {
@@ -319,6 +347,7 @@ impl Crawler {
             domain_last_request: Arc::new(DashMap::new()),
             max_pages,
             max_response_bytes,
+            skip_extensions,
             mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
@@ -594,6 +623,12 @@ impl Crawler {
 
     async fn process_url(&self, current_url: Url, current_depth: usize) {
         tracing::info!("Processing URL: {} (depth: {})", current_url, current_depth);
+
+        if self.skip_extensions && has_non_html_extension(&current_url) {
+            tracing::info!("Skipping {} without a request: non-HTML extension", current_url);
+            self.result.write().await.pages_skipped_extension += 1;
+            return;
+        }
 
         // URL is already marked as visited in run_parallel, no need to check again
         let robots_rules = match self.get_or_fetch_robots(&current_url).await {
@@ -1175,6 +1210,54 @@ mod tests {
         assert_eq!(result.pages_skipped_robots, 1);
     }
 
+    #[rstest]
+    #[case("http://a.com/doc.PDF", true)]
+    #[case("http://a.com/x/img.png?v=1", true)]
+    #[case("http://a.com/page.html", false)]
+    #[case("http://a.com/a.b/page", false)]
+    #[case("http://a.com/", false)]
+    fn test_has_non_html_extension(#[case] url: &str, #[case] expected: bool) {
+        assert_eq!(has_non_html_extension(&Url::parse(url).unwrap()), expected);
+    }
+
+    #[tokio::test]
+    async fn test_crawl_skips_extension_without_request() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body(r#"<html><body><a href="/doc.pdf">pdf</a></body></html>"#);
+            })
+            .await;
+        let pdf = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/doc.pdf");
+                then.status(200).header("content-type", "application/pdf").body("x");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/", port)).unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions {
+                skip_extensions: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        pdf.assert_calls_async(0).await;
+        let result = crawler.result.read().await;
+        assert_eq!(result.pages_skipped_extension, 1);
+        assert_eq!(result.pages_skipped_non_html, 0);
+    }
+
     #[tokio::test]
     async fn test_crawl_skips_non_html_responses() {
         let server = MockServer::start_async().await;
@@ -1341,6 +1424,7 @@ mod tests {
                 pages_crawled: 5,
                 pages_skipped_robots: 1,
                 pages_skipped_non_html: 4,
+                pages_skipped_extension: 2,
                 pages_failed: 2,
                 links_discovered: 7,
                 total_pages_visited: 1,

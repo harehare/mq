@@ -45,6 +45,9 @@ struct CliArgs {
     /// Maximum size (in bytes) of a page body. Larger pages are reported as failed. 0 means unlimited.
     #[clap(long, default_value_t = 10 * 1024 * 1024, value_name = "BYTES")]
     max_response_bytes: usize,
+    /// Request URLs even when they have a known non-HTML extension (.pdf, .png, ...).
+    #[clap(long)]
+    no_skip_extensions: bool,
     /// Path to write periodic crawl checkpoints to (JSON). Enables resuming an
     /// interrupted crawl later with --resume-from. A checkpoint is written every
     /// --checkpoint-interval-pages pages, and once more when the crawl stops.
@@ -400,6 +403,7 @@ async fn run(args: CliArgs) -> miette::Result<()> {
             additional_seed_urls: sitemap_seed_urls,
             max_pages: args.max_pages,
             max_response_bytes: Some(args.max_response_bytes).filter(|&bytes| bytes > 0),
+            skip_extensions: !args.no_skip_extensions,
             checkpoint_path: args.checkpoint_path,
             checkpoint_interval_pages: args.checkpoint_interval_pages,
             resume_checkpoint,
