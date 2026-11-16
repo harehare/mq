@@ -20,7 +20,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
-use which::which;
 
 use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
@@ -1092,8 +1091,28 @@ impl Cli {
         if local_path.exists() {
             Some(local_path)
         } else {
-            which(&command_bin).ok()
+            Self::find_in_path(&command_bin)
         }
+    }
+
+    /// The first executable `command_bin` on `PATH`. A bare word as the query reaches this on
+    /// every run, so it only stats one candidate per directory.
+    #[cfg(unix)]
+    fn find_in_path(command_bin: &str) -> Option<PathBuf> {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::var_os("PATH")?;
+        std::env::split_paths(&path)
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .map(|dir| dir.join(command_bin))
+            .find(|candidate| {
+                fs::metadata(candidate)
+                    .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & UNIX_EXECUTABLE_BITS != 0)
+            })
+    }
+
+    #[cfg(not(unix))]
+    fn find_in_path(command_bin: &str) -> Option<PathBuf> {
+        which::which(command_bin).ok()
     }
 
     /// Find all external commands (mq-* files in ~/.local/bin and PATH)
@@ -1187,7 +1206,9 @@ impl Cli {
     /// subcommands take precedence.
     pub fn run_external_subcommand(args: &[OsString]) -> Option<std::process::ExitCode> {
         let name = args.get(1)?.to_str()?;
+        // An option is never a subcommand.
         if name.is_empty()
+            || name.starts_with('-')
             || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
             || Self::command().find_subcommand(name).is_some()
         {
