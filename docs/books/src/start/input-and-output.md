@@ -230,6 +230,16 @@ mq --stream '.h2' large.md
 mq -P 1 '.h2' *.md  # parallel from the second file on
 ```
 
+## Limitations
+
+| Area | Limitation |
+| ---- | ---------- |
+| Encoding | UTF-32 input is an error. See [Text encoding](#text-encoding) |
+| `--diff` | Cannot be combined with `-F grep` |
+| `--stream` | Not supported for binary input formats (`-I bytes`, `-I cbor`), and cannot be combined with `--count` or `-i` |
+| `-U` / `--update` | Only for Markdown input. Any other `-I` format is an error |
+| WebAssembly (`mq-wasm`) | HTTP imports are off by default and need `allowHttpImport`. Only modules imported by the query itself, on an allowed domain, are fetched, and they are preloaded before the query runs. Imports inside fetched modules are ignored. With the `opfs` feature, an environment without OPFS cannot use HTTP imports |
+
 ## Error format
 
 An uncaught error is printed in a human-readable form by default. `--error-format json` writes it as a JSON object with `message`, `code`, `severity`, `help` and `labels`, for use by other tools. The exit code is unchanged.
