@@ -759,6 +759,24 @@ fn test_binary_op_type_errors(#[case] code: &str, #[case] should_succeed: bool, 
     true,
     "array|number union ordered against number"
 )]
+#[case::lt_union_array_number("filter([[4, 5], 6, 4], fn(x): x < 1;)", true, "union < number")]
+#[case::lte_union_array_number("filter([[4, 5], 6, 4], fn(x): x <= 1;)", true, "union <= number")]
+#[case::gte_union_array_number("filter([[4, 5], 6, 4], fn(x): x >= 1;)", true, "union >= number")]
+#[case::gt_fn_union_array_number("filter([[4, 5], 6, 4], fn(x): gt(x, 1);)", true, "gt() with union")]
+#[case::lt_fn_union_array_number("filter([[4, 5], 6, 4], fn(x): lt(x, 1);)", true, "lt() with union")]
+#[case::gt_number_union_array_number("filter([[4, 5], 6, 4], fn(x): 1 > x;)", true, "number > union on the right")]
+#[case::gt_union_result_is_bool(
+    r#"filter([[4, 5], 6, 4], fn(x): if (x > 1): true else: false;)"#,
+    true,
+    "union comparison result is usable as bool"
+)]
+#[case::gt_union_array_none("filter([[4, 5], None], fn(x): x > 1;)", false, "array|none has no ordered pairing")]
+#[case::gt_union_array_bool("filter([[4, 5], true], fn(x): x > 1;)", false, "array|bool has no ordered pairing")]
+#[case::sub_union_array_number(
+    "filter([[4, 5], 6, 4], fn(x): x - 1;)",
+    false,
+    "non-ordering op still rejects the union"
+)]
 #[case::lt_number_string(r#"1 < "hello""#, false, "number < string")]
 #[case::gt_string_number(r#""a" > 1"#, false, "string > number")]
 #[case::lte_number_bool("1 <= true", false, "number <= bool")]
