@@ -138,6 +138,8 @@ config.complexity.max_interpolation_exprs = 4;
 | `always_true_condition` | warn     |         | `if` condition is a literal `true` or `false`                                  |
 | `assign_to_immutable`   | error    |         | Assignment (`=`, `+=`, `x[k] = ...`) to a `let` binding                        |
 | `bare_pipe_in_branch`   | warn     |         | `if`/`elif`/`else` branch starting with `let`/`var` without `do ... end`, so a following `\|` applies to the whole `if` |
+| `deprecated_function_call` | warn   |         | Call to a function marked deprecated                                           |
+| `duplicate_import`      | error    |         | Same module imported more than once                                            |
 
 "Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
@@ -180,6 +182,7 @@ if (true): 1 else: 2;  # warn: condition is always `true`
 | `redundant_try`             | style    | ✓       | `try: ... catch: none` is exactly what the `?` operator does         |
 | `unnecessary_interpolation` | style    | ✓       | `s"${x}"` (a single interpolation, nothing else) → `x`               |
 | `constant_string_concat`    | style    | ✓       | `"a" + "b"` (both literals) → `"ab"`                                 |
+| `negated_condition`         | style    |         | `if (!cond): a else: b` reads better with the branches swapped       |
 
 "Fixable" rules can be auto-corrected with `mq-lint --fix` or their language server quick fix.
 
