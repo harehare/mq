@@ -111,8 +111,8 @@ def sections(md_nodes, depth = false):
               | let end_node = first(filter(boundaries_with_end, fn(b): b > start;))
               | result += [{type: :section, header: agg_nodes[start], children: agg_nodes[start + 1:end_node]}]
               | i += 1
-              | result
             end
+          | result
         end
       else:
         do
@@ -126,9 +126,9 @@ def sections(md_nodes, depth = false):
               | let end_node = indices_with_end[i + 1]
               | let children = agg_nodes[start_node + 1:end_node]
               | result += [{type: :section, header: agg_nodes[start_node], children: children}]
-              | i = i + 1
-              | result
+              | i += 1
             end
+          | result
         end
 end
 
@@ -161,8 +161,8 @@ def _tree_from_nodes(items, prefix = [], offset = 0):
                 | let here = prefix + [first_k + k]
                 | result += [{type: :section, header: items[start], children: own_body, path: here, subsections: _tree_from_nodes(rest, here)}]
                 | k += 1
-                | result
               end
+            | result
           end
     end
 end

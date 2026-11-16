@@ -12,6 +12,11 @@ def test_section_sections(markdown, expected_len):
   | assert_eq(len(sections), expected_len)
 end
 
+# @parametrize([[false], [true]])
+def test_section_sections_without_headings(depth):
+  assert_eq(section::sections(to_markdown("text\n\nmore\n"), depth), [])
+end
+
 def test_section_filter_sections():
   let sections = do test_sections | section::filter_sections(fn(x): section::level(x) == 1;);
   | assert_eq(len(sections), 2)
