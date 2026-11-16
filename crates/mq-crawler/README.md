@@ -197,7 +197,7 @@ robots.txt is fetched per origin (scheme, host and port) and follows RFC 9309: a
 mq-crawl --max-response-bytes 2097152 https://example.com
 ```
 
-Responses whose `Content-Type` is not HTML (PDFs, images, ...) are skipped and counted as "Pages skipped (non-HTML)". Oversized pages count as failed. With `--headless` or `--webdriver-url`, only the size limit applies, after rendering.
+Responses whose `Content-Type` is not HTML (PDFs, images, ...) are skipped and counted as "Pages skipped (non-HTML)". URLs with a known non-HTML extension (`.pdf`, `.png`, `.zip`, ...) are not requested at all and are counted as "URLs skipped (extension)"; pass `--no-skip-extensions` to request them anyway. Oversized pages count as failed. With `--headless` or `--webdriver-url`, only the size limit applies, after rendering.
 
 ### Exit Codes and Short Flags
 
