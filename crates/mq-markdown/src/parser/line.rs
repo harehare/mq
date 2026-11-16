@@ -145,17 +145,15 @@ pub(super) fn tab_stops(src: &str) -> Vec<TabStop> {
     let mut stops = Vec::new();
     // The byte offset and the column right after the last tab or line start.
     let (mut anchor, mut anchor_column) = (if src.starts_with(BOM) { BOM.len_utf8() } else { 0 }, 0);
-    for (index, byte) in src.bytes().enumerate() {
-        match byte {
-            b'\n' | b'\r' => (anchor, anchor_column) = (index + 1, 0),
-            b'\t' => {
-                let column = anchor_column + (index - anchor);
-                let after = (column / 4 + 1) * 4;
-                stops.push(TabStop { at: index, after });
-                (anchor, anchor_column) = (index + 1, after);
-            }
-            _ => {}
+    let bytes = src.as_bytes();
+    for index in memchr::memchr_iter(b'\t', bytes) {
+        if let Some(line_end) = memchr::memrchr2(b'\n', b'\r', &bytes[anchor..index]) {
+            (anchor, anchor_column) = (anchor + line_end + 1, 0);
         }
+        let column = anchor_column + (index - anchor);
+        let after = (column / 4 + 1) * 4;
+        stops.push(TabStop { at: index, after });
+        (anchor, anchor_column) = (index + 1, after);
     }
     stops
 }
@@ -219,16 +217,25 @@ pub(super) fn leading_ws(text: &str) -> usize {
     text.bytes().take_while(|byte| matches!(byte, b' ' | b'\t')).count()
 }
 
-/// The `Line::others` of `text`.
+/// The `Line::others` of `text`. Scans from the end, where the first ordinary byte settles all three.
 fn last_others(text: &str) -> [usize; 3] {
     let mut last = [0; 3];
-    for (index, byte) in text.bytes().enumerate() {
-        match byte {
-            b' ' | b'\t' => {}
-            b'*' => (last[1], last[2]) = (index + 1, index + 1),
-            b'-' => (last[0], last[2]) = (index + 1, index + 1),
-            b'_' => (last[0], last[1]) = (index + 1, index + 1),
-            _ => last = [index + 1; 3],
+    let mut settled = [false; 3];
+    for (index, byte) in text.bytes().enumerate().rev() {
+        let others: [bool; 3] = match byte {
+            b' ' | b'\t' => continue,
+            b'*' => [false, true, true],
+            b'-' => [true, false, true],
+            b'_' => [true, true, false],
+            _ => [true; 3],
+        };
+        for marker in 0..3 {
+            if others[marker] && !settled[marker] {
+                (last[marker], settled[marker]) = (index + 1, true);
+            }
+        }
+        if settled == [true; 3] {
+            break;
         }
     }
     last
@@ -237,7 +244,8 @@ fn last_others(text: &str) -> [usize; 3] {
 /// Splits `src` into lines on `\n`, `\r\n` and `\r`. A trailing terminator does not add a line.
 pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]) -> Vec<Line<'a>> {
     let bytes = src.as_bytes();
-    let mut lines = Vec::new();
+    // A `\r\n` counts twice, which only reserves a little more.
+    let mut lines = Vec::with_capacity(memchr::memchr2_iter(b'\n', b'\r', bytes).count() + 1);
     let (mut start, mut index) = (0, 0);
     let mut next_stop = 0;
     // The tabs between `start` and `end`.
@@ -249,16 +257,14 @@ pub(super) fn split_lines<'a>(src: &'a str, flavor: Flavor, stops: &'a [TabStop]
         &stops[first..next_stop]
     };
 
-    while index < bytes.len() {
-        let end = index;
-        match bytes[index] {
-            b'\n' => index += 1,
-            b'\r' => index += if bytes.get(index + 1) == Some(&b'\n') { 2 } else { 1 },
-            _ => {
-                index += 1;
-                continue;
-            }
-        }
+    while let Some(found) = memchr::memchr2(b'\n', b'\r', &bytes[index..]) {
+        let end = index + found;
+        index = end
+            + if bytes[end] == b'\r' && bytes.get(end + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
         lines.push(Line {
             number: to_u32(lines.len() + 1),
             column: 0,
@@ -323,6 +329,43 @@ mod tests {
             let (at, offset) = (a.min(b), a.max(b));
             let bytes = text.as_bytes();
             prop_assert_eq!(extra_bytes(&bytes[..offset]), extra_bytes(&bytes[..at]) + extra_bytes(&bytes[at..offset]));
+        }
+
+        /// `others[m]` is one past the last byte that is neither marker `m` nor whitespace.
+        #[test]
+        fn last_others_finds_the_last_byte_that_is_not_the_marker(text in "[-*_ \ta\u{e9}]{0,16}") {
+            let expected = (*b"*-_").map(|marker| {
+                text.bytes()
+                    .rposition(|byte| !matches!(byte, b' ' | b'\t') && byte != marker)
+                    .map_or(0, |index| index + 1)
+            });
+            prop_assert_eq!(last_others(&text), expected);
+        }
+
+        /// Lines and their tabs cover the source exactly, whatever the terminators.
+        #[test]
+        fn split_lines_covers_the_source(src in "[a\t\r\n]{0,24}") {
+            let stops = tab_stops(&src);
+            let lines = split_lines(&src, Flavor::Markdown, &stops);
+            let joined: String = lines.iter().flat_map(|line| [line.text, line.eol]).collect();
+            prop_assert_eq!(&joined, &src);
+            prop_assert!(lines.iter().all(|line| !line.text.contains(['\r', '\n'])));
+            prop_assert!(lines.iter().all(|line| matches!(line.eol, "" | "\n" | "\r" | "\r\n")));
+            prop_assert_eq!(lines.iter().map(|line| line.stops.len()).sum::<usize>(), src.matches('\t').count());
+            let columns: Vec<usize> = stops.iter().map(|stop| stop.after).collect();
+            let mut expected = Vec::new();
+            let mut column = 0;
+            for byte in src.bytes() {
+                match byte {
+                    b'\n' | b'\r' => column = 0,
+                    b'\t' => {
+                        column = (column / 4 + 1) * 4;
+                        expected.push(column);
+                    }
+                    _ => column += 1,
+                }
+            }
+            prop_assert_eq!(columns, expected);
         }
 
         #[test]

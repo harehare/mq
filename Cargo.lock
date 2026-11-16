@@ -2737,6 +2737,7 @@ dependencies = [
  "codspeed-divan-compat",
  "ego-tree",
  "itertools 0.15.0",
+ "memchr",
  "miette",
  "mimalloc",
  "proptest",

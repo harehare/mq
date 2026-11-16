@@ -102,7 +102,17 @@ fn frontmatter(lines: &[Line<'_>]) -> Option<(Node, usize)> {
 /// lines belong to interrupted an open paragraph.
 fn parse_blocks(lines: &[Line<'_>], depth: usize, interrupting: Interrupt) -> Vec<Block> {
     let containers = depth < MAX_DEPTH;
-    let mut blocks = Vec::new();
+    // A document mostly has one block per run of lines between blank ones. Reserving them once
+    // avoids moving every block again each time the list doubles.
+    let mut blocks = if depth == 0 {
+        let runs = lines
+            .windows(2)
+            .filter(|pair| pair[0].is_blank() && !pair[1].is_blank())
+            .count();
+        Vec::with_capacity(runs + 1)
+    } else {
+        Vec::new()
+    };
     let mut index = 0;
     let mut after_paragraph = interrupting;
     // Set after a container, and whether a blank line or an empty list item preceded the next block.

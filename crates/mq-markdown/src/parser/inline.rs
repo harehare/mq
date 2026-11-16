@@ -316,6 +316,18 @@ fn text_element(context: &Context<'_>, tag: TextTag, children: Vec<Node>, end: u
     })
 }
 
+/// How far [`SpanRuns::next_nearby`] looks before leaving the search to the index.
+const NEARBY_SPAN: usize = 256;
+
+/// What a search of the next [`NEARBY_SPAN`] bytes tells about the closing run of a span.
+enum Nearby {
+    Found(usize),
+    /// The source ends before a closing run.
+    Missing,
+    /// There may be a closing run further on.
+    Unknown,
+}
+
 /// Where the runs of backticks and of dollar signs start, by length, found in one pass the first time a
 /// span asks, so that openers without a closer do not each scan to the end.
 #[derive(Default)]
@@ -328,6 +340,14 @@ impl SpanRuns {
     /// The start of the first run of exactly `size` bytes `ch` that starts at or after `from`.
     fn next_of_length(&self, src: &str, ch: u8, size: usize, from: usize) -> Option<usize> {
         let runs = if ch == b'`' { &self.backticks } else { &self.dollars };
+        // Most spans close nearby, so look there before building the index.
+        if runs.get().is_none() {
+            match Self::next_nearby(src.as_bytes(), ch, size, from) {
+                Nearby::Found(start) => return Some(start),
+                Nearby::Missing => return None,
+                Nearby::Unknown => {}
+            }
+        }
         let starts = runs
             .get_or_init(|| {
                 let bytes = src.as_bytes();
@@ -346,6 +366,31 @@ impl SpanRuns {
             })
             .get(&size)?;
         starts.get(starts.partition_point(|&start| start < from)).copied()
+    }
+}
+
+impl SpanRuns {
+    /// Looks for the run [`Self::next_of_length`] returns in the bytes right after `from`, which must
+    /// not be inside a run of `ch`.
+    fn next_nearby(bytes: &[u8], ch: u8, size: usize, from: usize) -> Nearby {
+        let limit = bytes.len().min(from + NEARBY_SPAN);
+        let mut index = from;
+        while let Some(found) = memchr::memchr(ch, &bytes[index..limit]) {
+            let start = index + found;
+            let length = bytes[start..].iter().take_while(|&&b| b == ch).count();
+            if length == size {
+                return Nearby::Found(start);
+            }
+            index = start + length;
+            if index >= limit {
+                break;
+            }
+        }
+        if limit == bytes.len() {
+            Nearby::Missing
+        } else {
+            Nearby::Unknown
+        }
     }
 }
 
@@ -804,5 +849,40 @@ fn span_value(content: &str) -> SmolStr {
         SmolStr::new(&content[1..content.len() - 1])
     } else {
         SmolStr::new(content)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// The first run of exactly `size` backticks that starts at or after `from`.
+    fn first_run(src: &str, size: usize, from: usize) -> Option<usize> {
+        let bytes = src.as_bytes();
+        (from..bytes.len()).find(|&start| {
+            bytes[start] == b'`'
+                && (start == 0 || bytes[start - 1] != b'`')
+                && bytes[start..].iter().take_while(|&&b| b == b'`').count() == size
+        })
+    }
+
+    proptest! {
+        /// The nearby search and the index agree, on either side of `NEARBY_SPAN`.
+        #[test]
+        fn next_of_length_finds_the_first_run(
+            head in "[`a]{0,12}",
+            gap in 0usize..2 * NEARBY_SPAN,
+            tail in "[`a]{0,12}",
+            size in 1usize..4,
+        ) {
+            let src = format!("{head}{}{tail}", "a".repeat(gap));
+            for from in (0..=src.len()).filter(|&from| src.as_bytes().get(from) != Some(&b'`')) {
+                // A fresh index each time, so that every search starts nearby.
+                let runs = SpanRuns::default();
+                prop_assert_eq!(runs.next_of_length(&src, b'`', size, from), first_run(&src, size, from));
+                prop_assert_eq!(runs.next_of_length(&src, b'`', size, from), first_run(&src, size, from));
+            }
+        }
     }
 }
