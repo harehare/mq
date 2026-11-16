@@ -2805,6 +2805,7 @@ dependencies = [
  "rustc-hash",
  "rustyline",
  "scopeguard",
+ "serde",
  "serde_json",
  "strum",
  "tabled",
