@@ -869,14 +869,15 @@ fn implicit_self_decision(
 
 // Keep out of the dispatch loop to avoid code bloat.
 #[inline(never)]
-pub(super) fn call_builtin(
+/// Takes the arguments by value, so a builtin that updates its argument in place gets the only reference.
+pub(super) fn call_builtin<const N: usize>(
     ident: &Ident,
-    args: &[RuntimeValue],
+    args: [RuntimeValue; N],
     self_value: &RuntimeValue,
     env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
-    call_builtin_args(ident, args.iter().cloned().collect(), self_value, env, host_functions)
+    call_builtin_args(ident, Args::from_iter(args), self_value, env, host_functions)
 }
 
 pub(super) fn call_builtin_args(
