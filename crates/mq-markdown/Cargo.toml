@@ -17,6 +17,7 @@ workspace = true
 [dependencies]
 ego-tree = {workspace = true, optional = true}
 itertools = {workspace = true}
+memchr = {workspace = true}
 miette = {workspace = true}
 rustc-hash = {workspace = true}
 scraper = {workspace = true, optional = true}
