@@ -14,9 +14,12 @@ use rustc_hash::FxHashMap;
 use crate::field_guard::{FieldGuard, TagTest};
 use crate::{
     TypeError,
-    builtin::PARTIAL,
-    constraint::{ChildrenIndex, Constraint, ConstraintOrigin},
+    builtin::{ORDERING_OPS, PARTIAL},
+    constraint::{ChildrenIndex, Constraint, ConstraintOrigin, call::common_result},
     infer::{DeferredOverload, DeferredParameterCall, DeferredRecordAccess, InferenceContext},
+    inline::check_inlined_calls,
+    is_module_range,
+    narrowing::refresh_pending_narrowings,
     node_attr::{SelectorOutput, node_attr_type, node_selector_output},
     types::{self, Substitution},
     unify, walk_ancestors,
@@ -612,6 +615,24 @@ fn check_union_members(
     }
 }
 
+fn is_ordering_op(op_name: &str) -> bool {
+    ORDERING_OPS.contains(&op_name)
+}
+
+/// Whether some member of a union operand resolves to an overload.
+fn any_union_member_supported(ctx: &mut InferenceContext, op_name: &str, resolved_operands: &[types::Type]) -> bool {
+    resolved_operands.iter().enumerate().any(|(i, arg_ty)| {
+        let types::Type::Union(members) = arg_ty else {
+            return false;
+        };
+        members.iter().any(|member| {
+            let mut test_args = resolved_operands.to_vec();
+            test_args[i] = member.clone();
+            ctx.resolve_overload(op_name, &test_args).is_some()
+        })
+    })
+}
+
 /// Resolves an operation whose single operand is a union of arrays with different return types
 /// by treating that operand as one array of the union of the members' element types.
 ///
@@ -855,7 +876,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
 
         for &idx in &remaining_indices {
             if ctx.has_pending_narrowings() {
-                crate::narrowing::refresh_pending_narrowings(ctx);
+                refresh_pending_narrowings(ctx);
             }
             settle_partial_piped(ctx, &mut deferred[idx]);
             let d = &deferred[idx];
@@ -939,6 +960,14 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         continue;
                     }
                     UnionCheckResult::MemberUnsupported(bad_member) => {
+                        // Ordering across unrelated types is `false` at runtime, not an error,
+                        // so a union is fine as long as one member pairing is ordered.
+                        if is_ordering_op(&d.op_name) && any_union_member_supported(ctx, &d.op_name, &resolved_operands)
+                        {
+                            settle_result(ctx, d, types::Type::Bool);
+                            unify::solve_constraints(ctx);
+                            continue;
+                        }
                         let args_str = resolved_operands
                             .iter()
                             .map(|t| t.display_renumbered())
@@ -1031,7 +1060,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
                         // Overloads that agree on the result settle it before the arguments are.
-                        if let Some(ret) = crate::constraint::call::common_result(ctx, &d.op_name, &resolved_operands) {
+                        if let Some(ret) = common_result(ctx, &d.op_name, &resolved_operands) {
                             ctx.set_symbol_type(d.symbol_id, ret);
                         }
                         store_back_for_later.push(idx);
@@ -1343,7 +1372,7 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
         }
     }
 
-    crate::inline::check_inlined_calls(hir, ctx, children_index, &deferred_calls);
+    check_inlined_calls(hir, ctx, children_index, &deferred_calls);
 }
 
 /// Checks deferred overloads iteratively, resolving chained operators.
@@ -1406,7 +1435,7 @@ fn check_deferred_overloads_iteratively(
             } else {
                 // No matching overload, report error
                 // An operator of a module body keeps its own range so the module filter drops it.
-                let range = d.range.filter(crate::is_module_range).or(error_range);
+                let range = d.range.filter(is_module_range).or(error_range);
                 ctx.report_no_matching_overload(&d.op_name, &substituted_operands, d.implicit_input, range);
                 made_progress = true;
             }

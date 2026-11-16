@@ -238,10 +238,13 @@ fn text() -> Type {
     Type::union(vec![Type::String, Type::markdown()])
 }
 
+/// Ordering operators, in symbol and function form.
+pub(crate) const ORDERING_OPS: [&str; 8] = ["<", ">", "<=", ">=", "lt", "gt", "lte", "gte"];
+
 /// Comparison operators: <, >, <=, >=, ==, !=, lt, gt, lte, gte, eq, ne
 fn register_comparison(ctx: &mut InferenceContext) {
     // Ordering: supports number, string, symbol, bool, bytes
-    for name in ["<", ">", "<=", ">=", "lt", "gt", "lte", "gte"] {
+    for name in ORDERING_OPS {
         register_binary(ctx, name, Type::Number, Type::Number, Type::Bool);
         register_binary(ctx, name, Type::String, Type::String, Type::Bool);
         register_binary(ctx, name, Type::Symbol, Type::Symbol, Type::Bool);
