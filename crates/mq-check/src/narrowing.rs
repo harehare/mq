@@ -183,6 +183,80 @@ fn find_enclosing_function_first_param(
     None
 }
 
+/// A builtin type predicate such as `is_string`.
+#[derive(Clone, Copy)]
+pub(crate) enum TypeGuard {
+    String,
+    Number,
+    Bool,
+    None,
+    Bytes,
+    Array,
+    Dict,
+    Coroutine,
+}
+
+impl TypeGuard {
+    pub(crate) const ALL: [Self; 8] = [
+        Self::String,
+        Self::Number,
+        Self::Bool,
+        Self::None,
+        Self::Bytes,
+        Self::Array,
+        Self::Dict,
+        Self::Coroutine,
+    ];
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::String => "is_string",
+            Self::Number => "is_number",
+            Self::Bool => "is_bool",
+            Self::None => "is_none",
+            Self::Bytes => "is_bytes",
+            Self::Array => "is_array",
+            Self::Dict => "is_dict",
+            Self::Coroutine => "is_coroutine",
+        }
+    }
+
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|g| g.name() == name)
+    }
+
+    fn narrowed(self, ctx: &mut InferenceContext) -> Type {
+        match self {
+            Self::String => Type::String,
+            Self::Number => Type::Number,
+            Self::Bool => Type::Bool,
+            Self::None => Type::None,
+            Self::Bytes => Type::Bytes,
+            Self::Array => Type::array(Type::Var(ctx.fresh_var())),
+            Self::Dict => {
+                let k = ctx.fresh_var();
+                let v = ctx.fresh_var();
+                Type::dict(Type::Var(k), Type::Var(v))
+            }
+            Self::Coroutine => Type::Generator(Box::new(Type::Var(ctx.fresh_var()))),
+        }
+    }
+
+    /// Whether a settled type satisfies the predicate.
+    pub(crate) fn accepts(self, ty: &Type) -> bool {
+        match self {
+            Self::String => matches!(ty, Type::String),
+            Self::Number => matches!(ty, Type::Number),
+            Self::Bool => matches!(ty, Type::Bool),
+            Self::None => matches!(ty, Type::None),
+            Self::Bytes => matches!(ty, Type::Bytes),
+            Self::Array => matches!(ty, Type::Array(_)),
+            Self::Dict => matches!(ty, Type::Dict(..) | Type::Record(..)),
+            Self::Coroutine => matches!(ty, Type::Generator(_)),
+        }
+    }
+}
+
 /// Analyzes a single type predicate call (e.g., `is_string(x)`) and returns
 /// the variable definition ID and the narrowed type if the pattern matches.
 ///
@@ -191,7 +265,6 @@ fn find_enclosing_function_first_param(
 /// - `is_number(x)` → `Number`
 /// - `is_bool(x)` → `Bool`
 /// - `is_none(x)` → `None`
-/// - `is_symbol(x)` → `Symbol`
 /// - `is_array(x)` → `Array('a)`
 /// - `is_dict(x)` → `Dict('k, 'v)`
 /// - `is_markdown(x)`, `is_h(x)`, `is_code(x)`, … → the node kinds of the predicate (`NODE_PREDICATES`)
@@ -207,25 +280,9 @@ pub(crate) fn analyze_type_predicate_call(
     }
     let name = symbol.value.as_ref()?;
 
-    let narrowed_type = match name.as_str() {
-        "is_string" => Type::String,
-        "is_number" => Type::Number,
-        "is_bool" => Type::Bool,
-        "is_none" => Type::None,
-        "is_symbol" => Type::Symbol,
-        "is_array" => {
-            let elem = ctx.fresh_var();
-            Type::array(Type::Var(elem))
-        }
-        "is_dict" => {
-            let k = ctx.fresh_var();
-            let v = ctx.fresh_var();
-            Type::dict(Type::Var(k), Type::Var(v))
-        }
-        "is_bytes" => Type::Bytes,
-        "is_coroutine" => Type::Generator(Box::new(Type::Var(ctx.fresh_var()))),
-        name if predicate_kinds(name).is_some() => Type::Node(predicate_kinds(name)?),
-        _ => return None,
+    let narrowed_type = match TypeGuard::from_name(name) {
+        Some(guard) => guard.narrowed(ctx),
+        None => Type::Node(predicate_kinds(name)?),
     };
 
     // The argument must be a single variable reference
@@ -1206,6 +1263,39 @@ fn apply_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_type_guard_names_round_trip() {
+        for guard in TypeGuard::ALL {
+            assert_eq!(
+                TypeGuard::from_name(guard.name()).map(TypeGuard::name),
+                Some(guard.name())
+            );
+        }
+        assert!(TypeGuard::from_name("is_empty").is_none());
+    }
+
+    #[test]
+    fn test_type_guard_accepts_only_its_own_type() {
+        let samples = [
+            Type::String,
+            Type::Number,
+            Type::Bool,
+            Type::None,
+            Type::Bytes,
+            Type::array(Type::Number),
+            Type::dict(Type::String, Type::Number),
+            Type::Record(Default::default(), Box::new(Type::RowEmpty)),
+            Type::Generator(Box::new(Type::Number)),
+        ];
+        // The sample indexes each guard accepts, in `TypeGuard::ALL` order.
+        let expected: [&[usize]; 8] = [&[0], &[1], &[2], &[3], &[4], &[5], &[6, 7], &[8]];
+        for (guard, accepted) in TypeGuard::ALL.into_iter().zip(expected) {
+            for (i, ty) in samples.iter().enumerate() {
+                assert_eq!(guard.accepts(ty), accepted.contains(&i), "{} on {ty:?}", guard.name());
+            }
+        }
+    }
 
     /// `def is_x(arg): to_md_name(arg) == "name"` lines of builtin.mq, as `(is_x, name)`.
     fn name_predicates() -> Vec<(String, String)> {
