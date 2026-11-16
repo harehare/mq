@@ -14,9 +14,12 @@ use rustc_hash::FxHashMap;
 use crate::field_guard::{FieldGuard, TagTest};
 use crate::{
     TypeError,
-    builtin::PARTIAL,
-    constraint::{ChildrenIndex, Constraint, ConstraintOrigin},
+    builtin::{ORDERING_OPS, PARTIAL},
+    constraint::{ChildrenIndex, Constraint, ConstraintOrigin, call::common_result},
     infer::{DeferredOverload, DeferredParameterCall, DeferredRecordAccess, InferenceContext},
+    inline::check_inlined_calls,
+    is_module_range,
+    narrowing::refresh_pending_narrowings,
     node_attr::{SelectorOutput, node_attr_type, node_selector_output},
     types::{self, Substitution},
     unify, walk_ancestors,
@@ -613,7 +616,7 @@ fn check_union_members(
 }
 
 fn is_ordering_op(op_name: &str) -> bool {
-    crate::builtin::ORDERING_OPS.contains(&op_name)
+    ORDERING_OPS.contains(&op_name)
 }
 
 /// Whether some member of a union operand resolves to an overload.
@@ -873,7 +876,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
 
         for &idx in &remaining_indices {
             if ctx.has_pending_narrowings() {
-                crate::narrowing::refresh_pending_narrowings(ctx);
+                refresh_pending_narrowings(ctx);
             }
             settle_partial_piped(ctx, &mut deferred[idx]);
             let d = &deferred[idx];
@@ -1057,7 +1060,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
                         // Overloads that agree on the result settle it before the arguments are.
-                        if let Some(ret) = crate::constraint::call::common_result(ctx, &d.op_name, &resolved_operands) {
+                        if let Some(ret) = common_result(ctx, &d.op_name, &resolved_operands) {
                             ctx.set_symbol_type(d.symbol_id, ret);
                         }
                         store_back_for_later.push(idx);
@@ -1369,7 +1372,7 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
         }
     }
 
-    crate::inline::check_inlined_calls(hir, ctx, children_index, &deferred_calls);
+    check_inlined_calls(hir, ctx, children_index, &deferred_calls);
 }
 
 /// Checks deferred overloads iteratively, resolving chained operators.
@@ -1432,7 +1435,7 @@ fn check_deferred_overloads_iteratively(
             } else {
                 // No matching overload, report error
                 // An operator of a module body keeps its own range so the module filter drops it.
-                let range = d.range.filter(crate::is_module_range).or(error_range);
+                let range = d.range.filter(is_module_range).or(error_range);
                 ctx.report_no_matching_overload(&d.op_name, &substituted_operands, d.implicit_input, range);
                 made_progress = true;
             }
