@@ -1225,6 +1225,12 @@ fn test_filter_over_a_dict_gives_each_entry_as_a_pair(#[case] code: &str, #[case
 #[case::array_ok(r#"def f(x): if (is_array(x)): len(x) else: x - 1; | f([1])"#, true)]
 #[case::dict_else(r#"def f(x): if (is_dict(x)): 0 else: x - 1; | f("a")"#, false)]
 #[case::dict_ok(r#"def f(x): if (is_dict(x)): 0 else: x - 1; | f({"a": 1})"#, true)]
+#[case::bytes_else(r#"def f(x): if (is_bytes(x)): 0 else: x - 1; | f("a")"#, false)]
+#[case::bytes_ok(r#"def f(x): if (is_bytes(x)): 0 else: x - 1; | f(to_bytes("a"))"#, true)]
+#[case::bool_literal_arg(r#"def f(x): if (is_bool(x)): 1 else: x - 1; | f(true)"#, true)]
+#[case::then_branch_array(r#"def f(x): if (is_array(x)): x - 1 else: 0; | f([1])"#, false)]
+#[case::then_branch_dict(r#"def f(x): if (is_dict(x)): x - 1 else: 0; | f({"a": 1})"#, false)]
+#[case::then_branch_none(r#"def f(x): if (is_none(x)): x - 1 else: 0; | f(none)"#, false)]
 #[case::elif_reached(
     r#"def f(x): if (is_string(x)): 0 elif (is_number(x)): 1 else: x - 1; | f(true)"#,
     false

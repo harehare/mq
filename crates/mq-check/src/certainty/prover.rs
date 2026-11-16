@@ -6,6 +6,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::{Certainty, UNAUDITED_BUILTINS};
 use crate::constraint::ChildrenIndex;
 use crate::infer::{InferenceContext, InlinedError};
+use crate::narrowing::TypeGuard;
 use crate::probe::ELEMENT_BUILTINS;
 
 mod unknown;
@@ -578,7 +579,6 @@ impl<'a> Prover<'a> {
     /// it for: `is_string(x)`, `type(x) == "number"`, `x != None`, or those joined with `!`, `&&`
     /// and `||`. A condition that reads the variable otherwise is not such a test.
     fn is_type_test(&self, hir: &Hir, cond: SymbolId, def: SymbolId) -> bool {
-        const PREDICATES: &[&str] = &["is_string", "is_number", "is_bool", "is_array", "is_dict", "is_none"];
         let Some(symbol) = hir.symbol(cond) else {
             return false;
         };
@@ -589,7 +589,7 @@ impl<'a> Prover<'a> {
         let value = symbol.value.as_deref().unwrap_or("");
         match &symbol.kind {
             SymbolKind::Call => {
-                PREDICATES.contains(&value)
+                TypeGuard::from_name(value).is_some()
                     && children.len() == 1
                     && is_def(children[0])
                     && hir

@@ -6,6 +6,7 @@
 
 use crate::infer::InferenceContext;
 use crate::kind_set::KindSet;
+use crate::narrowing::TypeGuard;
 use crate::types::Type;
 use mq_markdown::NodeKind;
 
@@ -1216,18 +1217,9 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
 /// Type check functions: is_none, is_array, is_dict, is_string, is_number, is_bool, is_empty
 fn register_type_checks(ctx: &mut InferenceContext) {
     // Type predicate functions: (a) -> bool
-    for name in [
-        "is_none",
-        "is_array",
-        "is_dict",
-        "is_string",
-        "is_number",
-        "is_bool",
-        "is_bytes",
-        "is_coroutine",
-    ] {
+    for guard in TypeGuard::ALL {
         let a = ctx.fresh_var();
-        register_unary(ctx, name, Type::Var(a), Type::Bool);
+        register_unary(ctx, guard.name(), Type::Var(a), Type::Bool);
     }
 
     // is_empty: (string) -> bool, ([a]) -> bool, ({k: v}) -> bool, (a) -> bool

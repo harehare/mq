@@ -14,6 +14,7 @@ use crate::certainty::UNAUDITED_BUILTINS;
 use crate::constraint::{ChildrenIndex, get_children};
 use crate::field_guard::literal_of;
 use crate::infer::{DeferredUserCall, InferenceContext};
+use crate::narrowing::TypeGuard;
 use crate::probe::{ELEMENT_BUILTINS, combinations, representatives};
 use crate::types::{Lit, Type};
 use crate::{is_module_range, symbol_range};
@@ -189,17 +190,7 @@ fn kind_predicate(name: &str, ty: &Type) -> Option<bool> {
         Type::Lit(Lit::Str(_)) => &Type::String,
         other => other,
     };
-    let is = match name {
-        "is_string" => matches!(ty, Type::String),
-        "is_number" => matches!(ty, Type::Number),
-        "is_bool" => matches!(ty, Type::Bool),
-        "is_none" => matches!(ty, Type::None),
-        "is_bytes" => matches!(ty, Type::Bytes),
-        "is_array" => matches!(ty, Type::Array(_)),
-        "is_dict" => matches!(ty, Type::Dict(..) | Type::Record(..)),
-        _ => return None,
-    };
-    Some(is)
+    Some(TypeGuard::from_name(name)?.accepts(ty))
 }
 
 struct Inliner<'a> {
