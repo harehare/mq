@@ -613,7 +613,7 @@ fn check_union_members(
 }
 
 fn is_ordering_op(op_name: &str) -> bool {
-    matches!(op_name, "<" | ">" | "<=" | ">=" | "lt" | "gt" | "lte" | "gte")
+    crate::builtin::ORDERING_OPS.contains(&op_name)
 }
 
 /// Whether some member of a union operand resolves to an overload.
