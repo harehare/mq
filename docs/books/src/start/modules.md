@@ -20,7 +20,7 @@ Standard modules are built into `mq`: use them with `include` or `import`, no in
 | `toon`    | TOON format support                                                   |
 | `gron`    | gron-style flattening into `path = value;` lines, and back            |
 | `md`      | Builders for generating Markdown (headings, tables, lists, callouts)  |
-| `gen`     | Generator combinators for property-based testing                      |
+| `gen`     | Generator combinators for property-based testing (`mq test` only)     |
 | `test`    | Testing framework (`assert_eq`, `assert_true`, …)                     |
 
 ## Extension Modules
