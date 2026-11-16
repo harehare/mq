@@ -1566,3 +1566,38 @@ fn test_eval_structured_formats_unsupported() {
         assert_eq!(eval_format(c".", c"x", format), Err(MqStatus::MQ_ERR_UNSUPPORTED));
     }
 }
+
+#[test]
+fn test_define_value_ex_validates_name_and_json() {
+    let engine = mq_create();
+    let ok = |name: &str, v: &str, json: bool| {
+        let (n, v) = (make_c_string(name), make_c_string(v));
+        let mut err: *mut MqError = ptr::null_mut();
+        let status = unsafe {
+            if json {
+                mq_define_json_value_ex(engine, n, v, &mut err)
+            } else {
+                mq_define_string_value_ex(engine, n, v, &mut err)
+            }
+        };
+        if !err.is_null() {
+            unsafe { mq_error_free(err) };
+        }
+        status
+    };
+    assert_eq!(ok("a", "x", false), MqStatus::MQ_OK);
+    assert_eq!(ok("def", "x", false), MqStatus::MQ_ERR_INVALID_ARGUMENT);
+    assert_eq!(ok("a-b", "x", false), MqStatus::MQ_ERR_INVALID_ARGUMENT);
+    // Whitespace, comments and a byte-order mark are skipped by the lexer, so they must be rejected.
+    for bad in [" greeting ", "greeting#comment", "\u{feff}greeting", "greeting\n"] {
+        assert_eq!(ok(bad, "x", false), MqStatus::MQ_ERR_INVALID_ARGUMENT, "{bad:?}");
+        assert_eq!(ok(bad, "1", true), MqStatus::MQ_ERR_INVALID_ARGUMENT, "{bad:?}");
+    }
+    assert_eq!(ok("j", "{\"k\": [1, 2]}", true), MqStatus::MQ_OK);
+    assert_eq!(ok("j", "{oops", true), MqStatus::MQ_ERR_INVALID_ARGUMENT);
+    assert_eq!(
+        unsafe { mq_define_string_value_ex(ptr::null_mut(), make_c_string("a"), make_c_string("x"), ptr::null_mut()) },
+        MqStatus::MQ_ERR_INVALID_ARGUMENT
+    );
+    mq_destroy(engine);
+}

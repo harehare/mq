@@ -559,10 +559,44 @@ pub unsafe extern "C" fn mq_set_search_paths(
     });
 }
 
+// Checks the engine and variable name, then defines `value` under `name`.
+unsafe fn define_core(
+    engine_ptr: *mut MqContext,
+    name_c: *const c_char,
+    value: impl FnOnce() -> Result<RuntimeValue, FfiError>,
+) -> Result<(), FfiError> {
+    if engine_ptr.is_null() {
+        return Err(FfiError::invalid_argument("Engine pointer is null"));
+    }
+    let engine = unsafe { &*(engine_ptr as *const Engine) };
+    let name = unsafe { c_str_to_rust_str_slice(name_c, "name") }?;
+    if !mq_lang::is_valid_ident(name) {
+        return Err(FfiError::invalid_argument(format!(
+            "'{name}' is not a valid variable name (it must be an identifier and not a keyword)"
+        )));
+    }
+    let value = value()?;
+    engine
+        .define_value(name, value)
+        .map_err(|e| FfiError::invalid_argument(e.to_string()))
+}
+
+unsafe fn define_string_core(
+    engine_ptr: *mut MqContext,
+    name_c: *const c_char,
+    value_c: *const c_char,
+) -> Result<(), FfiError> {
+    unsafe {
+        define_core(engine_ptr, name_c, || {
+            c_str_to_rust_str_slice(value_c, "value").map(|v| RuntimeValue::String(v.to_string().into()))
+        })
+    }
+}
+
 /// Defines a string variable that can be referenced from mq code evaluated
 /// afterwards by `mq_eval`, allowing values from the host environment to be
 /// injected without building query strings by hand.
-/// Has no effect if `engine_ptr` is null.
+/// Invalid input is ignored without notice; use `mq_define_string_value_ex` to detect it.
 ///
 /// # Safety
 ///
@@ -577,22 +611,52 @@ pub unsafe extern "C" fn mq_define_string_value(
     value_c: *const c_char,
 ) {
     guard(move || {
-        if engine_ptr.is_null() {
-            return;
-        }
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-
-        let name = match unsafe { c_str_to_rust_str_slice(name_c, "name") } {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let value = match unsafe { c_str_to_rust_str_slice(value_c, "value") } {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-
-        engine.define_string_value(name, value);
+        let _ = unsafe { define_string_core(engine_ptr, name_c, value_c) };
     });
+}
+
+/// Defines a string variable like `mq_define_string_value`, reporting failure as a status
+/// plus an `mq_error_t`. `name_c` must be a valid mq identifier and not a keyword, otherwise
+/// `MQ_ERR_INVALID_ARGUMENT` is returned. On failure, if `err` is non-null, an error is stored
+/// in `*err`, to be freed with `mq_error_free`.
+///
+/// # Safety
+///
+/// `err` must be null or valid for writes. The other arguments are as for
+/// `mq_define_string_value`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_define_string_value_ex(
+    engine_ptr: *mut MqContext,
+    name_c: *const c_char,
+    value_c: *const c_char,
+    err: *mut *mut MqError,
+) -> MqStatus {
+    run_status(err, || unsafe { define_string_core(engine_ptr, name_c, value_c) })
+}
+
+/// Defines a variable from a JSON string: `null`, booleans, numbers, strings, arrays and
+/// objects (as dicts). Reports failure like `mq_define_string_value_ex`; malformed JSON is
+/// `MQ_ERR_INVALID_ARGUMENT`.
+///
+/// # Safety
+///
+/// `err` must be null or valid for writes. The other arguments are as for
+/// `mq_define_string_value`, with `json_c` a null-terminated C string holding JSON.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mq_define_json_value_ex(
+    engine_ptr: *mut MqContext,
+    name_c: *const c_char,
+    json_c: *const c_char,
+    err: *mut *mut MqError,
+) -> MqStatus {
+    run_status(err, || unsafe {
+        define_core(engine_ptr, name_c, || {
+            let json = c_str_to_rust_str_slice(json_c, "json")?;
+            serde_json::from_str::<serde_json::Value>(json)
+                .map(RuntimeValue::from)
+                .map_err(|e| FfiError::invalid_argument(format!("Invalid JSON: {e}")))
+        })
+    })
 }
 
 // Runs `f` on the engine and module name, after checking both arguments.

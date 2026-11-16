@@ -312,12 +312,18 @@ pub fn builtin_takes_piped_input(name: &str, num_args: usize) -> Option<bool> {
 /// assert!(mq_lang::is_valid_ident("my_function"));
 /// assert!(!mq_lang::is_valid_ident("def"));
 /// assert!(!mq_lang::is_valid_ident("a-b"));
+/// assert!(!mq_lang::is_valid_ident(" a "));
+/// assert!(!mq_lang::is_valid_ident("a#comment"));
 /// ```
 pub fn is_valid_ident(name: &str) -> bool {
     Lexer::new(lexer::Options::default())
         .tokenize(name, Module::TOP_LEVEL_MODULE_ID)
         .is_ok_and(
-            |tokens| matches!(tokens.as_slice(), [token] | [token, _] if matches!(token.kind, TokenKind::Ident(_))),
+            // The text must equal `name` so skipped whitespace, comments and a BOM are rejected.
+            |tokens| {
+                matches!(tokens.as_slice(), [token] | [token, _]
+                    if matches!(&token.kind, TokenKind::Ident(ident) if ident.as_str() == name))
+            },
         )
 }
 
