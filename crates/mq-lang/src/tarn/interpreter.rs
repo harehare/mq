@@ -216,21 +216,44 @@ pub(crate) fn run_with_globals(
     max_call_stack_depth: u32,
     global_bindings: &[(Ident, RuntimeValue)],
 ) -> VmResult<RuntimeValue> {
-    run(
-        compiled,
-        input,
-        Run::new(RunOptions {
-            host_functions,
-            timeout,
-            max_call_stack_depth,
-            capture_stack_trace: false,
-            global_bindings,
-        }),
-    )
-    .result
+    let options = RunOptions {
+        host_functions,
+        timeout,
+        max_call_stack_depth,
+        capture_stack_trace: false,
+        global_bindings,
+    };
+    let env = VmEnv::from_bindings(global_bindings, Shared::clone(&compiled.token_arena));
+    run_plain(compiled, input, options, &env, ExecutionPools::default()).0
 }
 
-/// Runs a compiled program. The single entry point; see [`Run`] for the knobs.
+/// Runs without bindings, capture or hook. Skips [`Run`] and [`RunOutput`] on the hot path.
+pub(crate) fn run_plain(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    options: RunOptions<'_>,
+    env: &VmEnv,
+    pools: ExecutionPools,
+) -> (VmResult<RuntimeValue>, ExecutionPools) {
+    #[cfg(feature = "debugger")]
+    let mut debug = DebugRuntime {
+        hook: None,
+        call_stack: Vec::new(),
+        current_node: None,
+    };
+    run_impl_with_bindings(
+        compiled,
+        input,
+        &[],
+        options,
+        env,
+        pools,
+        #[cfg(feature = "debugger")]
+        &mut debug,
+    )
+}
+
+/// Runs a compiled program. See [`Run`] for the knobs.
 pub(crate) fn run(compiled: &CompiledProgram, input: RuntimeValue, run: Run<'_>) -> RunOutput {
     let Run {
         options,
@@ -328,6 +351,7 @@ pub(crate) fn run_debug_expression(
     .0
 }
 
+#[inline(never)]
 fn run_impl_with_bindings(
     compiled: &CompiledProgram,
     input: RuntimeValue,
@@ -372,6 +396,7 @@ fn run_impl_with_bindings(
 
 /// Like [`run_impl_with_bindings`], but captures precomputed local slots' final values. Bypasses
 /// `run_chunk`'s pooling wrapper to keep `locals` readable.
+#[inline(never)]
 fn run_impl_capturing_locals_with_env(
     compiled: &CompiledProgram,
     capture: CapturingRun<'_>,
