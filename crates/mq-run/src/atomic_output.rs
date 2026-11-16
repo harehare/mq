@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum AtomicOutput {
     /// Atomic for a missing or regular-file target; direct write for pipes/devices.
+    /// Later inputs of the same run append directly.
     #[default]
     Auto,
     /// Always write atomically, even over pipes/devices.
@@ -112,7 +113,8 @@ impl OutputSink {
         let use_atomic = match atomic {
             AtomicOutput::Never => false,
             AtomicOutput::Always => true,
-            AtomicOutput::Auto => Self::target_supports_atomic(path)?,
+            // An atomic append rewrites the whole target, which is quadratic over many inputs.
+            AtomicOutput::Auto => is_first_open && Self::target_supports_atomic(path)?,
         };
 
         let sink = Self::open_target(path, use_atomic, clobber, is_first_open)?;
@@ -661,6 +663,24 @@ mod tests {
         }
 
         assert_eq!(fs::read_to_string(&target).unwrap(), "one\ntwo\nthree\n");
+    }
+
+    #[rstest]
+    #[case::auto(AtomicOutput::Auto, true)]
+    #[case::always(AtomicOutput::Always, false)]
+    fn test_second_open_appends_directly_only_in_auto_mode(#[case] mode: AtomicOutput, #[case] direct: bool) {
+        let dir = temp_dir("second-open-direct");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.md");
+        let claimed = AtomicBool::new(false);
+
+        let first = OutputSink::open(&Some(target.clone()), mode, false, ClobberMode::Overwrite, &claimed).unwrap();
+        assert!(matches!(first, OutputSink::Atomic { .. }));
+        first.finish().unwrap();
+
+        let second = OutputSink::open(&Some(target.clone()), mode, false, ClobberMode::Overwrite, &claimed).unwrap();
+        assert_eq!(matches!(second, OutputSink::Direct(_)), direct);
+        second.finish().unwrap();
     }
 
     #[test]
