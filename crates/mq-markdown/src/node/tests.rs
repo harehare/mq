@@ -2366,7 +2366,7 @@ fn test_set_children(#[case] mut node: Node, #[case] children: Vec<Node>, #[case
     Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None})
 )]
 fn test_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
-    node.set_attr(attr, value);
+    let _ = node.set_attr(attr, value);
     assert_eq!(node, expected);
 }
 
@@ -2479,7 +2479,7 @@ fn test_callout_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: O
     Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None })
 )]
 fn test_callout_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
-    node.set_attr(attr, value);
+    let _ = node.set_attr(attr, value);
     assert_eq!(node, expected);
 }
 
@@ -2609,7 +2609,7 @@ fn test_embed_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Opt
     Node::Embed(Embed { target: "note".to_string(), display: None, position: None })
 )]
 fn test_embed_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
-    node.set_attr(attr, value);
+    let _ = node.set_attr(attr, value);
     assert_eq!(node, expected);
 }
 
@@ -2903,18 +2903,233 @@ fn heading_depth_saturating_sub(#[case] depth: HeadingDepth, #[case] levels: u8,
 #[rstest]
 #[case::integer(AttrValue::Integer(3), HeadingDepth::H3)]
 #[case::string(AttrValue::String("4".to_string()), HeadingDepth::H4)]
-#[case::too_deep(AttrValue::Integer(7), HeadingDepth::H2)]
-#[case::wraps_as_byte(AttrValue::Integer(257), HeadingDepth::H2)]
-#[case::negative(AttrValue::Integer(-1), HeadingDepth::H2)]
-#[case::zero_string(AttrValue::String("0".to_string()), HeadingDepth::H2)]
-fn set_attr_keeps_heading_depth_in_range(#[case] value: AttrValue, #[case] expected: HeadingDepth) {
+#[case::too_deep(AttrValue::Integer(7), HeadingDepth::H6)]
+#[case::large(AttrValue::Integer(257), HeadingDepth::H6)]
+#[case::negative(AttrValue::Integer(-1), HeadingDepth::H1)]
+#[case::zero_string(AttrValue::String("0".to_string()), HeadingDepth::H1)]
+#[case::huge_float(AttrValue::Number(1e20), HeadingDepth::H6)]
+#[case::huge_negative_float(AttrValue::Number(-1e20), HeadingDepth::H1)]
+fn set_attr_clamps_heading_depth(#[case] value: AttrValue, #[case] expected: HeadingDepth) {
     let mut node = Node::Heading(Heading {
         depth: HeadingDepth::H2,
         values: vec!["a".to_string().into()],
         position: None,
     });
-    node.set_attr(attr_keys::DEPTH, value);
+    node.set_attr(attr_keys::DEPTH, value).unwrap();
     assert!(matches!(node, Node::Heading(Heading { depth, .. }) if depth == expected));
+}
+
+#[rstest]
+#[case::unknown_attr(Node::Text(Text { value: "a".into(), position: None }), "lang", AttrValue::String("x".into()))]
+#[case::read_only(Node::Text(Text { value: "a".into(), position: None }), "line", AttrValue::Integer(1))]
+#[case::bad_integer(Node::Heading(Heading { depth: HeadingDepth::H1, values: Vec::new(), position: None }), "depth", AttrValue::String("deep".into()))]
+#[case::bad_bool(Node::Code(Code { value: "a".into(), lang: None, meta: None, fence: true, position: None }), "fence", AttrValue::String("yes".into()))]
+#[case::negative_index(Node::List(List { values: Vec::new(), ordered: false, level: 0, index: 0, checked: None, marker: None, spread: false, start: None, position: None }), "index", AttrValue::Integer(-1))]
+#[case::float_beyond_usize(Node::List(List { values: Vec::new(), ordered: false, level: 0, index: 0, checked: None, marker: None, spread: false, start: None, position: None }), "index", AttrValue::Number(1e20))]
+#[case::float_beyond_usize_cell(Node::TableCell(TableCell { values: Vec::new(), row: 0, column: 0, position: None }), "row", AttrValue::Number(1e20))]
+#[case::nan(Node::Heading(Heading { depth: HeadingDepth::H1, values: Vec::new(), position: None }), "depth", AttrValue::Number(f64::NAN))]
+fn set_attr_rejects_invalid(#[case] mut node: Node, #[case] attr: &str, #[case] value: AttrValue) {
+    let before = node.clone();
+    assert!(node.set_attr(attr, value).is_err());
+    assert_eq!(node, before);
+}
+
+fn list_node(index: usize, level: u8, ordered: bool, checked: Option<bool>) -> Node {
+    Node::List(List {
+        values: Vec::new(),
+        ordered,
+        level,
+        index,
+        checked,
+        marker: None,
+        spread: false,
+        start: None,
+        position: None,
+    })
+}
+
+fn cell_node(row: usize, column: usize) -> Node {
+    Node::TableCell(TableCell {
+        values: Vec::new(),
+        row,
+        column,
+        position: None,
+    })
+}
+
+fn code_node(lang: Option<&str>, meta: Option<&str>, fence: bool) -> Node {
+    Node::Code(Code {
+        value: "a".into(),
+        lang: lang.map(Into::into),
+        meta: meta.map(Into::into),
+        fence,
+        position: None,
+    })
+}
+
+fn link_node(url: &str, title: Option<&str>) -> Node {
+    Node::Link(Link {
+        url: Url::new(url.to_string()),
+        title: title.map(|t| Title::new(t.to_string())),
+        values: Vec::new(),
+        position: None,
+    })
+}
+
+fn heading_node(depth: HeadingDepth) -> Node {
+    Node::Heading(Heading {
+        depth,
+        values: Vec::new(),
+        position: None,
+    })
+}
+
+#[rstest]
+#[case::list_index_integer(
+    list_node(0, 0, false, None),
+    "index",
+    AttrValue::Integer(3),
+    list_node(3, 0, false, None)
+)]
+#[case::list_index_string(list_node(0, 0, false, None), "index", AttrValue::String("4".into()), list_node(4, 0, false, None))]
+#[case::list_index_float(
+    list_node(0, 0, false, None),
+    "index",
+    AttrValue::Number(5.0),
+    list_node(5, 0, false, None)
+)]
+#[case::list_level(
+    list_node(0, 0, false, None),
+    "level",
+    AttrValue::Integer(2),
+    list_node(0, 2, false, None)
+)]
+#[case::list_ordered_bool(
+    list_node(0, 0, false, None),
+    "ordered",
+    AttrValue::Boolean(true),
+    list_node(0, 0, true, None)
+)]
+#[case::list_ordered_string(list_node(0, 0, true, None), "ordered", AttrValue::String("false".into()), list_node(0, 0, false, None))]
+#[case::list_checked_bool(
+    list_node(0, 0, false, None),
+    "checked",
+    AttrValue::Boolean(true),
+    list_node(0, 0, false, Some(true))
+)]
+#[case::list_checked_empty_clears(
+    list_node(0, 0, false, Some(true)),
+    "checked",
+    AttrValue::String(String::new()),
+    list_node(0, 0, false, None)
+)]
+#[case::cell_row(cell_node(0, 0), "row", AttrValue::Integer(2), cell_node(2, 0))]
+#[case::cell_column_string(cell_node(0, 0), "column", AttrValue::String("3".into()), cell_node(0, 3))]
+#[case::cell_column_float(cell_node(0, 0), "column", AttrValue::Number(1.0), cell_node(0, 1))]
+#[case::code_lang(code_node(None, None, true), "lang", AttrValue::String("rust".into()), code_node(Some("rust"), None, true))]
+#[case::code_language_alias(code_node(None, None, true), "language", AttrValue::String("rust".into()), code_node(Some("rust"), None, true))]
+#[case::code_lang_empty_clears(
+    code_node(Some("rust"), None, true),
+    "lang",
+    AttrValue::String(String::new()),
+    code_node(None, None, true)
+)]
+#[case::code_meta(code_node(None, None, true), "meta", AttrValue::String("title=x".into()), code_node(None, Some("title=x"), true))]
+#[case::code_meta_empty_clears(
+    code_node(None, Some("m"), true),
+    "meta",
+    AttrValue::String(String::new()),
+    code_node(None, None, true)
+)]
+#[case::code_fence_bool(
+    code_node(None, None, true),
+    "fence",
+    AttrValue::Boolean(false),
+    code_node(None, None, false)
+)]
+#[case::code_fence_string(code_node(None, None, false), "fence", AttrValue::String("true".into()), code_node(None, None, true))]
+#[case::link_url(link_node("a", None), "url", AttrValue::String("b".into()), link_node("b", None))]
+#[case::link_title(link_node("a", None), "title", AttrValue::String("t".into()), link_node("a", Some("t")))]
+#[case::link_title_empty_clears(
+    link_node("a", Some("t")),
+    "title",
+    AttrValue::String(String::new()),
+    link_node("a", None)
+)]
+#[case::heading_depth_float(
+    heading_node(HeadingDepth::H1),
+    "depth",
+    AttrValue::Number(3.0),
+    heading_node(HeadingDepth::H3)
+)]
+#[case::heading_level_alias(
+    heading_node(HeadingDepth::H1),
+    "level",
+    AttrValue::Integer(2),
+    heading_node(HeadingDepth::H2)
+)]
+fn set_attr_typed_values(#[case] mut node: Node, #[case] attr: &str, #[case] value: AttrValue, #[case] expected: Node) {
+    assert_eq!(node.set_attr(attr, value), Ok(()));
+    assert_eq!(node, expected);
+}
+
+#[rstest]
+#[case::unknown_on_text(Node::Text(Text { value: "a".into(), position: None }), "nope")]
+#[case::unknown_on_link(link_node("a", None), "lang")]
+#[case::unknown_on_list(list_node(0, 0, false, None), "url")]
+#[case::unknown_on_cell(cell_node(0, 0), "index")]
+#[case::unknown_on_code(code_node(None, None, true), "depth")]
+#[case::unknown_on_heading(heading_node(HeadingDepth::H1), "url")]
+fn set_attr_unknown_attr_error(#[case] mut node: Node, #[case] attr: &str) {
+    let before = node.clone();
+    let kind = node.kind();
+    assert_eq!(
+        node.set_attr(attr, "x"),
+        Err(SetAttrError::UnknownAttr {
+            attr: attr.to_string(),
+            kind
+        })
+    );
+    assert_eq!(node, before);
+}
+
+#[rstest]
+#[case::list_index_fraction(list_node(1, 0, false, None), "index", AttrValue::Number(1.5))]
+#[case::list_index_text(list_node(1, 0, false, None), "index", AttrValue::String("x".into()))]
+#[case::list_index_bool(list_node(1, 0, false, None), "index", AttrValue::Boolean(true))]
+#[case::list_level_overflow(list_node(1, 1, false, None), "level", AttrValue::Integer(256))]
+#[case::list_ordered_int(list_node(1, 0, false, None), "ordered", AttrValue::Integer(1))]
+#[case::list_checked_text(list_node(1, 0, false, None), "checked", AttrValue::String("maybe".into()))]
+#[case::cell_row_negative(cell_node(1, 1), "row", AttrValue::Integer(-1))]
+#[case::cell_column_negative_float(cell_node(1, 1), "column", AttrValue::Number(-1.0))]
+#[case::cell_column_infinite(cell_node(1, 1), "column", AttrValue::Number(f64::INFINITY))]
+#[case::code_fence_int(code_node(None, None, true), "fence", AttrValue::Integer(0))]
+#[case::heading_infinite(heading_node(HeadingDepth::H2), "depth", AttrValue::Number(f64::INFINITY))]
+fn set_attr_invalid_value_error(#[case] mut node: Node, #[case] attr: &str, #[case] value: AttrValue) {
+    let before = node.clone();
+    assert!(matches!(
+        node.set_attr(attr, value),
+        Err(SetAttrError::InvalidValue { attr: a, .. }) if a == attr
+    ));
+    assert_eq!(node, before);
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn set_attr_accepts_float_above_i64_max_within_usize() {
+    let mut node = Node::List(List {
+        values: Vec::new(),
+        ordered: false,
+        level: 0,
+        index: 0,
+        checked: None,
+        marker: None,
+        spread: false,
+        start: None,
+        position: None,
+    });
+    node.set_attr(attr_keys::INDEX, AttrValue::Number(1e19)).unwrap();
+    assert!(matches!(node, Node::List(List { index, .. }) if index == 10_000_000_000_000_000_000usize));
 }
 
 #[cfg(feature = "json")]
