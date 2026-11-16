@@ -3378,29 +3378,32 @@ impl Cli {
     }
 
     fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
-        files
-            .iter()
-            .map(|file| {
-                if Self::is_stdin_path(file) {
-                    return Ok((None, self.read_stdin()?));
-                }
-                let content = if InputFormat::is_gzip_path(file) {
-                    self.read_gzip_file(file)?
-                } else {
-                    let bytes = fs::read(file)
-                        .into_diagnostic()
-                        .wrap_err_with(|| ReadFailure(file.clone()))?;
-                    if self.needs_binary_read_for_file(file) {
-                        ContentData::Bytes(bytes)
-                    } else {
-                        text_input::decode_text(bytes)
-                            .map(ContentData::Text)
-                            .wrap_err_with(|| ReadFailure(file.clone()))?
-                    }
-                };
-                Ok((Some(file.clone()), content))
-            })
-            .collect()
+        // Stdin is read in argument order, so it keeps the inputs sequential.
+        if files.len() > self.parallel_threshold && !files.iter().any(|file| Self::is_stdin_path(file)) {
+            return files.par_iter().map(|file| self.read_file_content(file)).collect();
+        }
+        files.iter().map(|file| self.read_file_content(file)).collect()
+    }
+
+    fn read_file_content(&self, file: &PathBuf) -> miette::Result<(Option<PathBuf>, ContentData)> {
+        if Self::is_stdin_path(file) {
+            return Ok((None, self.read_stdin()?));
+        }
+        let content = if InputFormat::is_gzip_path(file) {
+            self.read_gzip_file(file)?
+        } else {
+            let bytes = fs::read(file)
+                .into_diagnostic()
+                .wrap_err_with(|| ReadFailure(file.clone()))?;
+            if self.needs_binary_read_for_file(file) {
+                ContentData::Bytes(bytes)
+            } else {
+                text_input::decode_text(bytes)
+                    .map(ContentData::Text)
+                    .wrap_err_with(|| ReadFailure(file.clone()))?
+            }
+        };
+        Ok((Some(file.clone()), content))
     }
 
     fn read_gzip_file(&self, file: &Path) -> miette::Result<ContentData> {
