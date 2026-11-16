@@ -1430,6 +1430,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
         let chunk = &chunks[frame.chunk_index as usize];
+        // Locals of the entry chunk can be read after the program finishes.
+        let locals_end_with_frame = frame.chunk_index != 0;
         let locals = &mut frame.locals;
         let upvalues = frame.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
         let mut ip = frame.ip as usize;
@@ -1938,7 +1940,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         RuntimeValue::Number(n) => RuntimeValue::Number(Number::new(-n.value())),
                         other => call_builtin(
                             negate_ident(),
-                            &[other],
+                            [other],
                             &current_self(locals, chunks),
                             execution.env,
                             execution.host_functions,
@@ -1988,7 +1990,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         RuntimeValue::Array(array) => RuntimeValue::Number(Number::new(array.len() as f64)),
                         value => call_builtin(
                             &LEN_IDENT,
-                            &[value],
+                            [value],
                             &current_self(locals, chunks),
                             execution.env,
                             execution.host_functions,
@@ -2012,7 +2014,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             .unwrap_or(RuntimeValue::None),
                         (array, index) => call_builtin(
                             &GET_IDENT,
-                            &[array, index],
+                            [array, index],
                             &current_self(locals, chunks),
                             execution.env,
                             execution.host_functions,
@@ -2600,13 +2602,47 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     break 'dispatch FrameOutcome::Complete(locals.get(*slot));
                 }
                 OpCode::ReturnBinaryLocalLocal { op, left, right } => {
-                    let value = eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
-                        .map_err(|e| locate(chunk, ip, e))?;
+                    let moved = if *op == BinaryOp::Add && locals_end_with_frame && left != right {
+                        take_returning_local(locals, *left)
+                    } else {
+                        None
+                    };
+                    let value = match moved {
+                        Some(moved) => local_runtime_value(locals, *right, chunks).and_then(|right| {
+                            binop(
+                                *op,
+                                moved,
+                                right,
+                                locals,
+                                chunks,
+                                execution.env,
+                                execution.host_functions,
+                            )
+                        }),
+                        None => eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution),
+                    }
+                    .map_err(|e| locate(chunk, ip, e))?;
                     break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
                 }
                 OpCode::ReturnBinaryLocalConst { op, local, constant } => {
-                    let value = eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
-                        .map_err(|e| locate(chunk, ip, e))?;
+                    let moved = if *op == BinaryOp::Add && locals_end_with_frame {
+                        take_returning_local(locals, *local)
+                    } else {
+                        None
+                    };
+                    let value = match moved {
+                        Some(moved) => binop(
+                            *op,
+                            moved,
+                            chunk.constants[*constant as usize].clone(),
+                            locals,
+                            chunks,
+                            execution.env,
+                            execution.host_functions,
+                        ),
+                        None => eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution),
+                    }
+                    .map_err(|e| locate(chunk, ip, e))?;
                     break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
                 }
                 OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
@@ -3126,6 +3162,20 @@ fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
     }
 }
 
+/// Moves a string, array or bytes local out of a frame that is returning, so that `local + x`
+/// extends it in place instead of copying it. `None` leaves the local for the caller to clone.
+fn take_returning_local(locals: &mut Locals, slot: u16) -> Option<RuntimeValue> {
+    if slot == SELF_SLOT {
+        return None;
+    }
+    match locals.direct_runtime_value_mut(slot)? {
+        value @ (RuntimeValue::String(_) | RuntimeValue::Array(_) | RuntimeValue::Bytes(_)) => {
+            Some(std::mem::take(value))
+        }
+        _ => None,
+    }
+}
+
 fn local_runtime_value(locals: &Locals, slot: u16, chunks: &Shared<Vec<Chunk>>) -> VmResult<RuntimeValue> {
     let value = locals.get(slot);
     Ok(into_runtime_value(value, chunks))
@@ -3335,7 +3385,7 @@ fn binop(
         BinaryOp::Mod => &MOD_IDENT,
         _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
     };
-    call_builtin(ident, &[a, b], &borrow_self(locals, chunks), env, host_functions)
+    call_builtin(ident, [a, b], &borrow_self(locals, chunks), env, host_functions)
 }
 
 #[inline(always)]
