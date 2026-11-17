@@ -3053,6 +3053,7 @@ fn test_bare_env_is_read_when_the_program_runs(
     }
 }
 
+#[cfg(feature = "custom-builtin")]
 #[test]
 fn test_set_builtin_source_replaces_a_soft_builtin() {
     let mut engine = DefaultEngine::default();

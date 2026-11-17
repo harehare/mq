@@ -80,6 +80,8 @@ vm-profile = []
 # Use the browser clock for VM deadlines when targeting WebAssembly.
 wasm = ["dep:web-time"]
 cst = []
+# Lets `Engine::set_builtin_source` replace the bundled `builtin.mq`, for mutation testing.
+custom-builtin = []
 html-parse = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]
 default = ["html-to-markdown"]
