@@ -639,13 +639,12 @@ mod tests {
     /// - nested `strong` of runs of `*` and `_`, which `CommonMark` 0.30 and later render as nested
     ///   elements where 0.29 merged them (388, 416, 424, 425, 426, 463, 464, 465, 467)
     /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href`, as
-    ///   as mdast to HTML does by default (496, 594, 595, 597)
+    ///   as mdast to HTML does by default (594, 595, 597)
     /// - GFM autolink literals, which the spec does not have (598, 604, 607, 608)
     /// - the GFM tag filter, which writes the tags `script`, `style` and `textarea` as text (140, 141,
     ///   142, 145, 147)
     const KNOWN_DIFFERENCES: &[usize] = &[
-        66, 68, 140, 141, 142, 145, 147, 388, 416, 424, 425, 426, 463, 464, 465, 467, 496, 594, 595, 597, 598, 604,
-        607, 608,
+        66, 68, 140, 141, 142, 145, 147, 388, 416, 424, 425, 426, 463, 464, 465, 467, 594, 595, 597, 598, 604, 607, 608,
     ];
 
     /// Examples of the GFM spec with `[[...]]` in them that the `wikilink` feature reads as a wikilink
@@ -674,14 +673,13 @@ mod tests {
     /// Examples of the `CommonMark` 0.31.2 spec that are not rendered as in the spec, by number:
     ///
     /// - a document that starts with `---` has frontmatter (96, 98)
-    /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href` (500,
-    ///   598, 599, 601)
+    /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href` (598,
+    ///   599, 601)
     /// - GFM autolink literals (602, 608, 611, 612)
     /// - the GFM tag filter, which writes the tags `script`, `style` and `textarea` as text (170, 171, 172,
     ///   173, 176, 178)
-    const COMMONMARK_KNOWN_DIFFERENCES: &[usize] = &[
-        96, 98, 170, 171, 172, 173, 176, 178, 500, 598, 599, 601, 602, 608, 611, 612,
-    ];
+    const COMMONMARK_KNOWN_DIFFERENCES: &[usize] =
+        &[96, 98, 170, 171, 172, 173, 176, 178, 598, 599, 601, 602, 608, 611, 612];
 
     /// Examples of the GFM extensions spec that are not rendered as in the spec, by number:
     ///
