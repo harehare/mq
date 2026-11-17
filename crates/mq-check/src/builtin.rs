@@ -866,6 +866,10 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::dict(Type::Var(k), Type::Var(v)),
     );
 
+    // concat: [a] -> [b]. Elements may be arrays or scalars, so the result element type is free.
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(ctx, "concat", Type::array(Type::Var(a)), Type::array(Type::Var(b)));
+
     // len: [a] -> number, string -> number
     let a = ctx.fresh_var();
     register_unary(ctx, "len", Type::array(Type::Var(a)), Type::Number);
