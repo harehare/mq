@@ -162,8 +162,6 @@ struct Compiler<R: ModuleResolver> {
     try_depth: usize,
     /// Counter making the temporaries of each `set_chain` expansion unique.
     path_chain_count: usize,
-    /// Counter making the hidden argument locals of `compile_call` unique.
-    hidden_arg_count: usize,
     /// Whether the chunk currently being compiled is lexically inside a `def`/`fn` body. A
     /// `try` body inherits this from its enclosing scope; a default-parameter expression does
     /// not (see the two call sites that toggle it). Gates `yield`.
@@ -1303,7 +1301,6 @@ fn compile_program_impl<R: ModuleResolver>(
         unresolved_call_names: FxHashSet::default(),
         try_depth: 0,
         path_chain_count: 0,
-        hidden_arg_count: 0,
         in_fn_body: false,
         defer_undefined_identifiers: options.defer_undefined_identifiers,
         patterns: PatternState::default(),
@@ -3372,35 +3369,15 @@ impl<R: ModuleResolver> Compiler<R> {
             self.unresolved_call_names.insert(ident);
         }
 
-        if let Some(slot) = args.first().and_then(|arg| self.current_local_slot(arg))
-            && args.len() > 1
-            && args[1..].iter().all(|arg| self.is_pure_local_expr(arg))
-            && args[1..].iter().any(|arg| self.reads_local(arg, slot))
-        {
-            // Read the first local after the pure arguments that also read it, so its last use
-            // can move the value into the call instead of cloning it. The later arguments are
-            // evaluated first and parked in hidden locals, so the call stack order is unchanged.
-            let mut parked = Vec::with_capacity(args.len() - 1);
+        if let Some((slot, below)) = self.first_local_read_last(args) {
             for arg in &args[1..] {
-                if matches!(arg.expr, Expr::Literal(_)) {
-                    parked.push(None);
-                    continue;
-                }
                 self.compile_expr(arg)?;
-                let name: Ident = format!("$arg{}", self.hidden_arg_count).as_str().into();
-                self.hidden_arg_count += 1;
-                let hidden = self.scope_mut().declare(name);
-                self.emit(OpCode::SetLocal(hidden));
-                parked.push(Some(hidden));
             }
-            self.compile_expr(&args[0])?;
-            for (arg, hidden) in args[1..].iter().zip(parked) {
-                if let Some(slot) = hidden {
-                    self.emit(OpCode::GetLocal(slot));
-                } else {
-                    self.compile_expr(arg)?;
-                }
-            }
+            self.emit(OpCode::GetLocalBelow {
+                slot,
+                below,
+                take: false,
+            });
         } else {
             for arg in args {
                 self.compile_expr(arg)?;
@@ -3410,6 +3387,19 @@ impl<R: ModuleResolver> Compiler<R> {
         let argc = self.arg_count(args.len())?;
         self.emit_call_builtin(ident, argc);
         Ok(())
+    }
+
+    /// Returns the first argument's slot and the count of later arguments when the first is a
+    /// local that the later, pure arguments also read.
+    ///
+    /// Reading it after them lets its last use move the value into the call instead of cloning
+    /// it, so a callee such as `slice(a, 0, len(a) - 1)` owns the array.
+    fn first_local_read_last(&mut self, args: &ast::Args) -> Option<(u16, u8)> {
+        let slot = self.current_local_slot(args.first()?)?;
+        let below = u8::try_from(args.len() - 1).ok().filter(|below| *below > 0)?;
+        (args[1..].iter().all(|arg| self.is_pure_local_expr(arg))
+            && args[1..].iter().any(|arg| self.reads_local(arg, slot)))
+        .then_some((slot, below))
     }
 
     /// Whether `node` only reads locals and constants, so evaluating it earlier is unobservable.

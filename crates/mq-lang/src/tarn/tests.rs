@@ -1977,9 +1977,9 @@ fn first_local_arg_moves_after_pure_args_that_read_it(
 
     assert_eq!(
         compiled.chunks[0]
-            .local_names
+            .code
             .iter()
-            .any(|name| name.to_string().starts_with("$arg")),
+            .any(|op| matches!(op, super::bytecode::OpCode::GetLocalBelow { .. })),
         reordered
     );
     assert_eq!(run(source).to_string(), expected);

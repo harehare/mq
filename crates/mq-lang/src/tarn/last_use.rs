@@ -33,6 +33,18 @@ fn move_last_uses_in(chunk: &mut Chunk, retained: &[u16]) {
             OpCode::CopyLocal { source, destination } if source != destination => {
                 (source, OpCode::MoveLocal { source, destination })
             }
+            OpCode::GetLocalBelow {
+                slot,
+                below,
+                take: false,
+            } => (
+                slot,
+                OpCode::GetLocalBelow {
+                    slot,
+                    below,
+                    take: true,
+                },
+            ),
             OpCode::CallUpvalueLocal {
                 index,
                 local,
@@ -63,6 +75,7 @@ fn candidate_slots(chunk: &Chunk, retained: &[u16]) -> Vec<u16> {
         .iter()
         .filter_map(|op| match op {
             OpCode::GetLocal(slot)
+            | OpCode::GetLocalBelow { slot, take: false, .. }
             | OpCode::CopyLocal { source: slot, .. }
             | OpCode::CallUpvalueLocal {
                 local: slot,
@@ -294,7 +307,10 @@ mod tests {
     fn is_move(op: &OpCode) -> bool {
         matches!(
             op,
-            OpCode::TakeLocal(_) | OpCode::MoveLocal { .. } | OpCode::CallUpvalueLocal { take: true, .. }
+            OpCode::TakeLocal(_)
+                | OpCode::MoveLocal { .. }
+                | OpCode::GetLocalBelow { take: true, .. }
+                | OpCode::CallUpvalueLocal { take: true, .. }
         )
     }
 
