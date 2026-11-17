@@ -632,6 +632,14 @@ fn check_path_local(
     builtin::get_path(&target, &keys).map(drop).map_err(VmError::from)
 }
 
+/// Runs `GetLocalBelow`: pushes the local below the top `below` stack values.
+#[inline(never)]
+fn get_local_below(stack: &mut Vec<StackValue>, locals: &mut Locals, slot: u16, below: u8, take: bool) {
+    let value = if take { locals.take(slot) } else { locals.get(slot) };
+    let at = stack.len() - below as usize;
+    stack.insert(at, value);
+}
+
 /// Runs `SetIndexUpvalue` or `PathUpvalue`, so the dispatch loop carries a single arm for both.
 #[inline(never)]
 fn upvalue_update(
@@ -2586,6 +2594,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     .map_err(|e| locate(chunk, ip, e))?;
                     stack.push(StackValue::Value(result));
                 }
+                OpCode::GetLocalBelow { slot, below, take } => get_local_below(stack, locals, *slot, *below, *take),
                 OpCode::SetIndexUpvalue(_) | OpCode::PathUpvalue { .. } => {
                     upvalue_update(stack, upvalues, op, locals, chunks, execution).map_err(|e| locate(chunk, ip, e))?;
                 }

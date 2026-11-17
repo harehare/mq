@@ -227,4 +227,5 @@ pub(super) mod opcode {
     pub(crate) const ADD_ASSIGN_UPVALUE: u8 = 104;
     pub(crate) const SET_INDEX_UPVALUE: u8 = 105;
     pub(crate) const PATH_UPVALUE: u8 = 106;
+    pub(crate) const GET_LOCAL_BELOW: u8 = 107;
 }

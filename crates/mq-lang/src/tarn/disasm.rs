@@ -248,6 +248,10 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::PathUpvalue { index, depth, op } => {
             format!("PathUpvalue {} depth={depth} {op:?}", upvalue(*index))
         }
+        bytecode::OpCode::GetLocalBelow { slot, below, take } => {
+            let take = if *take { " take" } else { "" };
+            format!("GetLocalBelow {}, below={below}{take}", local(*slot))
+        }
         bytecode::OpCode::SetIndexUpvalue(slot) => format!("SetIndexUpvalue {}", upvalue(*slot)),
         bytecode::OpCode::MakeClosure(payload) => {
             format!("MakeClosure chunk {}, upvalues {}", payload.0, payload.1.len())

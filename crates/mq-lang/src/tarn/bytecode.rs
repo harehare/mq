@@ -526,6 +526,13 @@ pub(crate) enum OpCode {
         depth: u8,
         op: PathOp,
     },
+    /// Inserts a local below the top `below` stack values, so a call that must read the local
+    /// last still receives it first. `take` moves the value out instead of cloning it.
+    GetLocalBelow {
+        slot: u16,
+        below: u8,
+        take: bool,
+    },
 }
 
 /// The update a [`OpCode::PathUpvalue`] performs.
@@ -556,6 +563,7 @@ impl OpCode {
             | Self::CallBuiltinLocal { local: slot, .. }
             | Self::CallLocal(slot, _)
             | Self::CallUpvalueLocal { local: slot, .. }
+            | Self::GetLocalBelow { slot, .. }
             | Self::ReturnLocal(slot)
             | Self::SetLocalConst { local: slot, .. }
             | Self::BinaryLocalConst { local: slot, .. }
@@ -722,6 +730,7 @@ impl OpCode {
             Self::AddAssignUpvalue(_) => "AddAssignUpvalue",
             Self::SetIndexUpvalue(_) => "SetIndexUpvalue",
             Self::PathUpvalue { .. } => "PathUpvalue",
+            Self::GetLocalBelow { .. } => "GetLocalBelow",
             Self::SetLocalAndCopy { .. } => "SetLocalAndCopy",
             Self::SetLocalAndCopyAndJump { .. } => "SetLocalAndCopyAndJump",
             Self::SetLocalConst { .. } => "SetLocalConst",
@@ -1360,6 +1369,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::GetLocal(slot)
                 | OpCode::TakeLocal(slot)
                 | OpCode::SetLocal(slot)
+                | OpCode::GetLocalBelow { slot, .. }
                 | OpCode::SetIndexLocal(slot)
                 | OpCode::CheckPathLocal { slot, .. }
                 | OpCode::SetPathLocal { slot, .. }
@@ -1995,6 +2005,7 @@ pub(crate) fn stack_effect(op: &OpCode) -> (usize, usize) {
             ..
         } => (*depth as usize, *depth as usize),
         OpCode::PathUpvalue { depth, .. } => (*depth as usize + 1, 0),
+        OpCode::GetLocalBelow { below, .. } => (*below as usize, *below as usize + 1),
         OpCode::CheckPathLocal { depth, .. } => (*depth as usize, *depth as usize),
         OpCode::SetPathLocal { depth, .. } | OpCode::AddAssignPathLocal { depth, .. } => (*depth as usize + 1, 0),
         OpCode::Dup => (1, 2),

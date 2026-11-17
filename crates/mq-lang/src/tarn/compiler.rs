@@ -3369,13 +3369,61 @@ impl<R: ModuleResolver> Compiler<R> {
             self.unresolved_call_names.insert(ident);
         }
 
-        for arg in args {
-            self.compile_expr(arg)?;
+        if let Some((slot, below)) = self.first_local_read_last(args) {
+            for arg in &args[1..] {
+                self.compile_expr(arg)?;
+            }
+            self.emit(OpCode::GetLocalBelow {
+                slot,
+                below,
+                take: false,
+            });
+        } else {
+            for arg in args {
+                self.compile_expr(arg)?;
+            }
         }
         self.set_call_token_id(call_token_id);
         let argc = self.arg_count(args.len())?;
         self.emit_call_builtin(ident, argc);
         Ok(())
+    }
+
+    /// Returns the first argument's slot and the count of later arguments when the first is a
+    /// local that the later, pure arguments also read.
+    ///
+    /// Reading it after them lets its last use move the value into the call instead of cloning
+    /// it, so a callee such as `slice(a, 0, len(a) - 1)` owns the array.
+    fn first_local_read_last(&mut self, args: &ast::Args) -> Option<(u16, u8)> {
+        let slot = self.current_local_slot(args.first()?)?;
+        let below = u8::try_from(args.len() - 1).ok().filter(|below| *below > 0)?;
+        (args[1..].iter().all(|arg| self.is_pure_local_expr(arg))
+            && args[1..].iter().any(|arg| self.reads_local(arg, slot)))
+        .then_some((slot, below))
+    }
+
+    /// Whether `node` only reads locals and constants, so evaluating it earlier is unobservable.
+    fn is_pure_local_expr(&mut self, node: &Shared<Node>) -> bool {
+        match &node.expr {
+            Expr::Literal(_) => true,
+            Expr::Ident(_) => self.current_local_slot(node).is_some(),
+            Expr::Call(..) => self
+                .unshadowed_builtin_args(node, builtins::LEN.into(), 1)
+                .is_some_and(|args| args.iter().all(|arg| self.is_pure_local_expr(arg))),
+            Expr::BinaryOp(_, lhs, rhs) => self.is_pure_local_expr(lhs) && self.is_pure_local_expr(rhs),
+            Expr::UnaryOp(_, operand) | Expr::Paren(operand) => self.is_pure_local_expr(operand),
+            _ => false,
+        }
+    }
+
+    fn reads_local(&self, node: &Shared<Node>, slot: u16) -> bool {
+        match &node.expr {
+            Expr::Ident(_) => self.current_local_slot(node) == Some(slot),
+            Expr::Call(_, args) => args.iter().any(|arg| self.reads_local(arg, slot)),
+            Expr::BinaryOp(_, lhs, rhs) => self.reads_local(lhs, slot) || self.reads_local(rhs, slot),
+            Expr::UnaryOp(_, operand) | Expr::Paren(operand) => self.reads_local(operand, slot),
+            _ => false,
+        }
     }
 
     /// Emits a direct call, binding the native builtin now so the interpreter skips the name lookup.
