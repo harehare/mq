@@ -2483,7 +2483,7 @@ key: 1
     BuiltinDoc {
         name: "join",
         aliases: &[],
-        description: "Joins the elements of an array into a string with the given separator. An array of byte arrays with a byte array separator is joined into a byte array instead.",
+        description: "Joins the elements of an array into a string with the given separator. An array of bytes with a bytes separator is joined into bytes instead.",
         params: &["array", "separator"],
         param_types: &["array", "dynamic"],
         returns: "dynamic",

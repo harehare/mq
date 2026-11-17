@@ -3199,6 +3199,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::ltrim_bytes(r#"to_hex(ltrim(b"\x20\x09hi\x0a"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("68690a".to_string()))].into()))]
 #[case::rtrim_bytes(r#"to_hex(rtrim(b"\x20\x09hi\x0a"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("20096869".to_string()))].into()))]
 #[case::join_bytes(r#"to_hex(join([b"ab", b"cd"], b"-"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("61622d6364".to_string()))].into()))]
+#[case::join_bytes_empty(r#"to_hex(join([], b"-"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
 // pack / unpack
 #[case::pack_u8(r#"pack("u8", 255)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff]))].into()))]
 #[case::pack_unpack_roundtrip(r#"unpack("u8", pack("u8", 42))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
