@@ -573,6 +573,20 @@ def flat_map(v, f):
     foreach (x, v): f(x); | flatten()
 end
 
+# Concatenates the elements of an array one level deep. Unlike `flatten`, nested arrays
+# inside the elements are kept. Non-array elements are kept as single elements.
+#
+# Example:
+# ```
+# concat([[1, [2]], [3], 4])
+# #=> [1, [2], 3, 4]
+# ```
+#
+# Returns: array
+def concat(arr):
+  fold(arr, [], fn(acc, x): if (is_array(x)): acc + x else: acc + [x];)
+end
+
 # Filters the elements of an array based on a provided callback function.
 # A coroutine input is filtered lazily and returns a coroutine.
 #

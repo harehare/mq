@@ -2419,3 +2419,14 @@ def test_to_markdown_string_roundtrip_is_stable(src):
   let once = to_markdown_string(to_markdown(src))
   | assert_eq(to_markdown_string(to_markdown(once)), once)
 end
+
+# @parametrize([
+#   [[[1, 2], [3]], [1, 2, 3]],
+#   [[[[1], [2]], [[3]]], [[1], [2], [3]]],
+#   [[[1], 2], [1, 2]],
+#   [[], []],
+# ])
+def test_concat(value, expected):
+  let result = concat(value)
+  | assert_eq(result, expected)
+end
