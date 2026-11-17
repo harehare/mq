@@ -12,8 +12,8 @@ Every example of each spec is rendered to HTML with `to_html` and compared with 
 
 | Spec                                | Passed / Total | Rate  |
 | ----------------------------------- | -------------- | ----- |
-| GFM spec (based on CommonMark 0.29) | 624 / 648      | 96.3% |
-| CommonMark 0.31.2                   | 636 / 652      | 97.5% |
+| GFM spec (based on CommonMark 0.29) | 625 / 648      | 96.5% |
+| CommonMark 0.31.2                   | 637 / 652      | 97.7% |
 | GFM extensions (`extensions.txt`)   | 26 / 30        | 86.7% |
 
 The examples that do not match are intentional differences, not parse failures:
