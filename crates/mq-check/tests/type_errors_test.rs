@@ -1251,3 +1251,15 @@ fn test_each_type_guard_selects_the_branch_run_by_a_call(#[case] code: &str, #[c
     let errors = check_types_with_builtins(code);
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }
+
+#[test]
+fn test_join_bytes_with_bytes_separator() {
+    let code = r#"join([to_bytes("a"), to_bytes("b")], to_bytes("-")) | to_hex()"#;
+    assert!(check_types_with_builtins(code).is_empty());
+}
+
+#[test]
+fn test_join_bytes_returns_bytes() {
+    let code = r#"join([to_bytes("a")], to_bytes("-")) + "x""#;
+    assert!(!check_types_with_builtins(code).is_empty());
+}

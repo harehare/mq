@@ -501,6 +501,9 @@ fn register_string(ctx: &mut InferenceContext) {
     // join: ([a], string) -> string. The elements are converted to strings.
     let a = ctx.fresh_var();
     register_binary(ctx, "join", Type::array(Type::Var(a)), Type::String, Type::String);
+    // join: ([bytes], bytes) -> bytes
+    register_binary(ctx, "join", Type::array(Type::Bytes), Type::Bytes, Type::Bytes);
+    register_binary(ctx, "join", Type::None, Type::String, Type::String);
 
     // contains: (string, string) -> bool
     register_binary(ctx, "contains", Type::String, Type::String, Type::Bool);

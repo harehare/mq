@@ -2707,7 +2707,7 @@ fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 fn join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(array), RuntimeValue::Bytes(sep)]
-            if !array.is_empty() && array.iter().all(|v| matches!(v, RuntimeValue::Bytes(_))) =>
+            if array.iter().all(|v| matches!(v, RuntimeValue::Bytes(_))) =>
         {
             let mut out = Vec::new();
             for (i, v) in array.iter().enumerate() {
