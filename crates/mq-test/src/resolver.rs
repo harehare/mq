@@ -2,6 +2,7 @@
 //! and defers every other module to the default resolver.
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use mq_lang::{DefaultModuleResolver, ModuleError, ModuleResolver};
 
@@ -23,12 +24,35 @@ fn bundled(module_name: &str) -> Option<&'static str> {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TestModuleResolver {
     fallback: DefaultModuleResolver,
+    overrides: Arc<[(String, String)]>,
+    resolved: Option<ResolvedModules>,
 }
+
+/// A module read from disk, as `(name, path, source)`.
+pub(crate) type ResolvedModule = (String, PathBuf, String);
+
+/// Shared log of the modules a resolver read from disk.
+pub(crate) type ResolvedModules = Arc<Mutex<Vec<ResolvedModule>>>;
 
 impl TestModuleResolver {
     /// Serves the bundled modules and defers every other module to `fallback`.
     pub(crate) fn new(fallback: DefaultModuleResolver) -> Self {
-        Self { fallback }
+        Self {
+            fallback,
+            ..Self::default()
+        }
+    }
+
+    /// Serves `source` for the module `name` instead of the one on disk.
+    pub(crate) fn with_override(mut self, name: String, source: String) -> Self {
+        self.overrides = Arc::from(vec![(name, source)]);
+        self
+    }
+
+    /// Logs every module read from disk to `resolved`.
+    pub(crate) fn with_recorder(mut self, resolved: ResolvedModules) -> Self {
+        self.resolved = Some(resolved);
+        self
     }
 }
 
@@ -37,7 +61,19 @@ impl ModuleResolver for TestModuleResolver {
         if let Some(source) = bundled(module_name) {
             return Ok(source.to_string());
         }
-        self.fallback.resolve(module_name)
+        if let Some((_, source)) = self.overrides.iter().find(|(name, _)| name == module_name) {
+            return Ok(source.clone());
+        }
+        let source = self.fallback.resolve(module_name)?;
+        if let Some(resolved) = &self.resolved
+            && let Ok(path) = self.fallback.get_path(module_name)
+        {
+            resolved
+                .lock()
+                .unwrap()
+                .push((module_name.to_string(), PathBuf::from(path), source.clone()));
+        }
+        Ok(source)
     }
 
     fn get_path(&self, module_name: &str) -> Result<String, ModuleError> {

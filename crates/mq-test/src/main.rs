@@ -94,6 +94,14 @@ struct Cli {
     #[arg(long)]
     list: bool,
 
+    /// Mutate the modules the tests use and report the mutants the tests fail to catch.
+    #[arg(long, conflicts_with_all = ["coverage", "list", "doc"])]
+    mutate: bool,
+
+    /// Fail when the mutation score (percent of mutants killed) is below this value.
+    #[arg(long, requires = "mutate", value_parser = clap::value_parser!(u32).range(0..=100))]
+    min_score: Option<u32>,
+
     /// Output format for both --list and a normal test run.
     #[arg(long, value_enum, default_value = "text")]
     format: OutputFormat,
@@ -131,6 +139,8 @@ fn main() -> ExitCode {
         .with_list(cli.list)
         .with_format(cli.format)
         .with_module_directories(cli.module_directories)
+        .with_mutation(cli.mutate)
+        .with_min_score(cli.min_score)
         .run()
     {
         Ok(true) => ExitCode::SUCCESS,

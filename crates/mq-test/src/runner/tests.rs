@@ -1580,3 +1580,41 @@ fn test_a_parametrize_case_with_wrong_argument_count_fails_the_run(#[case] body:
 
     fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn test_mutation_score_is_checked_against_min_score() {
+    let dir = temp_project_dir("mutation_score");
+    // `a < b` is checked at one point only, so `<` -> `>=` is caught but `0` -> `1` is not.
+    fs::write(dir.join("lib.mq"), "def below(a): a < 0;\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\ndef test_below():\n  assert_eq(below(-1), true)\nend\n",
+    )
+    .unwrap();
+
+    let run = |min_score| {
+        TestRunner::new(vec![test_file.clone()])
+            .with_mutation(true)
+            .with_min_score(min_score)
+            .run()
+            .unwrap()
+    };
+    assert!(run(None));
+    assert!(run(Some(1)));
+    assert!(!run(Some(100)));
+}
+
+#[test]
+fn test_mutation_requires_passing_tests() {
+    let dir = temp_project_dir("mutation_failing_baseline");
+    fs::write(dir.join("lib.mq"), "def one(): 1;\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\ndef test_one():\n  assert_eq(one(), 2)\nend\n",
+    )
+    .unwrap();
+
+    assert!(TestRunner::new(vec![test_file]).with_mutation(true).run().is_err());
+}

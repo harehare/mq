@@ -4,6 +4,7 @@ mod coverage;
 mod doctest;
 mod highlight;
 mod html;
+mod mutation;
 mod resolver;
 mod runner;
 mod snapshot;

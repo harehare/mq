@@ -136,6 +136,8 @@ pub struct TestRunner {
     list: bool,
     format: OutputFormat,
     module_directories: Vec<PathBuf>,
+    mutate: bool,
+    min_score: Option<u32>,
     step_handler: Option<std::sync::Arc<dyn mq_lang::DebuggerHandler>>,
 }
 
@@ -166,6 +168,8 @@ impl TestRunner {
             list: false,
             format: OutputFormat::default(),
             module_directories: Vec::new(),
+            mutate: false,
+            min_score: None,
             step_handler: None,
         }
     }
@@ -253,6 +257,18 @@ impl TestRunner {
         Some(paths)
     }
 
+    /// Runs mutation testing on the modules the tests use instead of a plain test run.
+    pub fn with_mutation(mut self, mutate: bool) -> Self {
+        self.mutate = mutate;
+        self
+    }
+
+    /// Fails a mutation run whose score (percent of mutants killed) is below `min_score`.
+    pub fn with_min_score(mut self, min_score: Option<u32>) -> Self {
+        self.min_score = min_score;
+        self
+    }
+
     /// Adds directories searched for `include`/`import`ed modules, after the
     /// directory of each test file.
     pub fn with_module_directories(mut self, dirs: Vec<PathBuf>) -> Self {
@@ -277,6 +293,52 @@ impl TestRunner {
     /// stop the remaining files from running.
     ///
     /// Returns `Ok(true)` if every executed test passed and every file ran.
+    /// Creates an engine with the builtins, the search paths for `file` and the host functions
+    /// test files rely on.
+    fn build_engine(
+        &self,
+        file: &Path,
+        resolver: TestModuleResolver,
+    ) -> mq_lang::Engine<TestModuleResolver, mq_lang::MemIo> {
+        let mut engine = mq_lang::Engine::with_io(resolver, mq_lang::Shared::new(mq_lang::MemIo::default()));
+
+        engine.load_builtin_module();
+
+        // Resolve relative `include` statements in the test file, then fall back to `-L` dirs.
+        if let Some(paths) = self.search_paths(file) {
+            engine.set_search_paths(paths);
+        }
+
+        Self::register_clock(&mut engine);
+
+        {
+            let test_file = file.to_string_lossy().into_owned();
+            engine.register_fn(
+                "current_test_file",
+                move || -> Result<String, mq_lang::HostFunctionError> { Ok(test_file.clone()) },
+            );
+        }
+
+        {
+            let snapshot_file = file.to_path_buf();
+            let update_snapshots = self.update_snapshots;
+            engine.register_fn(
+                "assert_snapshot",
+                move |name: String, actual: String| -> mq_lang::HostFnResult {
+                    Ok(snapshot::check_snapshot(
+                        &snapshot_file,
+                        &name,
+                        &actual,
+                        update_snapshots,
+                    ))
+                },
+            );
+        }
+
+        engine
+    }
+
+    /// Runs the discovered tests and prints the reports. Returns `false` if anything failed.
     pub fn run(self) -> miette::Result<bool> {
         let test_files: Vec<PathBuf> = if self.files.is_empty() {
             Self::discover("./")?
@@ -294,6 +356,10 @@ impl TestRunner {
 
         if self.list {
             return self.run_list(&test_files);
+        }
+
+        if self.mutate {
+            return self.run_mutation(&test_files);
         }
 
         if let Some(path) = &self.coverage_output {
@@ -375,43 +441,7 @@ impl TestRunner {
                 OutputFormat::Text => Self::build_test_query(&content, &tests),
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
             };
-            let mut engine = mq_lang::Engine::with_io(
-                crate::resolver::TestModuleResolver::default(),
-                mq_lang::Shared::new(mq_lang::MemIo::default()),
-            );
-
-            engine.load_builtin_module();
-
-            // Resolve relative `include` statements in the test file, then fall back to `-L` dirs.
-            if let Some(paths) = self.search_paths(file) {
-                engine.set_search_paths(paths);
-            }
-
-            Self::register_clock(&mut engine);
-
-            {
-                let test_file = file.to_string_lossy().into_owned();
-                engine.register_fn(
-                    "current_test_file",
-                    move || -> Result<String, mq_lang::HostFunctionError> { Ok(test_file.clone()) },
-                );
-            }
-
-            {
-                let snapshot_file = file.clone();
-                let update_snapshots = self.update_snapshots;
-                engine.register_fn(
-                    "assert_snapshot",
-                    move |name: String, actual: String| -> mq_lang::HostFnResult {
-                        Ok(snapshot::check_snapshot(
-                            &snapshot_file,
-                            &name,
-                            &actual,
-                            update_snapshots,
-                        ))
-                    },
-                );
-            }
+            let mut engine = self.build_engine(file, TestModuleResolver::default());
 
             if self.coverage || self.step_handler.is_some() {
                 match &self.step_handler {
@@ -1192,5 +1222,6 @@ fn open_in_default_app(path: &Path) -> miette::Result<()> {
     Ok(())
 }
 
+mod mutate;
 #[cfg(test)]
 mod tests;
