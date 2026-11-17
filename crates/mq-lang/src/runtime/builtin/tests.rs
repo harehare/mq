@@ -1482,7 +1482,7 @@ fn test_eval_builtin_get_map() {
     assert_eq!(
             result_err1,
             Err(Error::Runtime(
-                "cannot index string with string (arrays, strings and markdown take a number, dicts take a string or symbol)".to_string()
+                "cannot index string with string (arrays, strings, bytes and markdown take a number, dicts take a string or symbol)".to_string()
             ))
         );
 
@@ -1491,10 +1491,25 @@ fn test_eval_builtin_get_map() {
     assert_eq!(
         result_err2,
         Err(Error::Runtime(
-            "cannot index dict with number (arrays, strings and markdown take a number, dicts take a string or symbol)"
+            "cannot index dict with number (arrays, strings, bytes and markdown take a number, dicts take a string or symbol)"
                 .to_string()
         ))
     );
+}
+
+#[rstest]
+#[case(0, RuntimeValue::Number(97.into()))]
+#[case(2, RuntimeValue::Number(99.into()))]
+#[case(-1, RuntimeValue::Number(99.into()))]
+#[case(3, RuntimeValue::NONE)]
+#[case(-4, RuntimeValue::NONE)]
+fn test_eval_builtin_get_bytes(#[case] index: i64, #[case] expected: RuntimeValue) {
+    let args = vec![
+        RuntimeValue::Bytes(Shared::new(b"abc".to_vec())),
+        RuntimeValue::Number(index.into()),
+    ];
+    let result = eval_builtin(&RuntimeValue::None, &Ident::new("get"), args.into(), &VmEnv::default());
+    assert_eq!(result, Ok(expected));
 }
 
 #[test]

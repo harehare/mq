@@ -4026,6 +4026,10 @@ fn get_value(target: &mut RuntimeValue, key: &RuntimeValue) -> Result<RuntimeVal
             Some(o) => Ok(o.to_string().into()),
             None => Ok(RuntimeValue::NONE),
         },
+        (RuntimeValue::Bytes(bytes), RuntimeValue::Number(index)) => Ok(resolve_index(*index, bytes.len())
+            .and_then(|i| bytes.get(i))
+            .map(|b| RuntimeValue::Number((*b as i64).into()))
+            .unwrap_or(RuntimeValue::NONE)),
         (RuntimeValue::Markdown(node, _), RuntimeValue::Number(i)) => {
             let len = node.value().chars().count();
             match resolve_index(*i, len).and_then(runtime_value::Selector::index) {
@@ -4035,7 +4039,7 @@ fn get_value(target: &mut RuntimeValue, key: &RuntimeValue) -> Result<RuntimeVal
         }
         (RuntimeValue::None, _) | (_, RuntimeValue::None) => Ok(RuntimeValue::NONE),
         (a, b) => Err(Error::Runtime(format!(
-            "cannot index {} with {} (arrays, strings and markdown take a number, dicts take a string or symbol)",
+            "cannot index {} with {} (arrays, strings, bytes and markdown take a number, dicts take a string or symbol)",
             a.name(),
             b.name()
         ))),

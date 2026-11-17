@@ -1153,6 +1153,13 @@ fn register_dict(ctx: &mut InferenceContext) {
     // get: (string, number) -> string (a character), (markdown, number) -> markdown, (none, a) -> none
     register_binary(ctx, "get", Type::String, Type::Number, Type::String);
     register_binary(ctx, "get", Type::markdown(), Type::Number, Type::markdown());
+    register_binary(
+        ctx,
+        "get",
+        Type::Bytes,
+        Type::Number,
+        Type::union(vec![Type::Number, Type::None]),
+    );
     let key = ctx.fresh_var();
     register_binary(ctx, "get", Type::None, Type::Var(key), Type::None);
 
