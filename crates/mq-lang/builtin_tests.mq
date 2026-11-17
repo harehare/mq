@@ -161,6 +161,12 @@ def test_is_markdown_and_markdowns():
   | assert_eq(markdowns("t"), None)
 end
 
+def test_bytes_index():
+  assert_eq(b"abc"[0], 97)
+  | assert_eq(b"abc"[-1], 99)
+  | assert_eq(b"abc"[3], None)
+end
+
 def test_is_bytes():
   assert_eq(is_bytes(b"ab"), true)
   | assert_eq(is_bytes("ab"), false)
