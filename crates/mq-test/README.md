@@ -171,6 +171,7 @@ really checked. The report lists survivors and the mutation score (killed / tota
 - Tests must pass unmutated. A mutant that fails, errors or times out counts as killed.
 - `--min-score <0-100>` exits non-zero below that score.
 - `--mutate-format <text|json|markdown|html>` (default `text`); `--mutate-output <path>` writes to a file.
+- `--mutate-jobs <n>` sets how many mutants run at once (default: half the cores, at most four).
 - `--mutate-builtin` also mutates the bundled `builtin.mq`. It is slow, so narrow the run with `-k`.
 - `# @mutate(skip)` excludes equivalent mutants: after code it skips that line, on its own line it
   skips the next statement or `def`.

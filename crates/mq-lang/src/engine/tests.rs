@@ -3068,6 +3068,7 @@ fn test_bare_env_is_read_when_the_program_runs(
     }
 }
 
+#[cfg(feature = "custom-builtin")]
 #[test]
     let (temp_dir, temp_file_path) = create_file(
         "private_helper_module.mq",

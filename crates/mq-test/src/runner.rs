@@ -141,6 +141,7 @@ pub struct TestRunner {
     mutate_builtin: bool,
     mutate_format: MutationFormat,
     mutate_output: Option<PathBuf>,
+    mutate_jobs: Option<usize>,
     min_score: Option<u32>,
     step_handler: Option<std::sync::Arc<dyn mq_lang::DebuggerHandler>>,
 }
@@ -176,6 +177,7 @@ impl TestRunner {
             mutate_builtin: false,
             mutate_format: MutationFormat::default(),
             mutate_output: None,
+            mutate_jobs: None,
             min_score: None,
             step_handler: None,
         }
@@ -285,6 +287,12 @@ impl TestRunner {
     /// Writes the mutation report to `output` instead of stdout.
     pub fn with_mutation_output(mut self, output: Option<PathBuf>) -> Self {
         self.mutate_output = output;
+        self
+    }
+
+    /// Sets how many mutants run at once. Defaults to half the cores, at most four.
+    pub fn with_mutation_jobs(mut self, jobs: Option<usize>) -> Self {
+        self.mutate_jobs = jobs;
         self
     }
 

@@ -19,6 +19,12 @@ use crate::resolver::{ResolvedModules, TestModuleResolver};
 /// Name the bundled `builtin.mq` is registered under.
 const BUILTIN: &str = "builtin";
 
+/// Stack size of the threads that run mutants.
+const MUTANT_STACK_SIZE: usize = 64 * 1024 * 1024;
+
+/// Call depth limit for mutants, so runaway recursion fails fast.
+const MUTANT_MAX_CALL_DEPTH: u32 = 10_000;
+
 /// A test file with the query that runs its selected tests.
 struct Suite {
     file: PathBuf,
@@ -55,6 +61,11 @@ impl DebuggerHandler for LineRecorder {
         }
         DebuggerAction::StepInto
     }
+}
+
+/// Half the cores, at most four: each running mutant holds its own parsed modules.
+fn default_jobs() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).clamp(1, 4))
 }
 
 fn module_key(name: &str) -> &str {
@@ -155,26 +166,33 @@ impl TestRunner {
             })
             .collect();
 
-        let results: Vec<(usize, MutantResult)> = jobs
-            .into_par_iter()
-            .map(|(index, mutant)| {
-                let target = &targets[index];
-                let killed = suites
-                    .iter()
-                    .enumerate()
-                    .filter(|(suite, _)| {
-                        target
-                            .lines
-                            .get(suite)
-                            .is_some_and(|lines| lines.contains(&mutant.line))
-                    })
-                    .any(|(_, suite)| {
-                        // A mutant that crashes the engine itself counts as caught.
-                        !catch_unwind(AssertUnwindSafe(|| self.survives(suite, target, &mutant))).unwrap_or(false)
-                    });
-                (index, MutantResult { mutant, killed })
-            })
-            .collect();
+        // Mutants can recurse without bound, so they run on threads with a large stack.
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(self.mutate_jobs.unwrap_or_else(default_jobs))
+            .stack_size(MUTANT_STACK_SIZE)
+            .build()
+            .map_err(|e| miette::miette!("failed to start worker threads: {e}"))?;
+        let results: Vec<(usize, MutantResult)> = pool.install(|| {
+            jobs.into_par_iter()
+                .map(|(index, mutant)| {
+                    let target = &targets[index];
+                    let killed = suites
+                        .iter()
+                        .enumerate()
+                        .filter(|(suite, _)| {
+                            target
+                                .lines
+                                .get(suite)
+                                .is_some_and(|lines| lines.contains(&mutant.line))
+                        })
+                        .any(|(_, suite)| {
+                            // A mutant that crashes the engine itself counts as caught.
+                            !catch_unwind(AssertUnwindSafe(|| self.survives(suite, target, &mutant))).unwrap_or(false)
+                        });
+                    (index, MutantResult { mutant, killed })
+                })
+                .collect()
+        });
 
         let mut modules: Vec<ModuleResult> = targets
             .into_iter()
@@ -236,6 +254,7 @@ impl TestRunner {
         };
         let mut engine = self.build_engine(&suite.file, resolver, builtin);
         // A mutant can loop forever; give it far longer than the unmutated run took.
+        engine.set_max_call_stack_depth(MUTANT_MAX_CALL_DEPTH);
         engine.set_timeout(suite.baseline * 20 + Duration::from_secs(2));
         Self::passed(engine.eval(&suite.query, mq_lang::null_input().into_iter()))
     }

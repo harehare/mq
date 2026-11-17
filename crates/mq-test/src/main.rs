@@ -110,6 +110,10 @@ struct Cli {
     #[arg(long, requires = "mutate")]
     mutate_output: Option<PathBuf>,
 
+    /// Number of mutants to run at once. Default: half the cores, at most four.
+    #[arg(long, requires = "mutate", value_parser = clap::value_parser!(usize))]
+    mutate_jobs: Option<usize>,
+
     /// Fail when the mutation score (percent of mutants killed) is below this value.
     #[arg(long, requires = "mutate", value_parser = clap::value_parser!(u32).range(0..=100))]
     min_score: Option<u32>,
@@ -155,6 +159,7 @@ fn main() -> ExitCode {
         .with_mutate_builtin(cli.mutate_builtin)
         .with_mutation_format(cli.mutate_format)
         .with_mutation_output(cli.mutate_output)
+        .with_mutation_jobs(cli.mutate_jobs)
         .with_min_score(cli.min_score)
         .run()
     {
