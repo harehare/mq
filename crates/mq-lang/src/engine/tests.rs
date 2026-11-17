@@ -3069,7 +3069,6 @@ fn test_bare_env_is_read_when_the_program_runs(
 }
 
 #[test]
-fn test_eval_error_in_module_private_helper_points_at_the_query() {
     let (temp_dir, temp_file_path) = create_file(
         "private_helper_module.mq",
         "def _expect(): error(\"boom\");\ndef api(): _expect();",
@@ -3114,4 +3113,29 @@ fn test_eval_caught_error_keeps_its_message_when_relocated() {
     let query = r#"def _check(): error("boom"); | def api(): _check(); | try: api() catch (e): e["message"]"#;
     let result = engine.eval(query, null_input().into_iter()).unwrap();
     assert_eq!(result.values(), &["boom".to_string().into()]);
+}
+
+
+#[test]
+fn test_set_builtin_source_replaces_a_soft_builtin() {
+    let mut engine = DefaultEngine::default();
+    let source = crate::BUILTIN_MODULE_FILE.replacen(
+        "def is_string(s): type(s) == \"string\";",
+        "def is_string(s): false;",
+        1,
+    );
+    assert_ne!(source, crate::BUILTIN_MODULE_FILE);
+    engine.set_builtin_source(&source);
+    engine.load_builtin_module();
+
+    assert_eq!(
+        engine.eval("is_string(\"a\")", null_input().into_iter()).unwrap()[0],
+        RuntimeValue::Boolean(false)
+    );
+    assert_eq!(
+        DefaultEngine::default()
+            .eval("is_string(\"a\")", null_input().into_iter())
+            .unwrap()[0],
+        RuntimeValue::Boolean(true)
+    );
 }

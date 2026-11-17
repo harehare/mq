@@ -1,6 +1,7 @@
 //! Generates mutants of a module's source by replacing single tokens.
 
 use mq_lang::{CstNode, Shared, Token, TokenKind};
+use rustc_hash::FxHashSet;
 
 /// One single-token replacement of a module's source.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,11 +14,17 @@ pub(crate) struct Mutant {
     pub(crate) original: String,
     /// The replacement text.
     pub(crate) replacement: String,
-    /// The module source with the replacement applied.
-    pub(crate) source: String,
+    /// Byte range of the original token in the module source.
+    from: usize,
+    to: usize,
 }
 
 impl Mutant {
+    /// Returns `source` with the replacement applied.
+    pub(crate) fn apply(&self, source: &str) -> String {
+        format!("{}{}{}", &source[..self.from], self.replacement, &source[self.to..])
+    }
+
     /// Short description such as `` `==` -> `!=` ``.
     pub(crate) fn describe(&self) -> String {
         if self.replacement.is_empty() {
@@ -52,12 +59,28 @@ fn replacement_for(kind: &TokenKind, text: &str) -> Option<String> {
     Some(swapped.to_string())
 }
 
-fn collect_tokens(nodes: &[Shared<CstNode>], out: &mut Vec<Shared<Token>>) {
+/// Comment that excludes the code it annotates from mutation.
+const SKIP_ANNOTATION: &str = "@mutate(skip)";
+
+/// Tokens of the tree, and the `(line, last line of the annotated node)` of each skip comment.
+#[derive(Default)]
+struct Collected {
+    tokens: Vec<Shared<Token>>,
+    skips: Vec<(usize, usize)>,
+}
+
+fn collect(nodes: &[Shared<CstNode>], out: &mut Collected) {
     for node in nodes {
         if let Some(token) = &node.token {
-            out.push(Shared::clone(token));
+            out.tokens.push(Shared::clone(token));
         }
-        collect_tokens(&node.all_children(), out);
+        let end = node.node_range().end.line as usize;
+        for trivia in node.leading_trivia.iter().chain(node.trailing_trivia.iter()) {
+            if trivia.comment().is_some_and(|c| c.trim() == SKIP_ANNOTATION) {
+                out.skips.push((trivia.range().start.line as usize, end));
+            }
+        }
+        collect(&node.all_children(), out);
     }
 }
 
@@ -80,15 +103,29 @@ pub(crate) fn generate(source: &str, is_candidate: impl Fn(usize) -> bool) -> Ve
     if errors.has_errors() {
         return Vec::new();
     }
-    let mut tokens = Vec::new();
-    collect_tokens(&nodes, &mut tokens);
+    let mut collected = Collected::default();
+    collect(&nodes, &mut collected);
+    let mut tokens = collected.tokens;
+    let token_lines: FxHashSet<usize> = tokens.iter().map(|t| t.range.start.line as usize).collect();
+    // A comment after code skips its own line; one on its own line skips the next node.
+    let skipped: FxHashSet<usize> = collected
+        .skips
+        .iter()
+        .flat_map(|&(line, end)| {
+            if token_lines.contains(&line) {
+                line..=line
+            } else {
+                line + 1..=end.max(line + 1)
+            }
+        })
+        .collect();
     tokens.sort_by_key(|token| (token.range.start.line, token.range.start.column));
     tokens.dedup_by_key(|token| (token.range.start.line, token.range.start.column));
 
     let mut mutants = Vec::new();
     for token in tokens {
         let (start, end) = (token.range.start, token.range.end);
-        if start.line != end.line || !is_candidate(start.line as usize) {
+        if start.line != end.line || skipped.contains(&(start.line as usize)) || !is_candidate(start.line as usize) {
             continue;
         }
         let (Some(from), Some(to)) = (
@@ -101,17 +138,18 @@ pub(crate) fn generate(source: &str, is_candidate: impl Fn(usize) -> bool) -> Ve
         let Some(replacement) = replacement_for(&token.kind, text) else {
             continue;
         };
-        let mutated = format!("{}{}{}", &source[..from], replacement, &source[to..]);
-        if mq_lang::parse_recovery(&mutated).1.has_errors() {
-            continue;
-        }
-        mutants.push(Mutant {
+        let mutant = Mutant {
             line: start.line as usize,
             column: start.column as usize,
             original: text.to_string(),
             replacement,
-            source: mutated,
-        });
+            from,
+            to,
+        };
+        if mq_lang::parse_recovery(&mutant.apply(source)).1.has_errors() {
+            continue;
+        }
+        mutants.push(mutant);
     }
     mutants
 }
@@ -128,7 +166,10 @@ mod tests {
             described,
             vec!["`==` -> `!=`", "`1` -> `2`", "`true` -> `false`", "`false` -> `true`"]
         );
-        assert_eq!(mutants[0].source, "def f(x): if (x != 1): true else: false;");
+        assert_eq!(
+            mutants[0].apply("def f(x): if (x == 1): true else: false;"),
+            "def f(x): if (x != 1): true else: false;"
+        );
     }
 
     #[test]
@@ -144,8 +185,20 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_skips_annotated_code() {
+        let source = "# @mutate(skip)\ndef f(x): x == 1;\ndef g(x): x == 2; # @mutate(skip)\ndef h(x): x == 3;";
+        let mutants = generate(source, |_| true);
+        let lines: Vec<usize> = mutants.iter().map(|m| m.line).collect();
+        assert_eq!(lines, vec![4, 4]);
+
+        let multiline = "# @mutate(skip)\ndef f(x) do\n  x == 1\nend\ndef g(x): x == 2;";
+        assert!(generate(multiline, |_| true).iter().all(|m| m.line == 5));
+    }
+
+    #[test]
     fn test_generate_uses_character_columns() {
         let mutants = generate("\"あ\" | 1 == 1", |_| true);
-        assert!(mutants.iter().any(|m| m.source == "\"あ\" | 1 != 1"));
+        let source = "\"あ\" | 1 == 1";
+        assert!(mutants.iter().any(|m| m.apply(source) == "\"あ\" | 1 != 1"));
     }
 }

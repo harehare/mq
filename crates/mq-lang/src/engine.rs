@@ -321,6 +321,12 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.vm.load_builtin_module(Shared::clone(&self.token_arena));
     }
 
+    /// Replaces the bundled `builtin.mq` with `source`. Call before [`Self::load_builtin_module`].
+    /// Meant for tools such as mutation testing; `source` must define the same functions.
+    pub fn set_builtin_source(&mut self, source: &str) {
+        self.vm.module_loader.set_builtin_source(source);
+    }
+
     /// Import an external module by name.
     ///
     /// The module will be searched for in the configured search paths
