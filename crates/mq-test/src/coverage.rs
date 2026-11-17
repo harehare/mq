@@ -38,7 +38,7 @@ pub(crate) struct ModuleHits {
 pub(crate) struct CoverageData(Arc<Mutex<FxHashMap<String, ModuleHits>>>);
 
 impl CoverageData {
-    fn record(&self, module_name: &str, code: &str, line: usize) {
+    pub(crate) fn record(&self, module_name: &str, code: &str, line: usize) {
         let mut data = self.0.lock().unwrap();
         let hits = data.entry(module_name.to_string()).or_insert_with(|| ModuleHits {
             code: code.to_string(),
@@ -295,7 +295,7 @@ pub(crate) fn format_lcov_report(coverages: &[FileCoverage]) -> String {
 }
 
 /// Classifies a coverage percentage into a badge color tier.
-fn badge_class(pct: f64) -> &'static str {
+pub(crate) fn badge_class(pct: f64) -> &'static str {
     if pct >= 80.0 {
         "high"
     } else if pct >= 50.0 {
@@ -305,7 +305,7 @@ fn badge_class(pct: f64) -> &'static str {
     }
 }
 
-const HTML_STYLE: &str = r#"
+pub(crate) const HTML_STYLE: &str = r#"
 :root {
   color-scheme: light dark;
   --bg: #ffffff;

@@ -5,11 +5,13 @@ mod doctest;
 mod highlight;
 mod html;
 mod mutation;
+mod mutation_report;
 mod resolver;
 mod runner;
 mod snapshot;
 
 pub use coverage::{CoverageFormat, FileCoverage};
+pub use mutation_report::MutationFormat;
 pub use runner::{OutputFormat, TestRunner};
 
 /// Runs the `# => expected` examples in Markdown ` ```mq ` blocks and in fenced blocks of `.mq`

@@ -1,18 +1,23 @@
 //! Mutation testing: mutates the modules the tests use and checks that the tests notice.
 
 use std::fs;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use mq_lang::RuntimeValue;
+use mq_lang::{DebugContext, DebuggerAction, DebuggerHandler, RuntimeValue};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{OutputFormat, TestRunner};
-use crate::coverage::{CoverageData, CoverageHandler};
+use super::TestRunner;
+use crate::coverage::CoverageData;
 use crate::mutation::{self, Mutant};
+use crate::mutation_report::{self, ModuleResult, MutantResult};
 use crate::resolver::{ResolvedModules, TestModuleResolver};
+
+/// Name the bundled `builtin.mq` is registered under.
+const BUILTIN: &str = "builtin";
 
 /// A test file with the query that runs its selected tests.
 struct Suite {
@@ -32,10 +37,24 @@ struct Target {
     lines: FxHashMap<usize, FxHashSet<usize>>,
 }
 
-struct Outcome {
-    path: PathBuf,
-    mutant: Mutant,
-    killed: bool,
+impl Target {
+    fn is_builtin(&self) -> bool {
+        self.name == BUILTIN
+    }
+}
+
+/// Records the executed lines of every module, `builtin` included.
+#[derive(Debug)]
+struct LineRecorder(CoverageData);
+
+impl DebuggerHandler for LineRecorder {
+    fn on_step(&self, context: &DebugContext) -> DebuggerAction {
+        if let Some(name) = &context.source.name {
+            self.0
+                .record(name, &context.source.code, context.range.start.line as usize);
+        }
+        DebuggerAction::StepInto
+    }
 }
 
 fn module_key(name: &str) -> &str {
@@ -62,8 +81,8 @@ impl TestRunner {
             let resolved: ResolvedModules = Arc::default();
             let coverage = CoverageData::default();
             let resolver = TestModuleResolver::default().with_recorder(Arc::clone(&resolved));
-            let mut engine = self.build_engine(file, resolver);
-            engine.set_debugger_handler(Box::new(CoverageHandler(coverage.clone())));
+            let mut engine = self.build_engine(file, resolver, None);
+            engine.set_debugger_handler(Box::new(LineRecorder(coverage.clone())));
             let debugger = engine.debugger();
             debugger.write().unwrap().activate();
             debugger
@@ -83,23 +102,36 @@ impl TestRunner {
 
             let suite = suites.len();
             let hits = coverage.snapshot();
-            for (name, path, source) in resolved.lock().unwrap().iter() {
-                if !path.is_file() {
-                    continue;
-                }
-                let lines = hits
-                    .iter()
+            let lines_of = |name: &str| {
+                hits.iter()
                     .find(|(hit, _)| module_key(hit) == module_key(name))
                     .map(|(_, hits)| hits.lines.clone())
-                    .unwrap_or_default();
-                match targets.iter_mut().find(|target| target.path == *path) {
+                    .unwrap_or_default()
+            };
+            let mut modules: Vec<(String, PathBuf, String)> = resolved
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, path, _)| path.is_file())
+                .cloned()
+                .collect();
+            if self.mutate_builtin {
+                modules.push((
+                    BUILTIN.to_string(),
+                    PathBuf::from("builtin.mq"),
+                    mq_lang::BUILTIN_MODULE_FILE.to_string(),
+                ));
+            }
+            for (name, path, source) in modules {
+                let lines = lines_of(&name);
+                match targets.iter_mut().find(|target| target.path == path) {
                     Some(target) => {
                         target.lines.insert(suite, lines);
                     }
                     None => targets.push(Target {
-                        name: name.clone(),
-                        path: path.clone(),
-                        source: source.clone(),
+                        name,
+                        path,
+                        source,
                         lines: FxHashMap::from_iter([(suite, lines)]),
                     }),
                 }
@@ -111,52 +143,66 @@ impl TestRunner {
             });
         }
 
-        let jobs: Vec<(&Target, Mutant)> = targets
+        let jobs: Vec<(usize, Mutant)> = targets
             .iter()
-            .flat_map(|target| {
+            .enumerate()
+            .flat_map(|(index, target)| {
                 mutation::generate(&target.source, |line| {
                     target.lines.values().any(|lines| lines.contains(&line))
                 })
                 .into_iter()
-                .map(move |mutant| (target, mutant))
+                .map(move |mutant| (index, mutant))
             })
             .collect();
 
-        let mut outcomes: Vec<Outcome> = jobs
+        let results: Vec<(usize, MutantResult)> = jobs
             .into_par_iter()
-            .map(|(target, mutant)| {
+            .map(|(index, mutant)| {
+                let target = &targets[index];
                 let killed = suites
                     .iter()
                     .enumerate()
-                    .filter(|(index, _)| {
+                    .filter(|(suite, _)| {
                         target
                             .lines
-                            .get(index)
+                            .get(suite)
                             .is_some_and(|lines| lines.contains(&mutant.line))
                     })
-                    .any(|(_, suite)| !self.survives(suite, target, &mutant));
-                Outcome {
-                    path: target.path.clone(),
-                    mutant,
-                    killed,
-                }
+                    .any(|(_, suite)| {
+                        // A mutant that crashes the engine itself counts as caught.
+                        !catch_unwind(AssertUnwindSafe(|| self.survives(suite, target, &mutant))).unwrap_or(false)
+                    });
+                (index, MutantResult { mutant, killed })
             })
             .collect();
-        outcomes
-            .sort_by(|a, b| (&a.path, a.mutant.line, a.mutant.column).cmp(&(&b.path, b.mutant.line, b.mutant.column)));
 
-        let killed = outcomes.iter().filter(|o| o.killed).count();
-        let score = if outcomes.is_empty() {
-            100.0
-        } else {
-            killed as f64 * 100.0 / outcomes.len() as f64
-        };
-        match self.format {
-            OutputFormat::Text => print!("{}", Self::format_mutation_text(&outcomes, killed, score)),
-            OutputFormat::Json => println!("{}", Self::format_mutation_json(&outcomes, killed, score)),
+        let mut modules: Vec<ModuleResult> = targets
+            .into_iter()
+            .map(|target| ModuleResult {
+                path: target.path,
+                source: target.source,
+                mutants: Vec::new(),
+            })
+            .collect();
+        for (index, result) in results {
+            modules[index].mutants.push(result);
+        }
+        modules.retain(|module| !module.mutants.is_empty());
+        for module in &mut modules {
+            module.mutants.sort_by_key(|r| (r.mutant.line, r.mutant.column));
+        }
+        modules.sort_by(|a, b| a.path.cmp(&b.path));
+
+        let report = mutation_report::format_report(&modules, self.mutate_format);
+        match &self.mutate_output {
+            Some(path) => fs::write(path, report)
+                .map_err(|e| miette::miette!("failed to write mutation report to {}: {e}", path.display()))?,
+            None => print!("{report}"),
         }
 
-        Ok(self.min_score.is_none_or(|min| score >= f64::from(min)))
+        Ok(self
+            .min_score
+            .is_none_or(|min| mutation_report::score(&modules) >= f64::from(min)))
     }
 
     /// `true` when the run finished and no test failed.
@@ -179,57 +225,18 @@ impl TestRunner {
 
     /// Runs `suite` against `mutant`; `true` when the tests still pass.
     fn survives(&self, suite: &Suite, target: &Target, mutant: &Mutant) -> bool {
-        let resolver = TestModuleResolver::default().with_override(target.name.clone(), mutant.source.clone());
-        let mut engine = self.build_engine(&suite.file, resolver);
+        let source = mutant.apply(&target.source);
+        let (resolver, builtin) = if target.is_builtin() {
+            (TestModuleResolver::default(), Some(source.as_str()))
+        } else {
+            (
+                TestModuleResolver::default().with_override(target.name.clone(), source.clone()),
+                None,
+            )
+        };
+        let mut engine = self.build_engine(&suite.file, resolver, builtin);
         // A mutant can loop forever; give it far longer than the unmutated run took.
         engine.set_timeout(suite.baseline * 20 + Duration::from_secs(2));
         Self::passed(engine.eval(&suite.query, mq_lang::null_input().into_iter()))
-    }
-
-    fn format_mutation_text(outcomes: &[Outcome], killed: usize, score: f64) -> String {
-        let mut out = String::from("# Mutation testing\n\n");
-        let survived: Vec<&Outcome> = outcomes.iter().filter(|o| !o.killed).collect();
-        if !survived.is_empty() {
-            out.push_str("Survived mutants:\n");
-            for o in survived {
-                out.push_str(&format!(
-                    "  {}:{}:{}  {}\n",
-                    o.path.display(),
-                    o.mutant.line,
-                    o.mutant.column,
-                    o.mutant.describe()
-                ));
-            }
-            out.push('\n');
-        }
-        out.push_str(&format!(
-            "Mutation score: {score:.1}% ({killed} killed, {} survived, {} total)\n",
-            outcomes.len() - killed,
-            outcomes.len()
-        ));
-        out
-    }
-
-    fn format_mutation_json(outcomes: &[Outcome], killed: usize, score: f64) -> String {
-        let mutants: Vec<serde_json::Value> = outcomes
-            .iter()
-            .map(|o| {
-                serde_json::json!({
-                    "file": o.path.display().to_string(),
-                    "line": o.mutant.line,
-                    "column": o.mutant.column,
-                    "original": o.mutant.original,
-                    "replacement": o.mutant.replacement,
-                    "killed": o.killed,
-                })
-            })
-            .collect();
-        serde_json::json!({
-            "score": score,
-            "killed": killed,
-            "survived": outcomes.len() - killed,
-            "mutants": mutants,
-        })
-        .to_string()
     }
 }

@@ -10,6 +10,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
+use crate::mutation_report::MutationFormat;
 use crate::resolver::TestModuleResolver;
 use crate::snapshot;
 
@@ -137,6 +138,9 @@ pub struct TestRunner {
     format: OutputFormat,
     module_directories: Vec<PathBuf>,
     mutate: bool,
+    mutate_builtin: bool,
+    mutate_format: MutationFormat,
+    mutate_output: Option<PathBuf>,
     min_score: Option<u32>,
     step_handler: Option<std::sync::Arc<dyn mq_lang::DebuggerHandler>>,
 }
@@ -169,6 +173,9 @@ impl TestRunner {
             format: OutputFormat::default(),
             module_directories: Vec::new(),
             mutate: false,
+            mutate_builtin: false,
+            mutate_format: MutationFormat::default(),
+            mutate_output: None,
             min_score: None,
             step_handler: None,
         }
@@ -263,6 +270,24 @@ impl TestRunner {
         self
     }
 
+    /// Also mutates the bundled `builtin.mq`, which is slow.
+    pub fn with_mutate_builtin(mut self, mutate_builtin: bool) -> Self {
+        self.mutate_builtin = mutate_builtin;
+        self
+    }
+
+    /// Sets the mutation report format.
+    pub fn with_mutation_format(mut self, format: MutationFormat) -> Self {
+        self.mutate_format = format;
+        self
+    }
+
+    /// Writes the mutation report to `output` instead of stdout.
+    pub fn with_mutation_output(mut self, output: Option<PathBuf>) -> Self {
+        self.mutate_output = output;
+        self
+    }
+
     /// Fails a mutation run whose score (percent of mutants killed) is below `min_score`.
     pub fn with_min_score(mut self, min_score: Option<u32>) -> Self {
         self.min_score = min_score;
@@ -299,9 +324,13 @@ impl TestRunner {
         &self,
         file: &Path,
         resolver: TestModuleResolver,
+        builtin_source: Option<&str>,
     ) -> mq_lang::Engine<TestModuleResolver, mq_lang::MemIo> {
         let mut engine = mq_lang::Engine::with_io(resolver, mq_lang::Shared::new(mq_lang::MemIo::default()));
 
+        if let Some(source) = builtin_source {
+            engine.set_builtin_source(source);
+        }
         engine.load_builtin_module();
 
         // Resolve relative `include` statements in the test file, then fall back to `-L` dirs.
@@ -441,7 +470,7 @@ impl TestRunner {
                 OutputFormat::Text => Self::build_test_query(&content, &tests),
                 OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
             };
-            let mut engine = self.build_engine(file, TestModuleResolver::default());
+            let mut engine = self.build_engine(file, TestModuleResolver::default(), None);
 
             if self.coverage || self.step_handler.is_some() {
                 match &self.step_handler {

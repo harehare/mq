@@ -169,8 +169,16 @@ really checked. The report lists survivors and the mutation score (killed / tota
 - Mutations: comparison, arithmetic and logical operators, `!` removal, boolean and integer literals.
 - Lines no test executes are not mutated; use `--coverage` for those.
 - Tests must pass unmutated. A mutant that fails, errors or times out counts as killed.
-- `--min-score <0-100>` exits non-zero below that score. `--format json` prints a JSON report.
-- Modules from `-L` or the test file's directory are mutated; the implicit `builtin` module is not.
+- `--min-score <0-100>` exits non-zero below that score.
+- `--mutate-format <text|json|markdown|html>` (default `text`); `--mutate-output <path>` writes to a file.
+- `--mutate-builtin` also mutates the bundled `builtin.mq`. It is slow, so narrow the run with `-k`.
+- `# @mutate(skip)` excludes equivalent mutants: after code it skips that line, on its own line it
+  skips the next statement or `def`.
+
+```mq
+# @mutate(skip)
+def clamp_index(i, n): if (i >= n): n - 1 else: i;
+```
 
 ## JSON Output
 

@@ -1,7 +1,7 @@
 //! Command-line runner for `.mq` tests.
 
 use clap::Parser;
-use mq_test::{CoverageFormat, OutputFormat, TestRunner, run_doc_examples};
+use mq_test::{CoverageFormat, MutationFormat, OutputFormat, TestRunner, run_doc_examples};
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser, Debug)]
@@ -98,6 +98,18 @@ struct Cli {
     #[arg(long, conflicts_with_all = ["coverage", "list", "doc"])]
     mutate: bool,
 
+    /// Also mutate the bundled `builtin.mq`. Slow: run it with a narrow `--filter`.
+    #[arg(long, requires = "mutate")]
+    mutate_builtin: bool,
+
+    /// Report format used when `--mutate` is enabled.
+    #[arg(long, value_enum, default_value = "text", requires = "mutate")]
+    mutate_format: MutationFormat,
+
+    /// Write the mutation report to a file instead of stdout.
+    #[arg(long, requires = "mutate")]
+    mutate_output: Option<PathBuf>,
+
     /// Fail when the mutation score (percent of mutants killed) is below this value.
     #[arg(long, requires = "mutate", value_parser = clap::value_parser!(u32).range(0..=100))]
     min_score: Option<u32>,
@@ -140,6 +152,9 @@ fn main() -> ExitCode {
         .with_format(cli.format)
         .with_module_directories(cli.module_directories)
         .with_mutation(cli.mutate)
+        .with_mutate_builtin(cli.mutate_builtin)
+        .with_mutation_format(cli.mutate_format)
+        .with_mutation_output(cli.mutate_output)
         .with_min_score(cli.min_score)
         .run()
     {
