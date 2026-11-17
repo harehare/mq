@@ -129,7 +129,7 @@ def csv_to_markdown_table(data):
     do
       let headers = _csv_headers(data)
       | let rows = if (is_dict(first(data))): data else: skip(data, 1)
-      | let to_row = fn(cells): "| " + join(map(cells, _csv_md_cell), " | ") + " |";
+      | let to_row = fn(cells): "| " + join(map(to_array(cells), _csv_md_cell), " | ") + " |";
       | let data_rows = map(rows, fn(row): to_row(if (is_dict(row)): map(headers, fn(h): row[h];) else: row);)
       | join([to_row(headers), "| " + join(map(headers, fn(_): "---";), " | ") + " |"] + data_rows, "\n")
     end

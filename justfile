@@ -164,18 +164,16 @@ test-lang-cached:
 test: test-lang-cached
     cargo nextest run --workspace
 
-# Lint and type check all tracked .mq files, run per directory so sibling modules resolve (skipped if mq-lint/mq-check are not on PATH)
+# Lint and type check all tracked .mq files with the in-tree mq-lint/mq-check, run per directory so sibling modules resolve
 lint-mq:
     #!/usr/bin/env bash
     set -euo pipefail
-    if ! command -v mq-lint >/dev/null || ! command -v mq-check >/dev/null; then
-        echo "mq-lint/mq-check not found, skipping .mq lint"
-        exit 0
-    fi
+    cargo build -q -p mq-lint -p mq-check --features mq-lint/cli,mq-check/cli
+    bin="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/debug"
     status=0
     for dir in $(git ls-files '*.mq' | xargs -n1 dirname | sort -u); do
         files=$(git ls-files "$dir/*.mq" | grep -v "^$dir/.*/" | xargs -n1 basename)
-        (cd "$dir" && mq-lint --min-severity error $files && mq-check $files) || status=1
+        (cd "$dir" && "$bin/mq-lint" --min-severity error $files && "$bin/mq-check" $files) || status=1
     done
     exit $status
 
