@@ -1235,13 +1235,16 @@ fn register_type_conversion(ctx: &mut InferenceContext) {
     register_unary(ctx, "type", Type::Var(a), Type::String);
 }
 
-/// Type check functions: is_none, is_array, is_dict, is_string, is_number, is_bool, is_empty
+/// Type check functions: is_none, is_array, is_dict, is_string, is_number, is_bool, is_markdown, is_empty
 fn register_type_checks(ctx: &mut InferenceContext) {
     // Type predicate functions: (a) -> bool
     for guard in TypeGuard::ALL {
         let a = ctx.fresh_var();
         register_unary(ctx, guard.name(), Type::Var(a), Type::Bool);
     }
+
+    let a = ctx.fresh_var();
+    register_unary(ctx, "is_markdown", Type::Var(a), Type::Bool);
 
     // is_empty: (string) -> bool, ([a]) -> bool, ({k: v}) -> bool, (a) -> bool
     register_unary(ctx, "is_empty", Type::String, Type::Bool);

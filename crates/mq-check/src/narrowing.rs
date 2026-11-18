@@ -59,7 +59,8 @@ impl ConditionNarrowings {
 }
 
 /// The node kinds for which each Markdown `is_*` predicate holds. This is the only place that
-/// relates a predicate to kinds; a test checks it against the definitions in `builtin.mq`.
+/// relates a predicate to kinds; a test checks that each is a builtin, and the name predicates of
+/// `builtin.mq` against their definitions.
 const NODE_PREDICATES: &[(&str, KindSet)] = &[
     ("is_markdown", KindSet::ALL),
     ("is_h", KindSet::HEADING),
@@ -1328,11 +1329,12 @@ mod tests {
     }
 
     #[test]
-    fn test_every_table_entry_is_defined_in_builtin_mq() {
+    fn test_every_table_entry_is_a_builtin() {
         for (predicate, _) in NODE_PREDICATES {
             assert!(
-                mq_lang::BUILTIN_MODULE_FILE.contains(&format!("def {predicate}(")),
-                "`{predicate}` is not defined in builtin.mq"
+                mq_lang::BUILTIN_MODULE_FILE.contains(&format!("def {predicate}("))
+                    || mq_lang::BUILTIN_FUNCTION_NAMES.contains(predicate),
+                "`{predicate}` is neither defined in builtin.mq nor a native builtin"
             );
         }
     }

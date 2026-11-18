@@ -5999,3 +5999,62 @@ fn test_hmac_rejects_non_string_key() {
     );
     assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
 }
+
+/// The type predicates give what comparing `type(v)` with the type name gives, for every kind of value.
+#[rstest]
+#[case("is_none", "None")]
+#[case("is_number", "number")]
+#[case("is_string", "string")]
+#[case("is_bool", "bool")]
+#[case("is_array", "array")]
+#[case("is_dict", "dict")]
+#[case("is_bytes", "bytes")]
+#[case("is_markdown", "markdown")]
+#[case("is_coroutine", "coroutine")]
+fn test_type_predicates_agree_with_type_name(#[case] predicate: &str, #[case] type_name: &str) {
+    let values = [
+        RuntimeValue::NONE,
+        RuntimeValue::TRUE,
+        RuntimeValue::Number(1.into()),
+        RuntimeValue::String(Shared::new("a".into())),
+        RuntimeValue::Symbol(Ident::new("s")),
+        RuntimeValue::Markdown(Shared::new(Node::from("hi".to_string())), None),
+        RuntimeValue::Array(Shared::new(vec![RuntimeValue::NONE])),
+        DictMap::from_iter([(Ident::new("a"), RuntimeValue::NONE)]).into(),
+        RuntimeValue::Bytes(Shared::new(vec![1])),
+    ];
+    let ident = Ident::new(predicate);
+    for value in values {
+        assert_eq!(
+            eval_builtin(
+                &RuntimeValue::None,
+                &ident,
+                vec![value.clone()].into(),
+                &VmEnv::default()
+            ),
+            Ok(RuntimeValue::Boolean(value.name() == type_name)),
+            "{predicate}({value:?})"
+        );
+    }
+}
+
+/// Without an argument the piped value is tested; with two arguments the call is an error.
+#[rstest]
+#[case("is_none", RuntimeValue::TRUE)]
+#[case("is_markdown", RuntimeValue::FALSE)]
+fn test_type_predicates_arity(#[case] predicate: &str, #[case] piped_none: RuntimeValue) {
+    let ident = Ident::new(predicate);
+    assert_eq!(
+        eval_builtin(&RuntimeValue::None, &ident, vec![].into(), &VmEnv::default()),
+        Ok(piped_none)
+    );
+    assert!(
+        eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::NONE, RuntimeValue::NONE].into(),
+            &VmEnv::default()
+        )
+        .is_err()
+    );
+}
