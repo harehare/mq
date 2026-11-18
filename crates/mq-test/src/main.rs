@@ -1,6 +1,6 @@
 //! Command-line runner for `.mq` tests.
 
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use mq_test::{CoverageFormat, MutationFormat, OutputFormat, TestRunner, run_doc_examples};
 use std::{path::PathBuf, process::ExitCode};
 
@@ -8,6 +8,7 @@ use std::{path::PathBuf, process::ExitCode};
 #[command(name = "mq-test")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Test runner for mq: auto-discovers test_ functions and runs them")]
+#[command(args_conflicts_with_subcommands = true)]
 #[command(after_help = "# Examples:\n\n\
     ## Run all tests in a specific file:\n\
     mq-test tests.mq\n\n\
@@ -42,8 +43,15 @@ use std::{path::PathBuf, process::ExitCode};
     ## List discovered tests as JSON, e.g. for an editor integration:\n\
     mq-test --list --format json\n\n\
     ## Run tests and print per-test results as JSON instead of a Markdown report:\n\
-    mq-test --format json")]
+    mq-test --format json\n\n\
+    ## Mutation testing of the modules the tests include/import:\n\
+    mq-test mutate tests.mq\n\n\
+    ## Fail below a 80% mutation score and write an HTML report:\n\
+    mq-test mutate --min-score 80 --format html --output mutation.html")]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Path(s) to mq test files or directories (searched for **/*.mq).
     /// Defaults to **/*.mq in the current directory when omitted.
     files: Vec<PathBuf>,
@@ -94,30 +102,6 @@ struct Cli {
     #[arg(long)]
     list: bool,
 
-    /// Mutate the modules the tests use and report the mutants the tests fail to catch.
-    #[arg(long, conflicts_with_all = ["coverage", "list", "doc"])]
-    mutate: bool,
-
-    /// Also mutate the bundled `builtin.mq`. Slow: run it with a narrow `--filter`.
-    #[arg(long, requires = "mutate")]
-    mutate_builtin: bool,
-
-    /// Report format used when `--mutate` is enabled.
-    #[arg(long, value_enum, default_value = "text", requires = "mutate")]
-    mutate_format: MutationFormat,
-
-    /// Write the mutation report to a file instead of stdout.
-    #[arg(long, requires = "mutate")]
-    mutate_output: Option<PathBuf>,
-
-    /// Number of mutants to run at once. Default: half the cores, at most four.
-    #[arg(long, requires = "mutate", value_parser = clap::value_parser!(usize))]
-    mutate_jobs: Option<usize>,
-
-    /// Fail when the mutation score (percent of mutants killed) is below this value.
-    #[arg(long, requires = "mutate", value_parser = clap::value_parser!(u32).range(0..=100))]
-    min_score: Option<u32>,
-
     /// Output format for both --list and a normal test run.
     #[arg(long, value_enum, default_value = "text")]
     format: OutputFormat,
@@ -128,8 +112,80 @@ struct Cli {
     doc: bool,
 }
 
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Mutate the modules the tests use and report the mutants the tests fail to catch.
+    Mutate(MutateArgs),
+}
+
+#[derive(Args, Debug)]
+struct MutateArgs {
+    /// Path(s) to mq test files or directories (searched for **/*.mq).
+    /// Defaults to **/*.mq in the current directory when omitted.
+    files: Vec<PathBuf>,
+
+    /// Search modules from the directory. Repeatable.
+    #[arg(short = 'L', long = "directory")]
+    module_directories: Vec<PathBuf>,
+
+    /// Only run tests whose name contains this substring (case-insensitive).
+    #[arg(short = 'k', long)]
+    filter: Option<String>,
+
+    /// Only run tests tagged (via `# @tags(...)`) with this tag. Repeatable.
+    #[arg(long = "tag")]
+    tags: Vec<String>,
+
+    /// Also mutate the bundled `builtin.mq`. Slow: run it with a narrow `--filter`.
+    #[arg(long)]
+    builtin: bool,
+
+    /// Report format.
+    #[arg(long, value_enum, default_value = "text")]
+    format: MutationFormat,
+
+    /// Write the report to a file instead of stdout.
+    #[arg(long)]
+    output: Option<PathBuf>,
+
+    /// Number of mutants to run at once. Default: half the cores, at most four.
+    #[arg(long, value_parser = clap::value_parser!(usize))]
+    jobs: Option<usize>,
+
+    /// Fail when the mutation score (percent of mutants killed) is below this value.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(0..=100))]
+    min_score: Option<u32>,
+}
+
+fn exit_code(result: miette::Result<bool>) -> ExitCode {
+    match result {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("{e:?}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    if let Some(Command::Mutate(args)) = cli.command {
+        return exit_code(
+            TestRunner::new(args.files)
+                .with_filter(args.filter)
+                .with_tags(args.tags)
+                .with_module_directories(args.module_directories)
+                .with_mutation(true)
+                .with_mutate_builtin(args.builtin)
+                .with_mutation_format(args.format)
+                .with_mutation_output(args.output)
+                .with_mutation_jobs(args.jobs)
+                .with_min_score(args.min_score)
+                .run(),
+        );
+    }
 
     if cli.doc {
         if cli.files.is_empty() {
@@ -143,31 +199,19 @@ fn main() -> ExitCode {
         };
     }
 
-    match TestRunner::new(cli.files)
-        .with_coverage(cli.coverage)
-        .with_coverage_format(cli.coverage_format)
-        .with_coverage_output(cli.coverage_output)
-        .with_open(cli.open)
-        .with_filter(cli.filter)
-        .with_tags(cli.tags)
-        .with_parallel_threshold(cli.parallel_threshold.unwrap_or(usize::MAX))
-        .with_update_snapshots(cli.update_snapshots)
-        .with_list(cli.list)
-        .with_format(cli.format)
-        .with_module_directories(cli.module_directories)
-        .with_mutation(cli.mutate)
-        .with_mutate_builtin(cli.mutate_builtin)
-        .with_mutation_format(cli.mutate_format)
-        .with_mutation_output(cli.mutate_output)
-        .with_mutation_jobs(cli.mutate_jobs)
-        .with_min_score(cli.min_score)
-        .run()
-    {
-        Ok(true) => ExitCode::SUCCESS,
-        Ok(false) => ExitCode::FAILURE,
-        Err(e) => {
-            eprintln!("{e:?}");
-            ExitCode::FAILURE
-        }
-    }
+    exit_code(
+        TestRunner::new(cli.files)
+            .with_coverage(cli.coverage)
+            .with_coverage_format(cli.coverage_format)
+            .with_coverage_output(cli.coverage_output)
+            .with_open(cli.open)
+            .with_filter(cli.filter)
+            .with_tags(cli.tags)
+            .with_parallel_threshold(cli.parallel_threshold.unwrap_or(usize::MAX))
+            .with_update_snapshots(cli.update_snapshots)
+            .with_list(cli.list)
+            .with_format(cli.format)
+            .with_module_directories(cli.module_directories)
+            .run(),
+    )
 }
