@@ -18,12 +18,14 @@ mq-test -k parse             # tests whose name contains "parse" (case-insensiti
 mq-test --tag smoke          # tests tagged "smoke" (repeatable)
 mq-test -P 4                 # run files in parallel once more than 4 are found
 mq-test --update-snapshots   # accept current assert_snapshot output as golden
-mq-test --list               # list tests without running (honors -k/--tag)
-mq-test --format json        # JSON for --list and runs, for editors and CI
-mq-test --doc docs/guide.md lib.mq  # run `# =>` examples in ```mq blocks and `.mq` comments
-mq-test --coverage           # line coverage of included/imported modules
+mq-test list                 # list tests without running (honors -k/--tag)
+mq-test --format json        # JSON for runs (`list --format json` for lists), for editors and CI
+mq-test doc docs/guide.md lib.mq  # run `# =>` examples in ```mq blocks and `.mq` comments
+mq-test coverage             # line coverage of included/imported modules
 mq-test mutate               # mutation testing of included/imported modules
 ```
+
+`--coverage`, `--list` and `--doc` still work as deprecated aliases of the subcommands.
 
 A failing test, or a file that fails to run, does not stop other files. `mq-test` exits non-zero if any failed. An error inside a test body is recorded as that test's failure.
 
@@ -148,7 +150,7 @@ end
 
 ## Coverage
 
-`--coverage` reports line coverage of the code your tests `include`/`import`. The test file's own
+`mq-test coverage` reports line coverage of the code your tests `include`/`import`. The test file's own
 lines are not counted, and a module shared by several test files is reported once, combined.
 
 ```
@@ -156,9 +158,9 @@ lines are not counted, and a module shared by several test files is reported onc
       uncovered lines: 9
 ```
 
-- `--coverage-format <text|lcov|html|markdown|json|cobertura>` (default `text`).
-- `--coverage-output <path>` writes to a file; `--open` then opens it (needs `--coverage-output`).
-- Line-based: a line is covered if any expression on it ran. Tracking is off without `--coverage`.
+- `--format <text|lcov|html|markdown|json|cobertura>` (default `text`).
+- `--output <path>` writes to a file; `--open` then opens it (needs `--output`).
+- Line-based: a line is covered if any expression on it ran. Tracking is off outside `mq-test coverage`.
 
 ## Mutation Testing
 
@@ -167,7 +169,7 @@ that execute the changed line. A mutant the tests still pass on has *survived*: 
 really checked. The report lists survivors and the mutation score (killed / total).
 
 - Mutations: comparison, arithmetic and logical operators, `!` removal, boolean and integer literals.
-- Lines no test executes are not mutated; use `--coverage` for those.
+- Lines no test executes are not mutated; use `mq-test coverage` for those.
 - Tests must pass unmutated. A mutant that fails, errors or times out counts as killed.
 - `--min-score <0-100>` exits non-zero below that score.
 - `--format <text|json|markdown|html>` (default `text`); `--output <path>` writes to a file.
@@ -183,7 +185,7 @@ def clamp_index(i, n): if (i >= n): n - 1 else: i;
 
 ## JSON Output
 
-`--format json` prints one JSON document for `--list` and for runs.
+`--format json` prints one JSON document for `mq-test list` and for runs.
 
 ```json
 { "files": [ { "file": "tests.mq", "tests": [
@@ -207,7 +209,7 @@ MIT
 
 ## Doc examples
 
-`--doc` runs the examples in the given files like a doc test. In Markdown it reads ` ```mq ` blocks,
+`mq-test doc` runs the examples in the given files like a doc test. In Markdown it reads ` ```mq ` blocks,
 in `.mq` files it reads fenced blocks inside `#` comments. A query is the code since the last blank
 line or expectation, followed by its `# =>` line(s):
 
