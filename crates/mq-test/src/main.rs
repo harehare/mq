@@ -52,13 +52,8 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// Path(s) to mq test files or directories (searched for **/*.mq).
-    /// Defaults to **/*.mq in the current directory when omitted.
-    files: Vec<PathBuf>,
-
-    /// Search modules from the directory. Repeatable.
-    #[arg(short = 'L', long = "directory")]
-    module_directories: Vec<PathBuf>,
+    #[command(flatten)]
+    common: CommonArgs,
 
     /// Collect and report line coverage of the `include`d/imported modules
     /// exercised while running the tests. Coverage of the test files'
@@ -78,15 +73,6 @@ struct Cli {
     /// Requires `--coverage-output`.
     #[arg(long, requires_all = ["coverage", "coverage_output"])]
     open: bool,
-
-    /// Only run tests whose name contains this substring (case-insensitive).
-    #[arg(short = 'k', long)]
-    filter: Option<String>,
-
-    /// Only run tests tagged (via `# @tags(...)`) with this tag. Repeatable;
-    /// a test runs if it has at least one of the given tags.
-    #[arg(long = "tag")]
-    tags: Vec<String>,
 
     /// Number of test files to process before switching to parallel processing.
     /// Omit to always run files sequentially.
@@ -112,14 +98,9 @@ struct Cli {
     doc: bool,
 }
 
-#[derive(Subcommand, Debug)]
-enum Command {
-    /// Mutate the modules the tests use and report the mutants the tests fail to catch.
-    Mutate(MutateArgs),
-}
-
+/// Arguments that select the tests to run, shared by a plain run and `mutate`.
 #[derive(Args, Debug)]
-struct MutateArgs {
+struct CommonArgs {
     /// Path(s) to mq test files or directories (searched for **/*.mq).
     /// Defaults to **/*.mq in the current directory when omitted.
     files: Vec<PathBuf>,
@@ -132,9 +113,22 @@ struct MutateArgs {
     #[arg(short = 'k', long)]
     filter: Option<String>,
 
-    /// Only run tests tagged (via `# @tags(...)`) with this tag. Repeatable.
+    /// Only run tests tagged (via `# @tags(...)`) with this tag. Repeatable;
+    /// a test runs if it has at least one of the given tags.
     #[arg(long = "tag")]
     tags: Vec<String>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Mutate the modules the tests use and report the mutants the tests fail to catch.
+    Mutate(MutateArgs),
+}
+
+#[derive(Args, Debug)]
+struct MutateArgs {
+    #[command(flatten)]
+    common: CommonArgs,
 
     /// Also mutate the bundled `builtin.mq`. Slow: run it with a narrow `--filter`.
     #[arg(long)]
@@ -173,10 +167,10 @@ fn main() -> ExitCode {
 
     if let Some(Command::Mutate(args)) = cli.command {
         return exit_code(
-            TestRunner::new(args.files)
-                .with_filter(args.filter)
-                .with_tags(args.tags)
-                .with_module_directories(args.module_directories)
+            TestRunner::new(args.common.files)
+                .with_filter(args.common.filter)
+                .with_tags(args.common.tags)
+                .with_module_directories(args.common.module_directories)
                 .with_mutation(MutationOptions {
                     builtin: args.builtin,
                     format: args.format,
@@ -189,11 +183,11 @@ fn main() -> ExitCode {
     }
 
     if cli.doc {
-        if cli.files.is_empty() {
+        if cli.common.files.is_empty() {
             eprintln!("{:?}", miette::miette!("--doc needs at least one file"));
             return ExitCode::FAILURE;
         }
-        return if run_doc_examples(&cli.files, &cli.module_directories) {
+        return if run_doc_examples(&cli.common.files, &cli.common.module_directories) {
             ExitCode::SUCCESS
         } else {
             ExitCode::FAILURE
@@ -201,18 +195,18 @@ fn main() -> ExitCode {
     }
 
     exit_code(
-        TestRunner::new(cli.files)
+        TestRunner::new(cli.common.files)
             .with_coverage(cli.coverage)
             .with_coverage_format(cli.coverage_format)
             .with_coverage_output(cli.coverage_output)
             .with_open(cli.open)
-            .with_filter(cli.filter)
-            .with_tags(cli.tags)
+            .with_filter(cli.common.filter)
+            .with_tags(cli.common.tags)
             .with_parallel_threshold(cli.parallel_threshold.unwrap_or(usize::MAX))
             .with_update_snapshots(cli.update_snapshots)
             .with_list(cli.list)
             .with_format(cli.format)
-            .with_module_directories(cli.module_directories)
+            .with_module_directories(cli.common.module_directories)
             .run(),
     )
 }
