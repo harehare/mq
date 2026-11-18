@@ -118,13 +118,13 @@ mod tests {
 
     #[test]
     fn test_goto_definition_builtin_function_opens_virtual_builtin() {
-        // `is_dict` is defined in builtin.mq.
-        let code = "{} | is_dict()";
+        // `is_empty` is defined in builtin.mq.
+        let code = "{} | is_empty()";
         let location = goto(code, Position::new(0, 8)).expect("builtin definition");
         assert_eq!(location.uri.as_str(), "mq-std:/builtin.mq");
         let text = virtual_document::content(location.uri.as_str()).unwrap();
         let line = text.lines().nth(location.range.start.line as usize).unwrap();
-        assert!(line.contains("def is_dict"), "{line}");
+        assert!(line.contains("def is_empty"), "{line}");
     }
 
     #[test]

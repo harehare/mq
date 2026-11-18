@@ -170,7 +170,8 @@ impl Hir {
         self.resolve();
     }
 
-    /// Loads the builtin module into the HIR once, unless builtins are disabled.
+    /// Loads the builtin module and declares the native builtins into the HIR once, unless builtins are
+    /// disabled. A self hosted HIR (`builtin.mq` is the source) skips the module.
     pub fn add_builtin(&mut self) {
         if self.builtin.loaded || self.builtin.disabled {
             return;
@@ -178,11 +179,13 @@ impl Hir {
 
         self.builtin.loaded = true;
 
-        let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
+        if !self.builtin.self_hosted {
+            let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
 
-        nodes.iter().for_each(|node| {
-            self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
-        });
+            nodes.iter().for_each(|node| {
+                self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
+            });
+        }
 
         let source_id = self.builtin.source_id;
         let scope_id = self.builtin.scope_id;
@@ -716,6 +719,58 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
         let mut hir = Hir::default();
         hir.add_builtin();
         assert!(hir.builtin.loaded);
+    }
+
+    /// The names of `code` that the self hosted HIR cannot resolve. Modules that `code` includes are not
+    /// counted: they call functions of the builtin module, which is not loaded in a self hosted HIR.
+    fn self_hosted_unresolved(code: &str) -> Vec<String> {
+        let mut hir = Hir::default();
+        hir.builtin.self_hosted = true;
+        let (source_id, _, _) = hir.add_code(None, code);
+        hir.errors()
+            .iter()
+            .filter_map(|error| match error {
+                HirError::UnresolvedSymbol { symbol, .. } if symbol.source.source_id == Some(source_id) => {
+                    symbol.value.as_deref().map(str::to_owned)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_self_hosted_declares_native_builtins_without_the_module() {
+        // `len` is native; `is_empty` is defined by the builtin module, which is not loaded.
+        assert_eq!(
+            self_hosted_unresolved("len(\"a\") | is_empty()"),
+            vec!["is_empty".to_owned()]
+        );
+    }
+
+    /// Every name `builtin.mq` calls is a function it defines or a documented native builtin. A native
+    /// builtin that the enabled features leave out (like `open_http` without `http`) is documented but
+    /// not declared, so it is the one kind of name that may be reported.
+    #[test]
+    fn test_self_hosted_builtin_module_only_misses_native_builtins_of_disabled_features() {
+        let documented = |name: &str| mq_help::BUILTIN_DOC.iter().any(|doc| doc.names().any(|n| n == name));
+        let missing = self_hosted_unresolved(mq_lang::BUILTIN_MODULE_FILE)
+            .into_iter()
+            .filter(|name| !documented(name))
+            .collect::<Vec<_>>();
+        assert_eq!(missing, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_self_hosted_builtin_module_still_reports_an_unknown_name() {
+        let code = format!("{}\nnosuch_function(1) | also_missing()", mq_lang::BUILTIN_MODULE_FILE);
+        let unresolved = self_hosted_unresolved(&code);
+        for name in ["nosuch_function", "also_missing"] {
+            assert!(unresolved.iter().any(|n| n == name), "{name} in {unresolved:?}");
+        }
+        // The functions the module defines resolve.
+        for name in ["map", "filter", "is_empty", "first"] {
+            assert!(!unresolved.iter().any(|n| n == name), "{name} in {unresolved:?}");
+        }
     }
 
     #[test]

@@ -276,6 +276,61 @@ fn type_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     }
 }
 
+/// Type predicates: one variant test instead of building the type name and comparing it.
+fn type_predicate(ident: &Ident, args: &Args, test: fn(&RuntimeValue) -> bool) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [value] => Ok(RuntimeValue::Boolean(test(value))),
+        _ => Err(invalid_arity(ident, 1, args.len())),
+    }
+}
+
+#[mq_macros::mq_fn(name = "is_none", params = Fixed(1))]
+fn is_none_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::None))
+}
+
+#[mq_macros::mq_fn(name = "is_number", params = Fixed(1))]
+fn is_number_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::Number(_)))
+}
+
+#[mq_macros::mq_fn(name = "is_string", params = Fixed(1))]
+fn is_string_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::String(_)))
+}
+
+#[mq_macros::mq_fn(name = "is_bool", params = Fixed(1))]
+fn is_bool_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::Boolean(_)))
+}
+
+#[mq_macros::mq_fn(name = "is_array", params = Fixed(1))]
+fn is_array_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::Array(_)))
+}
+
+#[mq_macros::mq_fn(name = "is_dict", params = Fixed(1))]
+fn is_dict_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::Dict(_)))
+}
+
+#[mq_macros::mq_fn(name = "is_bytes", params = Fixed(1))]
+fn is_bytes_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::Bytes(_)))
+}
+
+#[mq_macros::mq_fn(name = "is_markdown", params = Fixed(1))]
+fn is_markdown_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| matches!(v, RuntimeValue::Markdown(_, _)))
+}
+
+#[mq_macros::mq_fn(name = "is_coroutine", params = Fixed(1))]
+fn is_coroutine_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| {
+        matches!(v, RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_))
+    })
+}
+
 #[mq_macros::mq_fn(name = "close", params = Fixed(1))]
 fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
@@ -6025,6 +6080,15 @@ mq_macros::builtin_dispatch! {
     PRINT,
     STDERR,
     TYPE,
+    IS_NONE,
+    IS_NUMBER,
+    IS_STRING,
+    IS_BOOL,
+    IS_ARRAY,
+    IS_DICT,
+    IS_BYTES,
+    IS_MARKDOWN,
+    IS_COROUTINE,
     CLOSE,
     STATUS,
     FLATTEN,
