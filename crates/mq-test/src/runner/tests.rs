@@ -1595,8 +1595,10 @@ fn test_mutation_score_is_checked_against_min_score() {
 
     let run = |min_score| {
         TestRunner::new(vec![test_file.clone()])
-            .with_mutation(true)
-            .with_min_score(min_score)
+            .with_mutation(MutationOptions {
+                min_score,
+                ..Default::default()
+            })
             .run()
             .unwrap()
     };
@@ -1616,5 +1618,10 @@ fn test_mutation_requires_passing_tests() {
     )
     .unwrap();
 
-    assert!(TestRunner::new(vec![test_file]).with_mutation(true).run().is_err());
+    assert!(
+        TestRunner::new(vec![test_file])
+            .with_mutation(MutationOptions::default())
+            .run()
+            .is_err()
+    );
 }

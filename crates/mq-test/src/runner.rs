@@ -10,7 +10,6 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
-use crate::mutation_report::MutationFormat;
 use crate::resolver::TestModuleResolver;
 use crate::snapshot;
 
@@ -137,12 +136,7 @@ pub struct TestRunner {
     list: bool,
     format: OutputFormat,
     module_directories: Vec<PathBuf>,
-    mutate: bool,
-    mutate_builtin: bool,
-    mutate_format: MutationFormat,
-    mutate_output: Option<PathBuf>,
-    mutate_jobs: Option<usize>,
-    min_score: Option<u32>,
+    mutation: Option<MutationOptions>,
     step_handler: Option<std::sync::Arc<dyn mq_lang::DebuggerHandler>>,
 }
 
@@ -173,12 +167,7 @@ impl TestRunner {
             list: false,
             format: OutputFormat::default(),
             module_directories: Vec::new(),
-            mutate: false,
-            mutate_builtin: false,
-            mutate_format: MutationFormat::default(),
-            mutate_output: None,
-            mutate_jobs: None,
-            min_score: None,
+            mutation: None,
             step_handler: None,
         }
     }
@@ -266,39 +255,9 @@ impl TestRunner {
         Some(paths)
     }
 
-    /// Runs mutation testing on the modules the tests use instead of a plain test run.
-    pub fn with_mutation(mut self, mutate: bool) -> Self {
-        self.mutate = mutate;
-        self
-    }
-
-    /// Also mutates the bundled `builtin.mq`, which is slow.
-    pub fn with_mutate_builtin(mut self, mutate_builtin: bool) -> Self {
-        self.mutate_builtin = mutate_builtin;
-        self
-    }
-
-    /// Sets the mutation report format.
-    pub fn with_mutation_format(mut self, format: MutationFormat) -> Self {
-        self.mutate_format = format;
-        self
-    }
-
-    /// Writes the mutation report to `output` instead of stdout.
-    pub fn with_mutation_output(mut self, output: Option<PathBuf>) -> Self {
-        self.mutate_output = output;
-        self
-    }
-
-    /// Sets how many mutants run at once. Defaults to half the cores, at most four.
-    pub fn with_mutation_jobs(mut self, jobs: Option<usize>) -> Self {
-        self.mutate_jobs = jobs;
-        self
-    }
-
-    /// Fails a mutation run whose score (percent of mutants killed) is below `min_score`.
-    pub fn with_min_score(mut self, min_score: Option<u32>) -> Self {
-        self.min_score = min_score;
+    /// Runs mutation testing with `options` on the modules the tests use instead of a plain test run.
+    pub fn with_mutation(mut self, options: MutationOptions) -> Self {
+        self.mutation = Some(options);
         self
     }
 
@@ -395,8 +354,8 @@ impl TestRunner {
             return self.run_list(&test_files);
         }
 
-        if self.mutate {
-            return self.run_mutation(&test_files);
+        if let Some(options) = &self.mutation {
+            return self.run_mutation(&test_files, options);
         }
 
         if let Some(path) = &self.coverage_output {
@@ -1260,5 +1219,6 @@ fn open_in_default_app(path: &Path) -> miette::Result<()> {
 }
 
 mod mutate;
+pub use mutate::MutationOptions;
 #[cfg(test)]
 mod tests;

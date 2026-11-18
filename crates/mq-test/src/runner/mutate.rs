@@ -13,7 +13,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::TestRunner;
 use crate::coverage::CoverageData;
 use crate::mutation::{self, Mutant};
-use crate::mutation_report::{self, ModuleResult, MutantResult};
+use crate::mutation_report::{self, ModuleResult, MutantResult, MutationFormat};
 use crate::resolver::{ResolvedModules, TestModuleResolver};
 
 /// Name the bundled `builtin.mq` is registered under.
@@ -41,6 +41,21 @@ struct Target {
     source: String,
     /// Suite index -> executed lines.
     lines: FxHashMap<usize, FxHashSet<usize>>,
+}
+
+/// Settings of a mutation run.
+#[derive(Debug, Clone, Default)]
+pub struct MutationOptions {
+    /// Also mutate the bundled `builtin.mq`, which is slow.
+    pub builtin: bool,
+    /// Report format.
+    pub format: MutationFormat,
+    /// Write the report here instead of stdout.
+    pub output: Option<PathBuf>,
+    /// Mutants run at once. Defaults to half the cores, at most four.
+    pub jobs: Option<usize>,
+    /// Fail when the score (percent of mutants killed) is below this.
+    pub min_score: Option<u32>,
 }
 
 impl Target {
@@ -73,7 +88,7 @@ fn module_key(name: &str) -> &str {
 }
 
 impl TestRunner {
-    pub(super) fn run_mutation(&self, test_files: &[PathBuf]) -> miette::Result<bool> {
+    pub(super) fn run_mutation(&self, test_files: &[PathBuf], options: &MutationOptions) -> miette::Result<bool> {
         let mut suites = Vec::new();
         let mut targets: Vec<Target> = Vec::new();
 
@@ -126,7 +141,7 @@ impl TestRunner {
                 .filter(|(_, path, _)| path.is_file())
                 .cloned()
                 .collect();
-            if self.mutate_builtin {
+            if options.builtin {
                 modules.push((
                     BUILTIN.to_string(),
                     PathBuf::from("builtin.mq"),
@@ -168,7 +183,7 @@ impl TestRunner {
 
         // Mutants can recurse without bound, so they run on threads with a large stack.
         let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(self.mutate_jobs.unwrap_or_else(default_jobs))
+            .num_threads(options.jobs.unwrap_or_else(default_jobs))
             .stack_size(MUTANT_STACK_SIZE)
             .build()
             .map_err(|e| miette::miette!("failed to start worker threads: {e}"))?;
@@ -211,14 +226,14 @@ impl TestRunner {
         }
         modules.sort_by(|a, b| a.path.cmp(&b.path));
 
-        let report = mutation_report::format_report(&modules, self.mutate_format);
-        match &self.mutate_output {
+        let report = mutation_report::format_report(&modules, options.format);
+        match &options.output {
             Some(path) => fs::write(path, report)
                 .map_err(|e| miette::miette!("failed to write mutation report to {}: {e}", path.display()))?,
             None => print!("{report}"),
         }
 
-        Ok(self
+        Ok(options
             .min_score
             .is_none_or(|min| mutation_report::score(&modules) >= f64::from(min)))
     }

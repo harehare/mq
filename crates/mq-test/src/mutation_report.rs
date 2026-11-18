@@ -9,7 +9,7 @@ use crate::highlight;
 use crate::html;
 use crate::mutation::Mutant;
 
-/// Report format for `--mutate`.
+/// Report format of `mq-test mutate`.
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum MutationFormat {
     /// Survivors and the score, for the terminal.
@@ -84,32 +84,24 @@ pub(crate) fn format_report(modules: &[ModuleResult], format: MutationFormat) ->
 }
 
 fn format_text(modules: &[ModuleResult]) -> String {
-    let (killed, total) = totals(modules);
-    let mut out = String::from("# Mutation testing\n\n");
-    if total > 0 && killed < total {
-        out.push_str("Survived mutants:\n");
-        for module in modules {
-            for m in module.survivors() {
-                out.push_str(&format!(
-                    "  {}:{}:{}  {}\n",
-                    module.path.display(),
-                    m.line,
-                    m.column,
-                    m.describe()
-                ));
-            }
-        }
-        out.push('\n');
-    }
-    if total == 0 {
-        out.push_str("No mutants were generated.\n");
-    } else {
+    let mut out = String::from("\nMutation report:\n");
+    for module in modules {
         out.push_str(&format!(
-            "Mutation score: {:.1}% ({killed} killed, {} survived, {total} total)\n",
-            score(modules),
-            total - killed
+            "  {:<50} {:>6.1}% ({}/{})\n",
+            module.path.display(),
+            percent(module.killed(), module.mutants.len()),
+            module.killed(),
+            module.mutants.len()
         ));
+        for m in module.survivors() {
+            out.push_str(&format!("      survived {}:{}  {}\n", m.line, m.column, m.describe()));
+        }
     }
+    let (killed, total) = totals(modules);
+    out.push_str(&format!(
+        "\n  Total: {:.1}% ({killed}/{total} killed)\n",
+        score(modules)
+    ));
     out
 }
 
@@ -256,8 +248,8 @@ mod tests {
         let modules = sample();
         assert_eq!(score(&modules), 50.0);
         let text = format_report(&modules, MutationFormat::Text);
-        assert!(text.contains("lib.mq:2:13  `==` -> `!=`"));
-        assert!(text.contains("Mutation score: 50.0% (2 killed, 2 survived, 4 total)"));
+        assert!(text.contains("survived 2:13  `==` -> `!=`"));
+        assert!(text.contains("Total: 50.0% (2/4 killed)"));
     }
 
     #[test]
