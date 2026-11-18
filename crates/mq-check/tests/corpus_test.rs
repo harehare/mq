@@ -68,8 +68,9 @@ struct FileReport {
 fn check_file(path: &Path) -> FileReport {
     let code = std::fs::read_to_string(path).unwrap();
     let mut hir = Hir::default();
-    // builtin.mq defines the builtins, so it is checked on its own.
-    hir.builtin.disabled = path.file_name().is_some_and(|n| n == "builtin.mq");
+    // builtin.mq defines the builtins, so it is not loaded on top of itself; the native builtins it
+    // calls are still declared.
+    hir.builtin.self_hosted = path.file_name().is_some_and(|n| n == "builtin.mq");
     for name in mq_check::TEST_RUNNER_GLOBALS {
         hir.declare_global(name);
     }
