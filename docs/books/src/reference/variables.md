@@ -43,6 +43,18 @@ var message = "Hello"
 # => "Hello World"
 ```
 
+### Updating an element
+
+`x[key] = value` and `x[k1][k2] = value` evaluate the keys and the value first, then update the current value of `x`. Changes that a function called in `value` made to `x` are kept:
+
+```mq
+var d = {"x": 1}
+| def f(): d["y"] = 2 | 3;
+| d["z"] = f()
+| d
+# => {"x": 1, "y": 2, "z": 3}
+```
+
 ## Destructuring Assignment
 
 Both `let` and `var` support destructuring patterns on the left-hand side.
