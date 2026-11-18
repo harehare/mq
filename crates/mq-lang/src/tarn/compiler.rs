@@ -3472,8 +3472,6 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    /// Compiles `name[index] = value`. A mutable local is updated in place; reading it first
-    /// would leave a second reference alive and make every update copy the whole collection.
     fn compile_index_assign(&mut self, name: Ident, index: &Shared<Node>, value: &Shared<Node>) -> CompileResult<()> {
         let token_id = self.current_token_id;
         match self.resolve(name) {
@@ -3481,14 +3479,16 @@ impl<R: ModuleResolver> Compiler<R> {
                 if self.scope_mut().is_immutable(slot) {
                     return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
                 }
-                if self.is_used_by_nested_function(name) && !self.cannot_run_user_code_in(index, value) {
+                let add = path_add_operand(name, std::slice::from_ref(index), value);
+                if add.is_some() && self.is_used_by_nested_function(name) && !self.cannot_run_user_code_in(index, value)
+                {
                     self.emit(OpCode::GetLocal(slot));
                     self.compile_expr(index)?;
                     self.compile_expr(value)?;
                     self.set_call_token_id(token_id);
                     self.emit_call_builtin(builtins::SET.into(), 3);
                     self.emit(OpCode::SetLocal(slot));
-                } else if let Some(operand) = path_add_operand(name, std::slice::from_ref(index), value) {
+                } else if let Some(operand) = add {
                     self.compile_path_assign(PathTarget::Local(slot), vec![index], PathLeaf::Add(operand))?;
                 } else {
                     self.compile_expr(index)?;
@@ -3504,8 +3504,9 @@ impl<R: ModuleResolver> Compiler<R> {
                 if immutable {
                     return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
                 }
-                if self.cannot_run_user_code_in(index, value) {
-                    if let Some(operand) = path_add_operand(name, std::slice::from_ref(index), value) {
+                let add = path_add_operand(name, std::slice::from_ref(index), value);
+                if add.is_none() || self.cannot_run_user_code_in(index, value) {
+                    if let Some(operand) = add {
                         self.compile_path_assign(PathTarget::Upvalue(upvalue), vec![index], PathLeaf::Add(operand))?;
                     } else {
                         self.compile_expr(index)?;
@@ -3576,9 +3577,6 @@ impl<R: ModuleResolver> Compiler<R> {
         });
     }
 
-    /// Compiles `name[k1]...[kn] = value` (n >= 2), updating the containers along the path in
-    /// place. When a nested function uses the variable and an operand can run user code, the
-    /// target is read before they run, so that case compiles as a chain of `set` calls instead.
     fn compile_path_assign_expr(
         &mut self,
         name: Ident,
@@ -3586,7 +3584,8 @@ impl<R: ModuleResolver> Compiler<R> {
         value: &Shared<Node>,
     ) -> CompileResult<()> {
         let token_id = self.current_token_id;
-        let pure = keys.iter().all(|key| self.cannot_run_user_code(key)) && self.cannot_run_user_code(value);
+        let add = path_add_operand(name, keys, value).is_some();
+        let pure = !add || (keys.iter().all(|key| self.cannot_run_user_code(key)) && self.cannot_run_user_code(value));
         let target = match self.resolve(name) {
             Some(Resolved::Local(slot)) => {
                 if self.scope_mut().is_immutable(slot) {
@@ -3635,13 +3634,6 @@ impl<R: ModuleResolver> Compiler<R> {
             .is_used_by_nested_function(name, names_used_in_nested_functions)
     }
 
-    /// Compiles `x = x + rhs` on a mutable local `x` into an opcode that appends to the local in
-    /// place; reading `x` first would leave a second reference alive and copy it on every append.
-    ///
-    /// A local that a nested function uses is updated through its cell, and only when `rhs`
-    /// cannot run user code, because the opcode reads `x` after `rhs` has run.
-    ///
-    /// Returns `false`, emitting nothing, for any other assignment.
     fn compile_add_assign_local(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
         let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
             return Ok(false);
@@ -3667,12 +3659,6 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(true)
     }
 
-    /// Compiles `x = x + rhs` on a mutable variable `x` captured from an enclosing function into
-    /// an opcode that appends in place; reading `x` first would leave a second reference alive
-    /// and copy it on every append.
-    ///
-    /// The opcode reads `x` after `rhs` has run, so this applies only when `rhs` cannot run user
-    /// code that assigns `x`. Returns `false`, emitting nothing, for any other assignment.
     fn compile_add_assign_upvalue(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
         let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
             return Ok(false);
@@ -3696,11 +3682,6 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(true)
     }
 
-    /// Whether evaluating `node` cannot call a user-defined function or closure, so it cannot
-    /// assign a variable behind the back of the expression it is part of.
-    ///
-    /// Arguments of a builtin call are checked like any other expression; a builtin that is
-    /// handed a closure stored in a variable is not detected.
     fn cannot_run_user_code(&mut self, node: &Shared<Node>) -> bool {
         match &node.expr {
             Expr::Literal(_) | Expr::Ident(_) | Expr::Env(_) => true,
