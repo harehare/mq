@@ -753,4 +753,239 @@ mod tests {
         }
         assert!(io.check_write(&allowed.join("new.md")).is_ok());
     }
+    /// Builds `root/allowed` and `root/outside` (with `outside/secret.txt`) for escape tests.
+    #[cfg(unix)]
+    fn escape_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let root = tempfile::tempdir().expect("failed to create temp dir");
+        let allowed = root.path().join("allowed");
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&allowed).expect("failed to create dir");
+        std::fs::create_dir(&outside).expect("failed to create dir");
+        std::fs::write(outside.join("secret.txt"), "secret").expect("failed to write");
+        (root, allowed, outside)
+    }
+
+    /// Reads through `..`, a sibling sharing the grant's name prefix, a symlinked file, a
+    /// chain of symlinks and a relative symlink target must all be denied.
+    #[cfg(unix)]
+    #[test]
+    fn test_read_rejects_path_escapes() {
+        let (root, allowed, outside) = escape_fixture();
+        let sibling = root.path().join("allowed-evil");
+        std::fs::create_dir(&sibling).expect("failed to create dir");
+        std::fs::write(sibling.join("secret.txt"), "secret").expect("failed to write");
+
+        let secret = outside.join("secret.txt");
+        std::os::unix::fs::symlink(&secret, allowed.join("file_link")).expect("failed to symlink");
+        std::os::unix::fs::symlink(allowed.join("file_link"), allowed.join("hop2")).expect("failed to symlink");
+        std::os::unix::fs::symlink(allowed.join("hop2"), allowed.join("hop3")).expect("failed to symlink");
+        std::os::unix::fs::symlink("../outside/secret.txt", allowed.join("relative_link")).expect("failed to symlink");
+        std::os::unix::fs::symlink("../outside", allowed.join("relative_dir")).expect("failed to symlink");
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.clone()]);
+        let a = allowed.to_string_lossy().into_owned();
+
+        for path in [
+            format!("{a}/../outside/secret.txt"),
+            format!("{a}/../allowed-evil/secret.txt"),
+            format!("{a}/file_link"),
+            format!("{a}/hop2"),
+            format!("{a}/hop3"),
+            format!("{a}/relative_link"),
+            format!("{a}/relative_dir/secret.txt"),
+            format!("{}/secret.txt", sibling.display()),
+        ] {
+            assert!(
+                matches!(io.read_to_string(Path::new(&path)), Err(IoError::PermissionDenied(_))),
+                "read must be denied for {path}"
+            );
+        }
+        assert!(matches!(
+            io.exists(&allowed.join("relative_dir").join("secret.txt")),
+            Err(IoError::PermissionDenied(_))
+        ));
+    }
+
+    /// A relative grant and relative targets are resolved against the cwd, so `..` cannot be
+    /// used to climb out of them.
+    #[test]
+    fn test_read_allowlist_relative_paths_cannot_climb_out() {
+        let io = SandboxedIo::new(MemIo::default().with_file("/outside/b.txt", "no"))
+            .allow_read(vec![PathBuf::from("sandbox_dir")]);
+
+        for path in [
+            "sandbox_dir/../../../../../../outside/b.txt",
+            "../outside/b.txt",
+            "./../b.txt",
+        ] {
+            assert!(
+                matches!(io.read_to_string(Path::new(path)), Err(IoError::PermissionDenied(_))),
+                "read must be denied for {path}"
+            );
+        }
+    }
+
+    /// Writing to a not-yet-existing path must still be confined: through a dangling symlink
+    /// (single, chained or relative), via `..` under a missing directory, and through a
+    /// symlinked parent directory.
+    #[cfg(unix)]
+    #[test]
+    fn test_write_rejects_escapes_to_nonexistent_paths() {
+        let (_root, allowed, outside) = escape_fixture();
+        std::os::unix::fs::symlink(outside.join("new.md"), allowed.join("dangling")).expect("failed to symlink");
+        std::os::unix::fs::symlink(allowed.join("dangling"), allowed.join("dangling2")).expect("failed to symlink");
+        std::os::unix::fs::symlink("../outside/new.md", allowed.join("dangling_rel")).expect("failed to symlink");
+        std::os::unix::fs::symlink(&outside, allowed.join("dir_link")).expect("failed to symlink");
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_write(vec![allowed.clone()]);
+        let a = allowed.to_string_lossy().into_owned();
+
+        for path in [
+            format!("{a}/dangling"),
+            format!("{a}/dangling2"),
+            format!("{a}/dangling_rel"),
+            format!("{a}/dir_link/new.md"),
+            format!("{a}/missing/../../outside/new.md"),
+        ] {
+            assert!(
+                matches!(io.write(Path::new(&path), b"x"), Err(IoError::PermissionDenied(_))),
+                "write must be denied for {path}"
+            );
+        }
+        assert!(
+            !outside.join("new.md").exists(),
+            "nothing may be created outside the grant"
+        );
+        assert!(io.write(&allowed.join("fresh.md"), b"x").is_ok());
+    }
+
+    /// A symlink loop must neither hang nor be treated as inside the grant.
+    #[cfg(unix)]
+    #[test]
+    fn test_write_symlink_loop_terminates_and_is_denied_or_contained() {
+        let (_root, allowed, outside) = escape_fixture();
+        std::os::unix::fs::symlink(allowed.join("b"), allowed.join("a")).expect("failed to symlink");
+        std::os::unix::fs::symlink(allowed.join("a"), allowed.join("b")).expect("failed to symlink");
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_write(vec![allowed.clone()]);
+        // Must return (not spin); the write itself fails either way, and nothing leaks out.
+        assert!(io.write(&allowed.join("a"), b"x").is_err());
+        assert!(!outside.join("a").exists());
+    }
+
+    /// A chain longer than `MAX_LINK_DEPTH` that finally points outside the grant must not be
+    /// followed to the end and then waved through.
+    #[cfg(unix)]
+    #[test]
+    fn test_write_long_dangling_chain_to_outside_is_not_allowed() {
+        let (_root, allowed, outside) = escape_fixture();
+        let mut target = outside.join("new.md");
+        for i in 0..60 {
+            let link = allowed.join(format!("l{i}"));
+            std::os::unix::fs::symlink(&target, &link).expect("failed to symlink");
+            target = link;
+        }
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_write(vec![allowed.clone()]);
+        assert!(io.write(&target, b"x").is_err());
+        assert!(
+            !outside.join("new.md").exists(),
+            "nothing may be created outside the grant"
+        );
+    }
+
+    /// Case variants of the grant must never widen access to a different directory. On
+    /// case-insensitive filesystems (default macOS/Windows) a variant of the grant may be
+    /// denied (fail safe) or allowed, but a variant of an *outside* path is always denied.
+    #[test]
+    fn test_case_variants_do_not_widen_the_grant() {
+        let (root, allowed, outside) = {
+            let root = tempfile::tempdir().expect("failed to create temp dir");
+            let allowed = root.path().join("allowed");
+            let outside = root.path().join("outside");
+            std::fs::create_dir(&allowed).expect("failed to create dir");
+            std::fs::create_dir(&outside).expect("failed to create dir");
+            std::fs::write(outside.join("secret.txt"), "secret").expect("failed to write");
+            (root, allowed, outside)
+        };
+        let _keep = root;
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.clone()]);
+
+        for variant in [
+            outside.join("secret.txt"),
+            PathBuf::from(outside.to_string_lossy().to_uppercase()).join("SECRET.TXT"),
+            PathBuf::from(outside.to_string_lossy().to_lowercase()).join("secret.txt"),
+            // `ALLOWED/../outside` still climbs out whatever the case of the first segment.
+            PathBuf::from(format!(
+                "{}/../outside/secret.txt",
+                allowed.to_string_lossy().to_uppercase()
+            )),
+        ] {
+            assert!(
+                matches!(io.read_to_string(&variant), Err(IoError::PermissionDenied(_))),
+                "read must be denied for {}",
+                variant.display()
+            );
+        }
+    }
+
+    /// Case-insensitive FS: a symlink whose target is spelled in a different case than the
+    /// grant must still be judged by its real location.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_case_insensitive_fs_symlink_escape_is_denied() {
+        let (_root, allowed, outside) = escape_fixture();
+        let shouty = PathBuf::from(outside.to_string_lossy().to_uppercase());
+        std::os::unix::fs::symlink(&shouty, allowed.join("shout")).expect("failed to symlink");
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.clone()]);
+        assert!(matches!(
+            io.read_to_string(&allowed.join("shout").join("secret.txt")),
+            Err(IoError::PermissionDenied(_))
+        ));
+    }
+
+    /// `--allow-run` matches the command string exactly: another case, a path form, an extra
+    /// separator or whitespace, a `..` form or a shell-ish suffix must not match a bare name.
+    #[rstest]
+    #[case::other_case("ECHO")]
+    #[case::mixed_case("Echo")]
+    #[case::absolute_path("/bin/echo")]
+    #[case::relative_path("./echo")]
+    #[case::parent_path("../echo")]
+    #[case::nested_dot_dot("bin/../echo")]
+    #[case::backslash("bin\\echo")]
+    #[case::trailing_slash("echo/")]
+    #[case::trailing_space("echo ")]
+    #[case::leading_space(" echo")]
+    #[case::trailing_dot("echo.")]
+    #[case::exe_suffix("echo.exe")]
+    #[case::shell_chain("echo; rm")]
+    #[case::nul_suffix("echo\0")]
+    #[case::empty("")]
+    fn test_execute_allowlist_rejects_name_variants(#[case] command: &str) {
+        let io = SandboxedIo::new(
+            MemIo::default()
+                .with_command_response(command, &[], "ran")
+                .with_command_response("echo", &[], "ran"),
+        )
+        .allow_run(Some(vec!["echo".to_string()]));
+
+        assert!(matches!(io.execute(command, &[]), Err(IoError::PermissionDenied(_))));
+        assert_eq!(io.execute("echo", &[]).unwrap(), "ran");
+    }
+
+    /// A grant written as a path allows exactly that string, not the bare name or a sibling.
+    #[rstest]
+    #[case::bare_name("echo")]
+    #[case::other_dir("/usr/bin/echo")]
+    #[case::grant_with_suffix("/bin/echo2")]
+    #[case::grant_prefix("/bin")]
+    fn test_execute_path_grant_does_not_match_other_forms(#[case] command: &str) {
+        let io = SandboxedIo::new(MemIo::default().with_command_response(command, &[], "ran"))
+            .allow_run(Some(vec!["/bin/echo".to_string()]));
+
+        assert!(matches!(io.execute(command, &[]), Err(IoError::PermissionDenied(_))));
+    }
 }
