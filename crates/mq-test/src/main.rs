@@ -1,7 +1,7 @@
 //! Command-line runner for `.mq` tests.
 
 use clap::{Args, Parser, Subcommand};
-use mq_test::{CoverageFormat, MutationFormat, OutputFormat, TestRunner, run_doc_examples};
+use mq_test::{CoverageFormat, MutationFormat, MutationOptions, OutputFormat, TestRunner, run_doc_examples};
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser, Debug)]
@@ -177,12 +177,13 @@ fn main() -> ExitCode {
                 .with_filter(args.filter)
                 .with_tags(args.tags)
                 .with_module_directories(args.module_directories)
-                .with_mutation(true)
-                .with_mutate_builtin(args.builtin)
-                .with_mutation_format(args.format)
-                .with_mutation_output(args.output)
-                .with_mutation_jobs(args.jobs)
-                .with_min_score(args.min_score)
+                .with_mutation(MutationOptions {
+                    builtin: args.builtin,
+                    format: args.format,
+                    output: args.output,
+                    jobs: args.jobs,
+                    min_score: args.min_score,
+                })
                 .run(),
         );
     }

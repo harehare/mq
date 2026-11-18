@@ -12,7 +12,7 @@ mod snapshot;
 
 pub use coverage::{CoverageFormat, FileCoverage};
 pub use mutation_report::MutationFormat;
-pub use runner::{OutputFormat, TestRunner};
+pub use runner::{MutationOptions, OutputFormat, TestRunner};
 
 /// Runs the `# => expected` examples in Markdown ` ```mq ` blocks and in fenced blocks of `.mq`
 /// comments. Returns `true` when at least one example ran and every example passed.
