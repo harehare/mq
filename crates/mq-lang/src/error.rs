@@ -302,7 +302,38 @@ fn unexpected_token_hint(source: &str, offset: usize, token: &Token) -> Option<C
         TokenKind::Pipe if before.ends_with('|') => Some(Cow::Borrowed(
             "Expected an expression between two `|`. Remove the extra `|`.",
         )),
+        TokenKind::Else | TokenKind::Elif => Some(dangling_branch_hint(before, &token.kind)),
         _ => None,
+    }
+}
+
+// `else` or `elif` with no `if` to continue. When a `)` comes right before it, that `)` almost
+// always closed a parenthesised `(if ...)` too early, so say where it is.
+#[cold]
+fn dangling_branch_hint(before: &str, kind: &TokenKind) -> Cow<'static, str> {
+    let keyword = if *kind == TokenKind::Elif { "elif" } else { "else" };
+    if before.ends_with(')') {
+        let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        Cow::Owned(format!(
+            "`{keyword}` has no `if` to continue because the `)` on line {line} right before it already closed the `if`. Remove that extra `)`, or move it after the last branch."
+        ))
+    } else {
+        Cow::Borrowed(
+            "`elif` and `else` must continue an `if`. Check that the `if` before them was not closed early or ended by a stray `end`.",
+        )
+    }
+}
+
+// `|` where a closing delimiter was expected. It pipes the left value into the next expression,
+// so it is never a bitwise OR; point at the functions that are.
+#[cold]
+fn closing_delimiter_hint(found: &Token, base: &'static str) -> Cow<'static, str> {
+    if found.kind == TokenKind::Pipe {
+        Cow::Owned(format!(
+            "{base} `|` pipes a value into the next expression, so it is not a bitwise OR; use `bor(a, b)` (and `band`, `xor`)."
+        ))
+    } else {
+        Cow::Borrowed(base)
     }
 }
 
@@ -359,13 +390,16 @@ impl Diagnostic for Error {
                 "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.",
             )),
             InnerError::Syntax(SyntaxError::UnknownSelector(sel)) => Some(self.selector_help_in_source(sel)),
-            InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, _)) => Some(Cow::Borrowed(
+            InnerError::Syntax(SyntaxError::ExpectedClosingParen(found, _)) => Some(closing_delimiter_hint(
+                found,
                 "Expected a closing parenthesis ')'. Check your parentheses for balance.",
             )),
-            InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_, _)) => Some(Cow::Borrowed(
+            InnerError::Syntax(SyntaxError::ExpectedClosingBrace(found, _)) => Some(closing_delimiter_hint(
+                found,
                 "Expected a closing brace '}'. Check your braces for balance.",
             )),
-            InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_, _)) => Some(Cow::Borrowed(
+            InnerError::Syntax(SyntaxError::ExpectedClosingBracket(found, _)) => Some(closing_delimiter_hint(
+                found,
                 "Expected a closing bracket ']'. Check your brackets for balance.",
             )),
             InnerError::Syntax(SyntaxError::InvalidAssignmentTarget(_)) => Some(Cow::Borrowed(
@@ -476,15 +510,21 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InsufficientTokens(_))) => Some(Cow::Borrowed(
                 "Parsing could not continue here. Check for missing arguments, operators, or mismatched delimiters.",
             )),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_, _))) => Some(
-                Cow::Borrowed("Expected a closing bracket ']'. Check your brackets for balance."),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(found, _))) => {
+                Some(closing_delimiter_hint(
+                    found,
+                    "Expected a closing bracket ']'. Check your brackets for balance.",
+                ))
+            }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(found, _))) => Some(
+                closing_delimiter_hint(found, "Expected a closing brace '}'. Check your braces for balance."),
             ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_, _))) => Some(
-                Cow::Borrowed("Expected a closing brace '}'. Check your braces for balance."),
-            ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_, _))) => Some(
-                Cow::Borrowed("Expected a closing parenthesis ')'. Check your parentheses for balance."),
-            ),
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(found, _))) => {
+                Some(closing_delimiter_hint(
+                    found,
+                    "Expected a closing parenthesis ')'. Check your parentheses for balance.",
+                ))
+            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::InvalidAssignmentTarget(_))) => Some(
                 Cow::Borrowed("Invalid assignment target. Ensure you're assigning to a valid variable or property."),
             ),
@@ -1216,6 +1256,9 @@ mod test {
     #[case::missing_var_name("var 1", 4, TokenKind::NumberLiteral(1.into()), Some("after `var`"))]
     #[case::let_as_identifier_suffix("outlet = 1", 7, TokenKind::Equal, None)]
     #[case::double_pipe("1 | | 2", 4, TokenKind::Pipe, Some("between two `|`"))]
+    #[case::else_after_a_closed_if("(if (a): 1)\n else: 2)", 13, TokenKind::Else, Some("`)` on line 1"))]
+    #[case::elif_after_a_closed_if("(if (a): 1)\n elif (b): 2)", 13, TokenKind::Elif, Some("`elif` has no `if`"))]
+    #[case::else_without_a_paren("x\n else: 2", 3, TokenKind::Else, Some("must continue an `if`"))]
     #[case::no_context("1 + )", 4, TokenKind::RParen, None)]
     fn test_unexpected_token_hint(
         #[case] source: &str,
