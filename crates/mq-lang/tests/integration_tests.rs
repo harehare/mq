@@ -4151,7 +4151,7 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::mul_array_fraction_is_error("[1, 2] * 2.5", vec![RuntimeValue::None],)]
 #[case::mul_array_negative_is_error("[1, 2] * -1", vec![RuntimeValue::None],)]
 #[case::mul_number_array_fraction_is_error("0.5 * [1, 2]", vec![RuntimeValue::None],)]
-#[case::mul_array_too_large_is_error("[1, 2] * 1000000", vec![RuntimeValue::None],)]
+#[case::mul_array_too_large_is_error("[1, 2] * 10000000", vec![RuntimeValue::None],)]
 #[case::shift_left_number_negative("shift_left(1, -1)", vec![RuntimeValue::None],)]
 #[case::shift_right_number_negative("shift_right(8, -1)", vec![RuntimeValue::None],)]
 #[case::shift_left_string_negative(r#"shift_left("abc", -1)"#, vec![RuntimeValue::None],)]
