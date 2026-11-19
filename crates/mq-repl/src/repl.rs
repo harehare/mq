@@ -28,7 +28,7 @@ type Paint = fn(&str) -> ColoredString;
 static HIGHLIGHT_PATTERNS: LazyLock<Vec<(Regex, Paint)>> = LazyLock::new(|| {
     const PATTERNS: [(&str, Paint); 5] = [
         (
-            r"^(/all|/clear|/copy|/edit|/env|/help|/history|/more|/quit|/load|/save|/reset|/vars|/version)\b",
+            r"^(/all|/clear|/edit|/env|/help|/history|/more|/quit|/load|/save|/reset|/vars|/version)\b",
             |s| s.bright_green(),
         ),
         (r#""([^"\\]|\\.)*""#, |s| s.bright_green()),
