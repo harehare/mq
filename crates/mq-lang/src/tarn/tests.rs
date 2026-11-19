@@ -620,10 +620,10 @@ fn run_with_max_depth(code: &str, max_call_stack_depth: u32) -> Result<RuntimeVa
 }
 
 #[rstest]
-#[case::random_string(r#"random_string(1000001, "x")"#)]
-#[case::set_array("set([], 1000000, 1)")]
-#[case::insert_array("insert([], 1000000, 1)")]
-#[case::insert_string(r#"insert("", 1000000, "x")"#)]
+#[case::random_string(r#"random_string(16777217, "x")"#)]
+#[case::set_array("set([], 16777216, 1)")]
+#[case::insert_array("insert([], 16777216, 1)")]
+#[case::insert_string(r#"insert("", 16777216, "x")"#)]
 #[case::del_array("del([], 1000000)")]
 #[case::del_string(r#"del("", 1000000)"#)]
 fn vm_rejects_unbounded_builtin_allocations(#[case] code: &str) {
@@ -1145,16 +1145,27 @@ fn nested_index_assignment_rejects_non_variable_roots(#[case] code: &str) {
 #[case::string_target(r#"var a = "ab" | a[0] = "x""#)]
 #[case::array_with_string_key(r#"var a = [1] | a["k"] = 2"#)]
 #[case::fractional_index("var a = [1] | a[0.5] = 2")]
-#[case::index_over_limit("var a = [1] | a[1000000] = 2")]
+#[case::index_over_limit("var a = [1] | a[16777216] = 2")]
 #[case::immutable("let a = [1] | a[0] = 2")]
 fn index_assignment_rejects_invalid_targets(#[case] code: &str) {
     assert!(run_result(code).is_err(), "{code}");
 }
 
+#[rstest]
+#[case::index_assignment(
+    "var a = range(0, 999999) + range(0, 999999) | a[1500000] = 7 | a[1500000] == 7 && len(a) == 2000000"
+)]
+#[case::set_builtin("let a = range(0, 999999) + range(0, 999999) | set(a, 1500000, 7)[1500000] == 7")]
+#[case::insert_builtin("let a = range(0, 999999) + range(0, 999999) | len(insert(a, 1500000, 7)) == 2000001")]
+#[case::concatenation("len(range(0, 999999) + range(0, 999999) + [1]) == 2000001")]
+fn arrays_longer_than_the_allocation_limit_can_be_updated_in_place(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
 #[test]
 fn failed_index_assignment_keeps_local_intact() {
     assert_eq!(
-        run("var a = [1, 2] | (try: a[1000000] = 9 catch: None) | a == [1, 2]"),
+        run("var a = [1, 2] | (try: a[16777216] = 9 catch: None) | a == [1, 2]"),
         RuntimeValue::from(true)
     );
 }
@@ -1201,17 +1212,17 @@ fn add_assignment_appends_to_captured_variable_preserving_value_semantics(#[case
 }
 
 #[rstest]
-#[case::array_array("var a = range(0, 999999) | def f(): a += [1, 2]; | f()")]
-#[case::array_element("var a = range(0, 999999) | def f(): a += 1; | f()")]
-fn add_assignment_to_captured_variable_respects_array_size_limit(#[case] code: &str) {
-    assert!(run_result(code).is_err(), "{code}");
+#[case::array_array("var a = range(0, 999999) | def f(): a += [1, 2]; | f() | len(a) == 1000002")]
+#[case::array_element("var a = range(0, 999999) | def f(): a += 1; | f() | len(a) == 1000001")]
+fn add_assignment_to_captured_variable_grows_past_the_allocation_limit(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
 }
 
 #[test]
 fn failed_add_assignment_keeps_captured_variable_intact() {
     assert_eq!(
-        run("var a = range(0, 999999) | def f(): a += [1, 2]; | (try: f() catch: None) | len(a)"),
-        RuntimeValue::from(1_000_000)
+        run(r#"var s = "ab" | def f(): s += {}; | (try: f() catch: None) | s == "ab""#),
+        RuntimeValue::from(true)
     );
 }
 
@@ -1316,10 +1327,10 @@ fn printed_numbers_parse_back_to_the_same_value(#[case] code: &str) {
 }
 
 #[rstest]
-#[case::array_array("var a = range(0, 999999) | a += [1, 2]")]
-#[case::array_element("var a = range(0, 999999) | a += 1")]
-fn add_assignment_respects_array_size_limit(#[case] code: &str) {
-    assert!(run_result(code).is_err(), "{code}");
+#[case::array_array("var a = range(0, 999999) | a += [1, 2] | len(a) == 1000002")]
+#[case::array_element("var a = range(0, 999999) | a += 1 | len(a) == 1000001")]
+fn add_assignment_grows_past_the_allocation_limit(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
 }
 
 #[rstest]
@@ -1405,8 +1416,8 @@ fn nested_updates_through_missing_or_scalar_entries_fail(#[case] code: &str) {
 #[test]
 fn failed_add_assignment_keeps_local_intact() {
     assert_eq!(
-        run("var a = range(0, 999999) | (try: a += [1, 2] catch: None) | len(a)"),
-        RuntimeValue::from(1_000_000)
+        run(r#"var s = "ab" | (try: s += {} catch: None) | s == "ab""#),
+        RuntimeValue::from(true)
     );
 }
 

@@ -1,7 +1,7 @@
 use crate::Shared;
 use crate::runtime::runtime_value::RuntimeValue;
 
-use super::{Error, MAX_RANGE_SIZE};
+use super::{Error, MAX_ALLOC_SIZE};
 
 pub(super) fn generate_numeric_range(start: isize, end: isize, step: isize) -> Result<Vec<RuntimeValue>, Error> {
     if step == 0 {
@@ -16,10 +16,10 @@ pub(super) fn generate_numeric_range(start: isize, end: isize, step: isize) -> R
         0
     };
 
-    if range_size > MAX_RANGE_SIZE {
+    if range_size > MAX_ALLOC_SIZE {
         return Err(Error::Runtime(format!(
             "range size {} exceeds maximum allowed size of {}",
-            range_size, MAX_RANGE_SIZE
+            range_size, MAX_ALLOC_SIZE
         )));
     }
 
@@ -66,13 +66,6 @@ pub(super) fn generate_char_range(
         0
     };
 
-    if range_size > MAX_RANGE_SIZE {
-        return Err(Error::Runtime(format!(
-            "range size {} exceeds maximum allowed size of {}",
-            range_size, MAX_RANGE_SIZE
-        )));
-    }
-
     let mut result = Vec::with_capacity(range_size);
     let mut current = start_char as i32;
     let end = end_char as i32;
@@ -103,7 +96,7 @@ pub(super) fn generate_char_range(
 }
 
 fn multi_char_range_count(start: &[u8], end: &[u8]) -> Result<u128, Error> {
-    let too_large = || Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_RANGE_SIZE));
+    let too_large = || Error::Runtime(format!("range size exceeds maximum allowed size of {}", MAX_ALLOC_SIZE));
 
     // A common prefix does not change the difference.
     let common = start.iter().zip(end).take_while(|(a, b)| a == b).count();
@@ -132,10 +125,10 @@ pub(super) fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<Ru
 
     let count = multi_char_range_count(start_bytes, end_bytes)?;
 
-    if count > MAX_RANGE_SIZE as u128 {
+    if count > MAX_ALLOC_SIZE as u128 {
         return Err(Error::Runtime(format!(
             "range size {} exceeds maximum allowed size of {}",
-            count, MAX_RANGE_SIZE
+            count, MAX_ALLOC_SIZE
         )));
     }
 

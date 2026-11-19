@@ -58,8 +58,10 @@ use super::json::parse_json_runtime_value;
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
-/// Maximum number of elements allowed in a generated range
-pub(super) const MAX_RANGE_SIZE: usize = 1_000_000;
+/// Maximum number of elements (or bytes) a single builtin may allocate from a numeric argument alone,
+/// such as `range`, `fill`, repeat, `random_string`, or padding the gap when `set`/`insert` write past the end.
+/// Results sized by data that already exists (concatenation, appends, in-place updates) are not bounded by it.
+pub(super) const MAX_ALLOC_SIZE: usize = 16 * 1024 * 1024;
 /// Maximum number of bytes a single `read_bytes` call may request from a reader handle
 #[cfg(any(feature = "file-io", feature = "http"))]
 pub(super) const MAX_READ_BYTES: usize = 64 * 1024 * 1024;
@@ -82,14 +84,14 @@ fn bounded_size(value: &number::Number, maximum: usize, parameter: &str) -> Resu
 /// Resolves the index `set` writes to in an array of length `len`, which may grow the array.
 ///
 /// A negative index counts from the end, and one before the first element is an error.
-/// Non-finite, fractional, and excessively large values are rejected before they can cause an
-/// oversized allocation.
+/// Non-finite and fractional values are rejected, and so is an index that would pad the array with
+/// more than `MAX_ALLOC_SIZE` elements. Writing at or below the current length never allocates.
 fn resolve_write_index(value: &number::Number, len: usize) -> Result<usize, Error> {
     let raw = value.value();
-    if !raw.is_finite() || !value.is_int() || raw > (MAX_RANGE_SIZE - 1) as f64 {
+    if !raw.is_finite() || !value.is_int() || (raw > len as f64 && raw > (MAX_ALLOC_SIZE - 1) as f64) {
         return Err(Error::Runtime(format!(
             "set index must be a finite integer no greater than {}",
-            MAX_RANGE_SIZE - 1
+            len.max(MAX_ALLOC_SIZE - 1)
         )));
     }
     if raw < 0.0 {
@@ -106,14 +108,14 @@ fn resolve_write_index(value: &number::Number, len: usize) -> Result<usize, Erro
 
 /// Validates an array or string index for `insert`, which may grow its target collection.
 ///
-/// Negative indices saturate to zero. Non-finite, fractional, and excessively large values are
-/// rejected before they can cause an oversized allocation.
-fn bounded_growth_index(value: &number::Number, operation: &str) -> Result<usize, Error> {
+/// Negative indices saturate to zero. Non-finite and fractional values are rejected, and so is an
+/// index that would pad a collection of length `len` with more than `MAX_ALLOC_SIZE` elements.
+fn bounded_growth_index(value: &number::Number, len: usize, operation: &str) -> Result<usize, Error> {
     let raw = value.value();
-    if !raw.is_finite() || !value.is_int() || raw > (MAX_RANGE_SIZE - 1) as f64 {
+    if !raw.is_finite() || !value.is_int() || (raw > len as f64 && raw > (MAX_ALLOC_SIZE - 1) as f64) {
         return Err(Error::Runtime(format!(
             "{operation} index must be a finite integer no greater than {}",
-            MAX_RANGE_SIZE - 1
+            len.max(MAX_ALLOC_SIZE - 1)
         )));
     }
     Ok(raw.max(0.0) as usize)
@@ -982,7 +984,7 @@ fn sample_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Number(len), RuntimeValue::String(charset)] if len.is_int() && len.value() >= 0.0 => {
-            let len = bounded_size(len, MAX_RANGE_SIZE, "random_string length")?;
+            let len = bounded_size(len, MAX_ALLOC_SIZE, "random_string length")?;
             let charset: Vec<char> = charset.chars().collect();
             random::next_string(len, &charset, None)
                 .map(|s| RuntimeValue::String(s.into()))
@@ -993,7 +995,7 @@ fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
             RuntimeValue::String(charset),
             RuntimeValue::Number(seed),
         ] if len.is_int() && len.value() >= 0.0 && seed.is_int() => {
-            let len = bounded_size(len, MAX_RANGE_SIZE, "random_string length")?;
+            let len = bounded_size(len, MAX_ALLOC_SIZE, "random_string length")?;
             let charset: Vec<char> = charset.chars().collect();
             random::next_string(len, &charset, Some(seed.to_int() as u64))
                 .map(|s| RuntimeValue::String(s.into()))
@@ -3031,21 +3033,9 @@ pub(crate) fn add_in_place(target: &mut RuntimeValue, rhs: &RuntimeValue) -> Res
         (RuntimeValue::String(s), RuntimeValue::String(suffix)) => runtime_value::string_mut(s).push_str(suffix),
         (RuntimeValue::String(s), RuntimeValue::Number(n)) => runtime_value::string_mut(s).push_str(&n.to_string()),
         (RuntimeValue::Array(array), RuntimeValue::Array(other)) => {
-            let total_size = array.len().saturating_add(other.len());
-            if total_size > MAX_RANGE_SIZE {
-                return Err(Error::Runtime(format!(
-                    "array concatenation size {total_size} exceeds maximum allowed size of {MAX_RANGE_SIZE}"
-                )));
-            }
             runtime_value::array_mut(array).extend_from_slice(other);
         }
         (RuntimeValue::Array(array), elem) => {
-            let total_size = array.len().saturating_add(1);
-            if total_size > MAX_RANGE_SIZE {
-                return Err(Error::Runtime(format!(
-                    "array size {total_size} exceeds maximum allowed size of {MAX_RANGE_SIZE}"
-                )));
-            }
             runtime_value::array_mut(array).push(elem.clone());
         }
         _ => return Ok(false),
@@ -3091,13 +3081,6 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             Ok(RuntimeValue::Bytes(result))
         }
         [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
-            let total_size = a1.len().saturating_add(a2.len());
-            if total_size > MAX_RANGE_SIZE {
-                return Err(Error::Runtime(format!(
-                    "array concatenation size {} exceeds maximum allowed size of {}",
-                    total_size, MAX_RANGE_SIZE
-                )));
-            }
             let mut a = std::mem::take(a1);
             let a_mut = runtime_value::array_mut(&mut a);
             a_mut.reserve(a2.len());
@@ -3105,14 +3088,6 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             Ok(RuntimeValue::Array(a))
         }
         [RuntimeValue::Array(a1), a2] => {
-            let total_size = a1.len().saturating_add(1);
-            if total_size > MAX_RANGE_SIZE {
-                return Err(Error::Runtime(format!(
-                    "array size {} exceeds maximum allowed size of {}",
-                    total_size, MAX_RANGE_SIZE
-                )));
-            }
-
             let mut a = std::mem::take(a1);
             let a_mut = runtime_value::array_mut(&mut a);
             a_mut.reserve(1);
@@ -3120,15 +3095,7 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             Ok(RuntimeValue::Array(a))
         }
         [v, RuntimeValue::Array(a)] => {
-            let total_size = a.len().saturating_add(1);
-            if total_size > MAX_RANGE_SIZE {
-                return Err(Error::Runtime(format!(
-                    "array size {} exceeds maximum allowed size of {}",
-                    total_size, MAX_RANGE_SIZE
-                )));
-            }
-
-            let mut arr = Vec::with_capacity(total_size);
+            let mut arr = Vec::with_capacity(a.len().saturating_add(1));
             arr.push(std::mem::take(v));
             arr.extend(Shared::unwrap_or_clone(std::mem::take(a)));
 
@@ -4338,13 +4305,8 @@ fn insert_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         // Insert into array at index
         [RuntimeValue::Array(array), RuntimeValue::Number(index), value] => {
             let mut new_array = std::mem::take(array);
-            let idx = bounded_growth_index(index, "insert")?;
+            let idx = bounded_growth_index(index, new_array.len(), "insert")?;
             let array_mut = runtime_value::array_mut(&mut new_array);
-            if array_mut.len() >= MAX_RANGE_SIZE {
-                return Err(Error::Runtime(format!(
-                    "insert would exceed maximum array size of {MAX_RANGE_SIZE}"
-                )));
-            }
             if idx > array_mut.len() {
                 array_mut.resize(idx, RuntimeValue::NONE);
             }
@@ -4354,7 +4316,7 @@ fn insert_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         // Insert into string at index
         [RuntimeValue::String(s), RuntimeValue::Number(index), value] => {
             let mut chars: Vec<char> = s.chars().collect();
-            let idx = bounded_growth_index(index, "insert")?;
+            let idx = bounded_growth_index(index, chars.len(), "insert")?;
             let insert_str = value.to_string();
             if idx > chars.len() {
                 chars.resize(idx, ' ');
@@ -7012,10 +6974,10 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
     match &*value {
         RuntimeValue::String(s) => {
             let total_size = s.len().saturating_mul(n);
-            if total_size > MAX_RANGE_SIZE {
+            if total_size > MAX_ALLOC_SIZE {
                 return Err(Error::Runtime(format!(
                     "string repeat size {} exceeds maximum allowed size of {}",
-                    total_size, MAX_RANGE_SIZE
+                    total_size, MAX_ALLOC_SIZE
                 )));
             }
             Ok(s.repeat(n).into())
@@ -7023,10 +6985,10 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
         node @ RuntimeValue::Markdown(_, _) => {
             if let Some(md) = node.markdown_node() {
                 let total_size = md.value().len().saturating_mul(n);
-                if total_size > MAX_RANGE_SIZE {
+                if total_size > MAX_ALLOC_SIZE {
                     return Err(Error::Runtime(format!(
                         "markdown repeat size {} exceeds maximum allowed size of {}",
-                        total_size, MAX_RANGE_SIZE
+                        total_size, MAX_ALLOC_SIZE
                     )));
                 }
                 Ok(node.update_markdown_value(md.value().repeat(n).as_str()))
@@ -7040,10 +7002,10 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
             }
 
             let total_size = array.len().saturating_mul(n);
-            if total_size > MAX_RANGE_SIZE {
+            if total_size > MAX_ALLOC_SIZE {
                 return Err(Error::Runtime(format!(
                     "array repeat size {} exceeds maximum allowed size of {}",
-                    total_size, MAX_RANGE_SIZE
+                    total_size, MAX_ALLOC_SIZE
                 )));
             }
 
@@ -7058,10 +7020,10 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
                 return Ok(RuntimeValue::Bytes(Shared::new(vec![])));
             }
             let total_size = b.len().saturating_mul(n);
-            if total_size > MAX_RANGE_SIZE {
+            if total_size > MAX_ALLOC_SIZE {
                 return Err(Error::Runtime(format!(
                     "bytes repeat size {} exceeds maximum allowed size of {}",
-                    total_size, MAX_RANGE_SIZE
+                    total_size, MAX_ALLOC_SIZE
                 )));
             }
             let mut repeated = Vec::with_capacity(total_size);
