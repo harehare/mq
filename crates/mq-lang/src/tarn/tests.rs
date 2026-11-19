@@ -107,15 +107,12 @@ fn run_with_call_depth_limit(code: &str, limit: u32) -> Result<RuntimeValue, Box
     Ok(values.values().first().cloned().unwrap_or(RuntimeValue::None))
 }
 
-/// Calls live on the heap, so recursion deeper than the debug default needs only the limit.
-///
-/// The depths stay small because the `debugger` feature makes each call cost time proportional
-/// to the depth; the scale of the release default is covered by the next tests.
 #[rstest]
 #[case::string_const(r#"let f = fn(a): a + "y"; | let s = "x" | [f(s), s]"#, r#"["xy", "x"]"#)]
 #[case::array_local("let f = fn(a, b): a + b; | let t = [1] | [f(t, [2]), t]", "[[1, 2], [1]]")]
 #[case::same_local_twice("let f = fn(a): a + a; | f([1])", "[1, 1]")]
 #[case::captured_local(r#"let f = fn(a): let g = fn(): a; | a + "z"; | f("q")"#, r#""qz""#)]
+#[case::entry_chunk("let a = [1] | let b = [2] | a + b", "[1, 2]")]
 #[case::implicit_self(r#"def f(a): a + "!"; | "s" | f()"#, r#""s!""#)]
 fn returning_add_leaves_the_caller_value_untouched(#[case] code: &str, #[case] expected: &str) {
     assert_eq!(
@@ -124,6 +121,10 @@ fn returning_add_leaves_the_caller_value_untouched(#[case] code: &str, #[case] e
     );
 }
 
+/// Calls live on the heap, so recursion deeper than the debug default needs only the limit.
+///
+/// The depths stay small because the `debugger` feature makes each call cost time proportional
+/// to the depth; the scale of the release default is covered by the next tests.
 #[rstest]
 #[case::linear("def f(n): if (n == 0): 0 else: 1 + f(n - 1); | f(3000)")]
 #[case::mutual("def a(n): if (n == 0): 0 else: 1 + b(n - 1); | def b(n): if (n == 0): 0 else: 1 + a(n - 1); | a(3000)")]

@@ -867,9 +867,9 @@ fn implicit_self_decision(
     }
 }
 
+/// Takes the arguments by value, so a builtin that updates its argument in place gets the only reference.
 // Keep out of the dispatch loop to avoid code bloat.
 #[inline(never)]
-/// Takes the arguments by value, so a builtin that updates its argument in place gets the only reference.
 pub(super) fn call_builtin<const N: usize>(
     ident: &Ident,
     args: [RuntimeValue; N],
