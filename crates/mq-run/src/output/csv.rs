@@ -1,4 +1,4 @@
-//! CSV output rendering for the `--output-format csv` CLI option.
+//! CSV output rendering for the `--output-format csv`/`tsv` CLI options.
 //!
 //! Converts [`mq_lang::RuntimeValue`]s into CSV using the `csv` crate. A top-level
 //! `Array` is expanded so each element becomes its own row (mirroring `table.rs`).
@@ -54,6 +54,22 @@ pub(crate) fn runtime_values_to_csv(
     runtime_values: &[RuntimeValue],
     theme: Option<&ColorTheme<'_>>,
 ) -> miette::Result<String> {
+    runtime_values_to_delimited(runtime_values, theme, b',')
+}
+
+/// Converts a list of [`RuntimeValue`]s into a TSV string.
+pub(crate) fn runtime_values_to_tsv(
+    runtime_values: &[RuntimeValue],
+    theme: Option<&ColorTheme<'_>>,
+) -> miette::Result<String> {
+    runtime_values_to_delimited(runtime_values, theme, b'\t')
+}
+
+fn runtime_values_to_delimited(
+    runtime_values: &[RuntimeValue],
+    theme: Option<&ColorTheme<'_>>,
+    delimiter: u8,
+) -> miette::Result<String> {
     let non_none: Vec<&RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
 
     // unwrap a single top-level Array, matching table.rs's behavior
@@ -64,7 +80,7 @@ pub(crate) fn runtime_values_to_csv(
     };
     let candidates: &[&RuntimeValue] = expanded.as_deref().unwrap_or(&non_none);
 
-    let mut writer = csv::WriterBuilder::new().from_writer(vec![]);
+    let mut writer = csv::WriterBuilder::new().delimiter(delimiter).from_writer(vec![]);
 
     let all_dicts = !candidates.is_empty() && candidates.iter().all(|v| matches!(*v, RuntimeValue::Dict(_)));
     let all_arrays = !candidates.is_empty() && candidates.iter().all(|v| matches!(*v, RuntimeValue::Array(_)));
@@ -124,6 +140,21 @@ pub(crate) fn runtime_values_to_csv(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tsv_uses_tab_delimiter() {
+        let values = vec![RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::String(Shared::new("a".to_string())),
+                RuntimeValue::String(Shared::new("b".to_string())),
+            ])),
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::String(Shared::new("1".to_string())),
+                RuntimeValue::String(Shared::new("x\ty".to_string())),
+            ])),
+        ]))];
+        assert_eq!(runtime_values_to_tsv(&values, None).unwrap(), "a\tb\n1\t\"x\ty\"\n");
+    }
 
     #[test]
     fn test_array_of_dicts() {

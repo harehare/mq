@@ -23,6 +23,7 @@ use std::{fs, path::PathBuf};
 
 use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
+use crate::output::csv::{runtime_values_to_csv, runtime_values_to_tsv};
 use crate::output::is_unmatched;
 use exit_status::{ExitReason, HAD_RESULT, ReadFailure};
 use mq_help as help;
@@ -358,6 +359,7 @@ enum OutputFormat {
     Gron,
     Raw,
     Csv,
+    Tsv,
     Jsonl,
     Toml,
     Toon,
@@ -375,6 +377,7 @@ impl OutputFormat {
             "json" => Self::Json,
             "jsonl" | "ndjson" => Self::Jsonl,
             "csv" => Self::Csv,
+            "tsv" => Self::Tsv,
             "toml" => Self::Toml,
             "toon" => Self::Toon,
             "xml" => Self::Xml,
@@ -400,6 +403,7 @@ enum IoFormat {
     Gron,
     Raw,
     Csv,
+    Tsv,
     Toml,
     Toon,
     Xml,
@@ -417,6 +421,7 @@ impl From<IoFormat> for InputFormat {
             IoFormat::Gron => Self::Gron,
             IoFormat::Raw => Self::Raw,
             IoFormat::Csv => Self::Csv,
+            IoFormat::Tsv => Self::Tsv,
             IoFormat::Toml => Self::Toml,
             IoFormat::Toon => Self::Toon,
             IoFormat::Xml => Self::Xml,
@@ -436,6 +441,7 @@ impl From<IoFormat> for OutputFormat {
             IoFormat::Gron => Self::Gron,
             IoFormat::Raw => Self::Raw,
             IoFormat::Csv => Self::Csv,
+            IoFormat::Tsv => Self::Tsv,
             IoFormat::Toml => Self::Toml,
             IoFormat::Toon => Self::Toon,
             IoFormat::Xml => Self::Xml,
@@ -889,7 +895,7 @@ struct OutputArgs {
     limit: Option<usize>,
 
     /// Omit Markdown node position information from structured output
-    /// (json, table, gron, csv, toml, toon, xml, yaml). Reduces output size
+    /// (json, table, gron, csv, tsv, toml, toon, xml, yaml). Reduces output size
     /// when source line/column spans aren't needed.
     #[arg(long, default_value_t = false, conflicts_with = "quiet")]
     no_position: bool,
@@ -3693,8 +3699,14 @@ impl Cli {
             OutputFormat::Csv => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
                 let runtime_values: Vec<_> = runtime_values.into_iter().filter(|v| !is_unmatched(v)).collect();
-                let csv_str = crate::output::csv::runtime_values_to_csv(&runtime_values, theme.as_ref())?;
+                let csv_str = runtime_values_to_csv(&runtime_values, theme.as_ref())?;
                 buf.extend_from_slice(csv_str.as_bytes());
+            }
+            OutputFormat::Tsv => {
+                let theme = colorize.then(mq_markdown::ColorTheme::from_env);
+                let runtime_values: Vec<_> = runtime_values.into_iter().filter(|v| !is_unmatched(v)).collect();
+                let tsv_str = runtime_values_to_tsv(&runtime_values, theme.as_ref())?;
+                buf.extend_from_slice(tsv_str.as_bytes());
             }
             OutputFormat::Toml => {
                 let toml_str = crate::output::toml::runtime_values_to_toml(&runtime_values)?;
