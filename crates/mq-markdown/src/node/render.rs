@@ -1294,6 +1294,15 @@ fn escape_text(value: String) -> String {
     escape_text_with(value, false)
 }
 
+/// Whether a line-initial `c` followed by `rest` can open a heading, list item, thematic
+/// break or setext underline. `-10%` and `#tag` stay plain.
+fn is_block_marker(c: char, rest: &str) -> bool {
+    match rest.chars().next() {
+        None | Some(' ' | '\t' | '\n') => true,
+        Some(next) => matches!(c, '#' | '-' | '=') && next == c,
+    }
+}
+
 /// Whether `text` starts with the `import ` or `export ` that makes a block ESM in MDX.
 fn starts_esm(text: &str) -> bool {
     text.starts_with("import ") || text.starts_with("export ")
@@ -1367,7 +1376,8 @@ fn escape_text_with(value: String, mdx: bool) -> String {
                 previous = Some(c);
                 continue;
             }
-            '#' | '-' | '+' | '>' | '=' if at_line_start => result.push('\\'),
+            '>' if at_line_start => result.push('\\'),
+            '#' | '-' | '+' | '=' if at_line_start && is_block_marker(c, rest) => result.push('\\'),
             '.' | ')' if leading_digits => result.push('\\'),
             '&' if starts_reference(rest) => result.push('\\'),
             '@' if previous.is_some_and(is_email_local) && is_email_domain(rest) => result.push('\\'),
@@ -1402,6 +1412,10 @@ mod tests {
     #[case::code_span("`not code`", "\\`not code\\`")]
     #[case::link_brackets("[not a link](x)", "\\[not a link\\](x)")]
     #[case::list_marker("- not a list item", "\\- not a list item")]
+    #[case::negative_number("-10%", "-10%")]
+    #[case::hashtag("#tag", "#tag")]
+    #[case::plus_number("+1", "+1")]
+    #[case::double_dash("--", "\\--")]
     #[case::blockquote_marker("> not a quote", "\\> not a quote")]
     #[case::table_pipe("| not a table |", "\\| not a table \\|")]
     #[case::strikethrough("~not strikethrough~", "\\~not strikethrough\\~")]

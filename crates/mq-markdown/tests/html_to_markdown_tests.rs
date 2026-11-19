@@ -599,33 +599,33 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::svg_with_title(
     "<svg><title>My Awesome Icon</title><circle cx=\"50\" cy=\"50\" r=\"40\" /></svg>",
     ConversionOptions::default(),
-    "[SVG: My Awesome Icon]"
+    "SVG: My Awesome Icon"
 )]
 #[case::svg_no_title(
     "<svg><rect width=\"100\" height=\"100\" /></svg>",
     ConversionOptions::default(),
-    "[SVG Image]"
+    "SVG Image"
 )]
 #[case::svg_empty_title(
     "<svg><title></title><path d=\"...\" /></svg>",
     ConversionOptions::default(),
-    "[SVG Image]"
+    "SVG Image"
 )]
 #[case::svg_title_with_whitespace_only(
     "<svg><title>   </title><ellipse /></svg>",
     ConversionOptions::default(),
-    "[SVG Image]"
+    "SVG Image"
 )]
-#[case::svg_empty_tag("<svg></svg>", ConversionOptions::default(), "[SVG Image]")]
+#[case::svg_empty_tag("<svg></svg>", ConversionOptions::default(), "SVG Image")]
 #[case::svg_title_with_inline_markup(
     "<svg><title>An <em>important</em> icon</title><line /></svg>",
     ConversionOptions::default(),
-    "[SVG: An *important* icon]"
+    "SVG: An *important* icon"
 )]
 #[case::svg_multiple_titles_uses_first(
     "<svg><title>First Title</title><title>Second Title</title><circle /></svg>",
     ConversionOptions::default(),
-    "[SVG: First Title]"
+    "SVG: First Title"
 )]
 #[case::checkbox_unchecked("<input type=\"checkbox\">", ConversionOptions::default(), "[ ]")]
 #[case::checkbox_checked("<input type=\"checkbox\" checked>", ConversionOptions::default(), "[x]")]

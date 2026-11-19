@@ -946,9 +946,9 @@ fn handle_svg_element(element: &HtmlElement) -> miette::Result<String> {
     }
 
     if let Some(title) = title_text {
-        Ok(format!("[SVG: {}]", title))
+        Ok(format!("SVG: {}", title))
     } else {
-        Ok("[SVG Image]".to_string())
+        Ok("SVG Image".to_string())
     }
 }
 
