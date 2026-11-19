@@ -3143,10 +3143,11 @@ fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
     }
 }
 
-/// Moves a string, array or bytes local out of a frame that is returning, so that `local + x`
-/// extends it in place instead of copying it. `None` leaves the local for the caller to clone.
-fn take_returning_local(locals: &mut Locals, slot: u16) -> Option<RuntimeValue> {
-    if slot == SELF_SLOT {
+/// For an `Add` in a frame that is returning, moves a string, array or bytes local out so that
+/// `local + x` extends it in place instead of copying it. `None` leaves the local for the caller to clone.
+/// Locals of the entry chunk can be read after the program finishes, so only other chunks move.
+fn take_returning_local(locals: &mut Locals, slot: u16, op: BinaryOp, can_move: bool) -> Option<RuntimeValue> {
+    if op != BinaryOp::Add || !can_move || slot == SELF_SLOT {
         return None;
     }
     match locals.direct_runtime_value_mut(slot)? {
@@ -3157,7 +3158,7 @@ fn take_returning_local(locals: &mut Locals, slot: u16) -> Option<RuntimeValue> 
     }
 }
 
-/// `ReturnBinaryLocalLocal` body. Locals of the entry chunk can be read after the program finishes, so only other chunks move.
+/// `ReturnBinaryLocalLocal` body.
 #[inline(never)]
 fn return_binary_local_local(
     op: BinaryOp,
@@ -3168,12 +3169,7 @@ fn return_binary_local_local(
     chunks: &Shared<Vec<Chunk>>,
     execution: &ExecutionContext<'_>,
 ) -> VmResult<RuntimeValue> {
-    let moved = if op == BinaryOp::Add && can_move && left != right {
-        take_returning_local(locals, left)
-    } else {
-        None
-    };
-    match moved {
+    match take_returning_local(locals, left, op, can_move && left != right) {
         Some(moved) => local_runtime_value(locals, right, chunks).and_then(|right| {
             binop(
                 op,
@@ -3189,7 +3185,7 @@ fn return_binary_local_local(
     }
 }
 
-/// `ReturnBinaryLocalConst` body. See [`return_binary_local_local`].
+/// `ReturnBinaryLocalConst` body.
 #[allow(clippy::too_many_arguments)]
 #[inline(never)]
 fn return_binary_local_const(
@@ -3202,12 +3198,7 @@ fn return_binary_local_const(
     chunks: &Shared<Vec<Chunk>>,
     execution: &ExecutionContext<'_>,
 ) -> VmResult<RuntimeValue> {
-    let moved = if op == BinaryOp::Add && can_move {
-        take_returning_local(locals, local)
-    } else {
-        None
-    };
-    match moved {
+    match take_returning_local(locals, local, op, can_move) {
         Some(moved) => binop(
             op,
             moved,
