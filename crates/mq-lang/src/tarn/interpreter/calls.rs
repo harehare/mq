@@ -877,7 +877,7 @@ pub(super) fn call_builtin<const N: usize>(
     env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
-    call_builtin_args(ident, Args::from_iter(args), self_value, env, host_functions)
+    call_builtin_args(ident, args.iter().cloned().collect(), self_value, env, host_functions)
 }
 
 pub(super) fn call_builtin_args(
