@@ -5803,3 +5803,28 @@ fn pooled_frames_do_not_keep_arguments_alive() {
     assert!(pools.pooled_local_frame_count() > 0);
     assert_eq!(Shared::strong_count(&array), 1);
 }
+
+#[rstest]
+#[case::ascii(r#"to_string(to_bytes("hello"))"#, "hello")]
+#[case::multibyte(r#"to_string(to_bytes("héllo"))"#, "héllo")]
+#[case::empty("to_string(to_bytes([]))", "")]
+#[case::from_numbers("to_string(to_bytes([104, 105]))", "hi")]
+fn to_string_decodes_bytes_as_utf8(#[case] code: &str, #[case] expected: &str) {
+    assert_eq!(run(code), RuntimeValue::from(expected), "{code}");
+}
+
+#[rstest]
+#[case::invalid_start("to_string(to_bytes([255, 0, 65]))")]
+#[case::truncated("to_string(to_bytes([195]))")]
+fn to_string_rejects_bytes_that_are_not_utf8(#[case] code: &str) {
+    let error = format!("{:?}", run_result(code).unwrap_err());
+    assert!(
+        error.contains("not valid UTF-8") && error.contains("to_hex"),
+        "{code}: {error}"
+    );
+}
+
+#[test]
+fn to_hex_still_gives_the_hex_text_of_bytes() {
+    assert_eq!(run("to_hex(to_bytes([255, 0, 65]))"), RuntimeValue::from("ff0041"));
+}

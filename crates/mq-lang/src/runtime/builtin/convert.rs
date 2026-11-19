@@ -280,6 +280,11 @@ pub(super) fn to_markdown_string(args: Vec<RuntimeValue>) -> Result<RuntimeValue
 pub(super) fn to_string(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
     match value {
         RuntimeValue::Symbol(s) => Ok(s.to_string().into()),
+        RuntimeValue::Bytes(b) => std::str::from_utf8(b).map(|s| s.into()).map_err(|e| {
+            Error::Runtime(format!(
+                "to_string: bytes are not valid UTF-8 ({e}); use to_hex for a hex string"
+            ))
+        }),
         o => Ok(o.to_string().into()),
     }
 }
