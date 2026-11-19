@@ -1384,8 +1384,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
         let chunk = &chunks[frame.chunk_index as usize];
-        // Locals of the entry chunk can be read after the program finishes.
-        let locals_end_with_frame = frame.chunk_index != 0;
         let locals = &mut frame.locals;
         let upvalues = frame.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
         let mut ip = frame.ip as usize;
@@ -2556,7 +2554,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     break 'dispatch FrameOutcome::Complete(locals.get(*slot));
                 }
                 OpCode::ReturnBinaryLocalLocal { op, left, right } => {
-                    let moved = if *op == BinaryOp::Add && locals_end_with_frame && left != right {
+                    // Locals of the entry chunk can be read after the program finishes.
+                    let moved = if *op == BinaryOp::Add && frame.chunk_index != 0 && left != right {
                         take_returning_local(locals, *left)
                     } else {
                         None
@@ -2579,7 +2578,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
                 }
                 OpCode::ReturnBinaryLocalConst { op, local, constant } => {
-                    let moved = if *op == BinaryOp::Add && locals_end_with_frame {
+                    let moved = if *op == BinaryOp::Add && frame.chunk_index != 0 {
                         take_returning_local(locals, *local)
                     } else {
                         None
