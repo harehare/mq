@@ -1359,7 +1359,7 @@ key: 1
     BuiltinDoc {
         name: "band",
         aliases: &[],
-        description: "Computes the bitwise AND: of two byte arrays of equal length, or of two integers from 0 to 2^53 - 1.",
+        description: "Computes the bitwise AND: of two byte arrays of equal length, or of two integers with a magnitude below 2^53 (negative integers act as 64-bit two's complement).",
         params: &["a", "b"],
         param_types: &["number | bytes", "number | bytes"],
         returns: "number | bytes",
@@ -1485,7 +1485,7 @@ key: 1
     BuiltinDoc {
         name: "bnot",
         aliases: &[],
-        description: "Computes the bitwise NOT (complement) of a byte array. For integers, use xor(n, mask) with an explicit width.",
+        description: "Computes the bitwise NOT (complement) of a byte array. For integers, use xor(n, -1).",
         params: &["bytes"],
         param_types: &["bytes"],
         returns: "bytes",
@@ -1496,7 +1496,7 @@ key: 1
     BuiltinDoc {
         name: "bor",
         aliases: &[],
-        description: "Computes the bitwise OR: of two byte arrays of equal length, or of two integers from 0 to 2^53 - 1.",
+        description: "Computes the bitwise OR: of two byte arrays of equal length, or of two integers with a magnitude below 2^53 (negative integers act as 64-bit two's complement).",
         params: &["a", "b"],
         param_types: &["number | bytes", "number | bytes"],
         returns: "number | bytes",
@@ -4448,7 +4448,7 @@ world"#,
     BuiltinDoc {
         name: "xor",
         aliases: &[],
-        description: "Computes the bitwise XOR: of two byte arrays of equal length, or of two integers from 0 to 2^53 - 1.",
+        description: "Computes the bitwise XOR: of two byte arrays of equal length, or of two integers with a magnitude below 2^53 (negative integers act as 64-bit two's complement).",
         params: &["a", "b"],
         param_types: &["number | bytes", "number | bytes"],
         returns: "number | bytes",

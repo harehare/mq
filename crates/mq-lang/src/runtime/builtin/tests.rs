@@ -3785,7 +3785,7 @@ fn test_bnot_number_points_to_xor() {
     assert_eq!(
         call("bnot", vec![RuntimeValue::Number(5.into())]),
         Err(Error::Runtime(
-            "bnot: expected bytes; for integers use xor(n, mask) with an explicit width".to_string()
+            "bnot: expected bytes; for integers use xor(n, -1)".to_string()
         ))
     );
 }
@@ -5882,6 +5882,14 @@ fn test_char_at_sees_mutation_of_an_indexed_string() {
 #[case::bor_above_32_bits("bor", 4_503_599_627_370_496, 1, 4_503_599_627_370_497)]
 #[case::xor_clears_the_same_bits("xor", 9_007_199_254_740_991, 9_007_199_254_740_991, 0)]
 #[case::xor_flips_the_low_bit("xor", 9_007_199_254_740_991, 1, 9_007_199_254_740_990)]
+#[case::band_masks_a_negative_number("band", -1, 255, 255)]
+#[case::band_of_a_negative_difference("band", -247, 255, 9)]
+#[case::band_of_two_negatives("band", -2, -4, -4)]
+#[case::bor_with_a_negative_number("bor", -8, 3, -5)]
+#[case::bor_of_minus_one_stays_minus_one("bor", -1, 12345, -1)]
+#[case::xor_with_minus_one_is_the_complement("xor", -1, 5, -6)]
+#[case::xor_of_two_negatives("xor", -3, -5, 6)]
+#[case::largest_negative("band", -9_007_199_254_740_991, 9_007_199_254_740_991, 1)]
 fn test_bitwise_numbers(#[case] name: &str, #[case] a: i64, #[case] b: i64, #[case] expected: i64) {
     assert_eq!(
         call(
@@ -5893,8 +5901,8 @@ fn test_bitwise_numbers(#[case] name: &str, #[case] a: i64, #[case] b: i64, #[ca
 }
 
 #[rstest]
-#[case::negative("band", (-1).into(), "-1")]
 #[case::too_large("bor", 9_007_199_254_740_992i64.into(), "9007199254740992")]
+#[case::too_negative("band", (-9_007_199_254_740_992i64).into(), "-9007199254740992")]
 #[case::fraction("xor", 1.5.into(), "1.5")]
 fn test_bitwise_numbers_reject_what_they_cannot_hold(
     #[case] name: &str,
@@ -5904,7 +5912,7 @@ fn test_bitwise_numbers_reject_what_they_cannot_hold(
     assert_eq!(
         call(name, vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(bad)]),
         Err(Error::Runtime(format!(
-            "{name}: expected an integer from 0 to 2^53 - 1, got {shown}"
+            "{name}: expected an integer whose magnitude is below 2^53, got {shown}"
         )))
     );
 }
