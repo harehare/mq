@@ -23,6 +23,7 @@ use std::{fs, path::PathBuf};
 
 use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
+use crate::output::csv::{runtime_values_to_csv, runtime_values_to_tsv};
 use crate::output::is_unmatched;
 use exit_status::{ExitReason, HAD_RESULT, ReadFailure};
 use mq_help as help;
@@ -3698,13 +3699,13 @@ impl Cli {
             OutputFormat::Csv => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
                 let runtime_values: Vec<_> = runtime_values.into_iter().filter(|v| !is_unmatched(v)).collect();
-                let csv_str = crate::output::csv::runtime_values_to_csv(&runtime_values, theme.as_ref())?;
+                let csv_str = runtime_values_to_csv(&runtime_values, theme.as_ref())?;
                 buf.extend_from_slice(csv_str.as_bytes());
             }
             OutputFormat::Tsv => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
                 let runtime_values: Vec<_> = runtime_values.into_iter().filter(|v| !is_unmatched(v)).collect();
-                let tsv_str = crate::output::csv::runtime_values_to_tsv(&runtime_values, theme.as_ref())?;
+                let tsv_str = runtime_values_to_tsv(&runtime_values, theme.as_ref())?;
                 buf.extend_from_slice(tsv_str.as_bytes());
             }
             OutputFormat::Toml => {
