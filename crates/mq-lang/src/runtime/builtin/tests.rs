@@ -424,7 +424,7 @@ fn test_random_string_rejects_lengths_above_the_allocation_limit() {
         &RuntimeValue::None,
         &Ident::new("random_string"),
         vec![
-            RuntimeValue::Number((MAX_RANGE_SIZE as i64 + 1).into()),
+            RuntimeValue::Number((MAX_ALLOC_SIZE as i64 + 1).into()),
             RuntimeValue::String(Shared::new("abc".into())),
         ]
         .into(),
@@ -1643,9 +1643,9 @@ fn test_eval_builtin_values_dict() {
 }
 
 #[rstest]
-#[case::excessively_large_range(0, 2_000_000, 1)]
-#[case::negative_step_large_range(10_000_000, 0, -1)]
-#[case::just_over_limit(0, 1_000_000, 1)]
+#[case::excessively_large_range(0, 20_000_000, 1)]
+#[case::negative_step_large_range(100_000_000, 0, -1)]
+#[case::just_over_limit(0, 16_777_216, 1)]
 fn test_range_size_limit_exceeds(#[case] start: isize, #[case] end: isize, #[case] step: isize) {
     let result = generate_numeric_range(start, end, step);
     assert!(result.is_err());
@@ -1658,7 +1658,7 @@ fn test_range_size_limit_exceeds(#[case] start: isize, #[case] end: isize, #[cas
 
 #[rstest]
 #[case::reasonable_range(0, 100, 1, 101)]
-#[case::exactly_at_limit(0, 999_999, 1, 1_000_000)]
+#[case::past_the_former_limit(0, 1_999_999, 1, 2_000_000)]
 #[case::ends_at_isize_max(isize::MAX - 1, isize::MAX, 1, 2)]
 #[case::ends_at_isize_min(isize::MIN + 1, isize::MIN, -1, 2)]
 #[case::step_past_isize_max(isize::MAX - 1, isize::MAX, isize::MAX, 1)]
@@ -1672,18 +1672,6 @@ fn test_range_size_limit_success(
     assert!(result.is_ok());
     if let Ok(vec) = result {
         assert_eq!(vec.len(), expected_len);
-    }
-}
-
-#[rstest]
-#[case::unicode_max_range('\u{0000}', '\u{10FFFF}', Some(1))]
-fn test_char_range_size_limit_exceeds(#[case] start: char, #[case] end: char, #[case] step: Option<i32>) {
-    let result = generate_char_range(start, end, step);
-    assert!(result.is_err());
-    if let Err(Error::Runtime(msg)) = result {
-        assert!(msg.contains("exceeds maximum allowed size"));
-    } else {
-        panic!("Expected Runtime error");
     }
 }
 
@@ -1733,12 +1721,12 @@ fn test_multi_char_range_success(#[case] start: &str, #[case] end: &str, #[case]
 #[rstest]
 #[case::excessively_large_array_repeat(
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
-        600_000,
+        10_000_000,
         "array repeat size"
     )]
 #[case::just_over_limit(
         vec![RuntimeValue::Number(1.into())],
-        1_000_001,
+        16_777_217,
         "exceeds maximum allowed size"
     )]
 fn test_repeat_array_size_limit_exceeds(
@@ -1762,10 +1750,10 @@ fn test_repeat_array_size_limit_exceeds(
         10,
         20
     )]
-#[case::exactly_at_limit(
+#[case::past_the_former_limit(
         vec![RuntimeValue::Number(1.into())],
-        1_000_000,
-        1_000_000
+        2_000_000,
+        2_000_000
     )]
 #[case::empty_array_huge_n(vec![], usize::MAX, 0)]
 fn test_repeat_array_size_limit_success(
@@ -1784,7 +1772,7 @@ fn test_repeat_array_size_limit_success(
 }
 
 #[rstest]
-#[case::excessively_large_string_repeat("test", 300_000, "string repeat size")]
+#[case::excessively_large_string_repeat("test", 5_000_000, "string repeat size")]
 fn test_repeat_string_size_limit_exceeds(#[case] string: &str, #[case] n: usize, #[case] expected_msg: &str) {
     let mut value = RuntimeValue::String(Shared::new(string.to_string()));
     let result = repeat(&mut value, n);
@@ -1810,11 +1798,11 @@ fn test_repeat_string_size_limit_success(#[case] string: &str, #[case] n: usize,
 }
 
 #[rstest]
-#[case::set_array("set", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into()), RuntimeValue::Number(1.into())])]
-#[case::insert_array("insert", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into()), RuntimeValue::Number(1.into())])]
-#[case::insert_string("insert", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into()), RuntimeValue::String(Shared::new("x".into()))])]
-#[case::del_array("del", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into())])]
-#[case::del_string("del", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into())])]
+#[case::set_array("set", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_ALLOC_SIZE as i64).into()), RuntimeValue::Number(1.into())])]
+#[case::insert_array("insert", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_ALLOC_SIZE as i64).into()), RuntimeValue::Number(1.into())])]
+#[case::insert_string("insert", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::Number((MAX_ALLOC_SIZE as i64).into()), RuntimeValue::String(Shared::new("x".into()))])]
+#[case::del_array("del", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_ALLOC_SIZE as i64).into())])]
+#[case::del_string("del", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::Number((MAX_ALLOC_SIZE as i64).into())])]
 fn collection_mutators_reject_oversized_indices(#[case] name: &str, #[case] args: Vec<RuntimeValue>) {
     let env = VmEnv::default();
     let result = eval_builtin(&RuntimeValue::None, &Ident::new(name), args.into(), &env);
