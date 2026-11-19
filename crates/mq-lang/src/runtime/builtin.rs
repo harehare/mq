@@ -1081,22 +1081,24 @@ fn encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
-/// Combines two integers from 0 to `2^53 - 1` bit by bit.
+/// Combines two integers bit by bit as 64-bit two's complement values, so a negative number acts as if
+/// its higher bits were all ones (`band(-1, 255)` is 255). Operands may be any integer whose magnitude
+/// is below `2^53`, and the result is then also exactly representable.
 fn bitwise_numbers(
     ident: &Ident,
     a: &number::Number,
     b: &number::Number,
-    op: fn(u64, u64) -> u64,
+    op: fn(i64, i64) -> i64,
 ) -> Result<RuntimeValue, Error> {
     for n in [a, b] {
-        if !n.is_int() || n.value() < 0.0 || n.value() >= hash::INT_LIMIT {
+        if !n.is_int() || n.value().abs() >= hash::INT_LIMIT {
             return Err(Error::Runtime(format!(
-                "{ident}: expected an integer from 0 to 2^53 - 1, got {}",
+                "{ident}: expected an integer whose magnitude is below 2^53, got {}",
                 n.value()
             )));
         }
     }
-    Ok(RuntimeValue::Number(op(a.to_int() as u64, b.to_int() as u64).into()))
+    Ok(RuntimeValue::Number(op(a.to_int(), b.to_int()).into()))
 }
 
 #[mq_macros::mq_fn(name = "xor", params = Fixed(2))]
@@ -1176,7 +1178,7 @@ fn bnot_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     match args.as_mut_slice() {
         [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::Bytes(Shared::new(b.iter().map(|x| !x).collect()))),
         [RuntimeValue::Number(_)] => Err(Error::Runtime(
-            "bnot: expected bytes; for integers use xor(n, mask) with an explicit width".to_string(),
+            "bnot: expected bytes; for integers use xor(n, -1)".to_string(),
         )),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => Err(invalid_arity(ident, 1, args.len())),
