@@ -20,7 +20,6 @@ workflows:
         - 'codecov/codecov-action@v7.1.1'
         - 'embarkstudios/cargo-deny-action@v2.1.1'
         - 'extractions/setup-just@v4.0.0'
-        - 'harehare/setup-mq@v1.1.6'
         - 'harehare/setup-mq@v1.1.7'
         - 'swatinem/rust-cache@v2.9.3'
         - 'taiki-e/install-action@v2.90.3'
@@ -224,11 +223,6 @@ dependencies:
         commit: 'sha1-8da46b539cd8fe6ab27ca75128919a18d757604c'
         owner_id: 124156
         repo_id: 743626948
-    'harehare/setup-mq@v1.1.6':
-        ref: 'v1.1.6'
-        commit: 'sha1-cfe56378737401938b84d329d42f63cafa263a71'
-        owner_id: 533078
-        repo_id: 966154753
     'harehare/setup-mq@v1.1.7':
         ref: 'v1.1.7'
         commit: 'sha1-5a6827e5ae7f927b80445ebb8b68d8331ac7a506'
