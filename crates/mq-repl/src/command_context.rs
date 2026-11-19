@@ -1,7 +1,5 @@
 use std::{fmt, fs, io::Write, path::PathBuf, process::Command as ProcessCommand};
 
-#[cfg(all(feature = "clipboard", not(target_os = "android")))]
-use arboard::Clipboard;
 use miette::{IntoDiagnostic, miette};
 use strum::IntoEnumIterator;
 
@@ -30,7 +28,6 @@ pub enum CommandOutput {
 pub enum Command {
     All,
     Clear,
-    Copy,
     Edit,
     Env(String, String),
     Eval(String),
@@ -53,7 +50,6 @@ impl fmt::Display for Command {
         match self {
             Command::All => write!(f, "/all"),
             Command::Clear => write!(f, "/clear"),
-            Command::Copy => write!(f, "/copy"),
             Command::Edit => write!(f, "/edit"),
             Command::Env(_, _) => write!(f, "/env"),
             Command::Help => write!(f, "/help"),
@@ -77,7 +73,6 @@ impl Command {
         match self {
             Command::All => format!("{:<12}{}", "/all", "Show all remaining truncated output"),
             Command::Clear => format!("{:<12}{}", "/clear", "Clear the terminal screen"),
-            Command::Copy => format!("{:<12}{}", "/copy", "Copy the execution results to the clipboard"),
             Command::Edit => format!("{:<12}{}", "/edit", "Edit the current buffer in external editor"),
             Command::Env(_, _) => format!("{:<12}{}", "/env", "Set environment variables (key value)"),
             Command::Help => format!("{:<12}{}", "/help", "Print command help"),
@@ -106,7 +101,6 @@ impl From<String> for Command {
         match s.as_str().split_whitespace().collect::<Vec<&str>>().as_slice() {
             ["/all"] => Command::All,
             ["/clear"] => Command::Clear,
-            ["/copy"] => Command::Copy,
             ["/edit"] => Command::Edit,
             ["/env", name, value] => Command::Env(name.to_string(), value.to_string()),
             ["/help"] => Command::Help,
@@ -425,28 +419,6 @@ impl CommandContext {
                 self.reindex_document();
                 Ok(CommandOutput::None)
             }
-            Command::Copy => {
-                #[cfg(all(feature = "clipboard", not(target_os = "android")))]
-                {
-                    if self.input.is_empty() {
-                        return Ok(CommandOutput::String(vec!["nothing to copy".to_string()]));
-                    }
-                    let text = self
-                        .input
-                        .iter()
-                        .map(|runtime_value| runtime_value.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    let mut clipboard = Clipboard::new().unwrap();
-
-                    clipboard.set_text(text).into_diagnostic()?;
-                    Ok(CommandOutput::None)
-                }
-                #[cfg(any(not(feature = "clipboard"), target_os = "android"))]
-                {
-                    Err(miette!("Clipboard functionality is not available on this platform"))
-                }
-            }
             Command::Edit => {
                 // Get editor from environment variables
                 let editor = std::env::var("EDITOR")
@@ -678,7 +650,6 @@ mod tests {
         assert!(matches!(Command::from("/all".to_string()), Command::All));
         assert!(matches!(Command::from("/more".to_string()), Command::More));
         assert!(matches!(Command::from("/clear".to_string()), Command::Clear));
-        assert!(matches!(Command::from("/copy".to_string()), Command::Copy));
         assert!(matches!(Command::from("/edit".to_string()), Command::Edit));
         assert!(matches!(Command::from("/help".to_string()), Command::Help));
         assert!(matches!(Command::from("/history".to_string()), Command::History));
@@ -739,7 +710,6 @@ mod tests {
         assert_eq!(format!("{}", Command::All), "/all");
         assert_eq!(format!("{}", Command::More), "/more");
         assert_eq!(format!("{}", Command::Clear), "/clear");
-        assert_eq!(format!("{}", Command::Copy), "/copy");
         assert_eq!(format!("{}", Command::Edit), "/edit");
         assert_eq!(format!("{}", Command::Help), "/help");
         assert_eq!(format!("{}", Command::History), "/history");
@@ -765,7 +735,6 @@ mod tests {
                 Command::All => assert!(help.contains("/all")),
                 Command::More => assert!(help.contains("/more")),
                 Command::Clear => assert!(help.contains("/clear")),
-                Command::Copy => assert!(help.contains("/copy")),
                 Command::Edit => assert!(help.contains("/edit")),
                 Command::Help => assert!(help.contains("/help")),
                 Command::History => assert!(help.contains("/history")),
@@ -881,7 +850,6 @@ mod tests {
         let result = ctx.execute("/help").unwrap();
         if let CommandOutput::String(help_strings) = result {
             assert!(!help_strings.is_empty());
-            assert!(help_strings.iter().any(|s| s.contains("/copy")));
             assert!(help_strings.iter().any(|s| s.contains("/env")));
             assert!(help_strings.iter().any(|s| s.contains("/help")));
         } else {

@@ -33,7 +33,6 @@ Commands start with `/`. `/help` prints this list.
 | ---------- | ------------------------------------------------------------------- |
 | `/load`    | Load one or more Markdown files (supports globs, e.g. `/load *.md`) |
 | `/save`    | Save the current result to a file (`/save out.md`)                  |
-| `/copy`    | Copy the result to the clipboard (needs the `clipboard` feature)    |
 | `/vars`    | List bound variables                                                |
 | `/reset`   | Reset the REPL state (clear variables and input)                    |
 | `/env`     | Set an environment variable (`/env KEY value`)                      |
@@ -76,12 +75,6 @@ engine.register_fn("double", |n: i64| Ok(n * 2));
 
 Repl::with_engine(engine, Vec::new()).run().unwrap();
 ```
-
-## Features
-
-| Feature     | Description                               |
-| ----------- | ----------------------------------------- |
-| `clipboard` | `/copy` through `arboard` (on by default) |
 
 ## Documentation
 
