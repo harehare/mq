@@ -2600,47 +2600,29 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     break 'dispatch FrameOutcome::Complete(locals.get(*slot));
                 }
                 OpCode::ReturnBinaryLocalLocal { op, left, right } => {
-                    // Locals of the entry chunk can be read after the program finishes.
-                    let moved = if *op == BinaryOp::Add && frame.chunk_index != 0 && left != right {
-                        take_returning_local(locals, *left)
-                    } else {
-                        None
-                    };
-                    let value = match moved {
-                        Some(moved) => local_runtime_value(locals, *right, chunks).and_then(|right| {
-                            binop(
-                                *op,
-                                moved,
-                                right,
-                                locals,
-                                chunks,
-                                execution.env,
-                                execution.host_functions,
-                            )
-                        }),
-                        None => eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution),
-                    }
+                    let value = return_binary_local_local(
+                        *op,
+                        locals,
+                        *left,
+                        *right,
+                        frame.chunk_index != 0,
+                        chunks,
+                        execution,
+                    )
                     .map_err(|e| locate(chunk, ip, e))?;
                     break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
                 }
                 OpCode::ReturnBinaryLocalConst { op, local, constant } => {
-                    let moved = if *op == BinaryOp::Add && frame.chunk_index != 0 {
-                        take_returning_local(locals, *local)
-                    } else {
-                        None
-                    };
-                    let value = match moved {
-                        Some(moved) => binop(
-                            *op,
-                            moved,
-                            chunk.constants[*constant as usize].clone(),
-                            locals,
-                            chunks,
-                            execution.env,
-                            execution.host_functions,
-                        ),
-                        None => eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution),
-                    }
+                    let value = return_binary_local_const(
+                        *op,
+                        locals,
+                        *local,
+                        chunk,
+                        *constant,
+                        frame.chunk_index != 0,
+                        chunks,
+                        execution,
+                    )
                     .map_err(|e| locate(chunk, ip, e))?;
                     break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
                 }
@@ -3172,6 +3154,70 @@ fn take_returning_local(locals: &mut Locals, slot: u16) -> Option<RuntimeValue> 
             Some(std::mem::take(value))
         }
         _ => None,
+    }
+}
+
+/// `ReturnBinaryLocalLocal` body. Locals of the entry chunk can be read after the program finishes, so only other chunks move.
+#[inline(never)]
+fn return_binary_local_local(
+    op: BinaryOp,
+    locals: &mut Locals,
+    left: u16,
+    right: u16,
+    can_move: bool,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<RuntimeValue> {
+    let moved = if op == BinaryOp::Add && can_move && left != right {
+        take_returning_local(locals, left)
+    } else {
+        None
+    };
+    match moved {
+        Some(moved) => local_runtime_value(locals, right, chunks).and_then(|right| {
+            binop(
+                op,
+                moved,
+                right,
+                locals,
+                chunks,
+                execution.env,
+                execution.host_functions,
+            )
+        }),
+        None => eval_local_local_binary_op(op, locals, left, right, chunks, execution),
+    }
+}
+
+/// `ReturnBinaryLocalConst` body. See [`return_binary_local_local`].
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn return_binary_local_const(
+    op: BinaryOp,
+    locals: &mut Locals,
+    local: u16,
+    chunk: &Chunk,
+    constant: u16,
+    can_move: bool,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<RuntimeValue> {
+    let moved = if op == BinaryOp::Add && can_move {
+        take_returning_local(locals, local)
+    } else {
+        None
+    };
+    match moved {
+        Some(moved) => binop(
+            op,
+            moved,
+            chunk.constants[constant as usize].clone(),
+            locals,
+            chunks,
+            execution.env,
+            execution.host_functions,
+        ),
+        None => eval_local_const_binary_op(op, locals, local, chunk, constant, chunks, execution),
     }
 }
 
