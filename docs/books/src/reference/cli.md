@@ -79,7 +79,7 @@ Options:
       --eval-all
           Merge all input files into one input and run the query once (like yq's `eval-all`), instead of once per file
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format. When omitted, inferred from the `-o`/`--output` file extension if given (e.g. `.json` -> json, `.csv` -> csv), else defaults to markdown [possible values: markdown, html, text, json, table, grep, gron, raw, csv, jsonl, toml, toon, xml, yaml, shell, none]
+          Set output format. When omitted, inferred from the `-o`/`--output` file extension if given (e.g. `.json` -> json, `.csv` -> csv), else defaults to markdown [possible values: markdown, html, text, json, table, grep, gron, raw, csv, tsv, jsonl, toml, toon, xml, yaml, shell, none]
       --shell-prefix <PREFIX>
           Prefix for variable names in `-F shell` output (must be non-empty) [default: MQ_]
   -U, --update
@@ -127,7 +127,7 @@ Options:
       --limit <N>
           Limit output to at most N results
       --no-position
-          Omit Markdown node position information from structured output (json, table, gron, csv, toml, toon, xml, yaml). Reduces output size when source line/column spans aren't needed
+          Omit Markdown node position information from structured output (json, table, gron, csv, tsv, toml, toon, xml, yaml). Reduces output size when source line/column spans aren't needed
   -c, --compact
           Print JSON on a single line, without pretty-printing. Only valid with -F json
       --indent <N>
@@ -135,7 +135,7 @@ Options:
       --tab
           Indent pretty-printed output with tabs instead of spaces, jq's `--tab`. Only valid with -F json or -F xml
   -T, --format <FORMAT>
-          Set both input and output format at once (shorthand for `-I FORMAT -F FORMAT`). An explicit `-I`/`-F` overrides this for that side. Only accepts formats valid on both sides; e.g. `-I mdx` or `-F table` still require the dedicated flag [possible values: markdown, html, text, json, jsonl, gron, raw, csv, toml, toon, xml, yaml]
+          Set both input and output format at once (shorthand for `-I FORMAT -F FORMAT`). An explicit `-I`/`-F` overrides this for that side. Only accepts formats valid on both sides; e.g. `-I mdx` or `-F table` still require the dedicated flag [possible values: markdown, html, text, json, jsonl, gron, raw, csv, tsv, toml, toon, xml, yaml]
   -P, --parallel-threshold <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --args [<ARGS>...]
