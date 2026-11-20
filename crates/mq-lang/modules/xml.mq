@@ -224,9 +224,14 @@ end
 #
 # Returns: string
 def xml_attr(data, name):
-  _expect_type("xml::xml_attr", "data", data, "dict")
-  | _expect_type("xml::xml_attr", "name", name, "string")
-  | data["attributes"][name]
+  _expect_type("xml::xml_attr", "name", name, "string")
+  | if (is_none(data)):
+      None
+    else:
+      do
+        _expect_type("xml::xml_attr", "data", data, "dict")
+        | data["attributes"][name]
+      end
 end
 
 def _xml_text_parts(data):
@@ -245,8 +250,13 @@ end
 #
 # Returns: string
 def xml_text(data):
-  _expect_type("xml::xml_text", "data", data, "dict")
-  | join(_xml_text_parts(data), " ")
+  if (is_none(data)):
+    ""
+  else:
+    do
+      _expect_type("xml::xml_text", "data", data, "dict")
+      | join(_xml_text_parts(data), " ")
+    end
 end
 
 # Converts a data structure (typically the `{tag, attributes, children,

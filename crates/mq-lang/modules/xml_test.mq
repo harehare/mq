@@ -116,6 +116,12 @@ def test_xml_argument_type_errors(op):
   | assert_eq(result, "error")
 end
 
+# A missing element (None from xml_find) is accepted by the leaf accessors.
+def test_xml_leaf_accessors_accept_none():
+  assert_eq(xml::xml_text(None), "")
+  | assert_eq(xml::xml_attr(None, "x"), None)
+end
+
 # Valid arguments are accepted by the same calls.
 # @parametrize([
 #   [fn(): xml::xml_find_all(xml::xml_parse("<a x=\"1\"><b>t</b></a>"), "b");],
