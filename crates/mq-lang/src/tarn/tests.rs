@@ -3376,7 +3376,7 @@ fn try_depth_limit_returns_its_unstarted_frame_to_the_pool() {
     let program = crate::parse("try: 1 catch(e): 2;", Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
-    let interpreter::RunOutput { result, pools, .. } = interpreter::run(
+    let interpreter::RunOutput { result, pools, .. } = interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3480,7 +3480,7 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
 
-    let result = interpreter::run(
+    let result = interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3540,7 +3540,7 @@ fn debugger_boundary_fires_once_per_call_with_a_literal_argument() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
 
-    interpreter::run(
+    interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3591,7 +3591,7 @@ fn dynamic_call_caller_node_is_the_call_expression_not_the_last_argument() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
 
-    interpreter::run(
+    interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3642,7 +3642,7 @@ fn debugger_hook_exposes_closure_bindings() {
     let program = crate::parse("let f = fn(x): x; | breakpoint() | f(1)", Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     let mut recorder = Recorder::default();
-    interpreter::run(
+    interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3747,7 +3747,7 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
         host_functions,
     );
 
-    interpreter::run(
+    interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3840,7 +3840,7 @@ fn vm_debugger_hook_applies_live_frame_writes(
         HostFunctions::default(),
     );
 
-    let result = interpreter::run(
+    let result = interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3903,7 +3903,7 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
         HostFunctions::default(),
     );
 
-    let result = interpreter::run(
+    let result = interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -3981,7 +3981,7 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
         HostFunctions::default(),
     );
 
-    interpreter::run(
+    interpreter::run_with_options(
         &compiled,
         RuntimeValue::None,
         interpreter::Run::new(interpreter::RunOptions {
@@ -5798,7 +5798,7 @@ fn pooled_frames_do_not_keep_arguments_alive() {
     .unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
-    let interpreter::RunOutput { result, pools, .. } = interpreter::run(
+    let interpreter::RunOutput { result, pools, .. } = interpreter::run_with_options(
         &compiled,
         RuntimeValue::Array(Shared::clone(&array)),
         interpreter::Run::new(interpreter::RunOptions {

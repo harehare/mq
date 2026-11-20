@@ -192,7 +192,7 @@ impl SplitProgram {
             let result = map_input_values(input, |value| {
                 let execution_pools = std::mem::take(pools);
                 if self.let_names.is_empty() {
-                    let (result, next_pools) = interpreter::run_plain(
+                    let (result, next_pools) = interpreter::run(
                         &self.program,
                         value,
                         context.run_options(remaining_timeout(deadline)),
@@ -202,7 +202,7 @@ impl SplitProgram {
                     *pools = next_pools;
                     result
                 } else {
-                    let output = interpreter::run(
+                    let output = interpreter::run_with_options(
                         &self.program,
                         value,
                         interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
@@ -227,7 +227,7 @@ impl SplitProgram {
         };
         let input = RuntimeValue::Array(Shared::new(values));
         let result = if self.let_names.is_empty() {
-            let (result, next_pools) = interpreter::run_plain(
+            let (result, next_pools) = interpreter::run(
                 after,
                 input,
                 context.run_options(remaining_timeout(deadline)),
@@ -238,7 +238,7 @@ impl SplitProgram {
             result
         } else {
             let let_values: Vec<RuntimeValue> = let_bindings.into_iter().map(|(_, value)| value).collect();
-            let output = interpreter::run(
+            let output = interpreter::run_with_options(
                 after,
                 input,
                 interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
