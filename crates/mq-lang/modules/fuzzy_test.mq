@@ -89,3 +89,40 @@ end
 def test_fuzzy_match_and_filter_never_return_more_than_the_candidates(candidates, query, threshold):
   assert_true(len(fuzzy::fuzzy_match(candidates, query)) <= len(candidates) && len(fuzzy::fuzzy_filter(candidates, query, threshold)) <= len(candidates))
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): fuzzy::levenshtein(1, "b");],
+#   [fn(): fuzzy::levenshtein("a", 1);],
+#   [fn(): fuzzy::jaro(1, "b");],
+#   [fn(): fuzzy::jaro("a", 1);],
+#   [fn(): fuzzy::jaro_winkler(1, "b");],
+#   [fn(): fuzzy::jaro_winkler("a", 1);],
+#   [fn(): fuzzy::fuzzy_match(["a", "b"], 1);],
+#   [fn(): fuzzy::fuzzy_match_levenshtein(["a", "b"], 1);],
+#   [fn(): fuzzy::fuzzy_match_jaro("a", "a");],
+#   [fn(): fuzzy::fuzzy_match_jaro(["a", "b"], 1);],
+#   [fn(): fuzzy::fuzzy_filter(["a", "b"], 1, 0.5);],
+#   [fn(): fuzzy::fuzzy_filter(["a", "b"], "a", "a");],
+#   [fn(): fuzzy::fuzzy_best_match(["a", "b"], 1);],
+# ])
+def test_fuzzy_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): fuzzy::levenshtein("a", "b");],
+#   [fn(): fuzzy::jaro("a", "b");],
+#   [fn(): fuzzy::jaro_winkler("a", "b");],
+#   [fn(): fuzzy::fuzzy_match(["a", "b"], "a");],
+#   [fn(): fuzzy::fuzzy_match_levenshtein(["a", "b"], "a");],
+#   [fn(): fuzzy::fuzzy_match_jaro(["a", "b"], "a");],
+#   [fn(): fuzzy::fuzzy_filter(["a", "b"], "a", 0.5);],
+#   [fn(): fuzzy::fuzzy_best_match(["a", "b"], "a");],
+# ])
+def test_fuzzy_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

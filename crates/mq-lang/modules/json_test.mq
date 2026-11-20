@@ -317,3 +317,31 @@ def test_json_stringify_is_stable_after_a_round_trip(value, indent):
   | let text = json::json_stringify(value, options)
   | assert_eq(json::json_stringify(json::json_parse(text), options), text)
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): json::json_pointer_to_path({"a": [1]}, 1);],
+#   [fn(): json::json_pointer_from_path("a");],
+#   [fn(): json::json_pointer_get({"a": [1]}, 1);],
+#   [fn(): json::json_pointer_has({"a": [1]}, 1);],
+#   [fn(): json::json_pointer_set({"a": [1]}, 1, 2);],
+#   [fn(): json::json_pointer_del({"a": [1]}, 1);],
+# ])
+def test_json_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): json::json_pointer_to_path({"a": [1]}, "/a/0");],
+#   [fn(): json::json_pointer_from_path(["a", 0]);],
+#   [fn(): json::json_pointer_get({"a": [1]}, "/a/0");],
+#   [fn(): json::json_pointer_has({"a": [1]}, "/a/0");],
+#   [fn(): json::json_pointer_set({"a": [1]}, "/a/0", 2);],
+#   [fn(): json::json_pointer_del({"a": [1]}, "/a/0");],
+# ])
+def test_json_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

@@ -3616,3 +3616,27 @@ def fold_while(arr, init, f):
       | acc
     end
 end
+
+# Argument checks for module functions. Each returns `v`, or raises an error
+# naming the function (`who`) and argument so the failure is not reported from
+# deep inside the implementation.
+def _expect_type(who, arg, v, t):
+  if (type(v) == t):
+    v
+  else:
+    error(who + ": `" + arg + "` must be " + t + ", got " + type(v))
+end
+
+def _expect_function(who, arg, v):
+  if (type(v) == "function" || type(v) == "native_function"):
+    v
+  else:
+    error(who + ": `" + arg + "` must be a function, got " + type(v))
+end
+
+def _expect_one_of(who, arg, v, types):
+  if (contains(types, type(v))):
+    v
+  else:
+    error(who + ": `" + arg + "` must be " + join(types, " or ") + ", got " + type(v))
+end

@@ -250,3 +250,30 @@ def test_html_select_general_sibling_over_many_siblings():
   | assert_eq(len(html::html_select(html, ".missing ~ span")), 0)
   | assert_eq(len(html::html_select(html, "li ~ span")), 1)
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): html::html_find_all(1, "p");],
+#   [fn(): html::html_find_all(html::html_parse("<p id=\"1\">t</p>"), 1);],
+#   [fn(): html::html_find(1, "p");],
+#   [fn(): html::html_find(html::html_parse("<p id=\"1\">t</p>"), 1);],
+#   [fn(): html::html_attr(1, "id");],
+#   [fn(): html::html_attr(html::html_parse("<p id=\"1\">t</p>"), 1);],
+#   [fn(): html::html_text(1);],
+# ])
+def test_html_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): html::html_find_all(html::html_parse("<p id=\"1\">t</p>"), "p");],
+#   [fn(): html::html_find(html::html_parse("<p id=\"1\">t</p>"), "p");],
+#   [fn(): html::html_attr(html::html_parse("<p id=\"1\">t</p>"), "id");],
+#   [fn(): html::html_text(html::html_parse("<p id=\"1\">t</p>"));],
+# ])
+def test_html_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

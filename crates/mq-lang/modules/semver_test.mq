@@ -285,3 +285,42 @@ end
 def test_semver_compare_invalid_string():
   assert_eq(try: semver::semver_compare("nope", "1.0.0") catch: "err", "err")
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): semver::semver_to_string(1);],
+#   [fn(): semver::semver_compare(1, "2.0.0");],
+#   [fn(): semver::semver_compare("1.0.0", 1);],
+#   [fn(): semver::semver_bump_major(1);],
+#   [fn(): semver::semver_bump_minor(1);],
+#   [fn(): semver::semver_bump_patch(1);],
+#   [fn(): semver::semver_sort("a");],
+#   [fn(): semver::semver_max("a");],
+#   [fn(): semver::semver_min("a");],
+#   [fn(): semver::semver_satisfies(1, "^1.0.0");],
+#   [fn(): semver::semver_satisfies("1.2.3", 1);],
+#   [fn(): semver::semver_max_satisfying("a", "^1.0.0");],
+#   [fn(): semver::semver_max_satisfying(["1.0.0", "1.5.0"], 1);],
+# ])
+def test_semver_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): semver::semver_to_string("1.2.3");],
+#   [fn(): semver::semver_compare("1.0.0", "2.0.0");],
+#   [fn(): semver::semver_bump_major("1.2.3");],
+#   [fn(): semver::semver_bump_minor("1.2.3");],
+#   [fn(): semver::semver_bump_patch("1.2.3");],
+#   [fn(): semver::semver_sort(["2.0.0", "1.0.0"]);],
+#   [fn(): semver::semver_max(["2.0.0", "1.0.0"]);],
+#   [fn(): semver::semver_min(["2.0.0", "1.0.0"]);],
+#   [fn(): semver::semver_satisfies("1.2.3", "^1.0.0");],
+#   [fn(): semver::semver_max_satisfying(["1.0.0", "1.5.0"], "^1.0.0");],
+# ])
+def test_semver_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

@@ -93,7 +93,9 @@ end
 #
 # Returns: array
 def html_find_all(data, tag):
-  _html_find_all(data, tag)
+  _expect_type("html::html_find_all", "data", data, "dict")
+  | _expect_type("html::html_find_all", "tag", tag, "string")
+  | _html_find_all(data, tag)
 end
 
 # Recursively finds the first element (including `data` itself) whose tag
@@ -107,7 +109,9 @@ end
 #
 # Returns: dict
 def html_find(data, tag):
-  first(_html_find_all(data, tag))
+  _expect_type("html::html_find", "data", data, "dict")
+  | _expect_type("html::html_find", "tag", tag, "string")
+  | first(_html_find_all(data, tag))
 end
 
 # Returns the value of attribute `name` on element `data`, or `None` if the
@@ -121,7 +125,9 @@ end
 #
 # Returns: string
 def html_attr(data, name):
-  data["attributes"][name]
+  _expect_type("html::html_attr", "data", data, "dict")
+  | _expect_type("html::html_attr", "name", name, "string")
+  | data["attributes"][name]
 end
 
 def _html_text_parts(data):
@@ -140,7 +146,8 @@ end
 #
 # Returns: string
 def html_text(data):
-  join(_html_text_parts(data), " ")
+  _expect_type("html::html_text", "data", data, "dict")
+  | join(_html_text_parts(data), " ")
 end
 
 def _html_escape_json_string(str):

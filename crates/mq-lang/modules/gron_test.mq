@@ -57,3 +57,21 @@ def test_gron_stringify_is_stable_after_a_round_trip(value):
   let text = gron::gron_stringify(value)
   | assert_eq(gron::gron_stringify(gron::gron_parse(text)), text)
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): gron::gron_parse(1);],
+# ])
+def test_gron_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): gron::gron_parse(gron::gron_stringify({"a": 1}));],
+# ])
+def test_gron_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

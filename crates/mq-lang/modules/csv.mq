@@ -50,7 +50,11 @@ end
 # ```
 #
 # Returns: array
-def csv_parse_with_delimiter(input, delimiter, has_header): _csv_parse(input, delimiter, has_header);
+def csv_parse_with_delimiter(input, delimiter, has_header):
+  _expect_type("csv::csv_parse_with_delimiter", "input", input, "string")
+  | _expect_type("csv::csv_parse_with_delimiter", "delimiter", delimiter, "string")
+  | _csv_parse(input, delimiter, has_header)
+end
 
 # Parses CSV content using a comma as the delimiter.
 # With a header, duplicate header names and rows longer than the header are
@@ -63,7 +67,10 @@ def csv_parse_with_delimiter(input, delimiter, has_header): _csv_parse(input, de
 # ```
 #
 # Returns: array
-def csv_parse(input, has_header): _csv_parse(input, ",", has_header);
+def csv_parse(input, has_header):
+  _expect_type("csv::csv_parse", "input", input, "string")
+  | _csv_parse(input, ",", has_header)
+end
 
 # Parses TSV (Tab-Separated Values) content.
 #
@@ -74,7 +81,10 @@ def csv_parse(input, has_header): _csv_parse(input, ",", has_header);
 # ```
 #
 # Returns: array
-def tsv_parse(input, has_header): _csv_parse(input, "\t", has_header);
+def tsv_parse(input, has_header):
+  _expect_type("csv::tsv_parse", "input", input, "string")
+  | _csv_parse(input, "\t", has_header)
+end
 
 # Parses PSV (Pipe-Separated Values) content.
 #
@@ -85,7 +95,10 @@ def tsv_parse(input, has_header): _csv_parse(input, "\t", has_header);
 # ```
 #
 # Returns: array
-def psv_parse(input, has_header): _csv_parse(input, "|", has_header);
+def psv_parse(input, has_header):
+  _expect_type("csv::psv_parse", "input", input, "string")
+  | _csv_parse(input, "|", has_header)
+end
 
 # Converts data to a CSV string with a specified delimiter. A row whose only field is empty is
 # written as `""`, so it is not read back as a blank line.
@@ -99,7 +112,9 @@ def psv_parse(input, has_header): _csv_parse(input, "|", has_header);
 #
 # Returns: string
 def csv_stringify(data, delimiter):
-  let headers = _csv_headers(data)
+  _expect_type("csv::csv_stringify", "data", data, "array")
+  | _expect_type("csv::csv_stringify", "delimiter", delimiter, "string")
+  | let headers = _csv_headers(data)
   | let rows = if (!is_empty(data) && is_dict(first(data))): data else: skip(data, 1)
   | let to_line = fn(row):
       let fields = map(if (is_dict(row)): map(headers, fn(h): row[h];) else: row, fn(f): _csv_field(f, delimiter);)
@@ -123,7 +138,8 @@ end
 #
 # Returns: string
 def csv_to_markdown_table(data):
-  if (is_empty(data)):
+  _expect_type("csv::csv_to_markdown_table", "data", data, "array")
+  | if (is_empty(data)):
     ""
   else:
     do
@@ -150,7 +166,8 @@ end
 #
 # Returns: string
 def csv_to_json(data):
-  def _escape_control_char(code):
+  _expect_type("csv::csv_to_json", "data", data, "array")
+  | def _escape_control_char(code):
     if (code < 32):
       "\\u00" + slice("0123456789abcdef", floor(code / 16), floor(code / 16) + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
     else:
@@ -252,7 +269,8 @@ end
 #
 # Returns: array
 def forward_fill(rows, cols, group_by = [], missing = "both", max_gap = None):
-  if (len(rows) == 0):
+  _expect_type("csv::forward_fill", "rows", rows, "array")
+  | if (len(rows) == 0):
     rows
   else:
     do
@@ -272,7 +290,8 @@ end
 #
 # Returns: array
 def backward_fill(rows, cols, group_by = [], missing = "both", max_gap = None):
-  if (len(rows) == 0):
+  _expect_type("csv::backward_fill", "rows", rows, "array")
+  | if (len(rows) == 0):
     rows
   else:
     do
@@ -292,7 +311,9 @@ end
 #
 # Returns: array
 def constant_fill(rows, defaults, missing = "both"):
-  if (len(rows) == 0):
+  _expect_type("csv::constant_fill", "rows", rows, "array")
+  | _expect_type("csv::constant_fill", "defaults", defaults, "dict")
+  | if (len(rows) == 0):
     rows
   else:
     do
@@ -354,7 +375,8 @@ end
 #
 # Returns: array
 def sort_rows(rows, cols, desc = false):
-  if (len(rows) == 0):
+  _expect_type("csv::sort_rows", "rows", rows, "array")
+  | if (len(rows) == 0):
     rows
   else:
     do

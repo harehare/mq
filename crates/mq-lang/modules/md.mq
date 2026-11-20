@@ -376,7 +376,10 @@ def table_align(aligns): to_md_table_align(aligns);
 #
 # Returns: array
 def table(header, rows, aligns = []):
-  let aligns = if (is_empty(aligns)): map(header, fn(_): "none";) else: aligns
+  _expect_type("md::table", "header", header, "array")
+  | _expect_type("md::table", "rows", rows, "array")
+  | _expect_type("md::table", "aligns", aligns, "array")
+  | let aligns = if (is_empty(aligns)): map(header, fn(_): "none";) else: aligns
   | [table_row(header), table_align(aligns)] + map(rows, table_row);
 
 # Combines markdown nodes into a single markdown value. Accepts either a variable

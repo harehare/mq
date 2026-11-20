@@ -281,3 +281,44 @@ def test_csv_tsv_and_psv_parsers_read_their_own_delimiter(rows):
     [rows, rows, rows]
   )
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): csv::csv_parse_with_delimiter(1, ",", true);],
+#   [fn(): csv::csv_parse_with_delimiter("a,b\n1,2", 1, true);],
+#   [fn(): csv::csv_parse(1, true);],
+#   [fn(): csv::tsv_parse(1, true);],
+#   [fn(): csv::psv_parse(1, true);],
+#   [fn(): csv::csv_stringify("a", ",");],
+#   [fn(): csv::csv_stringify([{"a": "1", "b": "2"}], 1);],
+#   [fn(): csv::csv_to_markdown_table("a");],
+#   [fn(): csv::csv_to_json("a");],
+#   [fn(): csv::forward_fill("a", ["a"]);],
+#   [fn(): csv::backward_fill("a", ["a"]);],
+#   [fn(): csv::constant_fill("a", {"a": "x"});],
+#   [fn(): csv::constant_fill([{"a": "1", "b": "2"}], 1);],
+#   [fn(): csv::sort_rows("a", "a");],
+# ])
+def test_csv_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): csv::csv_parse_with_delimiter("a,b\n1,2", ",", true);],
+#   [fn(): csv::csv_parse("a,b\n1,2", true);],
+#   [fn(): csv::tsv_parse("a\tb\n1\t2", true);],
+#   [fn(): csv::psv_parse("a|b\n1|2", true);],
+#   [fn(): csv::csv_stringify([{"a": "1", "b": "2"}], ",");],
+#   [fn(): csv::csv_to_markdown_table([{"a": "1", "b": "2"}]);],
+#   [fn(): csv::csv_to_json([{"a": "1", "b": "2"}]);],
+#   [fn(): csv::forward_fill([{"a": "1", "b": "2"}], ["a"]);],
+#   [fn(): csv::backward_fill([{"a": "1", "b": "2"}], ["a"]);],
+#   [fn(): csv::constant_fill([{"a": "1", "b": "2"}], {"a": "x"});],
+#   [fn(): csv::sort_rows([{"a": "1", "b": "2"}], "a");],
+# ])
+def test_csv_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

@@ -474,3 +474,53 @@ def test_section_filters_never_return_more_than_their_input(src):
       len(section::by_level(secs, 1)) <= len(secs)]
   | assert_true(all(counts, fn(b): b;))
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(n, s): section::title_contains("a", "A");],
+#   [fn(n, s): section::title_is("a", "A");],
+#   [fn(n, s): section::title_match("a", "A");],
+#   [fn(n, s): section::titles("a");],
+#   [fn(n, s): section::bodies("a");],
+#   [fn(n, s): section::toc("a");],
+#   [fn(n, s): section::toc_markdown("a");],
+#   [fn(n, s): section::collect("a");],
+#   [fn(n, s): section::by_level("a", 1);],
+#   [fn(n, s): section::by_level(s, "x");],
+#   [fn(n, s): section::nth("a", 0);],
+#   [fn(n, s): section::nth(s, "a");],
+#   [fn(n, s): section::split(n, "a");],
+#   [fn(n, s): section::filter_sections(n, 1);],
+#   [fn(n, s): section::map_sections(n, 1);],
+#   [fn(n, s): section::shift_level(first(s), "a");],
+# ])
+def test_section_argument_type_errors(op):
+  let n = test_sections
+  | let s = section::sections(n)
+  | let result = try: op(n, s) catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(n, s): section::title_contains(s, "A");],
+#   [fn(n, s): section::title_is(s, "A");],
+#   [fn(n, s): section::title_match(s, "A");],
+#   [fn(n, s): section::titles(s);],
+#   [fn(n, s): section::bodies(s);],
+#   [fn(n, s): section::toc(s);],
+#   [fn(n, s): section::toc_markdown(s);],
+#   [fn(n, s): section::collect(s);],
+#   [fn(n, s): section::by_level(s, 1);],
+#   [fn(n, s): section::nth(s, 0);],
+#   [fn(n, s): section::split(n, 1);],
+#   [fn(n, s): section::filter_sections(n, fn(x): true;);],
+#   [fn(n, s): section::map_sections(n, fn(h, c): h;);],
+#   [fn(n, s): section::shift_level(first(s), 1);],
+# ])
+def test_section_valid_arguments_accepted(op):
+  let n = test_sections
+  | let s = section::sections(n)
+  | let result = try: op(n, s) catch: "error"
+  | assert_ne(result, "error")
+end

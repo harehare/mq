@@ -364,3 +364,23 @@ def test_md_table_roundtrips(header, cell):
     _mb_names(md::table(["a"], [["a"]]))
   )
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): md::table("a", [["1"]], []);],
+#   [fn(): md::table(["a"], "a", []);],
+#   [fn(): md::table(["a"], [["1"]], "a");],
+# ])
+def test_md_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): md::table(["a"], [["1"]], []);],
+# ])
+def test_md_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

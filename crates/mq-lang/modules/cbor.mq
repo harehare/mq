@@ -10,7 +10,8 @@
 #
 # Returns: dynamic
 def cbor_parse(input):
-  if (is_bytes(input)):
+  _expect_one_of("cbor::cbor_parse", "input", input, ["string", "bytes"])
+  | if (is_bytes(input)):
     _cbor_parse(input)
   else:
     _cbor_parse(trim(to_string(input)))
