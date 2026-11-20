@@ -5828,3 +5828,39 @@ fn to_string_rejects_bytes_that_are_not_utf8(#[case] code: &str) {
 fn to_hex_still_gives_the_hex_text_of_bytes() {
     assert_eq!(run("to_hex(to_bytes([255, 0, 65]))"), RuntimeValue::from("ff0041"));
 }
+
+#[rstest]
+#[case::replaces_a_byte("var b = to_bytes([1, 2, 3]) | b[1] = 9 | b == to_bytes([1, 9, 3])")]
+#[case::appends_at_the_end("var b = to_bytes([1, 2]) | b[2] = 9 | b == to_bytes([1, 2, 9])")]
+#[case::pads_with_zeros("var b = to_bytes([1]) | b[3] = 9 | b == to_bytes([1, 0, 0, 9])")]
+#[case::negative_index_counts_from_the_end("var b = to_bytes([1, 2, 3]) | b[-1] = 7 | b == to_bytes([1, 2, 7])")]
+#[case::compound_assignment("var b = to_bytes([1, 2, 3]) | b[1] += 5 | b == to_bytes([1, 7, 3])")]
+#[case::set_builtin("set(to_bytes([1, 2, 3]), 0, 255) == to_bytes([255, 2, 3])")]
+#[case::through_a_closure("var b = to_bytes([1, 2, 3]) | def f(): b[0] = 8; | f() | b == to_bytes([8, 2, 3])")]
+#[case::alias_is_not_changed(
+    "var b = to_bytes([1, 2]) | var c = b | b[0] = 9 | b == to_bytes([9, 2]) && c == to_bytes([1, 2])"
+)]
+#[case::in_a_loop(
+    "var b = to_bytes([0, 0, 0, 0]) | var i = 0 | while (i < 4): b[i] = i * 2 | i += 1 end | b == to_bytes([0, 2, 4, 6])"
+)]
+fn bytes_elements_can_be_assigned(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::above_255("var b = to_bytes([1]) | b[0] = 256", "from 0 to 255")]
+#[case::negative_value("var b = to_bytes([1]) | b[0] = -1", "from 0 to 255")]
+#[case::fraction("var b = to_bytes([1]) | b[0] = 1.5", "from 0 to 255")]
+#[case::not_a_number(r#"var b = to_bytes([1]) | b[0] = "x""#, "InvalidTypes")]
+fn assigning_a_non_byte_to_bytes_fails(#[case] code: &str, #[case] message: &str) {
+    let error = format!("{:?}", run_result(code).unwrap_err());
+    assert!(error.contains(message), "{code}: {error}");
+}
+
+#[test]
+fn failed_bytes_assignment_keeps_the_bytes_intact() {
+    assert_eq!(
+        run("var b = to_bytes([1, 2]) | (try: b[0] = 300 catch: None) | b == to_bytes([1, 2])"),
+        RuntimeValue::from(true)
+    );
+}
