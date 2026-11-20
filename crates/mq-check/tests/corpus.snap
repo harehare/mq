@@ -2,6 +2,7 @@ crates/mq-lang/benches/mq_benches.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/builtin.mq: syntax=0 type=0 unresolved=0 dynamic=16
 crates/mq-lang/builtin_tests.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/cbor.mq: syntax=0 type=0 unresolved=0 dynamic=0
+crates/mq-lang/modules/cbor_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/csv.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/csv_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/fuzzy.mq: syntax=0 type=0 unresolved=0 dynamic=0

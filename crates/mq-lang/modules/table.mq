@@ -68,70 +68,70 @@ end
 def tables(md_nodes):
   _expect_type("table::tables", "md_nodes", md_nodes, "array")
   | if (is_empty(md_nodes)):
-    []
-  else:
-    do
-      var tables = []
-      | var current_align = []
-      | var current_row_index = -1
-      | var current_row = []
-      | var current_rows = []
-      | var i = 0
-      | let nodes_len = len(md_nodes)
-      | while (i < nodes_len):
-          let node = md_nodes[i]
-          | if (is_table_cell(node)): do
-                if (node.row == 0 && node.column == 0 && !is_empty(current_align)) do
-                    if (!is_empty(current_row)) do
-                        current_rows += [current_row]
-                        | current_row = []
-                      end
-                    | if (!is_empty(current_rows)) do
-                          let normalized_rows = _normalize_table_rows(current_rows)
-                          | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
+      []
+    else:
+      do
+        var tables = []
+        | var current_align = []
+        | var current_row_index = -1
+        | var current_row = []
+        | var current_rows = []
+        | var i = 0
+        | let nodes_len = len(md_nodes)
+        | while (i < nodes_len):
+            let node = md_nodes[i]
+            | if (is_table_cell(node)): do
+                  if (node.row == 0 && node.column == 0 && !is_empty(current_align)) do
+                      if (!is_empty(current_row)) do
+                          current_rows += [current_row]
+                          | current_row = []
                         end
-                    | current_align = []
-                    | current_rows = []
-                    | current_row_index = -1
-                  end
-                | if (node.row != current_row_index) do
-                      if (!is_empty(current_row)):
-                        current_rows += [current_row]
-                      | current_row = []
-                      | current_row_index = node.row
-                      | current_row = [node]
-                    end
-                  else:
-                    current_row += node
-              end
-            elif (is_table_align(node)): current_align = node
-            else: do
-                if (!is_empty(current_row)) do
-                    current_rows += [current_row]
-                    | current_row = []
-                    | current_row_index = -1
-                  end
-                | if (!is_empty(current_rows)) do
-                      let normalized_rows = _normalize_table_rows(current_rows)
-                      | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
+                      | if (!is_empty(current_rows)) do
+                            let normalized_rows = _normalize_table_rows(current_rows)
+                            | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
+                          end
                       | current_align = []
                       | current_rows = []
+                      | current_row_index = -1
+                    end
+                  | if (node.row != current_row_index) do
+                        if (!is_empty(current_row)):
+                          current_rows += [current_row]
+                        | current_row = []
+                        | current_row_index = node.row
+                        | current_row = [node]
+                      end
+                    else:
+                      current_row += node
+                end
+              elif (is_table_align(node)): current_align = node
+              else: do
+                  if (!is_empty(current_row)) do
+                      current_rows += [current_row]
                       | current_row = []
                       | current_row_index = -1
                     end
-              end
-          | i = i + 1
-          | None
-        end
-      | if (!is_empty(current_row)) do
-            current_rows += [current_row]
+                  | if (!is_empty(current_rows)) do
+                        let normalized_rows = _normalize_table_rows(current_rows)
+                        | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
+                        | current_align = []
+                        | current_rows = []
+                        | current_row = []
+                        | current_row_index = -1
+                      end
+                end
+            | i = i + 1
+            | None
           end
-      | if (!is_empty(current_rows)) do
-            let normalized_rows = _normalize_table_rows(current_rows)
-            | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
-          end
-      | tables
-    end
+        | if (!is_empty(current_row)) do
+              current_rows += [current_row]
+            end
+        | if (!is_empty(current_rows)) do
+              let normalized_rows = _normalize_table_rows(current_rows)
+              | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
+            end
+        | tables
+      end
 end
 
 # Returns the index of the column whose header matches `name` (compared as
@@ -287,15 +287,15 @@ def add_row(table, row):
   _expect_table("add_row", "table", table)
   | _expect_type("table::add_row", "row", row, "array")
   | if (len(row) != len(table[:header])):
-    error("Row length does not match table header length.")
-  else: do
-      var i = 0
-      | let cells = foreach (cell, row):
-          to_md_table_cell(cell, len(table[:rows]) + 1, i)
-          | i += 1
-        end
-      | set(table, :rows, table[:rows] + [cells])
-    end
+      error("Row length does not match table header length.")
+    else: do
+        var i = 0
+        | let cells = foreach (cell, row):
+            to_md_table_cell(cell, len(table[:rows]) + 1, i)
+            | i += 1
+          end
+        | set(table, :rows, table[:rows] + [cells])
+      end
 end
 
 # Insert a new row into the table at data-row index `index` (0-indexed),
@@ -317,9 +317,9 @@ def insert_row(table, index, row):
   | _expect_type("table::insert_row", "index", index, "number")
   | _expect_type("table::insert_row", "row", row, "array")
   | if (len(row) != len(table[:header])):
-    error("Row length does not match table header length.")
-  else:
-    set(table, :rows, _renumber_rows(insert(table[:rows], index, row)))
+      error("Row length does not match table header length.")
+    else:
+      set(table, :rows, _renumber_rows(insert(table[:rows], index, row)))
 end
 
 # Add a new column to a table.
@@ -337,20 +337,20 @@ def add_column(table, col):
   _expect_table("add_column", "table", table)
   | _expect_type("table::add_column", "col", col, "array")
   | if (len(col) != len(table[:rows]) + 1):
-    error("Column length does not match table row count.")
-  else: do
-      let header_cell = to_md_table_cell(col[0], 0, len(table[:header]))
-      | let new_header = table[:header] + [header_cell]
-      | var i = 1
-      | let new_rows = foreach (row, table[:rows]):
-          let first_cell = row[0]
-          | let cell = to_md_table_cell(col[i], first_cell.row, len(row))
-          | i += 1
-          | row + [cell]
-        end
-      | let table_with_header = set(table, :header, new_header)
-      | set(table_with_header, :rows, new_rows)
-    end
+      error("Column length does not match table row count.")
+    else: do
+        let header_cell = to_md_table_cell(col[0], 0, len(table[:header]))
+        | let new_header = table[:header] + [header_cell]
+        | var i = 1
+        | let new_rows = foreach (row, table[:rows]):
+            let first_cell = row[0]
+            | let cell = to_md_table_cell(col[i], first_cell.row, len(row))
+            | i += 1
+            | row + [cell]
+          end
+        | let table_with_header = set(table, :header, new_header)
+        | set(table_with_header, :rows, new_rows)
+      end
 end
 
 # Insert a new column into the table at `index` (0-indexed), shifting
@@ -372,31 +372,31 @@ def insert_column(table, index, col):
   | _expect_type("table::insert_column", "index", index, "number")
   | _expect_type("table::insert_column", "col", col, "array")
   | if (len(col) != len(table[:rows]) + 1):
-    error("Column length does not match table row count.")
-  else: do
-      let new_header_values = insert(map(table[:header], to_string), index, to_string(col[0]))
-      | var c = 0
-      | let new_header = foreach (h, new_header_values):
-          let cell = to_md_table_cell(h, 0, c)
-          | c += 1
-          | cell
-        end
-      | let align_tokens = split(attr(table[:align], "align"), ",")
-      | let new_align = to_md_table_align(insert(align_tokens, index, "none"))
-      | var row_num = 0
-      | let new_rows = foreach (row, table[:rows]):
-          row_num += 1
-          | let values = insert(map(row, to_string), index, to_string(col[row_num]))
-          | var c = 0
-          | let cells = foreach (v, values):
-              let cell = to_md_table_cell(v, row_num, c)
-              | c += 1
-              | cell
-            end
-          | cells
-        end
-      | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
-    end
+      error("Column length does not match table row count.")
+    else: do
+        let new_header_values = insert(map(table[:header], to_string), index, to_string(col[0]))
+        | var c = 0
+        | let new_header = foreach (h, new_header_values):
+            let cell = to_md_table_cell(h, 0, c)
+            | c += 1
+            | cell
+          end
+        | let align_tokens = split(attr(table[:align], "align"), ",")
+        | let new_align = to_md_table_align(insert(align_tokens, index, "none"))
+        | var row_num = 0
+        | let new_rows = foreach (row, table[:rows]):
+            row_num += 1
+            | let values = insert(map(row, to_string), index, to_string(col[row_num]))
+            | var c = 0
+            | let cells = foreach (v, values):
+                let cell = to_md_table_cell(v, row_num, c)
+                | c += 1
+                | cell
+              end
+            | cells
+          end
+        | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
+      end
 end
 
 # Concatenates the data rows of `table_b` onto `table_a`. Errors if the two
@@ -417,21 +417,21 @@ def union(table_a, table_b):
   _expect_table("union", "table_a", table_a)
   | _expect_table("union", "table_b", table_b)
   | if (len(table_a[:header]) != len(table_b[:header])):
-    error("Tables must have the same number of columns.")
-  else: do
-      var row_num = len(table_a[:rows])
-      | let appended_rows = foreach (row, table_b[:rows]):
-          row_num += 1
-          | var c = 0
-          | let cells = foreach (v, row):
-              let cell = to_md_table_cell(to_string(v), row_num, c)
-              | c += 1
-              | cell
-            end
-          | cells
-        end
-      | set(table_a, :rows, table_a[:rows] + appended_rows)
-    end
+      error("Tables must have the same number of columns.")
+    else: do
+        var row_num = len(table_a[:rows])
+        | let appended_rows = foreach (row, table_b[:rows]):
+            row_num += 1
+            | var c = 0
+            | let cells = foreach (v, row):
+                let cell = to_md_table_cell(to_string(v), row_num, c)
+                | c += 1
+                | cell
+              end
+            | cells
+          end
+        | set(table_a, :rows, table_a[:rows] + appended_rows)
+      end
 end
 
 # Remove a row from a table at the specified index.
@@ -559,8 +559,8 @@ def map_cells(table, f):
   _expect_table("map_cells", "table", table)
   | _expect_function("table::map_cells", "f", f)
   | let new_rows = map(table[:rows], fn(row):
-    map(row, fn(cell): to_md_table_cell(f(to_string(cell)), cell.row, cell.column););
-  )
+      map(row, fn(cell): to_md_table_cell(f(to_string(cell)), cell.row, cell.column););
+    )
   | set(table, :rows, new_rows)
 end
 
@@ -648,20 +648,20 @@ end
 def sort_rows(table, keys = None, order = :asc, kind = :string):
   _expect_table("sort_rows", "table", table)
   | let new_rows = if (keys == None):
-    sort(table[:rows])
-  else:
-    do
-      let specs = if (is_array(keys)):
-        map(keys, fn(k): if (is_array(k)): k else: [k];)
-      else:
-        [[keys]]
-      | fold(reverse(specs), table[:rows], fn(rows, spec):
-          let col = _resolve_column(table, spec[0])
-          | let o = if (len(spec) > 1): spec[1] elif (is_array(keys)): :asc else: order
-          | let k = if (len(spec) > 2): spec[2] elif (is_array(keys)): :string else: kind
-          | _sort_rows_by(rows, col, o, k);
-        )
-    end
+      sort(table[:rows])
+    else:
+      do
+        let specs = if (is_array(keys)):
+          map(keys, fn(k): if (is_array(k)): k else: [k];)
+        else:
+          [[keys]]
+        | fold(reverse(specs), table[:rows], fn(rows, spec):
+            let col = _resolve_column(table, spec[0])
+            | let o = if (len(spec) > 1): spec[1] elif (is_array(keys)): :asc else: order
+            | let k = if (len(spec) > 2): spec[2] elif (is_array(keys)): :string else: kind
+            | _sort_rows_by(rows, col, o, k);
+          )
+      end
   | set(table, :rows, _renumber_rows(new_rows))
 end
 
@@ -792,30 +792,30 @@ end
 def from_array(records):
   _expect_type("table::from_array", "records", records, "array")
   | if (is_empty(records)):
-    {type: :table, align: to_md_table_align([]), header: [], rows: []}
-  else:
-    do
-      let headers = map(keys(first(records)), to_string)
-      | var col = 0
-      | let header_cells = foreach (h, headers):
-          let cell = to_md_table_cell(h, 0, col)
-          | col += 1
-          | cell
-        end
-      | let align = to_md_table_align(map(headers, fn(_): "none";))
-      | var row_num = 0
-      | let rows = foreach (record, records):
-          row_num += 1
-          | var c = 0
-          | let cells = foreach (h, headers):
-              let cell = to_md_table_cell(to_string(get_or(record, h, "")), row_num, c)
-              | c += 1
-              | cell
-            end
-          | cells
-        end
-      | {type: :table, align: align, header: header_cells, rows: rows}
-    end
+      {type: :table, align: to_md_table_align([]), header: [], rows: []}
+    else:
+      do
+        let headers = map(keys(first(records)), to_string)
+        | var col = 0
+        | let header_cells = foreach (h, headers):
+            let cell = to_md_table_cell(h, 0, col)
+            | col += 1
+            | cell
+          end
+        | let align = to_md_table_align(map(headers, fn(_): "none";))
+        | var row_num = 0
+        | let rows = foreach (record, records):
+            row_num += 1
+            | var c = 0
+            | let cells = foreach (h, headers):
+                let cell = to_md_table_cell(to_string(get_or(record, h, "")), row_num, c)
+                | c += 1
+                | cell
+              end
+            | cells
+          end
+        | {type: :table, align: align, header: header_cells, rows: rows}
+      end
 end
 
 # Applies a `csv` fill function to the table as array rows (header first), then writes the
@@ -1016,8 +1016,8 @@ def nest_rows(table, col, sep):
   | _expect_type("table::nest_rows", "col", col, "string")
   | _expect_type("table::nest_rows", "sep", sep, "string")
   | flat_map(to_array(table), fn(record):
-    map(split(get_or(record, col, ""), sep), fn(v): set(record, col, v););
-  ) | from_array
+      map(split(get_or(record, col, ""), sep), fn(v): set(record, col, v););
+    ) | from_array
 end
 
 # Inverse of `nest_rows`: collapses rows that share identical values in every

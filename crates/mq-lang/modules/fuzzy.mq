@@ -65,9 +65,9 @@ end
 def fuzzy_match(candidates, query):
   _expect_type("fuzzy::fuzzy_match", "query", query, "string")
   | let candidates = if (is_array(candidates)):
-    candidates
-  else:
-    [candidates]
+      candidates
+    else:
+      [candidates]
   | _fuzzy_match_with_algorithm(query, candidates, jaro_winkler)
   | sort_by(fn(item): 1 - item["score"];)
 end
@@ -84,9 +84,9 @@ end
 def fuzzy_match_levenshtein(candidates, query):
   _expect_type("fuzzy::fuzzy_match_levenshtein", "query", query, "string")
   | let candidates = if (is_array(candidates)):
-    candidates
-  else:
-    [candidates]
+      candidates
+    else:
+      [candidates]
   | _fuzzy_match_with_algorithm(query, candidates, levenshtein)
   | sort_by(fn(item): item["score"];)
 end
