@@ -178,6 +178,7 @@ if (true): 1 else: 2;  # warn: condition is always `true`
 | `redundant_boolean_literal` | style    | ✓       | `if (cond): true else: false` simplifies to `cond`                   |
 | `prefer_specific_heading`   | style    |         | `.h` without a level, prefer `.h1`–`.h6`                             |
 | `prefer_coalesce`           | style    | ✓       | `if (x == none): fallback else: x` simplifies to `x ?? fallback`     |
+| `prefer_index_assignment`   | style    |         | `x = set(x, k, v)` copies a captured collection; `x[k] = v` updates it in place |
 | `prefer_pipe_style`         | style    |         | Nested unary call `f(g(x))` reads better as a pipe `x \| g() \| f()` |
 | `redundant_try`             | style    | ✓       | `try: ... catch: none` is exactly what the `?` operator does         |
 | `unnecessary_interpolation` | style    | ✓       | `s"${x}"` (a single interpolation, nothing else) → `x`               |

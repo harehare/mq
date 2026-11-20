@@ -65,6 +65,8 @@ pub enum RuleId {
     PreferPipeStyle,
     /// An `if`/`else` null check expressible with `??`.
     PreferCoalesce,
+    /// `x = set(x, key, value)`, which `x[key] = value` writes in place.
+    PreferIndexAssignment,
     /// The generic `.h` selector used instead of `.h1` to `.h6`.
     PreferSpecificHeading,
     /// `try ... catch: none`, which is what `?` does.
@@ -118,6 +120,7 @@ impl RuleId {
         RuleId::PreferLetOverVar,
         RuleId::PreferPipeStyle,
         RuleId::PreferCoalesce,
+        RuleId::PreferIndexAssignment,
         RuleId::PreferSpecificHeading,
         RuleId::RedundantTry,
         RuleId::NamingConvention,
@@ -159,6 +162,7 @@ impl RuleId {
             RuleId::PreferLetOverVar => "prefer_let_over_var",
             RuleId::PreferPipeStyle => "prefer_pipe_style",
             RuleId::PreferCoalesce => "prefer_coalesce",
+            RuleId::PreferIndexAssignment => "prefer_index_assignment",
             RuleId::PreferSpecificHeading => "prefer_specific_heading",
             RuleId::RedundantTry => "redundant_try",
             RuleId::NamingConvention => "naming_convention",
@@ -331,6 +335,11 @@ pub enum LintMessage {
     },
     /// An `if`/`else` null check expressible with `??`.
     PreferCoalesce,
+    /// `x = set(x, key, value)`, which `x[key] = value` writes in place.
+    PreferIndexAssignment {
+        /// Name of the assigned variable.
+        name: String,
+    },
     /// The generic `.h` selector used instead of `.h1` to `.h6`.
     PreferSpecificHeading,
     /// `try ... catch: none`, which is what `?` does.
@@ -409,6 +418,7 @@ impl LintMessage {
             LintMessage::PreferLetOverVar { .. } => RuleId::PreferLetOverVar,
             LintMessage::PreferPipeStyle { .. } => RuleId::PreferPipeStyle,
             LintMessage::PreferCoalesce => RuleId::PreferCoalesce,
+            LintMessage::PreferIndexAssignment { .. } => RuleId::PreferIndexAssignment,
             LintMessage::PreferSpecificHeading => RuleId::PreferSpecificHeading,
             LintMessage::RedundantTry => RuleId::RedundantTry,
             LintMessage::NamingConvention { .. } => RuleId::NamingConvention,
@@ -490,6 +500,7 @@ impl LintMessage {
                 Some(format!("rewrite as `... | {inner_name}() | {outer_name}()`"))
             }
             LintMessage::PreferCoalesce => Some("rewrite as `<value> ?? <fallback>`".to_string()),
+            LintMessage::PreferIndexAssignment { name } => Some(format!("rewrite as `{name}[<key>] = <value>`")),
             LintMessage::PreferSpecificHeading => {
                 Some("using `.h1`–`.h6` makes the intended heading level explicit".to_string())
             }
@@ -608,6 +619,12 @@ impl fmt::Display for LintMessage {
                 write!(
                     f,
                     "`if`/`else` null-check can be simplified using the `??` coalesce operator"
+                )
+            }
+            LintMessage::PreferIndexAssignment { name } => {
+                write!(
+                    f,
+                    "`{name} = set({name}, ...)` copies the collection when `{name}` is captured; `{name}[key] = value` updates it in place"
                 )
             }
             LintMessage::PreferSpecificHeading => {
