@@ -168,7 +168,6 @@ impl<'a> Run<'a> {
     }
 
     /// Uses a prebuilt environment instead of building one from `options.global_bindings`.
-    #[cfg_attr(feature = "debugger", allow(dead_code))]
     pub(crate) fn env(mut self, env: &'a VmEnv) -> Self {
         self.env = Some(env);
         self
@@ -198,7 +197,7 @@ impl<'a> Run<'a> {
     }
 }
 
-/// Result of [`run`].
+/// Result of [`run_with_options`].
 pub(crate) struct RunOutput {
     pub(crate) result: VmResult<RuntimeValue>,
     /// Final values of the requested locals; empty when capture is off or the run failed early.
@@ -224,11 +223,11 @@ pub(crate) fn run_with_globals(
         global_bindings,
     };
     let env = VmEnv::from_bindings(global_bindings, Shared::clone(&compiled.token_arena));
-    run_plain(compiled, input, options, &env, ExecutionPools::default()).0
+    run(compiled, input, options, &env, ExecutionPools::default()).0
 }
 
 /// Runs without bindings, capture or hook. Skips [`Run`] and [`RunOutput`] on the hot path.
-pub(crate) fn run_plain(
+pub(crate) fn run(
     compiled: &CompiledProgram,
     input: RuntimeValue,
     options: RunOptions<'_>,
@@ -254,7 +253,7 @@ pub(crate) fn run_plain(
 }
 
 /// Runs a compiled program. See [`Run`] for the knobs.
-pub(crate) fn run(compiled: &CompiledProgram, input: RuntimeValue, run: Run<'_>) -> RunOutput {
+pub(crate) fn run_with_options(compiled: &CompiledProgram, input: RuntimeValue, run: Run<'_>) -> RunOutput {
     let Run {
         options,
         env,

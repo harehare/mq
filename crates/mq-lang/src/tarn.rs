@@ -670,7 +670,7 @@ impl<R: ModuleResolver> PreludeScan<'_, R> {
             result: run_result,
             captured,
             ..
-        } = interpreter::run(
+        } = interpreter::run_with_options(
             &compiled,
             RuntimeValue::None,
             interpreter::Run::new(interpreter::RunOptions {
@@ -1130,7 +1130,7 @@ where
 
     let before_env = VmEnv::from_bindings(context.global_bindings, Shared::clone(&before_compiled.token_arena));
     let (values, before_bindings) = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
-        let interpreter::RunOutput { result, captured, .. } = interpreter::run(
+        let interpreter::RunOutput { result, captured, .. } = interpreter::run_with_options(
             &before_compiled,
             value,
             interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
@@ -1158,7 +1158,7 @@ where
     } else {
         binding_values(&before_bindings)
     };
-    let interpreter::RunOutput { result, captured, .. } = interpreter::run(
+    let interpreter::RunOutput { result, captured, .. } = interpreter::run_with_options(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
         interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
@@ -1205,7 +1205,7 @@ where
             result,
             captured: newly_captured,
             ..
-        } = interpreter::run(
+        } = interpreter::run_with_options(
             &compiled,
             value,
             interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
@@ -1267,7 +1267,7 @@ where
     );
 
     let input_result = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
-        let interpreter::RunOutput { result, captured, .. } = interpreter::run(
+        let interpreter::RunOutput { result, captured, .. } = interpreter::run_with_options(
             &before_compiled,
             value,
             interpreter::Run::new(engine.run_options(remaining_timeout(deadline)))
@@ -1299,7 +1299,7 @@ where
     } else {
         binding_values(&before_bindings)
     };
-    let interpreter::RunOutput { result, captured, .. } = interpreter::run(
+    let interpreter::RunOutput { result, captured, .. } = interpreter::run_with_options(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
         interpreter::Run::new(engine.run_options(remaining_timeout(deadline)))
@@ -1364,7 +1364,7 @@ where
             result,
             captured: newly_captured,
             ..
-        } = interpreter::run(
+        } = interpreter::run_with_options(
             &compiled,
             value,
             interpreter::Run::new(context.engine.run_options(remaining_timeout(deadline)))
@@ -1436,7 +1436,7 @@ where
             context.engine.host_functions.clone(),
         );
         return run_inputs(inputs, |value| {
-            interpreter::run(
+            interpreter::run_with_options(
                 &compiled,
                 value,
                 interpreter::Run::new(context.engine.run_options(remaining_timeout(deadline))).hook(&mut hook),
@@ -1468,7 +1468,7 @@ where
     let mut let_bindings: Vec<(Ident, RuntimeValue)> = Vec::new();
     let values = if let_names.is_empty() {
         run_inputs(inputs, |value| {
-            interpreter::run(
+            interpreter::run_with_options(
                 &compiled,
                 value,
                 interpreter::Run::new(context.engine.run_options(remaining_timeout(deadline))).hook(&mut hook),
@@ -1483,7 +1483,7 @@ where
         inputs
             .map(|input| {
                 match map_input_values(input, |v| {
-                    let interpreter::RunOutput { result, captured, .. } = interpreter::run(
+                    let interpreter::RunOutput { result, captured, .. } = interpreter::run_with_options(
                         &compiled,
                         v,
                         interpreter::Run::new(context.engine.run_options(remaining_timeout(deadline)))
@@ -1518,7 +1518,7 @@ where
             &context.engine.preresolved_module_vars,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());
-        interpreter::run(
+        interpreter::run_with_options(
             &aggregate_compiled,
             input,
             interpreter::Run::new(run_options).hook(&mut hook),
@@ -1537,7 +1537,7 @@ where
             &context.engine.preresolved_module_vars,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());
-        interpreter::run(
+        interpreter::run_with_options(
             &aggregate_compiled,
             input,
             interpreter::Run::new(run_options).bindings(&let_values).hook(&mut hook),
