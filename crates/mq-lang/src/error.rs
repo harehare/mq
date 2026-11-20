@@ -38,9 +38,8 @@ impl InnerError {
         match self {
             InnerError::Syntax(SyntaxError::ExpectedClosingParen(_, opening))
             | InnerError::Syntax(SyntaxError::ExpectedClosingBrace(_, opening))
-            | InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_, opening)) => {
-                opening.as_ref().map(|v| v.as_ref())
-            }
+            | InnerError::Syntax(SyntaxError::ExpectedClosingBracket(_, opening))
+            | InnerError::Syntax(SyntaxError::DanglingBranch(_, opening)) => opening.as_ref().map(|v| v.as_ref()),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingParen(_, opening)))
             | InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBrace(_, opening)))
             | InnerError::Module(ModuleError::SyntaxError(SyntaxError::ExpectedClosingBracket(_, opening))) => {
@@ -324,6 +323,27 @@ fn dangling_branch_hint(before: &str, kind: &TokenKind) -> Cow<'static, str> {
     }
 }
 
+#[cold]
+fn dangling_branch_label(token: &Token) -> &'static str {
+    if token.kind == TokenKind::Elif {
+        "`elif` has no `if` to continue"
+    } else {
+        "`else` has no `if` to continue"
+    }
+}
+
+#[cold]
+fn dangling_branch_help(token: &Token, has_closing_paren: bool) -> Cow<'static, str> {
+    let keyword = if token.kind == TokenKind::Elif { "elif" } else { "else" };
+    if has_closing_paren {
+        Cow::Owned(format!(
+            "The `)` marked above closed the `if` before this `{keyword}`. Remove that extra `)`, or move it after the last branch."
+        ))
+    } else {
+        Cow::Borrowed("`elif` and `else` must continue an `if`. Check that the `if` before them was not closed early.")
+    }
+}
+
 // `|` where a closing delimiter was expected. It pipes the left value into the next expression,
 // so it is never a bitwise OR; point at the functions that are.
 #[cold]
@@ -423,6 +443,9 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::TooDeeplyNested(_, _))) => Some(Cow::Borrowed(
                 "Reduce the nesting of parentheses, brackets, or blocks in this expression.",
             )),
+            InnerError::Syntax(SyntaxError::DanglingBranch(token, closing)) => {
+                Some(dangling_branch_help(token, closing.is_some()))
+            }
             InnerError::Syntax(SyntaxError::UnmatchedEnd(_)) => Some(Cow::Borrowed(UNMATCHED_END_HELP)),
             InnerError::Runtime(RuntimeError::UserDefined { .. }) => {
                 Some(Cow::Borrowed("A user-defined error occurred during evaluation."))
@@ -548,6 +571,9 @@ impl Diagnostic for Error {
                     "An expression was expected here. Check for incomplete expressions after operators or keywords.",
                 ))
             }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::DanglingBranch(token, closing))) => {
+                Some(dangling_branch_help(token, closing.is_some()))
+            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnmatchedEnd(_))) => {
                 Some(Cow::Borrowed(UNMATCHED_END_HELP))
             }
@@ -583,6 +609,7 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::MultipleVariadicParameters(_)) => "duplicate variadic parameter",
             InnerError::Syntax(SyntaxError::UnexpectedEOFDetected(_)) => "unexpected end of input",
             InnerError::Syntax(SyntaxError::UnexpectedEOFAfterToken(_)) => "expected expression here",
+            InnerError::Syntax(SyntaxError::DanglingBranch(token, _)) => dangling_branch_label(token),
             InnerError::Syntax(SyntaxError::UnmatchedEnd(_)) => "unmatched `end` keyword",
             InnerError::Syntax(SyntaxError::TooDeeplyNested(_, _)) => "nesting too deep",
             InnerError::Runtime(_) => "error occurred here",
@@ -623,6 +650,9 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFAfterToken(_))) => {
                 "expected expression here"
             }
+            InnerError::Module(ModuleError::SyntaxError(SyntaxError::DanglingBranch(token, _))) => {
+                dangling_branch_label(token)
+            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnmatchedEnd(_))) => "unmatched `end` keyword",
             InnerError::Module(_) => "module error here",
         };
@@ -630,9 +660,18 @@ impl Diagnostic for Error {
         let primary = miette::LabeledSpan::new_with_span(Some(label.to_string()), self.location);
 
         if let Some(secondary_span) = self.secondary_location {
+            let secondary = if matches!(
+                self.cause,
+                InnerError::Syntax(SyntaxError::DanglingBranch(..))
+                    | InnerError::Module(ModuleError::SyntaxError(SyntaxError::DanglingBranch(..)))
+            ) {
+                "the `if` is closed here"
+            } else {
+                "opened here"
+            };
             Some(Box::new(
                 [
-                    miette::LabeledSpan::new_with_span(Some("opened here".to_string()), secondary_span),
+                    miette::LabeledSpan::new_with_span(Some(secondary.to_string()), secondary_span),
                     primary,
                 ]
                 .into_iter(),

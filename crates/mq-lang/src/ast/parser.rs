@@ -41,6 +41,7 @@ struct RetainedToken {
 /// Parses a token stream into an AST, allocating tokens in the arena.
 pub struct Parser<'a, 'alloc> {
     tokens: Peekable<core::slice::Iter<'a, Token>>,
+    token_slice: &'a [Token],
     token_base_address: usize,
     token_cache: Vec<Option<RetainedToken>>,
     token_arena: &'alloc mut Arena<Token>,
@@ -58,6 +59,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_slice = tokens.as_slice();
         Self {
             tokens: tokens.peekable(),
+            token_slice,
             token_base_address: token_slice.as_ptr() as usize,
             token_cache: vec![None; token_slice.len()],
             token_arena,
@@ -69,6 +71,29 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Parses the whole input into a program.
     pub fn parse(&mut self) -> Result<Program, SyntaxError> {
         self.parse_program(ProgramKind::Root)
+            .map_err(|error| self.explain_dangling_branch(error))
+    }
+
+    /// Upgrades an unexpected `else` or `elif` that directly follows a `)` to a diagnostic that
+    /// points at that `)`: it almost always closed the parenthesised `(if ...)` too early.
+    fn explain_dangling_branch(&self, error: SyntaxError) -> SyntaxError {
+        let SyntaxError::UnexpectedToken(token) = &error else {
+            return error;
+        };
+        if !matches!(token.kind, TokenKind::Else | TokenKind::Elif) {
+            return error;
+        }
+        let closing = self
+            .token_slice
+            .iter()
+            .position(|candidate| candidate.range == token.range && candidate.kind == token.kind)
+            .and_then(|index| index.checked_sub(1))
+            .map(|index| &self.token_slice[index])
+            .filter(|previous| previous.kind == TokenKind::RParen);
+        match closing {
+            Some(previous) => SyntaxError::DanglingBranch(token.clone(), Some(Box::new(previous.clone()))),
+            None => error,
+        }
     }
 
     /// Index of `token` in the input slice, which is stable for the duration of parsing and so

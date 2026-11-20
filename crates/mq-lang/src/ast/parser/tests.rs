@@ -454,6 +454,57 @@ fn token(token_kind: TokenKind) -> Token {
             token(TokenKind::Eof),
         ],
         Err(SyntaxError::UnmatchedEnd(token(TokenKind::End))))]
+#[case::else_after_a_closed_paren_if(
+        // `(if (.): .) else: .` - the `)` before `else` closed the `if` early
+        vec![
+            token(TokenKind::LParen),
+            token(TokenKind::If),
+            token(TokenKind::LParen),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::RParen),
+            token(TokenKind::Else),
+            token(TokenKind::Colon),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::Eof),
+        ],
+        Err(SyntaxError::DanglingBranch(
+            token(TokenKind::Else),
+            Some(Box::new(token(TokenKind::RParen))),
+        )))]
+#[case::elif_after_a_closed_paren_if(
+        vec![
+            token(TokenKind::LParen),
+            token(TokenKind::If),
+            token(TokenKind::LParen),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::RParen),
+            token(TokenKind::Elif),
+            token(TokenKind::LParen),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::RParen),
+            token(TokenKind::Colon),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::Eof),
+        ],
+        Err(SyntaxError::DanglingBranch(
+            token(TokenKind::Elif),
+            Some(Box::new(token(TokenKind::RParen))),
+        )))]
+#[case::else_without_an_if_keeps_the_plain_error(
+        vec![
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::Else),
+            token(TokenKind::Colon),
+            token(TokenKind::Selector(SmolStr::new("."))),
+            token(TokenKind::Eof),
+        ],
+        Err(SyntaxError::UnexpectedToken(token(TokenKind::Else))))]
 #[case::let_1(
             vec![
                 token(TokenKind::Let),

@@ -48,6 +48,10 @@ pub enum SyntaxError {
     /// The Token is the keyword or operator that required an expression to follow.
     #[error("Expected an expression after `{}` but reached end of file", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     UnexpectedEOFAfterToken(Token),
+    /// An `else` or `elif` has no `if` to continue. The second field is the `)` right before it,
+    /// which closed the parenthesised `if` early.
+    #[error("`{}` has no `if` to continue", .0)]
+    DanglingBranch(Token, Option<Box<Token>>),
     /// An `end` keyword was encountered without a matching block opener.
     #[error("Unexpected `end` keyword: no open block to close")]
     UnmatchedEnd(Token),
@@ -73,6 +77,7 @@ impl SyntaxError {
             SyntaxError::VariadicParameterMustBeLast(token) => Some(token),
             SyntaxError::MultipleVariadicParameters(token) => Some(token),
             SyntaxError::UnexpectedEOFAfterToken(token) => Some(token),
+            SyntaxError::DanglingBranch(token, _) => Some(token),
             SyntaxError::UnmatchedEnd(token) => Some(token),
             SyntaxError::TooDeeplyNested(token, _) => Some(token),
         }
@@ -106,6 +111,7 @@ mod tests {
     #[case(SyntaxError::VariadicParameterMustBeLast(eof_token()), true)]
     #[case(SyntaxError::MultipleVariadicParameters(eof_token()), true)]
     #[case(SyntaxError::UnexpectedEOFAfterToken(eof_token()), true)]
+    #[case(SyntaxError::DanglingBranch(eof_token(), None), true)]
     #[case(SyntaxError::UnmatchedEnd(eof_token()), true)]
     #[case(SyntaxError::TooDeeplyNested(eof_token(), 512), true)]
     fn test_token_presence(#[case] err: SyntaxError, #[case] has_token: bool) {
