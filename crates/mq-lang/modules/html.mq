@@ -125,9 +125,14 @@ end
 #
 # Returns: string
 def html_attr(data, name):
-  _expect_type("html::html_attr", "data", data, "dict")
-  | _expect_type("html::html_attr", "name", name, "string")
-  | data["attributes"][name]
+  _expect_type("html::html_attr", "name", name, "string")
+  | if (is_none(data)):
+      None
+    else:
+      do
+        _expect_type("html::html_attr", "data", data, "dict")
+        | data["attributes"][name]
+      end
 end
 
 def _html_text_parts(data):
@@ -146,8 +151,13 @@ end
 #
 # Returns: string
 def html_text(data):
-  _expect_type("html::html_text", "data", data, "dict")
-  | join(_html_text_parts(data), " ")
+  if (is_none(data)):
+    ""
+  else:
+    do
+      _expect_type("html::html_text", "data", data, "dict")
+      | join(_html_text_parts(data), " ")
+    end
 end
 
 def _html_escape_json_string(str):

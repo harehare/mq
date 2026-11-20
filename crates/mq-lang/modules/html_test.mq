@@ -266,6 +266,13 @@ def test_html_argument_type_errors(op):
   | assert_eq(result, "error")
 end
 
+# A missing element (None from html_find) is accepted by the leaf accessors.
+def test_html_leaf_accessors_accept_none():
+  let missing = html::html_find(html::html_parse("<p>hi</p>"), "img")
+  | assert_eq(html::html_text(missing), "")
+  | assert_eq(html::html_attr(missing, "src"), None)
+end
+
 # Valid arguments are accepted by the same calls.
 # @parametrize([
 #   [fn(): html::html_find_all(html::html_parse("<p id=\"1\">t</p>"), "p");],
