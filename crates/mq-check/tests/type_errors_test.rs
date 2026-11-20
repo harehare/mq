@@ -1252,6 +1252,25 @@ fn test_each_type_guard_selects_the_branch_run_by_a_call(#[case] code: &str, #[c
     assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
 }
 
+#[rstest]
+#[case::assign_a_byte(r#"var b = to_bytes("ab") | b[0] = 9 | b"#, true)]
+#[case::set_a_byte(r#"set(to_bytes("ab"), 0, 9) | len(self)"#, true)]
+#[case::repeat_bytes(r#"to_bytes([0]) * 4 | len(self)"#, true)]
+#[case::repeat_bytes_number_first(r#"4 * to_bytes([0]) | len(self)"#, true)]
+#[case::assigned_bytes_stay_bytes(r#"var b = to_bytes("ab") | b[0] = 9 | to_hex(b)"#, true)]
+#[case::bytes_index_gives_a_number(r#"to_bytes("ab")[0] + 1"#, true)]
+fn test_bytes_assignment_and_repeat_types(#[case] code: &str, #[case] ok: bool) {
+    let errors = check_types_with_builtins(code);
+    assert_eq!(errors.is_empty(), ok, "`{code}`: {errors:?}");
+}
+
+#[test]
+fn test_strict_array_rejects_a_string_assigned_to_a_byte() {
+    let errors = check_types_strict_array(r#"var b = to_bytes("ab") | b[0] = "x" | b"#);
+    assert!(!errors.is_empty());
+    assert!(check_types_strict_array(r#"var b = to_bytes("ab") | b[0] = 9 | b"#).is_empty());
+}
+
 #[test]
 fn test_join_bytes_with_bytes_separator() {
     let code = r#"join([to_bytes("a"), to_bytes("b")], to_bytes("-")) | to_hex()"#;

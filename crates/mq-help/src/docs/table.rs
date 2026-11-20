@@ -3280,7 +3280,7 @@ key: 1
     BuiltinDoc {
         name: "set",
         aliases: &[],
-        description: "Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.",
+        description: "Sets a key-value pair in a dict, or an element of an array or bytes by index. Bytes take integers from 0 to 255. Returns the modified value.",
         params: &["obj", "key", "value"],
         param_types: &["dict", "dynamic", "dynamic"],
         returns: "dict",

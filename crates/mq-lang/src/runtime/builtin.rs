@@ -4096,7 +4096,8 @@ fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
 
 /// Applies `set(target, key, value)` to `target` in place.
 ///
-/// Returns `Ok(false)`, leaving `target` and `value` untouched, when the operand types are not
+/// A bytes target takes an integer from 0 to 255 and pads with zeros past its end. Returns
+/// `Ok(false)`, leaving `target` and `value` untouched, when the operand types are not
 /// supported. Every error is raised before `target` is modified.
 pub(crate) fn set_in_place(
     target: &mut RuntimeValue,
@@ -4117,6 +4118,24 @@ pub(crate) fn set_in_place(
                 array.resize(index + 1, RuntimeValue::NONE);
             }
             array[index] = std::mem::take(value);
+        }
+        (RuntimeValue::Bytes(bytes), RuntimeValue::Number(index)) => {
+            let RuntimeValue::Number(number) = value else {
+                return Ok(false);
+            };
+            if !number.is_int() || !(0.0..=255.0).contains(&number.value()) {
+                return Err(Error::Runtime(format!(
+                    "set: a byte must be an integer from 0 to 255, got {}",
+                    number.value()
+                )));
+            }
+            let byte = number.value() as u8;
+            let index = resolve_write_index(index, bytes.len())?;
+            let bytes = runtime_value::bytes_mut(bytes);
+            if index >= bytes.len() {
+                bytes.resize(index + 1, 0);
+            }
+            bytes[index] = byte;
         }
         _ => return Ok(false),
     }

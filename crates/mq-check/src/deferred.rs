@@ -413,6 +413,16 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                 ctx.add_constraint(Constraint::Equal(call_ty, result_ty, None, ConstraintOrigin::General));
                 resolved_any = true;
             }
+            types::Type::Bytes => {
+                let call_ty = access.result_ty.clone();
+                ctx.add_constraint(Constraint::Equal(
+                    call_ty,
+                    types::Type::Number,
+                    None,
+                    ConstraintOrigin::General,
+                ));
+                resolved_any = true;
+            }
             types::Type::Array(elem) => {
                 // Normal array, bind to element type
                 let call_ty = access.result_ty.clone();

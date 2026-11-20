@@ -208,6 +208,9 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
             Type::Number,
             Type::array(Type::Var(a)),
         );
+        // bytes repeat: (bytes, number) and (number, bytes) -> bytes
+        register_binary(ctx, name, Type::Bytes, Type::Number, Type::Bytes);
+        register_binary(ctx, name, Type::Number, Type::Bytes, Type::Bytes);
     }
 
     // None propagation: (none, none) -> none for all arithmetic operators
@@ -1076,6 +1079,9 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(a),
         Type::array(Type::Var(a)),
     );
+
+    // set: (bytes, number, number) -> bytes  (byte assignment; the value must be 0 to 255)
+    register_ternary(ctx, "set", Type::Bytes, Type::Number, Type::Number, Type::Bytes);
 
     // del: ({k: v}, k) -> {k: v}
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
