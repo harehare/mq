@@ -248,6 +248,7 @@ end
 # Returns: array
 def title_contains(sections, text):
   _expect_type("section::title_contains", "sections", sections, "array")
+  | _expect_type("section::title_contains", "text", text, "string")
   | if (is_empty(sections)):
       []
     else:
@@ -276,6 +277,7 @@ end
 # Returns: array
 def title_is(sections, text):
   _expect_type("section::title_is", "sections", sections, "array")
+  | _expect_type("section::title_is", "text", text, "string")
   | if (is_empty(sections)):
       []
     else:
@@ -303,6 +305,7 @@ end
 # Returns: array
 def title_match(sections, pattern):
   _expect_type("section::title_match", "sections", sections, "array")
+  | _expect_type("section::title_match", "pattern", pattern, "string")
   | if (is_empty(sections)):
       []
     else:
