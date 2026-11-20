@@ -3628,7 +3628,7 @@ def _expect_type(who, arg, v, t):
 end
 
 def _expect_function(who, arg, v):
-  if (type(v) == "function" || type(v) == "native_function"):
+  if (is_function(v)):
     v
   else:
     error(who + ": `" + arg + "` must be a function, got " + type(v))

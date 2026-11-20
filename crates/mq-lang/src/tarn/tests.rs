@@ -2210,8 +2210,8 @@ fn engine_compiler_loads_only_reachable_module_exports() {
     )
     .unwrap();
 
-    // The top-level chunk and `csv_parse`; the remaining CSV exports are not reachable.
-    assert_eq!(compiled.chunks.len(), 2);
+    // The top-level chunk, `csv_parse` and its `_expect_type` argument check; the remaining CSV exports are not reachable.
+    assert_eq!(compiled.chunks.len(), 3);
 }
 
 #[test]

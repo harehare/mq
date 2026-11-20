@@ -2489,6 +2489,20 @@ key: 1
         kind: DocKind::Function,
     },
     BuiltinDoc {
+        name: "is_function",
+        aliases: &[],
+        description: "Checks if input is a function.",
+        params: &["value"],
+        param_types: &["dynamic"],
+        returns: "bool",
+        examples: &[BuiltinExample {
+            code: r#"is_function(1)"#,
+            expected: r#"false"#,
+        }],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "is_infinite",
         aliases: &[],
         description: "Returns true if the given number is positive or negative infinity.",

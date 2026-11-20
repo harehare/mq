@@ -333,6 +333,16 @@ fn is_coroutine_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv)
     })
 }
 
+#[mq_macros::mq_fn(name = "is_function", params = Fixed(1))]
+fn is_function_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    type_predicate(ident, &args, |v| {
+        matches!(
+            v,
+            RuntimeValue::Closure(_) | RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_)
+        )
+    })
+}
+
 #[mq_macros::mq_fn(name = "close", params = Fixed(1))]
 fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
@@ -6053,6 +6063,7 @@ mq_macros::builtin_dispatch! {
     IS_BYTES,
     IS_MARKDOWN,
     IS_COROUTINE,
+    IS_FUNCTION,
     CLOSE,
     STATUS,
     FLATTEN,

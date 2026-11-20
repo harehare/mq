@@ -1245,6 +1245,8 @@ fn register_type_checks(ctx: &mut InferenceContext) {
 
     let a = ctx.fresh_var();
     register_unary(ctx, "is_markdown", Type::Var(a), Type::Bool);
+    let a = ctx.fresh_var();
+    register_unary(ctx, "is_function", Type::Var(a), Type::Bool);
 
     // is_empty: (string) -> bool, ([a]) -> bool, ({k: v}) -> bool, (a) -> bool
     register_unary(ctx, "is_empty", Type::String, Type::Bool);
