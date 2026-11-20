@@ -4,7 +4,7 @@
 # `include "section"` then `fn()` (no namespace prefix), or `mq -A 'section::fn()'`
 # on the command line. Section functions need every document node at once; pass
 # `-A` on the CLI, or pipe through `nodes` in an inline query/script; a single
-# node instead prints a stderr warning and is treated as a one-element array.
+# node is an error.
 #
 # Example:
 # ```
@@ -14,19 +14,10 @@
 
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
-# Normalizes input into an array of Markdown nodes.
-# section::* functions operate on the full document, so calling them without
-# aggregating input first (missing `-A` on the CLI, or `nodes |` inline) means
-# a single node is passed instead of an array, which silently produces
-# meaningless results. Detect that case, warn on stderr, and treat the single
-# node as a one-element array so the result stays sane either way.
-def _ensure_aggregated(md_nodes):
-  if (is_array(md_nodes)):
-    md_nodes
-  else:
-    do
-      [md_nodes] | stderr("mq: section functions expect all document nodes; got a single node. Pass `-A` on the command line or pipe through `nodes` first.")
-    end
+# section::* functions operate on the full document, so `md_nodes` must be an
+# array (missing `-A` on the CLI, or `nodes |` inline, passes a single node).
+def _expect_nodes(who, md_nodes):
+  _expect_type(who, "md_nodes", md_nodes, "array")
 end
 
 # Returns sections whose title contains the specified pattern.
@@ -92,7 +83,7 @@ end
 #
 # Returns: array
 def sections(md_nodes, depth = false):
-  let agg_nodes = _ensure_aggregated(md_nodes)
+  let agg_nodes = _expect_nodes("section::sections", md_nodes)
   | if (is_empty(agg_nodes)):
       []
     else:
@@ -183,7 +174,7 @@ end
 #
 # Returns: array
 def tree(md_nodes):
-  _tree_from_nodes(_ensure_aggregated(md_nodes))
+  _tree_from_nodes(_expect_nodes("section::tree", md_nodes))
 end
 
 # Filters sections based on a given predicate function.
@@ -196,7 +187,8 @@ end
 #
 # Returns: array
 def filter_sections(md_nodes, predicate):
-  sections(md_nodes) | filter(fn(section): predicate(section);)
+  _expect_function("section::filter_sections", "predicate", predicate)
+  | sections(md_nodes) | filter(fn(section): predicate(section);)
 end
 
 # Maps sections using a given mapper function.
@@ -209,7 +201,8 @@ end
 #
 # Returns: array
 def map_sections(md_nodes, mapper):
-  sections(md_nodes) | map(fn(section): mapper(section[:header], section[:children]);)
+  _expect_function("section::map_sections", "mapper", mapper)
+  | sections(md_nodes) | map(fn(section): mapper(section[:header], section[:children]);)
 end
 
 # Returns an array of sections, each section is an array of markdown nodes between the specified header and the next header of the same level.
@@ -222,7 +215,8 @@ end
 #
 # Returns: array
 def split(md_nodes, level):
-  let agg_nodes = _ensure_aggregated(md_nodes)
+  _expect_type("section::split", "level", level, "number")
+  | let agg_nodes = _expect_nodes("section::split", md_nodes)
   | if (is_empty(agg_nodes)):
       []
     else:
@@ -253,20 +247,22 @@ end
 #
 # Returns: array
 def title_contains(sections, text):
-  if (is_empty(sections)):
-    []
-  else:
-    do
-      let section_contains = fn(section):
-        if (_is_section(section)):
-          do
-            section[:header] | to_text() | contains(text)
-          end
-        else:
-          false
+  _expect_type("section::title_contains", "sections", sections, "array")
+  | _expect_type("section::title_contains", "text", text, "string")
+  | if (is_empty(sections)):
+      []
+    else:
+      do
+        let section_contains = fn(section):
+          if (_is_section(section)):
+            do
+              section[:header] | to_text() | contains(text)
+            end
+          else:
+            false
+        end
+        | filter(sections, section_contains)
       end
-      | filter(sections, section_contains)
-    end
 end
 
 # Filters the given list of sections, returning only those whose title is exactly
@@ -280,20 +276,22 @@ end
 #
 # Returns: array
 def title_is(sections, text):
-  if (is_empty(sections)):
-    []
-  else:
-    do
-      let section_eq = fn(section):
-        if (_is_section(section)):
-          do
-            section[:header] | to_text() == text
-          end
-        else:
-          false
+  _expect_type("section::title_is", "sections", sections, "array")
+  | _expect_type("section::title_is", "text", text, "string")
+  | if (is_empty(sections)):
+      []
+    else:
+      do
+        let section_eq = fn(section):
+          if (_is_section(section)):
+            do
+              section[:header] | to_text() == text
+            end
+          else:
+            false
+        end
+        | filter(sections, section_eq)
       end
-      | filter(sections, section_eq)
-    end
 end
 
 # Filters sections by a pattern match in the title text.
@@ -306,20 +304,22 @@ end
 #
 # Returns: array
 def title_match(sections, pattern):
-  if (is_empty(sections)):
-    []
-  else:
-    do
-      let section_filter = fn(section):
-        if (_is_section(section)):
-          do
-            section[:header] | to_text() | regex_match(pattern) | !is_empty()
-          end
-        else:
-          false
+  _expect_type("section::title_match", "sections", sections, "array")
+  | _expect_type("section::title_match", "pattern", pattern, "string")
+  | if (is_empty(sections)):
+      []
+    else:
+      do
+        let section_filter = fn(section):
+          if (_is_section(section)):
+            do
+              section[:header] | to_text() | regex_match(pattern) | !is_empty()
+            end
+          else:
+            false
+        end
+        | filter(sections, section_filter)
       end
-      | filter(sections, section_filter)
-    end
 end
 
 # Returns the title text of a section (header text without the # symbols).
@@ -596,21 +596,23 @@ end
 #
 # Returns: array
 def by_level(sections, l):
-  if (is_empty(sections)):
-    []
-  else:
-    filter(sections, fn(section):
-      if (_is_section(section)):
-        do
-          let lvl = level(section)
-          | if (is_array(l)):
-              contains(l, lvl)
-            else:
-              lvl == l
-        end
-      else:
-        false
-    end)
+  _expect_type("section::by_level", "sections", sections, "array")
+  | _expect_one_of("section::by_level", "l", l, ["number", "array"])
+  | if (is_empty(sections)):
+      []
+    else:
+      filter(sections, fn(section):
+        if (_is_section(section)):
+          do
+            let lvl = level(section)
+            | if (is_array(l)):
+                contains(l, lvl)
+              else:
+                lvl == l
+          end
+        else:
+          false
+      end)
 end
 
 # Returns the header level (1-6) of a section.
@@ -639,10 +641,12 @@ end
 #
 # Returns: dynamic
 def nth(sections, n):
-  if (is_empty(sections) || n < 0 || n >= len(sections)):
-    None
-  else:
-    get(sections, n)
+  _expect_type("section::nth", "sections", sections, "array")
+  | _expect_type("section::nth", "n", n, "number")
+  | if (is_empty(sections) || n < 0 || n >= len(sections)):
+      None
+    else:
+      get(sections, n)
 end
 
 # Extracts titles from all sections.
@@ -655,10 +659,11 @@ end
 #
 # Returns: array
 def titles(sections):
-  if (is_empty(sections)):
-    []
-  else:
-    map(sections, title)
+  _expect_type("section::titles", "sections", sections, "array")
+  | if (is_empty(sections)):
+      []
+    else:
+      map(sections, title)
 end
 
 # Extracts body from all sections.
@@ -671,10 +676,11 @@ end
 #
 # Returns: array
 def bodies(sections):
-  if (is_empty(sections)):
-    []
-  else:
-    map(sections, body)
+  _expect_type("section::bodies", "sections", sections, "array")
+  | if (is_empty(sections)):
+      []
+    else:
+      map(sections, body)
 end
 
 # Generates a table of contents from sections.
@@ -687,23 +693,24 @@ end
 #
 # Returns: array
 def toc(sections):
-  if (is_empty(sections)):
-    []
-  else:
-    do
-      let create_toc_entry = fn(section):
-        if (_is_section(section)):
-          do
-            let lvl = level(section)
-            | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
-            | let title_text = title(section)
-            | indent + "- " + title_text
-          end
-        else:
-          ""
+  _expect_type("section::toc", "sections", sections, "array")
+  | if (is_empty(sections)):
+      []
+    else:
+      do
+        let create_toc_entry = fn(section):
+          if (_is_section(section)):
+            do
+              let lvl = level(section)
+              | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
+              | let title_text = title(section)
+              | indent + "- " + title_text
+            end
+          else:
+            ""
+        end
+        | map(sections, create_toc_entry)
       end
-      | map(sections, create_toc_entry)
-    end
 end
 
 # Generates a Markdown table-of-contents with links to each section's
@@ -720,28 +727,29 @@ end
 #
 # Returns: array
 def toc_markdown(sections):
-  if (is_empty(sections)):
-    []
-  else:
-    do
-      var seen = dict()
-      | var result = []
-      | foreach (section, sections):
-          if (_is_section(section)) do
-              let lvl = level(section)
-              | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
-              | let title_text = title(section)
-              | let base_slug = slugify(title_text)
-              | let count = get_or(seen, base_slug, -1)
-              | let slug = if (count < 0): base_slug else: base_slug + "-" + to_string(count + 1)
-              | seen = set(seen, base_slug, count + 1)
-              | result += [indent + "- [" + title_text + "](#" + slug + ")"]
-            end
-          else:
-            None
-        end
-      | result
-    end
+  _expect_type("section::toc_markdown", "sections", sections, "array")
+  | if (is_empty(sections)):
+      []
+    else:
+      do
+        var seen = dict()
+        | var result = []
+        | foreach (section, sections):
+            if (_is_section(section)) do
+                let lvl = level(section)
+                | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
+                | let title_text = title(section)
+                | let base_slug = slugify(title_text)
+                | let count = get_or(seen, base_slug, -1)
+                | let slug = if (count < 0): base_slug else: base_slug + "-" + to_string(count + 1)
+                | seen = set(seen, base_slug, count + 1)
+                | result += [indent + "- [" + title_text + "](#" + slug + ")"]
+              end
+            else:
+              None
+          end
+        | result
+      end
 end
 
 # Checks if a section has any content beyond the header.
@@ -774,23 +782,24 @@ end
 #
 # Returns: dict
 def shift_level(section, delta):
-  if (!_is_section(section)):
-    section
-  else:
-    do
-      let shift_node = fn(node):
-        if (_md_heading_level(node) > 0):
-          if (delta >= 0):
-            shift_right(node, delta)
+  _expect_type("section::shift_level", "delta", delta, "number")
+  | if (!_is_section(section)):
+      section
+    else:
+      do
+        let shift_node = fn(node):
+          if (_md_heading_level(node) > 0):
+            if (delta >= 0):
+              shift_right(node, delta)
+            else:
+              shift_left(node, 0 - delta)
           else:
-            shift_left(node, 0 - delta)
-        else:
-          node
+            node
+        end
+        | let new_header = shift_node(section[:header])
+        | let new_children = map(section[:children], shift_node)
+        | set(set(section, :header, new_header), :children, new_children)
       end
-      | let new_header = shift_node(section[:header])
-      | let new_children = map(section[:children], shift_node)
-      | set(set(section, :header, new_header), :children, new_children)
-    end
 end
 
 # Flattens sections back to markdown nodes for output.
@@ -804,13 +813,14 @@ end
 #
 # Returns: array
 def collect(sections):
-  if (is_empty(sections)):
-    []
-  else:
-    flat_map(sections, fn(section):
-      if (_is_section(section)):
-        all_nodes(section)
-      else:
-        section
-    end)
+  _expect_type("section::collect", "sections", sections, "array")
+  | if (is_empty(sections)):
+      []
+    else:
+      flat_map(sections, fn(section):
+        if (_is_section(section)):
+          all_nodes(section)
+        else:
+          section
+      end)
 end

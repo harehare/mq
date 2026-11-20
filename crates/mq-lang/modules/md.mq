@@ -4,7 +4,7 @@
 #
 # `md::reference_index` and `md::resolve_references` need every document node at
 # once; pass `-A` on the CLI, or pipe through `nodes` in an inline query/script;
-# a single node instead prints a stderr warning and is treated as a one-element array.
+# a single node is an error.
 
 # Wraps `value` in a heading node at the given `depth` (1-6).
 #
@@ -376,7 +376,10 @@ def table_align(aligns): to_md_table_align(aligns);
 #
 # Returns: array
 def table(header, rows, aligns = []):
-  let aligns = if (is_empty(aligns)): map(header, fn(_): "none";) else: aligns
+  _expect_type("md::table", "header", header, "array")
+  | _expect_type("md::table", "rows", rows, "array")
+  | _expect_type("md::table", "aligns", aligns, "array")
+  | let aligns = if (is_empty(aligns)): map(header, fn(_): "none";) else: aligns
   | [table_row(header), table_align(aligns)] + map(rows, table_row);
 
 # Combines markdown nodes into a single markdown value. Accepts either a variable
@@ -399,19 +402,6 @@ def _is_footnote_def(md): to_md_name(md) == "footnote";
 def _is_link_ref(md): to_md_name(md) == "link_ref";
 def _is_image_ref(md): to_md_name(md) == "image_ref";
 def _is_footnote_ref(md): to_md_name(md) == "footnoteref";
-
-# Normalizes input into an array of Markdown nodes, for the same reason as
-# `section::_ensure_aggregated`: reference indexing/resolution needs the full
-# document, so a bare single node (missing `-A`/`nodes`) is warned about and
-# wrapped in a one-element array instead of silently producing nonsense.
-def _ensure_aggregated(md_nodes):
-  if (is_array(md_nodes)):
-    md_nodes
-  else:
-    do
-      [md_nodes] | stderr("mq: reference functions expect all document nodes; got a single node. Pass `-A` on the command line or pipe through `nodes` first.")
-    end
-end
 
 def _link_def_entry(d):
   {ident: attr(d, "ident"), label: attr(d, "label"), url: attr(d, "url"), title: attr(d, "title"), location: get_location(d)}
@@ -443,9 +433,9 @@ end
 #
 # Returns: dict
 def reference_index(md_nodes):
-  let agg_nodes = _ensure_aggregated(md_nodes)
-  | let link_groups = group_by(filter(agg_nodes, _is_definition), fn(d): attr(d, "ident");)
-  | let footnote_groups = group_by(filter(agg_nodes, _is_footnote_def), fn(d): attr(d, "ident");)
+  _expect_type("md::reference_index", "md_nodes", md_nodes, "array")
+  | let link_groups = group_by(filter(md_nodes, _is_definition), fn(d): attr(d, "ident");)
+  | let footnote_groups = group_by(filter(md_nodes, _is_footnote_def), fn(d): attr(d, "ident");)
   | {
       links: map(link_groups, fn(e): [e[0], map(e[1], _link_def_entry)];),
       footnotes: map(footnote_groups, fn(e): [e[0], map(e[1], _footnote_def_entry)];)
@@ -498,8 +488,8 @@ end
 #
 # Returns: array
 def resolve_references(md_nodes, index = None):
-  let agg_nodes = _ensure_aggregated(md_nodes)
-  | let idx = if (is_none(index)): reference_index(agg_nodes) else: index
-  | let refs = filter(agg_nodes, fn(n): _is_link_ref(n) || _is_image_ref(n) || _is_footnote_ref(n);)
+  _expect_type("md::resolve_references", "md_nodes", md_nodes, "array")
+  | let idx = if (is_none(index)): reference_index(md_nodes) else: index
+  | let refs = filter(md_nodes, fn(n): _is_link_ref(n) || _is_image_ref(n) || _is_footnote_ref(n);)
   | map(refs, fn(n): _resolve_ref(n, idx);)
 end

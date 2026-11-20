@@ -17,7 +17,11 @@ end
 # ```
 #
 # Returns: number
-def levenshtein(s1, s2): _levenshtein_distance(s1, s2);
+def levenshtein(s1, s2):
+  _expect_type("fuzzy::levenshtein", "s1", s1, "string")
+  | _expect_type("fuzzy::levenshtein", "s2", s2, "string")
+  | _levenshtein_distance(s1, s2)
+end
 
 # Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is exact match).
 #
@@ -28,7 +32,11 @@ def levenshtein(s1, s2): _levenshtein_distance(s1, s2);
 # ```
 #
 # Returns: number
-def jaro(s1, s2): _jaro_distance(s1, s2);
+def jaro(s1, s2):
+  _expect_type("fuzzy::jaro", "s1", s1, "string")
+  | _expect_type("fuzzy::jaro", "s2", s2, "string")
+  | _jaro_distance(s1, s2)
+end
 
 # Calculates the Jaro-Winkler distance between two strings.
 #
@@ -39,7 +47,11 @@ def jaro(s1, s2): _jaro_distance(s1, s2);
 # ```
 #
 # Returns: number
-def jaro_winkler(s1, s2): _jaro_winkler_distance(s1, s2);
+def jaro_winkler(s1, s2):
+  _expect_type("fuzzy::jaro_winkler", "s1", s1, "string")
+  | _expect_type("fuzzy::jaro_winkler", "s2", s2, "string")
+  | _jaro_winkler_distance(s1, s2)
+end
 
 # Performs fuzzy matching on an array of strings using Jaro-Winkler distance.
 #
@@ -51,10 +63,11 @@ def jaro_winkler(s1, s2): _jaro_winkler_distance(s1, s2);
 #
 # Returns: array
 def fuzzy_match(candidates, query):
-  let candidates = if (is_array(candidates)):
-    candidates
-  else:
-    [candidates]
+  _expect_type("fuzzy::fuzzy_match", "query", query, "string")
+  | let candidates = if (is_array(candidates)):
+      candidates
+    else:
+      [candidates]
   | _fuzzy_match_with_algorithm(query, candidates, jaro_winkler)
   | sort_by(fn(item): 1 - item["score"];)
 end
@@ -69,10 +82,11 @@ end
 #
 # Returns: array
 def fuzzy_match_levenshtein(candidates, query):
-  let candidates = if (is_array(candidates)):
-    candidates
-  else:
-    [candidates]
+  _expect_type("fuzzy::fuzzy_match_levenshtein", "query", query, "string")
+  | let candidates = if (is_array(candidates)):
+      candidates
+    else:
+      [candidates]
   | _fuzzy_match_with_algorithm(query, candidates, levenshtein)
   | sort_by(fn(item): item["score"];)
 end
@@ -87,7 +101,9 @@ end
 #
 # Returns: array
 def fuzzy_match_jaro(candidates, query):
-  _fuzzy_match_with_algorithm(query, candidates, jaro)
+  _expect_type("fuzzy::fuzzy_match_jaro", "candidates", candidates, "array")
+  | _expect_type("fuzzy::fuzzy_match_jaro", "query", query, "string")
+  | _fuzzy_match_with_algorithm(query, candidates, jaro)
   | sort_by(fn(item): 1 - item["score"];)
 end
 
@@ -101,7 +117,9 @@ end
 #
 # Returns: array
 def fuzzy_filter(candidates, query, threshold):
-  let matches = fuzzy_match(candidates, query)
+  _expect_type("fuzzy::fuzzy_filter", "query", query, "string")
+  | _expect_type("fuzzy::fuzzy_filter", "threshold", threshold, "number")
+  | let matches = fuzzy_match(candidates, query)
   | filter(matches, fn(m): m["score"] >= threshold;)
 end
 
@@ -115,7 +133,8 @@ end
 #
 # Returns: dict
 def fuzzy_best_match(candidates, query):
-  let matches = fuzzy_match(candidates, query)
+  _expect_type("fuzzy::fuzzy_best_match", "query", query, "string")
+  | let matches = fuzzy_match(candidates, query)
   | if (is_empty(matches)):
       None
     else:

@@ -100,3 +100,36 @@ def test_xml_text_and_attribute_roundtrip(text, attribute):
   | let parsed = xml::xml_parse(xml::xml_stringify(doc))
   | assert_eq([parsed["attributes"]["x"], parsed["children"][0]["text"]], [attribute, if (text == ""): None else: text])
 end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): xml::xml_find_all(1, "b");],
+#   [fn(): xml::xml_find_all(xml::xml_parse("<a x=\"1\"><b>t</b></a>"), 1);],
+#   [fn(): xml::xml_find(1, "b");],
+#   [fn(): xml::xml_find(xml::xml_parse("<a x=\"1\"><b>t</b></a>"), 1);],
+#   [fn(): xml::xml_attr(1, "x");],
+#   [fn(): xml::xml_attr(xml::xml_parse("<a x=\"1\"><b>t</b></a>"), 1);],
+#   [fn(): xml::xml_text(1);],
+# ])
+def test_xml_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# A missing element (None from xml_find) is accepted by the leaf accessors.
+def test_xml_leaf_accessors_accept_none():
+  assert_eq(xml::xml_text(None), "")
+  | assert_eq(xml::xml_attr(None, "x"), None)
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): xml::xml_find_all(xml::xml_parse("<a x=\"1\"><b>t</b></a>"), "b");],
+#   [fn(): xml::xml_find(xml::xml_parse("<a x=\"1\"><b>t</b></a>"), "b");],
+#   [fn(): xml::xml_attr(xml::xml_parse("<a x=\"1\"><b>t</b></a>"), "x");],
+#   [fn(): xml::xml_text(xml::xml_parse("<a x=\"1\"><b>t</b></a>"));],
+# ])
+def test_xml_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
+end

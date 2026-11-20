@@ -235,9 +235,16 @@ def test_md_reference_index_missing_ident_is_empty():
   | assert_eq(get_or(idx[:links], "missing", []), [])
 end
 
-def test_md_reference_index_ignores_single_node_input_with_warning():
-  let idx = md::reference_index(first(to_markdown("[a][b]\n\n[b]: https://example.com")))
-  | assert_eq(is_dict(idx), true)
+# A single node (missing `-A`/`nodes |`) is an argument error.
+# @parametrize([
+#   [fn(): md::reference_index(first(to_markdown("[a][b]\n\n[b]: https://example.com")));],
+#   [fn(): md::resolve_references(first(to_markdown("[a][b]\n\n[b]: https://example.com")));],
+#   [fn(): md::reference_index("abc");],
+#   [fn(): md::resolve_references(None);],
+# ])
+def test_md_references_single_node_is_error(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
 end
 
 def test_md_resolve_references_link():
@@ -363,4 +370,24 @@ def test_md_table_roundtrips(header, cell):
     _mb_names(md::table([md::escape(header)], [[md::escape(cell)]])),
     _mb_names(md::table(["a"], [["a"]]))
   )
+end
+
+# Wrong argument types raise an error.
+# @parametrize([
+#   [fn(): md::table("a", [["1"]], []);],
+#   [fn(): md::table(["a"], "a", []);],
+#   [fn(): md::table(["a"], [["1"]], "a");],
+# ])
+def test_md_argument_type_errors(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Valid arguments are accepted by the same calls.
+# @parametrize([
+#   [fn(): md::table(["a"], [["1"]], []);],
+# ])
+def test_md_valid_arguments_accepted(op):
+  let result = try: op() catch: "error"
+  | assert_ne(result, "error")
 end

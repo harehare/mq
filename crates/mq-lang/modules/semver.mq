@@ -57,7 +57,12 @@ end
 
 # Accepts a version string or an already parsed SemVer dict and returns the dict.
 def _semver_coerce(v):
-  if (is_string(v)): semver_parse(v) else: v
+  if (is_string(v)):
+    semver_parse(v)
+  elif (is_dict(v) && v[:type] == "semver"):
+    v
+  else:
+    error("semver: expected a version string or parsed version, got " + type(v))
 end
 
 # Parses a SemVer string into a dict with major, minor, patch, pre, and build fields.
@@ -101,7 +106,8 @@ end
 #
 # Returns: string
 def semver_to_string(v):
-  let base = to_string(v[:major]) + "." + to_string(v[:minor]) + "." + to_string(v[:patch])
+  let v = _semver_coerce(v)
+  | let base = to_string(v[:major]) + "." + to_string(v[:minor]) + "." + to_string(v[:patch])
   | let with_pre = if (is_empty(v[:pre])): base else: base + "-" + v[:pre]
   | if (is_empty(v[:build])): with_pre else: with_pre + "+" + v[:build]
 end
@@ -198,7 +204,8 @@ def semver_lte(a, b): semver_compare(a, b) <= 0;
 #
 # Returns: dict
 def semver_bump_major(v):
-  {type: "semver", major: v[:major] + 1, minor: 0, patch: 0, pre: "", build: ""}
+  let v = _semver_coerce(v)
+  | {type: "semver", major: v[:major] + 1, minor: 0, patch: 0, pre: "", build: ""}
 end
 
 # Increments the minor version and resets patch and pre-release.
@@ -211,7 +218,8 @@ end
 #
 # Returns: dict
 def semver_bump_minor(v):
-  {type: "semver", major: v[:major], minor: v[:minor] + 1, patch: 0, pre: "", build: ""}
+  let v = _semver_coerce(v)
+  | {type: "semver", major: v[:major], minor: v[:minor] + 1, patch: 0, pre: "", build: ""}
 end
 
 # Increments the patch version and clears pre-release.
@@ -224,7 +232,8 @@ end
 #
 # Returns: dict
 def semver_bump_patch(v):
-  {type: "semver", major: v[:major], minor: v[:minor], patch: v[:patch] + 1, pre: "", build: ""}
+  let v = _semver_coerce(v)
+  | {type: "semver", major: v[:major], minor: v[:minor], patch: v[:patch] + 1, pre: "", build: ""}
 end
 
 # Sorts an array of parsed SemVer dicts in ascending order.
@@ -237,7 +246,8 @@ end
 #
 # Returns: array
 def semver_sort(input):
-  let versions = map(input, _semver_coerce)
+  _expect_type("semver::semver_sort", "input", input, "array")
+  | let versions = map(input, _semver_coerce)
   | let n = len(versions)
   | if (n <= 1): versions
     else:
@@ -277,7 +287,8 @@ end
 #
 # Returns: dict
 def semver_max(input):
-  let versions = map(input, _semver_coerce)
+  _expect_type("semver::semver_max", "input", input, "array")
+  | let versions = map(input, _semver_coerce)
   | fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_gt(v, acc)): v else: acc;)
 end
 
@@ -291,7 +302,8 @@ end
 #
 # Returns: dict
 def semver_min(input):
-  let versions = map(input, _semver_coerce)
+  _expect_type("semver::semver_min", "input", input, "array")
+  | let versions = map(input, _semver_coerce)
   | fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_lt(v, acc)): v else: acc;)
 end
 
@@ -429,7 +441,8 @@ end
 #
 # Returns: bool
 def semver_satisfies(version, range):
-  let v = semver_parse(version)
+  _expect_type("semver::semver_satisfies", "range", range, "string")
+  | let v = semver_parse(version)
   | let groups = split(range, "\\|\\|")
   | any(groups, fn(group): _semver_satisfies_group(v, group);)
 end
@@ -445,7 +458,9 @@ end
 #
 # Returns: string | None
 def semver_max_satisfying(versions, range):
-  let matching = filter(versions, fn(version): semver_satisfies(version, range);)
+  _expect_type("semver::semver_max_satisfying", "versions", versions, "array")
+  | _expect_type("semver::semver_max_satisfying", "range", range, "string")
+  | let matching = filter(versions, fn(version): semver_satisfies(version, range);)
   | if (is_empty(matching)): None
     else: semver_to_string(semver_max(map(matching, semver_parse)))
 end

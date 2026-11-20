@@ -122,18 +122,19 @@ end
 #
 # Returns: array
 def json_pointer_to_path(data, pointer):
-  last(fold(_pointer_tokens(pointer), [data, []], fn(acc, token):
-    let current = first(acc)
-    | let key = if (is_array(current) && test(token, "^(0|[1-9][0-9]*)$")):
-        to_number(token)
-      elif (is_array(current) && token == "-"):
-        len(current)
-      elif (is_array(current)):
-        error("invalid array index in JSON Pointer: " + token)
-      else:
-        token
-    | [get(current, key), last(acc) + [key]]
-  end))
+  _expect_type("json::json_pointer_to_path", "pointer", pointer, "string")
+  | last(fold(_pointer_tokens(pointer), [data, []], fn(acc, token):
+      let current = first(acc)
+      | let key = if (is_array(current) && test(token, "^(0|[1-9][0-9]*)$")):
+          to_number(token)
+        elif (is_array(current) && token == "-"):
+          len(current)
+        elif (is_array(current)):
+          error("invalid array index in JSON Pointer: " + token)
+        else:
+          token
+      | [get(current, key), last(acc) + [key]]
+    end))
 end
 
 # Converts a path array (e.g. from `paths`) into a JSON Pointer (RFC 6901), escaping `~` and `/`.
@@ -146,7 +147,8 @@ end
 #
 # Returns: string
 def json_pointer_from_path(path):
-  join(map(path, fn(key): "/" + replace(replace(to_string(key), "~", "~0"), "/", "~1");), "")
+  _expect_type("json::json_pointer_from_path", "path", path, "array")
+  | join(map(path, fn(key): "/" + replace(replace(to_string(key), "~", "~0"), "/", "~1");), "")
 end
 
 # Returns the value a JSON Pointer (RFC 6901) refers to, or None if it does not exist.
@@ -159,7 +161,8 @@ end
 #
 # Returns: dynamic
 def json_pointer_get(data, pointer):
-  get_path(data, json_pointer_to_path(data, pointer))
+  _expect_type("json::json_pointer_get", "pointer", pointer, "string")
+  | get_path(data, json_pointer_to_path(data, pointer))
 end
 
 # Returns true if a JSON Pointer (RFC 6901) refers to an existing value, even if that value is None.
@@ -172,7 +175,8 @@ end
 #
 # Returns: bool
 def json_pointer_has(data, pointer):
-  let path = json_pointer_to_path(data, pointer)
+  _expect_type("json::json_pointer_has", "pointer", pointer, "string")
+  | let path = json_pointer_to_path(data, pointer)
   | if (is_empty(path)):
       true
     else:
@@ -190,7 +194,8 @@ end
 #
 # Returns: dynamic
 def json_pointer_set(data, pointer, value):
-  set_path(data, json_pointer_to_path(data, pointer), value)
+  _expect_type("json::json_pointer_set", "pointer", pointer, "string")
+  | set_path(data, json_pointer_to_path(data, pointer), value)
 end
 
 # Deletes the value at a JSON Pointer (RFC 6901). A pointer to a missing value leaves `data` unchanged.
@@ -203,7 +208,8 @@ end
 #
 # Returns: dynamic
 def json_pointer_del(data, pointer):
-  del_path(data, json_pointer_to_path(data, pointer))
+  _expect_type("json::json_pointer_del", "pointer", pointer, "string")
+  | del_path(data, json_pointer_to_path(data, pointer))
 end
 
 def _diff_dict(a, b, path):

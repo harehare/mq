@@ -192,7 +192,9 @@ end
 #
 # Returns: array
 def xml_find_all(data, tag):
-  _xml_find_all(data, tag)
+  _expect_type("xml::xml_find_all", "data", data, "dict")
+  | _expect_type("xml::xml_find_all", "tag", tag, "string")
+  | _xml_find_all(data, tag)
 end
 
 # Recursively finds the first element (including `data` itself) whose tag
@@ -206,7 +208,9 @@ end
 #
 # Returns: dict
 def xml_find(data, tag):
-  first(_xml_find_all(data, tag))
+  _expect_type("xml::xml_find", "data", data, "dict")
+  | _expect_type("xml::xml_find", "tag", tag, "string")
+  | first(_xml_find_all(data, tag))
 end
 
 # Returns the value of attribute `name` on element `data`, or `None` if the
@@ -220,7 +224,14 @@ end
 #
 # Returns: string
 def xml_attr(data, name):
-  data["attributes"][name]
+  _expect_type("xml::xml_attr", "name", name, "string")
+  | if (is_none(data)):
+      None
+    else:
+      do
+        _expect_type("xml::xml_attr", "data", data, "dict")
+        | data["attributes"][name]
+      end
 end
 
 def _xml_text_parts(data):
@@ -239,7 +250,13 @@ end
 #
 # Returns: string
 def xml_text(data):
-  join(_xml_text_parts(data), " ")
+  if (is_none(data)):
+    ""
+  else:
+    do
+      _expect_type("xml::xml_text", "data", data, "dict")
+      | join(_xml_text_parts(data), " ")
+    end
 end
 
 # Converts a data structure (typically the `{tag, attributes, children,

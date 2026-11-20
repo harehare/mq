@@ -54,7 +54,7 @@ Run the following command.
 
 ## Notes
 
-- Section objects are automatically expanded back to Markdown nodes in CLI output, so `section::collect` isn't needed there. If you forget `-A`/`nodes` and call `section::*` on a single node, mq prints a warning on stderr and treats that node as a one-element array instead of silently giving you a meaningless result.
+- Section objects are automatically expanded back to Markdown nodes in CLI output, so `section::collect` isn't needed there. If you forget `-A`/`nodes` and call `section::*` on a single node, it raises an error.
 - Calling the section module from Rust or other code (not the CLI)? Section objects are plain dicts there and need an explicit `section::collect` to turn back into Markdown:
 
   ```mq

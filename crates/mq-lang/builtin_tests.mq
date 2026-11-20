@@ -86,6 +86,12 @@ def test_is_coroutine():
   | assert_eq(result2, false)
 end
 
+def test_is_function():
+  assert_eq(is_function(fn(x): x;), true)
+  | assert_eq(is_function(upcase), true)
+  | assert_eq(is_function(1), false)
+end
+
 def test_is_mdx():
   let result1 = do "import Component from './Component'\n\n# Hello\n\n<Component />" | to_mdx() | get(2) | is_mdx();
   | assert_eq(result1, true)
