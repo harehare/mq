@@ -235,9 +235,16 @@ def test_md_reference_index_missing_ident_is_empty():
   | assert_eq(get_or(idx[:links], "missing", []), [])
 end
 
-def test_md_reference_index_ignores_single_node_input_with_warning():
-  let idx = md::reference_index(first(to_markdown("[a][b]\n\n[b]: https://example.com")))
-  | assert_eq(is_dict(idx), true)
+# A single node (missing `-A`/`nodes |`) is an argument error.
+# @parametrize([
+#   [fn(): md::reference_index(first(to_markdown("[a][b]\n\n[b]: https://example.com")));],
+#   [fn(): md::resolve_references(first(to_markdown("[a][b]\n\n[b]: https://example.com")));],
+#   [fn(): md::reference_index("abc");],
+#   [fn(): md::resolve_references(None);],
+# ])
+def test_md_references_single_node_is_error(op):
+  let result = try: op() catch: "error"
+  | assert_eq(result, "error")
 end
 
 def test_md_resolve_references_link():

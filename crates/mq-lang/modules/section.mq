@@ -4,7 +4,7 @@
 # `include "section"` then `fn()` (no namespace prefix), or `mq -A 'section::fn()'`
 # on the command line. Section functions need every document node at once; pass
 # `-A` on the CLI, or pipe through `nodes` in an inline query/script; a single
-# node instead prints a stderr warning and is treated as a one-element array.
+# node is an error.
 #
 # Example:
 # ```
@@ -14,19 +14,10 @@
 
 def _is_section(section): is_dict(section) && section[:type] == :section;
 
-# Normalizes input into an array of Markdown nodes.
-# section::* functions operate on the full document, so calling them without
-# aggregating input first (missing `-A` on the CLI, or `nodes |` inline) means
-# a single node is passed instead of an array, which silently produces
-# meaningless results. Detect that case, warn on stderr, and treat the single
-# node as a one-element array so the result stays sane either way.
-def _ensure_aggregated(md_nodes):
-  if (is_array(md_nodes)):
-    md_nodes
-  else:
-    do
-      [md_nodes] | stderr("mq: section functions expect all document nodes; got a single node. Pass `-A` on the command line or pipe through `nodes` first.")
-    end
+# section::* functions operate on the full document, so `md_nodes` must be an
+# array (missing `-A` on the CLI, or `nodes |` inline, passes a single node).
+def _expect_nodes(who, md_nodes):
+  _expect_type(who, "md_nodes", md_nodes, "array")
 end
 
 # Returns sections whose title contains the specified pattern.
@@ -92,7 +83,7 @@ end
 #
 # Returns: array
 def sections(md_nodes, depth = false):
-  let agg_nodes = _ensure_aggregated(md_nodes)
+  let agg_nodes = _expect_nodes("section::sections", md_nodes)
   | if (is_empty(agg_nodes)):
       []
     else:
@@ -183,7 +174,7 @@ end
 #
 # Returns: array
 def tree(md_nodes):
-  _tree_from_nodes(_ensure_aggregated(md_nodes))
+  _tree_from_nodes(_expect_nodes("section::tree", md_nodes))
 end
 
 # Filters sections based on a given predicate function.
@@ -225,7 +216,7 @@ end
 # Returns: array
 def split(md_nodes, level):
   _expect_type("section::split", "level", level, "number")
-  | let agg_nodes = _ensure_aggregated(md_nodes)
+  | let agg_nodes = _expect_nodes("section::split", md_nodes)
   | if (is_empty(agg_nodes)):
       []
     else:
