@@ -31,20 +31,20 @@ authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/harehare/mq"
-version = "0.10.1"
+version = "0.10.2"
 
 [workspace.dependencies]
-mq-check = {path = "crates/mq-check", version = "0.10.1"}
-mq-test = {path = "crates/mq-test", version = "0.10.1"}
-mq-dap = {path = "crates/mq-dap", version = "0.10.1"}
-mq-formatter = {path = "crates/mq-formatter", version = "0.10.1", default-features = false}
-mq-help = {path = "crates/mq-help", version = "0.10.1", default-features = false}
-mq-hir = {path = "crates/mq-hir", version = "0.10.1"}
-mq-lang = {path = "crates/mq-lang", version = "0.10.1"}
-mq-lint = {path = "crates/mq-lint", version = "0.10.1"}
-mq-macros = {path = "crates/mq-macros", version = "0.10.1"}
-mq-markdown = {path = "crates/mq-markdown", version = "0.10.1"}
-mq-repl = {path = "crates/mq-repl", version = "0.10.1"}
+mq-check = {path = "crates/mq-check", version = "0.10.2"}
+mq-test = {path = "crates/mq-test", version = "0.10.2"}
+mq-dap = {path = "crates/mq-dap", version = "0.10.2"}
+mq-formatter = {path = "crates/mq-formatter", version = "0.10.2", default-features = false}
+mq-help = {path = "crates/mq-help", version = "0.10.2", default-features = false}
+mq-hir = {path = "crates/mq-hir", version = "0.10.2"}
+mq-lang = {path = "crates/mq-lang", version = "0.10.2"}
+mq-lint = {path = "crates/mq-lint", version = "0.10.2"}
+mq-macros = {path = "crates/mq-macros", version = "0.10.2"}
+mq-markdown = {path = "crates/mq-markdown", version = "0.10.2"}
+mq-repl = {path = "crates/mq-repl", version = "0.10.2"}
 ammonia = "4.2.5"
 arbitrary = {version = "1.4.2", features = ["derive"]}
 assert_cmd = "2.2.2"
@@ -108,7 +108,7 @@ hmac = "0.13.0"
 similar = "3.0.0"
 siphasher = "1.0.4"
 slotmap = "1.1.1"
-smallvec = { version = "1.15.1", features = ["union"] }
+smallvec = {version = "1.15.1", features = ["union"]}
 thin-vec = "0.2.14"
 smol_str = "0.3.6"
 string-interner = "0.20"
