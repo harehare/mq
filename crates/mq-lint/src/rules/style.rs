@@ -8,6 +8,8 @@ pub mod naming_convention;
 pub mod negated_condition;
 /// The `prefer_coalesce` rule.
 pub mod prefer_coalesce;
+/// The `prefer_index_assignment` rule.
+pub mod prefer_index_assignment;
 /// The `prefer_let_over_var` rule.
 pub mod prefer_let_over_var;
 /// The `prefer_pipe_style` rule.
@@ -29,6 +31,7 @@ pub fn all() -> Vec<Box<dyn LintRule>> {
         Box::new(prefer_let_over_var::PreferLetOverVar),
         Box::new(prefer_pipe_style::PreferPipeStyle),
         Box::new(prefer_coalesce::PreferCoalesce),
+        Box::new(prefer_index_assignment::PreferIndexAssignment),
         Box::new(prefer_specific_heading::PreferSpecificHeading),
         Box::new(redundant_try::RedundantTry),
         Box::new(naming_convention::NamingConvention),
