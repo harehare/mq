@@ -713,8 +713,8 @@ fn resume_bind_params(
         arg_count,
         param_count,
     } = state;
-    for index in next_index..shape.bindings.len() {
-        match &shape.bindings[index] {
+    for (index, binding) in shape.bindings.iter().enumerate().skip(next_index) {
+        match binding {
             ParamBinding::Variadic(slot) => {
                 let collected: Vec<RuntimeValue> = remaining_args
                     .drain(..)
@@ -867,11 +867,12 @@ fn implicit_self_decision(
     }
 }
 
+/// Takes the arguments by value, so a builtin that updates its argument in place gets the only reference.
 // Keep out of the dispatch loop to avoid code bloat.
 #[inline(never)]
-pub(super) fn call_builtin(
+pub(super) fn call_builtin<const N: usize>(
     ident: &Ident,
-    args: &[RuntimeValue],
+    args: [RuntimeValue; N],
     self_value: &RuntimeValue,
     env: &VmEnv,
     host_functions: &HostFunctions,
