@@ -1128,11 +1128,13 @@ where
         &context.preresolved_module_vars,
     )?;
 
+    let before_env = VmEnv::from_bindings(context.global_bindings, Shared::clone(&before_compiled.token_arena));
     let (values, before_bindings) = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
         let interpreter::RunOutput { result, captured, .. } = interpreter::run(
             &before_compiled,
             value,
             interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
+                .env(&before_env)
                 .bindings(bindings)
                 .capture(interpreter::Capture::Names(&before_names)),
         );
@@ -1197,6 +1199,7 @@ where
         &context.preresolved_module_vars,
     )?;
 
+    let env = VmEnv::from_bindings(context.global_bindings, Shared::clone(&compiled.token_arena));
     let (values, captured) = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
         let interpreter::RunOutput {
             result,
@@ -1206,6 +1209,7 @@ where
             &compiled,
             value,
             interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
+                .env(&env)
                 .bindings(bindings)
                 .capture(interpreter::Capture::Names(&seed.capture_names)),
         );
