@@ -16,9 +16,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Line tables keep panic backtraces; full debug info only slows linking and bloats the cache.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
-  test:
+  test-mq:
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -34,30 +36,125 @@ jobs:
         with:
           just-version: 1.58.0
       - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Configure RUSTFLAGS for Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "RUSTFLAGS=${RUSTFLAGS} -C link-args=/STACK:8388608" >> $GITHUB_ENV
+      - name: Run mq tests and doc examples
+        run: just test-mq test-doc-examples
+
+  test-doc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
+      - uses: extractions/setup-just@v4.0.0
+        with:
+          just-version: 1.58.0
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Run doc tests
+        run: just test-doc
+
+  # ubuntu runs the all-features superset, macOS and Windows run the default features.
+  test-workspace:
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
+      - uses: extractions/setup-just@v4.0.0
+        with:
+          just-version: 1.58.0
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install tools
         uses: taiki-e/install-action@v2.90.3
         with:
-          tool: nextest,cargo-llvm-cov
+          tool: nextest
       - name: Configure RUSTFLAGS for Windows
         if: runner.os == 'Windows'
         shell: bash
         run: |
           echo "RUSTFLAGS=${RUSTFLAGS} -C link-args=/STACK:8388608" >> $GITHUB_ENV
       - name: Run tests
-        run: just test-mq test-doc test-doc-examples test-all-features test
+        run: just test-workspace
         env:
           NEXTEST_RETRIES: 3
-      - name: Generate code coverage
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+  test-all-features:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
+      - uses: extractions/setup-just@v4.0.0
+        with:
+          just-version: 1.58.0
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install tools
+        uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: nextest,cargo-llvm-cov
+      - name: Run tests
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        run: just test-all-features
+        env:
+          NEXTEST_RETRIES: 3
+      - name: Run tests with code coverage
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: cargo llvm-cov nextest --all-features --workspace --lcov --output-path lcov.info
+        env:
+          NEXTEST_RETRIES: 3
       - name: Upload coverage to Codecov
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v7.1.1
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           files: lcov.info
           fail_ci_if_error: true
+
+  test-features:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
+      - uses: extractions/setup-just@v4.0.0
+        with:
+          just-version: 1.58.0
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install tools
+        uses: taiki-e/install-action@v2.90.3
+        with:
+          tool: nextest
+      - name: Run feature-gated tests
+        run: just test-lang-cached test-default
+        env:
+          NEXTEST_RETRIES: 3
 
   format-check:
     runs-on: ubuntu-latest
@@ -71,6 +168,8 @@ jobs:
         with:
           just-version: 1.58.0
       - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: harehare/setup-mq@v1.1.7
         with:
           bins: fmt
@@ -89,6 +188,8 @@ jobs:
         with:
           just-version: 1.58.0
       - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Run lint
         run: just lint
 
