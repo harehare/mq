@@ -240,14 +240,14 @@ mod tests {
     use crate::module::resolver::std_resolver::StdModuleResolver;
     use crate::runtime::host::HostFunctions;
     use crate::runtime::runtime_value::RuntimeValue;
+    use crate::tarn::TokenArena;
     use crate::tarn::bytecode::{BinaryOp, Chunk, OpCode, TryCatchInfo};
     use crate::tarn::compiler::{
         CompileSeeds, CompiledProgram, ResolvedModuleVars, compile_program_for_engine,
         compile_uninstrumented_program_for_engine,
     };
-    use crate::tarn::interpreter::run_with_globals;
+    use crate::tarn::interpreter::{self, Run};
     use crate::tarn::last_use::{BitRows, move_last_uses, successors_of};
-    use crate::tarn::{Options, TokenArena};
     use crate::{ModuleLoader, Shared, SharedCell};
     use rstest::rstest;
 
@@ -289,15 +289,9 @@ mod tests {
     }
 
     fn run(compiled: &CompiledProgram) -> RuntimeValue {
-        run_with_globals(
-            compiled,
-            RuntimeValue::None,
-            &HostFunctions::default(),
-            None,
-            Options::default().max_call_stack_depth,
-            &[],
-        )
-        .unwrap()
+        interpreter::run(compiled, RuntimeValue::None, Run::new(&HostFunctions::default()))
+            .result
+            .unwrap()
     }
 
     fn all_ops(compiled: &CompiledProgram) -> impl Iterator<Item = &OpCode> {

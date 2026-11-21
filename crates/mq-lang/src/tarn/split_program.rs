@@ -192,21 +192,23 @@ impl SplitProgram {
             let result = map_input_values(input, |value| {
                 let execution_pools = std::mem::take(pools);
                 if self.let_names.is_empty() {
-                    let (result, next_pools) = interpreter::run(
+                    let output = interpreter::run(
                         &self.program,
                         value,
-                        context.run_options(remaining_timeout(deadline)),
-                        env,
-                        execution_pools,
+                        context
+                            .new_run(remaining_timeout(deadline))
+                            .env(interpreter::Env::Prebuilt(env))
+                            .pools(execution_pools),
                     );
-                    *pools = next_pools;
-                    result
+                    *pools = output.pools;
+                    output.result
                 } else {
-                    let output = interpreter::run_with_options(
+                    let output = interpreter::run(
                         &self.program,
                         value,
-                        interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
-                            .env(env)
+                        context
+                            .new_run(remaining_timeout(deadline))
+                            .env(interpreter::Env::Prebuilt(env))
                             .capture(interpreter::Capture::Slots(&self.let_slots))
                             .pools(execution_pools),
                     );
@@ -227,22 +229,24 @@ impl SplitProgram {
         };
         let input = RuntimeValue::Array(Shared::new(values));
         let result = if self.let_names.is_empty() {
-            let (result, next_pools) = interpreter::run(
+            let output = interpreter::run(
                 after,
                 input,
-                context.run_options(remaining_timeout(deadline)),
-                env,
-                std::mem::take(pools),
+                context
+                    .new_run(remaining_timeout(deadline))
+                    .env(interpreter::Env::Prebuilt(env))
+                    .pools(std::mem::take(pools)),
             );
-            *pools = next_pools;
-            result
+            *pools = output.pools;
+            output.result
         } else {
             let let_values: Vec<RuntimeValue> = let_bindings.into_iter().map(|(_, value)| value).collect();
-            let output = interpreter::run_with_options(
+            let output = interpreter::run(
                 after,
                 input,
-                interpreter::Run::new(context.run_options(remaining_timeout(deadline)))
-                    .env(env)
+                context
+                    .new_run(remaining_timeout(deadline))
+                    .env(interpreter::Env::Prebuilt(env))
                     .bindings(&let_values)
                     .pools(std::mem::take(pools)),
             );

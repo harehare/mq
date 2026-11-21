@@ -35,7 +35,6 @@ use crate::runtime::builtin::{self, Args, resolve_index};
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, ResumeBuiltin, RuntimeValue};
 use crate::selector::Selector;
-#[cfg(feature = "debugger")]
 use crate::tarn::Options;
 use crate::tarn::VmEnv;
 #[cfg(feature = "vm-profile")]
@@ -96,12 +95,12 @@ struct DebugRuntime<'a> {
     current_node: Option<Shared<Node>>,
 }
 
-pub(crate) struct RunOptions<'a> {
-    pub(crate) host_functions: &'a HostFunctions,
-    pub(crate) timeout: Option<Duration>,
-    pub(crate) max_call_stack_depth: u32,
-    pub(crate) capture_stack_trace: bool,
-    pub(crate) global_bindings: &'a [(Ident, RuntimeValue)],
+/// Per-run limits and host services shared by the VM entry points.
+struct Settings<'a> {
+    host_functions: &'a HostFunctions,
+    timeout: Option<Duration>,
+    max_call_stack_depth: u32,
+    capture_stack_trace: bool,
 }
 
 /// A top-level local selected for capture after execution.
@@ -143,10 +142,22 @@ pub(crate) enum Capture<'a> {
     Slots(&'a [CaptureSlot]),
 }
 
+/// Where a run gets its globals environment.
+#[derive(Clone, Copy)]
+pub(crate) enum Env<'a> {
+    /// Built from these bindings on every run.
+    Build(&'a [(Ident, RuntimeValue)]),
+    /// Built once by the caller and shared across runs.
+    Prebuilt(&'a VmEnv),
+}
+
 /// Everything a run needs beyond the program and its input.
 pub(crate) struct Run<'a> {
-    options: RunOptions<'a>,
-    env: Option<&'a VmEnv>,
+    host_functions: &'a HostFunctions,
+    timeout: Option<Duration>,
+    max_call_stack_depth: u32,
+    capture_stack_trace: bool,
+    env: Env<'a>,
     bindings: &'a [RuntimeValue],
     capture: Capture<'a>,
     pools: ExecutionPools,
@@ -155,10 +166,13 @@ pub(crate) struct Run<'a> {
 }
 
 impl<'a> Run<'a> {
-    pub(crate) fn new(options: RunOptions<'a>) -> Self {
+    pub(crate) fn new(host_functions: &'a HostFunctions) -> Self {
         Self {
-            options,
-            env: None,
+            host_functions,
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            env: Env::Build(&[]),
             bindings: &[],
             capture: Capture::None,
             pools: ExecutionPools::default(),
@@ -167,9 +181,23 @@ impl<'a> Run<'a> {
         }
     }
 
-    /// Uses a prebuilt environment instead of building one from `options.global_bindings`.
-    pub(crate) fn env(mut self, env: &'a VmEnv) -> Self {
-        self.env = Some(env);
+    pub(crate) fn timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub(crate) fn max_call_stack_depth(mut self, depth: u32) -> Self {
+        self.max_call_stack_depth = depth;
+        self
+    }
+
+    pub(crate) fn capture_stack_trace(mut self, capture: bool) -> Self {
+        self.capture_stack_trace = capture;
+        self
+    }
+
+    pub(crate) fn env(mut self, env: Env<'a>) -> Self {
+        self.env = env;
         self
     }
 
@@ -197,7 +225,7 @@ impl<'a> Run<'a> {
     }
 }
 
-/// Result of [`run_with_options`].
+/// Result of [`run`].
 pub(crate) struct RunOutput {
     pub(crate) result: VmResult<RuntimeValue>,
     /// Final values of the requested locals; empty when capture is off or the run failed early.
@@ -206,56 +234,13 @@ pub(crate) struct RunOutput {
     pub(crate) pools: ExecutionPools,
 }
 
-/// Runs a compiled program with Engine-defined globals.
-pub(crate) fn run_with_globals(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    global_bindings: &[(Ident, RuntimeValue)],
-) -> VmResult<RuntimeValue> {
-    let options = RunOptions {
+/// Runs a compiled program. See [`Run`] for the knobs.
+pub(crate) fn run(compiled: &CompiledProgram, input: RuntimeValue, run: Run<'_>) -> RunOutput {
+    let Run {
         host_functions,
         timeout,
         max_call_stack_depth,
-        capture_stack_trace: false,
-        global_bindings,
-    };
-    let env = VmEnv::from_bindings(global_bindings, Shared::clone(&compiled.token_arena));
-    run(compiled, input, options, &env, ExecutionPools::default()).0
-}
-
-/// Runs without bindings, capture or hook. Skips [`Run`] and [`RunOutput`] on the hot path.
-pub(crate) fn run(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    options: RunOptions<'_>,
-    env: &VmEnv,
-    pools: ExecutionPools,
-) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    #[cfg(feature = "debugger")]
-    let mut debug = DebugRuntime {
-        hook: None,
-        call_stack: Vec::new(),
-        current_node: None,
-    };
-    run_impl_with_bindings(
-        compiled,
-        input,
-        &[],
-        options,
-        env,
-        pools,
-        #[cfg(feature = "debugger")]
-        &mut debug,
-    )
-}
-
-/// Runs a compiled program. See [`Run`] for the knobs.
-pub(crate) fn run_with_options(compiled: &CompiledProgram, input: RuntimeValue, run: Run<'_>) -> RunOutput {
-    let Run {
-        options,
+        capture_stack_trace,
         env,
         bindings,
         capture,
@@ -263,6 +248,12 @@ pub(crate) fn run_with_options(compiled: &CompiledProgram, input: RuntimeValue, 
         #[cfg(feature = "debugger")]
         hook,
     } = run;
+    let settings = Settings {
+        host_functions,
+        timeout,
+        max_call_stack_depth,
+        capture_stack_trace,
+    };
     #[cfg(feature = "debugger")]
     let mut debug = DebugRuntime {
         hook,
@@ -271,9 +262,9 @@ pub(crate) fn run_with_options(compiled: &CompiledProgram, input: RuntimeValue, 
     };
     let owned_env;
     let env = match env {
-        Some(env) => env,
-        None => {
-            owned_env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
+        Env::Prebuilt(env) => env,
+        Env::Build(global_bindings) => {
+            owned_env = VmEnv::from_bindings(global_bindings, Shared::clone(&compiled.token_arena));
             &owned_env
         }
     };
@@ -284,7 +275,7 @@ pub(crate) fn run_with_options(compiled: &CompiledProgram, input: RuntimeValue, 
                 compiled,
                 input,
                 bindings,
-                options,
+                settings,
                 env,
                 pools,
                 #[cfg(feature = "debugger")]
@@ -305,7 +296,7 @@ pub(crate) fn run_with_options(compiled: &CompiledProgram, input: RuntimeValue, 
     let (result, captured, pools) = run_impl_capturing_locals_with_env(
         compiled,
         CapturingRun { input, bindings, slots },
-        options,
+        settings,
         env,
         pools,
         #[cfg(feature = "debugger")]
@@ -336,12 +327,11 @@ pub(crate) fn run_debug_expression(
         compiled,
         input,
         bindings,
-        RunOptions {
+        Settings {
             host_functions,
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
-            global_bindings: &[],
         },
         &env,
         ExecutionPools::default(),
@@ -355,7 +345,7 @@ fn run_impl_with_bindings(
     compiled: &CompiledProgram,
     input: RuntimeValue,
     initial_bindings: &[RuntimeValue],
-    options: RunOptions<'_>,
+    options: Settings<'_>,
     env: &VmEnv,
     pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
@@ -399,7 +389,7 @@ fn run_impl_with_bindings(
 fn run_impl_capturing_locals_with_env(
     compiled: &CompiledProgram,
     capture: CapturingRun<'_>,
-    options: RunOptions<'_>,
+    options: Settings<'_>,
     env: &VmEnv,
     pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
