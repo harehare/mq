@@ -89,6 +89,8 @@ pub use lexer::token::{StringSegment, Token, TokenKind};
 pub use lexer::{BOOLEAN_LITERALS, KEYWORDS};
 #[cfg(feature = "http-import")]
 pub use module::resolver::http_import;
+#[cfg(feature = "http-import-ureq")]
+pub use module::resolver::http_resolver::UreqFetcher;
 #[cfg(feature = "http-import")]
 pub use module::resolver::http_resolver::{HttpFetcher, HttpModuleResolver};
 #[cfg(feature = "http-import")]
