@@ -1057,28 +1057,27 @@ end
 #
 # Returns: number
 def find_index(arr, f):
-  let _find_index_impl = fn(arr, f, idx):
-    if (idx == len(arr)):
-      -1
-    elif (f(get(arr, idx))):
-      idx
-    else:
-      _find_index_impl(arr, f, idx + 1);
-
-  | if (is_coroutine(arr)):
-      do
-        var idx = 0
-        | var step = next(arr)
-        | while (!step["done"] && !f(step["value"])):
-            step = next(arr)
-            | idx += 1
-          end
-        | if (step["done"]): -1 else: idx
-      end
-    elif (not(is_array(arr))):
-      error("first argument must be an array")
-    else:
-      _find_index_impl(arr, f, 0)
+  if (is_coroutine(arr)):
+    do
+      var idx = 0
+      | var step = next(arr)
+      | while (!step["done"] && !f(step["value"])):
+          step = next(arr)
+          | idx += 1
+        end
+      | if (step["done"]): -1 else: idx
+    end
+  elif (not(is_array(arr))):
+    error("first argument must be an array")
+  else:
+    do
+      let n = len(arr)
+      | var idx = 0
+      | while (idx < n && !f(get(arr, idx))):
+          idx += 1
+        end
+      | if (idx == n): -1 else: idx
+    end
 end
 
 # Skips elements from the beginning of an array while the provided function returns true.

@@ -630,6 +630,11 @@ def test_find_index(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_find_index_long_array():
+  let arr = explode(repeat("a", 1000))
+  | assert_eq(find_index(arr, fn(c): c == 0;), -1)
+end
+
 def test_find_index_coroutine():
   let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
   | assert_eq(find_index(source(), fn(x): x == 3;), 2)
