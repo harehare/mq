@@ -2822,10 +2822,12 @@ impl<R: ModuleResolver> Compiler<R> {
             Resolved::Upvalue { index: idx, .. } => self.emit(OpCode::GetUpvalue(idx)),
         };
         if let AccessTarget::Call(_, args) = target {
+            let call_token_id = self.current_token_id;
             for arg in args.iter() {
                 self.compile_expr(arg)?;
             }
             let argc = self.arg_count(args.len())?;
+            self.set_call_token_id(call_token_id);
             self.emit(OpCode::CallValue(argc));
         }
         Ok(())

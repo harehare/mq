@@ -292,7 +292,7 @@ mod nodes {
     }
 
     #[test]
-    fn error_after_dropped_def_points_at_its_source() {
+    fn error_after_dropped_def_points_at_the_caller() {
         let query = "def unused(x): x; | def fail(x): error(\"boom\"); | fail(.)";
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
@@ -304,7 +304,7 @@ mod nodes {
             .map(|label| label.offset())
             .expect("error has a source label");
         assert!(
-            query[offset..].starts_with("error"),
+            query[offset..].starts_with("fail(.)"),
             "label at {offset}: {}",
             &query[offset..]
         );
@@ -624,14 +624,28 @@ fn test_eval_frees_tokens_of_modules_it_imports() {
 }
 
 #[rstest]
-#[case::query("def fail(): error(\"boom\"); | fail()")]
-#[case::after_builtin_call(r#"upcase("a") | error("boom")"#)]
-fn test_eval_error_points_at_the_query(#[case] query: &str) {
+#[case::in_function("def fail(): error(\"boom\"); | fail()", "fail()")]
+#[case::top_level(r#"upcase("a") | error("boom")"#, "error")]
+#[case::in_builtin_mq_function(r#"1 | top_by(1, 2)"#, "top_by")]
+#[case::private_helper("def _check(): error(\"boom\"); | def api(): _check(); | api()", "api")]
+#[case::nested_private_helpers(
+    "def _inner(): error(\"boom\"); | def _outer(): _inner(); | def api(): _outer(); | api()",
+    "api"
+)]
+#[case::private_helper_at_top_level("def _check(): error(\"boom\"); | _check()", "_check")]
+#[case::only_private_chain("def _inner(): error(\"boom\"); | def _outer(): _inner(); | _outer()", "_outer")]
+#[case::private_helper_called_from_lambda(
+    "def _check(): error(\"boom\"); | def api(): map([1], fn(x): _check();); | api()",
+    "_check"
+)]
+#[case::thrown_value("def api(): error({\"a\": 1}); | api()", "api()")]
+#[case::thrown_value_private("def _check(): error([1]); | def api(): _check(); | api()", "api")]
+fn test_eval_error_points_at_the_query(#[case] query: &str, #[case] at: &str) {
     let mut engine = DefaultEngine::default();
     engine.load_builtin_module();
     let error = engine.eval(query, null_input().into_iter()).unwrap_err();
     let offset = label_offset(&error);
-    assert!(query[offset..].starts_with("error"), "label at {offset}: {query}");
+    assert!(query[offset..].starts_with(at), "label at {offset}: {query}");
 }
 
 /// The diagnostic's source name, source text, and label offset.
@@ -654,8 +668,9 @@ fn test_query_session_error_in_an_earlier_def_shows_its_query() {
         .eval(r#"upcase("abc") | fail()"#, null_input().into_iter())
         .unwrap_err();
     let (name, source, offset) = diagnostic(&error);
-    assert_eq!((name.as_str(), source.as_str()), ("repl#1", definition));
-    assert!(definition[offset..].starts_with("error"), "label at {offset}");
+    let query = r#"upcase("abc") | fail()"#;
+    assert_eq!((name.as_str(), source.as_str()), ("repl#2", query));
+    assert!(query[offset..].starts_with("fail"), "label at {offset}");
 }
 
 #[rstest]
@@ -995,7 +1010,7 @@ fn test_eval() {
 /// even when the engine already holds another module (so the module ids can't line up by luck).
 #[rstest]
 #[case::runtime_error(
-    "def boom(): error(\"boom\");",
+    "def boom(): 1 / 0;",
     "broken_module_runtime_error",
     "broken_module_runtime_error::boom()"
 )]
@@ -3051,4 +3066,52 @@ fn test_bare_env_is_read_when_the_program_runs(
             assert!(is_expected, "{error}");
         }
     }
+}
+
+#[test]
+fn test_eval_error_in_module_private_helper_points_at_the_query() {
+    let (temp_dir, temp_file_path) = create_file(
+        "private_helper_module.mq",
+        "def _expect(): error(\"boom\");\ndef api(): _expect();",
+    );
+    defer! {
+        let _ = std::fs::remove_file(&temp_file_path);
+    }
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    engine.load_builtin_module();
+    let query = r#"import "private_helper_module" | private_helper_module::api()"#;
+    let error = engine.eval(query, null_input().into_iter()).unwrap_err();
+    let offset = label_offset(&error);
+    assert!(
+        query[offset..].starts_with("private_helper_module::api"),
+        "label at {offset}: {query}"
+    );
+}
+
+#[test]
+fn test_eval_error_in_module_function_with_args_points_at_the_call() {
+    let (temp_dir, temp_file_path) = create_file("args_module.mq", "def fail(x): error(\"boom\");");
+    defer! {
+        let _ = std::fs::remove_file(&temp_file_path);
+    }
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    engine.load_builtin_module();
+    let query = r#"import "args_module" | args_module::fail(42)"#;
+    let error = engine.eval(query, null_input().into_iter()).unwrap_err();
+    let offset = label_offset(&error);
+    assert!(
+        query[offset..].starts_with("args_module::fail"),
+        "label at {offset}: {query}"
+    );
+}
+
+#[test]
+fn test_eval_caught_error_keeps_its_message_when_relocated() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let query = r#"def _check(): error("boom"); | def api(): _check(); | try: api() catch (e): e["message"]"#;
+    let result = engine.eval(query, null_input().into_iter()).unwrap();
+    assert_eq!(result.values(), &["boom".to_string().into()]);
 }

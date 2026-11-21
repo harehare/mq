@@ -1116,18 +1116,21 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
             }
             Ok(FrameSliceOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
             Ok(FrameSliceOutcome::Complete(value)) => value,
-            Err(e) => match unwind_frames(
-                e,
-                frames,
-                root_chunks,
-                operand_stack,
-                execution,
-                #[cfg(feature = "debugger")]
-                debug,
-            ) {
-                Ok(()) => continue 'frames,
-                Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
-            },
+            Err(e) => {
+                let e = relocate_user_error_to_caller(e, frames, root_chunks);
+                match unwind_frames(
+                    e,
+                    frames,
+                    root_chunks,
+                    operand_stack,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                ) {
+                    Ok(()) => continue 'frames,
+                    Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                }
+            }
         };
 
         if frames.len() == 1 {
@@ -1225,7 +1228,50 @@ fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError)
     locate(&chunks[caller.chunk_index as usize], caller.ip as usize, e)
 }
 
+fn relocate_user_error_to_caller(e: VmError, frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> VmError {
+    let VmError::Located(inner, _) = &e else {
+        return e;
+    };
+
+    if !matches!(
+        &**inner,
+        VmError::Builtin(b) if matches!(**b, builtin::Error::UserDefined(_) | builtin::Error::Thrown(_))
+    ) {
+        return e;
+    }
+
+    let function_name = |frame: &Frame| {
+        let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
+        chunks[frame.chunk_index as usize].function_name
+    };
+    let is_private = |name: Ident| name.resolve_with(|name| name.starts_with('_'));
+    let Some(failed) = frames.len().checked_sub(1).filter(|&i| i > 0) else {
+        return e;
+    };
+    let Some(mut name) = function_name(&frames[failed]) else {
+        return e;
+    };
+    let mut at = failed;
+
+    while is_private(name) && at > 1 {
+        let Some(caller_name) = function_name(&frames[at - 1]) else {
+            break;
+        };
+        at -= 1;
+        name = caller_name;
+    }
+
+    let VmError::Located(inner, _) = e else {
+        return e;
+    };
+    let caller = &frames[at - 1];
+    let chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
+
+    locate(&chunks[caller.chunk_index as usize], caller.ip as usize, *inner)
+}
+
 /// Pops frames until a `try` body catches `e` (`Ok(())`) or the stack empties (`Err`).
+#[cold]
 #[allow(
     clippy::ptr_arg,
     reason = "unwinding may truncate and push onto the shared operand stack"
