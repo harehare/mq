@@ -14,6 +14,8 @@ pub(super) fn write_text_report(
     code: &str,
     diagnostics: &[Diagnostic],
 ) -> io::Result<bool> {
+    // Split once: each snippet looks up its line here instead of re-splitting the whole source.
+    let lines: Vec<&str> = code.lines().collect();
     let mut printed_category = false;
     for severity in SEVERITY_ORDER {
         let group: Vec<&Diagnostic> = diagnostics.iter().filter(|d| d.severity == severity).collect();
@@ -24,7 +26,7 @@ pub(super) fn write_text_report(
             writeln!(w)?;
         }
         printed_category = true;
-        write_category(w, severity, &group, file_label, code)?;
+        write_category(w, severity, &group, file_label, &lines)?;
     }
 
     if diagnostics.is_empty() {
@@ -72,7 +74,7 @@ fn write_category(
     severity: Severity,
     diagnostics: &[&Diagnostic],
     file_label: &str,
-    code: &str,
+    lines: &[&str],
 ) -> io::Result<()> {
     let (title, letter) = severity_category(severity);
     let bar = severity_color(severity, "│");
@@ -90,7 +92,7 @@ fn write_category(
 
         if let Some(range) = &diagnostic.range {
             writeln!(w, "{bar}")?;
-            write_snippet(w, code, range, diagnostic.severity, &bar)?;
+            write_snippet(w, lines, range, diagnostic.severity, &bar)?;
         }
 
         let loc = match &diagnostic.range {
@@ -122,12 +124,11 @@ fn write_category(
 /// `severity` and indented under the category's gutter `bar`.
 fn write_snippet(
     w: &mut impl Write,
-    code: &str,
+    lines: &[&str],
     range: &mq_lang::Range,
     severity: Severity,
     bar: &colored::ColoredString,
 ) -> io::Result<()> {
-    let lines: Vec<&str> = code.lines().collect();
     let line_idx = range.start.line.saturating_sub(1) as usize;
     let Some(source_line) = lines.get(line_idx) else {
         return Ok(());
