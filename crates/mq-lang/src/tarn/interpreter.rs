@@ -1228,19 +1228,18 @@ fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError)
     locate(&chunks[caller.chunk_index as usize], caller.ip as usize, e)
 }
 
-/// Points an `error(...)` raised inside a named function at that function's call site, since the
-/// caller is what misused it. Private helpers (`_name`) are skipped so the label lands on the first
-/// public caller. Errors raised at the top level or in anonymous bodies keep their place.
 fn relocate_user_error_to_caller(e: VmError, frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> VmError {
     let VmError::Located(inner, _) = &e else {
         return e;
     };
+
     if !matches!(
         &**inner,
         VmError::Builtin(b) if matches!(**b, builtin::Error::UserDefined(_) | builtin::Error::Thrown(_))
     ) {
         return e;
     }
+
     let function_name = |frame: &Frame| {
         let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
         chunks[frame.chunk_index as usize].function_name
@@ -1253,6 +1252,7 @@ fn relocate_user_error_to_caller(e: VmError, frames: &[Frame], root_chunks: &Sha
         return e;
     };
     let mut at = failed;
+
     while is_private(name) && at > 1 {
         let Some(caller_name) = function_name(&frames[at - 1]) else {
             break;
@@ -1260,11 +1260,13 @@ fn relocate_user_error_to_caller(e: VmError, frames: &[Frame], root_chunks: &Sha
         at -= 1;
         name = caller_name;
     }
+
     let VmError::Located(inner, _) = e else {
         return e;
     };
     let caller = &frames[at - 1];
     let chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
+
     locate(&chunks[caller.chunk_index as usize], caller.ip as usize, *inner)
 }
 

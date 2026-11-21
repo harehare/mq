@@ -633,6 +633,13 @@ fn test_eval_frees_tokens_of_modules_it_imports() {
     "api"
 )]
 #[case::private_helper_at_top_level("def _check(): error(\"boom\"); | _check()", "_check")]
+#[case::only_private_chain("def _inner(): error(\"boom\"); | def _outer(): _inner(); | _outer()", "_outer")]
+#[case::private_helper_called_from_lambda(
+    "def _check(): error(\"boom\"); | def api(): map([1], fn(x): _check();); | api()",
+    "_check"
+)]
+#[case::thrown_value("def api(): error({\"a\": 1}); | api()", "api()")]
+#[case::thrown_value_private("def _check(): error([1]); | def api(): _check(); | api()", "api")]
 fn test_eval_error_points_at_the_query(#[case] query: &str, #[case] at: &str) {
     let mut engine = DefaultEngine::default();
     engine.load_builtin_module();
@@ -3059,4 +3066,34 @@ fn test_bare_env_is_read_when_the_program_runs(
             assert!(is_expected, "{error}");
         }
     }
+}
+
+#[test]
+fn test_eval_error_in_module_private_helper_points_at_the_query() {
+    let (temp_dir, temp_file_path) = create_file(
+        "private_helper_module.mq",
+        "def _expect(): error(\"boom\");\ndef api(): _expect();",
+    );
+    defer! {
+        let _ = std::fs::remove_file(&temp_file_path);
+    }
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    engine.load_builtin_module();
+    let query = r#"import "private_helper_module" | private_helper_module::api()"#;
+    let error = engine.eval(query, null_input().into_iter()).unwrap_err();
+    let offset = label_offset(&error);
+    assert!(
+        query[offset..].starts_with("private_helper_module::api"),
+        "label at {offset}: {query}"
+    );
+}
+
+#[test]
+fn test_eval_caught_error_keeps_its_message_when_relocated() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let query = r#"def _check(): error("boom"); | def api(): _check(); | try: api() catch (e): e["message"]"#;
+    let result = engine.eval(query, null_input().into_iter()).unwrap();
+    assert_eq!(result.values(), &["boom".to_string().into()]);
 }
