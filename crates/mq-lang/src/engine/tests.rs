@@ -3057,12 +3057,12 @@ fn test_bare_env_is_read_when_the_program_runs(
 #[test]
 fn test_set_builtin_source_replaces_a_soft_builtin() {
     let mut engine = DefaultEngine::default();
-    let source = crate::BUILTIN_MODULE_FILE.replacen(
-        "def is_string(s): type(s) == \"string\";",
-        "def is_string(s): false;",
-        1,
-    );
-    assert_ne!(source, crate::BUILTIN_MODULE_FILE);
+    let original = crate::BUILTIN_MODULE_FILE;
+    let start = original
+        .find("def is_string(s):")
+        .expect("builtin.mq defines is_string");
+    let end = start + original[start..].find(';').expect("is_string definition ends with `;`");
+    let source = format!("{}def is_string(s): false{}", &original[..start], &original[end..]);
     engine.set_builtin_source(&source);
     engine.load_builtin_module();
 
