@@ -3090,6 +3090,24 @@ fn test_eval_error_in_module_private_helper_points_at_the_query() {
 }
 
 #[test]
+fn test_eval_error_in_module_function_with_args_points_at_the_call() {
+    let (temp_dir, temp_file_path) = create_file("args_module.mq", "def fail(x): error(\"boom\");");
+    defer! {
+        let _ = std::fs::remove_file(&temp_file_path);
+    }
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    engine.load_builtin_module();
+    let query = r#"import "args_module" | args_module::fail(42)"#;
+    let error = engine.eval(query, null_input().into_iter()).unwrap_err();
+    let offset = label_offset(&error);
+    assert!(
+        query[offset..].starts_with("args_module::fail"),
+        "label at {offset}: {query}"
+    );
+}
+
+#[test]
 fn test_eval_caught_error_keeps_its_message_when_relocated() {
     let mut engine = DefaultEngine::default();
     engine.load_builtin_module();
