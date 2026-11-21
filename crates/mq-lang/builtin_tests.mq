@@ -630,6 +630,11 @@ def test_find_index(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_find_index_long_array():
+  let arr = explode(repeat("a", 1000))
+  | assert_eq(find_index(arr, fn(c): c == 0;), -1)
+end
+
 def test_find_index_coroutine():
   let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
   | assert_eq(find_index(source(), fn(x): x == 3;), 2)
@@ -2435,4 +2440,115 @@ end
 def test_concat(value, expected):
   let result = concat(value)
   | assert_eq(result, expected)
+end
+
+def test_is_mdx_every_node_kind():
+  let kinds = ["{1+1}", "<A />", "x <B /> y", "x {y} z", "export const a = 1"]
+  | let results = map(kinds, fn(s): s | to_mdx() | filter(is_mdx) | len;)
+  | assert_eq(results, [1, 1, 1, 1, 1])
+end
+
+# @parametrize([
+#   [[5, 1, 3], fn(x): x;, 1],
+#   [[{"k": 1, "v": "a"}, {"k": 1, "v": "b"}], fn(x): x["k"];, {"k": 1, "v": "a"}],
+# ])
+def test_min_by_second_and_tie(value, f, expected):
+  assert_eq(min_by(value, f), expected)
+end
+
+# @parametrize([
+#   [[1, 5, 3], fn(x): x;, 5],
+#   [[{"k": 1, "v": "a"}, {"k": 1, "v": "b"}], fn(x): x["k"];, {"k": 1, "v": "a"}],
+# ])
+def test_max_by_second_and_tie(value, f, expected):
+  assert_eq(max_by(value, f), expected)
+end
+
+# @parametrize([[0, 5, 0], [5, 0, 0], [1, 5, 5], [5, 1, 5], [4, 6, 12]])
+def test_lcm_edges(a, b, expected):
+  assert_eq(lcm(a, b), expected)
+end
+
+# @parametrize([[[1], "a"], ["a", [1]]])
+def test_zip_non_array_errors(a, b):
+  assert_eq(try: zip(a, b) catch: "error", "error")
+end
+
+# @parametrize([
+#   [[[1, 2, 3]], [[1], [2], [3]]],
+#   [[[1], [2]], [[1, 2]]],
+# ])
+def test_transpose_single_row_or_col(value, expected):
+  assert_eq(transpose(value), expected)
+end
+
+# @parametrize([[[1, 5, 2], fn(x): x < 3;, [5, 2]]])
+def test_skip_while_stops_at_first_miss(value, f, expected):
+  assert_eq(skip_while(value, f), expected)
+end
+
+def test_find_index_coroutine_not_found():
+  let source = fn(): yield: 1 | yield: 2;
+  | assert_eq(find_index(source(), fn(x): x == 9;), -1)
+end
+
+# @parametrize([[[1, 2, 3], 1, [[1], [2], [3]]], ["abc", 1, ["a", "b", "c"]]])
+def test_chunks_size_one(value, n, expected):
+  assert_eq(chunks(value, n), expected)
+end
+
+# @parametrize([[-0.5], [1.5]])
+def test_percentile_out_of_range_errors(p):
+  assert_eq(try: percentile([1, 2, 3], p) catch: "error", "error")
+end
+
+# @parametrize([
+#   [{"a": 1}, {"b": 2}, "replace", {"a": 1, "b": 2}],
+#   [{"a": 1}, 5, "replace", 5],
+#   [{"a": 1}, {"a": {"x": 1}}, "append", {"a": [1, {"x": 1}]}],
+# ])
+def test_merge_with_dict_shapes(a, b, policy, expected):
+  assert_eq(merge_with(a, b, policy), expected)
+end
+
+# @parametrize([["a\nb", "a\nb"], ["", ""]])
+def test_dedent_no_indent(value, expected):
+  assert_eq(dedent(value), expected)
+end
+
+# @parametrize([["a=b=c", "=", ["a", "b=c"]]])
+def test_split_once_multiple_separators(s, sep, expected):
+  assert_eq(split_once(s, sep), expected)
+end
+
+# @parametrize([["a=b=c", "=", ["a=b", "c"]]])
+def test_rsplit_once_multiple_separators(s, sep, expected):
+  assert_eq(rsplit_once(s, sep), expected)
+end
+
+def test_histogram_bucket_shape():
+  let two = histogram([0, 10], 10)
+  | assert_eq(get(two[9], "range"), "9-10")
+  | assert_eq(get(two[0], "count"), 1)
+  | assert_eq(get(two[9], "count"), 1)
+  | let same = histogram([5, 5], 2)
+  | assert_eq(get(same[0], "range"), "5-5.5")
+  | assert_eq(get(same[0], "count"), 2)
+  | let uneven = histogram([0, 0, 10], 2)
+  | assert_eq(get(uneven[1], "bar"), repeat("█", 20))
+end
+
+def test_stream_range_multi_char_strings():
+  assert_eq(collect(stream_range("aa", "ac")), ["aa", "ab", "ac"])
+  | assert_eq(collect(stream_range("e", "a", -1)), ["e", "d", "c", "b", "a"])
+  | assert_eq(try: collect(stream_range("a", "bc")) catch: "error", "error")
+end
+
+# @parametrize([[".hidden", 4, ".hid"], ["a.b.c", 4, "a..c"], ["noext", 3, "noe"]])
+def test_safe_filename_dot_handling(value, max_length, expected):
+  assert_eq(safe_filename(value, max_length), expected)
+end
+
+def test_safe_filename_default_max_length():
+  assert_eq(len(safe_filename(repeat("a", 300))), 255)
 end
