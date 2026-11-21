@@ -364,6 +364,9 @@ pub(super) fn flow_continue(e: &VmError) -> bool {
 mod tests {
     use super::*;
     use crate::parse;
+    use crate::runtime::host::HostFunctions;
+    use crate::tarn::compiler::compile_program;
+    use crate::tarn::interpreter::{Run, run};
 
     // One case per `builtin::Error` variant; see `all_builtin_error_variants_are_covered`.
     #[rstest::rstest]
@@ -522,19 +525,15 @@ mod tests {
     fn run_query(query: &str) -> RuntimeValue {
         let token_arena = Shared::new(crate::SharedCell::new(crate::arena::Arena::new(100)));
         let program = parse(query, Shared::clone(&token_arena)).unwrap();
-        let compiled = super::super::super::compiler::compile_program(
+        let compiled = compile_program(
             &program,
             token_arena,
             crate::ModuleLoader::new(crate::module::resolver::std_resolver::StdModuleResolver),
         )
         .unwrap();
-        super::super::run(
-            &compiled,
-            RuntimeValue::None,
-            super::super::Run::new(&crate::runtime::host::HostFunctions::default()),
-        )
-        .result
-        .unwrap()
+        run(&compiled, RuntimeValue::None, Run::new(&HostFunctions::default()))
+            .result
+            .unwrap()
     }
 
     #[test]
