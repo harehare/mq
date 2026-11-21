@@ -4,7 +4,7 @@ use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
 use crate::{TypeEnv, TypeError};
 use mq_hir::SymbolId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
 
 /// A deferred overload resolution for operators with unresolved type variable operands.
@@ -287,6 +287,8 @@ pub struct InferenceContext {
     constraints: Vec<Constraint>,
     /// Type variable substitutions (unified types)
     substitutions: FxHashMap<TypeVarId, Type>,
+    /// Resolved variables reused between calls (see `ResolveCx`).
+    resolved: std::cell::RefCell<ResolvedCache>,
     /// Bindings made during speculation, with the value they replaced, to undo a failed trial.
     trail: Vec<(TypeVarId, Option<Type>)>,
     speculating: usize,
@@ -366,6 +368,7 @@ impl InferenceContext {
             symbol_types: FxHashMap::default(),
             constraints: Vec::new(),
             substitutions: FxHashMap::default(),
+            resolved: Default::default(),
             trail: Vec::new(),
             speculating: 0,
             builtins: FxHashMap::default(),
@@ -1005,6 +1008,8 @@ impl InferenceContext {
     /// Binds a type variable to a type
     pub fn bind_type_var(&mut self, var: TypeVarId, ty: Type) {
         let previous = self.substitutions.insert(var, ty);
+        // A first binding cannot change a result without free variables; replacing one can
+        self.resolved.get_mut().invalidate(previous.is_some());
         if self.speculating > 0 {
             self.trail.push((var, previous));
         }
@@ -1019,6 +1024,7 @@ impl InferenceContext {
         self.speculating -= 1;
         let fits = self.errors.len() == errors;
         if !fits {
+            self.resolved.get_mut().invalidate(true);
             while self.trail.len() > mark {
                 let Some((var, previous)) = self.trail.pop() else { break };
                 match previous {
@@ -1046,12 +1052,18 @@ impl InferenceContext {
     /// Union(Var(b), String)` and `Var(b) → Union(Var(a), String)`), which
     /// would otherwise cause infinite recursion.
     pub fn resolve_type(&self, ty: &Type) -> Type {
-        self.resolve_type_inner(ty, &mut Vec::new())
+        let mut cx = ResolveCx {
+            cache: self.resolved.take(),
+            ..Default::default()
+        };
+        let resolved = self.resolve_type_inner(ty, &mut cx);
+        self.resolved.replace(cx.cache);
+        resolved
     }
 
     /// Whether the type is fully known and not `dynamic`, without building the resolved type.
     pub fn is_settled(&self, ty: &Type) -> bool {
-        !self.resolves_to_dynamic(ty) && self.is_settled_inner(ty, &mut Vec::new())
+        !self.resolves_to_dynamic(ty) && self.is_settled_inner(ty, &mut FxHashSet::default())
     }
 
     fn resolves_to_dynamic(&self, ty: &Type) -> bool {
@@ -1069,18 +1081,17 @@ impl InferenceContext {
         false
     }
 
-    fn is_settled_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> bool {
+    fn is_settled_inner(&self, ty: &Type, path: &mut FxHashSet<TypeVarId>) -> bool {
         match ty {
             Type::Var(var) => {
                 let Some(bound) = self.substitutions.get(var) else {
                     return false;
                 };
-                if path.contains(var) {
+                if !path.insert(*var) {
                     return false;
                 }
-                path.push(*var);
                 let settled = self.is_settled_inner(bound, path);
-                path.pop();
+                path.remove(var);
                 settled
             }
             Type::Array(elem) | Type::Generator(elem) => self.is_settled_inner(elem, path),
@@ -1094,40 +1105,57 @@ impl InferenceContext {
         }
     }
 
-    fn resolve_type_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> Type {
+    fn resolve_type_inner(&self, ty: &Type, cx: &mut ResolveCx) -> Type {
         match ty {
             Type::Var(var) => {
                 let Some(bound) = self.substitutions.get(var) else {
+                    cx.frees += 1;
                     return ty.clone();
                 };
-                if path.contains(var) {
+                if let Some(done) = cx.cache.ground.get(var) {
+                    return done.clone();
+                }
+                if let Some(done) = cx.cache.settled.get(var) {
+                    // Still holds a free variable, so enclosing results must not be cached as ground
+                    cx.frees += 1;
+                    return done.clone();
+                }
+                if !cx.path.insert(*var) {
                     // Cycle detected, return the var unresolved to break infinite recursion
+                    cx.cuts += 1;
+                    cx.frees += 1;
                     return ty.clone();
                 }
-                path.push(*var);
-                let result = self.resolve_type_inner(bound, path);
-                path.pop(); // Allow the same var in sibling branches
+                let (cuts_before, frees_before) = (cx.cuts, cx.frees);
+                let result = self.resolve_type_inner(bound, cx);
+                cx.path.remove(var); // Allow the same var in sibling branches
+                // Without a cut underneath, the result does not depend on the path: reuse it
+                if cx.frees == frees_before {
+                    cx.cache.ground.insert(*var, result.clone());
+                } else if cx.cuts == cuts_before {
+                    cx.cache.settled.insert(*var, result.clone());
+                }
                 result
             }
-            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, path))),
-            Type::Generator(yielded) => Type::Generator(Box::new(self.resolve_type_inner(yielded, path))),
+            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, cx))),
+            Type::Generator(yielded) => Type::Generator(Box::new(self.resolve_type_inner(yielded, cx))),
             Type::Dict(key, value) => Type::Dict(
-                Box::new(self.resolve_type_inner(key, path)),
-                Box::new(self.resolve_type_inner(value, path)),
+                Box::new(self.resolve_type_inner(key, cx)),
+                Box::new(self.resolve_type_inner(value, cx)),
             ),
             Type::Function(params, ret) => {
-                let new_params = params.iter().map(|p| self.resolve_type_inner(p, path)).collect();
-                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, path)))
+                let new_params = params.iter().map(|p| self.resolve_type_inner(p, cx)).collect();
+                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, cx)))
             }
             Type::Record(fields, rest) => {
                 let new_fields = fields
                     .iter()
-                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, path)))
+                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, cx)))
                     .collect();
-                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, path)))
+                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, cx)))
             }
-            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, path)).collect()),
-            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, path)).collect()),
+            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, cx)).collect()),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, cx)).collect()),
             _ => ty.clone(),
         }
     }
@@ -1136,8 +1164,9 @@ impl InferenceContext {
     pub fn finalize(self) -> TypeEnv {
         let mut result = TypeEnv::with_capacity(self.symbol_types.len());
 
+        let mut cx = ResolveCx::default();
         for (symbol, ty) in &self.symbol_types {
-            let resolved = self.resolve_type(ty);
+            let resolved = self.resolve_type_inner(ty, &mut cx);
             // Generalize function types: free type variables become quantified
             let scheme = if matches!(resolved, Type::Function(_, _)) {
                 TypeScheme::generalize(resolved, &[])
@@ -1149,6 +1178,37 @@ impl InferenceContext {
 
         result
     }
+}
+
+/// Resolved variables that are the same on any path (no cycle was cut beneath them).
+#[derive(Default)]
+struct ResolvedCache {
+    /// Results without free variables: no new binding can change them.
+    ground: FxHashMap<TypeVarId, Type>,
+    /// Results that still contain free variables: valid until the next binding.
+    settled: FxHashMap<TypeVarId, Type>,
+}
+
+impl ResolvedCache {
+    fn invalidate(&mut self, everything: bool) {
+        if !self.settled.is_empty() {
+            self.settled.clear();
+        }
+        if everything && !self.ground.is_empty() {
+            self.ground.clear();
+        }
+    }
+}
+
+/// Working state of `resolve_type_inner`: the variables being resolved (to detect cycles) and
+/// the cache. `cuts` and `frees` count cycles cut and unbound variables met so far, to tell
+/// whether a subtree's result may be cached.
+#[derive(Default)]
+struct ResolveCx {
+    path: FxHashSet<TypeVarId>,
+    cache: ResolvedCache,
+    cuts: usize,
+    frees: usize,
 }
 
 /// The overload among `overloads` that fits `arg_types` best.
@@ -1251,6 +1311,27 @@ mod tests {
 
         let resolved = ctx.resolve_type(&Type::Var(var1));
         assert_eq!(resolved, Type::Number);
+    }
+
+    #[test]
+    fn test_resolve_type_binds_free_var_behind_settled_cache_hit() {
+        let mut ctx = InferenceContext::new();
+        let free = ctx.fresh_var();
+        let shared = ctx.fresh_var();
+        let parent = ctx.fresh_var();
+
+        ctx.bind_type_var(shared, Type::Array(Box::new(Type::Var(free))));
+        ctx.bind_type_var(parent, Type::Var(shared));
+
+        // Warm `shared`, then resolve `parent` through the cache hit
+        ctx.resolve_type(&Type::Var(shared));
+        ctx.resolve_type(&Type::Var(parent));
+
+        ctx.bind_type_var(free, Type::Number);
+        assert_eq!(
+            ctx.resolve_type(&Type::Var(parent)),
+            Type::Array(Box::new(Type::Number))
+        );
     }
 
     #[test]
