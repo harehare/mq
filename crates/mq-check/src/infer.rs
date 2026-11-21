@@ -1112,7 +1112,12 @@ impl InferenceContext {
                     cx.frees += 1;
                     return ty.clone();
                 };
-                if let Some(done) = cx.cache.ground.get(var).or_else(|| cx.cache.settled.get(var)) {
+                if let Some(done) = cx.cache.ground.get(var) {
+                    return done.clone();
+                }
+                if let Some(done) = cx.cache.settled.get(var) {
+                    // Still holds a free variable, so enclosing results must not be cached as ground
+                    cx.frees += 1;
                     return done.clone();
                 }
                 if !cx.path.insert(*var) {
@@ -1306,6 +1311,27 @@ mod tests {
 
         let resolved = ctx.resolve_type(&Type::Var(var1));
         assert_eq!(resolved, Type::Number);
+    }
+
+    #[test]
+    fn test_resolve_type_binds_free_var_behind_settled_cache_hit() {
+        let mut ctx = InferenceContext::new();
+        let free = ctx.fresh_var();
+        let shared = ctx.fresh_var();
+        let parent = ctx.fresh_var();
+
+        ctx.bind_type_var(shared, Type::Array(Box::new(Type::Var(free))));
+        ctx.bind_type_var(parent, Type::Var(shared));
+
+        // Warm `shared`, then resolve `parent` through the cache hit
+        ctx.resolve_type(&Type::Var(shared));
+        ctx.resolve_type(&Type::Var(parent));
+
+        ctx.bind_type_var(free, Type::Number);
+        assert_eq!(
+            ctx.resolve_type(&Type::Var(parent)),
+            Type::Array(Box::new(Type::Number))
+        );
     }
 
     #[test]
