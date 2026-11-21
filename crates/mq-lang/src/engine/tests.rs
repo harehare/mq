@@ -627,6 +627,12 @@ fn test_eval_frees_tokens_of_modules_it_imports() {
 #[case::in_function("def fail(): error(\"boom\"); | fail()", "fail()")]
 #[case::top_level(r#"upcase("a") | error("boom")"#, "error")]
 #[case::in_builtin_mq_function(r#"1 | top_by(1, 2)"#, "top_by")]
+#[case::private_helper("def _check(): error(\"boom\"); | def api(): _check(); | api()", "api")]
+#[case::nested_private_helpers(
+    "def _inner(): error(\"boom\"); | def _outer(): _inner(); | def api(): _outer(); | api()",
+    "api"
+)]
+#[case::private_helper_at_top_level("def _check(): error(\"boom\"); | _check()", "_check")]
 fn test_eval_error_points_at_the_query(#[case] query: &str, #[case] at: &str) {
     let mut engine = DefaultEngine::default();
     engine.load_builtin_module();
