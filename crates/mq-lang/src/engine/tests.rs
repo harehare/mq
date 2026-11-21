@@ -3052,3 +3052,26 @@ fn test_bare_env_is_read_when_the_program_runs(
         }
     }
 }
+
+#[cfg(feature = "custom-builtin")]
+#[test]
+fn test_set_builtin_source_replaces_a_soft_builtin() {
+    let mut engine = DefaultEngine::default();
+    let original = crate::BUILTIN_MODULE_FILE;
+    let start = original.find("def is_h1(md):").expect("builtin.mq defines is_h1");
+    let end = start + original[start..].find(';').expect("is_h1 definition ends with `;`");
+    let source = format!("{}def is_h1(md): 42{}", &original[..start], &original[end..]);
+    engine.set_builtin_source(&source);
+    engine.load_builtin_module();
+
+    assert_eq!(
+        engine.eval("is_h1(\"a\")", null_input().into_iter()).unwrap()[0],
+        RuntimeValue::Number(42.into())
+    );
+    assert_eq!(
+        DefaultEngine::default()
+            .eval("is_h1(\"a\")", null_input().into_iter())
+            .unwrap()[0],
+        RuntimeValue::Boolean(false)
+    );
+}

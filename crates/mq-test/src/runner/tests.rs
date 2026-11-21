@@ -1580,3 +1580,160 @@ fn test_a_parametrize_case_with_wrong_argument_count_fails_the_run(#[case] body:
 
     fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn test_mutation_score_is_checked_against_min_score() {
+    let dir = temp_project_dir("mutation_score");
+    // `a < b` is checked at one point only, so `<` -> `>=` is caught but `0` -> `1` is not.
+    fs::write(dir.join("lib.mq"), "def below(a): a < 0;\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\ndef test_below():\n  assert_eq(below(-1), true)\nend\n",
+    )
+    .unwrap();
+
+    let run = |min_score| {
+        TestRunner::new(vec![test_file.clone()])
+            .with_mutation(MutationOptions {
+                min_score,
+                ..Default::default()
+            })
+            .run()
+            .unwrap()
+    };
+    assert!(run(None));
+    assert!(run(Some(1)));
+    assert!(!run(Some(100)));
+}
+
+#[test]
+fn test_mutation_requires_passing_tests() {
+    let dir = temp_project_dir("mutation_failing_baseline");
+    fs::write(dir.join("lib.mq"), "def one(): 1;\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\ndef test_one():\n  assert_eq(one(), 2)\nend\n",
+    )
+    .unwrap();
+
+    assert!(
+        TestRunner::new(vec![test_file])
+            .with_mutation(MutationOptions::default())
+            .run()
+            .is_err()
+    );
+}
+
+#[test]
+fn test_mutation_rejects_duplicate_test_names() {
+    let dir = temp_project_dir("mutation_duplicate");
+    fs::write(dir.join("lib.mq"), "def one(): 1;\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\ndef test_one():\n  assert_eq(one(), 2)\nend\ndef test_one():\n  assert_eq(one(), 1)\nend\n",
+    )
+    .unwrap();
+
+    let err = TestRunner::new(vec![test_file])
+        .with_mutation(MutationOptions::default())
+        .run()
+        .unwrap_err();
+    assert!(err.to_string().contains("duplicate test function `test_one`"), "{err}");
+}
+
+#[test]
+fn test_mutation_rejects_a_selection_that_matches_nothing() {
+    let dir = temp_project_dir("mutation_no_match");
+    fs::write(dir.join("lib.mq"), "def one(): 1;\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\ndef test_one():\n  assert_eq(one(), 1)\nend\n",
+    )
+    .unwrap();
+
+    let result = TestRunner::new(vec![test_file])
+        .with_filter(Some("nothing_like_this".to_string()))
+        .with_mutation(MutationOptions {
+            min_score: Some(100),
+            ..Default::default()
+        })
+        .run();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_mutation_kills_a_mutant_that_removes_parametrized_cases() {
+    let dir = temp_project_dir("mutation_missing_cases");
+    fs::write(dir.join("lib.mq"), "def cases(): if (true): [[1]] else: [];\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\n# @parametrize(cases())\ndef test_param(a):\n  assert_eq(a, 1)\nend\n",
+    )
+    .unwrap();
+
+    assert!(
+        TestRunner::new(vec![test_file])
+            .with_mutation(MutationOptions {
+                min_score: Some(100),
+                ..Default::default()
+            })
+            .run()
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_mutation_does_not_kill_a_mutant_that_adds_passing_cases() {
+    let dir = temp_project_dir("mutation_extra_cases");
+    fs::write(dir.join("lib.mq"), "def cases(): if (true): [[1]] else: [[1], [1]];\n").unwrap();
+    let test_file = dir.join("tests.mq");
+    fs::write(
+        &test_file,
+        "include \"test\"\n| include \"lib\"\n|\n# @parametrize(cases())\ndef test_param(a):\n  assert_eq(a, 1)\nend\n",
+    )
+    .unwrap();
+
+    assert!(
+        !TestRunner::new(vec![test_file])
+            .with_mutation(MutationOptions {
+                min_score: Some(100),
+                ..Default::default()
+            })
+            .run()
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_mutation_overrides_every_import_path_of_a_module() {
+    let dir = temp_project_dir("mutation_import_paths");
+    fs::write(dir.join("lib.mq"), "def below(a): a < 0;\n").unwrap();
+    let plain = dir.join("plain.mq");
+    fs::write(
+        &plain,
+        "include \"test\"\n| include \"lib\"\n|\ndef test_plain():\n  assert_true(true)\nend\n",
+    )
+    .unwrap();
+    let dotted = dir.join("dotted.mq");
+    fs::write(
+        &dotted,
+        "include \"test\"\n| include \"./lib\"\n|\ndef test_dotted():\n  assert_eq(below(-1), true)\nend\n",
+    )
+    .unwrap();
+
+    // Only `dotted.mq` asserts `below`, so it must see the mutated module to kill `<` -> `>=`.
+    assert!(
+        TestRunner::new(vec![plain, dotted])
+            .with_mutation(MutationOptions {
+                min_score: Some(1),
+                ..Default::default()
+            })
+            .run()
+            .unwrap()
+    );
+}
