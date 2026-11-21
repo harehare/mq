@@ -2,7 +2,11 @@
 
 use clap::{Args, Parser, Subcommand};
 use mq_test::{CoverageFormat, MutationFormat, MutationOptions, OutputFormat, TestRunner, run_doc_examples};
-use std::{path::PathBuf, process::ExitCode};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "mq-test")]
@@ -154,6 +158,10 @@ struct CoverageArgs {
     /// Open the written report in the OS default application. Requires `--output`.
     #[arg(long, requires = "output")]
     open: bool,
+
+    /// Output format of the test results.
+    #[arg(long, value_enum, default_value = "text")]
+    test_format: OutputFormat,
 }
 
 #[derive(Args, Debug)]
@@ -235,8 +243,25 @@ fn deprecated(flag: &str, replacement: &str) {
     eprintln!("warning: `{flag}` is deprecated, use `{replacement}`");
 }
 
+const SUBCOMMANDS: [&str; 4] = ["coverage", "mutate", "list", "doc"];
+
+/// A lone bare argument naming both a subcommand and an existing directory selects the
+/// directory, as before subcommands existed. Pass `./name` or `name .` to be explicit.
+fn normalize_args(mut args: Vec<OsString>, is_dir: impl Fn(&str) -> bool) -> Vec<OsString> {
+    if args.len() == 2
+        && let Some(name) = args[1].to_str()
+        && SUBCOMMANDS.contains(&name)
+        && is_dir(name)
+    {
+        args[1] = Path::new(".").join(name).into_os_string();
+    }
+    args
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(normalize_args(std::env::args_os().collect(), |name| {
+        Path::new(name).is_dir()
+    }));
 
     match cli.command {
         Some(Command::Coverage(args)) => exit_code(
@@ -245,6 +270,7 @@ fn main() -> ExitCode {
                 .with_coverage_format(args.format)
                 .with_coverage_output(args.output)
                 .with_open(args.open)
+                .with_format(args.test_format)
                 .run(),
         ),
         Some(Command::Mutate(args)) => exit_code(
@@ -300,5 +326,58 @@ fn main() -> ExitCode {
                     .run(),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    fn args(v: &[&str]) -> Vec<OsString> {
+        v.iter().map(OsString::from).collect()
+    }
+
+    #[rstest]
+    #[case(&["mq-test", "list"], true, &["mq-test", "./list"])]
+    #[case(&["mq-test", "coverage"], true, &["mq-test", "./coverage"])]
+    #[case(&["mq-test", "mutate"], true, &["mq-test", "./mutate"])]
+    #[case(&["mq-test", "doc"], true, &["mq-test", "./doc"])]
+    #[case(&["mq-test", "list"], false, &["mq-test", "list"])]
+    #[case(&["mq-test", "list", "."], true, &["mq-test", "list", "."])]
+    #[case(&["mq-test", "list", "--format", "json"], true, &["mq-test", "list", "--format", "json"])]
+    #[case(&["mq-test", "--filter", "list"], true, &["mq-test", "--filter", "list"])]
+    #[case(&["mq-test", "tests"], true, &["mq-test", "tests"])]
+    #[case(&["mq-test"], true, &["mq-test"])]
+    fn test_normalize_args(#[case] input: &[&str], #[case] is_dir: bool, #[case] expected: &[&str]) {
+        assert_eq!(normalize_args(args(input), |_| is_dir), args(expected));
+    }
+
+    #[rstest]
+    #[case(&["mq-test", "./list"], false)]
+    #[case(&["mq-test", "list", "."], true)]
+    fn test_parsed_command(#[case] argv: &[&str], #[case] is_subcommand: bool) {
+        assert_eq!(Cli::try_parse_from(argv).unwrap().command.is_some(), is_subcommand);
+    }
+
+    #[rstest]
+    #[case(&["mq-test", "coverage"], CoverageFormat::Text, OutputFormat::Text)]
+    #[case(&["mq-test", "coverage", "--format", "lcov"], CoverageFormat::Lcov, OutputFormat::Text)]
+    #[case(&["mq-test", "coverage", "--test-format", "json"], CoverageFormat::Text, OutputFormat::Json)]
+    #[case(
+        &["mq-test", "coverage", "--format", "lcov", "--output", "l.info", "--test-format", "json"],
+        CoverageFormat::Lcov,
+        OutputFormat::Json
+    )]
+    fn test_coverage_formats_are_independent(
+        #[case] argv: &[&str],
+        #[case] coverage: CoverageFormat,
+        #[case] test: OutputFormat,
+    ) {
+        let Some(Command::Coverage(a)) = Cli::try_parse_from(argv).unwrap().command else {
+            panic!("expected coverage subcommand");
+        };
+        assert_eq!(a.format, coverage);
+        assert_eq!(a.test_format, test);
     }
 }
