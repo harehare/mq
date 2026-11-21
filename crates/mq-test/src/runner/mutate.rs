@@ -342,9 +342,9 @@ impl TestRunner {
             (TestModuleResolver::default().with_overrides(names, &source), None)
         };
         let mut engine = self.build_engine(&suite.file, resolver, builtin);
-        // A mutant can loop forever; give it far longer than the unmutated run took.
+        // A mutant can loop forever; each one costs the whole timeout, so keep it tight.
         engine.set_max_call_stack_depth(MUTANT_MAX_CALL_DEPTH);
-        engine.set_timeout(suite.baseline * 20 + Duration::from_secs(2));
+        engine.set_timeout(suite.baseline * 5 + Duration::from_millis(100));
         let result = engine.eval(&suite.query, mq_lang::null_input().into_iter());
 
         let timed_out = result.as_ref().is_err_and(|e| e.is_timeout());
