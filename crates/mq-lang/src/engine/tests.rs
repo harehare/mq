@@ -3068,8 +3068,8 @@ fn test_bare_env_is_read_when_the_program_runs(
     }
 }
 
-#[cfg(feature = "custom-builtin")]
 #[test]
+fn test_eval_error_in_module_private_helper_points_at_the_query() {
     let (temp_dir, temp_file_path) = create_file(
         "private_helper_module.mq",
         "def _expect(): error(\"boom\");\ndef api(): _expect();",
@@ -3116,7 +3116,7 @@ fn test_eval_caught_error_keeps_its_message_when_relocated() {
     assert_eq!(result.values(), &["boom".to_string().into()]);
 }
 
-
+#[cfg(feature = "custom-builtin")]
 #[test]
 fn test_set_builtin_source_replaces_a_soft_builtin() {
     let mut engine = DefaultEngine::default();
