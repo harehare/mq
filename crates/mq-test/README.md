@@ -19,6 +19,8 @@ mq-test --tag smoke          # tests tagged "smoke" (repeatable)
 mq-test -P 4                 # run files in parallel once more than 4 are found
 mq-test --update-snapshots   # accept current assert_snapshot output as golden
 mq-test list                 # list tests without running (honors -k/--tag)
+                             # (a lone `list`/`coverage`/`doc`/`mutate` that is also a directory runs
+                             # that directory; use `mq-test list .` to force the subcommand)
 mq-test --format json        # JSON for runs (`list --format json` for lists), for editors and CI
 mq-test doc docs/guide.md lib.mq  # run `# =>` examples in ```mq blocks and `.mq` comments
 mq-test coverage             # line coverage of included/imported modules
