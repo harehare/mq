@@ -253,7 +253,7 @@ fn normalize_args(mut args: Vec<OsString>, is_dir: impl Fn(&str) -> bool) -> Vec
         && SUBCOMMANDS.contains(&name)
         && is_dir(name)
     {
-        args[1] = Path::new(".").join(name).into_os_string();
+        args[1] = OsString::from(format!("./{name}"));
     }
     args
 }
