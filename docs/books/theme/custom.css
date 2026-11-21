@@ -1052,13 +1052,13 @@ html:not(.js) .mq-feature-text strong {
 }
 
 .module-chip {
-    padding: 0.3rem 0.7rem;
+    padding: 0.5rem 1.1rem;
     font-size: 0.8em;
     font-family: "Inter", sans-serif;
     color: var(--mq-accent-primary);
     background-color: transparent;
     border: 1px solid rgba(103, 184, 227, 0.3);
-    border-radius: 999px;
+    border-radius: 0;
     cursor: pointer;
     transition: all 0.2s;
 }
@@ -1133,4 +1133,33 @@ html:not(.js) .mq-feature-text strong {
         padding: 8px 10px;
         font-size: 0.9em;
     }
+}
+
+.module-empty {
+    margin: 1rem 0;
+    color: var(--mq-text-muted);
+}
+
+#modules-table mark {
+    background-color: rgba(103, 184, 227, 0.3);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
+.module-copy {
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.72em;
+    font-family: "Inter", sans-serif;
+    color: var(--mq-accent-primary);
+    background: transparent;
+    border: 1px solid rgba(103, 184, 227, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.module-copy:hover {
+    background-color: rgba(103, 184, 227, 0.08);
 }

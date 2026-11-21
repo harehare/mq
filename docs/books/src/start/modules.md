@@ -1,32 +1,7 @@
 # Modules
 
-## Standard Library
-
-Standard modules are built into `mq`: use them with `include` or `import`, no installation needed.
-
-| Module    | Description                                                           |
-| --------- | --------------------------------------------------------------------- |
-| `json`    | JSON parser and formatter                                             |
-| `yaml`    | YAML 1.2 parser and formatter                                         |
-| `toml`    | TOML parser and formatter                                             |
-| `xml`     | XML parser and formatter                                              |
-| `html`    | HTML parser, formatter and CSS selector search (requires the `html-parse` build feature) |
-| `csv`     | CSV / TSV parser, formatter, and blank-cell fill helpers              |
-| `cbor`    | CBOR binary format support                                            |
-| `semver`  | Semantic versioning (SemVer) utilities                                |
-| `section` | Markdown section extraction helpers                                   |
-| `table`   | Table rendering utilities                                             |
-| `fuzzy`   | Fuzzy string matching                                                 |
-| `toon`    | TOON format support                                                   |
-| `gron`    | gron-style flattening into `path = value;` lines, and back            |
-| `md`      | Builders for generating Markdown (headings, tables, lists, callouts)  |
-| `gen`     | Generator combinators for property-based testing (`mq test` only)     |
-| `test`    | Testing framework (`assert_eq`, `assert_true`, …)                     |
-
-## Extension Modules
-
-These modules extend mq with additional parsers, utilities, and domain-specific languages.
-All modules support [HTTP Import](../reference/modules_and_imports.md#http-imports): no local installation required.
+**Standard Library** modules are built into `mq`: use them with `include` or `import`, no installation needed.
+**Extension modules** are fetched with [HTTP Import](../reference/modules_and_imports.md#http-imports), no local installation required:
 
 ```mq
 import "github.com/harehare/<module-name>"
@@ -35,11 +10,12 @@ import "github.com/harehare/<module-name>"
 Type to search by name or description, or click a category to filter.
 
 <div class="module-toolbar">
-  <input type="text" id="module-search-input" class="module-search-input" placeholder="Search modules…" aria-label="Search extension modules">
+  <input type="text" id="module-search-input" class="module-search-input" placeholder="Search modules…" aria-label="Search modules">
   <span id="module-count" class="module-count"></span>
 </div>
 <div id="module-category-filters" class="module-category-chips">
   <button type="button" class="module-chip active" data-category="all">All</button>
+  <button type="button" class="module-chip" data-category="standard-library">Standard Library</button>
   <button type="button" class="module-chip" data-category="format-parsers">Format Parsers</button>
   <button type="button" class="module-chip" data-category="diagram-graph">Diagram &amp; Graph</button>
   <button type="button" class="module-chip" data-category="devops-infrastructure">DevOps &amp; Infrastructure</button>
@@ -55,6 +31,22 @@ Type to search by name or description, or click a category to filter.
 <tr><th>Module</th><th>Category</th><th>Description</th></tr>
 </thead>
 <tbody>
+<tr data-category="standard-library"><td><code>json</code></td><td><span class="module-category-badge">Standard Library</span></td><td>JSON parser and formatter</td></tr>
+<tr data-category="standard-library"><td><code>yaml</code></td><td><span class="module-category-badge">Standard Library</span></td><td>YAML 1.2 parser and formatter</td></tr>
+<tr data-category="standard-library"><td><code>toml</code></td><td><span class="module-category-badge">Standard Library</span></td><td>TOML parser and formatter</td></tr>
+<tr data-category="standard-library"><td><code>xml</code></td><td><span class="module-category-badge">Standard Library</span></td><td>XML parser and formatter</td></tr>
+<tr data-category="standard-library"><td><code>html</code></td><td><span class="module-category-badge">Standard Library</span></td><td>HTML parser, formatter and CSS selector search (requires the <code>html-parse</code> build feature)</td></tr>
+<tr data-category="standard-library"><td><code>csv</code></td><td><span class="module-category-badge">Standard Library</span></td><td>CSV / TSV parser, formatter, and blank-cell fill helpers</td></tr>
+<tr data-category="standard-library"><td><code>cbor</code></td><td><span class="module-category-badge">Standard Library</span></td><td>CBOR binary format support</td></tr>
+<tr data-category="standard-library"><td><code>semver</code></td><td><span class="module-category-badge">Standard Library</span></td><td>Semantic versioning (SemVer) utilities</td></tr>
+<tr data-category="standard-library"><td><code>section</code></td><td><span class="module-category-badge">Standard Library</span></td><td>Markdown section extraction helpers</td></tr>
+<tr data-category="standard-library"><td><code>table</code></td><td><span class="module-category-badge">Standard Library</span></td><td>Table rendering utilities</td></tr>
+<tr data-category="standard-library"><td><code>fuzzy</code></td><td><span class="module-category-badge">Standard Library</span></td><td>Fuzzy string matching</td></tr>
+<tr data-category="standard-library"><td><code>toon</code></td><td><span class="module-category-badge">Standard Library</span></td><td>TOON format support</td></tr>
+<tr data-category="standard-library"><td><code>gron</code></td><td><span class="module-category-badge">Standard Library</span></td><td>gron-style flattening into <code>path = value;</code> lines, and back</td></tr>
+<tr data-category="standard-library"><td><code>md</code></td><td><span class="module-category-badge">Standard Library</span></td><td>Builders for generating Markdown (headings, tables, lists, callouts)</td></tr>
+<tr data-category="standard-library"><td><code>gen</code></td><td><span class="module-category-badge">Standard Library</span></td><td>Generator combinators for property-based testing (<code>mq test</code> only)</td></tr>
+<tr data-category="standard-library"><td><code>test</code></td><td><span class="module-category-badge">Standard Library</span></td><td>Testing framework (<code>assert_eq</code>, <code>assert_true</code>, …)</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/json5.mq">json5.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://json5.org">JSON5</a>: comments, trailing commas, unquoted keys</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/hcl.mq">hcl.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://github.com/hashicorp/hcl">HCL</a> (HashiCorp Configuration Language), blocks, labels, attributes</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/pkl.mq">pkl.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://pkl-lang.org">PKL</a>: Apple's configuration language, with type annotations and collection literals</td></tr>
