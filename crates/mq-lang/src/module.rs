@@ -86,6 +86,9 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     precompiled_ids: FxHashMap<(SmolStr, Shared<str>), ModuleId>,
     /// Parsed builtin AST tied to the token arena it was created in, shared by derived loaders.
     builtin_module_cache: Option<(TokenArena, Shared<Module>)>,
+    /// Replaces `builtin.mq` when set; parsed per loader and never cached across loaders.
+    #[cfg(feature = "custom-builtin")]
+    builtin_source: Option<Shared<str>>,
     /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
     /// instead of reparsing its cached source.
     module_ast_cache: FxHashMap<ModuleId, Module>,
@@ -184,6 +187,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "mqc")]
             precompiled_ids: FxHashMap::default(),
             builtin_module_cache: None,
+            #[cfg(feature = "custom-builtin")]
+            builtin_source: None,
             module_ast_cache: FxHashMap::default(),
             resolver,
             #[cfg(feature = "http-import")]
@@ -206,6 +211,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "mqc")]
             precompiled_ids: FxHashMap::default(),
             builtin_module_cache: self.builtin_module_cache.clone(),
+            #[cfg(feature = "custom-builtin")]
+            builtin_source: self.builtin_source.clone(),
             module_ast_cache: FxHashMap::default(),
             resolver: self.resolver.clone(),
             #[cfg(feature = "http-import")]
@@ -483,6 +490,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.http_depth = self.http_depth.saturating_sub(1);
     }
 
+    /// Uses `source` instead of the bundled `builtin.mq` the next time the builtin module loads.
+    #[cfg(feature = "custom-builtin")]
+    pub fn set_builtin_source(&mut self, source: impl Into<Shared<str>>) {
+        self.builtin_source = Some(source.into());
+    }
+
     pub(crate) fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
         // The builtin module outlives any one query, so its tokens stay in the engine's arena.
         let token_arena = root_token_arena(&token_arena);
@@ -496,6 +509,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             let module_id = self.module_id_of(Module::BUILTIN_MODULE);
             self.loaded_modules.insert(module_id);
             return Ok(Module::clone(module));
+        }
+
+        #[cfg(feature = "custom-builtin")]
+        if let Some(source) = self.builtin_source.clone() {
+            let module = self.load(Module::BUILTIN_MODULE, &source, Shared::clone(&token_arena))?;
+            self.builtin_module_cache = Some((token_arena, Shared::new(module.clone())));
+            return Ok(module);
         }
 
         // Cache is only valid when both arenas are in their initial state (builtin

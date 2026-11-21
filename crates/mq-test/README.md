@@ -22,6 +22,7 @@ mq-test --list               # list tests without running (honors -k/--tag)
 mq-test --format json        # JSON for --list and runs, for editors and CI
 mq-test --doc docs/guide.md lib.mq  # run `# =>` examples in ```mq blocks and `.mq` comments
 mq-test --coverage           # line coverage of included/imported modules
+mq-test mutate               # mutation testing of included/imported modules
 ```
 
 A failing test, or a file that fails to run, does not stop other files. `mq-test` exits non-zero if any failed. An error inside a test body is recorded as that test's failure.
@@ -158,6 +159,27 @@ lines are not counted, and a module shared by several test files is reported onc
 - `--coverage-format <text|lcov|html|markdown|json|cobertura>` (default `text`).
 - `--coverage-output <path>` writes to a file; `--open` then opens it (needs `--coverage-output`).
 - Line-based: a line is covered if any expression on it ran. Tracking is off without `--coverage`.
+
+## Mutation Testing
+
+`mq-test mutate` changes the code your tests `include`/`import` one token at a time and reruns the tests
+that execute the changed line. A mutant the tests still pass on has *survived*: that code is not
+really checked. The report lists survivors and the mutation score (killed / total).
+
+- Mutations: comparison, arithmetic and logical operators, `!` removal, boolean and integer literals.
+- Lines no test executes are not mutated; use `--coverage` for those.
+- Tests must pass unmutated. A mutant that fails, errors or times out counts as killed.
+- `--min-score <0-100>` exits non-zero below that score.
+- `--format <text|json|markdown|html>` (default `text`); `--output <path>` writes to a file.
+- `--jobs <n>` sets how many mutants run at once (default: half the cores, at most four).
+- `--builtin` also mutates the bundled `builtin.mq`. It is slow, so narrow the run with `-k`. `mutate` also takes `FILES`, `-L` and `--tag`.
+- `# @mutate(skip)` excludes equivalent mutants: after code it skips that line, on its own line it
+  skips the next statement or `def`.
+
+```mq
+# @mutate(skip)
+def clamp_index(i, n): if (i >= n): n - 1 else: i;
+```
 
 ## JSON Output
 
