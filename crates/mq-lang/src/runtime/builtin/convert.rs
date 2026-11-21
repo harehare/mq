@@ -262,7 +262,7 @@ pub(super) fn to_html(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 
 /// convert to Markdown string
 pub(super) fn to_markdown_string(args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {
-    let args = flatten(args);
+    let args = flatten(args)?;
 
     Ok(mq_markdown::Markdown::new(
         args.iter()
@@ -961,15 +961,23 @@ pub(super) fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(Shared::new(format!("'{}'", escaped))))
 }
 
-pub(super) fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+pub(super) fn flatten(args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>, super::Error> {
     let mut result = Vec::new();
+    flatten_into(args, &mut result)?;
+    Ok(result)
+}
+
+fn flatten_into(args: Vec<RuntimeValue>, result: &mut Vec<RuntimeValue>) -> Result<(), super::Error> {
     for arg in args {
         match arg {
-            RuntimeValue::Array(arr) => result.extend(flatten(crate::Shared::unwrap_or_clone(arr))),
-            other => result.push(other),
+            RuntimeValue::Array(arr) => flatten_into(crate::Shared::unwrap_or_clone(arr), result)?,
+            other => {
+                super::check_result_len("array", result.len().saturating_add(1), super::MAX_VALUE_ELEMENTS)?;
+                result.push(other);
+            }
         }
     }
-    result
+    Ok(())
 }
 
 #[cfg(test)]
