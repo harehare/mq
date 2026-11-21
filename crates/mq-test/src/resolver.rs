@@ -43,9 +43,9 @@ impl TestModuleResolver {
         }
     }
 
-    /// Serves `source` for the module `name` instead of the one on disk.
-    pub(crate) fn with_override(mut self, name: String, source: String) -> Self {
-        self.overrides = Arc::from(vec![(name, source)]);
+    /// Serves `source` for every import name in `names` instead of the module on disk.
+    pub(crate) fn with_overrides(mut self, names: &[String], source: &str) -> Self {
+        self.overrides = names.iter().map(|name| (name.clone(), source.to_string())).collect();
         self
     }
 
@@ -113,6 +113,14 @@ mod tests {
         let source = TestModuleResolver::default().resolve(name).unwrap();
         assert!(source.contains(expected));
         assert!(TestModuleResolver::default().is_immutable_module(name));
+    }
+
+    #[test]
+    fn test_overrides_serve_every_name() {
+        let names = ["lib".to_string(), "./lib".to_string()];
+        let resolver = TestModuleResolver::default().with_overrides(&names, "def f(): 1 end");
+        assert_eq!(resolver.resolve("lib").unwrap(), "def f(): 1 end");
+        assert_eq!(resolver.resolve("./lib").unwrap(), "def f(): 1 end");
     }
 
     #[test]
