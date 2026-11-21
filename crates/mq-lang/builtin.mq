@@ -321,6 +321,8 @@ def scalars(v): select(v, !(is_array(v) || is_dict(v)));
 
 # Formats a date to ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ)
 #
+# Deprecated: use `strftime(d, "%Y-%m-%dT%H:%M:%SZ")`.
+#
 # Example:
 # ```
 # to_date_iso8601(0)
@@ -1188,6 +1190,8 @@ def frequencies_by(arr, f):
 end
 
 # Counts occurrences of each element in an array, returning a dict of `{value: count}`.
+#
+# Deprecated: use `frequencies_by(arr, identity)`.
 #
 # Example:
 # ```
@@ -2195,6 +2199,8 @@ end
 
 # Returns a new function that takes the same arguments as the original function but with the first two arguments flipped.
 #
+# Deprecated: write `f(b, a)` directly.
+#
 # Example:
 # ```
 # flip(sub, 2, 10)
@@ -3076,6 +3082,8 @@ end
 # in `d` win (recursively for nested dicts), while keys missing from `d` fall back to the
 # corresponding value in `defaults`. Arrays and scalar conflicts are resolved by letting
 # `d` replace `defaults`. Neither input is mutated.
+#
+# Deprecated: use `merge_with(defaults, d, "replace")`.
 #
 # Example:
 # ```

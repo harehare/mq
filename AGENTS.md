@@ -42,6 +42,8 @@ Do not hand-edit these, and do not run `just docs` during normal development. It
 ## Builtins
 
 - Do not add a builtin that duplicates or thinly wraps an existing one or an operator (e.g. a `substr` when `slice` exists).
+  Exception: jq-compatible names (e.g. `test`, `arrays`, `with_entries`) stay as aliases.
+- Deprecate a redundant builtin with a `# Deprecated: use X` doc line (the `deprecated_function_call` lint warns) and remove it at the next major version.
 - A new builtin needs its type signature registered in `crates/mq-check/src/builtin.rs`.
 - Pure-mq functions in `builtin.mq`: tests go only in `crates/mq-lang/builtin_tests.mq`.
 - Native Rust builtins: test only the logic you added, not the behavior of the underlying crate (e.g. `regex`).
