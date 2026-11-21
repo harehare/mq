@@ -1116,18 +1116,21 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
             }
             Ok(FrameSliceOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
             Ok(FrameSliceOutcome::Complete(value)) => value,
-            Err(e) => match unwind_frames(
-                e,
-                frames,
-                root_chunks,
-                operand_stack,
-                execution,
-                #[cfg(feature = "debugger")]
-                debug,
-            ) {
-                Ok(()) => continue 'frames,
-                Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
-            },
+            Err(e) => {
+                let e = relocate_user_error_to_caller(e, frames, root_chunks);
+                match unwind_frames(
+                    e,
+                    frames,
+                    root_chunks,
+                    operand_stack,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                ) {
+                    Ok(()) => continue 'frames,
+                    Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                }
+            }
         };
 
         if frames.len() == 1 {
@@ -1252,6 +1255,7 @@ fn relocate_user_error_to_caller(e: VmError, frames: &[Frame], root_chunks: &Sha
 }
 
 /// Pops frames until a `try` body catches `e` (`Ok(())`) or the stack empties (`Err`).
+#[cold]
 #[allow(
     clippy::ptr_arg,
     reason = "unwinding may truncate and push onto the shared operand stack"
@@ -1264,7 +1268,6 @@ fn unwind_frames(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> Result<(), (VmError, Locals)> {
-    e = relocate_user_error_to_caller(e, frames, root_chunks);
     let capture_trace = execution.capture_stack_trace && !frames.iter().any(|frame| frame.on_complete.is_try_body());
     let mut stack_trace = capture_trace.then(|| capture_stack_trace(frames, root_chunks));
     loop {
