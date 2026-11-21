@@ -593,7 +593,7 @@ fn test_to_html(#[case] input: RuntimeValue, #[case] expected: &str) {
     )]
 #[case::empty(vec![], vec![])]
 fn test_flatten(#[case] input: Vec<RuntimeValue>, #[case] expected: Vec<RuntimeValue>) {
-    let result = flatten(input);
+    let result = flatten(input).unwrap();
     assert_eq!(result, expected);
 }
 
@@ -604,7 +604,7 @@ fn test_flatten_with_empty_nested() {
         RuntimeValue::Number(1.into()),
         RuntimeValue::Array(crate::Shared::new(vec![])),
     ];
-    let result = flatten(input);
+    let result = flatten(input).unwrap();
     assert_eq!(result, vec![RuntimeValue::Number(1.into())]);
 }
 
