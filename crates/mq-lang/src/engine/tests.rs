@@ -292,7 +292,7 @@ mod nodes {
     }
 
     #[test]
-    fn error_after_dropped_def_points_at_its_source() {
+    fn error_after_dropped_def_points_at_the_caller() {
         let query = "def unused(x): x; | def fail(x): error(\"boom\"); | fail(.)";
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
@@ -304,7 +304,7 @@ mod nodes {
             .map(|label| label.offset())
             .expect("error has a source label");
         assert!(
-            query[offset..].starts_with("error"),
+            query[offset..].starts_with("fail(.)"),
             "label at {offset}: {}",
             &query[offset..]
         );
@@ -624,14 +624,15 @@ fn test_eval_frees_tokens_of_modules_it_imports() {
 }
 
 #[rstest]
-#[case::query("def fail(): error(\"boom\"); | fail()")]
-#[case::after_builtin_call(r#"upcase("a") | error("boom")"#)]
-fn test_eval_error_points_at_the_query(#[case] query: &str) {
+#[case::in_function("def fail(): error(\"boom\"); | fail()", "fail()")]
+#[case::top_level(r#"upcase("a") | error("boom")"#, "error")]
+#[case::in_builtin_mq_function(r#"1 | top_by(1, 2)"#, "top_by")]
+fn test_eval_error_points_at_the_query(#[case] query: &str, #[case] at: &str) {
     let mut engine = DefaultEngine::default();
     engine.load_builtin_module();
     let error = engine.eval(query, null_input().into_iter()).unwrap_err();
     let offset = label_offset(&error);
-    assert!(query[offset..].starts_with("error"), "label at {offset}: {query}");
+    assert!(query[offset..].starts_with(at), "label at {offset}: {query}");
 }
 
 /// The diagnostic's source name, source text, and label offset.
@@ -654,8 +655,9 @@ fn test_query_session_error_in_an_earlier_def_shows_its_query() {
         .eval(r#"upcase("abc") | fail()"#, null_input().into_iter())
         .unwrap_err();
     let (name, source, offset) = diagnostic(&error);
-    assert_eq!((name.as_str(), source.as_str()), ("repl#1", definition));
-    assert!(definition[offset..].starts_with("error"), "label at {offset}");
+    let query = r#"upcase("abc") | fail()"#;
+    assert_eq!((name.as_str(), source.as_str()), ("repl#2", query));
+    assert!(query[offset..].starts_with("fail"), "label at {offset}");
 }
 
 #[rstest]
@@ -995,7 +997,7 @@ fn test_eval() {
 /// even when the engine already holds another module (so the module ids can't line up by luck).
 #[rstest]
 #[case::runtime_error(
-    "def boom(): error(\"boom\");",
+    "def boom(): 1 / 0;",
     "broken_module_runtime_error",
     "broken_module_runtime_error::boom()"
 )]

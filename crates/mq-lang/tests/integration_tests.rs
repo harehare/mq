@@ -4468,7 +4468,7 @@ fn error_span_text<'a>(err: &mq_lang::Error, program: &'a str) -> &'a str {
 #[case::multibyte_text_before(r#"s"あい ${error("boom")}""#, "error")]
 #[case::second_interpolation(r#"s"${1} and ${error("boom")}""#, "error")]
 #[case::after_pipe_on_later_line("let x = 1\n| s\"v=${x}, ${error(\"boom\")}\"", "error")]
-#[case::inside_function("def f(): s\"a ${error(\"boom\")}\"; | f()", "error")]
+#[case::inside_function("def f(): s\"a ${error(\"boom\")}\"; | f()", "f")]
 fn interpolation_runtime_error_points_at_inner_expression(
     mut engine: Engine,
     #[case] program: &str,

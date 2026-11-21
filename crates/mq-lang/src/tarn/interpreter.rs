@@ -1225,6 +1225,32 @@ fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError)
     locate(&chunks[caller.chunk_index as usize], caller.ip as usize, e)
 }
 
+/// Points an `error(...)` raised inside a named function at that function's call site, since the
+/// caller is what misused it. Errors raised at the top level or in anonymous bodies keep their place.
+fn relocate_user_error_to_caller(e: VmError, frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> VmError {
+    let VmError::Located(inner, _) = &e else {
+        return e;
+    };
+    if !matches!(
+        &**inner,
+        VmError::Builtin(b) if matches!(**b, builtin::Error::UserDefined(_) | builtin::Error::Thrown(_))
+    ) {
+        return e;
+    }
+    let [.., caller, failed] = frames else {
+        return e;
+    };
+    let failed_chunks = failed.chunks.as_ref().unwrap_or(root_chunks);
+    if failed_chunks[failed.chunk_index as usize].function_name.is_none() {
+        return e;
+    }
+    let VmError::Located(inner, _) = e else {
+        return e;
+    };
+    let chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
+    locate(&chunks[caller.chunk_index as usize], caller.ip as usize, *inner)
+}
+
 /// Pops frames until a `try` body catches `e` (`Ok(())`) or the stack empties (`Err`).
 #[allow(
     clippy::ptr_arg,
@@ -1238,6 +1264,7 @@ fn unwind_frames(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> Result<(), (VmError, Locals)> {
+    e = relocate_user_error_to_caller(e, frames, root_chunks);
     let capture_trace = execution.capture_stack_trace && !frames.iter().any(|frame| frame.on_complete.is_try_body());
     let mut stack_trace = capture_trace.then(|| capture_stack_trace(frames, root_chunks));
     loop {
