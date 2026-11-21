@@ -512,16 +512,29 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
 
 /// Appends `rhs` to a directly stored string local in place.
 #[inline(always)]
-fn append_to_string_local(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -> bool {
+fn append_to_string_local(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -> VmResult<bool> {
     let Some(RuntimeValue::String(target)) = locals.direct_runtime_value_mut(local) else {
-        return false;
+        return Ok(false);
     };
     match rhs {
-        RuntimeValue::String(suffix) => runtime_value::string_mut(target).push_str(suffix),
-        RuntimeValue::Number(n) => runtime_value::string_mut(target).push_str(&n.to_string()),
-        _ => return false,
+        RuntimeValue::String(suffix) => {
+            builtin::check_result_len(
+                "string",
+                target.len().saturating_add(suffix.len()),
+                builtin::MAX_VALUE_BYTES,
+            )
+            .map_err(VmError::from)?;
+            runtime_value::string_mut(target).push_str(suffix)
+        }
+        RuntimeValue::Number(n) => {
+            let n = n.to_string();
+            builtin::check_result_len("string", target.len().saturating_add(n.len()), builtin::MAX_VALUE_BYTES)
+                .map_err(VmError::from)?;
+            runtime_value::string_mut(target).push_str(&n)
+        }
+        _ => return Ok(false),
     }
-    true
+    Ok(true)
 }
 
 /// Applies `local + rhs` to a directly stored string or array local in place.
@@ -1839,7 +1852,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
                 OpCode::UpdateLocalConst { op, local, constant } => {
                     let appended = *op == BinaryOp::Add
-                        && append_to_string_local(locals, *local, &chunk.constants[*constant as usize]);
+                        && append_to_string_local(locals, *local, &chunk.constants[*constant as usize])
+                            .map_err(|e| locate(chunk, ip, e))?;
                     if !appended
                         && !(*op == BinaryOp::Add
                             && add_to_local_in_place(locals, *local, &chunk.constants[*constant as usize])
@@ -1860,7 +1874,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         *number = result;
                         true
                     } else {
-                        *op == BinaryOp::Add && append_to_string_local(locals, *local, &RuntimeValue::Number(rhs))
+                        *op == BinaryOp::Add
+                            && append_to_string_local(locals, *local, &RuntimeValue::Number(rhs))
+                                .map_err(|e| locate(chunk, ip, e))?
                     };
                     if !updated
                         && !(*op == BinaryOp::Add
@@ -1875,7 +1891,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
                 OpCode::UpdateLocalLocal { op, local, value } => {
                     let b = local_runtime_value(locals, *value, chunks)?;
-                    let appended = *op == BinaryOp::Add && append_to_string_local(locals, *local, &b);
+                    let appended = *op == BinaryOp::Add
+                        && append_to_string_local(locals, *local, &b).map_err(|e| locate(chunk, ip, e))?;
                     if !appended
                         && !(*op == BinaryOp::Add
                             && add_to_local_in_place(locals, *local, &b).map_err(|e| locate(chunk, ip, e))?)
@@ -2140,6 +2157,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         bail!(VmError::Corrupt("stack underflow in InterpString"));
                     }
                     let value = interp_string(&stack[start..], chunks);
+                    builtin::check_result_size(&value).map_err(|e| locate(chunk, ip, VmError::from(e)))?;
                     stack.truncate(start);
                     stack.push(StackValue::Value(value));
                 }

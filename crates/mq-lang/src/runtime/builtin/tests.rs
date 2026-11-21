@@ -6054,3 +6054,25 @@ fn test_type_predicates_arity(#[case] predicate: &str, #[case] piped_none: Runti
         .is_err()
     );
 }
+
+#[test]
+fn add_rejects_oversized_concatenation() {
+    let env = VmEnv::default();
+    let half = RuntimeValue::String(Shared::new("x".repeat(MAX_VALUE_BYTES / 2 + 1)));
+    let result = eval_builtin(
+        &RuntimeValue::None,
+        &Ident::new("add"),
+        vec![half.clone(), half].into(),
+        &env,
+    );
+    assert!(matches!(result, Err(Error::Runtime(message)) if message.contains("exceeds maximum")));
+}
+
+#[test]
+fn flatten_rejects_oversized_result() {
+    let env = VmEnv::default();
+    let inner = RuntimeValue::Array(Shared::new(vec![RuntimeValue::NONE; MAX_VALUE_ELEMENTS / 2 + 1]));
+    let outer = RuntimeValue::Array(Shared::new(vec![inner.clone(), inner]));
+    let result = eval_builtin(&RuntimeValue::None, &Ident::new("flatten"), vec![outer].into(), &env);
+    assert!(matches!(result, Err(Error::Runtime(message)) if message.contains("exceeds maximum")));
+}

@@ -60,8 +60,33 @@ use mq_markdown;
 
 /// Maximum number of elements (or bytes) a single builtin may allocate from a numeric argument alone,
 /// such as `range`, `fill`, repeat, `random_string`, or padding the gap when `set`/`insert` write past the end.
-/// Results sized by data that already exists (concatenation, appends, in-place updates) are not bounded by it.
 pub(super) const MAX_ALLOC_SIZE: usize = 16 * 1024 * 1024;
+/// Maximum byte length of a string or bytes value a builtin or `+` may produce.
+pub(crate) const MAX_VALUE_BYTES: usize = 256 * 1024 * 1024;
+/// Maximum element count of an array a builtin or `+` may produce.
+pub(crate) const MAX_VALUE_ELEMENTS: usize = MAX_ALLOC_SIZE;
+
+/// Rejects a result of `len` bytes or elements above `max`, before it is built.
+#[inline]
+pub(crate) fn check_result_len(kind: &str, len: usize, max: usize) -> Result<(), Error> {
+    if len > max {
+        return Err(Error::Runtime(format!(
+            "{kind} result size {len} exceeds maximum allowed size of {max}"
+        )));
+    }
+    Ok(())
+}
+
+/// Rejects a string, bytes or array value larger than the result size limits.
+#[inline]
+pub(crate) fn check_result_size(value: &RuntimeValue) -> Result<(), Error> {
+    match value {
+        RuntimeValue::String(s) => check_result_len("string", s.len(), MAX_VALUE_BYTES),
+        RuntimeValue::Bytes(b) => check_result_len("bytes", b.len(), MAX_VALUE_BYTES),
+        RuntimeValue::Array(a) => check_result_len("array", a.len(), MAX_VALUE_ELEMENTS),
+        _ => Ok(()),
+    }
+}
 /// Maximum number of bytes a single `read_bytes` call may request from a reader handle
 #[cfg(any(feature = "file-io", feature = "http"))]
 pub(super) const MAX_READ_BYTES: usize = 64 * 1024 * 1024;
@@ -381,7 +406,7 @@ fn status_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
 #[mq_macros::mq_fn(name = "flatten", params = Fixed(1))]
 fn flatten_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Array(arrays)] => Ok(convert::flatten(Shared::unwrap_or_clone(std::mem::take(arrays))).into()),
+        [RuntimeValue::Array(arrays)] => Ok(convert::flatten(Shared::unwrap_or_clone(std::mem::take(arrays)))?.into()),
         [a] => Ok(std::mem::take(a)),
         _ => Err(invalid_arity(ident, 1, args.len())),
     }
@@ -3042,12 +3067,21 @@ fn abs_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 
 pub(crate) fn add_in_place(target: &mut RuntimeValue, rhs: &RuntimeValue) -> Result<bool, Error> {
     match (target, rhs) {
-        (RuntimeValue::String(s), RuntimeValue::String(suffix)) => runtime_value::string_mut(s).push_str(suffix),
-        (RuntimeValue::String(s), RuntimeValue::Number(n)) => runtime_value::string_mut(s).push_str(&n.to_string()),
+        (RuntimeValue::String(s), RuntimeValue::String(suffix)) => {
+            check_result_len("string", s.len().saturating_add(suffix.len()), MAX_VALUE_BYTES)?;
+            runtime_value::string_mut(s).push_str(suffix)
+        }
+        (RuntimeValue::String(s), RuntimeValue::Number(n)) => {
+            let n = n.to_string();
+            check_result_len("string", s.len().saturating_add(n.len()), MAX_VALUE_BYTES)?;
+            runtime_value::string_mut(s).push_str(&n)
+        }
         (RuntimeValue::Array(array), RuntimeValue::Array(other)) => {
+            check_result_len("array", array.len().saturating_add(other.len()), MAX_VALUE_ELEMENTS)?;
             runtime_value::array_mut(array).extend_from_slice(other);
         }
         (RuntimeValue::Array(array), elem) => {
+            check_result_len("array", array.len().saturating_add(1), MAX_VALUE_ELEMENTS)?;
             runtime_value::array_mut(array).push(elem.clone());
         }
         _ => return Ok(false),
@@ -3059,6 +3093,7 @@ pub(crate) fn add_in_place(target: &mut RuntimeValue, rhs: &RuntimeValue) -> Res
 fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+            check_result_len("string", s1.len().saturating_add(s2.len()), MAX_VALUE_BYTES)?;
             runtime_value::string_mut(s1).push_str(s2);
             Ok(std::mem::take(s1).into())
         }
@@ -3088,11 +3123,13 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             .unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
         [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => {
+            check_result_len("bytes", b1.len().saturating_add(b2.len()), MAX_VALUE_BYTES)?;
             let mut result = std::mem::take(b1);
             runtime_value::bytes_mut(&mut result).extend_from_slice(b2);
             Ok(RuntimeValue::Bytes(result))
         }
         [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
+            check_result_len("array", a1.len().saturating_add(a2.len()), MAX_VALUE_ELEMENTS)?;
             let mut a = std::mem::take(a1);
             let a_mut = runtime_value::array_mut(&mut a);
             a_mut.reserve(a2.len());
@@ -6446,6 +6483,12 @@ pub fn eval_builtin(
     )
 }
 
+#[inline]
+fn checked_result(value: RuntimeValue) -> Result<RuntimeValue, Error> {
+    check_result_size(&value)?;
+    Ok(value)
+}
+
 /// Runs an already resolved builtin, checking the argument count and filling in the implicit
 /// `self` argument when exactly one is missing.
 #[inline]
@@ -6458,12 +6501,12 @@ pub fn eval_resolved_builtin(
 ) -> Result<RuntimeValue, Error> {
     let args_len = args.len() as u8;
     if f.num_params.is_valid(args_len) {
-        (f.func)(ident, runtime_value, args, env)
+        (f.func)(ident, runtime_value, args, env).and_then(checked_result)
     } else if f.num_params.is_missing_one_params(args_len) {
         let mut new_args = Args::with_capacity(args.len() + 1);
         new_args.push(runtime_value.clone());
         new_args.extend(args);
-        (f.func)(ident, runtime_value, new_args, env)
+        (f.func)(ident, runtime_value, new_args, env).and_then(checked_result)
     } else {
         Err(Error::InvalidNumberOfArguments(
             ident.to_string(),
