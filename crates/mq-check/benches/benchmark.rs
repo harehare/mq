@@ -51,3 +51,20 @@ fn check(bencher: divan::Bencher, name: &str) {
     let hir = hir_for(name, &code);
     bencher.bench_local(|| TypeChecker::new().check(&hir));
 }
+
+fn elif_chain(n: usize) -> String {
+    let mut code = String::from("def f(a): if (a): 1");
+    for i in 0..n {
+        code.push_str(&format!(" elif (a == {i}): {i}"));
+    }
+    code.push_str(" else: 0;");
+    code
+}
+
+/// Long elif chains must stay near-linear (was cubic: 4000 branches took 14s).
+#[divan::bench(args = [1000, 2000, 4000], sample_count = 5)]
+fn check_elif_chain(bencher: divan::Bencher, n: usize) {
+    let code = elif_chain(n);
+    let hir = hir_for("elif", &code);
+    bencher.bench_local(|| TypeChecker::new().check(&hir));
+}

@@ -4,7 +4,7 @@ use crate::constraint::{Constraint, ConstraintOrigin};
 use crate::types::{Substitution, Type, TypeScheme, TypeVarContext, TypeVarId, format_type_list};
 use crate::{TypeEnv, TypeError};
 use mq_hir::SymbolId;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
 
 /// A deferred overload resolution for operators with unresolved type variable operands.
@@ -1046,12 +1046,12 @@ impl InferenceContext {
     /// Union(Var(b), String)` and `Var(b) → Union(Var(a), String)`), which
     /// would otherwise cause infinite recursion.
     pub fn resolve_type(&self, ty: &Type) -> Type {
-        self.resolve_type_inner(ty, &mut Vec::new())
+        self.resolve_type_inner(ty, &mut FxHashSet::default())
     }
 
     /// Whether the type is fully known and not `dynamic`, without building the resolved type.
     pub fn is_settled(&self, ty: &Type) -> bool {
-        !self.resolves_to_dynamic(ty) && self.is_settled_inner(ty, &mut Vec::new())
+        !self.resolves_to_dynamic(ty) && self.is_settled_inner(ty, &mut FxHashSet::default())
     }
 
     fn resolves_to_dynamic(&self, ty: &Type) -> bool {
@@ -1069,18 +1069,17 @@ impl InferenceContext {
         false
     }
 
-    fn is_settled_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> bool {
+    fn is_settled_inner(&self, ty: &Type, path: &mut FxHashSet<TypeVarId>) -> bool {
         match ty {
             Type::Var(var) => {
                 let Some(bound) = self.substitutions.get(var) else {
                     return false;
                 };
-                if path.contains(var) {
+                if !path.insert(*var) {
                     return false;
                 }
-                path.push(*var);
                 let settled = self.is_settled_inner(bound, path);
-                path.pop();
+                path.remove(var);
                 settled
             }
             Type::Array(elem) | Type::Generator(elem) => self.is_settled_inner(elem, path),
@@ -1094,19 +1093,18 @@ impl InferenceContext {
         }
     }
 
-    fn resolve_type_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> Type {
+    fn resolve_type_inner(&self, ty: &Type, path: &mut FxHashSet<TypeVarId>) -> Type {
         match ty {
             Type::Var(var) => {
                 let Some(bound) = self.substitutions.get(var) else {
                     return ty.clone();
                 };
-                if path.contains(var) {
+                if !path.insert(*var) {
                     // Cycle detected, return the var unresolved to break infinite recursion
                     return ty.clone();
                 }
-                path.push(*var);
                 let result = self.resolve_type_inner(bound, path);
-                path.pop(); // Allow the same var in sibling branches
+                path.remove(var); // Allow the same var in sibling branches
                 result
             }
             Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, path))),

@@ -600,6 +600,29 @@ mod tests {
     use mq_hir::{HirError, SymbolKind};
     use rstest::rstest;
 
+    /// Inference time must not blow up with the number of elif branches (was cubic).
+    #[test]
+    fn test_long_elif_chain_is_fast() {
+        let mut code = String::from("def f(a): if (a): 1");
+        for i in 0..2000 {
+            code.push_str(&format!(" elif (a == {i}): {i}"));
+        }
+        code.push_str(" else: 0;");
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(move || {
+                let mut hir = Hir::default();
+                hir.add_code(None, &code);
+                let start = std::time::Instant::now();
+                let errors = TypeChecker::new().check(&hir);
+                assert!(errors.is_empty(), "{errors:?}");
+                assert!(start.elapsed().as_secs_f64() < 5.0, "took {:?}", start.elapsed());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
     #[rstest]
     #[case::number_elements("[1, 2] | map(fn: self + 1)")]
     #[case::pipe_in_body("[\"a b\"] | map(fn: split(\" \") | len)")]
