@@ -161,8 +161,14 @@ test-lang-cached:
     cargo nextest run -p mq-lang --lib --features mqc
     cargo nextest run -p mq-lang --lib --features mqc,sync
 
-test: test-lang-cached
+test-workspace:
     cargo nextest run --workspace
+
+# Default-feature builds of the crates that gate code behind features, built without feature unification from the rest of the workspace.
+test-default:
+    cargo nextest run -p mq-lang -p mq-run
+
+test: test-lang-cached test-workspace
 
 # Lint and type check all tracked .mq files with the in-tree mq-lint/mq-check, run per directory so sibling modules resolve
 lint-mq:
@@ -178,7 +184,7 @@ lint-mq:
     exit $status
 
 # Run formatting, linting and all tests
-test-all: fmt fmt-mq lint-mq lint test-mq test-doc test-doc-examples test-all-features test
+test-all: fmt fmt-mq lint-mq lint test-mq test-doc test-doc-examples test-all-features test-lang-cached test-default
 
 # Run tests with code coverage reporting
 test-cov:

@@ -15,7 +15,7 @@
 
 Use `just`, not bare `cargo test`.
 
-- `just test-all`: fmt check, clippy, mq tests, doctests, all-features and workspace tests
+- `just test-all`: fmt check, clippy, mq tests, doctests, all-features, feature-gated and default-feature tests
 - `just test-mq`: `.mq` tests only. Sufficient when the change is confined to `crates/mq-lang`
 - `just lint`: clippy with `-D clippy::all`
 - `just dump-bytecode '<query>'` / `just vm-profile '<query>'`: inspect VM output
