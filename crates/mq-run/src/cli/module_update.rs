@@ -52,6 +52,21 @@ fn latest_tag(tags_json: &str) -> miette::Result<Option<(Version, String)>> {
 }
 
 impl Cli {
+    /// Vendors `new_url` as `name` and drops the lock entry of `old_url`.
+    pub(super) fn replace_module(
+        target: &Target,
+        domains: &[String],
+        old_url: &str,
+        new_url: &str,
+        name: &str,
+    ) -> miette::Result<()> {
+        target.create_dir()?;
+        // A fresh resolver per module: its cached lock must not outlive `remove_lock_entry`.
+        let resolver = Self::module_resolver(target, domains, false);
+        Self::fetch_module(&resolver, target, new_url, name)?;
+        remove_lock_entry(&target.lockfile, old_url)
+    }
+
     /// `mq module update [NAME...] [--global] [--dry-run]`
     pub(super) fn module_update(
         names: &[String],
@@ -66,7 +81,6 @@ impl Cli {
         }
 
         let fetcher = UreqFetcher::default();
-        let resolver = Self::module_resolver(&target, domains, false);
         for (url, name, _) in modules {
             if !names.is_empty() && !names.contains(&name) {
                 continue;
@@ -101,9 +115,7 @@ impl Cli {
                 continue;
             }
             let new_url = format!("{RAW_PREFIX}{}/{}/{tag}/{}", raw.owner, raw.repo, raw.file);
-            target.create_dir()?;
-            Self::fetch_module(&resolver, &target, &new_url, &name)?;
-            remove_lock_entry(&target.lockfile, &url)?;
+            Self::replace_module(&target, domains, &url, &new_url, &name)?;
             println!("{name}: {} -> {tag}", raw.git_ref);
         }
         Ok(())

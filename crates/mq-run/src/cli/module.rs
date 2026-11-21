@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 pub(super) struct Target {
     pub(super) dir: PathBuf,
     pub(super) lockfile: PathBuf,
+    /// Module download cache; the user cache directory when `None`.
+    pub(super) cache_dir: Option<PathBuf>,
 }
 
 impl Target {
@@ -16,6 +18,7 @@ impl Target {
         Self {
             dir: PathBuf::from("vendor"),
             lockfile: PathBuf::from(LOCKFILE_NAME),
+            cache_dir: None,
         }
     }
 
@@ -27,6 +30,7 @@ impl Target {
             .join("mq");
         Ok(Self {
             lockfile: dir.join(LOCKFILE_NAME),
+            cache_dir: None,
             dir,
         })
     }
@@ -125,15 +129,19 @@ pub(super) fn remove_lock_entry(lockfile: &Path, url: &str) -> miette::Result<()
 impl Cli {
     /// `mq module add [--global] MODULE...`
     pub(super) fn module_add(specs: &[String], global: bool, domains: &[String]) -> miette::Result<()> {
-        let target = Target::select(global)?;
+        Self::add_modules(&Target::select(global)?, specs, domains)
+    }
+
+    fn add_modules(target: &Target, specs: &[String], domains: &[String]) -> miette::Result<()> {
         target.create_dir()?;
-        let resolver = Self::module_resolver(&target, domains, false);
         for spec in specs {
             if !(http_import::is_github_url(spec) || http_import::is_remote_url(spec)) {
                 bail!("`{spec}` is not a github.com/OWNER/REPO[@VERSION] or https:// module");
             }
             let name = module_name(spec)?;
-            let hash = Self::fetch_module(&resolver, &target, spec, name)?;
+            // A fresh resolver per module: its cached lock must not outlive `prune_replaced`.
+            let resolver = Self::module_resolver(target, domains, false);
+            let hash = Self::fetch_module(&resolver, target, spec, name)?;
             prune_replaced(&target.lockfile, name, &hash)?;
         }
         Ok(())
@@ -176,6 +184,9 @@ impl Cli {
         let mut fetcher = UreqFetcher::default();
         fetcher.set_lockfile_path(target.lockfile.clone());
         fetcher.set_lockfile_frozen(frozen);
+        if let Some(dir) = &target.cache_dir {
+            fetcher.set_cache_dir(dir.clone());
+        }
         let mut resolver = HttpModuleResolver::new(domains.to_vec(), fetcher);
         resolver.set_enabled(true);
         resolver
@@ -236,6 +247,7 @@ mod tests {
         let target = Target {
             dir: dir.path().to_path_buf(),
             lockfile: dir.path().join(LOCKFILE_NAME),
+            cache_dir: None,
         };
         fs::write(target.module_path("ok"), "def a(): 1;").unwrap();
         fs::write(target.module_path("changed"), "def a(): 2;").unwrap();
@@ -268,5 +280,205 @@ mod tests {
 
         let lock = read_lock(&lockfile).unwrap();
         assert_eq!(lock.entries().map(|(u, _)| u).collect::<Vec<_>>(), vec![new]);
+    }
+
+    const KDL_V1: &str = "https://raw.githubusercontent.com/harehare/kdl.mq/v1.0/kdl.mq";
+    const KDL_V2: &str = "https://raw.githubusercontent.com/harehare/kdl.mq/v2.0/kdl.mq";
+    const INI_V1: &str = "https://raw.githubusercontent.com/harehare/ini.mq/v1.0/ini.mq";
+    const OTHER_HOST: &str = "https://example.invalid/mods/kdl.mq";
+    const INI_V2: &str = "https://raw.githubusercontent.com/harehare/ini.mq/v2.0/ini.mq";
+
+    /// A project layout in a temp dir whose module cache is pre-seeded, so nothing hits the network.
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        target: Target,
+        domains: Vec<String>,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let target = Target {
+                dir: dir.path().join("vendor"),
+                lockfile: dir.path().join(LOCKFILE_NAME),
+                cache_dir: Some(dir.path().join("cache")),
+            };
+            Self {
+                _dir: dir,
+                target,
+                domains: vec!["github.com/harehare".to_string()],
+            }
+        }
+
+        /// Makes `url` resolvable offline with `content`.
+        fn seed(&self, url: &str, content: &str) {
+            let kind = if http_import::is_versioned_url(url) {
+                "versioned"
+            } else {
+                "mutable"
+            };
+            let dir = self.target.cache_dir.as_ref().unwrap().join(kind);
+            fs::create_dir_all(&dir).unwrap();
+            let stem = format!("{:x}", md5::compute(url));
+            fs::write(dir.join(format!("{stem}.mq")), content).unwrap();
+            fs::write(dir.join(format!("{stem}.mq.sha256")), compute_hash(content)).unwrap();
+        }
+
+        fn pin(&self, entries: &[(&str, &str)]) {
+            let entries: Vec<_> = entries.iter().map(|(u, c)| (*u, compute_hash(c))).collect();
+            let entries: Vec<_> = entries.iter().map(|(u, h)| (*u, h.as_str())).collect();
+            fs::write(&self.target.lockfile, lock_with(&entries).to_json()).unwrap();
+        }
+
+        fn add(&self, specs: &[&str]) -> miette::Result<()> {
+            let specs: Vec<String> = specs.iter().map(|s| s.to_string()).collect();
+            Cli::add_modules(&self.target, &specs, &self.domains)
+        }
+
+        fn locked_urls(&self) -> Vec<String> {
+            let mut urls: Vec<_> = read_lock(&self.target.lockfile)
+                .unwrap()
+                .entries()
+                .map(|(u, _)| u.to_string())
+                .collect();
+            urls.sort();
+            urls
+        }
+
+        fn vendored(&self, name: &str) -> Option<String> {
+            fs::read_to_string(self.target.module_path(name)).ok()
+        }
+    }
+
+    #[test]
+    fn test_add_vendors_and_locks_a_module() {
+        let fx = Fixture::new();
+        fx.seed(KDL_V1, "def kdl(): 1;");
+
+        fx.add(&["github.com/harehare/kdl.mq@v1.0"]).unwrap();
+
+        assert_eq!(fx.vendored("kdl").as_deref(), Some("def kdl(): 1;"));
+        assert_eq!(fx.locked_urls(), vec![KDL_V1]);
+    }
+
+    #[test]
+    fn test_add_several_new_modules_locks_each() {
+        let fx = Fixture::new();
+        fx.seed(KDL_V1, "def kdl(): 1;");
+        fx.seed(INI_V1, "def ini(): 1;");
+
+        fx.add(&["github.com/harehare/kdl.mq@v1.0", "github.com/harehare/ini.mq@v1.0"])
+            .unwrap();
+
+        assert_eq!(fx.locked_urls(), vec![INI_V1, KDL_V1]);
+        assert!(fx.vendored("kdl").is_some() && fx.vendored("ini").is_some());
+    }
+
+    #[test]
+    fn test_add_upgrading_several_pinned_modules_leaves_one_entry_each() {
+        let fx = Fixture::new();
+        fx.pin(&[(KDL_V1, "def kdl(): 1;"), (INI_V1, "def ini(): 1;")]);
+        fx.seed(KDL_V2, "def kdl(): 2;");
+        fx.seed(INI_V2, "def ini(): 2;");
+
+        fx.add(&["github.com/harehare/kdl.mq@v2.0", "github.com/harehare/ini.mq@v2.0"])
+            .unwrap();
+
+        assert_eq!(fx.locked_urls(), vec![INI_V2, KDL_V2]);
+        assert!(locked_modules(&read_lock(&fx.target.lockfile).unwrap()).is_ok());
+        assert_eq!(fx.vendored("kdl").as_deref(), Some("def kdl(): 2;"));
+        assert_eq!(fx.vendored("ini").as_deref(), Some("def ini(): 2;"));
+    }
+
+    #[test]
+    fn test_add_upgrade_keeps_unrelated_pins() {
+        let fx = Fixture::new();
+        fx.pin(&[(KDL_V1, "def kdl(): 1;"), (INI_V1, "def ini(): 1;")]);
+        fx.seed(KDL_V2, "def kdl(): 2;");
+
+        fx.add(&["github.com/harehare/kdl.mq@v2.0"]).unwrap();
+
+        assert_eq!(fx.locked_urls(), vec![INI_V1, KDL_V2]);
+    }
+
+    #[test]
+    fn test_add_is_idempotent() {
+        let fx = Fixture::new();
+        fx.seed(KDL_V1, "def kdl(): 1;");
+
+        fx.add(&["github.com/harehare/kdl.mq@v1.0"]).unwrap();
+        fx.add(&["github.com/harehare/kdl.mq@v1.0"]).unwrap();
+
+        assert_eq!(fx.locked_urls(), vec![KDL_V1]);
+    }
+
+    #[test]
+    fn test_add_rejects_content_that_differs_from_the_lock() {
+        let fx = Fixture::new();
+        fx.pin(&[(KDL_V1, "def kdl(): 1;")]);
+        fx.seed(KDL_V1, "def kdl(): tampered;");
+
+        assert!(fx.add(&["github.com/harehare/kdl.mq@v1.0"]).is_err());
+
+        assert_eq!(fx.vendored("kdl"), None);
+        assert_eq!(fx.locked_urls(), vec![KDL_V1]);
+    }
+
+    #[test]
+    fn test_add_rejects_a_local_path() {
+        let fx = Fixture::new();
+
+        assert!(fx.add(&["./kdl.mq"]).is_err());
+
+        assert!(!fx.target.lockfile.exists());
+    }
+
+    #[test]
+    fn test_add_keeps_earlier_modules_when_a_later_spec_fails() {
+        let fx = Fixture::new();
+        fx.seed(KDL_V1, "def kdl(): 1;");
+
+        assert!(fx.add(&["github.com/harehare/kdl.mq@v1.0", "./nope.mq"]).is_err());
+
+        assert_eq!(fx.locked_urls(), vec![KDL_V1]);
+        assert!(fx.vendored("kdl").is_some());
+    }
+
+    #[test]
+    fn test_add_rejects_a_domain_outside_the_allowlist() {
+        let fx = Fixture::new();
+        fx.seed(OTHER_HOST, "def kdl(): 1;");
+
+        assert!(fx.add(&[OTHER_HOST]).is_err());
+
+        assert_eq!(fx.vendored("kdl"), None);
+        assert!(!fx.target.lockfile.exists());
+    }
+
+    #[test]
+    fn test_replace_module_across_several_modules_leaves_one_entry_each() {
+        let fx = Fixture::new();
+        fx.pin(&[(KDL_V1, "def kdl(): 1;"), (INI_V1, "def ini(): 1;")]);
+        fx.seed(KDL_V2, "def kdl(): 2;");
+        fx.seed(INI_V2, "def ini(): 2;");
+
+        Cli::replace_module(&fx.target, &fx.domains, KDL_V1, KDL_V2, "kdl").unwrap();
+        Cli::replace_module(&fx.target, &fx.domains, INI_V1, INI_V2, "ini").unwrap();
+
+        assert_eq!(fx.locked_urls(), vec![INI_V2, KDL_V2]);
+        assert!(locked_modules(&read_lock(&fx.target.lockfile).unwrap()).is_ok());
+        assert_eq!(fx.vendored("kdl").as_deref(), Some("def kdl(): 2;"));
+        assert_eq!(fx.vendored("ini").as_deref(), Some("def ini(): 2;"));
+    }
+
+    #[test]
+    fn test_replace_module_keeps_the_old_pin_when_the_fetch_fails() {
+        let fx = Fixture::new();
+        fx.pin(&[(KDL_V1, "def kdl(): 1;")]);
+        fx.seed(OTHER_HOST, "def kdl(): 2;");
+
+        assert!(Cli::replace_module(&fx.target, &fx.domains, KDL_V1, OTHER_HOST, "kdl").is_err());
+
+        assert_eq!(fx.locked_urls(), vec![KDL_V1]);
     }
 }

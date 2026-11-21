@@ -2752,6 +2752,7 @@ dependencies = [
  "flate2",
  "glob",
  "ignore",
+ "md5",
  "miette",
  "mimalloc",
  "mq-dap",

@@ -253,6 +253,11 @@ impl UreqFetcher {
         Ok(content)
     }
 
+    /// Sets the directory modules are cached in. Defaults to the user cache directory.
+    pub fn set_cache_dir(&mut self, dir: std::path::PathBuf) {
+        self.cache_dir = dir;
+    }
+
     /// Enables or disables the `mq.lock` integrity check/update. The path is unaffected.
     pub fn set_lockfile_enabled(&mut self, enabled: bool) {
         self.lockfile_enabled = enabled;
