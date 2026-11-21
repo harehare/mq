@@ -528,14 +528,12 @@ mod tests {
             crate::ModuleLoader::new(crate::module::resolver::std_resolver::StdModuleResolver),
         )
         .unwrap();
-        super::super::run_with_globals(
+        super::super::run(
             &compiled,
             RuntimeValue::None,
-            &crate::runtime::host::HostFunctions::default(),
-            None,
-            super::super::super::Options::default().max_call_stack_depth,
-            &[],
+            super::super::Run::new(&crate::runtime::host::HostFunctions::default()),
         )
+        .result
         .unwrap()
     }
 
