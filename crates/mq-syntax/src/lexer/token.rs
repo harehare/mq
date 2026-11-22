@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use itertools::Itertools;
 use smol_str::SmolStr;
 
-use crate::{ArenaId, module::ModuleId, number::Number, range::Range};
+use crate::{ArenaId, ModuleId, number::Number, range::Range};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 
@@ -258,7 +258,7 @@ impl TokenKind {
     /// Binding precedence of a binary operator (higher binds tighter); `None` for other tokens.
     /// All binary operators are left-associative. Shared by the AST and CST parsers so both build
     /// the same tree shape.
-    pub(crate) fn binary_op_precedence(&self) -> Option<u8> {
+    pub fn binary_op_precedence(&self) -> Option<u8> {
         match self {
             TokenKind::Equal
             | TokenKind::PlusEqual

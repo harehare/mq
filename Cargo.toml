@@ -7,6 +7,7 @@ members = [
   "crates/mq-macros",
   "crates/mq-run",
   "crates/mq-lang",
+  "crates/mq-syntax",
   "crates/mq-repl",
   "crates/mq-markdown",
   "crates/mq-lsp",
@@ -41,6 +42,7 @@ mq-formatter = {path = "crates/mq-formatter", version = "0.10.2", default-featur
 mq-help = {path = "crates/mq-help", version = "0.10.2", default-features = false}
 mq-hir = {path = "crates/mq-hir", version = "0.10.2"}
 mq-lang = {path = "crates/mq-lang", version = "0.10.2"}
+mq-syntax = {path = "crates/mq-syntax", version = "0.10.2"}
 mq-lint = {path = "crates/mq-lint", version = "0.10.2"}
 mq-macros = {path = "crates/mq-macros", version = "0.10.2"}
 mq-markdown = {path = "crates/mq-markdown", version = "0.10.2"}

@@ -35,7 +35,7 @@ impl Ident {
     }
 
     /// Returns the identifier for `s` only if it is already interned.
-    pub(crate) fn lookup(s: &str) -> Option<Self> {
+    pub fn lookup(s: &str) -> Option<Self> {
         interner_read().get(s).map(Self)
     }
 

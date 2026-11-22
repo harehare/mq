@@ -2605,11 +2605,11 @@ dependencies = [
  "ignore",
  "itertools 0.15.0",
  "md5",
- "memchr",
  "miette",
  "mimalloc",
  "mq-macros",
  "mq-markdown",
+ "mq-syntax",
  "percent-encoding",
  "proptest",
  "quick-xml",
@@ -2626,7 +2626,6 @@ dependencies = [
  "siphasher",
  "smallvec",
  "smol_str",
- "string-interner",
  "strsim",
  "tempfile",
  "thin-vec",
@@ -2778,6 +2777,25 @@ dependencies = [
  "toon-format",
  "which",
  "yaml-rust2",
+]
+
+[[package]]
+name = "mq-syntax"
+version = "0.10.2"
+dependencies = [
+ "itertools 0.15.0",
+ "memchr",
+ "miette",
+ "proptest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "smol_str",
+ "string-interner",
+ "strsim",
+ "thin-vec",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

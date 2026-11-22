@@ -29,23 +29,13 @@
 //!   to/from JSON format (`ast_to_json` / `ast_from_json`). Use `Engine::compile` and
 //!   `Engine::eval_compiled` to execute programs constructed from deserialized ASTs.
 //!   When this feature is enabled, `serde` and `serde_json` dependencies are included.
-mod arena;
-mod ast;
-#[cfg(feature = "cst")]
-mod cst;
-pub mod diagnostic;
 mod engine;
 mod error;
-mod ident;
 mod io;
-mod lexer;
 mod module;
 #[cfg(feature = "mqc")]
 pub mod mqc;
-mod number;
-mod range;
 mod runtime;
-mod selector;
 pub mod suggest;
 mod tarn;
 #[doc(hidden)]
@@ -54,16 +44,11 @@ pub mod text_diff;
 pub mod vm_profile;
 
 use lexer::Lexer;
-#[cfg(not(feature = "sync"))]
-use std::cell::RefCell;
-#[cfg(not(feature = "sync"))]
-use std::rc::Rc;
-#[cfg(feature = "sync")]
-use std::sync::Arc;
-#[cfg(feature = "sync")]
-use std::sync::RwLock;
+#[cfg(feature = "cst")]
+use mq_syntax::cst;
+use mq_syntax::{arena, ident, number, range, selector};
+use mq_syntax::{ast, lexer};
 
-pub use arena::{Arena, ArenaId};
 pub use ast::Program;
 pub use ast::constants::identifiers::IMPLICIT_FN_ARG;
 pub use ast::node::BinaryOp as AstBinaryOp;
@@ -77,10 +62,8 @@ pub use ast::node::UnaryOp as AstUnaryOp;
 pub use ast::parser::Parser as AstParser;
 #[cfg(feature = "ast-json")]
 pub use ast::{ast_from_json, ast_to_json};
-pub use diagnostic::Diagnostic;
 pub use engine::{CompiledProgram, DefineValueError, Engine, Session};
 pub use error::Error;
-pub use ident::Ident;
 #[cfg(feature = "mock-io")]
 pub use io::MemIo;
 pub use io::{EnvAccess, Io, IoError, IoReader, NativeIo, NetAccess, PathAccess, SandboxedIo};
@@ -101,6 +84,10 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
     resolver::DefaultModuleResolver, resolver::ModuleResolver,
 };
+pub use mq_syntax::Diagnostic;
+pub use mq_syntax::Ident;
+pub use mq_syntax::diagnostic;
+pub use mq_syntax::{Arena, ArenaId, Shared, SharedCell};
 #[cfg(feature = "mqc")]
 pub use mqc::{Mqc, MqcDependency, MqcError};
 pub use range::{Position, Range};
@@ -136,6 +123,8 @@ pub use cst::node::UnaryOp as CstUnaryOp;
 pub use cst::parser::ErrorReporter as CstErrorReporter;
 #[cfg(feature = "cst")]
 pub use cst::parser::Parser as CstParser;
+#[cfg(feature = "cst")]
+pub use mq_syntax::parse_recovery;
 
 #[cfg(feature = "debugger")]
 pub use runtime::debugger::{
@@ -147,54 +136,7 @@ use crate::ast::TokenId;
 /// The result of evaluating a query.
 pub type MqResult = Result<RuntimeValues, Box<Error>>;
 
-/// Type alias for reference-counted pointer, switches between Shared and Arc depending on "sync" feature.
-#[cfg(not(feature = "sync"))]
-pub type Shared<T> = Rc<T>;
-/// Reference-counted pointer: `Rc`, or `Arc` with the `sync` feature.
-#[cfg(feature = "sync")]
-pub type Shared<T> = Arc<T>;
-
-/// Type alias for interior mutability, switches between SharedCell and RwLock depending on "sync" feature.
-#[cfg(not(feature = "sync"))]
-pub type SharedCell<T> = RefCell<T>;
-/// Interior-mutability cell: `RefCell`, or `RwLock` with the `sync` feature.
-#[cfg(feature = "sync")]
-pub type SharedCell<T> = RwLock<T>;
-
-pub(crate) type TokenArena = Shared<SharedCell<Arena<Token>>>;
-
-/// Parses `code` into CST nodes, collecting errors instead of stopping at the first one.
-///
-/// Broken input still yields a lossless tree: unparsable tokens are kept in `Error` nodes
-/// and absent required tokens appear as zero-width `Missing` nodes.
-///
-/// ```rust
-/// let (cst_nodes, errors) = mq_lang::parse_recovery("1 + 2");
-/// assert!(!errors.has_errors());
-/// assert!(!cst_nodes.is_empty());
-/// ```
-#[cfg(feature = "cst")]
-pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
-    let tokens = Lexer::new(lexer::Options {
-        ignore_errors: true,
-        include_spaces: true,
-    })
-    .tokenize(code, Module::TOP_LEVEL_MODULE_ID);
-
-    let tokens = match tokens {
-        Ok(tokens) => tokens,
-        Err(error) => {
-            let parse_error = error
-                .token()
-                .map_or(cst::error::ParseError::UnexpectedEOFDetected, |token| {
-                    cst::error::ParseError::UnexpectedToken(Shared::new(token.clone()))
-                });
-            return (Vec::new(), CstErrorReporter::with_error(vec![parse_error], 100));
-        }
-    };
-
-    CstParser::new(&tokens).parse()
-}
+pub(crate) use mq_syntax::TokenArena;
 
 /// Parses `code` into an AST program, allocating tokens in `token_arena`.
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {

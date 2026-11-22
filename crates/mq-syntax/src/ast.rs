@@ -3,13 +3,19 @@ use node::Node;
 use crate::{Shared, Token, arena::ArenaId};
 use thin_vec::ThinVec;
 
+/// Rendering of AST nodes back to source code.
 pub mod code;
+/// Names of builtins and identifiers the parser treats specially.
+#[allow(missing_docs)]
 pub mod constants;
+/// AST node types.
 pub mod node;
+/// The AST parser.
 pub mod parser;
 
 /// A sequence of top-level or block-level nodes.
 pub type Program = ThinVec<Shared<Node>>;
+/// The id of a token in a [`TokenArena`](crate::TokenArena).
 pub type TokenId = ArenaId<Token>;
 
 /// Serializes an AST `Program` to a JSON string.
@@ -40,7 +46,7 @@ mod tests {
     #[cfg(feature = "ast-json")]
     #[test]
     fn test_ast_to_json_and_from_json_roundtrip() {
-        use crate::{AstExpr, ast::node::IdentWithToken};
+        use crate::ast::node::{Expr as AstExpr, IdentWithToken};
 
         let ident = Shared::new(Node {
             token_id: TokenId::new(1),

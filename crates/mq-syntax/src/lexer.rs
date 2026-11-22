@@ -1,10 +1,11 @@
+/// Token types.
 pub mod token;
 
 use smol_str::SmolStr;
 use token::{StringSegment, Token, TokenKind};
 
-use crate::error::syntax::SyntaxError;
-use crate::module::ModuleId;
+use crate::ModuleId;
+use crate::error::SyntaxError;
 use crate::number::Number;
 use crate::range::{Position, Range};
 
@@ -17,15 +18,18 @@ pub struct Options {
     pub include_spaces: bool,
 }
 
+/// Converts source text into tokens.
 pub struct Lexer {
     options: Options,
 }
 
 impl Lexer {
+    /// Creates a lexer with the given options.
     pub fn new(options: Options) -> Self {
         Self { options }
     }
 
+    /// Tokenizes `input`, a source of `module_id`.
     pub fn tokenize(&self, input: &str, module_id: ModuleId) -> Result<Vec<Token>, SyntaxError> {
         self.tokenize_from(input, module_id, Position { line: 1, column: 1 })
     }
@@ -81,10 +85,7 @@ impl Lexer {
 /// Parses `input` as an interpolated string body (like between `s"` and `"`) without requiring
 /// the surrounding quotes, e.g. for DAP logpoint messages.
 #[cfg(feature = "debugger")]
-pub(crate) fn parse_interpolation_segments(
-    input: &str,
-    module_id: ModuleId,
-) -> Result<Vec<StringSegment>, SyntaxError> {
+pub fn parse_interpolation_segments(input: &str, module_id: ModuleId) -> Result<Vec<StringSegment>, SyntaxError> {
     let mut cursor = Cursor::new(input, module_id);
     let mut segments = Vec::with_capacity(4);
 
@@ -1707,47 +1708,6 @@ mod tests {
         #[case] expected: Result<Vec<Token>, SyntaxError>,
     ) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
-    }
-
-    const FILES: &[(&str, &str)] = &[
-        ("builtin.mq", include_str!("../builtin.mq")),
-        ("builtin_tests.mq", include_str!("../builtin_tests.mq")),
-        ("modules/cbor.mq", include_str!("../modules/cbor.mq")),
-        ("modules/csv.mq", include_str!("../modules/csv.mq")),
-        ("modules/csv_test.mq", include_str!("../modules/csv_test.mq")),
-        ("modules/fuzzy.mq", include_str!("../modules/fuzzy.mq")),
-        ("modules/fuzzy_test.mq", include_str!("../modules/fuzzy_test.mq")),
-        ("modules/gron.mq", include_str!("../modules/gron.mq")),
-        ("modules/gron_test.mq", include_str!("../modules/gron_test.mq")),
-        ("modules/html.mq", include_str!("../modules/html.mq")),
-        ("modules/html_test.mq", include_str!("../modules/html_test.mq")),
-        ("modules/json.mq", include_str!("../modules/json.mq")),
-        ("modules/json_test.mq", include_str!("../modules/json_test.mq")),
-        ("modules/md.mq", include_str!("../modules/md.mq")),
-        ("modules/md_test.mq", include_str!("../modules/md_test.mq")),
-        ("modules/section.mq", include_str!("../modules/section.mq")),
-        ("modules/section_test.mq", include_str!("../modules/section_test.mq")),
-        ("modules/semver.mq", include_str!("../modules/semver.mq")),
-        ("modules/semver_test.mq", include_str!("../modules/semver_test.mq")),
-        ("modules/table.mq", include_str!("../modules/table.mq")),
-        ("modules/table_test.mq", include_str!("../modules/table_test.mq")),
-        ("modules/test.mq", include_str!("../modules/test.mq")),
-        ("modules/toml.mq", include_str!("../modules/toml.mq")),
-        ("modules/toml_test.mq", include_str!("../modules/toml_test.mq")),
-        ("modules/toon.mq", include_str!("../modules/toon.mq")),
-        ("modules/toon_test.mq", include_str!("../modules/toon_test.mq")),
-        ("modules/xml.mq", include_str!("../modules/xml.mq")),
-        ("modules/xml_test.mq", include_str!("../modules/xml_test.mq")),
-        ("modules/yaml.mq", include_str!("../modules/yaml.mq")),
-        ("modules/yaml_test.mq", include_str!("../modules/yaml_test.mq")),
-    ];
-
-    #[test]
-    fn parses_real_mq_files() {
-        for (name, source) in FILES {
-            let token_arena = crate::Shared::new(crate::SharedCell::new(crate::Arena::new(256)));
-            crate::parse(source, token_arena).unwrap_or_else(|e| panic!("{name} failed to parse: {e}"));
-        }
     }
 
     /// Pieces that stress every token kind and its failure paths when glued together.

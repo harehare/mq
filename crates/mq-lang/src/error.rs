@@ -1,8 +1,13 @@
 pub mod runtime;
-pub mod syntax;
+pub mod syntax {
+    pub use mq_syntax::SyntaxError;
+}
 
 use miette::{Diagnostic, NamedSource, SourceOffset, SourceSpan};
 use std::borrow::Cow;
+
+use mq_syntax::error::{UNMATCHED_END_HELP, UNPARSED_SOURCE_HELP};
+use mq_syntax::suggest::selector_help;
 
 use crate::{
     ModuleId, ModuleLoader, ModuleResolver, Token, TokenKind,
@@ -225,31 +230,6 @@ fn foreign_literal(name: &str) -> Option<&'static str> {
         "True" | "TRUE" => Some("true"),
         "False" | "FALSE" => Some("false"),
         _ => None,
-    }
-}
-
-/// Help text for a parse stopped before end of input.
-pub(crate) const UNPARSED_SOURCE_HELP: &str = "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.";
-
-/// Help text for an `end` with no open block.
-pub(crate) const UNMATCHED_END_HELP: &str = "This `end` keyword does not match any open block. \
-    Note: single-line `if` expressions do not require `end`. \
-    Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.";
-
-// help() text for an unknown selector, with a "did you mean" hint when available.
-#[cold]
-pub(crate) fn selector_help(sel: &selector::UnknownSelector) -> Cow<'static, str> {
-    let raw = match &sel.0.kind {
-        TokenKind::Selector(s) => s.as_str(),
-        _ => "",
-    };
-    match crate::suggest::suggest_selector(raw) {
-        Some(similar) => Cow::Owned(format!(
-            "Unknown selector `{raw}`. A selector with a similar name exists: `{similar}`."
-        )),
-        None => Cow::Borrowed(
-            "Unknown selector. Valid selectors include node types (e.g. .h1, .p, .code) and bracket access (e.g. .[0], .[n][m]).",
-        ),
     }
 }
 

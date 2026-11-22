@@ -164,6 +164,8 @@ test-all-features:
 test-lang-cached:
     cargo nextest run -p mq-lang --lib --features mqc
     cargo nextest run -p mq-lang --lib --features mqc,sync
+    cargo nextest run -p mq-syntax --features cst
+    cargo nextest run -p mq-syntax --features cst,sync
 
 test-workspace:
     cargo nextest run --workspace
@@ -213,9 +215,10 @@ test-fuzz target="interpreter" *args:
         exit 1
     fi
 
-# Prove mq-lang properties with Kani. Run manually: `cargo install --locked kani-verifier && cargo kani setup`.
+# Prove mq-lang and mq-syntax properties with Kani. Run manually: `cargo install --locked kani-verifier && cargo kani setup`.
 kani *args:
     cargo kani -p mq-lang --features mqc {{args}}
+    cargo kani -p mq-syntax {{args}}
 
 # Prove mq-markdown properties with Kani.
 kani-markdown *args:

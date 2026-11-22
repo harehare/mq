@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{Shared, Token, TokenKind, error, selector};
+use crate::{Shared, Token, TokenKind, selector};
 
 #[derive(Error, Debug, PartialEq, Clone, PartialOrd, Eq, Ord)]
 #[non_exhaustive]
@@ -54,9 +54,9 @@ impl ParseError {
     #[cold]
     pub fn hint(&self) -> Option<String> {
         match self {
-            ParseError::UnknownSelector(sel) => Some(crate::error::selector_help(sel).into_owned()),
+            ParseError::UnknownSelector(sel) => Some(crate::suggest::selector_help(sel).into_owned()),
             ParseError::UnexpectedToken(token) if token.kind == TokenKind::Eof => {
-                Some(error::UNPARSED_SOURCE_HELP.to_string())
+                Some(crate::error::UNPARSED_SOURCE_HELP.to_string())
             }
             ParseError::UnexpectedToken(_) => Some(
                 "This token is not valid here. Check for typos, missing operators, or misplaced punctuation."
@@ -82,7 +82,7 @@ impl ParseError {
             ParseError::Missing { .. } => {
                 Some("A token is missing here. Check for unclosed brackets, parentheses, or blocks.".to_string())
             }
-            ParseError::UnmatchedEnd(_) => Some(error::UNMATCHED_END_HELP.to_string()),
+            ParseError::UnmatchedEnd(_) => Some(crate::error::UNMATCHED_END_HELP.to_string()),
         }
     }
 }

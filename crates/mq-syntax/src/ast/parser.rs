@@ -1,9 +1,9 @@
+use crate::ModuleId;
 use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
-use crate::error::syntax::SyntaxError;
+use crate::error::SyntaxError;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
-use crate::module::ModuleId;
 use crate::range::Position;
 use crate::selector::Selector;
 use crate::{Ident, Shared, lexer};
@@ -704,7 +704,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     /// Tokens that can start the operand of a prefix `!` or `-`.
-    pub(crate) fn is_prefix_operand_start(kind: &TokenKind) -> bool {
+    pub fn is_prefix_operand_start(kind: &TokenKind) -> bool {
         matches!(
             kind,
             TokenKind::BoolLiteral(_)

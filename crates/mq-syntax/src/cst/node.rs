@@ -5,7 +5,7 @@ use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use thin_vec::ThinVec;
 
-use crate::{Module, Position, Range, Token};
+use crate::{Position, Range, TOP_LEVEL_MODULE_ID, Token};
 use crate::{Shared, TokenKind};
 
 type Comment = (Range, String);
@@ -599,7 +599,7 @@ impl Node {
             token: Some(Shared::new(Token {
                 kind: TokenKind::Pipe,
                 range: Range::default(),
-                module_id: Module::TOP_LEVEL_MODULE_ID,
+                module_id: TOP_LEVEL_MODULE_ID,
             })),
             leading_trivia: if with_new_line {
                 smallvec![Trivia::NewLine]

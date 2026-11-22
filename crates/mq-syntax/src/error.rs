@@ -1,10 +1,9 @@
 use thiserror::Error;
 
-use crate::{Token, module::ModuleId, selector};
+use crate::{ModuleId, Token, selector};
 
 /// Errors that occur during parsing of mq source code.
 #[derive(Error, Debug, PartialEq)]
-#[non_exhaustive]
 pub enum SyntaxError {
     /// An unexpected token was encountered during parsing.
     #[error("{}", if .0.is_eof() { "Invalid or unsupported input".to_string() } else { format!("Unexpected token `{}`", .0) })]
@@ -55,6 +54,14 @@ pub enum SyntaxError {
     #[error("Expression nesting is too deep (maximum depth is {1})")]
     TooDeeplyNested(Token, usize),
 }
+
+/// Help text for a parse stopped before end of input.
+pub const UNPARSED_SOURCE_HELP: &str = "The source could not be fully parsed from this position. Check for unsupported escape sequences (use \\u{XXXX} for Unicode), invalid characters, or unterminated string literals.";
+
+/// Help text for an `end` with no open block.
+pub const UNMATCHED_END_HELP: &str = "This `end` keyword does not match any open block. \
+    Note: single-line `if` expressions do not require `end`. \
+    Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.";
 
 impl SyntaxError {
     /// Returns the token associated with this error, if available.

@@ -16,6 +16,7 @@ workspace = true
 
 [dependencies]
 mq-macros = {workspace = true}
+mq-syntax = {workspace = true}
 base64 = {workspace = true}
 caseless = {workspace = true}
 ciborium = {workspace = true}
@@ -31,7 +32,6 @@ dirs = {workspace = true}
 glob = {workspace = true}
 ignore = {workspace = true, optional = true}
 itertools = {workspace = true}
-memchr = {workspace = true}
 miette = {workspace = true}
 mq-markdown = {workspace = true, features = ["json", "obsidian"]}
 percent-encoding = {workspace = true}
@@ -48,7 +48,6 @@ toml = {workspace = true}
 smallvec = {workspace = true}
 thin-vec = {workspace = true}
 smol_str = {workspace = true}
-string-interner = {workspace = true}
 strsim = {workspace = true}
 thiserror = {workspace = true}
 url = {workspace = true}
@@ -70,7 +69,7 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 web-time = {workspace = true, optional = true}
 
 [features]
-ast-json = ["smallvec/serde", "smol_str/serde", "thin-vec/serde"]
+ast-json = ["mq-syntax/ast-json", "smallvec/serde", "smol_str/serde", "thin-vec/serde"]
 # Captures VM operand-stack snapshots at debugger statement boundaries and enables bytecode
 # dumps. Intended for `mq-dbg` diagnosis; disabled by default to avoid snapshot allocations.
 debug-trace = ["debugger"]
@@ -79,16 +78,16 @@ debug-trace = ["debugger"]
 vm-profile = []
 # Use the browser clock for VM deadlines when targeting WebAssembly.
 wasm = ["dep:web-time"]
-cst = []
+cst = ["mq-syntax/cst"]
 # Lets `Engine::set_builtin_source` replace the bundled `builtin.mq`, for mutation testing.
 custom-builtin = []
 html-parse = ["dep:ego-tree", "dep:scraper"]
-debugger = ["sync"]
+debugger = ["sync", "mq-syntax/debugger"]
 default = ["html-to-markdown"]
 file-io = ["dep:ignore"]
 html-to-markdown = ["mq-markdown/html-to-markdown"]
 process-io = []
-sync = []
+sync = ["mq-syntax/sync"]
 http-import = []
 http = ["dep:ureq"]
 http-import-ureq = ["http-import", "http"]
