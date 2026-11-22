@@ -1467,9 +1467,7 @@ impl Formatter {
             match trivia {
                 mq_lang::CstTrivia::Whitespace(_) => {}
                 comment @ mq_lang::CstTrivia::Comment(_) => {
-                    if self.is_prev_pipe() {
-                        self.append_space();
-                    } else if node.has_new_line() && self.output.ends_with('\n') {
+                    if !self.is_prev_pipe() && node.has_new_line() && self.output.ends_with('\n') {
                         self.append_indent(indent_level);
                     }
 

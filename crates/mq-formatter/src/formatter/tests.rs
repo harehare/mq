@@ -512,6 +512,7 @@ process();"#,
 )]
 #[case::dict_index_access_inline("d[\"key\"]", "d[\"key\"]")]
 #[case::comment_first_line("# comment\nlet x = 1", "# comment\nlet x = 1\n")]
+#[case::comment_after_pipe_single_space("let a = 1 | # trailing\na", "let a = 1 | # trailing\na\n")]
 #[case::string_keeps_unicode_escape(r#"let x = "\u{D7FF}\u{E000}""#, r#"let x = "\u{D7FF}\u{E000}""#)]
 #[case::string_keeps_hex_escape(r#"let x = "\x41""#, r#"let x = "\x41""#)]
 #[case::string_keeps_regex_escapes(r#"let x = "\d+\s\/""#, r#"let x = "\d+\s\/""#)]
@@ -1747,5 +1748,18 @@ fn test_format_selector_chain_keeps_leading_comment_once(#[case] code: &str) {
     let once = Formatter::new(None).format(code).unwrap();
     let twice = Formatter::new(None).format(&once).unwrap();
     assert_eq!(once, code);
+    assert_eq!(once, twice);
+}
+
+#[test]
+fn test_format_comment_after_pipe_with_max_width() {
+    let code = "select(\"h1\") | upcase() | # note\ntrim() | to_text() | replace(\"a\",\"b\") | join(\",\")";
+    let config = || FormatterConfig {
+        max_width: Some(40),
+        ..Default::default()
+    };
+    let once = Formatter::new(Some(config())).format(code).unwrap();
+    assert!(!once.contains("  #"), "double space before comment: {once:?}");
+    let twice = Formatter::new(Some(config())).format(&once).unwrap();
     assert_eq!(once, twice);
 }
