@@ -116,6 +116,27 @@ fn coverage_writes_artifact_and_prints_json_test_results() {
 }
 
 #[test]
+fn coverage_without_output_keeps_stdout_a_single_json_document() {
+    let ws = Workspace::new("coverage_json_stdout");
+    ws.write("tests.mq", PASSING);
+
+    for coverage_format in ["text", "json"] {
+        let output = ws.run(&[
+            "coverage",
+            "--format",
+            coverage_format,
+            "--test-format",
+            "json",
+            "tests.mq",
+        ]);
+
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        serde_json::from_str::<serde_json::Value>(&stdout(&output))
+            .unwrap_or_else(|e| panic!("stdout must be one JSON document ({coverage_format}): {e}"));
+    }
+}
+
+#[test]
 fn coverage_format_only_changes_the_artifact() {
     let ws = Workspace::new("coverage_text");
     ws.write("tests.mq", PASSING);
