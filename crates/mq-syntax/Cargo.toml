@@ -32,8 +32,8 @@ thin-vec = {workspace = true}
 ast-json = ["dep:serde", "dep:serde_json", "dep:miette", "smallvec/serde", "smol_str/serde", "thin-vec/serde"]
 # The lossless, error-recovering concrete syntax tree parser.
 cst = []
-# `Display` for expressions and interpolation parsing used by the debugger.
-debugger = []
+# `Display` for expressions, rendering them as source text.
+expr-display = []
 # `Arc`/`RwLock` instead of `Rc`/`RefCell` for `Shared`/`SharedCell`.
 sync = []
 

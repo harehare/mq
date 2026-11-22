@@ -23,4 +23,4 @@ assert_eq!(program.len(), 1);
 - `cst`: the error-recovering CST parser (`parse_recovery`).
 - `ast-json`: JSON (de)serialization of the AST and tokens.
 - `sync`: `Arc`/`RwLock` instead of `Rc`/`RefCell` for `Shared`/`SharedCell`.
-- `debugger`: items used by the debugger.
+- `expr-display`: `Display` for AST expressions.

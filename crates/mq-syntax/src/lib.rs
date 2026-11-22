@@ -18,7 +18,7 @@
 //! - `cst`: the error-recovering CST parser ([`parse_recovery`], [`cst`]).
 //! - `ast-json`: JSON (de)serialization of the AST and tokens.
 //! - `sync`: `Arc`/`RwLock` instead of `Rc`/`RefCell` for [`Shared`] and [`SharedCell`].
-//! - `debugger`: items used by the debugger.
+//! - `expr-display`: `Display` for AST expressions.
 /// Id-indexed token and module-name storage.
 pub mod arena;
 /// The AST and its parser.

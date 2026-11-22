@@ -84,7 +84,6 @@ impl Lexer {
 
 /// Parses `input` as an interpolated string body (like between `s"` and `"`) without requiring
 /// the surrounding quotes, e.g. for DAP logpoint messages.
-#[cfg(feature = "debugger")]
 pub fn parse_interpolation_segments(input: &str, module_id: ModuleId) -> Result<Vec<StringSegment>, SyntaxError> {
     let mut cursor = Cursor::new(input, module_id);
     let mut segments = Vec::with_capacity(4);

@@ -574,7 +574,7 @@ pub enum Expr {
     Yield(Option<Shared<Node>>),
 }
 
-#[cfg(feature = "debugger")]
+#[cfg(feature = "expr-display")]
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -1294,7 +1294,7 @@ mod tests {
         assert!(a < b);
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_call() {
         let call = Expr::Call(IdentWithToken::new("func"), smallvec![make_node(0), make_node(1)]);
@@ -1302,7 +1302,7 @@ mod tests {
         assert!(s.starts_with("func("), "expected func(...), got: {s}");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_call_dynamic() {
         let callee = Shared::new(Node {
@@ -1314,7 +1314,7 @@ mod tests {
         assert!(s.contains('('), "expected parens in: {s}");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_literal() {
         let lit = Expr::Literal(Literal::None);
@@ -1323,20 +1323,20 @@ mod tests {
         assert_eq!(format!("{lit}"), "42");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_ident() {
         let ident = Expr::Ident(IdentWithToken::new("x"));
         assert_eq!(format!("{ident}"), "x");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_self() {
         assert_eq!(format!("{}", Expr::Self_), "self");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_other_is_empty() {
         assert_eq!(format!("{}", Expr::Continue), "");
