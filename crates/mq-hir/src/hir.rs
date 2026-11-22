@@ -646,6 +646,11 @@ mod tests {
         dir
     }
 
+    /// Forward-slash form of a path, valid inside an mq string literal and comparable with URL paths.
+    fn slash_path(path: &std::path::Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
+
     fn module_ranges(hir: &Hir, id: SourceId, name: &str) -> Vec<mq_lang::Range> {
         hir.symbols_for_source(id)
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)) && s.value.as_deref() == Some(name))
@@ -770,7 +775,7 @@ mod tests {
         let main = Url::parse("file:///main.mq").unwrap();
         let code = format!(
             "import \"lib\" as active | import \"{}/lib\" as shared | active::f()",
-            global.display()
+            slash_path(&global)
         );
         let (nodes, _) = mq_lang::parse_recovery(&code);
         hir.add_nodes(main, &nodes);
@@ -791,7 +796,7 @@ mod tests {
             .and_then(|s| s.source.source_id)
             .and_then(|id| hir.url_by_source(&id))
             .unwrap();
-        assert!(def_url.path().contains(&*vendor.to_string_lossy()), "{def_url}");
+        assert!(def_url.path().contains(&slash_path(&vendor)), "{def_url}");
         std::fs::remove_dir_all(&global).ok();
         std::fs::remove_dir_all(&vendor).ok();
     }
@@ -808,7 +813,7 @@ mod tests {
         hir.add_nodes(main, &nodes);
         let lib = open_global_lib(&mut hir, "def helper(): 1;");
 
-        std::fs::write(vendor.join("lib.mq"), format!("include \"{}/lib\"", global.display())).unwrap();
+        std::fs::write(vendor.join("lib.mq"), format!("include \"{}/lib\"", slash_path(&global))).unwrap();
         hir.remove_source(&lib);
 
         let source_id = hir.source_by_url(&lib).expect("dependency stays loaded");
