@@ -532,7 +532,7 @@ impl Hir {
         if let Some(source_id) = self.source_by_url(&url)
             && self.opened_sources.contains(&source_id)
         {
-            return (source_id, false);
+            return (source_id, self.reaches_loading_source(source_id));
         }
         let code = self.module_loader.resolve(module_name);
         (self.add_module_code(url, &code.unwrap_or_default()), false)

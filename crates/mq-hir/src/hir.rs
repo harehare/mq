@@ -247,34 +247,26 @@ impl Hir {
             };
             in_source(def_id) && !in_source(ref_id)
         });
-        let imported_elsewhere = self.symbols.iter().any(|(_, s)| {
-            matches!(s.kind, SymbolKind::Import(id) | SymbolKind::Include(id) if id == source_id)
-                && s.source.source_id != Some(source_id)
-        });
-        if referenced_elsewhere || imported_elsewhere {
-            let directives: Vec<(SymbolId, SmolStr)> = self
-                .symbols
-                .iter()
-                .filter_map(|(id, s)| match (&s.kind, &s.value) {
-                    (SymbolKind::Import(m) | SymbolKind::Include(m), Some(name)) if *m == source_id => {
-                        Some((id, name.clone()))
-                    }
-                    _ => None,
-                })
-                .collect();
+        let directives = self.directives_into(source_id);
+        if referenced_elsewhere || !directives.is_empty() {
             // The import may now resolve to another file, so contents are never attached to the old URL.
             let (same, moved): (Vec<_>, Vec<_>) = directives
                 .into_iter()
                 .partition(|(_, name)| self.module_url(name).is_none_or(|u| u == *url));
 
             if same.is_empty() && !moved.is_empty() {
-                // Nothing resolves here anymore, so release the old source after rebinding.
+                // Nothing resolved here before, but a replacement may now depend on this file.
                 self.rebind_directives(&moved);
+                self.resolve();
+                if !self.directives_into(source_id).is_empty() {
+                    return;
+                }
             } else {
                 // Reload the saved module so discarded editor edits do not linger.
                 let code = same.first().and_then(|(_, name)| self.module_loader.resolve(name).ok());
                 self.add_module_code(url.clone(), &code.unwrap_or_default());
                 self.rebind_directives(&moved);
+                self.resolve();
                 return;
             }
         }
@@ -288,6 +280,44 @@ impl Hir {
         self.module_sources.remove(&source_id);
         self.sources.remove(source_id);
         self.resolve();
+    }
+
+    /// Imports and includes in other sources that point at `source_id`, with their module names.
+    fn directives_into(&self, source_id: SourceId) -> Vec<(SymbolId, SmolStr)> {
+        self.symbols
+            .iter()
+            .filter_map(|(id, s)| match (&s.kind, &s.value) {
+                (SymbolKind::Import(m) | SymbolKind::Include(m), Some(name))
+                    if *m == source_id && s.source.source_id != Some(source_id) =>
+                {
+                    Some((id, name.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Whether `source_id` imports or includes, directly or not, a source that is being loaded.
+    pub(crate) fn reaches_loading_source(&self, source_id: SourceId) -> bool {
+        let mut visited = FxHashSet::default();
+        let mut stack = vec![source_id];
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            for (_, symbol) in self.symbols_for_source(current) {
+                if let SymbolKind::Import(target) | SymbolKind::Include(target) = symbol.kind {
+                    if self
+                        .url_by_source(&target)
+                        .is_some_and(|u| self.loading_sources.contains(u))
+                    {
+                        return true;
+                    }
+                    stack.push(target);
+                }
+            }
+        }
+        false
     }
 
     /// Points directives at the source their module name resolves to now.
@@ -706,6 +736,111 @@ mod tests {
         assert_eq!(hir.symbol(def).unwrap().source.source_id, Some(new_id));
         std::fs::remove_dir_all(&global).ok();
         std::fs::remove_dir_all(&vendor).ok();
+    }
+
+    fn shadowed_lib_hir(global: &std::path::Path, vendor: &std::path::Path) -> Hir {
+        let mut loader = mq_lang::ModuleLoader::default();
+        loader.set_search_paths(vec![vendor.to_path_buf(), global.to_path_buf()]);
+        let mut hir = Hir::new(loader);
+        hir.builtin.disabled = true;
+        hir
+    }
+
+    fn open_global_lib(hir: &mut Hir, code: &str) -> Url {
+        let id = hir
+            .symbols()
+            .find_map(|(_, s)| match s.kind {
+                SymbolKind::Import(id) | SymbolKind::Include(id) => Some(id),
+                _ => None,
+            })
+            .unwrap();
+        let url = hir.url_by_source(&id).unwrap().clone();
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        hir.add_nodes(url.clone(), &nodes);
+        url
+    }
+
+    #[test]
+    fn test_remove_source_rebinds_references_when_only_some_imports_move() {
+        let global = nested_module_dir("mixed_global");
+        let vendor = nested_module_dir("mixed_vendor");
+        std::fs::write(global.join("lib.mq"), "def f(): 1;").unwrap();
+        let mut hir = shadowed_lib_hir(&global, &vendor);
+
+        let main = Url::parse("file:///main.mq").unwrap();
+        let code = format!(
+            "import \"lib\" as active | import \"{}/lib\" as shared | active::f()",
+            global.display()
+        );
+        let (nodes, _) = mq_lang::parse_recovery(&code);
+        hir.add_nodes(main, &nodes);
+        let lib = open_global_lib(&mut hir, "def f(): 1;");
+
+        std::fs::write(vendor.join("lib.mq"), "def f(): 2;").unwrap();
+        hir.remove_source(&lib);
+
+        let (url, _) = qualified_target(&hir, "f").expect("member resolves");
+        assert_eq!(url.as_deref(), Some("lib.mq"));
+        let (call_id, _) = hir
+            .symbols()
+            .find(|(_, s)| matches!(s.kind, SymbolKind::Call | SymbolKind::Ref) && s.value.as_deref() == Some("f"))
+            .unwrap();
+        let def = hir.resolve_reference_symbol(call_id).unwrap();
+        let def_url = hir
+            .symbol(def)
+            .and_then(|s| s.source.source_id)
+            .and_then(|id| hir.url_by_source(&id))
+            .unwrap();
+        assert!(def_url.path().contains(&*vendor.to_string_lossy()), "{def_url}");
+        std::fs::remove_dir_all(&global).ok();
+        std::fs::remove_dir_all(&vendor).ok();
+    }
+
+    #[test]
+    fn test_remove_source_keeps_dependency_loaded_by_replacement() {
+        let global = nested_module_dir("dep_global");
+        let vendor = nested_module_dir("dep_vendor");
+        std::fs::write(global.join("lib.mq"), "def helper(): 1;").unwrap();
+        let mut hir = shadowed_lib_hir(&global, &vendor);
+
+        let main = Url::parse("file:///main.mq").unwrap();
+        let (nodes, _) = mq_lang::parse_recovery(r#"import "lib";"#);
+        hir.add_nodes(main, &nodes);
+        let lib = open_global_lib(&mut hir, "def helper(): 1;");
+
+        std::fs::write(vendor.join("lib.mq"), format!("include \"{}/lib\"", global.display())).unwrap();
+        hir.remove_source(&lib);
+
+        let source_id = hir.source_by_url(&lib).expect("dependency stays loaded");
+        for (_, s) in hir.symbols() {
+            if let SymbolKind::Import(id) | SymbolKind::Include(id) = s.kind {
+                assert!(hir.url_by_source(&id).is_some());
+            }
+        }
+        assert!(hir.is_module_source(source_id));
+        std::fs::remove_dir_all(&global).ok();
+        std::fs::remove_dir_all(&vendor).ok();
+    }
+
+    #[test]
+    fn test_open_modules_keep_reporting_dependency_cycle() {
+        let mut hir = hir_with_modules(
+            "open-cycle",
+            &[("a", "import \"b\"\ndef fa(): 1;"), ("b", "import \"a\"\ndef fb(): 2;")],
+        );
+        let url_a = hir.module_url("a").unwrap();
+        let url_b = hir.module_url("b").unwrap();
+        let open = |hir: &mut Hir, url: &Url, code: &str| {
+            let (nodes, _) = mq_lang::parse_recovery(code);
+            hir.add_nodes(url.clone(), &nodes);
+        };
+
+        open(&mut hir, &url_a, "import \"b\"\ndef fa(): 1;");
+        assert!(!hir.errors().is_empty());
+        open(&mut hir, &url_b, "import \"a\"\ndef fb(): 2;");
+        assert!(!hir.errors().is_empty());
+        open(&mut hir, &url_a, "import \"b\"\ndef fa(): 1;");
+        assert!(!hir.errors().is_empty());
     }
 
     #[rstest]
