@@ -2673,6 +2673,7 @@ dependencies = [
  "mq-lang",
  "mq-lint",
  "mq-markdown",
+ "parking_lot",
  "rstest",
  "rustc-hash",
  "serde",

@@ -1,4 +1,5 @@
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use tower_lsp_server::ls_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
@@ -151,11 +152,11 @@ fn hir_hover(
     type_env: Option<mq_check::TypeEnv>,
     position: Position,
 ) -> Option<Hover> {
-    let source = hir.read().unwrap().source_by_url(&url);
+    let source = hir.read().source_by_url(&url);
 
     if let Some(source) = source {
         let lsp_position = mq_lang::Position::new(position.line + 1, position.character + 1);
-        if let Some((symbol_id, symbol)) = hir.read().unwrap().find_symbol_in_position(source, lsp_position) {
+        if let Some((symbol_id, symbol)) = hir.read().find_symbol_in_position(source, lsp_position) {
             match &symbol.kind {
                 mq_hir::SymbolKind::Function(_)
                 | mq_hir::SymbolKind::Variable
@@ -166,7 +167,7 @@ fn hir_hover(
                     let name = symbol.value.as_deref().unwrap_or_default();
 
                     let examples: Vec<mq_help::BuiltinExample> = {
-                        let hir = hir.read().unwrap();
+                        let hir = hir.read();
                         if symbol.source.source_id == Some(hir.builtin.source_id) {
                             hir.builtin
                                 .docs
@@ -213,7 +214,6 @@ fn hir_hover(
                         // declared in another source.
                         range: hir
                             .read()
-                            .unwrap()
                             .find_range_in_position(source, lsp_position)
                             .map(|text_range| {
                                 Range::new(
@@ -488,7 +488,7 @@ def old_func(x): x + 1;"#;
 
         let hir = Arc::new(RwLock::new(hir));
         let mut checker = TypeChecker::new();
-        checker.check(&hir.read().unwrap());
+        checker.check(&hir.read());
         let type_env = Some(checker.symbol_types().clone());
 
         let position = Position::new(0, 5);

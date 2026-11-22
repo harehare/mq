@@ -1,4 +1,5 @@
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 use tower_lsp_server::ls_types::{DocumentHighlight, Position};
 use url::Url;
@@ -13,7 +14,7 @@ pub(crate) fn response(
     lines: &LineIndex,
     position: Position,
 ) -> Option<Vec<DocumentHighlight>> {
-    let hir = hir.read().unwrap();
+    let hir = hir.read();
     let source = hir.source_by_url(&url)?;
     let (symbol_id, symbol) = hir.find_symbol_in_position(source, lines.to_mq(position))?;
 

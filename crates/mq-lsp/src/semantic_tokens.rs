@@ -1,4 +1,5 @@
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use tower_lsp_server::ls_types::{self, SemanticToken, SemanticTokenModifier, SemanticTokenType};
@@ -8,7 +9,7 @@ pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url) -> Vec<SemanticT
     let mut pre_line = 0;
     let mut pre_start = 0;
 
-    let hir_guard = hir.read().unwrap();
+    let hir_guard = hir.read();
     let source_id = hir_guard.source_by_url(&url);
     let symbols = source_id
         .map(|source_id| hir_guard.find_symbols_in_source(source_id))

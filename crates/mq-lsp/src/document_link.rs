@@ -1,4 +1,5 @@
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 use tower_lsp_server::ls_types::{DocumentLink, Position, Range};
 use url::Url;
@@ -7,7 +8,7 @@ use crate::{position::LineIndex, virtual_document};
 
 /// Links the path string of each `import` / `include` to the module it loads.
 pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, lines: &LineIndex) -> Option<Vec<DocumentLink>> {
-    let hir = hir.read().unwrap();
+    let hir = hir.read();
     let source = hir.source_by_url(&url)?;
 
     let mut links = hir
