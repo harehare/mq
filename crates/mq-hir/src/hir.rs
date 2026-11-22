@@ -252,14 +252,31 @@ impl Hir {
                 && s.source.source_id != Some(source_id)
         });
         if referenced_elsewhere || imported_elsewhere {
-            // Reload the saved module so discarded editor edits do not linger.
-            let module_name = self.symbols.iter().find_map(|(_, s)| match s.kind {
-                SymbolKind::Import(id) | SymbolKind::Include(id) if id == source_id => s.value.clone(),
-                _ => None,
-            });
-            let code = module_name.and_then(|name| self.module_loader.resolve(&name).ok());
-            self.add_module_code(url.clone(), &code.unwrap_or_default());
-            return;
+            let directives: Vec<(SymbolId, SmolStr)> = self
+                .symbols
+                .iter()
+                .filter_map(|(id, s)| match (&s.kind, &s.value) {
+                    (SymbolKind::Import(m) | SymbolKind::Include(m), Some(name)) if *m == source_id => {
+                        Some((id, name.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            // The import may now resolve to another file, so contents are never attached to the old URL.
+            let (same, moved): (Vec<_>, Vec<_>) = directives
+                .into_iter()
+                .partition(|(_, name)| self.module_url(name).is_none_or(|u| u == *url));
+
+            if same.is_empty() && !moved.is_empty() {
+                // Nothing resolves here anymore, so release the old source after rebinding.
+                self.rebind_directives(&moved);
+            } else {
+                // Reload the saved module so discarded editor edits do not linger.
+                let code = same.first().and_then(|(_, name)| self.module_loader.resolve(name).ok());
+                self.add_module_code(url.clone(), &code.unwrap_or_default());
+                self.rebind_directives(&moved);
+                return;
+            }
         }
 
         self.remove_source_contents(source_id);
@@ -270,6 +287,23 @@ impl Hir {
         }
         self.module_sources.remove(&source_id);
         self.sources.remove(source_id);
+        self.resolve();
+    }
+
+    /// Points directives at the source their module name resolves to now.
+    fn rebind_directives(&mut self, directives: &[(SymbolId, SmolStr)]) {
+        for (symbol_id, name) in directives {
+            let Some(url) = self.module_url(name) else {
+                continue;
+            };
+            let (new_id, _) = self.load_directive_source(name, url);
+            if let Some(symbol) = self.symbols.get_mut(*symbol_id) {
+                match &mut symbol.kind {
+                    SymbolKind::Import(id) | SymbolKind::Include(id) => *id = new_id,
+                    _ => {}
+                }
+            }
+        }
     }
 
     /// Loads the source of an `include` or `import`.
@@ -570,6 +604,108 @@ mod tests {
         assert_eq!(names, vec!["saved".to_string()]);
         assert!(hir.is_module_source(module_id));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn nested_module_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "mq_hir_{tag}_{}_{}",
+            std::env::var("MARQ_SESSION_ID").unwrap_or_default(),
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn module_ranges(hir: &Hir, id: SourceId, name: &str) -> Vec<mq_lang::Range> {
+        hir.symbols_for_source(id)
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)) && s.value.as_deref() == Some(name))
+            .filter_map(|(_, s)| s.source.text_range)
+            .collect()
+    }
+
+    #[test]
+    fn test_remove_source_keeps_open_nested_dependency_buffer() {
+        let dir = nested_module_dir("nested");
+        std::fs::write(dir.join("a.mq"), r#"include "b";"#).unwrap();
+        std::fs::write(dir.join("b.mq"), "def helper(): 1;").unwrap();
+
+        let mut loader = mq_lang::ModuleLoader::default();
+        loader.set_search_paths(vec![dir.clone()]);
+        let mut hir = Hir::new(loader);
+        hir.builtin.disabled = true;
+
+        let main = Url::parse("file:///main.mq").unwrap();
+        let (nodes, _) = mq_lang::parse_recovery(r#"include "a" | helper()"#);
+        hir.add_nodes(main, &nodes);
+        let id_of = |hir: &Hir, name: &str| {
+            hir.symbols()
+                .find_map(|(_, s)| match s.kind {
+                    SymbolKind::Include(id) if s.value.as_deref() == Some(name) => Some(id),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let a = hir.url_by_source(&id_of(&hir, "a")).unwrap().clone();
+        let b = hir.url_by_source(&id_of(&hir, "b")).unwrap().clone();
+
+        let (nodes, _) = mq_lang::parse_recovery(r#"include "b";"#);
+        hir.add_nodes(a.clone(), &nodes);
+        let (nodes, _) = mq_lang::parse_recovery("def otherx(): 2;\ndef helper(): 1;");
+        let (b_id, _) = hir.add_nodes(b, &nodes);
+        let before = module_ranges(&hir, b_id, "helper");
+
+        hir.remove_source(&a);
+
+        assert_eq!(module_ranges(&hir, b_id, "helper"), before);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_remove_source_never_attaches_other_file_to_old_url() {
+        let global = nested_module_dir("global");
+        let vendor = nested_module_dir("vendor");
+        std::fs::write(global.join("lib.mq"), "def f(): 1;").unwrap();
+
+        let mut loader = mq_lang::ModuleLoader::default();
+        loader.set_search_paths(vec![vendor.clone(), global.clone()]);
+        let mut hir = Hir::new(loader);
+        hir.builtin.disabled = true;
+
+        let main = Url::parse("file:///main.mq").unwrap();
+        let (nodes, _) = mq_lang::parse_recovery(r#"include "lib" | f()"#);
+        hir.add_nodes(main, &nodes);
+        let old_id = hir
+            .symbols()
+            .find_map(|(_, s)| match s.kind {
+                SymbolKind::Include(id) => Some(id),
+                _ => None,
+            })
+            .unwrap();
+        let old_url = hir.url_by_source(&old_id).unwrap().clone();
+        let (nodes, _) = mq_lang::parse_recovery("def f(): 1;");
+        hir.add_nodes(old_url.clone(), &nodes);
+
+        std::fs::write(vendor.join("lib.mq"), "\n\ndef f(): 2;").unwrap();
+        hir.remove_source(&old_url);
+
+        let new_id = hir
+            .symbols()
+            .find_map(|(_, s)| match s.kind {
+                SymbolKind::Include(id) => Some(id),
+                _ => None,
+            })
+            .unwrap();
+        assert_ne!(new_id, old_id);
+        assert_ne!(hir.url_by_source(&new_id), Some(&old_url));
+        assert!(hir.source_by_url(&old_url).is_none());
+        let (call_id, _) = hir
+            .symbols()
+            .find(|(_, s)| s.kind == SymbolKind::Call && s.value.as_deref() == Some("f"))
+            .unwrap();
+        let def = hir.resolve_reference_symbol(call_id).unwrap();
+        assert_eq!(hir.symbol(def).unwrap().source.source_id, Some(new_id));
+        std::fs::remove_dir_all(&global).ok();
+        std::fs::remove_dir_all(&vendor).ok();
     }
 
     #[rstest]

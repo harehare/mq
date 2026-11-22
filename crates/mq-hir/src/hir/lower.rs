@@ -522,14 +522,26 @@ impl Hir {
 
     /// Loads the source of an `include` or `import`. A module already being loaded further up
     /// the chain is not loaded again, and the flag reports that.
-    fn load_directive_source(&mut self, module_name: &str, url: Url) -> (SourceId, bool) {
+    pub(crate) fn load_directive_source(&mut self, module_name: &str, url: Url) -> (SourceId, bool) {
         if self.loading_sources.contains(&url)
             && let Some(source_id) = self.source_by_url(&url)
         {
             return (source_id, true);
         }
+        // An open document holds the live contents, which the saved file must not replace.
+        if let Some(source_id) = self.source_by_url(&url)
+            && self.opened_sources.contains(&source_id)
+        {
+            return (source_id, false);
+        }
         let code = self.module_loader.resolve(module_name);
         (self.add_module_code(url, &code.unwrap_or_default()), false)
+    }
+
+    /// The URL a module name currently resolves to.
+    pub(crate) fn module_url(&self, module_name: &str) -> Option<Url> {
+        let module_path = self.module_loader.get_module_path(module_name);
+        Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))).ok()
     }
 
     /// The range from the directive keyword through its path string.
@@ -554,9 +566,7 @@ impl Hir {
             && let Some(module_name) = path.name()
         {
             {
-                let module_path = self.module_loader.get_module_path(&module_name);
-
-                if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
+                if let Some(url) = self.module_url(&module_name) {
                     let (module_source_id, circular) = self.load_directive_source(&module_name, url);
 
                     let symbol_id = self.add_symbol(Symbol {
@@ -587,9 +597,7 @@ impl Hir {
             && let Some(module_name) = path.name()
         {
             {
-                let module_path = self.module_loader.get_module_path(&module_name);
-
-                if let Ok(url) = Url::parse(&format!("file:///{}", module_path.unwrap_or(module_name.to_string()))) {
+                if let Some(url) = self.module_url(&module_name) {
                     let (module_source_id, circular) = self.load_directive_source(&module_name, url);
 
                     let symbol_id = self.add_symbol(Symbol {
