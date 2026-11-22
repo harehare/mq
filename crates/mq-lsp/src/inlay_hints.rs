@@ -1,5 +1,6 @@
-use parking_lot::RwLock;
+use crate::lock::RwLockExt;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use tower_lsp_server::ls_types::{InlayHint, InlayHintKind, InlayHintLabel, Position, Range};
 use url::Url;
@@ -16,10 +17,10 @@ pub(crate) fn response(
     range: Range,
 ) -> Option<Vec<InlayHint>> {
     let type_env = type_env?;
-    let source = hir.read().source_by_url(&url)?;
+    let source = hir.read_recover().source_by_url(&url)?;
 
     let hints: Vec<InlayHint> = hir
-        .read()
+        .read_recover()
         .symbols()
         .filter_map(|(symbol_id, symbol)| {
             // Only process symbols from this source file
@@ -104,7 +105,7 @@ mod tests {
 
         let hir = Arc::new(RwLock::new(hir));
         let mut checker = TypeChecker::new();
-        checker.check(&hir.read());
+        checker.check(&hir.read_recover());
         let type_env = Some(checker.symbol_types().clone());
 
         let hints = response(Arc::clone(&hir), url, type_env, make_full_range());
@@ -128,7 +129,7 @@ mod tests {
 
         let hir = Arc::new(RwLock::new(hir));
         let mut checker = TypeChecker::new();
-        checker.check(&hir.read());
+        checker.check(&hir.read_recover());
         let type_env = Some(checker.symbol_types().clone());
 
         // Range that doesn't cover line 0

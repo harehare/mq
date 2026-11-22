@@ -1,4 +1,5 @@
-use parking_lot::RwLock;
+use crate::lock::RwLockExt;
+use std::sync::RwLock;
 use std::{path::PathBuf, sync::Arc};
 
 use bimap::BiMap;
@@ -110,7 +111,7 @@ pub(crate) fn response(
         ));
     }
 
-    let hir_guard = hir.read();
+    let hir_guard = hir.read_recover();
     let cursor = mq_lang::Position::new(position.line + 1, line_prefix.chars().count() as u32 + 1);
 
     let scope_id = hir_guard

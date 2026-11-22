@@ -1,5 +1,5 @@
-use parking_lot::RwLock;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use url::Url;
 

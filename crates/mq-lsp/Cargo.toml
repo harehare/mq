@@ -20,7 +20,6 @@ clap = {workspace = true, features = ["derive"]}
 dashmap = {workspace = true}
 itertools = {workspace = true}
 mq-check = {workspace = true}
-parking_lot = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-help = {workspace = true, features = ["catalog"]}

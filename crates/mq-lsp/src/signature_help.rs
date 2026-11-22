@@ -1,5 +1,6 @@
-use parking_lot::RwLock;
+use crate::lock::RwLockExt;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use mq_lang::{CstNode, Shared, TokenKind};
 use tower_lsp_server::ls_types::{ParameterInformation, ParameterLabel, Position, SignatureHelp, SignatureInformation};
@@ -16,7 +17,7 @@ pub(crate) fn response(
     source_text: Option<&str>,
 ) -> Option<SignatureHelp> {
     let source_text = source_text?;
-    let hir_guard = hir.read();
+    let hir_guard = hir.read_recover();
     let source_id = hir_guard.source_by_url(&url)?;
     let cursor = mq_lang::Position::new(position.line + 1, position.character + 1);
 

@@ -116,11 +116,11 @@ async fn test_did_open() {
         })
         .await;
 
-    assert!(backend.source_map.read().contains_left(&uri.to_string()));
+    assert!(backend.source_map.read_recover().contains_left(&uri.to_string()));
     assert!(
         backend
             .hir
-            .read()
+            .read_recover()
             .symbols()
             .map(|(_, s)| { s.value.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "".into()) })
             .collect::<Vec<_>>()
@@ -455,7 +455,10 @@ async fn test_semantic_tokens() {
     let backend = service.inner();
     let uri = Url::parse("file:///test.mq").unwrap();
 
-    backend.hir.write().add_code(Some(uri.clone()), "def main(): 1;");
+    backend
+        .hir
+        .write_recover()
+        .add_code(Some(uri.clone()), "def main(): 1;");
 
     let result = backend
         .semantic_tokens_full(ls_types::SemanticTokensParams {
@@ -515,9 +518,9 @@ async fn test_references() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .references(ls_types::ReferenceParams {
@@ -621,7 +624,7 @@ async fn test_code_action_using_real_diagnostics_from_pipeline() {
     // Build the diagnostic the exact same way `diagnostics()` does, instead of
     // hand-computing a range, so this test exercises the real HIR error pipeline.
     let diagnostics: Vec<ls_types::Diagnostic> = {
-        let hir_guard = backend.hir.read();
+        let hir_guard = backend.hir.read_recover();
         hir_guard
             .error_ranges()
             .into_iter()
@@ -811,7 +814,7 @@ async fn test_published_warning_range_uses_utf16_columns() {
         .into_iter()
         .find(|d| d.severity == Some(ls_types::DiagnosticSeverity::WARNING))
         .expect("expected an unreachable code warning");
-    let scalar_start = backend.hir.read().warning_ranges()[0].1.start;
+    let scalar_start = backend.hir.read_recover().warning_ranges()[0].1.start;
     // The emoji precedes the warning on the same line, so it is one unit wider than in scalars.
     assert_eq!(
         warning.range.start.character,
@@ -912,9 +915,9 @@ async fn test_rename() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .rename(ls_types::RenameParams {
@@ -953,9 +956,9 @@ async fn test_prepare_rename_valid_symbol() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .prepare_rename(ls_types::TextDocumentPositionParams {
@@ -992,9 +995,9 @@ async fn test_prepare_rename_rejects_builtin() {
 
     let code = "\"hello\" | len";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .prepare_rename(ls_types::TextDocumentPositionParams {
@@ -1040,7 +1043,7 @@ async fn test_rename_across_two_tracked_sources() {
     // hir/lower.rs::add_include_expr); track it here the same way a client would
     // if it had that module file open as well.
     let module_source_id = {
-        let hir_guard = backend.hir.read();
+        let hir_guard = backend.hir.read_recover();
         hir_guard
             .symbols()
             .find_map(|(_, symbol)| match symbol.kind {
@@ -1049,10 +1052,15 @@ async fn test_rename_across_two_tracked_sources() {
             })
             .expect("expected an Include symbol for the csv module")
     };
-    let module_url = backend.hir.read().url_by_source(&module_source_id).unwrap().clone();
+    let module_url = backend
+        .hir
+        .read_recover()
+        .url_by_source(&module_source_id)
+        .unwrap()
+        .clone();
     backend
         .source_map
-        .write()
+        .write_recover()
         .insert(module_url.to_string(), module_source_id);
 
     let result = backend
@@ -1098,9 +1106,9 @@ async fn test_document_symbol() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1148,14 +1156,20 @@ async fn test_workspace_symbol() {
     let uri_a = Url::parse("file:///a.mq").unwrap();
     let code_a = "def test_func(): 1;";
     let (nodes_a, _) = mq_lang::parse_recovery(code_a);
-    let (source_id_a, _) = backend.hir.write().add_nodes(uri_a.clone(), &nodes_a);
-    backend.source_map.write().insert(uri_a.to_string(), source_id_a);
+    let (source_id_a, _) = backend.hir.write_recover().add_nodes(uri_a.clone(), &nodes_a);
+    backend
+        .source_map
+        .write_recover()
+        .insert(uri_a.to_string(), source_id_a);
 
     let uri_b = Url::parse("file:///b.mq").unwrap();
     let code_b = "def other_func(): 2;";
     let (nodes_b, _) = mq_lang::parse_recovery(code_b);
-    let (source_id_b, _) = backend.hir.write().add_nodes(uri_b.clone(), &nodes_b);
-    backend.source_map.write().insert(uri_b.to_string(), source_id_b);
+    let (source_id_b, _) = backend.hir.write_recover().add_nodes(uri_b.clone(), &nodes_b);
+    backend
+        .source_map
+        .write_recover()
+        .insert(uri_b.to_string(), source_id_b);
 
     let result = backend
         .symbol(ls_types::WorkspaceSymbolParams {
@@ -1275,7 +1289,7 @@ async fn test_did_close() {
     // Verify data exists before close
     assert!(backend.error_map.contains_key(&uri.to_string()));
     assert!(backend.documents.contains_key(&uri.to_string()));
-    assert!(backend.source_map.read().contains_left(&uri.to_string()));
+    assert!(backend.source_map.read_recover().contains_left(&uri.to_string()));
 
     // Close the file
     use ls_types::DidCloseTextDocumentParams;
@@ -1289,7 +1303,7 @@ async fn test_did_close() {
     // Verify data is cleaned up after close
     assert!(!backend.error_map.contains_key(&uri.to_string()));
     assert!(!backend.documents.contains_key(&uri.to_string()));
-    assert!(!backend.source_map.read().contains_left(&uri.to_string()));
+    assert!(!backend.source_map.read_recover().contains_left(&uri.to_string()));
 }
 
 #[tokio::test]
@@ -1327,7 +1341,7 @@ async fn test_did_save() {
 
     backend
         .source_map
-        .write()
+        .write_recover()
         .insert(uri.to_string(), mq_hir::SourceId::default());
 
     // Trigger save
@@ -1396,7 +1410,10 @@ async fn test_semantic_tokens_range() {
     let backend = service.inner();
     let uri = Url::parse("file:///test.mq").unwrap();
 
-    backend.hir.write().add_code(Some(uri.clone()), "def main(): 1;");
+    backend
+        .hir
+        .write_recover()
+        .add_code(Some(uri.clone()), "def main(): 1;");
 
     let result = backend
         .semantic_tokens_range(ls_types::SemanticTokensRangeParams {
@@ -1624,9 +1641,9 @@ async fn test_unused_function_warnings() {
     // Code with unused function
     let code = "def used_function(): 1; def unused_function(): 2; | used_function()";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1642,7 +1659,7 @@ async fn test_unused_function_warnings() {
 
     // Check unused functions are detected
     {
-        let hir_lock = backend.hir.read();
+        let hir_lock = backend.hir.read_recover();
         let unused = hir_lock.unused_functions(source_id);
         assert_eq!(unused.len(), 1);
         assert_eq!(unused[0].1.value.as_ref().unwrap(), "unused_function");
@@ -1679,9 +1696,9 @@ async fn test_lint_diagnostics_enabled() {
     // `x` is declared but never used.
     let code = "let x = .h1 | .text";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1696,7 +1713,7 @@ async fn test_lint_diagnostics_enabled() {
     );
 
     {
-        let hir_guard = backend.hir.read();
+        let hir_guard = backend.hir.read_recover();
         let lint_ctx = mq_lint::LintContext::new(&hir_guard, source_id, &backend.config.lint_config);
         let diagnostics = mq_lint::Linter::with_default_rules().run(&lint_ctx);
         assert!(
@@ -1731,9 +1748,9 @@ async fn test_lint_diagnostics_disabled_by_default() {
     let uri = Url::parse("file:///test.mq").unwrap();
     let code = "let x = .h1 | .text";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1821,9 +1838,9 @@ async fn test_unreachable_code_warnings() {
     // Code with unreachable code after halt()
     let code = "def test(): halt(1) | let x = 42";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1839,7 +1856,7 @@ async fn test_unreachable_code_warnings() {
 
     // Check unreachable code warnings are detected
     {
-        let hir_lock = backend.hir.read();
+        let hir_lock = backend.hir.read_recover();
         let warnings = hir_lock.warnings();
         assert_eq!(warnings.len(), 1);
 
@@ -2069,9 +2086,9 @@ async fn test_diagnostics_with_type_checking_disabled() {
     // Code that would cause a type error (number + string)
     let code = r#"1 + "string""#;
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -2116,9 +2133,9 @@ async fn test_diagnostics_with_type_checking_enabled_no_errors() {
     // Valid code with no type errors
     let code = "def add(x, y): x + y;\n| add(1, 2)";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -2262,9 +2279,9 @@ async fn test_diagnostics_with_strict_array_option() {
     // Homogeneous array, valid even with strict_array
     let code = "[1, 2, 3]";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -2312,9 +2329,9 @@ async fn test_diagnostics_with_tuple_option() {
     // Heterogeneous array typed as tuple, valid with tuple mode
     let code = r#"[1, "hello", true]"#;
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),

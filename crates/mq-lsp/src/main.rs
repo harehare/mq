@@ -28,6 +28,7 @@ pub mod goto_definition;
 pub mod hover;
 /// Inlay hints.
 pub mod inlay_hints;
+mod lock;
 mod position;
 pub mod refactor;
 /// Find references.

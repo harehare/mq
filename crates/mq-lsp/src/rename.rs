@@ -1,4 +1,5 @@
-use parking_lot::RwLock;
+use crate::lock::RwLockExt;
+use std::sync::RwLock;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use bimap::BiMap;
@@ -28,7 +29,7 @@ fn is_renamable(symbol: &mq_hir::Symbol) -> bool {
 /// to a new name. Mirrors the eligibility checks in [`response`]: no symbol at the position,
 /// builtin symbols, and unresolved references are all rejected here.
 pub(crate) fn prepare(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<PrepareRenameResponse> {
-    let hir_guard = hir.read();
+    let hir_guard = hir.read_recover();
     let source = hir_guard.source_by_url(&url)?;
 
     let (symbol_id, symbol) = hir_guard.find_symbol_in_position(
@@ -92,7 +93,7 @@ fn rename(
     new_name: &str,
     source_map: &BiMap<String, mq_hir::SourceId>,
 ) -> Result<Option<WorkspaceEdit>, String> {
-    let hir_guard = hir.read();
+    let hir_guard = hir.read_recover();
     let Some(source) = hir_guard.source_by_url(&url) else {
         return Ok(None);
     };

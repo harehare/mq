@@ -1,4 +1,5 @@
-use parking_lot::RwLock;
+use crate::lock::RwLockExt;
+use std::sync::RwLock;
 use std::{collections::HashMap, sync::Arc};
 
 use tower_lsp_server::ls_types::{DocumentSymbol, DocumentSymbolResponse, SymbolKind, SymbolTag};
@@ -51,7 +52,7 @@ fn extend(range: &mut mq_lang::Range, other: mq_lang::Range) {
 
 /// Document outline: functions, modules and `let`/`var` bindings, nested by definition.
 pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, lines: &LineIndex) -> Option<DocumentSymbolResponse> {
-    let hir = hir.read();
+    let hir = hir.read_recover();
     let source = hir.source_by_url(&url)?;
     let in_source = hir
         .symbols()

@@ -1,7 +1,8 @@
-use parking_lot::RwLock;
+use crate::lock::RwLockExt;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use bimap::BiMap;
 use dashmap::DashMap;
@@ -89,7 +90,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(ls_types::MessageType::INFO, "Server initialized")
             .await;
-        *self.workspace_roots.write() = workspace_roots(&params);
+        *self.workspace_roots.write_recover() = workspace_roots(&params);
         Ok(ls_types::InitializeResult {
             capabilities: capabilities::server_capabilities(),
             ..Default::default()
@@ -140,7 +141,7 @@ impl LanguageServer for Backend {
         self.type_env_map.remove(&uri_string);
 
         // Remove from source map
-        self.source_map.write().remove_by_left(&uri_string);
+        self.source_map.write_recover().remove_by_left(&uri_string);
 
         // Clear diagnostics for the closed file
         self.client
@@ -192,7 +193,7 @@ impl LanguageServer for Backend {
         let url = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
-        let source_map_guard = self.source_map.read();
+        let source_map_guard = self.source_map.read_recover();
         Ok(Some(references::response(
             Arc::clone(&self.hir),
             to_url(&url)?,
@@ -289,14 +290,14 @@ impl LanguageServer for Backend {
         params: ls_types::WorkspaceSymbolParams,
     ) -> jsonrpc::Result<Option<ls_types::WorkspaceSymbolResponse>> {
         let (open_symbols, open) = {
-            let source_map = self.source_map.read();
-            let hir = self.hir.read();
+            let source_map = self.source_map.read_recover();
+            let hir = self.hir.read_recover();
             (
                 workspace_symbol::collect(&hir, &params.query, &source_map),
                 source_map.left_values().cloned().collect::<FxHashSet<_>>(),
             )
         };
-        let mut roots = self.workspace_roots.read().clone();
+        let mut roots = self.workspace_roots.read_recover().clone();
         roots.extend(self.config.module_paths.iter().cloned());
         let query = params.query;
         let remaining = if query.is_empty() {
@@ -407,7 +408,7 @@ impl LanguageServer for Backend {
             .map(|snapshot| completions::line_prefix(&snapshot.text, position))
             .unwrap_or_default();
 
-        let source_map_guard = self.source_map.read();
+        let source_map_guard = self.source_map.read_recover();
         Ok(completions::response(
             Arc::clone(&self.hir),
             to_url(&uri)?,
@@ -432,7 +433,7 @@ impl LanguageServer for Backend {
         let url = to_url(&params.text_document.uri.clone())?;
         let uri_string = params.text_document.uri.to_string();
 
-        let source_id = self.source_map.read().get_by_left(&uri_string).copied();
+        let source_id = self.source_map.read_recover().get_by_left(&uri_string).copied();
         let source_text = self
             .documents
             .get(&uri_string)
@@ -453,7 +454,7 @@ impl LanguageServer for Backend {
         let url = to_url(&params.text_document_position.text_document.uri)?;
         let position = params.text_document_position.position;
 
-        let source_map_guard = self.source_map.read();
+        let source_map_guard = self.source_map.read_recover();
         rename::response(
             Arc::clone(&self.hir),
             url,
@@ -640,7 +641,7 @@ impl Backend {
         } else {
             mq_lang::parse_recovery(&text)
         };
-        let (source_id, _) = self.hir.write().add_nodes(uri.clone(), &nodes);
+        let (source_id, _) = self.hir.write_recover().add_nodes(uri.clone(), &nodes);
         let nodes = Arc::new(nodes);
 
         let uri_string = uri.to_string();
@@ -651,7 +652,7 @@ impl Backend {
             .collect::<Vec<_>>();
 
         if errors.is_empty() && self.config.enable_type_checking {
-            let hir_guard = self.hir.read();
+            let hir_guard = self.hir.read_recover();
             let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options.clone());
             let type_errors = checker.check_classified(&hir_guard);
 
@@ -684,7 +685,7 @@ impl Backend {
             );
         }
 
-        self.source_map.write().insert(uri_string.clone(), source_id);
+        self.source_map.write_recover().insert(uri_string.clone(), source_id);
         self.documents.insert(
             uri_string.clone(),
             Arc::new(DocumentSnapshot::new(Arc::new(text), Some(nodes))),
@@ -715,9 +716,9 @@ impl Backend {
             diagnostics.extend(errors.iter().map(|error| error.to_diagnostic(&document, lines)));
         }
 
-        let source_map_guard = self.source_map.read();
+        let source_map_guard = self.source_map.read_recover();
         if let Some(source_id) = source_map_guard.get_by_left(&uri_string) {
-            let hir_guard = self.hir.read();
+            let hir_guard = self.hir.read_recover();
 
             // Build a set of text_ranges for this file's symbols for O(1) lookup
             let range_set: FxHashSet<mq_lang::Range> = hir_guard

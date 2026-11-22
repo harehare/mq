@@ -1,5 +1,6 @@
-use parking_lot::RwLock;
+use crate::lock::RwLockExt;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use tower_lsp_server::ls_types::{GotoDefinitionResponse, Location, Position, Range};
 use url::Url;
@@ -20,7 +21,7 @@ fn to_range(range: mq_lang::Range) -> Range {
 }
 
 pub(crate) fn response(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Position) -> Option<GotoDefinitionResponse> {
-    let hir_guard = hir.read();
+    let hir_guard = hir.read_recover();
     let source = hir_guard.source_by_url(&url)?;
     let (_, symbol) = hir_guard.find_symbol_in_position(
         source,
