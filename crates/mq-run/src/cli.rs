@@ -2326,7 +2326,8 @@ impl Cli {
 
             if let Some(argjson) = &self.input.argjson {
                 for v in argjson.chunks(2) {
-                    let json_value: serde_json::Value = serde_json::from_str(&v[1]).into_diagnostic()?;
+                    let json_value: serde_json::Value =
+                        serde_json::from_str(&v[1]).map_err(|e| miette!("--argjson {}: invalid JSON: {}", v[0], e))?;
                     let runtime_value: mq_lang::RuntimeValue = json_value.into();
                     engine.define_value(&v[0], runtime_value.clone()).into_diagnostic()?;
                     named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
