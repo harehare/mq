@@ -18,10 +18,14 @@ def row(m, labels):
   "<tr data-category=\"" + m["category"] + "\"><td><a href=\"https://" + m["repo"] + "\">" + m["name"] + ".mq</a></td><td><span class=\"module-category-badge\">" + esc(labels[m["category"]]) + "</span></td><td>" + inline(m["description"]) + "</td></tr>"
 end
 
+def std_row(m):
+  "<tr data-category=\"standard-library\"><td><code>" + m["name"] + "</code></td><td><span class=\"module-category-badge\">Standard Library</span></td><td>" + inline(m["description"]) + "</td></tr>"
+end
+
 let data = json::json_parse(read_file("docs/modules.json"))
 | let labels = fold(data["categories"], {}, fn(acc, c): set(acc, c["slug"], c["label"]);)
-| let chips = [chip("all", "All", " active")] + map(data["categories"], fn(c): chip(c["slug"], esc(c["label"]), "");)
-| let rows = map(data["modules"], fn(m): row(m, labels);)
+| let chips = [chip("all", "All", " active"), chip("standard-library", "Standard Library", "")] + map(data["categories"], fn(c): chip(c["slug"], esc(c["label"]), "");)
+| let rows = map(data["standard_library"], fn(m): std_row(m);) + map(data["modules"], fn(m): row(m, labels);)
 | let table = "<table id=\"modules-table\">\n<thead>\n<tr><th>Module</th><th>Category</th><th>Description</th></tr>\n</thead>\n<tbody>\n" + join(rows, "\n") + "\n</tbody>\n</table>"
 | let block = "<!-- modules:begin -->\n<div id=\"module-category-filters\" class=\"module-category-chips\">\n" + join(chips, "\n") + "\n</div>\n\n" + table + "\n<!-- modules:end -->"
 | let doc = read_file("docs/books/src/start/modules.md")

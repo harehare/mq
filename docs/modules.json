@@ -1,5 +1,71 @@
 {
   "version": 1,
+  "standard_library": [
+    {
+      "name": "json",
+      "description": "JSON parser and formatter"
+    },
+    {
+      "name": "yaml",
+      "description": "YAML 1.2 parser and formatter"
+    },
+    {
+      "name": "toml",
+      "description": "TOML parser and formatter"
+    },
+    {
+      "name": "xml",
+      "description": "XML parser and formatter"
+    },
+    {
+      "name": "html",
+      "description": "HTML parser, formatter and CSS selector search (requires the `html-parse` build feature)"
+    },
+    {
+      "name": "csv",
+      "description": "CSV / TSV parser, formatter, and blank-cell fill helpers"
+    },
+    {
+      "name": "cbor",
+      "description": "CBOR binary format support"
+    },
+    {
+      "name": "semver",
+      "description": "Semantic versioning (SemVer) utilities"
+    },
+    {
+      "name": "section",
+      "description": "Markdown section extraction helpers"
+    },
+    {
+      "name": "table",
+      "description": "Table rendering utilities"
+    },
+    {
+      "name": "fuzzy",
+      "description": "Fuzzy string matching"
+    },
+    {
+      "name": "toon",
+      "description": "TOON format support"
+    },
+    {
+      "name": "gron",
+      "description": "gron-style flattening into `path = value;` lines, and back"
+    },
+    {
+      "name": "md",
+      "description": "Builders for generating Markdown (headings, tables, lists, callouts)"
+    },
+    {
+      "name": "gen",
+      "description": "Generator combinators for property-based testing (`mq test` only)"
+    },
+    {
+      "name": "test",
+      "description": "Testing framework (`assert_eq`, `assert_true`, …)"
+    }
+  ],
   "categories": [
     {
       "slug": "format-parsers",
