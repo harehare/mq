@@ -229,7 +229,8 @@ impl Hir {
 
     /// Releases a source opened with `add_nodes`, e.g. when its document closes.
     ///
-    /// A source that other sources still resolve references into, or import or include, is kept as a module source.
+    /// A source that other sources still resolve references into, or import or include, is kept as a module source
+    /// and reloaded through the module loader.
     pub fn remove_source(&mut self, url: &Url) {
         let Some(source_id) = self.source_by_url(url) else {
             return;
@@ -251,7 +252,13 @@ impl Hir {
                 && s.source.source_id != Some(source_id)
         });
         if referenced_elsewhere || imported_elsewhere {
-            self.module_sources.insert(source_id);
+            // Reload the saved module so discarded editor edits do not linger.
+            let module_name = self.symbols.iter().find_map(|(_, s)| match s.kind {
+                SymbolKind::Import(id) | SymbolKind::Include(id) if id == source_id => s.value.clone(),
+                _ => None,
+            });
+            let code = module_name.and_then(|name| self.module_loader.resolve(&name).ok());
+            self.add_module_code(url.clone(), &code.unwrap_or_default());
             return;
         }
 
@@ -522,6 +529,47 @@ mod tests {
         assert_eq!(hir.source_by_url(&lib), Some(module_id));
         assert!(matches!(directive.kind, SymbolKind::Import(id) if hir.url_by_source(&id).is_some()));
         hir.remove_source(&main);
+    }
+
+    #[test]
+    fn test_remove_source_reloads_saved_module_over_discarded_edits() {
+        let dir = std::env::temp_dir().join(format!(
+            "mq_hir_reload_{}_{}",
+            std::env::var("MARQ_SESSION_ID").unwrap_or_default(),
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("lib.mq"), "def saved(): 1;").unwrap();
+
+        let mut loader = mq_lang::ModuleLoader::default();
+        loader.set_search_paths(vec![dir.clone()]);
+        let mut hir = Hir::new(loader);
+        hir.builtin.disabled = true;
+
+        let main = Url::parse("file:///main.mq").unwrap();
+        let (nodes, _) = mq_lang::parse_recovery(r#"import "lib";"#);
+        hir.add_nodes(main.clone(), &nodes);
+        let module_id = hir
+            .symbols()
+            .find_map(|(_, s)| match s.kind {
+                SymbolKind::Import(id) => Some(id),
+                _ => None,
+            })
+            .unwrap();
+        let lib = hir.url_by_source(&module_id).unwrap().clone();
+
+        let (nodes, _) = mq_lang::parse_recovery("def temporary(): 1;");
+        hir.add_nodes(lib.clone(), &nodes);
+        hir.remove_source(&lib);
+
+        let names = hir
+            .symbols_for_source(module_id)
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)))
+            .filter_map(|(_, s)| s.value.as_ref().map(|v| v.to_string()))
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["saved".to_string()]);
+        assert!(hir.is_module_source(module_id));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[rstest]
