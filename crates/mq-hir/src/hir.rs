@@ -227,6 +227,40 @@ impl Hir {
         (source_id, scope_id)
     }
 
+    /// Releases a source opened with `add_nodes`, e.g. when its document closes.
+    ///
+    /// A source that other sources still resolve references into is kept as a module source.
+    pub fn remove_source(&mut self, url: &Url) {
+        let Some(source_id) = self.source_by_url(url) else {
+            return;
+        };
+        if !self.opened_sources.remove(&source_id) {
+            return;
+        }
+
+        let referenced_elsewhere = self.references.iter().any(|(ref_id, def_id)| {
+            let in_source = |id: &SymbolId| {
+                self.symbols
+                    .get(*id)
+                    .is_some_and(|s| s.source.source_id == Some(source_id))
+            };
+            in_source(def_id) && !in_source(ref_id)
+        });
+        if referenced_elsewhere {
+            self.module_sources.insert(source_id);
+            return;
+        }
+
+        self.remove_source_contents(source_id);
+        if let Some(scope_id) = self.source_scopes.remove(&source_id) {
+            self.scopes.remove(scope_id);
+            self.leaking_scopes.remove(&scope_id);
+            self.scope_name_index.remove(&scope_id);
+        }
+        self.module_sources.remove(&source_id);
+        self.sources.remove(source_id);
+    }
+
     /// Loads the source of an `include` or `import`.
     pub(crate) fn add_module_code(&mut self, url: Url, code: &str) -> SourceId {
         let (nodes, _) = mq_syntax::parse_recovery(code);
@@ -440,6 +474,25 @@ mod tests {
     use crate::HirError;
     use itertools::Itertools;
     use rstest::rstest;
+
+    #[test]
+    fn test_remove_source_releases_everything() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let (baseline_sources, baseline_scopes) = (hir.sources.len(), hir.scopes.len());
+        let url = Url::parse("file:///a.mq").unwrap();
+        let (nodes, _) = mq_syntax::parse_recovery("def f(x): x; | f(1)");
+        hir.add_nodes(url.clone(), &nodes);
+        assert!(hir.source_by_url(&url).is_some());
+
+        hir.remove_source(&url);
+
+        assert!(hir.source_by_url(&url).is_none());
+        assert_eq!(hir.sources.len(), baseline_sources);
+        assert_eq!(hir.scopes.len(), baseline_scopes);
+        assert!(hir.symbols.is_empty());
+        assert!(hir.opened_sources.is_empty());
+    }
 
     #[rstest]
     #[case::undefined(r#"s"${missing}""#, 1)]

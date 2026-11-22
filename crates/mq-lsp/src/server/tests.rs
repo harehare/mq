@@ -1304,6 +1304,7 @@ async fn test_did_close() {
     assert!(!backend.error_map.contains_key(&uri.to_string()));
     assert!(!backend.documents.contains_key(&uri.to_string()));
     assert!(!backend.source_map.read_recover().contains_left(&uri.to_string()));
+    assert!(backend.hir.read_recover().source_by_url(&uri).is_none());
 }
 
 #[tokio::test]
