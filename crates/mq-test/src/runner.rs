@@ -568,6 +568,8 @@ impl TestRunner {
                         open_in_default_app(path)?;
                     }
                 }
+                // Keep stdout a single JSON document when test results are JSON.
+                None if self.format == OutputFormat::Json => eprint!("{report}"),
                 None => print!("{report}"),
             }
         }
