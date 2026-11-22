@@ -1,6 +1,8 @@
+use crate::lock::RwLockExt;
+use std::sync::RwLock;
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock, RwLock},
+    sync::{Arc, LazyLock},
 };
 
 use crate::position::{LineIndex, lsp_range as to_range};
@@ -197,7 +199,7 @@ pub(crate) fn response(
     lint_config: Option<&mq_lint::LintConfig>,
     source_text: Option<&str>,
 ) -> Option<Vec<CodeActionOrCommand>> {
-    let hir_guard = hir.read().unwrap();
+    let hir_guard = hir.read_recover();
     let doc_source_id = hir_guard.source_by_url(&url)?;
     let uri = &params.text_document.uri;
     let lines = source_text.map(|text| LineIndex::new(Arc::new(text.to_string())));

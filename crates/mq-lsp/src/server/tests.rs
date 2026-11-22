@@ -33,6 +33,7 @@ async fn test_formatting_unopened_document_returns_none() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -60,6 +61,7 @@ async fn test_formatting_edit_covers_removed_trailing_lines() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -95,6 +97,7 @@ async fn test_did_open() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -113,12 +116,11 @@ async fn test_did_open() {
         })
         .await;
 
-    assert!(backend.source_map.read().unwrap().contains_left(&uri.to_string()));
+    assert!(backend.source_map.read_recover().contains_left(&uri.to_string()));
     assert!(
         backend
             .hir
-            .read()
-            .unwrap()
+            .read_recover()
             .symbols()
             .map(|(_, s)| { s.value.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "".into()) })
             .collect::<Vec<_>>()
@@ -136,6 +138,7 @@ async fn test_formatting_and_folding_use_cached_cst() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -205,6 +208,7 @@ async fn test_formatting() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -254,6 +258,7 @@ async fn test_completion() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -285,6 +290,7 @@ async fn test_goto_definition() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -315,6 +321,7 @@ async fn test_hover() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -344,6 +351,7 @@ async fn test_signature_help() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -392,6 +400,7 @@ async fn test_folding_range() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -438,6 +447,7 @@ async fn test_semantic_tokens() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -447,8 +457,7 @@ async fn test_semantic_tokens() {
 
     backend
         .hir
-        .write()
-        .unwrap()
+        .write_recover()
         .add_code(Some(uri.clone()), "def main(): 1;");
 
     let result = backend
@@ -499,6 +508,7 @@ async fn test_references() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -508,9 +518,9 @@ async fn test_references() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .references(ls_types::ReferenceParams {
@@ -538,6 +548,7 @@ async fn test_code_action_suggests_include() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -591,6 +602,7 @@ async fn test_code_action_using_real_diagnostics_from_pipeline() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -612,7 +624,7 @@ async fn test_code_action_using_real_diagnostics_from_pipeline() {
     // Build the diagnostic the exact same way `diagnostics()` does, instead of
     // hand-computing a range, so this test exercises the real HIR error pipeline.
     let diagnostics: Vec<ls_types::Diagnostic> = {
-        let hir_guard = backend.hir.read().unwrap();
+        let hir_guard = backend.hir.read_recover();
         hir_guard
             .error_ranges()
             .into_iter()
@@ -672,6 +684,7 @@ async fn quick_fixes_for_published_diagnostics(text: &str, enable_lint: bool) ->
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config,
     });
@@ -777,6 +790,7 @@ async fn test_published_warning_range_uses_utf16_columns() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -800,7 +814,7 @@ async fn test_published_warning_range_uses_utf16_columns() {
         .into_iter()
         .find(|d| d.severity == Some(ls_types::DiagnosticSeverity::WARNING))
         .expect("expected an unreachable code warning");
-    let scalar_start = backend.hir.read().unwrap().warning_ranges()[0].1.start;
+    let scalar_start = backend.hir.read_recover().warning_ranges()[0].1.start;
     // The emoji precedes the warning on the same line, so it is one unit wider than in scalars.
     assert_eq!(
         warning.range.start.character,
@@ -818,6 +832,7 @@ async fn test_code_action_no_actions_for_clean_file() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -890,6 +905,7 @@ async fn test_rename() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -899,9 +915,9 @@ async fn test_rename() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .rename(ls_types::RenameParams {
@@ -930,6 +946,7 @@ async fn test_prepare_rename_valid_symbol() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -939,9 +956,9 @@ async fn test_prepare_rename_valid_symbol() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .prepare_rename(ls_types::TextDocumentPositionParams {
@@ -968,6 +985,7 @@ async fn test_prepare_rename_rejects_builtin() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -977,9 +995,9 @@ async fn test_prepare_rename_rejects_builtin() {
 
     let code = "\"hello\" | len";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
 
     let result = backend
         .prepare_rename(ls_types::TextDocumentPositionParams {
@@ -1001,6 +1019,7 @@ async fn test_rename_across_two_tracked_sources() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1024,7 +1043,7 @@ async fn test_rename_across_two_tracked_sources() {
     // hir/lower.rs::add_include_expr); track it here the same way a client would
     // if it had that module file open as well.
     let module_source_id = {
-        let hir_guard = backend.hir.read().unwrap();
+        let hir_guard = backend.hir.read_recover();
         hir_guard
             .symbols()
             .find_map(|(_, symbol)| match symbol.kind {
@@ -1035,15 +1054,13 @@ async fn test_rename_across_two_tracked_sources() {
     };
     let module_url = backend
         .hir
-        .read()
-        .unwrap()
+        .read_recover()
         .url_by_source(&module_source_id)
         .unwrap()
         .clone();
     backend
         .source_map
-        .write()
-        .unwrap()
+        .write_recover()
         .insert(module_url.to_string(), module_source_id);
 
     let result = backend
@@ -1079,6 +1096,7 @@ async fn test_document_symbol() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1088,9 +1106,9 @@ async fn test_document_symbol() {
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
     let (nodes, _) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1128,6 +1146,7 @@ async fn test_workspace_symbol() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1137,21 +1156,19 @@ async fn test_workspace_symbol() {
     let uri_a = Url::parse("file:///a.mq").unwrap();
     let code_a = "def test_func(): 1;";
     let (nodes_a, _) = mq_lang::parse_recovery(code_a);
-    let (source_id_a, _) = backend.hir.write().unwrap().add_nodes(uri_a.clone(), &nodes_a);
+    let (source_id_a, _) = backend.hir.write_recover().add_nodes(uri_a.clone(), &nodes_a);
     backend
         .source_map
-        .write()
-        .unwrap()
+        .write_recover()
         .insert(uri_a.to_string(), source_id_a);
 
     let uri_b = Url::parse("file:///b.mq").unwrap();
     let code_b = "def other_func(): 2;";
     let (nodes_b, _) = mq_lang::parse_recovery(code_b);
-    let (source_id_b, _) = backend.hir.write().unwrap().add_nodes(uri_b.clone(), &nodes_b);
+    let (source_id_b, _) = backend.hir.write_recover().add_nodes(uri_b.clone(), &nodes_b);
     backend
         .source_map
-        .write()
-        .unwrap()
+        .write_recover()
         .insert(uri_b.to_string(), source_id_b);
 
     let result = backend
@@ -1202,6 +1219,7 @@ async fn test_did_change() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1248,6 +1266,7 @@ async fn test_did_close() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1270,7 +1289,7 @@ async fn test_did_close() {
     // Verify data exists before close
     assert!(backend.error_map.contains_key(&uri.to_string()));
     assert!(backend.documents.contains_key(&uri.to_string()));
-    assert!(backend.source_map.read().unwrap().contains_left(&uri.to_string()));
+    assert!(backend.source_map.read_recover().contains_left(&uri.to_string()));
 
     // Close the file
     use ls_types::DidCloseTextDocumentParams;
@@ -1284,7 +1303,7 @@ async fn test_did_close() {
     // Verify data is cleaned up after close
     assert!(!backend.error_map.contains_key(&uri.to_string()));
     assert!(!backend.documents.contains_key(&uri.to_string()));
-    assert!(!backend.source_map.read().unwrap().contains_left(&uri.to_string()));
+    assert!(!backend.source_map.read_recover().contains_left(&uri.to_string()));
 }
 
 #[tokio::test]
@@ -1296,6 +1315,7 @@ async fn test_did_save() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1321,8 +1341,7 @@ async fn test_did_save() {
 
     backend
         .source_map
-        .write()
-        .unwrap()
+        .write_recover()
         .insert(uri.to_string(), mq_hir::SourceId::default());
 
     // Trigger save
@@ -1346,6 +1365,7 @@ async fn test_initialize_shutdown() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1382,6 +1402,7 @@ async fn test_semantic_tokens_range() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1391,8 +1412,7 @@ async fn test_semantic_tokens_range() {
 
     backend
         .hir
-        .write()
-        .unwrap()
+        .write_recover()
         .add_code(Some(uri.clone()), "def main(): 1;");
 
     let result = backend
@@ -1420,6 +1440,7 @@ async fn test_diagnostics_with_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1457,6 +1478,7 @@ async fn test_pull_diagnostics_returns_syntax_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1512,6 +1534,7 @@ async fn test_pull_diagnostics_syntax_error_includes_did_you_mean_hint() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1570,6 +1593,7 @@ async fn test_pull_diagnostics_empty_for_unknown_document() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1606,6 +1630,7 @@ async fn test_unused_function_warnings() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1616,9 +1641,9 @@ async fn test_unused_function_warnings() {
     // Code with unused function
     let code = "def used_function(): 1; def unused_function(): 2; | used_function()";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1634,7 +1659,7 @@ async fn test_unused_function_warnings() {
 
     // Check unused functions are detected
     {
-        let hir_lock = backend.hir.read().unwrap();
+        let hir_lock = backend.hir.read_recover();
         let unused = hir_lock.unused_functions(source_id);
         assert_eq!(unused.len(), 1);
         assert_eq!(unused[0].1.value.as_ref().unwrap(), "unused_function");
@@ -1654,6 +1679,7 @@ async fn test_lint_diagnostics_enabled() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::new(
             vec![],
@@ -1670,9 +1696,9 @@ async fn test_lint_diagnostics_enabled() {
     // `x` is declared but never used.
     let code = "let x = .h1 | .text";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1687,7 +1713,7 @@ async fn test_lint_diagnostics_enabled() {
     );
 
     {
-        let hir_guard = backend.hir.read().unwrap();
+        let hir_guard = backend.hir.read_recover();
         let lint_ctx = mq_lint::LintContext::new(&hir_guard, source_id, &backend.config.lint_config);
         let diagnostics = mq_lint::Linter::with_default_rules().run(&lint_ctx);
         assert!(
@@ -1711,6 +1737,7 @@ async fn test_lint_diagnostics_disabled_by_default() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1721,9 +1748,9 @@ async fn test_lint_diagnostics_disabled_by_default() {
     let uri = Url::parse("file:///test.mq").unwrap();
     let code = "let x = .h1 | .text";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1750,6 +1777,7 @@ async fn test_formatting_with_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1799,6 +1827,7 @@ async fn test_unreachable_code_warnings() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1809,9 +1838,9 @@ async fn test_unreachable_code_warnings() {
     // Code with unreachable code after halt()
     let code = "def test(): halt(1) | let x = 42";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -1827,7 +1856,7 @@ async fn test_unreachable_code_warnings() {
 
     // Check unreachable code warnings are detected
     {
-        let hir_lock = backend.hir.read().unwrap();
+        let hir_lock = backend.hir.read_recover();
         let warnings = hir_lock.warnings();
         assert_eq!(warnings.len(), 1);
 
@@ -1854,6 +1883,7 @@ async fn test_range_formatting_single_line() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1899,6 +1929,7 @@ async fn test_range_formatting_multi_line() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -1943,6 +1974,7 @@ async fn test_range_formatting_with_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });
@@ -2037,6 +2069,7 @@ async fn test_diagnostics_with_type_checking_disabled() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::new(
             vec![],
@@ -2053,9 +2086,9 @@ async fn test_diagnostics_with_type_checking_disabled() {
     // Code that would cause a type error (number + string)
     let code = r#"1 + "string""#;
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -2083,6 +2116,7 @@ async fn test_diagnostics_with_type_checking_enabled_no_errors() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::new(
             vec![],
@@ -2099,9 +2133,9 @@ async fn test_diagnostics_with_type_checking_enabled_no_errors() {
     // Valid code with no type errors
     let code = "def add(x, y): x + y;\n| add(1, 2)";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -2130,6 +2164,7 @@ async fn test_diagnostics_with_type_checking_enabled_type_error() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::new(
             vec![],
@@ -2176,6 +2211,7 @@ async fn test_diagnostics_type_checking_skipped_when_parse_errors_exist() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::new(
             vec![],
@@ -2223,6 +2259,7 @@ async fn test_diagnostics_with_strict_array_option() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::new(
             vec![],
@@ -2242,9 +2279,9 @@ async fn test_diagnostics_with_strict_array_option() {
     // Homogeneous array, valid even with strict_array
     let code = "[1, 2, 3]";
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -2272,6 +2309,7 @@ async fn test_diagnostics_with_tuple_option() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::new(
             vec![],
@@ -2291,9 +2329,9 @@ async fn test_diagnostics_with_tuple_option() {
     // Heterogeneous array typed as tuple, valid with tuple mode
     let code = r#"[1, "hello", true]"#;
     let (nodes, errors) = mq_lang::parse_recovery(code);
-    let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+    let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
-    backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
+    backend.source_map.write_recover().insert(uri.to_string(), source_id);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(code.to_string()), None)),
@@ -2330,6 +2368,7 @@ async fn test_workspace_folder_indexes_unopened_files() {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         documents: DashMap::new(),
+        versions: DashMap::new(),
         workspace_roots: RwLock::new(Vec::new()),
         config: LspConfig::default(),
     });

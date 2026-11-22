@@ -1,7 +1,6 @@
-use std::{
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use crate::lock::RwLockExt;
+use std::sync::RwLock;
+use std::{str::FromStr, sync::Arc};
 
 use bimap::BiMap;
 use tower_lsp_server::ls_types::{self, Location, Position, Range};
@@ -43,7 +42,7 @@ pub(crate) fn response(
     include_declaration: bool,
     source_map: &BiMap<String, mq_hir::SourceId>,
 ) -> Vec<Location> {
-    let hir_guard = hir.read().unwrap();
+    let hir_guard = hir.read_recover();
     let Some(source) = hir_guard.source_by_url(&url) else {
         return Vec::new();
     };
@@ -99,8 +98,7 @@ mod tests {
         let (hir, mut source_map) = setup();
         let url = Url::parse("file:///test.mq").unwrap();
         let (source_id, _, _) = hir
-            .write()
-            .unwrap()
+            .write_recover()
             .add_code(Some(url.clone()), "def func1(): 1; | let x = func1()");
         source_map.insert(url.to_string(), source_id);
 
@@ -116,7 +114,7 @@ mod tests {
     #[case::with_declaration(true, 2)]
     fn test_references_of_qualified_member_shadowing_builtin(#[case] include_declaration: bool, #[case] count: usize) {
         let (hir, url) = crate::test_support::hir_with_lib("refs", "import \"lib\"\n| lib::add(1, 2)\n| lib::exported");
-        let source = hir.read().unwrap().source_by_url(&url).unwrap();
+        let source = hir.read_recover().source_by_url(&url).unwrap();
         let mut source_map = BiMap::new();
         source_map.insert(url.to_string(), source);
 
@@ -136,8 +134,7 @@ mod tests {
         let (hir, mut source_map) = setup();
         let url = Url::parse("file:///test.mq").unwrap();
         let (source_id, _, _) = hir
-            .write()
-            .unwrap()
+            .write_recover()
             .add_code(Some(url.clone()), "def func1(): 1; | let x = func1()");
         source_map.insert(url.to_string(), source_id);
 
