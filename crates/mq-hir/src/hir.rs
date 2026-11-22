@@ -320,6 +320,36 @@ impl Hir {
         false
     }
 
+    /// Whether `from` is `to` or imports or includes it, directly or not.
+    pub(crate) fn source_reaches(&self, from: SourceId, to: SourceId) -> bool {
+        let mut visited = FxHashSet::default();
+        let mut stack = vec![from];
+        while let Some(current) = stack.pop() {
+            if current == to {
+                return true;
+            }
+            if !visited.insert(current) {
+                continue;
+            }
+            for (_, symbol) in self.symbols_for_source(current) {
+                if let SymbolKind::Import(target) | SymbolKind::Include(target) = symbol.kind {
+                    stack.push(target);
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether a directive flagged as circular still has a path back to its own source.
+    pub(crate) fn is_circular_directive(&self, symbol_id: SymbolId, symbol: &Symbol) -> bool {
+        match (&symbol.kind, symbol.source.source_id) {
+            (SymbolKind::Import(target) | SymbolKind::Include(target), Some(source_id)) => {
+                self.circular_modules.contains(&symbol_id) && self.source_reaches(*target, source_id)
+            }
+            _ => false,
+        }
+    }
+
     /// Points directives at the source their module name resolves to now.
     fn rebind_directives(&mut self, directives: &[(SymbolId, SmolStr)]) {
         for (symbol_id, name) in directives {
@@ -656,6 +686,23 @@ mod tests {
             .filter(|(_, s)| matches!(s.kind, SymbolKind::Function(_)) && s.value.as_deref() == Some(name))
             .filter_map(|(_, s)| s.source.text_range)
             .collect()
+    }
+
+    #[test]
+    fn test_cycle_broken_by_editing_other_source_is_not_circular() {
+        let mut hir = hir_with_modules("cycle-broken", &[("a", "import \"b\""), ("b", "")]);
+        let a = hir.module_url("a").unwrap();
+        let b = hir.module_url("b").unwrap();
+
+        let (nodes, _) = mq_lang::parse_recovery("import \"b\"");
+        hir.add_nodes(a.clone(), &nodes);
+        let (nodes, _) = mq_lang::parse_recovery("import \"a\"");
+        hir.add_nodes(b, &nodes);
+        assert!(matches!(&hir.errors()[..], [HirError::CircularModule { module_name, .. }] if module_name == "a"));
+
+        let (nodes, _) = mq_lang::parse_recovery("def fa(): 1;");
+        hir.add_nodes(a, &nodes);
+        assert!(hir.errors().is_empty(), "{:?}", hir.errors());
     }
 
     #[test]
