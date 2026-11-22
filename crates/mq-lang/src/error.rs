@@ -476,10 +476,10 @@ impl Diagnostic for Error {
                 Some(Cow::Borrowed("Failed to load module. Check module paths and names."))
             }
             InnerError::Runtime(RuntimeError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
-                "Environment variable '{env}' not found. Did you forget to set it?"
+                "Environment variable '{env}' not found. Did you forget to set it? `${env}` reads an environment variable; to use a --arg/--argjson value, write `{env}` without `$`."
             ))),
             InnerError::Runtime(RuntimeError::EnvNotAllowed(_, env)) => Some(Cow::Owned(format!(
-                "Environment variable '{env}' is not permitted. Pass --allow-env to permit it."
+                "Environment variable '{env}' is not permitted. Pass --allow-env to permit it. `${env}` reads an environment variable; to use a --arg/--argjson value, write `{env}` without `$`."
             ))),
             InnerError::Runtime(RuntimeError::InvalidConvert(_, msg)) => Some(Cow::Owned(format!(
                 "Invalid conversion: {msg}. Check that the conversion is supported and value types match."
@@ -1105,7 +1105,7 @@ mod test {
         let help = error.help().map(|h| h.to_string());
         assert_eq!(
             help,
-            Some("Environment variable 'MY_VAR' not found. Did you forget to set it?".to_string())
+            Some("Environment variable 'MY_VAR' not found. Did you forget to set it? `$MY_VAR` reads an environment variable; to use a --arg/--argjson value, write `MY_VAR` without `$`.".to_string())
         );
     }
 
