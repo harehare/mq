@@ -17,7 +17,8 @@ pub(crate) fn runtime_values_to_toon(runtime_values: &[mq_lang::RuntimeValue]) -
 mod tests {
     use super::*;
     use mq_lang::DictMap;
-    use mq_lang::{Ident, RuntimeValue, Shared};
+    use mq_lang::RuntimeValue;
+    use mq_syntax::{Ident, Shared};
     use rstest::rstest;
 
     fn single_key_dict(key: &str, value: RuntimeValue) -> RuntimeValue {

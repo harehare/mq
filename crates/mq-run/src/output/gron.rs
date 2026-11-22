@@ -66,7 +66,7 @@ fn is_bare_ident(s: &str) -> bool {
 mod tests {
     use super::*;
     use mq_lang::DictMap;
-    use mq_lang::Shared;
+    use mq_syntax::Shared;
     use rstest::rstest;
 
     #[rstest]
@@ -101,12 +101,12 @@ mod tests {
     fn test_gron_nested_dict() {
         let mut inner = DictMap::default();
         inner.insert(
-            mq_lang::Ident::new("b"),
+            mq_syntax::Ident::new("b"),
             mq_lang::RuntimeValue::String(Shared::new("deep".to_string())),
         );
         let mut outer = DictMap::default();
         outer.insert(
-            mq_lang::Ident::new("a"),
+            mq_syntax::Ident::new("a"),
             mq_lang::RuntimeValue::Dict(Shared::new(inner)),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(outer))];
@@ -120,7 +120,7 @@ mod tests {
     fn test_gron_dict_key_needing_brackets() {
         let mut m = DictMap::default();
         m.insert(
-            mq_lang::Ident::new("weird key"),
+            mq_syntax::Ident::new("weird key"),
             mq_lang::RuntimeValue::String(Shared::new("v".to_string())),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(m))];

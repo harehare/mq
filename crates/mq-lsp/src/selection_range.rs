@@ -1,5 +1,5 @@
-use mq_lang::Shared;
 use mq_syntax::CstNode;
+use mq_syntax::Shared;
 use tower_lsp_server::ls_types::{Position, Range, SelectionRange};
 
 use crate::position::LineIndex;

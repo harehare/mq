@@ -95,13 +95,14 @@ pub(crate) fn runtime_values_to_toml(runtime_values: &[RuntimeValue]) -> miette:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mq_lang::{DictMap, Shared};
+    use mq_lang::DictMap;
+    use mq_syntax::Shared;
 
     #[test]
     fn test_dict_value() {
         let mut map = mq_lang::DictMap::default();
         map.insert(
-            mq_lang::Ident::new("name"),
+            mq_syntax::Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
         );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
@@ -113,11 +114,11 @@ mod tests {
     fn test_nested_dict() {
         let mut inner = mq_lang::DictMap::default();
         inner.insert(
-            mq_lang::Ident::new("city"),
+            mq_syntax::Ident::new("city"),
             RuntimeValue::String(Shared::new("NYC".to_string())),
         );
         let mut outer = mq_lang::DictMap::default();
-        outer.insert(mq_lang::Ident::new("address"), RuntimeValue::Dict(Shared::new(inner)));
+        outer.insert(mq_syntax::Ident::new("address"), RuntimeValue::Dict(Shared::new(inner)));
         let values = vec![RuntimeValue::Dict(Shared::new(outer))];
         let result = runtime_values_to_toml(&values).unwrap();
         assert!(result.contains("[address]"));
@@ -143,12 +144,12 @@ mod tests {
     #[test]
     fn test_none_keys_are_omitted() {
         let mut inner = mq_lang::DictMap::default();
-        inner.insert(mq_lang::Ident::new("x"), RuntimeValue::None);
-        inner.insert(mq_lang::Ident::new("y"), RuntimeValue::Number(2.into()));
+        inner.insert(mq_syntax::Ident::new("x"), RuntimeValue::None);
+        inner.insert(mq_syntax::Ident::new("y"), RuntimeValue::Number(2.into()));
         let mut outer = mq_lang::DictMap::default();
-        outer.insert(mq_lang::Ident::new("a"), RuntimeValue::Number(1.into()));
-        outer.insert(mq_lang::Ident::new("n"), RuntimeValue::None);
-        outer.insert(mq_lang::Ident::new("t"), RuntimeValue::Dict(Shared::new(inner)));
+        outer.insert(mq_syntax::Ident::new("a"), RuntimeValue::Number(1.into()));
+        outer.insert(mq_syntax::Ident::new("n"), RuntimeValue::None);
+        outer.insert(mq_syntax::Ident::new("t"), RuntimeValue::Dict(Shared::new(inner)));
         let result = runtime_values_to_toml(&[RuntimeValue::Dict(Shared::new(outer))]).unwrap();
         assert!(result.contains("a = 1"));
         assert!(result.contains("y = 2"));
@@ -160,7 +161,7 @@ mod tests {
     fn test_none_in_array_errors_with_path() {
         let arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::None]));
         let mut map = mq_lang::DictMap::default();
-        map.insert(mq_lang::Ident::new("items"), arr);
+        map.insert(mq_syntax::Ident::new("items"), arr);
         let err = runtime_values_to_toml(&[RuntimeValue::Dict(Shared::new(map))]).unwrap_err();
         assert!(err.to_string().contains("items[1]"));
     }
@@ -168,7 +169,7 @@ mod tests {
     fn dict(entries: Vec<(&str, RuntimeValue)>) -> RuntimeValue {
         let mut map = DictMap::default();
         for (k, v) in entries {
-            map.insert(mq_lang::Ident::new(k), v);
+            map.insert(mq_syntax::Ident::new(k), v);
         }
         RuntimeValue::Dict(Shared::new(map))
     }

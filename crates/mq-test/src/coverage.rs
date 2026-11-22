@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use mq_lang::{DebugContext, DebuggerAction, DebuggerHandler, Module, Shared};
+use mq_lang::{DebugContext, DebuggerAction, DebuggerHandler, Module};
+use mq_syntax::Shared;
 use mq_syntax::{CstNode, CstNodeKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 

@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use mq_lang::text_diff::{self, ChangeTag};
-use mq_lang::{DictMap, Ident, RuntimeValue, Shared};
+use mq_lang::{DictMap, RuntimeValue};
+use mq_syntax::{Ident, Shared};
 
 use crate::html;
 

@@ -767,9 +767,9 @@ mod tests {
             name: None,
             code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
         };
-        context.range = mq_lang::Range {
-            start: mq_lang::Position { line: 4, column: 0 },
-            end: mq_lang::Position { line: 4, column: 1 },
+        context.range = mq_syntax::Range {
+            start: mq_syntax::Position { line: 4, column: 0 },
+            end: mq_syntax::Position { line: 4, column: 1 },
         };
         context.module_id = ModuleId::new(0);
         let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);

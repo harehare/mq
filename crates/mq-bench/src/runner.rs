@@ -505,7 +505,7 @@ impl BenchRunner {
         let query = format!("{content}\n| {}()", bench.name);
         let mut engine: BenchEngine = mq_lang::Engine::with_io(
             mq_lang::DefaultModuleResolver::default(),
-            mq_lang::Shared::new(mq_lang::MemIo::default()),
+            mq_syntax::Shared::new(mq_lang::MemIo::default()),
         );
         engine.load_builtin_module();
 
@@ -652,7 +652,7 @@ impl BenchRunner {
         Self::discover_benches_in(&nodes)
     }
 
-    fn discover_benches_in(nodes: &[mq_lang::Shared<mq_syntax::CstNode>]) -> Vec<DiscoveredBench> {
+    fn discover_benches_in(nodes: &[mq_syntax::Shared<mq_syntax::CstNode>]) -> Vec<DiscoveredBench> {
         let mut benches = Vec::new();
 
         for node in nodes {
@@ -687,7 +687,7 @@ impl BenchRunner {
     }
 
     /// Returns the number of positional parameters of a `def` node.
-    fn get_arity(node: &mq_lang::Shared<mq_syntax::CstNode>) -> usize {
+    fn get_arity(node: &mq_syntax::Shared<mq_syntax::CstNode>) -> usize {
         let (sig, _) = node.split_cond_and_program();
         // sig[0] is the function name; the rest are parameter idents.
         sig.len().saturating_sub(1)

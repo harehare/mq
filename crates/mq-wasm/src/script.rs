@@ -720,7 +720,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
                 values
                     .into_iter()
                     .map(|runtime_value| match runtime_value {
-                        mq_lang::RuntimeValue::Markdown(node, _) => mq_lang::Shared::unwrap_or_clone(node),
+                        mq_lang::RuntimeValue::Markdown(node, _) => mq_syntax::Shared::unwrap_or_clone(node),
                         _ => runtime_value.to_string().into(),
                     })
                     .collect(),
@@ -756,7 +756,7 @@ pub async fn run(code: &str, content: &str, options: JsValue) -> Result<String, 
 #[wasm_bindgen(js_name=toAst)]
 /// Parses `code` and returns its AST as JSON.
 pub async fn to_ast(code: &str) -> Result<String, JsValue> {
-    let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
+    let token_arena = mq_syntax::Shared::new(mq_syntax::SharedCell::new(mq_syntax::Arena::new(1024)));
     mq_lang::parse(code, token_arena)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse code: {}", e)))
         .and_then(|json| {
@@ -1036,7 +1036,7 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
     let _ = checker.check(&hir);
     let type_env = checker.symbol_types();
 
-    let pos = mq_lang::Position::new(line, column);
+    let pos = mq_syntax::Position::new(line, column);
     let Some((symbol_id, symbol)) = hir.find_symbol_in_position(source_id, pos) else {
         return JsValue::NULL;
     };
@@ -1251,7 +1251,7 @@ async fn write_opfs_lock(root: &opfs::persistent::DirectoryHandle, lock: &mq_lan
 /// Parses `code` and returns all import/include paths that are local module names (not URLs).
 #[cfg(feature = "opfs")]
 fn extract_local_import_names(code: &str) -> Vec<String> {
-    let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
+    let token_arena = mq_syntax::Shared::new(mq_syntax::SharedCell::new(mq_syntax::Arena::new(1024)));
     let Ok(program) = mq_lang::parse(code, token_arena) else {
         return vec![];
     };
@@ -1275,7 +1275,7 @@ fn extract_local_import_names(code: &str) -> Vec<String> {
 
 /// Parses `code` and returns all import/include paths that look like HTTP or GitHub URLs.
 fn extract_http_import_urls(code: &str) -> Vec<String> {
-    let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
+    let token_arena = mq_syntax::Shared::new(mq_syntax::SharedCell::new(mq_syntax::Arena::new(1024)));
     let Ok(program) = mq_lang::parse(code, token_arena) else {
         return vec![];
     };

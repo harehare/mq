@@ -176,10 +176,10 @@ pub(crate) fn mq_comment_examples(content: &str) -> Vec<Example> {
 /// Files are read through an in-memory I/O, so only the standard modules resolve. With
 /// `search_paths`, local modules are read from those directories on disk instead.
 fn eval_all(query: &str, search_paths: Option<&[PathBuf]>) -> Result<Vec<RuntimeValue>, String> {
-    let io = mq_lang::Shared::new(mq_lang::MemIo::default());
+    let io = mq_syntax::Shared::new(mq_lang::MemIo::default());
     let fallback = match search_paths {
         Some(paths) => mq_lang::DefaultModuleResolver::new(paths.to_vec()),
-        None => mq_lang::DefaultModuleResolver::with_io(io.clone() as mq_lang::Shared<dyn mq_lang::Io>, Vec::new()),
+        None => mq_lang::DefaultModuleResolver::with_io(io.clone() as mq_syntax::Shared<dyn mq_lang::Io>, Vec::new()),
     };
     let mut engine = mq_lang::Engine::with_io(crate::resolver::TestModuleResolver::new(fallback), io);
     engine.load_builtin_module();

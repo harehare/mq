@@ -20,7 +20,7 @@ type UnresolvedSymbol = (
     Range,
     Option<SmolStr>,
     mq_hir::ScopeId,
-    Option<mq_lang::Position>,
+    Option<mq_syntax::Position>,
 );
 
 static STD_MODULE_EXPORTS: LazyLock<FxHashMap<SmolStr, Vec<SmolStr>>> = LazyLock::new(|| {
@@ -77,7 +77,7 @@ fn lint_fix_action(
     uri: &ls_types::Uri,
     diagnostic: &ls_types::Diagnostic,
     title: String,
-    range: mq_lang::Range,
+    range: mq_syntax::Range,
     replacement: String,
 ) -> CodeActionOrCommand {
     let mut changes = HashMap::new();
@@ -142,7 +142,7 @@ fn fix_all_action(
     diagnostics: &[mq_lint::Diagnostic],
     source_text: &str,
 ) -> Option<CodeActionOrCommand> {
-    let mut fixes: Vec<(mq_lang::Range, String)> = diagnostics
+    let mut fixes: Vec<(mq_syntax::Range, String)> = diagnostics
         .iter()
         .filter_map(|d| d.fix.as_ref()?.resolve(source_text))
         .collect();
@@ -319,7 +319,7 @@ pub(crate) fn response(
 mod tests {
     use super::*;
 
-    fn to_range(range: mq_lang::Range) -> Range {
+    fn to_range(range: mq_syntax::Range) -> Range {
         super::to_range(None, range)
     }
     use std::str::FromStr;

@@ -5,8 +5,8 @@
 //! colored via the `tok-*` CSS classes defined in `coverage::HTML_STYLE`
 //! (palette taken from the [Tarn](https://github.com/harehare/tarn-theme) theme).
 
-use mq_lang::{Shared, TokenKind};
 use mq_syntax::{CstNode, CstNodeKind, CstTrivia};
+use mq_syntax::{Shared, TokenKind};
 use rustc_hash::FxHashMap;
 
 use crate::html::escape as html_escape;
@@ -48,7 +48,7 @@ impl TokenClass {
 }
 
 /// A classified token span within one source line, in 1-based UTF-8 columns
-/// (matching `mq_lang::Range`), end-exclusive.
+/// (matching `mq_syntax::Range`), end-exclusive.
 struct Span {
     line: u32,
     start_col: usize,

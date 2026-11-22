@@ -1,6 +1,6 @@
 use super::*;
 use dap::server::Server;
-use mq_lang::Shared;
+use mq_syntax::Shared;
 use std::io::{BufReader, BufWriter, Cursor};
 use std::time::Duration;
 
@@ -639,9 +639,9 @@ fn test_build_stack_frames_with_context_and_empty_call_stack() {
         expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("top_level"), Default::default()),
         token_id: 0u32.into(),
     });
-    context.range = mq_lang::Range {
-        start: mq_lang::Position::new(9, 2),
-        end: mq_lang::Position::new(9, 3),
+    context.range = mq_syntax::Range {
+        start: mq_syntax::Position::new(9, 2),
+        end: mq_syntax::Position::new(9, 3),
     };
     context.module_id = mq_lang::ModuleId::new(0);
     adapter.current_debug_context = Some(context);
@@ -659,9 +659,9 @@ fn test_build_stack_frames_with_context_and_empty_call_stack() {
 fn test_build_stack_frames_with_single_call_stack_frame_uses_current_token_for_location() {
     let mut adapter = MqAdapter::new();
     let mut context = mq_lang::DebugContext::default();
-    context.range = mq_lang::Range {
-        start: mq_lang::Position::new(4, 7),
-        end: mq_lang::Position::new(4, 8),
+    context.range = mq_syntax::Range {
+        start: mq_syntax::Position::new(4, 7),
+        end: mq_syntax::Position::new(4, 8),
     };
     context.module_id = mq_lang::ModuleId::new(0);
     context.call_stack.push(Shared::new(mq_lang::AstNode {
@@ -683,27 +683,27 @@ fn test_build_stack_frames_with_single_call_stack_frame_uses_current_token_for_l
 fn test_build_stack_frames_orders_frames_innermost_first() {
     let mut adapter = MqAdapter::new();
 
-    let outer_token_id = adapter.engine.token_arena().write().unwrap().alloc(mq_lang::Token {
-        kind: mq_lang::TokenKind::Eof,
-        range: mq_lang::Range {
-            start: mq_lang::Position::new(10, 1),
-            end: mq_lang::Position::new(10, 2),
+    let outer_token_id = adapter.engine.token_arena().write().unwrap().alloc(mq_syntax::Token {
+        kind: mq_syntax::TokenKind::Eof,
+        range: mq_syntax::Range {
+            start: mq_syntax::Position::new(10, 1),
+            end: mq_syntax::Position::new(10, 2),
         },
         module_id: mq_lang::ModuleId::new(0),
     });
-    let middle_token_id = adapter.engine.token_arena().write().unwrap().alloc(mq_lang::Token {
-        kind: mq_lang::TokenKind::Eof,
-        range: mq_lang::Range {
-            start: mq_lang::Position::new(20, 3),
-            end: mq_lang::Position::new(20, 4),
+    let middle_token_id = adapter.engine.token_arena().write().unwrap().alloc(mq_syntax::Token {
+        kind: mq_syntax::TokenKind::Eof,
+        range: mq_syntax::Range {
+            start: mq_syntax::Position::new(20, 3),
+            end: mq_syntax::Position::new(20, 4),
         },
         module_id: mq_lang::ModuleId::new(0),
     });
 
     let mut context = mq_lang::DebugContext::default();
-    context.range = mq_lang::Range {
-        start: mq_lang::Position::new(30, 5),
-        end: mq_lang::Position::new(30, 6),
+    context.range = mq_syntax::Range {
+        start: mq_syntax::Position::new(30, 5),
+        end: mq_syntax::Position::new(30, 6),
     };
     context.module_id = mq_lang::ModuleId::new(0);
     context.call_stack.push(Shared::new(mq_lang::AstNode {
@@ -766,9 +766,9 @@ fn test_build_stack_frames_current_location_in_an_imported_module_does_not_use_t
     let mut adapter = MqAdapter::new();
     adapter.query_file = Some("/tmp/query.mq".to_string());
     let mut context = mq_lang::DebugContext::default();
-    context.range = mq_lang::Range {
-        start: mq_lang::Position::new(12, 1),
-        end: mq_lang::Position::new(12, 2),
+    context.range = mq_syntax::Range {
+        start: mq_syntax::Position::new(12, 1),
+        end: mq_syntax::Position::new(12, 2),
     };
     context.module_id = mq_lang::ModuleId::new(1);
     adapter.current_debug_context = Some(context);
@@ -788,19 +788,19 @@ fn test_build_stack_frames_outer_call_stack_entry_from_an_imported_module_does_n
     let mut adapter = MqAdapter::new();
     adapter.query_file = Some("/tmp/query.mq".to_string());
 
-    let outer_token_id = adapter.engine.token_arena().write().unwrap().alloc(mq_lang::Token {
-        kind: mq_lang::TokenKind::Eof,
-        range: mq_lang::Range {
-            start: mq_lang::Position::new(12, 1),
-            end: mq_lang::Position::new(12, 2),
+    let outer_token_id = adapter.engine.token_arena().write().unwrap().alloc(mq_syntax::Token {
+        kind: mq_syntax::TokenKind::Eof,
+        range: mq_syntax::Range {
+            start: mq_syntax::Position::new(12, 1),
+            end: mq_syntax::Position::new(12, 2),
         },
         module_id: mq_lang::ModuleId::new(1),
     });
 
     let mut context = mq_lang::DebugContext::default();
-    context.range = mq_lang::Range {
-        start: mq_lang::Position::new(3, 1),
-        end: mq_lang::Position::new(3, 2),
+    context.range = mq_syntax::Range {
+        start: mq_syntax::Position::new(3, 1),
+        end: mq_syntax::Position::new(3, 2),
     };
     context.module_id = mq_lang::ModuleId::new(0);
     context.call_stack.push(Shared::new(mq_lang::AstNode {

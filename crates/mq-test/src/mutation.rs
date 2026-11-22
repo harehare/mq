@@ -1,7 +1,7 @@
 //! Generates mutants of a module's source by replacing single tokens.
 
-use mq_lang::{Shared, Token, TokenKind};
 use mq_syntax::CstNode;
+use mq_syntax::{Shared, Token, TokenKind};
 use rustc_hash::FxHashSet;
 
 /// One single-token replacement of a module's source.

@@ -338,7 +338,7 @@ impl CommandContext {
             let seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut seen_names = seen_names;
 
-            for keyword in mq_lang::KEYWORDS.iter().chain(mq_lang::BOOLEAN_LITERALS) {
+            for keyword in mq_syntax::KEYWORDS.iter().chain(mq_syntax::BOOLEAN_LITERALS) {
                 if keyword.starts_with(word) {
                     matches.push(CompletionItem {
                         name: keyword.to_string(),
@@ -820,7 +820,7 @@ mod tests {
     #[test]
     fn test_execute_env() {
         let mut engine = mq_lang::DefaultEngine::default();
-        engine.set_io(mq_lang::Shared::new(
+        engine.set_io(mq_syntax::Shared::new(
             mq_lang::SandboxedIo::new(mq_lang::NativeIo::default()).allow_env(true),
         ));
         let mut ctx = CommandContext::new(engine, Vec::new());
@@ -833,7 +833,7 @@ mod tests {
     #[test]
     fn test_execute_env_denied_without_allow_env() {
         let mut engine = mq_lang::DefaultEngine::default();
-        engine.set_io(mq_lang::Shared::new(mq_lang::SandboxedIo::new(
+        engine.set_io(mq_syntax::Shared::new(mq_lang::SandboxedIo::new(
             mq_lang::NativeIo::default(),
         )));
         let mut ctx = CommandContext::new(engine, Vec::new());

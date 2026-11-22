@@ -43,7 +43,7 @@ impl std::fmt::Display for ParamInfo {
 
 type Params = Vec<ParamInfo>;
 /// Doc comment text with its source range.
-pub type Doc = (mq_lang::Range, String);
+pub type Doc = (mq_syntax::Range, String);
 
 /// Whether a doc line marks deprecation: `deprecated` in any case, alone or followed by `:` or a space.
 /// Lines that only mention the word do not count.
@@ -159,7 +159,7 @@ pub enum SymbolKind {
     /// A reference to a variable or function.
     Ref,
     /// A selector such as `.h1`.
-    Selector(mq_lang::Selector),
+    Selector(mq_syntax::Selector),
     /// A `...expr` spread element inside an array or dict literal.
     Spread,
     /// A string literal.
@@ -305,11 +305,11 @@ mod tests {
     #[test]
     fn test_is_deprecated_ignores_lines_that_only_mention_the_word() {
         let mut symbol = create_test_symbol(SymbolKind::Function(Vec::new()), Some("f"));
-        symbol.doc = vec![(mq_lang::Range::default(), "Replaces the deprecated g.".to_string())];
+        symbol.doc = vec![(mq_syntax::Range::default(), "Replaces the deprecated g.".to_string())];
         assert!(!symbol.is_deprecated());
         symbol
             .doc
-            .push((mq_lang::Range::default(), "Deprecated: use h.".to_string()));
+            .push((mq_syntax::Range::default(), "Deprecated: use h.".to_string()));
         assert!(symbol.is_deprecated());
     }
 

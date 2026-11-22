@@ -25,12 +25,12 @@ pub struct SourceInfo {
     /// The source the item belongs to.
     pub source_id: Option<SourceId>,
     /// Range of the item within the source.
-    pub text_range: Option<mq_lang::Range>,
+    pub text_range: Option<mq_syntax::Range>,
 }
 
 impl SourceInfo {
     /// Creates a source location.
-    pub fn new(source_id: Option<SourceId>, text_range: Option<mq_lang::Range>) -> Self {
+    pub fn new(source_id: Option<SourceId>, text_range: Option<mq_syntax::Range>) -> Self {
         Self { source_id, text_range }
     }
 }

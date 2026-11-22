@@ -79,7 +79,7 @@ impl ConstraintOrigin {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constraint {
     /// Two types must be equal
-    Equal(Type, Type, Option<mq_lang::Range>, ConstraintOrigin),
+    Equal(Type, Type, Option<mq_syntax::Range>, ConstraintOrigin),
     /// A variable takes the value of another variable or parameter, `var x = ... | x = y`.
     /// The variable is `source` when `source_def` has a known type, and `previous | source`
     /// otherwise, since an unknown `source` may be the variable itself.
@@ -88,7 +88,7 @@ pub enum Constraint {
         previous: Type,
         source: Type,
         source_def: Type,
-        range: Option<mq_lang::Range>,
+        range: Option<mq_syntax::Range>,
         origin: ConstraintOrigin,
     },
 }
@@ -1728,7 +1728,7 @@ pub(super) fn generate_symbol_constraints(
             // node or from an array of nodes (`nodes | compact(.code)`).
             let varies_with_input = ctx.get_piped_input(symbol_id).is_none()
                 && matches!(ctx.input_type(), Type::Dynamic)
-                && !matches!(selector, mq_lang::Selector::Attr(_) | mq_lang::Selector::Recursive);
+                && !matches!(selector, mq_syntax::Selector::Attr(_) | mq_syntax::Selector::Recursive);
 
             // Compute this selector's own output type based on the incoming piped input.
             let own_type = if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
@@ -1797,11 +1797,11 @@ pub(super) fn generate_symbol_constraints(
                 // a Markdown node. Attr selectors (`.value`, `.depth`, etc.) as the root of
                 // a chain return their concrete type. The Recursive selector (`..`) returns
                 // an array of all descendant Markdown nodes.
-                if let mq_lang::Selector::Attr(attr_kind) = selector {
+                if let mq_syntax::Selector::Attr(attr_kind) = selector {
                     attr_kind_to_type(attr_kind)
                 } else if varies_with_input {
                     Type::Var(ctx.fresh_var())
-                } else if matches!(selector, mq_lang::Selector::Recursive) {
+                } else if matches!(selector, mq_syntax::Selector::Recursive) {
                     Type::array(Type::markdown())
                 } else {
                     selector_kinds(selector).map_or_else(Type::markdown, Type::Node)
@@ -2034,7 +2034,7 @@ fn constrain_bracket_access(
     children: &[SymbolId],
     explicit_arg_tys: &[Type],
     container_ty: Type,
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
 ) {
     let groups = hir.bracket_group_count(symbol_id);
     let is_chained_access = children.iter().skip(1).any(|&child_id| {
@@ -2084,7 +2084,7 @@ fn constrain_element_access(
     arg_id: SymbolId,
     arg_ty: &Type,
     result_ty: Type,
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
 ) {
     let literal_index = hir
         .symbol(arg_id)
@@ -2478,11 +2478,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case(mq_lang::AttrKind::Value, Type::String)]
-    #[case(mq_lang::AttrKind::Depth, Type::Number)]
-    #[case(mq_lang::AttrKind::Ordered, Type::Bool)]
-    #[case(mq_lang::AttrKind::Children, Type::array(Type::markdown()))]
-    fn test_attr_kind_to_type(#[case] kind: mq_lang::AttrKind, #[case] expected: Type) {
+    #[case(mq_syntax::AttrKind::Value, Type::String)]
+    #[case(mq_syntax::AttrKind::Depth, Type::Number)]
+    #[case(mq_syntax::AttrKind::Ordered, Type::Bool)]
+    #[case(mq_syntax::AttrKind::Children, Type::array(Type::markdown()))]
+    fn test_attr_kind_to_type(#[case] kind: mq_syntax::AttrKind, #[case] expected: Type) {
         assert_eq!(attr_kind_to_type(&kind), expected);
     }
 

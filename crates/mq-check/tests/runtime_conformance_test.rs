@@ -18,8 +18,9 @@ use std::sync::{Arc, Mutex};
 
 use mq_check::{TypeChecker, types::Type};
 use mq_hir::{Hir, SymbolId, SymbolKind};
-use mq_lang::{DebugContext, DebuggerAction, DebuggerHandler, Position, RuntimeValue};
+use mq_lang::{DebugContext, DebuggerAction, DebuggerHandler, RuntimeValue};
 use mq_markdown::NodeKind;
+use mq_syntax::Position;
 use url::Url;
 
 /// The shape of a runtime value, as much as is needed to compare it with a type.
@@ -114,7 +115,7 @@ struct SourceModel {
     bindings: BTreeMap<String, Vec<Binding>>,
 }
 
-fn position_of(range: &mq_lang::Range) -> (Position, Position) {
+fn position_of(range: &mq_syntax::Range) -> (Position, Position) {
     (range.start, range.end)
 }
 

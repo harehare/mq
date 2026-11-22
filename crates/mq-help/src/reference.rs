@@ -1,5 +1,5 @@
-use mq_lang::{Shared, TokenKind};
 use mq_syntax::{CstNode, CstNodeKind};
+use mq_syntax::{Shared, TokenKind};
 
 use crate::docs::BUILTIN_DOC;
 

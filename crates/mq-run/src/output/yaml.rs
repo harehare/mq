@@ -84,7 +84,7 @@ pub(crate) fn runtime_values_to_yaml(runtime_values: &[mq_lang::RuntimeValue]) -
 mod tests {
     use super::*;
     use mq_lang::RuntimeValue;
-    use mq_lang::Shared;
+    use mq_syntax::Shared;
 
     #[rstest::rstest]
     #[case("0o17", "\"0o17\"")]
@@ -115,7 +115,7 @@ mod tests {
     fn test_dict_value() {
         let mut map = mq_lang::DictMap::default();
         map.insert(
-            mq_lang::Ident::new("name"),
+            mq_syntax::Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
         );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];

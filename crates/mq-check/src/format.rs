@@ -32,7 +32,7 @@ pub(crate) struct CheckDiagnostic {
     pub(crate) severity: Severity,
     pub(crate) code: &'static str,
     pub(crate) message: String,
-    pub(crate) range: Option<mq_lang::Range>,
+    pub(crate) range: Option<mq_syntax::Range>,
 }
 
 /// Machine-readable diagnostic output format.
@@ -58,7 +58,7 @@ pub(crate) enum OutputFormat {
 pub(crate) fn syntax_diagnostics(
     hir: &Hir,
     source_id: SourceId,
-    parse_errors: &[mq_lang::Diagnostic],
+    parse_errors: &[mq_syntax::Diagnostic],
 ) -> Vec<CheckDiagnostic> {
     let mut diagnostics: Vec<CheckDiagnostic> = parse_errors
         .iter()
@@ -132,7 +132,7 @@ fn hir_error_symbol(error: &HirError) -> &Symbol {
     }
 }
 
-fn hir_error_range(error: &HirError) -> mq_lang::Range {
+fn hir_error_range(error: &HirError) -> mq_syntax::Range {
     hir_error_symbol(error).source.text_range.unwrap_or_default()
 }
 
@@ -149,7 +149,7 @@ fn hir_warning_symbol(warning: &HirWarning) -> &Symbol {
     }
 }
 
-fn hir_warning_range(warning: &HirWarning) -> mq_lang::Range {
+fn hir_warning_range(warning: &HirWarning) -> mq_syntax::Range {
     hir_warning_symbol(warning).source.text_range.unwrap_or_default()
 }
 

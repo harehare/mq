@@ -746,8 +746,8 @@ mod tests {
 
     #[test]
     fn test_format_runtime_value_displays_nested_none() {
-        let v = mq_lang::RuntimeValue::Dict(mq_lang::Shared::new(mq_lang::DictMap::from_iter([(
-            mq_lang::Ident::new("value"),
+        let v = mq_lang::RuntimeValue::Dict(mq_syntax::Shared::new(mq_lang::DictMap::from_iter([(
+            mq_syntax::Ident::new("value"),
             mq_lang::RuntimeValue::None,
         )])));
 

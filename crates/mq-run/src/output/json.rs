@@ -7,9 +7,9 @@ use std::io::{self, Write};
 
 use miette::miette;
 use mq_lang::RuntimeValue;
-#[cfg(test)]
-use mq_lang::Shared;
 use mq_markdown::ColorTheme;
+#[cfg(test)]
+use mq_syntax::Shared;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
 /// Whether `value` is left out of JSON output.
@@ -335,18 +335,18 @@ mod tests {
 
     fn nested() -> Vec<RuntimeValue> {
         let mut inner = mq_lang::DictMap::default();
-        inner.insert(mq_lang::Ident::new("z"), RuntimeValue::Array(Shared::new(Vec::new())));
-        inner.insert(mq_lang::Ident::new("a"), RuntimeValue::None);
+        inner.insert(mq_syntax::Ident::new("z"), RuntimeValue::Array(Shared::new(Vec::new())));
+        inner.insert(mq_syntax::Ident::new("a"), RuntimeValue::None);
         let mut outer = mq_lang::DictMap::default();
         outer.insert(
-            mq_lang::Ident::new("k"),
+            mq_syntax::Ident::new("k"),
             RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::from(1usize),
                 RuntimeValue::Dict(Shared::new(inner)),
             ])),
         );
         outer.insert(
-            mq_lang::Ident::new("e"),
+            mq_syntax::Ident::new("e"),
             RuntimeValue::Dict(Shared::new(mq_lang::DictMap::default())),
         );
         vec![RuntimeValue::Dict(Shared::new(outer))]
@@ -484,7 +484,7 @@ mod tests {
         let theme = plain_theme();
         let mut map = mq_lang::DictMap::default();
         map.insert(
-            mq_lang::Ident::new("key"),
+            mq_syntax::Ident::new("key"),
             RuntimeValue::String(Shared::new("val".to_string())),
         );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
@@ -495,8 +495,8 @@ mod tests {
     #[test]
     fn test_compact_no_theme() {
         let mut map = mq_lang::DictMap::default();
-        map.insert(mq_lang::Ident::new("a"), RuntimeValue::from(1usize));
-        map.insert(mq_lang::Ident::new("b"), RuntimeValue::from(2usize));
+        map.insert(mq_syntax::Ident::new("a"), RuntimeValue::from(1usize));
+        map.insert(mq_syntax::Ident::new("b"), RuntimeValue::from(2usize));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_json(&values, None, true, "  ").unwrap();
         assert_eq!(result, r#"{"a":1,"b":2}"#);
@@ -506,8 +506,8 @@ mod tests {
     fn test_compact_with_theme() {
         let theme = plain_theme();
         let mut map = mq_lang::DictMap::default();
-        map.insert(mq_lang::Ident::new("a"), RuntimeValue::from(1usize));
-        map.insert(mq_lang::Ident::new("b"), RuntimeValue::from(2usize));
+        map.insert(mq_syntax::Ident::new("a"), RuntimeValue::from(1usize));
+        map.insert(mq_syntax::Ident::new("b"), RuntimeValue::from(2usize));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_json(&values, Some(&theme), true, "  ").unwrap();
         assert_eq!(result, r#"{"a":1,"b":2}"#);

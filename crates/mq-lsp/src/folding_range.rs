@@ -1,4 +1,4 @@
-use mq_lang::Shared;
+use mq_syntax::Shared;
 use mq_syntax::{CstNode, CstNodeKind, CstTrivia};
 use tower_lsp_server::ls_types::{FoldingRange, FoldingRangeKind};
 

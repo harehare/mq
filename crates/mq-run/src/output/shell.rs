@@ -136,7 +136,7 @@ fn is_safe_unquoted_char(c: char) -> bool {
 mod tests {
     use super::*;
     use mq_lang::DictMap;
-    use mq_lang::Shared;
+    use mq_syntax::Shared;
     use rstest::rstest;
 
     #[rstest]
@@ -191,12 +191,12 @@ mod tests {
     fn test_shell_nested_dict() {
         let mut inner = DictMap::default();
         inner.insert(
-            mq_lang::Ident::new("color"),
+            mq_syntax::Ident::new("color"),
             mq_lang::RuntimeValue::String(Shared::new("turquoise".to_string())),
         );
         let mut outer = DictMap::default();
         outer.insert(
-            mq_lang::Ident::new("eyes"),
+            mq_syntax::Ident::new("eyes"),
             mq_lang::RuntimeValue::Dict(Shared::new(inner)),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(outer))];
@@ -210,7 +210,7 @@ mod tests {
     fn test_shell_dict_key_needing_sanitization() {
         let mut m = DictMap::default();
         m.insert(
-            mq_lang::Ident::new("weird key!"),
+            mq_syntax::Ident::new("weird key!"),
             mq_lang::RuntimeValue::String(Shared::new("v".to_string())),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(m))];
@@ -224,12 +224,12 @@ mod tests {
     fn test_shell_array_under_dict_key_has_no_double_underscore() {
         let mut friend = DictMap::default();
         friend.insert(
-            mq_lang::Ident::new("name"),
+            mq_syntax::Ident::new("name"),
             mq_lang::RuntimeValue::String(Shared::new("James P. Sullivan".to_string())),
         );
         let mut outer = DictMap::default();
         outer.insert(
-            mq_lang::Ident::new("friends"),
+            mq_syntax::Ident::new("friends"),
             mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::Dict(Shared::new(friend))])),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(outer))];
@@ -251,7 +251,7 @@ mod tests {
         let mut m = DictMap::default();
         for (k, v) in pairs {
             m.insert(
-                mq_lang::Ident::new(k),
+                mq_syntax::Ident::new(k),
                 mq_lang::RuntimeValue::String(Shared::new(v.to_string())),
             );
         }

@@ -1396,7 +1396,7 @@ fn check_deferred_overloads_iteratively(
     overloads: &[&DeferredOverload],
     subst: &mut Substitution,
     ctx: &mut InferenceContext,
-    error_range: Option<mq_lang::Range>,
+    error_range: Option<mq_syntax::Range>,
 ) {
     let mut remaining_indices: Vec<usize> = (0..overloads.len()).collect();
     let max_passes = overloads.len() + 1;

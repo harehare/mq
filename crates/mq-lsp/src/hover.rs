@@ -156,7 +156,7 @@ fn hir_hover(
     let source = hir.read_recover().source_by_url(&url);
 
     if let Some(source) = source {
-        let lsp_position = mq_lang::Position::new(position.line + 1, position.character + 1);
+        let lsp_position = mq_syntax::Position::new(position.line + 1, position.character + 1);
         if let Some((symbol_id, symbol)) = hir.read_recover().find_symbol_in_position(source, lsp_position) {
             match &symbol.kind {
                 mq_hir::SymbolKind::Function(_)

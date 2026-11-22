@@ -1793,11 +1793,11 @@ async fn test_formatting_with_errors() {
     );
     backend.error_map.insert(
         uri.to_string(),
-        vec![LspError::SyntaxError(mq_lang::Diagnostic {
+        vec![LspError::SyntaxError(mq_syntax::Diagnostic {
             message: "Syntax error".to_string(),
-            range: Some(mq_lang::Range {
-                start: mq_lang::Position { line: 1, column: 10 },
-                end: mq_lang::Position { line: 1, column: 11 },
+            range: Some(mq_syntax::Range {
+                start: mq_syntax::Position { line: 1, column: 10 },
+                end: mq_syntax::Position { line: 1, column: 11 },
             }),
             hints: Vec::new(),
         })],
@@ -1985,11 +1985,11 @@ async fn test_range_formatting_with_errors() {
     );
     backend.error_map.insert(
         uri.to_string(),
-        vec![LspError::SyntaxError(mq_lang::Diagnostic {
+        vec![LspError::SyntaxError(mq_syntax::Diagnostic {
             message: "Syntax error".to_string(),
-            range: Some(mq_lang::Range {
-                start: mq_lang::Position { line: 0, column: 0 },
-                end: mq_lang::Position { line: 0, column: 10 },
+            range: Some(mq_syntax::Range {
+                start: mq_syntax::Position { line: 0, column: 0 },
+                end: mq_syntax::Position { line: 0, column: 10 },
             }),
             hints: Vec::new(),
         })],
@@ -2233,11 +2233,11 @@ async fn test_diagnostics_type_checking_skipped_when_parse_errors_exist() {
     );
     backend.error_map.insert(
         uri.to_string(),
-        vec![LspError::SyntaxError(mq_lang::Diagnostic {
+        vec![LspError::SyntaxError(mq_syntax::Diagnostic {
             message: "Syntax error".to_string(),
-            range: Some(mq_lang::Range {
-                start: mq_lang::Position { line: 1, column: 1 },
-                end: mq_lang::Position { line: 1, column: 5 },
+            range: Some(mq_syntax::Range {
+                start: mq_syntax::Position { line: 1, column: 1 },
+                end: mq_syntax::Position { line: 1, column: 5 },
             }),
             hints: Vec::new(),
         })],

@@ -45,11 +45,11 @@ struct DocumentSnapshot {
     text: Arc<String>,
     lines: LineIndex,
     /// `None` when the document has never been parsed (only set directly in tests).
-    nodes: Option<Arc<Vec<mq_lang::Shared<mq_syntax::CstNode>>>>,
+    nodes: Option<Arc<Vec<mq_syntax::Shared<mq_syntax::CstNode>>>>,
 }
 
 impl DocumentSnapshot {
-    fn new(text: Arc<String>, nodes: Option<Arc<Vec<mq_lang::Shared<mq_syntax::CstNode>>>>) -> Self {
+    fn new(text: Arc<String>, nodes: Option<Arc<Vec<mq_syntax::Shared<mq_syntax::CstNode>>>>) -> Self {
         Self {
             lines: LineIndex::new(Arc::clone(&text)),
             text,
@@ -659,7 +659,7 @@ impl Backend {
             // Build a set of text ranges from the current source's symbols
             // so that type errors originating from other sources (e.g., pre-loaded modules)
             // are not incorrectly attributed to this file.
-            let source_locations: FxHashSet<mq_lang::Range> = hir_guard
+            let source_locations: FxHashSet<mq_syntax::Range> = hir_guard
                 .symbols_for_source(source_id)
                 .filter_map(|(_, symbol)| symbol.source.text_range)
                 .collect();
@@ -721,7 +721,7 @@ impl Backend {
             let hir_guard = self.hir.read_recover();
 
             // Build a set of text_ranges for this file's symbols for O(1) lookup
-            let range_set: FxHashSet<mq_lang::Range> = hir_guard
+            let range_set: FxHashSet<mq_syntax::Range> = hir_guard
                 .symbols()
                 .filter_map(|(_, symbol)| {
                     if symbol.source.source_id == Some(*source_id) {

@@ -336,7 +336,7 @@ impl Hir {
         module: Option<SymbolId>,
     ) -> Option<SymbolId> {
         let ref_start = self.symbols.get(ref_symbol_id)?.source.text_range?.start;
-        let mut best: Option<(mq_lang::Position, SymbolId)> = None;
+        let mut best: Option<(mq_syntax::Position, SymbolId)> = None;
         let mut pending = vec![scope_id];
 
         while let Some(parent_id) = pending.pop() {

@@ -6,7 +6,7 @@ use tower_lsp_server::ls_types::NumberOrString;
 /// A diagnostic produced by the language server.
 pub enum LspError {
     /// A syntax error.
-    SyntaxError(mq_lang::Diagnostic),
+    SyntaxError(mq_syntax::Diagnostic),
     /// A type checking error.
     TypeError(mq_check::TypeError, Vec<mq_check::Related>),
     /// A type error the checker is not sure about, or advice about the code, shown as a warning.
@@ -130,9 +130,9 @@ mod tests {
             mq_lint::LintMessage::UnusedVariable { name: "x".to_string() },
             mq_lint::Severity::Warn,
         )
-        .with_range(mq_lang::Range {
-            start: mq_lang::Position { line: 1, column: 5 },
-            end: mq_lang::Position { line: 1, column: 6 },
+        .with_range(mq_syntax::Range {
+            start: mq_syntax::Position { line: 1, column: 5 },
+            end: mq_syntax::Position { line: 1, column: 6 },
         });
 
         let lsp_diagnostic = LspError::LintWarning(diagnostic).to_lsp_diagnostic(None);
@@ -164,10 +164,10 @@ mod tests {
         assert_eq!(lsp_diagnostic.range.start.line, 0);
         assert_eq!(lsp_diagnostic.range.start.character, 0);
     }
-    fn range() -> Option<mq_lang::Range> {
-        Some(mq_lang::Range {
-            start: mq_lang::Position { line: 2, column: 3 },
-            end: mq_lang::Position { line: 2, column: 8 },
+    fn range() -> Option<mq_syntax::Range> {
+        Some(mq_syntax::Range {
+            start: mq_syntax::Position { line: 2, column: 3 },
+            end: mq_syntax::Position { line: 2, column: 8 },
         })
     }
 
@@ -248,13 +248,13 @@ mod tests {
         LineIndex::new(std::sync::Arc::new(text.to_string()))
     }
 
-    fn mq_range(start: (u32, u32), end: (u32, u32)) -> mq_lang::Range {
-        mq_lang::Range {
-            start: mq_lang::Position {
+    fn mq_range(start: (u32, u32), end: (u32, u32)) -> mq_syntax::Range {
+        mq_syntax::Range {
+            start: mq_syntax::Position {
                 line: start.0,
                 column: start.1,
             },
-            end: mq_lang::Position {
+            end: mq_syntax::Position {
                 line: end.0,
                 column: end.1,
             },
@@ -280,7 +280,7 @@ mod tests {
             ls_types::Position::new(expected.1.0, expected.1.1),
         );
 
-        let syntax = LspError::SyntaxError(mq_lang::Diagnostic {
+        let syntax = LspError::SyntaxError(mq_syntax::Diagnostic {
             message: "m".to_string(),
             range: Some(range),
             hints: Vec::new(),

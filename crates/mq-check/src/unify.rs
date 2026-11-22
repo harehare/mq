@@ -40,7 +40,7 @@ pub fn unify(
     ctx: &mut InferenceContext,
     t1: &Type,
     t2: &Type,
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
     origin: &ConstraintOrigin,
 ) {
     match (t1, t2) {
@@ -280,7 +280,7 @@ fn unify_records(
     r1: &Type,
     f2: &BTreeMap<String, Type>,
     r2: &Type,
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
     origin: &ConstraintOrigin,
 ) {
     // Unify common fields

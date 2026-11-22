@@ -35,7 +35,7 @@ struct Failure {
     args: Vec<Type>,
     /// The first argument is the piped input, which the call does not write
     implicit_input: bool,
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
     /// Raised in a lambda run on the elements of a collection, which may have none
     in_element_callback: bool,
 }
@@ -98,7 +98,7 @@ pub(crate) fn check_inlined_calls(
         .filter(|(call, args, lambdas)| seen.insert((call.def_id, call.range, args.clone(), lambdas.clone())))
         .collect();
     // A call with settled arguments is checked on its own, wherever it is
-    let own_calls: FxHashSet<mq_lang::Range> = settled.iter().filter_map(|(call, _, _)| call.range).collect();
+    let own_calls: FxHashSet<mq_syntax::Range> = settled.iter().filter_map(|(call, _, _)| call.range).collect();
     let mut failures = Vec::new();
     for (call, args, lambdas) in &settled {
         let mut inliner = Inliner {
@@ -198,7 +198,7 @@ struct Inliner<'a> {
     ctx: &'a InferenceContext,
     children: &'a ChildrenIndex,
     assigned: &'a FxHashSet<SymbolId>,
-    own_calls: &'a FxHashSet<mq_lang::Range>,
+    own_calls: &'a FxHashSet<mq_syntax::Range>,
     /// The functions being followed
     stack: Vec<SymbolId>,
     /// The function passed for each parameter that gets a lambda

@@ -153,7 +153,7 @@ impl Hir {
     }
 
     /// Returns each error message with its source range.
-    pub fn error_ranges(&self) -> Vec<(String, mq_lang::Range)> {
+    pub fn error_ranges(&self) -> Vec<(String, mq_syntax::Range)> {
         self.errors()
             .iter()
             .map(|e| {
@@ -205,7 +205,7 @@ impl Hir {
     }
 
     /// Returns each warning message with its source range.
-    pub fn warning_ranges(&self) -> Vec<(String, mq_lang::Range)> {
+    pub fn warning_ranges(&self) -> Vec<(String, mq_syntax::Range)> {
         self.warnings()
             .iter()
             .map(|w| {
