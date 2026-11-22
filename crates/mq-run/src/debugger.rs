@@ -265,7 +265,7 @@ impl DebuggerHandler {
                             let range = self.engine.token_arena().read().unwrap()[frame.token_id].range;
 
                             match &frame.expr {
-                                mq_lang::AstExpr::Call(ident, _) => {
+                                mq_syntax::ast::node::Expr::Call(ident, _) => {
                                     Some(format!("{} at {}:{}", ident, range.start.line, range.start.column))
                                 }
                                 _ => None,

@@ -1260,8 +1260,8 @@ fn extract_local_import_names(code: &str) -> Vec<String> {
         .iter()
         .filter_map(|node| {
             let path = match &node.expr {
-                mq_lang::AstExpr::Import(mq_lang::AstLiteral::String(p), _) => p,
-                mq_lang::AstExpr::Include(mq_lang::AstLiteral::String(p)) => p,
+                mq_syntax::ast::node::Expr::Import(mq_syntax::ast::node::Literal::String(p), _) => p,
+                mq_syntax::ast::node::Expr::Include(mq_syntax::ast::node::Literal::String(p)) => p,
                 _ => return None,
             };
             if !mq_lang::http_import::is_remote_url(path) && !mq_lang::http_import::is_github_url(path) {
@@ -1284,8 +1284,8 @@ fn extract_http_import_urls(code: &str) -> Vec<String> {
         .iter()
         .filter_map(|node| {
             let url = match &node.expr {
-                mq_lang::AstExpr::Import(mq_lang::AstLiteral::String(url), _) => url,
-                mq_lang::AstExpr::Include(mq_lang::AstLiteral::String(url)) => url,
+                mq_syntax::ast::node::Expr::Import(mq_syntax::ast::node::Literal::String(url), _) => url,
+                mq_syntax::ast::node::Expr::Include(mq_syntax::ast::node::Literal::String(url)) => url,
                 _ => return None,
             };
             if mq_lang::http_import::is_remote_url(url) || mq_lang::http_import::is_github_url(url) {

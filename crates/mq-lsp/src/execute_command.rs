@@ -41,7 +41,7 @@ pub(crate) fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<s
                     message: Cow::Owned(format!("Error: {}", e)),
                     data: None,
                 })?;
-                let ast_json = mq_lang::ast_to_json(&program).map_err(|e| jsonrpc::Error {
+                let ast_json = mq_syntax::ast::ast_to_json(&program).map_err(|e| jsonrpc::Error {
                     code: jsonrpc::ErrorCode::InvalidParams,
                     message: Cow::Owned(format!("Error: {}", e)),
                     data: None,

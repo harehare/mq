@@ -635,8 +635,11 @@ fn test_build_stack_frames_without_context() {
 fn test_build_stack_frames_with_context_and_empty_call_stack() {
     let mut adapter = MqAdapter::new();
     let mut context = mq_lang::DebugContext::default();
-    context.current_node = Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("top_level"), Default::default()),
+    context.current_node = Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(
+            mq_syntax::ast::node::IdentWithToken::new("top_level"),
+            Default::default(),
+        ),
         token_id: 0u32.into(),
     });
     context.range = mq_syntax::Range {
@@ -664,8 +667,8 @@ fn test_build_stack_frames_with_single_call_stack_frame_uses_current_token_for_l
         end: mq_syntax::Position::new(4, 8),
     };
     context.module_id = mq_lang::ModuleId::new(0);
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("callee"), Default::default()),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(mq_syntax::ast::node::IdentWithToken::new("callee"), Default::default()),
         token_id: 0u32.into(),
     }));
     adapter.current_debug_context = Some(context);
@@ -706,16 +709,16 @@ fn test_build_stack_frames_orders_frames_innermost_first() {
         end: mq_syntax::Position::new(30, 6),
     };
     context.module_id = mq_lang::ModuleId::new(0);
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("outer"), Default::default()),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(mq_syntax::ast::node::IdentWithToken::new("outer"), Default::default()),
         token_id: outer_token_id,
     }));
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("middle"), Default::default()),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(mq_syntax::ast::node::IdentWithToken::new("middle"), Default::default()),
         token_id: middle_token_id,
     }));
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("inner"), Default::default()),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(mq_syntax::ast::node::IdentWithToken::new("inner"), Default::default()),
         token_id: 0u32.into(),
     }));
     adapter.current_debug_context = Some(context);
@@ -745,8 +748,8 @@ fn test_build_stack_frames_uses_query_file_name_when_set() {
     let mut adapter = MqAdapter::new();
     adapter.query_file = Some("/tmp/query.mq".to_string());
     let mut context = mq_lang::DebugContext::default();
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("callee"), Default::default()),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(mq_syntax::ast::node::IdentWithToken::new("callee"), Default::default()),
         token_id: 0u32.into(),
     }));
     adapter.current_debug_context = Some(context);
@@ -803,12 +806,12 @@ fn test_build_stack_frames_outer_call_stack_entry_from_an_imported_module_does_n
         end: mq_syntax::Position::new(3, 2),
     };
     context.module_id = mq_lang::ModuleId::new(0);
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("helper"), Default::default()),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(mq_syntax::ast::node::IdentWithToken::new("helper"), Default::default()),
         token_id: outer_token_id,
     }));
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("inner"), Default::default()),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Call(mq_syntax::ast::node::IdentWithToken::new("inner"), Default::default()),
         token_id: 0u32.into(),
     }));
     adapter.current_debug_context = Some(context);
@@ -1246,8 +1249,8 @@ fn test_handle_request_stack_trace_with_context() {
 
     let mut context = mq_lang::DebugContext::default();
 
-    context.call_stack.push(Shared::new(mq_lang::AstNode {
-        expr: mq_lang::AstExpr::Literal(mq_lang::AstLiteral::Number(42.into())),
+    context.call_stack.push(Shared::new(mq_syntax::ast::node::Node {
+        expr: mq_syntax::ast::node::Expr::Literal(mq_syntax::ast::node::Literal::Number(42.into())),
         token_id: 0u32.into(),
     }));
     adapter.current_debug_context = Some(context);
