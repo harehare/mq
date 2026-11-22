@@ -229,7 +229,7 @@ impl Hir {
 
     /// Releases a source opened with `add_nodes`, e.g. when its document closes.
     ///
-    /// A source that other sources still resolve references into is kept as a module source.
+    /// A source that other sources still resolve references into, or import or include, is kept as a module source.
     pub fn remove_source(&mut self, url: &Url) {
         let Some(source_id) = self.source_by_url(url) else {
             return;
@@ -246,7 +246,11 @@ impl Hir {
             };
             in_source(def_id) && !in_source(ref_id)
         });
-        if referenced_elsewhere {
+        let imported_elsewhere = self.symbols.iter().any(|(_, s)| {
+            matches!(s.kind, SymbolKind::Import(id) | SymbolKind::Include(id) if id == source_id)
+                && s.source.source_id != Some(source_id)
+        });
+        if referenced_elsewhere || imported_elsewhere {
             self.module_sources.insert(source_id);
             return;
         }
@@ -492,6 +496,32 @@ mod tests {
         assert_eq!(hir.scopes.len(), baseline_scopes);
         assert!(hir.symbols.is_empty());
         assert!(hir.opened_sources.is_empty());
+    }
+
+    #[test]
+    fn test_remove_source_keeps_source_imported_by_open_document() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let main = Url::parse("file:///main.mq").unwrap();
+        let (nodes, _) = mq_syntax::parse_recovery(r#"import "lib";"#);
+        hir.add_nodes(main.clone(), &nodes);
+        let (module_id, directive) = hir
+            .symbols()
+            .find_map(|(_, s)| match s.kind {
+                SymbolKind::Import(id) => Some((id, s.clone())),
+                _ => None,
+            })
+            .unwrap();
+        let lib = hir.url_by_source(&module_id).unwrap().clone();
+
+        let (nodes, _) = mq_syntax::parse_recovery("def f(): 1;");
+        hir.add_nodes(lib.clone(), &nodes);
+        assert_eq!(hir.source_by_url(&lib), Some(module_id));
+        hir.remove_source(&lib);
+
+        assert_eq!(hir.source_by_url(&lib), Some(module_id));
+        assert!(matches!(directive.kind, SymbolKind::Import(id) if hir.url_by_source(&id).is_some()));
+        hir.remove_source(&main);
     }
 
     #[rstest]
