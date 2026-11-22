@@ -19,7 +19,7 @@ impl LintRule for InefficientSelector {
         // Selector symbols use insert_symbol → use all_symbols
         let recursive_selectors: Vec<_> = ctx
             .all_symbols()
-            .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_lang::Selector::Recursive)))
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_syntax::Selector::Recursive)))
             .collect();
 
         for (rec_id, rec_sym) in recursive_selectors {
@@ -46,7 +46,7 @@ impl LintRule for InefficientSelector {
                 }
                 matches!(
                     &s.kind,
-                    SymbolKind::Selector(sel) if !matches!(sel, mq_lang::Selector::Recursive | mq_lang::Selector::Attr(_))
+                    SymbolKind::Selector(sel) if !matches!(sel, mq_syntax::Selector::Recursive | mq_syntax::Selector::Attr(_))
                 )
             });
 

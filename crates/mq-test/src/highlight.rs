@@ -1,11 +1,12 @@
 //! Syntax highlighting for mq source embedded in the HTML coverage report.
 //!
-//! Classifies tokens by walking the CST returned by [`mq_lang::parse_recovery`]
+//! Classifies tokens by walking the CST returned by [`mq_syntax::parse_recovery`]
 //! and renders each source line as HTML with `<span class="tok-*">` wrappers,
 //! colored via the `tok-*` CSS classes defined in `coverage::HTML_STYLE`
 //! (palette taken from the [Tarn](https://github.com/harehare/tarn-theme) theme).
 
-use mq_lang::{CstNode, CstNodeKind, CstTrivia, Shared, TokenKind};
+use mq_lang::{Shared, TokenKind};
+use mq_syntax::{CstNode, CstNodeKind, CstTrivia};
 use rustc_hash::FxHashMap;
 
 use crate::html::escape as html_escape;
@@ -175,7 +176,7 @@ fn render_line(line: &str, spans: &[Span]) -> String {
 /// Renders every line of `content` as syntax-highlighted, HTML-escaped markup
 /// suitable for a `<td class="code">` cell, in source line order.
 pub(crate) fn highlight_lines(content: &str) -> Vec<String> {
-    let (nodes, _) = mq_lang::parse_recovery(content);
+    let (nodes, _) = mq_syntax::parse_recovery(content);
     let mut spans = Vec::new();
     collect_spans(&nodes, None, &mut spans);
 

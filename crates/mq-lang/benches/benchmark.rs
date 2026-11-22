@@ -623,8 +623,7 @@ fn parse_long_and_chain() -> mq_lang::Program {
 }
 
 /// Lexes and parses the embedded `builtin.mq` into a lossless CST, as the language server does.
-#[cfg(feature = "cst")]
 #[divan::bench]
 fn cst_parse_recovery_builtin_module() -> usize {
-    mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE).0.len()
+    mq_syntax::parse_recovery(mq_lang::BUILTIN_MODULE_FILE).0.len()
 }

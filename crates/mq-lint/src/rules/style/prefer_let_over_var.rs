@@ -2,7 +2,7 @@ use rustc_hash::FxHashSet;
 
 use crate::{Diagnostic, Fix, LintContext, LintMessage, LintRule, RuleId, Severity};
 use mq_hir::{SymbolId, SymbolKind};
-use mq_lang::Range;
+use mq_syntax::Range;
 
 /// Reports `var` bindings that are never reassigned.
 pub struct PreferLetOverVar;

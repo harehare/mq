@@ -217,7 +217,7 @@ async fn test_formatting() {
     let uri = Url::parse("file:///test.mq").unwrap();
     let text = "def main():1;";
 
-    let (_, errors) = mq_lang::parse_recovery(text);
+    let (_, errors) = mq_syntax::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
@@ -517,7 +517,7 @@ async fn test_references() {
     let uri = Url::parse("file:///test.mq").unwrap();
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
-    let (nodes, _) = mq_lang::parse_recovery(code);
+    let (nodes, _) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -914,7 +914,7 @@ async fn test_rename() {
     let uri = Url::parse("file:///test.mq").unwrap();
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
-    let (nodes, _) = mq_lang::parse_recovery(code);
+    let (nodes, _) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -955,7 +955,7 @@ async fn test_prepare_rename_valid_symbol() {
     let uri = Url::parse("file:///test.mq").unwrap();
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
-    let (nodes, _) = mq_lang::parse_recovery(code);
+    let (nodes, _) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -994,7 +994,7 @@ async fn test_prepare_rename_rejects_builtin() {
     let uri = Url::parse("file:///test.mq").unwrap();
 
     let code = "\"hello\" | len";
-    let (nodes, _) = mq_lang::parse_recovery(code);
+    let (nodes, _) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -1105,7 +1105,7 @@ async fn test_document_symbol() {
     let uri = Url::parse("file:///test.mq").unwrap();
 
     let code = "def test_func(): 1;\ndef main(): test_func();";
-    let (nodes, _) = mq_lang::parse_recovery(code);
+    let (nodes, _) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -1155,7 +1155,7 @@ async fn test_workspace_symbol() {
 
     let uri_a = Url::parse("file:///a.mq").unwrap();
     let code_a = "def test_func(): 1;";
-    let (nodes_a, _) = mq_lang::parse_recovery(code_a);
+    let (nodes_a, _) = mq_syntax::parse_recovery(code_a);
     let (source_id_a, _) = backend.hir.write_recover().add_nodes(uri_a.clone(), &nodes_a);
     backend
         .source_map
@@ -1164,7 +1164,7 @@ async fn test_workspace_symbol() {
 
     let uri_b = Url::parse("file:///b.mq").unwrap();
     let code_b = "def other_func(): 2;";
-    let (nodes_b, _) = mq_lang::parse_recovery(code_b);
+    let (nodes_b, _) = mq_syntax::parse_recovery(code_b);
     let (source_id_b, _) = backend.hir.write_recover().add_nodes(uri_b.clone(), &nodes_b);
     backend
         .source_map
@@ -1325,7 +1325,7 @@ async fn test_did_save() {
 
     // Setup some content with errors
     let text = "def main(): invalid_syntax";
-    let (_, errors) = mq_lang::parse_recovery(text);
+    let (_, errors) = mq_syntax::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
@@ -1450,7 +1450,7 @@ async fn test_diagnostics_with_errors() {
 
     // Add content with parsing errors
     let text = "def main() 1;"; // Missing colon
-    let (_, errors) = mq_lang::parse_recovery(text);
+    let (_, errors) = mq_syntax::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
@@ -1488,7 +1488,7 @@ async fn test_pull_diagnostics_returns_syntax_errors() {
 
     // Unlike `publish_diagnostics`, the pull model's response can be asserted on directly.
     let text = "let x = ;"; // Missing expression
-    let (_, errors) = mq_lang::parse_recovery(text);
+    let (_, errors) = mq_syntax::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
@@ -1543,7 +1543,7 @@ async fn test_pull_diagnostics_syntax_error_includes_did_you_mean_hint() {
     let uri = Url::parse("file:///test.mq").unwrap();
 
     let text = ".hedaing"; // Typo of the `.heading` selector
-    let (_, errors) = mq_lang::parse_recovery(text);
+    let (_, errors) = mq_syntax::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
@@ -1640,7 +1640,7 @@ async fn test_unused_function_warnings() {
 
     // Code with unused function
     let code = "def used_function(): 1; def unused_function(): 2; | used_function()";
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -1695,7 +1695,7 @@ async fn test_lint_diagnostics_enabled() {
 
     // `x` is declared but never used.
     let code = "let x = .h1 | .text";
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -1747,7 +1747,7 @@ async fn test_lint_diagnostics_disabled_by_default() {
 
     let uri = Url::parse("file:///test.mq").unwrap();
     let code = "let x = .h1 | .text";
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -1786,7 +1786,7 @@ async fn test_formatting_with_errors() {
     let uri = Url::parse("file:///test.mq").unwrap();
 
     let text = "def main() 1;";
-    let _ = mq_lang::parse_recovery(text);
+    let _ = mq_syntax::parse_recovery(text);
     backend.documents.insert(
         uri.to_string(),
         Arc::new(DocumentSnapshot::new(Arc::new(text.to_string()), None)),
@@ -1837,7 +1837,7 @@ async fn test_unreachable_code_warnings() {
 
     // Code with unreachable code after halt()
     let code = "def test(): halt(1) | let x = 42";
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -2085,7 +2085,7 @@ async fn test_diagnostics_with_type_checking_disabled() {
 
     // Code that would cause a type error (number + string)
     let code = r#"1 + "string""#;
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -2132,7 +2132,7 @@ async fn test_diagnostics_with_type_checking_enabled_no_errors() {
 
     // Valid code with no type errors
     let code = "def add(x, y): x + y;\n| add(1, 2)";
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -2278,7 +2278,7 @@ async fn test_diagnostics_with_strict_array_option() {
 
     // Homogeneous array, valid even with strict_array
     let code = "[1, 2, 3]";
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);
@@ -2328,7 +2328,7 @@ async fn test_diagnostics_with_tuple_option() {
 
     // Heterogeneous array typed as tuple, valid with tuple mode
     let code = r#"[1, "hello", true]"#;
-    let (nodes, errors) = mq_lang::parse_recovery(code);
+    let (nodes, errors) = mq_syntax::parse_recovery(code);
     let (source_id, _) = backend.hir.write_recover().add_nodes(uri.clone(), &nodes);
 
     backend.source_map.write_recover().insert(uri.to_string(), source_id);

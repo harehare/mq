@@ -2,7 +2,8 @@ use crate::lock::RwLockExt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use mq_lang::{CstNode, Shared, TokenKind};
+use mq_lang::{Shared, TokenKind};
+use mq_syntax::CstNode;
 use tower_lsp_server::ls_types::{ParameterInformation, ParameterLabel, Position, SignatureHelp, SignatureInformation};
 use url::Url;
 
@@ -21,7 +22,7 @@ pub(crate) fn response(
     let source_id = hir_guard.source_by_url(&url)?;
     let cursor = mq_lang::Position::new(position.line + 1, position.character + 1);
 
-    let (nodes, _) = mq_lang::parse_recovery(source_text);
+    let (nodes, _) = mq_syntax::parse_recovery(source_text);
     let call = find_enclosing_call(&nodes, cursor)?;
 
     let (_, target) = hir_guard.find_symbol_in_position(source_id, call.range().start)?;
@@ -73,7 +74,7 @@ fn visit(node: &Shared<CstNode>, position: mq_lang::Position, best: &mut Option<
     }
     if matches!(
         node.kind,
-        mq_lang::CstNodeKind::Call { .. } | mq_lang::CstNodeKind::CallDynamic { .. }
+        mq_syntax::CstNodeKind::Call { .. } | mq_syntax::CstNodeKind::CallDynamic { .. }
     ) {
         *best = Some(node.clone());
     }

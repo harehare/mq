@@ -809,7 +809,7 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
         return serde_wasm_bindgen::to_value(&Vec::<Diagnostic>::new()).unwrap();
     }
 
-    let (_, errors) = mq_lang::parse_recovery(code);
+    let (_, errors) = mq_syntax::parse_recovery(code);
     let mut errors = errors
         .error_ranges(code)
         .iter()

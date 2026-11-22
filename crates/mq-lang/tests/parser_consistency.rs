@@ -1,5 +1,4 @@
 //! Differential tests between the AST parser and the error-recovering CST parser.
-#![cfg(feature = "cst")]
 
 use std::path::{Path, PathBuf};
 
@@ -11,7 +10,7 @@ fn ast_accepts(code: &str) -> bool {
 }
 
 fn cst_accepts(code: &str) -> bool {
-    !mq_lang::parse_recovery(code).1.has_errors()
+    !mq_syntax::parse_recovery(code).1.has_errors()
 }
 
 fn crate_dir() -> PathBuf {
@@ -204,7 +203,8 @@ fn small_corpus() -> &'static [String] {
 #[cfg(feature = "ast-json")]
 mod declarations {
     use super::*;
-    use mq_lang::{CstNode, CstNodeKind, TokenKind};
+    use mq_lang::TokenKind;
+    use mq_syntax::{CstNode, CstNodeKind};
     use serde_json::Value;
 
     pub type Decls = Vec<(&'static str, String)>;
@@ -310,7 +310,7 @@ mod declarations {
     }
 
     pub fn cst(code: &str) -> Decls {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
         let mut out = Vec::new();
         nodes.iter().for_each(|n| cst_walk(n, &mut out));
         out

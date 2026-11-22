@@ -64,7 +64,7 @@ pub struct Diagnostic {
     /// How serious the finding is.
     pub severity: Severity,
     /// Source location of the finding, if available.
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
     /// A machine-applicable rewrite, if the rule can suggest one.
     pub fix: Option<Fix>,
 }
@@ -81,7 +81,7 @@ impl Diagnostic {
     }
 
     /// Sets the source range.
-    pub fn with_range(mut self, range: mq_lang::Range) -> Self {
+    pub fn with_range(mut self, range: mq_syntax::Range) -> Self {
         self.range = Some(range);
         self
     }
@@ -267,7 +267,7 @@ impl<'a> LintContext<'a> {
     /// A symbol's own `source.text_range` often covers only its own token (e.g. a `BinaryOp`
     /// symbol's range is just the operator), not the whole subtree, so rules building a [`Fix`]
     /// should use this instead.
-    pub fn full_range(&self, symbol_id: mq_hir::SymbolId) -> Option<mq_lang::Range> {
+    pub fn full_range(&self, symbol_id: mq_hir::SymbolId) -> Option<mq_syntax::Range> {
         let symbol = self.hir.symbol(symbol_id)?;
         let mut range = symbol.source.text_range;
 

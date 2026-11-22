@@ -642,7 +642,7 @@ impl Validator for DebuggerLineHelper {
             return Ok(ValidationResult::Valid(None));
         }
 
-        if mq_lang::parse_recovery(input).1.has_errors() {
+        if mq_syntax::parse_recovery(input).1.has_errors() {
             Ok(ValidationResult::Incomplete)
         } else {
             Ok(ValidationResult::Valid(None))

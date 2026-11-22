@@ -1,4 +1,5 @@
-use mq_lang::{CstNode, CstNodeKind, Shared, TokenKind};
+use mq_lang::{Shared, TokenKind};
+use mq_syntax::{CstNode, CstNodeKind};
 
 use crate::docs::BUILTIN_DOC;
 
@@ -52,7 +53,7 @@ pub struct ModuleDoc {
 /// (used for `builtin.mq`, which sometimes re-declares a native function's name).
 /// Names starting with `_` are always excluded (internal helpers).
 ///
-/// Doc comments are parsed from the CST produced by `mq_lang::parse_recovery`, so no
+/// Doc comments are parsed from the CST produced by `mq_syntax::parse_recovery`, so no
 /// hand-written text scanning is involved. Recognized Markdown-ish conventions:
 ///
 /// ```text
@@ -87,7 +88,7 @@ pub fn extract_module_doc(source: &str) -> Option<ModuleDoc> {
 /// off lookups, but callers needing both (e.g. `mq help`'s catalog build, over every standard
 /// module) should call this directly to parse each module's source only once.
 pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Vec<MqFnDoc>) {
-    let (nodes, _) = mq_lang::parse_recovery(source);
+    let (nodes, _) = mq_syntax::parse_recovery(source);
     // A module header shares node 0's leading trivia with that node's own doc comment, so
     // strip the header's lines off the front to avoid leaking it into the first def's
     // description.

@@ -1,4 +1,5 @@
-use mq_lang::{CstNode, CstNodeKind, CstTrivia, Shared};
+use mq_lang::Shared;
+use mq_syntax::{CstNode, CstNodeKind, CstTrivia};
 use tower_lsp_server::ls_types::{FoldingRange, FoldingRangeKind};
 
 /// Computes folding ranges by parsing the document into a CST and walking it directly,
@@ -6,7 +7,7 @@ use tower_lsp_server::ls_types::{FoldingRange, FoldingRangeKind};
 /// (block delimiters like `end`/`;` aren't lowered into HIR at all), but the CST's
 /// `node_range()` gives an exact span for every block construct.
 pub(crate) fn response(source_text: Option<&str>) -> Option<Vec<FoldingRange>> {
-    let (nodes, _) = mq_lang::parse_recovery(source_text?);
+    let (nodes, _) = mq_syntax::parse_recovery(source_text?);
     response_from_nodes(&nodes)
 }
 

@@ -186,11 +186,11 @@ fn test_merge_annotation_comments_ignores_unmatched_parens_in_plain_comments() {
     );
 }
 
-fn first_def(content: &str) -> mq_lang::Shared<mq_lang::CstNode> {
-    let (nodes, _) = mq_lang::parse_recovery(content);
+fn first_def(content: &str) -> mq_lang::Shared<mq_syntax::CstNode> {
+    let (nodes, _) = mq_syntax::parse_recovery(content);
     nodes
         .into_iter()
-        .find(|n| matches!(n.kind, mq_lang::CstNodeKind::Def { .. }))
+        .find(|n| matches!(n.kind, mq_syntax::CstNodeKind::Def { .. }))
         .expect("no def node found")
 }
 

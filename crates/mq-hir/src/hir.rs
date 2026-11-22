@@ -126,7 +126,7 @@ impl Hir {
 
     /// Adds `code` to an existing source and scope.
     pub fn add_line_of_code(&mut self, source_id: SourceId, scope_id: ScopeId, code: &str) {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
 
         self.source_scopes.insert(source_id, scope_id);
 
@@ -140,7 +140,7 @@ impl Hir {
     /// The HIR is built from the recovered tree even when there are errors. Empty and
     /// comment-only code reports none.
     pub fn add_code(&mut self, url: Option<Url>, code: &str) -> (SourceId, ScopeId, Vec<mq_lang::Diagnostic>) {
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+        let (nodes, errors) = mq_syntax::parse_recovery(code);
         let (source_id, scope_id) = self.add_nodes(url.unwrap_or(Url::parse("file:///").unwrap()), &nodes);
         let errors = if is_expression_free(code) {
             Vec::new()
@@ -180,7 +180,7 @@ impl Hir {
         self.builtin.loaded = true;
 
         if !self.builtin.self_hosted {
-            let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
+            let (nodes, _) = mq_syntax::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
 
             nodes.iter().for_each(|node| {
                 self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
@@ -220,7 +220,7 @@ impl Hir {
     }
 
     /// Adds an already parsed source, replacing the contents of any source with the same URL.
-    pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
+    pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_syntax::CstNode>]) -> (SourceId, ScopeId) {
         let (source_id, scope_id) = self.load_nodes(url, nodes);
         self.opened_sources.insert(source_id);
         self.module_sources.remove(&source_id);
@@ -229,7 +229,7 @@ impl Hir {
 
     /// Loads the source of an `include` or `import`.
     pub(crate) fn add_module_code(&mut self, url: Url, code: &str) -> SourceId {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
         let (source_id, _) = self.load_nodes(url, &nodes);
         if !self.opened_sources.contains(&source_id) {
             self.module_sources.insert(source_id);
@@ -237,7 +237,7 @@ impl Hir {
         source_id
     }
 
-    fn load_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
+    fn load_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_syntax::CstNode>]) -> (SourceId, ScopeId) {
         self.add_builtin();
 
         let source_id = self
@@ -1041,7 +1041,7 @@ end"#;
         hir.builtin.disabled = true;
 
         let code = r#"do "hello" end"#;
-        let _ = mq_lang::parse_recovery(code);
+        let _ = mq_syntax::parse_recovery(code);
         let _ = hir.add_code(None, code);
         let block_symbol = hir
             .symbols
@@ -1686,7 +1686,7 @@ end"#;
     #[case::builtin_calls("map([1, 2], fn(v): add(v, 1);) | to_string()")]
     fn test_re_adding_source_matches_fresh_hir(#[case] code: &str) {
         let url = Url::parse("file:///test.mq").unwrap();
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
 
         let mut fresh = Hir::default();
         fresh.add_nodes(url.clone(), &nodes);
@@ -1710,8 +1710,8 @@ end"#;
         let url = Url::parse("file:///test.mq").unwrap();
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        hir.add_nodes(url.clone(), &mq_lang::parse_recovery("def a(): 1; | def b(): 2;").0);
-        let (source_id, _) = hir.add_nodes(url, &mq_lang::parse_recovery("def f(x):\n  fn(y): x + y;;").0);
+        hir.add_nodes(url.clone(), &mq_syntax::parse_recovery("def a(): 1; | def b(): 2;").0);
+        let (source_id, _) = hir.add_nodes(url, &mq_syntax::parse_recovery("def f(x):\n  fn(y): x + y;;").0);
 
         let (_, scope) = hir
             .find_scope_in_position(source_id, mq_lang::Position { line: 2, column: 12 })

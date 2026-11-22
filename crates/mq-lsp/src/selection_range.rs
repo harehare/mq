@@ -1,4 +1,5 @@
-use mq_lang::{CstNode, Shared};
+use mq_lang::Shared;
+use mq_syntax::CstNode;
 use tower_lsp_server::ls_types::{Position, Range, SelectionRange};
 
 use crate::position::LineIndex;
@@ -56,7 +57,7 @@ mod tests {
     use super::*;
 
     fn chain(code: &str, position: Position) -> Vec<Range> {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
         let lines = LineIndex::new(Arc::new(code.to_string()));
         let mut selection = Some(response(&nodes, &lines, &[position]).remove(0));
         let mut out = Vec::new();

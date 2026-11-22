@@ -78,7 +78,6 @@ debug-trace = ["debugger"]
 vm-profile = []
 # Use the browser clock for VM deadlines when targeting WebAssembly.
 wasm = ["dep:web-time"]
-cst = ["mq-syntax/cst"]
 # Lets `Engine::set_builtin_source` replace the bundled `builtin.mq`, for mutation testing.
 custom-builtin = []
 html-parse = ["dep:ego-tree", "dep:scraper"]
@@ -97,6 +96,7 @@ mqc = []
 tiktoken = ["dep:tiktoken-rs"]
 
 [dev-dependencies]
+mq-syntax = {workspace = true, features = ["cst"]}
 divan = {workspace = true}
 mimalloc = {workspace = true, features = ["v3"]}
 proptest = {workspace = true}

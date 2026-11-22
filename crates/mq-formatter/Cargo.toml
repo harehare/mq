@@ -22,7 +22,7 @@ workspace = true
 clap = {workspace = true, features = ["derive"], optional = true}
 glob = {version = "0.3.3", optional = true}
 miette = {workspace = true, optional = true}
-mq-lang = {workspace = true, features = ["cst"]}
+mq-syntax = {workspace = true, features = ["cst"]}
 
 [dev-dependencies]
 assert_cmd = {workspace = true}

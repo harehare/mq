@@ -41,6 +41,7 @@ mimalloc = {workspace = true, features = ["v3"], optional = true}
 mq-dap = {workspace = true, optional = true}
 mq-help = {workspace = true, features = ["catalog"]}
 mq-lang = {workspace = true, features = ["file-io", "mqc", "process-io"]}
+mq-syntax = {workspace = true, features = ["cst"]}
 mq-markdown = {workspace = true, features = ["json", "html-to-markdown", "color"]}
 mq-repl = {workspace = true}
 notify = {workspace = true, optional = true}

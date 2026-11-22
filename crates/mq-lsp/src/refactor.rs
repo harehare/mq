@@ -4,11 +4,12 @@
 //! Unlike the quickfixes in [`crate::code_action`], these actions are driven by the
 //! user's cursor position/selection (`params.range`) rather than by diagnostics, and
 //! operate directly on the CST (re-parsed from the live buffer text) since neither the
-//! HIR symbol ranges nor `mq_lang::CstNode::node_range` are precise enough on their own
+//! HIR symbol ranges nor `mq_syntax::CstNode::node_range` are precise enough on their own
 //! (see `deep_end` below).
 
 use mq_hir::{Hir, SourceId, SymbolKind};
-use mq_lang::{CstNode, CstNodeKind, Range as MqRange, Shared};
+use mq_lang::{Range as MqRange, Shared};
+use mq_syntax::{CstNode, CstNodeKind};
 use rustc_hash::FxHashMap;
 use tower_lsp_server::ls_types::{
     self, CodeAction, CodeActionKind, CodeActionOrCommand, Position, TextEdit, WorkspaceEdit,
@@ -305,7 +306,7 @@ pub(crate) fn extract_actions(
         end: target_end,
     };
 
-    let (nodes, reporter) = mq_lang::parse_recovery(source_text);
+    let (nodes, reporter) = mq_syntax::parse_recovery(source_text);
     if reporter.has_errors() {
         return Vec::new();
     }
@@ -399,7 +400,7 @@ pub(crate) fn inline_action(
     }
     let def_range = def_symbol.source.text_range?;
 
-    let (nodes, reporter) = mq_lang::parse_recovery(source_text);
+    let (nodes, reporter) = mq_syntax::parse_recovery(source_text);
     if reporter.has_errors() {
         return None;
     }

@@ -20,7 +20,8 @@ glob = {workspace = true}
 indicatif = {workspace = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mimalloc = {workspace = true, features = ["v3"]}
-mq-lang = {workspace = true, features = ["cst", "file-io", "mock-io"]}
+mq-lang = {workspace = true, features = ["file-io", "mock-io"]}
+mq-syntax = {workspace = true, features = ["cst"]}
 rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
 serde_json = {workspace = true}

@@ -45,11 +45,11 @@ struct DocumentSnapshot {
     text: Arc<String>,
     lines: LineIndex,
     /// `None` when the document has never been parsed (only set directly in tests).
-    nodes: Option<Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>,
+    nodes: Option<Arc<Vec<mq_lang::Shared<mq_syntax::CstNode>>>>,
 }
 
 impl DocumentSnapshot {
-    fn new(text: Arc<String>, nodes: Option<Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>) -> Self {
+    fn new(text: Arc<String>, nodes: Option<Arc<Vec<mq_lang::Shared<mq_syntax::CstNode>>>>) -> Self {
         Self {
             lines: LineIndex::new(Arc::clone(&text)),
             text,
@@ -637,9 +637,9 @@ impl Backend {
 
     async fn on_change(&self, uri: Url, text: String) {
         let (nodes, errors) = if text.is_empty() {
-            (Vec::new(), mq_lang::CstErrorReporter::default())
+            (Vec::new(), mq_syntax::CstErrorReporter::default())
         } else {
-            mq_lang::parse_recovery(&text)
+            mq_syntax::parse_recovery(&text)
         };
         let (source_id, _) = self.hir.write_recover().add_nodes(uri.clone(), &nodes);
         let nodes = Arc::new(nodes);

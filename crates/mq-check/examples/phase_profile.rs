@@ -37,7 +37,7 @@ fn main() {
 
         for _ in 0..runs {
             let t = Instant::now();
-            let _ = mq_lang::parse_recovery(&code);
+            let _ = mq_syntax::parse_recovery(&code);
             parse.push(t.elapsed());
 
             let mut hir = Hir::default();

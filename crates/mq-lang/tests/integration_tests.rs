@@ -4415,9 +4415,8 @@ mod ast_json {
     }
 }
 
-#[cfg(feature = "cst")]
 mod implicit_pipeline_cst {
-    use mq_lang::{CstNodeKind, parse_recovery};
+    use mq_syntax::{CstNodeKind, parse_recovery};
     use rstest::rstest;
 
     fn has_no_errors(code: &str) -> bool {

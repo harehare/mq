@@ -19,8 +19,8 @@ impl LintRule for MissingDepthGuard {
         let has_depth_attr = ctx.all_symbols().any(|(_, s)| {
             matches!(
                 s.kind,
-                SymbolKind::Selector(mq_lang::Selector::Attr(mq_lang::AttrKind::Depth))
-                    | SymbolKind::Selector(mq_lang::Selector::Attr(mq_lang::AttrKind::Level))
+                SymbolKind::Selector(mq_syntax::Selector::Attr(mq_syntax::AttrKind::Depth))
+                    | SymbolKind::Selector(mq_syntax::Selector::Attr(mq_syntax::AttrKind::Level))
             )
         });
 
@@ -30,7 +30,7 @@ impl LintRule for MissingDepthGuard {
 
         // Flag every `..` selector that appears without any depth guard in the source.
         ctx.all_symbols()
-            .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_lang::Selector::Recursive)))
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_syntax::Selector::Recursive)))
             .map(|(_, sym)| {
                 let mut d = Diagnostic::new(LintMessage::MissingDepthGuard, self.severity());
                 if let Some(range) = sym.source.text_range {

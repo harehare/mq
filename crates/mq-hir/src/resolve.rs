@@ -489,7 +489,7 @@ mod tests {
     }
 
     fn add(hir: &mut Hir, url: &str, code: &str) {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
         hir.add_nodes(Url::parse(url).unwrap(), &nodes);
     }
 
