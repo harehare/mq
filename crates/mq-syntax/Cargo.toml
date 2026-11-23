@@ -1,0 +1,42 @@
+[package]
+authors.workspace = true
+categories = ["parser-implementations", "text-processing"]
+description = "Lexer, AST parser and CST parser for the mq query language"
+edition.workspace = true
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query", "parser"]
+license.workspace = true
+name = "mq-syntax"
+readme = "README.md"
+repository.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+itertools = {workspace = true}
+memchr = {workspace = true}
+miette = {workspace = true, optional = true}
+serde = {workspace = true, features = ["derive", "rc"], optional = true}
+serde_json = {workspace = true, optional = true}
+smallvec = {workspace = true}
+smol_str = {workspace = true}
+string-interner = {workspace = true}
+strsim = {workspace = true}
+thiserror = {workspace = true}
+thin-vec = {workspace = true}
+
+[features]
+# Serialization of the AST and tokens to and from JSON.
+ast-json = ["dep:serde", "dep:serde_json", "dep:miette", "smallvec/serde", "smol_str/serde", "thin-vec/serde"]
+# The lossless, error-recovering concrete syntax tree parser.
+cst = []
+# `Display` for expressions, rendering them as source text.
+expr-display = []
+# `Arc`/`RwLock` instead of `Rc`/`RefCell` for `Shared`/`SharedCell`.
+sync = []
+
+[dev-dependencies]
+proptest = {workspace = true}
+rstest = {workspace = true}

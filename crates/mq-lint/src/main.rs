@@ -176,7 +176,7 @@ fn run() -> io::Result<bool> {
 }
 
 /// Converts parser errors into error-severity diagnostics so every output format reports them.
-fn syntax_diagnostics(errors: Vec<mq_lang::Diagnostic>) -> Vec<Diagnostic> {
+fn syntax_diagnostics(errors: Vec<mq_syntax::Diagnostic>) -> Vec<Diagnostic> {
     errors
         .into_iter()
         .map(|error| {
@@ -191,7 +191,7 @@ fn syntax_diagnostics(errors: Vec<mq_lang::Diagnostic>) -> Vec<Diagnostic> {
 
 /// Applies every diagnostic with a fix to `code`, returning the rewritten source and how many
 /// fixes were applied, or the syntax errors if `code` does not parse.
-fn fix_source(code: &str, linter: &Linter, config: &LintConfig) -> Result<(String, usize), Vec<mq_lang::Diagnostic>> {
+fn fix_source(code: &str, linter: &Linter, config: &LintConfig) -> Result<(String, usize), Vec<mq_syntax::Diagnostic>> {
     let mut hir = Hir::default();
     let (source_id, _, errors) = hir.add_code(None, code);
     if !errors.is_empty() {
@@ -199,7 +199,7 @@ fn fix_source(code: &str, linter: &Linter, config: &LintConfig) -> Result<(Strin
     }
     let ctx = LintContext::new(&hir, source_id, config).with_source_text(code);
 
-    let edits: Vec<(mq_lang::Range, String)> = linter
+    let edits: Vec<(mq_syntax::Range, String)> = linter
         .run(&ctx)
         .into_iter()
         .filter_map(|d| d.fix.as_ref().and_then(|fix| fix.resolve(code)))
@@ -225,7 +225,7 @@ pub(crate) fn collect_diagnostics(
     linter: &Linter,
     config: &LintConfig,
     min_severity: Severity,
-) -> Result<Vec<Diagnostic>, Vec<mq_lang::Diagnostic>> {
+) -> Result<Vec<Diagnostic>, Vec<mq_syntax::Diagnostic>> {
     let mut hir = Hir::default();
     let (source_id, _, errors) = hir.add_code(None, code);
     if !errors.is_empty() {

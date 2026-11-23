@@ -61,7 +61,7 @@ mod tests {
             severity: Severity::Error,
             code: "typechecker::type_mismatch",
             message: "Undefined symbol: foo".to_string(),
-            range: Some(mq_lang::Range::default()),
+            range: Some(mq_syntax::Range::default()),
         }];
         let results = vec![("test.mq".to_string(), diagnostics)];
 

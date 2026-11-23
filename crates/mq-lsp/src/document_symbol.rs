@@ -11,9 +11,9 @@ struct Node<'a> {
     symbol: &'a mq_hir::Symbol,
     kind: SymbolKind,
     /// Name range.
-    selection: mq_lang::Range,
+    selection: mq_syntax::Range,
     /// Name range extended over everything the symbol owns.
-    full: mq_lang::Range,
+    full: mq_syntax::Range,
     parent: Option<mq_hir::SymbolId>,
 }
 
@@ -41,11 +41,11 @@ fn kind_of(hir: &mq_hir::Hir, symbol: &mq_hir::Symbol) -> Option<SymbolKind> {
 }
 
 /// Tokenless CST nodes lower to the zero-width default range, which is not a real extent.
-fn is_placeholder(range: mq_lang::Range) -> bool {
-    range == mq_lang::Range::default()
+fn is_placeholder(range: mq_syntax::Range) -> bool {
+    range == mq_syntax::Range::default()
 }
 
-fn extend(range: &mut mq_lang::Range, other: mq_lang::Range) {
+fn extend(range: &mut mq_syntax::Range, other: mq_syntax::Range) {
     range.start = range.start.min(other.start);
     range.end = range.end.max(other.end);
 }

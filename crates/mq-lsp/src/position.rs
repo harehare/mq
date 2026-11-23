@@ -18,7 +18,7 @@ struct Line {
 }
 
 /// Converts to UTF-16 columns via `lines`, or to plain scalar columns without document text.
-pub(crate) fn lsp_range(lines: Option<&LineIndex>, range: mq_lang::Range) -> Range {
+pub(crate) fn lsp_range(lines: Option<&LineIndex>, range: mq_syntax::Range) -> Range {
     match lines {
         Some(lines) => lines.to_lsp_range(range),
         None => Range::new(
@@ -65,7 +65,7 @@ impl LineIndex {
     }
 
     /// Converts an mq position. Columns past the end of the line clamp to its end.
-    pub(crate) fn to_lsp(&self, position: mq_lang::Position) -> Position {
+    pub(crate) fn to_lsp(&self, position: mq_syntax::Position) -> Position {
         let line = position.line.saturating_sub(1);
         let column = position.column.saturating_sub(1) as usize;
         let character = match self.line_text(line) {
@@ -76,12 +76,12 @@ impl LineIndex {
         Position::new(line, character as u32)
     }
 
-    pub(crate) fn to_lsp_range(&self, range: mq_lang::Range) -> Range {
+    pub(crate) fn to_lsp_range(&self, range: mq_syntax::Range) -> Range {
         Range::new(self.to_lsp(range.start), self.to_lsp(range.end))
     }
 
     /// Converts an LSP position. A position inside a surrogate pair rounds up to the next character.
-    pub(crate) fn to_mq(&self, position: Position) -> mq_lang::Position {
+    pub(crate) fn to_mq(&self, position: Position) -> mq_syntax::Position {
         let column = match self.line_text(position.line) {
             None => position.character as usize,
             Some((_, true, lead)) => (position.character as usize).saturating_sub(lead),
@@ -97,7 +97,7 @@ impl LineIndex {
                     .count()
             }
         };
-        mq_lang::Position::new(position.line + 1, column as u32 + 1)
+        mq_syntax::Position::new(position.line + 1, column as u32 + 1)
     }
 }
 
@@ -109,8 +109,8 @@ mod tests {
         LineIndex::new(Arc::new(text.to_string()))
     }
 
-    fn mq(line: u32, column: u32) -> mq_lang::Position {
-        mq_lang::Position::new(line, column)
+    fn mq(line: u32, column: u32) -> mq_syntax::Position {
+        mq_syntax::Position::new(line, column)
     }
 
     #[rstest::rstest]
@@ -124,7 +124,7 @@ mod tests {
     #[case::bom("\u{FEFF}def f()", mq(1, 5), Position::new(0, 5))]
     #[case::bom_non_ascii("\u{FEFF}😀|x", mq(1, 3), Position::new(0, 4))]
     #[case::bom_second_line("\u{FEFF}a\nb", mq(2, 2), Position::new(1, 1))]
-    fn test_to_lsp(#[case] text: &str, #[case] position: mq_lang::Position, #[case] expected: Position) {
+    fn test_to_lsp(#[case] text: &str, #[case] position: mq_syntax::Position, #[case] expected: Position) {
         assert_eq!(index(text).to_lsp(position), expected);
     }
 
@@ -138,7 +138,7 @@ mod tests {
     #[case::bom_before_text("\u{FEFF}def f()", Position::new(0, 0), mq(1, 1))]
     #[case::bom_non_ascii("\u{FEFF}😀|x", Position::new(0, 4), mq(1, 3))]
     #[case::bom_second_line("\u{FEFF}a\nb", Position::new(1, 1), mq(2, 2))]
-    fn test_to_mq(#[case] text: &str, #[case] position: Position, #[case] expected: mq_lang::Position) {
+    fn test_to_mq(#[case] text: &str, #[case] position: Position, #[case] expected: mq_syntax::Position) {
         assert_eq!(index(text).to_mq(position), expected);
     }
 

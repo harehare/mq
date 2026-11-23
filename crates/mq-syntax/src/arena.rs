@@ -72,7 +72,7 @@ impl<T> ArenaId<T> {
     }
 
     /// The raw `u32` index.
-    pub(crate) const fn raw(self) -> u32 {
+    pub const fn raw(self) -> u32 {
         self.id.get() - 1
     }
 }
@@ -119,7 +119,7 @@ impl<T: Clone + PartialEq> Arena<T> {
 
     /// Creates an arena whose leading elements are `base`, shared without copying. Ids handed
     /// out by an arena holding the same leading elements keep resolving to them.
-    pub(crate) fn with_base(base: Shared<Vec<T>>) -> Self {
+    pub fn with_base(base: Shared<Vec<T>>) -> Self {
         Arena {
             base: Some(base),
             items: Vec::new(),
@@ -128,7 +128,7 @@ impl<T: Clone + PartialEq> Arena<T> {
     }
 
     /// Creates an arena layered on `parent`.
-    pub(crate) fn layered(parent: Shared<SharedCell<Arena<T>>>) -> Self {
+    pub fn layered(parent: Shared<SharedCell<Arena<T>>>) -> Self {
         Arena {
             base: None,
             items: Vec::new(),
@@ -145,7 +145,7 @@ impl<T: Clone + PartialEq> Arena<T> {
 
     /// Applies `f` to the element at `id`, looking through to the parent arena, or to `None` if
     /// no arena in the chain holds it.
-    pub(crate) fn with<R>(&self, id: ArenaId<T>, f: impl FnOnce(Option<&T>) -> R) -> R {
+    pub fn with<R>(&self, id: ArenaId<T>, f: impl FnOnce(Option<&T>) -> R) -> R {
         if let Some(item) = self.get(id) {
             return f(Some(item));
         }
@@ -160,7 +160,7 @@ impl<T: Clone + PartialEq> Arena<T> {
     }
 
     /// The parent of a layered arena.
-    pub(crate) fn parent(&self) -> Option<&Shared<SharedCell<Arena<T>>>> {
+    pub fn parent(&self) -> Option<&Shared<SharedCell<Arena<T>>>> {
         self.parent.as_ref()
     }
 
@@ -180,7 +180,7 @@ impl<T: Clone + PartialEq> Arena<T> {
     }
 
     /// A copy of every element, in id order.
-    pub(crate) fn to_vec(&self) -> Vec<T> {
+    pub fn to_vec(&self) -> Vec<T> {
         self.iter().cloned().collect()
     }
 }

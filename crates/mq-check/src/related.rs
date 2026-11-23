@@ -9,7 +9,7 @@ use crate::symbol_range;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Related {
     /// Where it is.
-    pub range: mq_lang::Range,
+    pub range: mq_syntax::Range,
     /// What to say about it, e.g. `` `x` is `string` ``.
     pub message: String,
 }

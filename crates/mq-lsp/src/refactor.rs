@@ -4,11 +4,12 @@
 //! Unlike the quickfixes in [`crate::code_action`], these actions are driven by the
 //! user's cursor position/selection (`params.range`) rather than by diagnostics, and
 //! operate directly on the CST (re-parsed from the live buffer text) since neither the
-//! HIR symbol ranges nor `mq_lang::CstNode::node_range` are precise enough on their own
+//! HIR symbol ranges nor `mq_syntax::CstNode::node_range` are precise enough on their own
 //! (see `deep_end` below).
 
 use mq_hir::{Hir, SourceId, SymbolKind};
-use mq_lang::{CstNode, CstNodeKind, Range as MqRange, Shared};
+use mq_syntax::{CstNode, CstNodeKind};
+use mq_syntax::{Range as MqRange, Shared};
 use rustc_hash::FxHashMap;
 use tower_lsp_server::ls_types::{
     self, CodeAction, CodeActionKind, CodeActionOrCommand, Position, TextEdit, WorkspaceEdit,
@@ -21,13 +22,13 @@ fn to_range(text_range: MqRange) -> ls_types::Range {
     )
 }
 
-fn to_mq_position(position: Position) -> mq_lang::Position {
-    mq_lang::Position::new(position.line + 1, position.character + 1)
+fn to_mq_position(position: Position) -> mq_syntax::Position {
+    mq_syntax::Position::new(position.line + 1, position.character + 1)
 }
 
-/// Converts a 1-indexed `mq_lang::Position` (line/column counted in chars) to a byte
+/// Converts a 1-indexed `mq_syntax::Position` (line/column counted in chars) to a byte
 /// offset into `text`, since CST ranges are char-based but Rust string slicing is byte-based.
-fn byte_offset(text: &str, pos: mq_lang::Position) -> Option<usize> {
+fn byte_offset(text: &str, pos: mq_syntax::Position) -> Option<usize> {
     let mut line = 1u32;
     let mut column = 1u32;
 
@@ -63,7 +64,7 @@ fn slice(text: &str, range: MqRange) -> Option<&str> {
 /// token span), not that child's full subtree, so it under-reports whenever the last
 /// child is itself a compound node (e.g. a `let x = foo(1, 2)` where the last child of
 /// `Let` is the `Call` node `foo(1, 2)`: `Call.range()` is just `foo`, not `foo(1, 2)`).
-fn deep_end(node: &CstNode) -> mq_lang::Position {
+fn deep_end(node: &CstNode) -> mq_syntax::Position {
     match node.children().next_back() {
         Some(last) => deep_end(last),
         None => node.range().end,
@@ -73,7 +74,7 @@ fn deep_end(node: &CstNode) -> mq_lang::Position {
 /// The true start of `node`'s span. `node.range().start` is wrong for infix nodes like
 /// `BinaryOp`/`Assign`, whose own token is the *operator* sitting between its children
 /// (e.g. for `1 + 2`, the node's own token is `+`, not `1`) rather than the leading token.
-fn deep_start(node: &CstNode) -> mq_lang::Position {
+fn deep_start(node: &CstNode) -> mq_syntax::Position {
     let own = node.range().start;
     match node.children().next() {
         Some(first) => own.min(deep_start(first)),
@@ -305,7 +306,7 @@ pub(crate) fn extract_actions(
         end: target_end,
     };
 
-    let (nodes, reporter) = mq_lang::parse_recovery(source_text);
+    let (nodes, reporter) = mq_syntax::parse_recovery(source_text);
     if reporter.has_errors() {
         return Vec::new();
     }
@@ -343,10 +344,10 @@ pub(crate) fn extract_actions(
 }
 
 /// The reverse of [`byte_offset`]: converts a byte offset back to a 1-indexed
-/// `mq_lang::Position`, used to snap a trimmed text selection back onto CST-comparable coordinates.
-fn byte_to_mq_position(text: &str, target_byte: usize) -> Option<mq_lang::Position> {
+/// `mq_syntax::Position`, used to snap a trimmed text selection back onto CST-comparable coordinates.
+fn byte_to_mq_position(text: &str, target_byte: usize) -> Option<mq_syntax::Position> {
     if target_byte == 0 {
-        return Some(mq_lang::Position::new(1, 1));
+        return Some(mq_syntax::Position::new(1, 1));
     }
 
     let mut line = 1u32;
@@ -354,7 +355,7 @@ fn byte_to_mq_position(text: &str, target_byte: usize) -> Option<mq_lang::Positi
 
     for (byte_idx, ch) in text.char_indices() {
         if byte_idx == target_byte {
-            return Some(mq_lang::Position::new(line, column));
+            return Some(mq_syntax::Position::new(line, column));
         }
         if ch == '\n' {
             line += 1;
@@ -364,7 +365,7 @@ fn byte_to_mq_position(text: &str, target_byte: usize) -> Option<mq_lang::Positi
         }
     }
 
-    (target_byte == text.len()).then_some(mq_lang::Position::new(line, column))
+    (target_byte == text.len()).then_some(mq_syntax::Position::new(line, column))
 }
 
 /// Builds an "Inline variable"/"Inline function" action for the symbol at `position`, if any.
@@ -399,7 +400,7 @@ pub(crate) fn inline_action(
     }
     let def_range = def_symbol.source.text_range?;
 
-    let (nodes, reporter) = mq_lang::parse_recovery(source_text);
+    let (nodes, reporter) = mq_syntax::parse_recovery(source_text);
     if reporter.has_errors() {
         return None;
     }

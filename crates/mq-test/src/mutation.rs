@@ -1,6 +1,7 @@
 //! Generates mutants of a module's source by replacing single tokens.
 
-use mq_lang::{CstNode, Shared, Token, TokenKind};
+use mq_syntax::CstNode;
+use mq_syntax::{Shared, Token, TokenKind};
 use rustc_hash::FxHashSet;
 
 /// One single-token replacement of a module's source.
@@ -99,7 +100,7 @@ fn offset_of(source: &str, line: u32, column: u32) -> Option<usize> {
 /// Generates every single-token mutant of `source` that still parses.
 /// Lines for which `is_candidate` returns false are skipped.
 pub(crate) fn generate(source: &str, is_candidate: impl Fn(usize) -> bool) -> Vec<Mutant> {
-    let (nodes, errors) = mq_lang::parse_recovery(source);
+    let (nodes, errors) = mq_syntax::parse_recovery(source);
     if errors.has_errors() {
         return Vec::new();
     }
@@ -146,7 +147,7 @@ pub(crate) fn generate(source: &str, is_candidate: impl Fn(usize) -> bool) -> Ve
             from,
             to,
         };
-        if mq_lang::parse_recovery(&mutant.apply(source)).1.has_errors() {
+        if mq_syntax::parse_recovery(&mutant.apply(source)).1.has_errors() {
             continue;
         }
         mutants.push(mutant);

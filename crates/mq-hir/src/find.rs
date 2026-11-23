@@ -15,7 +15,7 @@ impl Hir {
     pub fn find_symbol_in_position(
         &self,
         source_id: SourceId,
-        position: mq_lang::Position,
+        position: mq_syntax::Position,
     ) -> Option<(SymbolId, Symbol)> {
         let (symbol_id, symbol) = self.symbol_at(source_id, position)?;
         match symbol.kind {
@@ -31,11 +31,15 @@ impl Hir {
 
     /// Finds the range of the symbol written at `position`, even for a reference that
     /// resolves to a declaration in another source.
-    pub fn find_range_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<mq_lang::Range> {
+    pub fn find_range_in_position(
+        &self,
+        source_id: SourceId,
+        position: mq_syntax::Position,
+    ) -> Option<mq_syntax::Range> {
         self.symbol_at(source_id, position)?.1.source.text_range
     }
 
-    fn symbol_at(&self, source_id: SourceId, position: mq_lang::Position) -> Option<(SymbolId, &Symbol)> {
+    fn symbol_at(&self, source_id: SourceId, position: mq_syntax::Position) -> Option<(SymbolId, &Symbol)> {
         self.sources.get(source_id)?;
         self.symbols.iter().find(|(_, symbol)| {
             symbol.source.source_id == Some(source_id)
@@ -48,7 +52,11 @@ impl Hir {
     }
 
     /// Finds the innermost scope containing `position` in the given source.
-    pub fn find_scope_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<(ScopeId, Scope)> {
+    pub fn find_scope_in_position(
+        &self,
+        source_id: SourceId,
+        position: mq_syntax::Position,
+    ) -> Option<(ScopeId, Scope)> {
         self.sources.get(source_id)?;
 
         // Innermost scope: latest start, then earliest end.
@@ -75,7 +83,7 @@ impl Hir {
         &self,
         scope_id: ScopeId,
         source_id: SourceId,
-        position: mq_lang::Position,
+        position: mq_syntax::Position,
     ) -> Vec<Arc<Symbol>> {
         let module = self.find_inline_module_in_position(source_id, position);
         self.symbol_ids_in_scope(scope_id)
@@ -86,7 +94,11 @@ impl Hir {
     }
 
     /// The innermost inline `module` whose body contains `position`.
-    pub fn find_inline_module_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<SymbolId> {
+    pub fn find_inline_module_in_position(
+        &self,
+        source_id: SourceId,
+        position: mq_syntax::Position,
+    ) -> Option<SymbolId> {
         let in_source = |symbol: &Symbol| symbol.source.source_id == Some(source_id);
         self.symbols
             .iter()
@@ -222,7 +234,7 @@ mod tests {
     fn test_find_symbol_in_position() {
         let mut hir = Hir::default();
         let (source_id, _, _) = hir.add_code(None, "let x = 5");
-        let pos = mq_lang::Position::new(1, 4);
+        let pos = mq_syntax::Position::new(1, 4);
 
         assert!(hir.find_symbol_in_position(source_id, pos).is_some());
     }
@@ -232,7 +244,7 @@ mod tests {
         // A synthetic `..` bridge node must not shadow `.code`'s range.
         let mut hir = Hir::default();
         let (source_id, _, _) = hir.add_code(None, ".blockquote .code");
-        let pos = mq_lang::Position::new(1, 14);
+        let pos = mq_syntax::Position::new(1, 14);
 
         let (_, symbol) = hir
             .find_symbol_in_position(source_id, pos)
@@ -244,7 +256,7 @@ mod tests {
     fn test_find_scope_in_position() {
         let mut hir = Hir::default();
         let (source_id, _, _) = hir.add_code(None, "def example(): 5;");
-        let pos = mq_lang::Position::new(1, 18);
+        let pos = mq_syntax::Position::new(1, 18);
 
         assert!(hir.find_scope_in_position(source_id, pos).map(|(id, _)| id).is_some());
     }

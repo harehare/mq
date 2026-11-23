@@ -8299,7 +8299,7 @@ fn kept_and_lexed_token_counts(code: &str, nodes: &[Shared<Node>]) -> (usize, us
         ignore_errors: true,
         include_spaces: true,
     })
-    .tokenize(code, crate::Module::TOP_LEVEL_MODULE_ID)
+    .tokenize(code, crate::TOP_LEVEL_MODULE_ID)
     .unwrap()
     .iter()
     .filter(|t| !matches!(t.kind, TokenKind::Eof | TokenKind::NewLine))

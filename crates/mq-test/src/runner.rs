@@ -1,6 +1,7 @@
 use glob::glob;
 use miette::{IntoDiagnostic, NamedSource};
-use mq_lang::{CstNodeKind, CstTrivia, RuntimeValue};
+use mq_lang::RuntimeValue;
+use mq_syntax::{CstNodeKind, CstTrivia};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs;
@@ -293,7 +294,7 @@ impl TestRunner {
         resolver: TestModuleResolver,
         builtin_source: Option<&str>,
     ) -> mq_lang::Engine<TestModuleResolver, mq_lang::MemIo> {
-        let mut engine = mq_lang::Engine::with_io(resolver, mq_lang::Shared::new(mq_lang::MemIo::default()));
+        let mut engine = mq_lang::Engine::with_io(resolver, mq_syntax::Shared::new(mq_lang::MemIo::default()));
 
         if let Some(source) = builtin_source {
             engine.set_builtin_source(source);
@@ -756,11 +757,11 @@ impl TestRunner {
     }
 
     fn discover_tests(content: &str) -> Vec<DiscoveredTest> {
-        let (nodes, _) = mq_lang::parse_recovery(content);
+        let (nodes, _) = mq_syntax::parse_recovery(content);
         Self::discover_tests_in(&nodes)
     }
 
-    fn discover_tests_in(nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> Vec<DiscoveredTest> {
+    fn discover_tests_in(nodes: &[mq_syntax::Shared<mq_syntax::CstNode>]) -> Vec<DiscoveredTest> {
         let mut tests = Vec::new();
 
         for node in nodes {
@@ -1101,7 +1102,7 @@ impl TestRunner {
     }
 
     /// Returns the number of positional parameters of a `def` node.
-    fn get_arity(node: &mq_lang::Shared<mq_lang::CstNode>) -> usize {
+    fn get_arity(node: &mq_syntax::Shared<mq_syntax::CstNode>) -> usize {
         let (sig, _) = node.split_cond_and_program();
         // sig[0] is the function name; the rest are parameter idents.
         sig.len().saturating_sub(1)

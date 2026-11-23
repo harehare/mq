@@ -1463,7 +1463,7 @@ fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
     };
     let result = Formatter::new(Some(config)).format(code).unwrap();
     assert_eq!(result, expected);
-    let (_, errors) = mq_lang::parse_recovery(&result);
+    let (_, errors) = mq_syntax::parse_recovery(&result);
     assert!(!errors.has_errors(), "{result:?} does not parse");
 }
 
@@ -1570,7 +1570,7 @@ fn test_is_let_line(#[case] output: &str, #[case] expected: bool) {
 
 #[test]
 fn test_format_with_cst_normalizes_escapes_without_source() {
-    let (mut nodes, _) = mq_lang::parse_recovery(r#""\u{41}\t""#);
+    let (mut nodes, _) = mq_syntax::parse_recovery(r#""\u{41}\t""#);
     let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
     assert_eq!(result, r#""A\t""#);
 }
@@ -1610,7 +1610,7 @@ fn test_format_keeps_comment_before_semicolon(#[case] code: &str, #[case] expect
 #[case::dict_final_newline("{\"a\": 1\n", "{\"a\": 1\n")]
 #[case::call_final_newline("foo(1\n", "foo(1\n")]
 fn test_format_with_cst_keeps_broken_source(#[case] code: &str, #[case] expected: &str) {
-    let (mut nodes, errors) = mq_lang::parse_recovery(code);
+    let (mut nodes, errors) = mq_syntax::parse_recovery(code);
     assert!(errors.has_errors());
 
     let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
@@ -1627,7 +1627,7 @@ fn test_format_with_cst_keeps_broken_source(#[case] code: &str, #[case] expected
 #[case::array_own_line("[1,\n  # note\n")]
 #[case::dict_own_line("{\"a\": 1,\n  # note\n")]
 fn test_format_with_cst_keeps_comment_before_missing_closer(#[case] code: &str) {
-    let (mut nodes, errors) = mq_lang::parse_recovery(code);
+    let (mut nodes, errors) = mq_syntax::parse_recovery(code);
     assert!(errors.has_errors());
 
     let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
@@ -1691,7 +1691,7 @@ proptest::proptest! {
         let code = format!("{prefix}\"{body}\"{suffix}");
         let code = code.strip_prefix("| ").unwrap_or(&code).to_string();
         // Interpolated strings accept fewer escapes than plain strings.
-        proptest::prop_assume!(!mq_lang::parse_recovery(&code).1.has_errors());
+        proptest::prop_assume!(!mq_syntax::parse_recovery(&code).1.has_errors());
         let once = Formatter::new(None).format(&code).unwrap();
         proptest::prop_assert!(once.contains(&format!("\"{body}\"")), "{code:?} -> {once:?}");
         let twice = Formatter::new(None).format(&once).unwrap();
@@ -1723,7 +1723,7 @@ proptest::proptest! {
     ) {
         let code = stmts.join(" | ");
         let expected = Formatter::new(None).format(&code).unwrap();
-        let (mut nodes, _) = mq_lang::parse_recovery(&code);
+        let (mut nodes, _) = mq_syntax::parse_recovery(&code);
         let actual = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
         proptest::prop_assert_eq!(actual, expected);
     }

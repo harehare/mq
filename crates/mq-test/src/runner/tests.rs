@@ -186,11 +186,11 @@ fn test_merge_annotation_comments_ignores_unmatched_parens_in_plain_comments() {
     );
 }
 
-fn first_def(content: &str) -> mq_lang::Shared<mq_lang::CstNode> {
-    let (nodes, _) = mq_lang::parse_recovery(content);
+fn first_def(content: &str) -> mq_syntax::Shared<mq_syntax::CstNode> {
+    let (nodes, _) = mq_syntax::parse_recovery(content);
     nodes
         .into_iter()
-        .find(|n| matches!(n.kind, mq_lang::CstNodeKind::Def { .. }))
+        .find(|n| matches!(n.kind, mq_syntax::CstNodeKind::Def { .. }))
         .expect("no def node found")
 }
 
@@ -841,7 +841,7 @@ fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
     );
     let mut engine = mq_lang::Engine::with_io(
         crate::resolver::TestModuleResolver::default(),
-        mq_lang::Shared::new(mq_lang::MemIo::default()),
+        mq_syntax::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
@@ -1059,7 +1059,7 @@ fn test_run_supports_importing_the_test_module() {
 fn test_an_error_raised_by_one_test_is_recorded_as_a_failure_and_later_tests_still_run() {
     let mut engine = mq_lang::Engine::with_io(
         crate::resolver::TestModuleResolver::default(),
-        mq_lang::Shared::new(mq_lang::MemIo::default()),
+        mq_syntax::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
@@ -1168,7 +1168,7 @@ fn test_render_file_error_attaches_the_file_name_when_mq_lang_left_it_blank() {
 
     let mut engine = mq_lang::Engine::with_io(
         crate::resolver::TestModuleResolver::default(),
-        mq_lang::Shared::new(mq_lang::MemIo::default()),
+        mq_syntax::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);
@@ -1312,7 +1312,7 @@ fn run_results(content: &str) -> Vec<serde_json::Value> {
     let query = TestRunner::build_test_query_with_fn(content, &tests, "run_tests_data");
     let mut engine = mq_lang::Engine::with_io(
         crate::resolver::TestModuleResolver::default(),
-        mq_lang::Shared::new(mq_lang::MemIo::default()),
+        mq_syntax::Shared::new(mq_lang::MemIo::default()),
     );
     engine.load_builtin_module();
     TestRunner::register_clock(&mut engine);

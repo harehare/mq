@@ -9,9 +9,9 @@
 
 use miette::miette;
 use mq_lang::RuntimeValue;
-#[cfg(test)]
-use mq_lang::Shared;
 use mq_markdown::ColorTheme;
+#[cfg(test)]
+use mq_syntax::Shared;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
@@ -105,7 +105,7 @@ fn runtime_values_to_delimited(
                 let row: Vec<String> = headers
                     .iter()
                     .map(|h| {
-                        map.get(&mq_lang::Ident::new(h.as_str()))
+                        map.get(&mq_syntax::Ident::new(h.as_str()))
                             .map(|v| data_cell(v, theme))
                             .unwrap_or_default()
                     })
@@ -160,20 +160,20 @@ mod tests {
     fn test_array_of_dicts() {
         let mut m1 = mq_lang::DictMap::default();
         m1.insert(
-            mq_lang::Ident::new("name"),
+            mq_syntax::Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
         );
         m1.insert(
-            mq_lang::Ident::new("age"),
+            mq_syntax::Ident::new("age"),
             RuntimeValue::String(Shared::new("30".to_string())),
         );
         let mut m2 = mq_lang::DictMap::default();
         m2.insert(
-            mq_lang::Ident::new("name"),
+            mq_syntax::Ident::new("name"),
             RuntimeValue::String(Shared::new("Bob".to_string())),
         );
         m2.insert(
-            mq_lang::Ident::new("age"),
+            mq_syntax::Ident::new("age"),
             RuntimeValue::String(Shared::new("25".to_string())),
         );
         let values = vec![RuntimeValue::Array(Shared::new(vec![
@@ -188,7 +188,7 @@ mod tests {
     fn test_single_dict() {
         let mut map = mq_lang::DictMap::default();
         map.insert(
-            mq_lang::Ident::new("a"),
+            mq_syntax::Ident::new("a"),
             RuntimeValue::String(Shared::new("1".to_string())),
         );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
@@ -200,7 +200,7 @@ mod tests {
     fn test_needs_quoting() {
         let mut map = mq_lang::DictMap::default();
         map.insert(
-            mq_lang::Ident::new("a"),
+            mq_syntax::Ident::new("a"),
             RuntimeValue::String(Shared::new("has,comma".to_string())),
         );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
@@ -222,16 +222,16 @@ mod tests {
     fn test_missing_key_is_empty() {
         let mut m1 = mq_lang::DictMap::default();
         m1.insert(
-            mq_lang::Ident::new("a"),
+            mq_syntax::Ident::new("a"),
             RuntimeValue::String(Shared::new("1".to_string())),
         );
         m1.insert(
-            mq_lang::Ident::new("b"),
+            mq_syntax::Ident::new("b"),
             RuntimeValue::String(Shared::new("2".to_string())),
         );
         let mut m2 = mq_lang::DictMap::default();
         m2.insert(
-            mq_lang::Ident::new("a"),
+            mq_syntax::Ident::new("a"),
             RuntimeValue::String(Shared::new("3".to_string())),
         );
         let values = vec![RuntimeValue::Array(Shared::new(vec![
@@ -292,10 +292,10 @@ mod tests {
     #[test]
     fn test_colored_header_and_typed_cells() {
         let mut map = mq_lang::DictMap::default();
-        map.insert(mq_lang::Ident::new("n"), RuntimeValue::Number(3i64.into()));
-        map.insert(mq_lang::Ident::new("ok"), RuntimeValue::Boolean(true));
+        map.insert(mq_syntax::Ident::new("n"), RuntimeValue::Number(3i64.into()));
+        map.insert(mq_syntax::Ident::new("ok"), RuntimeValue::Boolean(true));
         map.insert(
-            mq_lang::Ident::new("s"),
+            mq_syntax::Ident::new("s"),
             RuntimeValue::String(Shared::new("a,b".to_string())),
         );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];

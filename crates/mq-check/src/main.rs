@@ -378,7 +378,7 @@ fn check_type(
 ///
 /// `prefix_width` is the visual width of the location prefix (e.g. "1:5" = 3)
 /// used to align the gutter with the surrounding error message lines.
-fn write_snippet(w: &mut impl Write, code: &str, range: &mq_lang::Range, prefix_width: usize) -> io::Result<()> {
+fn write_snippet(w: &mut impl Write, code: &str, range: &mq_syntax::Range, prefix_width: usize) -> io::Result<()> {
     let sep = "│".dimmed();
     let lines: Vec<&str> = code.lines().collect();
     let line_idx = range.start.line.saturating_sub(1) as usize;

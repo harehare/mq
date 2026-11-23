@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
+/// A floating-point number.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Number(f64);

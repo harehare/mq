@@ -52,7 +52,7 @@ impl LintRule for BooleanComparison {
             let operand_range = operand_id
                 .and_then(|id| ctx.full_range(id))
                 .map(|r| match bop_sym.source.text_range {
-                    Some(op_range) if r.start <= op_range.start => mq_lang::Range {
+                    Some(op_range) if r.start <= op_range.start => mq_syntax::Range {
                         start: r.start,
                         end: op_range.start,
                     },

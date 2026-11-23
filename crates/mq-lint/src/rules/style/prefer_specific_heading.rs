@@ -19,8 +19,8 @@ impl LintRule for PreferSpecificHeading {
         let reads_depth = ctx.all_symbols().any(|(_, s)| {
             matches!(
                 s.kind,
-                SymbolKind::Selector(mq_lang::Selector::Attr(
-                    mq_lang::AttrKind::Depth | mq_lang::AttrKind::Level
+                SymbolKind::Selector(mq_syntax::Selector::Attr(
+                    mq_syntax::AttrKind::Depth | mq_syntax::AttrKind::Level
                 ))
             )
         });
@@ -29,7 +29,7 @@ impl LintRule for PreferSpecificHeading {
         }
 
         ctx.all_symbols()
-            .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_lang::Selector::Heading(None))))
+            .filter(|(_, s)| matches!(s.kind, SymbolKind::Selector(mq_syntax::Selector::Heading(None))))
             .map(|(_, sym)| {
                 let mut d = Diagnostic::new(LintMessage::PreferSpecificHeading, self.severity());
                 if let Some(range) = sym.source.text_range {

@@ -63,7 +63,7 @@ fn test_bundled_mq_files_format_idempotently() {
             let formatted = mq_formatter::Formatter::new(Some(config.clone()))
                 .format(&code)
                 .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
-            let (_, errors) = mq_lang::parse_recovery(&formatted);
+            let (_, errors) = mq_syntax::parse_recovery(&formatted);
             assert!(
                 !errors.has_errors(),
                 "{}: formatted output does not parse",

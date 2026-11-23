@@ -4,7 +4,8 @@
 use std::collections::BTreeSet;
 
 use mq_help::{BUILTIN_DOC, BuiltinDoc, DocKind};
-use mq_lang::{BUILTIN_FUNCTION_NAMES, INTERNAL_FUNCTION_NAMES, SELECTOR_NAMES};
+use mq_lang::{BUILTIN_FUNCTION_NAMES, INTERNAL_FUNCTION_NAMES};
+use mq_syntax::SELECTOR_NAMES;
 
 // Callable names the compiler handles itself, so they are absent from the native registry.
 const COMPILER_BUILTINS: [&str; 3] = ["breakpoint", "next", "send"];

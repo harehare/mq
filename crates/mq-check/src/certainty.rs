@@ -116,18 +116,18 @@ struct Classifier<'a> {
     ctx: &'a InferenceContext,
     declared_input: bool,
     /// The symbols at each range, built when the first error needs it
-    symbols_at: Option<FxHashMap<mq_lang::Range, Vec<SymbolId>>>,
+    symbols_at: Option<FxHashMap<mq_syntax::Range, Vec<SymbolId>>>,
     /// Built when the first error needs it
     prover: Option<Prover<'a>>,
 }
 
 impl Classifier<'_> {
     /// The symbols whose range is `range`.
-    fn symbols_at(&mut self, range: mq_lang::Range) -> &[SymbolId] {
+    fn symbols_at(&mut self, range: mq_syntax::Range) -> &[SymbolId] {
         let hir = self.hir;
         self.symbols_at
             .get_or_insert_with(|| {
-                let mut index: FxHashMap<mq_lang::Range, Vec<SymbolId>> = FxHashMap::default();
+                let mut index: FxHashMap<mq_syntax::Range, Vec<SymbolId>> = FxHashMap::default();
                 for (id, symbol) in hir.symbols() {
                     if let Some(range) = symbol_range(hir, symbol) {
                         index.entry(range).or_default().push(id);

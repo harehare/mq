@@ -20,32 +20,19 @@
 //! assert_eq!(program.len(), 1);
 //! ```
 //!
-//! Enable the `cst` feature to use `parse_recovery` or `CstParser` for a complete
-//! source parse. The CST parser does not retain state between parses.
-//!
 //! ## Features
 //!
 //! - `ast-json`: Enables serialization and deserialization of the AST (Abstract Syntax Tree)
 //!   to/from JSON format (`ast_to_json` / `ast_from_json`). Use `Engine::compile` and
 //!   `Engine::eval_compiled` to execute programs constructed from deserialized ASTs.
 //!   When this feature is enabled, `serde` and `serde_json` dependencies are included.
-mod arena;
-mod ast;
-#[cfg(feature = "cst")]
-mod cst;
-pub mod diagnostic;
 mod engine;
 mod error;
-mod ident;
 mod io;
-mod lexer;
 mod module;
 #[cfg(feature = "mqc")]
 pub mod mqc;
-mod number;
-mod range;
 mod runtime;
-mod selector;
 pub mod suggest;
 mod tarn;
 #[doc(hidden)]
@@ -54,16 +41,9 @@ pub mod text_diff;
 pub mod vm_profile;
 
 use lexer::Lexer;
-#[cfg(not(feature = "sync"))]
-use std::cell::RefCell;
-#[cfg(not(feature = "sync"))]
-use std::rc::Rc;
-#[cfg(feature = "sync")]
-use std::sync::Arc;
-#[cfg(feature = "sync")]
-use std::sync::RwLock;
+use mq_syntax::{arena, ident, number, range, selector};
+use mq_syntax::{ast, lexer};
 
-pub use arena::{Arena, ArenaId};
 pub use ast::Program;
 pub use ast::constants::identifiers::IMPLICIT_FN_ARG;
 pub use ast::node::BinaryOp as AstBinaryOp;
@@ -77,10 +57,8 @@ pub use ast::node::UnaryOp as AstUnaryOp;
 pub use ast::parser::Parser as AstParser;
 #[cfg(feature = "ast-json")]
 pub use ast::{ast_from_json, ast_to_json};
-pub use diagnostic::Diagnostic;
 pub use engine::{CompiledProgram, DefineValueError, Engine, Session};
 pub use error::Error;
-pub use ident::Ident;
 #[cfg(feature = "mock-io")]
 pub use io::MemIo;
 pub use io::{EnvAccess, Io, IoError, IoReader, NativeIo, NetAccess, PathAccess, SandboxedIo};
@@ -101,6 +79,10 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
     resolver::DefaultModuleResolver, resolver::ModuleResolver,
 };
+pub use mq_syntax::Diagnostic;
+pub use mq_syntax::Ident;
+pub use mq_syntax::diagnostic;
+pub use mq_syntax::{Arena, ArenaId, Shared, SharedCell};
 #[cfg(feature = "mqc")]
 pub use mqc::{Mqc, MqcDependency, MqcError};
 pub use range::{Position, Range};
@@ -118,25 +100,6 @@ pub type DefaultEngine = Engine<DefaultModuleResolver>;
 pub type DefaultModuleLoader = ModuleLoader<DefaultModuleResolver>;
 pub use suggest::{suggest_name, suggest_selector};
 
-#[cfg(feature = "cst")]
-pub use cst::node::BinaryOp as CstBinaryOp;
-#[cfg(feature = "cst")]
-pub use cst::node::Blank as CstBlank;
-#[cfg(feature = "cst")]
-pub use cst::node::Node as CstNode;
-#[cfg(feature = "cst")]
-pub use cst::node::NodeKind as CstNodeKind;
-#[cfg(feature = "cst")]
-pub use cst::node::Trivia as CstTrivia;
-#[cfg(feature = "cst")]
-pub use cst::node::TriviaList as CstTriviaList;
-#[cfg(feature = "cst")]
-pub use cst::node::UnaryOp as CstUnaryOp;
-#[cfg(feature = "cst")]
-pub use cst::parser::ErrorReporter as CstErrorReporter;
-#[cfg(feature = "cst")]
-pub use cst::parser::Parser as CstParser;
-
 #[cfg(feature = "debugger")]
 pub use runtime::debugger::{
     Breakpoint, DebugContext, Debugger, DebuggerAction, DebuggerCommand, DebuggerHandler, Source,
@@ -147,54 +110,7 @@ use crate::ast::TokenId;
 /// The result of evaluating a query.
 pub type MqResult = Result<RuntimeValues, Box<Error>>;
 
-/// Type alias for reference-counted pointer, switches between Shared and Arc depending on "sync" feature.
-#[cfg(not(feature = "sync"))]
-pub type Shared<T> = Rc<T>;
-/// Reference-counted pointer: `Rc`, or `Arc` with the `sync` feature.
-#[cfg(feature = "sync")]
-pub type Shared<T> = Arc<T>;
-
-/// Type alias for interior mutability, switches between SharedCell and RwLock depending on "sync" feature.
-#[cfg(not(feature = "sync"))]
-pub type SharedCell<T> = RefCell<T>;
-/// Interior-mutability cell: `RefCell`, or `RwLock` with the `sync` feature.
-#[cfg(feature = "sync")]
-pub type SharedCell<T> = RwLock<T>;
-
-pub(crate) type TokenArena = Shared<SharedCell<Arena<Token>>>;
-
-/// Parses `code` into CST nodes, collecting errors instead of stopping at the first one.
-///
-/// Broken input still yields a lossless tree: unparsable tokens are kept in `Error` nodes
-/// and absent required tokens appear as zero-width `Missing` nodes.
-///
-/// ```rust
-/// let (cst_nodes, errors) = mq_lang::parse_recovery("1 + 2");
-/// assert!(!errors.has_errors());
-/// assert!(!cst_nodes.is_empty());
-/// ```
-#[cfg(feature = "cst")]
-pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
-    let tokens = Lexer::new(lexer::Options {
-        ignore_errors: true,
-        include_spaces: true,
-    })
-    .tokenize(code, Module::TOP_LEVEL_MODULE_ID);
-
-    let tokens = match tokens {
-        Ok(tokens) => tokens,
-        Err(error) => {
-            let parse_error = error
-                .token()
-                .map_or(cst::error::ParseError::UnexpectedEOFDetected, |token| {
-                    cst::error::ParseError::UnexpectedToken(Shared::new(token.clone()))
-                });
-            return (Vec::new(), CstErrorReporter::with_error(vec![parse_error], 100));
-        }
-    };
-
-    CstParser::new(&tokens).parse()
-}
+pub(crate) use mq_syntax::TokenArena;
 
 /// Parses `code` into an AST program, allocating tokens in `token_arena`.
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
@@ -455,52 +371,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cst")]
-    fn test_parse_recovery_success() {
-        let code = "add(1, 2)";
-        let (cst_nodes, errors) = parse_recovery(code);
-
-        assert!(!errors.has_errors());
-        assert!(!cst_nodes.is_empty());
-    }
-
-    #[test]
-    #[cfg(feature = "cst")]
-    fn test_parse_recovery_with_errors() {
-        let code = "add(1,";
-        let (cst_nodes, errors) = parse_recovery(code);
-
-        assert!(errors.has_errors());
-        assert!(cst_nodes[0].has_error());
-    }
-
-    #[cfg(feature = "cst")]
-    proptest::proptest! {
-        #[test]
-        fn parse_recovery_never_panics(code in "\\PC{0,64}") {
-            let _ = parse_recovery(&code);
-        }
-    }
-
-    #[test]
-    #[cfg(feature = "cst")]
-    fn test_parse_recovery_with_error_lexer() {
-        let code = "add(1, \"";
-        let (cst_nodes, errors) = parse_recovery(code);
-
-        assert!(errors.has_errors());
-        assert!(cst_nodes[0].has_error());
-    }
-
-    #[test]
-    #[cfg(feature = "cst")]
-    fn test_parse_recovery_with_invalid_unicode_escape() {
-        let (nodes, errors) = parse_recovery("\"\\u{ZZZZ}\"");
-        assert!(nodes.iter().any(|node| node.has_error()));
-        assert!(errors.has_errors());
-    }
-
-    #[test]
     fn test_parse_markdown_input() {
         let input = "# Heading\n\nSome text.";
         let result = parse_markdown_input(input);
@@ -586,120 +456,5 @@ let foo = 'bar'
 Some text.
 "
         );
-    }
-
-    /// Binary operators grouped by precedence, lowest first, excluding assignments.
-    #[cfg(feature = "cst")]
-    const BINARY_OP_LEVELS: &[&[&str]] = &[
-        &["||"],
-        &["??"],
-        &["&&"],
-        &["==", "!=", ">", ">=", "<", "<=", "=~", "!~"],
-        &["+", "-", ">>", "<<"],
-        &["*", "/", "%"],
-        &["@"],
-        &[".."],
-    ];
-
-    #[cfg(feature = "cst")]
-    fn cst_shape(node: &CstNode) -> String {
-        match &node.kind {
-            CstNodeKind::BinaryOp { lhs, rhs, .. } => format!(
-                "({} {} {})",
-                cst_shape(lhs),
-                node.token.as_ref().unwrap(),
-                cst_shape(rhs)
-            ),
-            _ => node.token.as_ref().map(|t| t.to_string()).unwrap_or_default(),
-        }
-    }
-
-    #[cfg(feature = "cst")]
-    fn ast_shape(node: &AstNode, token_arena: &TokenArena) -> String {
-        let op = || with_token(token_arena, node.token_id, |token| token.to_string());
-        let fold = |operands: &[Shared<AstNode>]| {
-            let mut shape = ast_shape(&operands[0], token_arena);
-            for operand in &operands[1..] {
-                shape = format!("({} {} {})", shape, op(), ast_shape(operand, token_arena));
-            }
-            shape
-        };
-        match &node.expr {
-            AstExpr::BinaryOp(_, lhs, rhs) => fold(&[Shared::clone(lhs), Shared::clone(rhs)]),
-            AstExpr::And(operands) | AstExpr::Or(operands) => fold(operands),
-            AstExpr::Call(_, args)
-                if args.len() == 2
-                    && with_token(token_arena, node.token_id, |token| {
-                        token.kind.binary_op_precedence().is_some()
-                    }) =>
-            {
-                fold(args)
-            }
-            AstExpr::Ident(ident) => ident.name.to_string(),
-            _ => "?".to_string(),
-        }
-    }
-
-    #[test]
-    #[cfg(feature = "cst")]
-    fn test_binary_op_precedence_matches_between_ast_and_cst() {
-        let ops: Vec<(usize, &str)> = BINARY_OP_LEVELS
-            .iter()
-            .enumerate()
-            .flat_map(|(level, ops)| ops.iter().map(move |op| (level, *op)))
-            .collect();
-
-        for &(lx, x) in &ops {
-            for &(ly, y) in &ops {
-                let code = format!("a {x} b {y} c");
-                let expected = if lx < ly {
-                    format!("(a {x} (b {y} c))")
-                } else {
-                    format!("((a {x} b) {y} c)")
-                };
-
-                let (cst_nodes, errors) = parse_recovery(&code);
-                assert!(!errors.has_errors(), "CST errors for {code:?}");
-                assert_eq!(cst_shape(&cst_nodes[0]), expected, "CST shape for {code:?}");
-
-                let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
-                let program = parse(&code, Shared::clone(&token_arena)).unwrap_or_else(|e| panic!("{code:?}: {e:?}"));
-                assert_eq!(ast_shape(&program[0], &token_arena), expected, "AST shape for {code:?}");
-            }
-        }
-    }
-
-    #[rstest::rstest]
-    #[case::assign("=")]
-    #[case::plus_assign("+=")]
-    #[case::minus_assign("-=")]
-    #[case::mul_assign("*=")]
-    #[case::div_assign("/=")]
-    #[case::mod_assign("%=")]
-    #[case::floor_div_assign("//=")]
-    #[cfg(feature = "cst")]
-    fn test_cst_assignment_has_lowest_precedence(#[case] op: &str) {
-        let code = format!("x {op} a || b && c");
-        let (nodes, errors) = parse_recovery(&code);
-        assert!(!errors.has_errors(), "CST errors for {code:?}");
-
-        let CstNodeKind::Assign { lhs, rhs, .. } = &nodes[0].kind else {
-            panic!("expected an assignment for {code:?}");
-        };
-        assert_eq!(cst_shape(lhs), "x");
-        assert_eq!(cst_shape(rhs), "(a || (b && c))");
-    }
-
-    #[test]
-    #[cfg(feature = "cst")]
-    fn test_cst_pipe_assignment_has_lowest_precedence() {
-        let code = "x.url |= a || b && c";
-        let (nodes, errors) = parse_recovery(code);
-        assert!(!errors.has_errors(), "CST errors for {code:?}");
-
-        let CstNodeKind::Assign { rhs, .. } = &nodes[0].kind else {
-            panic!("expected an assignment for {code:?}");
-        };
-        assert_eq!(cst_shape(rhs), "(a || (b && c))");
     }
 }

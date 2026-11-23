@@ -265,7 +265,7 @@ impl DebuggerHandler {
                             let range = self.engine.token_arena().read().unwrap()[frame.token_id].range;
 
                             match &frame.expr {
-                                mq_lang::AstExpr::Call(ident, _) => {
+                                mq_syntax::ast::node::Expr::Call(ident, _) => {
                                     Some(format!("{} at {}:{}", ident, range.start.line, range.start.column))
                                 }
                                 _ => None,
@@ -642,7 +642,7 @@ impl Validator for DebuggerLineHelper {
             return Ok(ValidationResult::Valid(None));
         }
 
-        if mq_lang::parse_recovery(input).1.has_errors() {
+        if mq_syntax::parse_recovery(input).1.has_errors() {
             Ok(ValidationResult::Incomplete)
         } else {
             Ok(ValidationResult::Valid(None))
@@ -767,9 +767,9 @@ mod tests {
             name: None,
             code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
         };
-        context.range = mq_lang::Range {
-            start: mq_lang::Position { line: 4, column: 0 },
-            end: mq_lang::Position { line: 4, column: 1 },
+        context.range = mq_syntax::Range {
+            start: mq_syntax::Position { line: 4, column: 0 },
+            end: mq_syntax::Position { line: 4, column: 1 },
         };
         context.module_id = ModuleId::new(0);
         let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);

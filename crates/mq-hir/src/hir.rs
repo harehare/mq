@@ -126,7 +126,7 @@ impl Hir {
 
     /// Adds `code` to an existing source and scope.
     pub fn add_line_of_code(&mut self, source_id: SourceId, scope_id: ScopeId, code: &str) {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
 
         self.source_scopes.insert(source_id, scope_id);
 
@@ -139,8 +139,8 @@ impl Hir {
     ///
     /// The HIR is built from the recovered tree even when there are errors. Empty and
     /// comment-only code reports none.
-    pub fn add_code(&mut self, url: Option<Url>, code: &str) -> (SourceId, ScopeId, Vec<mq_lang::Diagnostic>) {
-        let (nodes, errors) = mq_lang::parse_recovery(code);
+    pub fn add_code(&mut self, url: Option<Url>, code: &str) -> (SourceId, ScopeId, Vec<mq_syntax::Diagnostic>) {
+        let (nodes, errors) = mq_syntax::parse_recovery(code);
         let (source_id, scope_id) = self.add_nodes(url.unwrap_or(Url::parse("file:///").unwrap()), &nodes);
         let errors = if is_expression_free(code) {
             Vec::new()
@@ -180,7 +180,7 @@ impl Hir {
         self.builtin.loaded = true;
 
         if !self.builtin.self_hosted {
-            let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
+            let (nodes, _) = mq_syntax::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
 
             nodes.iter().for_each(|node| {
                 self.add_expr(node, self.builtin.source_id, self.builtin.scope_id, None);
@@ -199,8 +199,8 @@ impl Hir {
                         SymbolKind::Function(doc.params.iter().map(|p| (*p).into()).collect::<Vec<_>>())
                     }
                     mq_help::DocKind::Selector => {
-                        let token = mq_lang::Token::new(mq_lang::TokenKind::Selector(name.into()));
-                        match mq_lang::Selector::try_from(&token) {
+                        let token = mq_syntax::Token::new(mq_syntax::TokenKind::Selector(name.into()));
+                        match mq_syntax::Selector::try_from(&token) {
                             Ok(selector) => SymbolKind::Selector(selector),
                             Err(_) => continue,
                         }
@@ -211,7 +211,7 @@ impl Hir {
                     kind,
                     source: SourceInfo::new(Some(source_id), None),
                     scope: scope_id,
-                    doc: vec![(mq_lang::Range::default(), doc.description.to_string())],
+                    doc: vec![(mq_syntax::Range::default(), doc.description.to_string())],
                     parent: None,
                     insertion_order: 0,
                 });
@@ -220,7 +220,7 @@ impl Hir {
     }
 
     /// Adds an already parsed source, replacing the contents of any source with the same URL.
-    pub fn add_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
+    pub fn add_nodes(&mut self, url: Url, nodes: &[mq_syntax::Shared<mq_syntax::CstNode>]) -> (SourceId, ScopeId) {
         let (source_id, scope_id) = self.load_nodes(url, nodes);
         self.opened_sources.insert(source_id);
         self.module_sources.remove(&source_id);
@@ -229,7 +229,7 @@ impl Hir {
 
     /// Loads the source of an `include` or `import`.
     pub(crate) fn add_module_code(&mut self, url: Url, code: &str) -> SourceId {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
         let (source_id, _) = self.load_nodes(url, &nodes);
         if !self.opened_sources.contains(&source_id) {
             self.module_sources.insert(source_id);
@@ -237,7 +237,7 @@ impl Hir {
         source_id
     }
 
-    fn load_nodes(&mut self, url: Url, nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> (SourceId, ScopeId) {
+    fn load_nodes(&mut self, url: Url, nodes: &[mq_syntax::Shared<mq_syntax::CstNode>]) -> (SourceId, ScopeId) {
         self.add_builtin();
 
         let source_id = self
@@ -525,7 +525,7 @@ mod tests {
             .filter_map(|(_, symbol)| symbol.value.as_deref())
             .collect();
 
-        for name in mq_lang::SELECTOR_NAMES {
+        for name in mq_syntax::SELECTOR_NAMES {
             assert!(defined.contains(name), "{name} is not defined as a selector");
         }
     }
@@ -590,20 +590,20 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::elif_("if (true): 1 elif (false): 2 else: 3;", "elif", SymbolKind::Elif)]
     #[case::else_("if (true): 1 else: 2;", "else", SymbolKind::Else)]
     #[case::literal("42", "42", SymbolKind::Number)]
-    #[case::selector(".h", ".h", SymbolKind::Selector(mq_lang::Selector::Heading(None)))]
-    #[case::selector(".code.lang", ".code", SymbolKind::Selector(mq_lang::Selector::Code))]
+    #[case::selector(".h", ".h", SymbolKind::Selector(mq_syntax::Selector::Heading(None)))]
+    #[case::selector(".code.lang", ".code", SymbolKind::Selector(mq_syntax::Selector::Code))]
     #[case::standalone_attr_selector(
         ".lang",
         ".lang",
-        SymbolKind::Selector(mq_lang::Selector::Attr(mq_lang::AttrKind::Lang))
+        SymbolKind::Selector(mq_syntax::Selector::Attr(mq_syntax::AttrKind::Lang))
     )]
     // Bracket selectors: .[n] → List, .[n][m] → Table
-    #[case::selector_list_any(".[]", ".", SymbolKind::Selector(mq_lang::Selector::List(None, None)))]
-    #[case::selector_list_index(".[1]", ".", SymbolKind::Selector(mq_lang::Selector::List(Some(1), None)))]
-    #[case::selector_table_any(".[][]", ".", SymbolKind::Selector(mq_lang::Selector::Table(None, None)))]
-    #[case::selector_table_row_any(".[1][]", ".", SymbolKind::Selector(mq_lang::Selector::Table(Some(1), None)))]
-    #[case::selector_table_row_col(".[1][2]", ".", SymbolKind::Selector(mq_lang::Selector::Table(Some(1), Some(2))))]
-    #[case::selector_table_any_col(".[][2]", ".", SymbolKind::Selector(mq_lang::Selector::Table(None, Some(2))))]
+    #[case::selector_list_any(".[]", ".", SymbolKind::Selector(mq_syntax::Selector::List(None, None)))]
+    #[case::selector_list_index(".[1]", ".", SymbolKind::Selector(mq_syntax::Selector::List(Some(1), None)))]
+    #[case::selector_table_any(".[][]", ".", SymbolKind::Selector(mq_syntax::Selector::Table(None, None)))]
+    #[case::selector_table_row_any(".[1][]", ".", SymbolKind::Selector(mq_syntax::Selector::Table(Some(1), None)))]
+    #[case::selector_table_row_col(".[1][2]", ".", SymbolKind::Selector(mq_syntax::Selector::Table(Some(1), Some(2))))]
+    #[case::selector_table_any_col(".[][2]", ".", SymbolKind::Selector(mq_syntax::Selector::Table(None, Some(2))))]
     #[case::interpolated_string("s\"hello ${world}\"", "world", SymbolKind::Variable)]
     #[case::include("include \"foo\"", "foo", SymbolKind::Include(SourceId::default()))]
     #[case::fn_expr("fn(): 42", "fn", SymbolKind::Keyword)]
@@ -682,27 +682,27 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     }
 
     #[rstest]
-    #[case::let_("let x = 1;", mq_lang::Position::new(1, 5), "x", SymbolKind::Variable)]
+    #[case::let_("let x = 1;", mq_syntax::Position::new(1, 5), "x", SymbolKind::Variable)]
     #[case::def(
         "def foo(): 1",
-        mq_lang::Position::new(1, 6),
+        mq_syntax::Position::new(1, 6),
         "foo",
         SymbolKind::Function(Vec::new())
     )]
-    #[case::if_("if (true): 1 else: 2;", mq_lang::Position::new(1, 1), "if", SymbolKind::If)]
-    #[case::while_("while (true): 1;", mq_lang::Position::new(1, 1), "while", SymbolKind::While)]
-    #[case::until_("until (true): 1;", mq_lang::Position::new(1, 1), "until", SymbolKind::Until)]
-    #[case::unless_("unless (true): 1;", mq_lang::Position::new(1, 1), "unless", SymbolKind::Unless)]
-    #[case::foreach_("foreach(x, y): 1", mq_lang::Position::new(1, 1), "foreach", SymbolKind::Foreach)]
+    #[case::if_("if (true): 1 else: 2;", mq_syntax::Position::new(1, 1), "if", SymbolKind::If)]
+    #[case::while_("while (true): 1;", mq_syntax::Position::new(1, 1), "while", SymbolKind::While)]
+    #[case::until_("until (true): 1;", mq_syntax::Position::new(1, 1), "until", SymbolKind::Until)]
+    #[case::unless_("unless (true): 1;", mq_syntax::Position::new(1, 1), "unless", SymbolKind::Unless)]
+    #[case::foreach_("foreach(x, y): 1", mq_syntax::Position::new(1, 1), "foreach", SymbolKind::Foreach)]
     #[case::call(
         "def foo():1; | foo()",
-        mq_lang::Position::new(1, 16),
+        mq_syntax::Position::new(1, 16),
         "foo",
         SymbolKind::Function(Vec::new())
     )]
     fn test_find_symbol_in_position(
         #[case] code: &str,
-        #[case] pos: mq_lang::Position,
+        #[case] pos: mq_syntax::Position,
         #[case] expected_name: &str,
         #[case] expected_kind: SymbolKind,
     ) {
@@ -1041,7 +1041,7 @@ end"#;
         hir.builtin.disabled = true;
 
         let code = r#"do "hello" end"#;
-        let _ = mq_lang::parse_recovery(code);
+        let _ = mq_syntax::parse_recovery(code);
         let _ = hir.add_code(None, code);
         let block_symbol = hir
             .symbols
@@ -1105,7 +1105,7 @@ end"#;
                 .any(|(_, s)| matches!(&s.kind, SymbolKind::Function(params) if params.len() == 1))
         );
 
-        let is_arg = |s: &Symbol| s.value.as_deref() == Some(mq_lang::IMPLICIT_FN_ARG);
+        let is_arg = |s: &Symbol| s.value.as_deref() == Some(mq_syntax::IMPLICIT_FN_ARG);
         let param = hir
             .symbols()
             .find(|(_, s)| s.kind == SymbolKind::Parameter && is_arg(s));
@@ -1686,7 +1686,7 @@ end"#;
     #[case::builtin_calls("map([1, 2], fn(v): add(v, 1);) | to_string()")]
     fn test_re_adding_source_matches_fresh_hir(#[case] code: &str) {
         let url = Url::parse("file:///test.mq").unwrap();
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
 
         let mut fresh = Hir::default();
         fresh.add_nodes(url.clone(), &nodes);
@@ -1710,11 +1710,11 @@ end"#;
         let url = Url::parse("file:///test.mq").unwrap();
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        hir.add_nodes(url.clone(), &mq_lang::parse_recovery("def a(): 1; | def b(): 2;").0);
-        let (source_id, _) = hir.add_nodes(url, &mq_lang::parse_recovery("def f(x):\n  fn(y): x + y;;").0);
+        hir.add_nodes(url.clone(), &mq_syntax::parse_recovery("def a(): 1; | def b(): 2;").0);
+        let (source_id, _) = hir.add_nodes(url, &mq_syntax::parse_recovery("def f(x):\n  fn(y): x + y;;").0);
 
         let (_, scope) = hir
-            .find_scope_in_position(source_id, mq_lang::Position { line: 2, column: 12 })
+            .find_scope_in_position(source_id, mq_syntax::Position { line: 2, column: 12 })
             .unwrap();
         // Innermost is the `fn`, nested inside `def f`.
         assert!(matches!(scope.kind, ScopeKind::Function(_)));

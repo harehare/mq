@@ -597,9 +597,9 @@ fn needs_block_syntax(program: &[Shared<Node>]) -> bool {
 mod tests {
     use super::*;
     use crate::{
-        Ident, IdentWithToken, Shared,
+        Ident, Shared,
         arena::ArenaId,
-        ast::node::{MatchArm, Param, Pattern},
+        ast::node::{IdentWithToken, MatchArm, Param, Pattern},
         number::Number,
     };
     use rstest::rstest;
@@ -1410,10 +1410,10 @@ mod tests {
     fn test_to_code_unary_op_reparses(#[case] expr: Expr) {
         let code = create_node(expr).to_code();
         let tokens = crate::Lexer::new(crate::lexer::Options::default())
-            .tokenize(&code, crate::Module::TOP_LEVEL_MODULE_ID)
+            .tokenize(&code, crate::TOP_LEVEL_MODULE_ID)
             .unwrap_or_else(|e| panic!("`{code}` failed to lex: {e:?}"));
         let mut arena = crate::arena::Arena::new(16);
-        let program = crate::ast::parser::Parser::new(tokens.iter(), &mut arena, crate::Module::TOP_LEVEL_MODULE_ID)
+        let program = crate::ast::parser::Parser::new(tokens.iter(), &mut arena, crate::TOP_LEVEL_MODULE_ID)
             .parse()
             .unwrap_or_else(|e| panic!("`{code}` failed to parse: {e:?}"));
 
@@ -1423,10 +1423,10 @@ mod tests {
 
     fn parse_code(code: &str) -> Program {
         let tokens = crate::Lexer::new(crate::lexer::Options::default())
-            .tokenize(code, crate::Module::TOP_LEVEL_MODULE_ID)
+            .tokenize(code, crate::TOP_LEVEL_MODULE_ID)
             .unwrap_or_else(|e| panic!("`{code}` failed to lex: {e:?}"));
         let mut arena = crate::arena::Arena::new(16);
-        crate::ast::parser::Parser::new(tokens.iter(), &mut arena, crate::Module::TOP_LEVEL_MODULE_ID)
+        crate::ast::parser::Parser::new(tokens.iter(), &mut arena, crate::TOP_LEVEL_MODULE_ID)
             .parse()
             .unwrap_or_else(|e| panic!("`{code}` failed to parse: {e:?}"))
     }

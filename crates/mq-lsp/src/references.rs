@@ -48,7 +48,7 @@ pub(crate) fn response(
     };
     let Some((symbol_id, symbol)) = hir_guard.find_symbol_in_position(
         source,
-        mq_lang::Position::new(position.line + 1, position.character + 1),
+        mq_syntax::Position::new(position.line + 1, position.character + 1),
     ) else {
         return Vec::new();
     };

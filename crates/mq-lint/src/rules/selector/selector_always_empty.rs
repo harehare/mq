@@ -1,5 +1,5 @@
 use mq_hir::SymbolKind;
-use mq_lang::Selector;
+use mq_syntax::Selector;
 
 use crate::{Diagnostic, LintContext, LintMessage, LintRule, RuleId, Severity};
 

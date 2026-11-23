@@ -27,7 +27,7 @@ fn hir_for(name: &str, code: &str) -> Hir {
 #[divan::bench(args = INPUTS)]
 fn parse(bencher: divan::Bencher, name: &str) {
     let code = input(name);
-    bencher.bench_local(|| mq_lang::parse_recovery(&code));
+    bencher.bench_local(|| mq_syntax::parse_recovery(&code));
 }
 
 /// Fresh `Hir` including builtin.mq. For `builtin` the builtins are disabled instead.

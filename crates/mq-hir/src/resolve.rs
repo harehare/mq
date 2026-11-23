@@ -336,7 +336,7 @@ impl Hir {
         module: Option<SymbolId>,
     ) -> Option<SymbolId> {
         let ref_start = self.symbols.get(ref_symbol_id)?.source.text_range?.start;
-        let mut best: Option<(mq_lang::Position, SymbolId)> = None;
+        let mut best: Option<(mq_syntax::Position, SymbolId)> = None;
         let mut pending = vec![scope_id];
 
         while let Some(parent_id) = pending.pop() {
@@ -489,7 +489,7 @@ mod tests {
     }
 
     fn add(hir: &mut Hir, url: &str, code: &str) {
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
         hir.add_nodes(Url::parse(url).unwrap(), &nodes);
     }
 

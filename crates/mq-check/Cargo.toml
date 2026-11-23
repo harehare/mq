@@ -34,7 +34,8 @@ clap = {workspace = true, features = ["derive"], optional = true}
 colored = {workspace = true, optional = true}
 miette = {workspace = true}
 mq-hir = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "file-io", "process-io"]}
+mq-lang = {workspace = true, features = ["file-io", "process-io"]}
+mq-syntax = {workspace = true, features = ["cst"]}
 mq-markdown = {workspace = true}
 rustc-hash = {workspace = true}
 serde_json = {workspace = true, optional = true}
@@ -45,7 +46,7 @@ url = {workspace = true, optional = true}
 
 [dev-dependencies]
 mq-help = {workspace = true}
-mq-lang = {workspace = true, features = ["cst", "file-io", "process-io", "debugger", "mock-io"]}
+mq-lang = {workspace = true, features = ["file-io", "process-io", "debugger", "mock-io"]}
 mq-test = {workspace = true}
 proptest = {workspace = true}
 rstest = {workspace = true}

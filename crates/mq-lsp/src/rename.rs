@@ -6,7 +6,7 @@ use bimap::BiMap;
 use tower_lsp_server::ls_types::{self, Position, PrepareRenameResponse, Range, TextEdit, WorkspaceEdit};
 use url::Url;
 
-fn to_range(text_range: mq_lang::Range) -> Range {
+fn to_range(text_range: mq_syntax::Range) -> Range {
     Range::new(
         Position::new(text_range.start.line - 1, text_range.start.column - 1),
         Position::new(text_range.end.line - 1, text_range.end.column - 1),
@@ -34,7 +34,7 @@ pub(crate) fn prepare(hir: Arc<RwLock<mq_hir::Hir>>, url: Url, position: Positio
 
     let (symbol_id, symbol) = hir_guard.find_symbol_in_position(
         source,
-        mq_lang::Position::new(position.line + 1, position.character + 1),
+        mq_syntax::Position::new(position.line + 1, position.character + 1),
     )?;
 
     if hir_guard.is_builtin_symbol(&symbol) {
@@ -100,7 +100,7 @@ fn rename(
 
     let Some((symbol_id, symbol)) = hir_guard.find_symbol_in_position(
         source,
-        mq_lang::Position::new(position.line + 1, position.character + 1),
+        mq_syntax::Position::new(position.line + 1, position.character + 1),
     ) else {
         return Ok(None);
     };

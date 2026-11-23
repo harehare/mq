@@ -34,7 +34,7 @@ pub(super) struct BuiltinCall<'a> {
     pub name: &'a str,
     /// The arguments as written, already including a piped input that was prepended
     pub args: &'a [Type],
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
     pub kind: CallKind,
     /// The call may still be given a piped input, as `join(",")` in `map(xs, join(","))` is. It
     /// is then reported only if no piped input could make it match.
@@ -52,7 +52,7 @@ impl<'a> BuiltinCall<'a> {
         symbol_id: SymbolId,
         name: &'a str,
         args: &'a [Type],
-        range: Option<mq_lang::Range>,
+        range: Option<mq_syntax::Range>,
         kind: CallKind,
     ) -> Self {
         Self {

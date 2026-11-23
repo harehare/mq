@@ -2470,7 +2470,7 @@ impl<'a> Parser<'a> {
         let operand_leading_trivia = self.parse_leading_trivia();
         if let Some(next) = self.peek()
             && !matches!(next.kind, TokenKind::Eof)
-            && !crate::AstParser::is_prefix_operand_start(&next.kind)
+            && !crate::ast::parser::Parser::is_prefix_operand_start(&next.kind)
         {
             return Err(ParseError::UnexpectedToken(self.shared(next)));
         }

@@ -7,7 +7,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Core {
     Literal(String),
-    Verbatim(mq_lang::Range),
+    Verbatim(mq_syntax::Range),
     Concat(Vec<Core>),
 }
 
@@ -30,7 +30,7 @@ impl Core {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fix {
     /// Source range to replace.
-    pub range: mq_lang::Range,
+    pub range: mq_syntax::Range,
     core: Core,
     /// Text inserted before the resolved core text.
     pub prefix: String,
@@ -40,7 +40,7 @@ pub struct Fix {
 
 impl Fix {
     /// A fix that replaces `range` with the source text spanned by `verbatim`, unchanged.
-    pub fn verbatim(range: mq_lang::Range, verbatim: mq_lang::Range) -> Self {
+    pub fn verbatim(range: mq_syntax::Range, verbatim: mq_syntax::Range) -> Self {
         Self {
             range,
             core: Core::Verbatim(verbatim),
@@ -50,7 +50,7 @@ impl Fix {
     }
 
     /// A fix that replaces `range` with fixed `text` known at rule-check time.
-    pub fn literal(range: mq_lang::Range, text: impl Into<String>) -> Self {
+    pub fn literal(range: mq_syntax::Range, text: impl Into<String>) -> Self {
         Self {
             range,
             core: Core::Literal(text.into()),
@@ -62,7 +62,7 @@ impl Fix {
     /// A fix that replaces `range` with several literal/verbatim `parts` concatenated together,
     /// for rewrites that reorder or splice more than one sub-expression (see
     /// [`crate::fix::Core`]).
-    pub(crate) fn concat(range: mq_lang::Range, parts: Vec<Core>) -> Self {
+    pub(crate) fn concat(range: mq_syntax::Range, parts: Vec<Core>) -> Self {
         Self {
             range,
             core: Core::Concat(parts),
@@ -88,15 +88,15 @@ impl Fix {
     ///
     /// A `Verbatim` core is trimmed, since rules can often only bound one side of such a range by
     /// a sibling token rather than the expression's own true end (see [`crate::LintContext::full_range`]).
-    pub fn resolve(&self, source: &str) -> Option<(mq_lang::Range, String)> {
+    pub fn resolve(&self, source: &str) -> Option<(mq_syntax::Range, String)> {
         let core = self.core.resolve(source)?;
         Some((self.range, format!("{}{}{}", self.prefix, core, self.suffix)))
     }
 }
 
-/// Converts a 1-based line/column [`mq_lang::Position`] (column counted in `char`s) into a byte
+/// Converts a 1-based line/column [`mq_syntax::Position`] (column counted in `char`s) into a byte
 /// offset into `source`.
-fn position_to_byte_offset(source: &str, position: mq_lang::Position) -> Option<usize> {
+fn position_to_byte_offset(source: &str, position: mq_syntax::Position) -> Option<usize> {
     let mut offset = 0;
     let mut lines = source.split_inclusive('\n');
 
@@ -120,7 +120,7 @@ fn position_to_byte_offset(source: &str, position: mq_lang::Position) -> Option<
 }
 
 /// The smallest range spanning both `a` and `b`.
-pub fn union(a: mq_lang::Range, b: mq_lang::Range) -> mq_lang::Range {
+pub fn union(a: mq_syntax::Range, b: mq_syntax::Range) -> mq_syntax::Range {
     let start = if (a.start.line, a.start.column) <= (b.start.line, b.start.column) {
         a.start
     } else {
@@ -131,11 +131,11 @@ pub fn union(a: mq_lang::Range, b: mq_lang::Range) -> mq_lang::Range {
     } else {
         b.end
     };
-    mq_lang::Range { start, end }
+    mq_syntax::Range { start, end }
 }
 
 /// Extracts the substring of `source` spanned by `range`.
-pub fn slice(source: &str, range: mq_lang::Range) -> Option<&str> {
+pub fn slice(source: &str, range: mq_syntax::Range) -> Option<&str> {
     let start = position_to_byte_offset(source, range.start)?;
     let end = position_to_byte_offset(source, range.end)?;
     if start > end {
@@ -148,7 +148,7 @@ pub fn slice(source: &str, range: mq_lang::Range) -> Option<&str> {
 ///
 /// Edits are applied from the end of the source towards the start so earlier byte offsets stay
 /// valid; if two edits overlap, the one starting earlier wins and the other is dropped.
-pub fn apply_edits(source: &str, edits: &[(mq_lang::Range, String)]) -> String {
+pub fn apply_edits(source: &str, edits: &[(mq_syntax::Range, String)]) -> String {
     let mut spans: Vec<(usize, usize, &str)> = edits
         .iter()
         .filter_map(|(range, text)| {
@@ -175,13 +175,13 @@ pub fn apply_edits(source: &str, edits: &[(mq_lang::Range, String)]) -> String {
 mod tests {
     use super::*;
 
-    fn range(start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> mq_lang::Range {
-        mq_lang::Range {
-            start: mq_lang::Position {
+    fn range(start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> mq_syntax::Range {
+        mq_syntax::Range {
+            start: mq_syntax::Position {
                 line: start_line,
                 column: start_col,
             },
-            end: mq_lang::Position {
+            end: mq_syntax::Position {
                 line: end_line,
                 column: end_col,
             },

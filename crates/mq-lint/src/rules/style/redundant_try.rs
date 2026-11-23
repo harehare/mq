@@ -49,11 +49,11 @@ impl LintRule for RedundantTry {
                     body_start,
                     catch_sym.source.text_range,
                 ) {
-                    let range = mq_lang::Range {
+                    let range = mq_syntax::Range {
                         start: try_start.start,
                         end: catch_expr_range.end,
                     };
-                    let body_range = mq_lang::Range {
+                    let body_range = mq_syntax::Range {
                         start: body_start,
                         end: catch_start.start,
                     };

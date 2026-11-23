@@ -92,16 +92,20 @@ fn find_coalesce_match(ctx: &LintContext<'_>, if_id: SymbolId) -> Option<Coalesc
 /// own start when the fallback comes first (the `==` shape), or, since nothing follows it when
 /// the fallback comes last (the `!=` shape), by simply not replacing it at all, leaving its
 /// original text in place right after the edit.
-fn build_fix(ctx: &LintContext<'_>, if_start: mq_lang::Position, m: &CoalesceMatch) -> Option<(mq_lang::Range, Fix)> {
+fn build_fix(
+    ctx: &LintContext<'_>,
+    if_start: mq_syntax::Position,
+    m: &CoalesceMatch,
+) -> Option<(mq_syntax::Range, Fix)> {
     let value_range = ctx.hir.symbol(m.value_branch_id)?.source.text_range?;
 
     if m.op == "==" {
         let else_kw_start = ctx.hir.symbol(m.else_kw_id)?.source.text_range?.start;
-        let fallback_range = mq_lang::Range {
+        let fallback_range = mq_syntax::Range {
             start: ctx.full_range(m.then_id)?.start,
             end: else_kw_start,
         };
-        let range = mq_lang::Range {
+        let range = mq_syntax::Range {
             start: if_start,
             end: value_range.end,
         };
@@ -116,7 +120,7 @@ fn build_fix(ctx: &LintContext<'_>, if_start: mq_lang::Position, m: &CoalesceMat
         Some((range, fix))
     } else {
         let fallback_start = ctx.full_range(m.else_expr_id)?.start;
-        let range = mq_lang::Range {
+        let range = mq_syntax::Range {
             start: if_start,
             end: fallback_start,
         };

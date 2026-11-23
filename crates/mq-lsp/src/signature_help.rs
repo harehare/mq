@@ -2,7 +2,8 @@ use crate::lock::RwLockExt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use mq_lang::{CstNode, Shared, TokenKind};
+use mq_syntax::CstNode;
+use mq_syntax::{Shared, TokenKind};
 use tower_lsp_server::ls_types::{ParameterInformation, ParameterLabel, Position, SignatureHelp, SignatureInformation};
 use url::Url;
 
@@ -19,9 +20,9 @@ pub(crate) fn response(
     let source_text = source_text?;
     let hir_guard = hir.read_recover();
     let source_id = hir_guard.source_by_url(&url)?;
-    let cursor = mq_lang::Position::new(position.line + 1, position.character + 1);
+    let cursor = mq_syntax::Position::new(position.line + 1, position.character + 1);
 
-    let (nodes, _) = mq_lang::parse_recovery(source_text);
+    let (nodes, _) = mq_syntax::parse_recovery(source_text);
     let call = find_enclosing_call(&nodes, cursor)?;
 
     let (_, target) = hir_guard.find_symbol_in_position(source_id, call.range().start)?;
@@ -59,7 +60,7 @@ pub(crate) fn response(
 /// paren, via `node_range()`) contains `position`. Recursing into children after recording
 /// a match means a nested call (e.g. `outer(inner(1))`) naturally overwrites the outer one
 /// once the cursor is confirmed to be inside it.
-fn find_enclosing_call(nodes: &[Shared<CstNode>], position: mq_lang::Position) -> Option<Shared<CstNode>> {
+fn find_enclosing_call(nodes: &[Shared<CstNode>], position: mq_syntax::Position) -> Option<Shared<CstNode>> {
     let mut best = None;
     for node in nodes {
         visit(node, position, &mut best);
@@ -67,13 +68,13 @@ fn find_enclosing_call(nodes: &[Shared<CstNode>], position: mq_lang::Position) -
     best
 }
 
-fn visit(node: &Shared<CstNode>, position: mq_lang::Position, best: &mut Option<Shared<CstNode>>) {
+fn visit(node: &Shared<CstNode>, position: mq_syntax::Position, best: &mut Option<Shared<CstNode>>) {
     if !node.node_range().contains(&position) {
         return;
     }
     if matches!(
         node.kind,
-        mq_lang::CstNodeKind::Call { .. } | mq_lang::CstNodeKind::CallDynamic { .. }
+        mq_syntax::CstNodeKind::Call { .. } | mq_syntax::CstNodeKind::CallDynamic { .. }
     ) {
         *best = Some(node.clone());
     }
@@ -85,7 +86,7 @@ fn visit(node: &Shared<CstNode>, position: mq_lang::Position, best: &mut Option<
 /// Counts the call's own top-level `,` children that fall before `position`. Only direct
 /// children are considered, so commas belonging to a nested call or array argument aren't
 /// mistaken for this call's own argument separators.
-fn active_parameter_index(call: &Shared<CstNode>, position: mq_lang::Position, param_count: usize) -> Option<u32> {
+fn active_parameter_index(call: &Shared<CstNode>, position: mq_syntax::Position, param_count: usize) -> Option<u32> {
     if param_count == 0 {
         return None;
     }

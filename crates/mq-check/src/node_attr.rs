@@ -41,9 +41,9 @@ pub(crate) enum SelectorOutput {
     MissingAttr(String),
 }
 
-pub(crate) fn node_selector_output(selector: &mq_lang::Selector, kinds: KindSet) -> SelectorOutput {
+pub(crate) fn node_selector_output(selector: &mq_syntax::Selector, kinds: KindSet) -> SelectorOutput {
     match selector {
-        mq_lang::Selector::Attr(attr) => {
+        mq_syntax::Selector::Attr(attr) => {
             let name = attr.to_string();
             let name = name.trim_start_matches('.');
             match node_attr_type(kinds, name) {
@@ -51,7 +51,7 @@ pub(crate) fn node_selector_output(selector: &mq_lang::Selector, kinds: KindSet)
                 None => SelectorOutput::MissingAttr(name.to_string()),
             }
         }
-        mq_lang::Selector::Recursive => SelectorOutput::Type(Type::array(Type::markdown())),
+        mq_syntax::Selector::Recursive => SelectorOutput::Type(Type::array(Type::markdown())),
         other => SelectorOutput::Type(match selector_kinds(other) {
             Some(selected) => {
                 let both = selected.intersect(kinds);

@@ -58,7 +58,7 @@ impl LintRule for RedundantBooleanLiteral {
                     else_sym.source.text_range,
                     ctx.full_range(cond_id),
                 ) {
-                    let range = mq_lang::Range {
+                    let range = mq_syntax::Range {
                         start: if_start.start,
                         end: else_range.end,
                     };

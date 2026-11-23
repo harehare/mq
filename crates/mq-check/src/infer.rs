@@ -26,7 +26,7 @@ pub struct DeferredOverload {
     /// The first operand is the input of the query, which the call does not write
     pub implicit_input: bool,
     /// The source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
     /// The type given as the result until the operation is resolved
     pub result: Type,
 }
@@ -72,7 +72,7 @@ pub struct DeferredAttrCall {
     /// Whether the call is `get` on a record rather than `attr` on a node
     pub is_get: bool,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
 }
 
 /// A deferred user-defined function call for post-unification type checking.
@@ -91,7 +91,7 @@ pub struct DeferredUserCall {
     /// for checking their body operators against call-site concrete types).
     pub arg_symbol_ids: Vec<SymbolId>,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
 }
 
 /// A deferred record field access for post-unification resolution.
@@ -116,10 +116,10 @@ pub struct DeferredRecordAccess {
     /// What the enclosing conditions say about the tag fields of the variable
     pub tags: Vec<crate::field_guard::TagTest>,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
     /// Where the read starts, when it runs in source order with the writes to its variable
     /// (`None` inside a function that the variable does not belong to)
-    pub read_start: Option<mq_lang::Position>,
+    pub read_start: Option<mq_syntax::Position>,
 }
 
 /// A deferred selector field access for post-unification resolution.
@@ -134,14 +134,14 @@ pub struct DeferredSelectorAccess {
     /// The field name being accessed
     pub field_name: String,
     /// The selector, used after unification when the piped type resolves to a Markdown node.
-    pub selector: mq_lang::Selector,
+    pub selector: mq_syntax::Selector,
     /// The type this selector yields on its own, not including the selectors chained after it.
     pub result_ty: Type,
     /// The pipe stage that feeds this selector, whose current type is used when `piped_ty` is
     /// still unresolved (a deferred overload result replaces the stage's type without binding).
     pub piped_source: Option<SymbolId>,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
 }
 
 /// A deferred bracket access on the return value of a user-defined function call.
@@ -163,7 +163,7 @@ pub struct DeferredCallReturnAccess {
     /// The field name to access (the bracket key)
     pub field_name: String,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
 }
 
 /// A deferred tuple index access for post-unification resolution.
@@ -180,7 +180,7 @@ pub struct DeferredTupleAccess {
     /// The literal index value (None if dynamic index)
     pub index: Option<usize>,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
 }
 
 /// A deferred `a[i][j] = v`, whose target element type is known once `a` is resolved.
@@ -193,7 +193,7 @@ pub struct DeferredIndexAssign {
     /// The type of the assigned value
     pub value_ty: Type,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
 }
 
 /// A deferred try/catch branch-type merge for post-unification resolution.
@@ -209,7 +209,7 @@ pub struct DeferredTryCatch {
     /// The catch body's type
     pub catch_ty: Type,
     /// Source range for error reporting
-    pub range: Option<mq_lang::Range>,
+    pub range: Option<mq_syntax::Range>,
 }
 
 /// A single variable type narrowing entry.
@@ -315,14 +315,14 @@ pub struct InferenceContext {
     deferred_user_calls: Vec<DeferredUserCall>,
     /// The overload errors found by running a function body on the arguments of a call, by range
     /// and message
-    inlined_errors: FxHashMap<(Option<mq_lang::Range>, String), InlinedError>,
+    inlined_errors: FxHashMap<(Option<mq_syntax::Range>, String), InlinedError>,
     /// Deferred inner calls to function parameters for higher-order function checking
     deferred_parameter_calls: Vec<DeferredParameterCall>,
     /// Deferred record field accesses for post-unification resolution
     deferred_record_accesses: Vec<DeferredRecordAccess>,
     /// Record fields assigned through `x["k"] = v`, per variable definition, with the end of the
     /// earliest assignment (`None` when its position is unknown)
-    written_record_fields: FxHashMap<(SymbolId, String), Option<mq_lang::Position>>,
+    written_record_fields: FxHashMap<(SymbolId, String), Option<mq_syntax::Position>>,
     /// Deferred selector field accesses for post-unification resolution
     deferred_selector_accesses: Vec<DeferredSelectorAccess>,
     /// Deferred tuple index accesses for post-unification resolution
@@ -427,7 +427,7 @@ impl InferenceContext {
     }
 
     /// Whether a call of `name` has already been reported as matching no overload at `range`.
-    pub(crate) fn has_overload_error_at(&self, name: &str, range: Option<mq_lang::Range>) -> bool {
+    pub(crate) fn has_overload_error_at(&self, name: &str, range: Option<mq_syntax::Range>) -> bool {
         let prefix = format!("{name} with arguments");
         self.errors.iter().any(|error| {
             matches!(error, TypeError::UnificationError { left, location, .. }
@@ -563,7 +563,7 @@ impl InferenceContext {
     }
 
     /// Records that `def_id["field"]` is assigned by a statement ending at `end`.
-    pub fn add_written_record_field(&mut self, def_id: SymbolId, field: String, end: Option<mq_lang::Position>) {
+    pub fn add_written_record_field(&mut self, def_id: SymbolId, field: String, end: Option<mq_syntax::Position>) {
         self.written_record_fields
             .entry((def_id, field))
             .and_modify(|first| *first = first.zip(end).map(|(a, b)| a.min(b)))
@@ -576,7 +576,7 @@ impl InferenceContext {
         &self,
         def_id: SymbolId,
         field: &str,
-        read_start: Option<mq_lang::Position>,
+        read_start: Option<mq_syntax::Position>,
     ) -> bool {
         match self.written_record_fields.get(&(def_id, field.to_owned())) {
             None => false,
@@ -710,7 +710,13 @@ impl InferenceContext {
     /// Resolves both types before formatting them, and constructs the error with
     /// source location info from `range`. Use this instead of hand-rolling
     /// `resolve_type` + `display_renumbered` + `add_error(TypeError::Mismatch {...})`.
-    pub fn report_mismatch(&mut self, t1: &Type, t2: &Type, range: Option<mq_lang::Range>, origin: &ConstraintOrigin) {
+    pub fn report_mismatch(
+        &mut self,
+        t1: &Type,
+        t2: &Type,
+        range: Option<mq_syntax::Range>,
+        origin: &ConstraintOrigin,
+    ) {
         let resolved_t1 = self.resolve_type(t1);
         let resolved_t2 = self.resolve_type(t2);
         // A call ties the argument to the parameter, in that order, and the parameter is what
@@ -773,7 +779,7 @@ impl InferenceContext {
         op_name: &str,
         arg_tys: &[Type],
         implicit_input: bool,
-        range: Option<mq_lang::Range>,
+        range: Option<mq_syntax::Range>,
         in_element_callback: bool,
     ) {
         let key = (
@@ -813,7 +819,7 @@ impl InferenceContext {
         op_name: &str,
         arg_tys: &[Type],
         implicit_input: bool,
-        range: Option<mq_lang::Range>,
+        range: Option<mq_syntax::Range>,
     ) {
         let args_str = format_arguments(arg_tys, implicit_input);
         let explicit = match arg_tys.split_first() {

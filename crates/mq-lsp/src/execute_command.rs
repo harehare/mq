@@ -35,13 +35,13 @@ pub(crate) fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<s
             .as_slice()
         {
             [Some(code)] => {
-                let token_arena = mq_lang::Shared::new(mq_lang::SharedCell::new(mq_lang::Arena::new(1024)));
+                let token_arena = mq_syntax::Shared::new(mq_syntax::SharedCell::new(mq_syntax::Arena::new(1024)));
                 let program = mq_lang::parse(code, token_arena).map_err(|e| jsonrpc::Error {
                     code: jsonrpc::ErrorCode::InvalidParams,
                     message: Cow::Owned(format!("Error: {}", e)),
                     data: None,
                 })?;
-                let ast_json = mq_lang::ast_to_json(&program).map_err(|e| jsonrpc::Error {
+                let ast_json = mq_syntax::ast::ast_to_json(&program).map_err(|e| jsonrpc::Error {
                     code: jsonrpc::ErrorCode::InvalidParams,
                     message: Cow::Owned(format!("Error: {}", e)),
                     data: None,
@@ -94,7 +94,7 @@ fn execute(code: &str, input: &str, input_format: Option<&str>) -> jsonrpc::Resu
                 values
                     .into_iter()
                     .map(|value| match value {
-                        mq_lang::RuntimeValue::Markdown(node, _) => mq_lang::Shared::unwrap_or_clone(node),
+                        mq_lang::RuntimeValue::Markdown(node, _) => mq_syntax::Shared::unwrap_or_clone(node),
                         _ => value.to_string().into(),
                     })
                     .collect(),

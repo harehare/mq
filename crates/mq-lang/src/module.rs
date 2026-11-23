@@ -2,7 +2,7 @@ pub mod error;
 pub mod resolver;
 
 use crate::{
-    Arena, ArenaId, Program, Shared, SharedCell, TokenArena,
+    Arena, Program, Shared, SharedCell, TokenArena,
     ast::{
         node::{self as ast, Node},
         parser::Parser,
@@ -30,10 +30,8 @@ thread_local! {
     static BUILTIN_CACHE: RefCell<Option<BuiltinCache>> = const { RefCell::new(None) };
 }
 
-/// Id of a module name in the module-name arena.
-pub type ModuleId = ArenaId<ModuleName>;
-
-type ModuleName = SmolStr;
+pub use mq_syntax::ModuleId;
+use mq_syntax::ModuleName;
 
 /// Marks module names registered from `.mqc` programs; never part of a real module name.
 const PRECOMPILED_NAME_PREFIX: char = '\0';
@@ -127,7 +125,7 @@ impl Module {
     /// Name of the top-level (query) module.
     pub const TOP_LEVEL_MODULE: &str = "top-level";
     /// Id of the top-level module.
-    pub const TOP_LEVEL_MODULE_ID: ArenaId<ModuleName> = ArenaId::new(0);
+    pub const TOP_LEVEL_MODULE_ID: ModuleId = mq_syntax::TOP_LEVEL_MODULE_ID;
 }
 
 /// Source of the modules bundled with mq, by name.

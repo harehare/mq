@@ -1,5 +1,5 @@
 use crate::ast::node::StringSegment;
-use crate::{Module, ast::node::MatchArm, range::Range, selector};
+use crate::{TOP_LEVEL_MODULE_ID, ast::node::MatchArm, range::Range, selector};
 
 use super::*;
 use rstest::rstest;
@@ -1645,7 +1645,7 @@ Shared::new(Node {
             token(TokenKind::Colon),
             token(TokenKind::Eof),
         ],
-        Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+        Err(SyntaxError::UnexpectedEOFDetected(TOP_LEVEL_MODULE_ID)))]
 #[case::while_error(
         vec![
             token(TokenKind::While),
@@ -1655,7 +1655,7 @@ Shared::new(Node {
             token(TokenKind::Colon),
             token(TokenKind::Eof),
         ],
-        Err(SyntaxError::UnexpectedEOFDetected(Module::TOP_LEVEL_MODULE_ID)))]
+        Err(SyntaxError::UnexpectedEOFDetected(TOP_LEVEL_MODULE_ID)))]
 #[case::using_reserved_keyword_let(
             vec![
                 token(TokenKind::Let),
@@ -5246,7 +5246,7 @@ Shared::new(Node {
         ]))]
 fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
     let mut arena = Arena::new(10);
-    let result = Parser::new(input.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(input.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match (&result, &expected) {
         (Ok(actual), Ok(expected)) => {
@@ -5321,7 +5321,7 @@ fn test_parse_selector(#[case] selector_str: &str, #[case] expected_selector: Se
         },
     ];
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -5401,7 +5401,7 @@ fn test_parse_array_selector(
         module_id: 1.into(),
     });
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -5457,7 +5457,7 @@ fn test_parse_property_selector_iterator(
         module_id: 1.into(),
     });
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID)
         .parse()
         .expect("parse error");
 
@@ -5521,7 +5521,7 @@ fn test_parse_chained_property_selector_iterator(
         module_id: 1.into(),
     });
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID)
         .parse()
         .expect("parse error");
 
@@ -5563,7 +5563,7 @@ fn test_parse_as_binding() {
             module_id: 1.into(),
         },
     ];
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
     assert!(result.is_ok());
     let program = result.unwrap();
     assert_eq!(program.len(), 1);
@@ -5590,7 +5590,7 @@ fn test_parse_env() {
         },
     ];
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -5632,7 +5632,7 @@ fn test_parse_env_in_arguments() {
         },
     ];
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -5668,7 +5668,7 @@ fn test_parse_standalone_attr_selector(#[case] selector: &str, #[case] attribute
         },
     ];
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -5716,7 +5716,7 @@ fn test_parse_selector_with_attribute(
         module_id: 1.into(),
     });
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -5777,7 +5777,7 @@ fn test_parse_selector_descendant_chain(#[case] selectors: Vec<&str>, #[case] ex
         module_id: 1.into(),
     });
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -5831,7 +5831,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
         module_id: 1.into(),
     });
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -6488,7 +6488,7 @@ fn test_parse_selector_descendant_chain_trailing_attribute() {
         ]))]
 fn test_parse_match(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
     let mut arena = Arena::new(10);
-    let result = Parser::new(input.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(input.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
     assert_eq!(result, expected);
 }
 
@@ -6622,7 +6622,7 @@ fn test_parse_interpolated_string_with_expr(
         },
     ];
 
-    let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+    let result = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse();
 
     match result {
         Ok(program) => {
@@ -6803,10 +6803,10 @@ const STACK_KIB: usize = 2048;
 
 fn parse_source(source: &str) -> Result<Program, SyntaxError> {
     let tokens = Lexer::new(lexer::Options::default())
-        .tokenize(source, Module::TOP_LEVEL_MODULE_ID)
+        .tokenize(source, TOP_LEVEL_MODULE_ID)
         .expect("source should tokenize");
     let mut arena = Arena::new(16);
-    Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse()
+    Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse()
 }
 
 /// Runs `f` on a 2 MiB stack (the default for spawned and tokio worker threads) in release
@@ -6988,10 +6988,10 @@ fn shape(node: &Node, arena: &Arena<Token>) -> String {
 
 fn parse_with_arena(code: &str) -> (Program, Arena<Token>) {
     let tokens = Lexer::new(lexer::Options::default())
-        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+        .tokenize(code, TOP_LEVEL_MODULE_ID)
         .expect("code should tokenize");
     let mut arena = Arena::new(16);
-    let program = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
+    let program = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID)
         .parse()
         .expect("code should parse");
     (program, arena)
@@ -7048,10 +7048,10 @@ fn test_attr_call_and_its_literal_have_distinct_ids(#[case] code: &str) {
 
 fn parse_shape(code: &str) -> Result<String, SyntaxError> {
     let tokens = Lexer::new(lexer::Options::default())
-        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+        .tokenize(code, TOP_LEVEL_MODULE_ID)
         .expect("code should tokenize");
     let mut arena = Arena::new(16);
-    let program = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse()?;
+    let program = Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse()?;
     assert_eq!(program.len(), 1, "expected one expression for {code:?}");
     Ok(shape(&program[0], &arena))
 }
@@ -7218,10 +7218,10 @@ fn test_pipe_assign_is_not_an_infix_operator(#[case] code: &str) {
 
 fn parse_program_source(code: &str) -> Result<Program, SyntaxError> {
     let tokens = Lexer::new(lexer::Options::default())
-        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+        .tokenize(code, TOP_LEVEL_MODULE_ID)
         .expect("code should tokenize");
     let mut arena = Arena::new(16);
-    Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse()
+    Parser::new(tokens.iter(), &mut arena, TOP_LEVEL_MODULE_ID).parse()
 }
 
 #[rstest]

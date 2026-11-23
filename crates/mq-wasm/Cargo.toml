@@ -28,6 +28,7 @@ mq-hir = {workspace = true}
 mq-check = {workspace = true}
 mq-help = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json", "http-import", "wasm"]}
+mq-syntax = {workspace = true, features = ["cst"]}
 mq-markdown = {workspace = true}
 opfs = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive"]}

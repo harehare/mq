@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use mq_lang::{CstNode, CstNodeKind, DebugContext, DebuggerAction, DebuggerHandler, Module, Shared};
+use mq_lang::{DebugContext, DebuggerAction, DebuggerHandler, Module};
+use mq_syntax::Shared;
+use mq_syntax::{CstNode, CstNodeKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::highlight;
@@ -236,7 +238,7 @@ fn collect_executable_lines(nodes: &[Shared<CstNode>], max_line: usize, lines: &
 /// own line count, since `content` may have a generated test harness appended).
 pub(crate) fn executable_lines(content: &str) -> BTreeSet<usize> {
     let max_line = content.lines().count().max(1);
-    let (nodes, _) = mq_lang::parse_recovery(content);
+    let (nodes, _) = mq_syntax::parse_recovery(content);
     let mut lines = BTreeSet::new();
     collect_executable_lines(&nodes, max_line, &mut lines);
     lines

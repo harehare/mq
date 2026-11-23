@@ -13,7 +13,7 @@ version.workspace = true
 
 [features]
 # Help catalog and rendering. Without it only the static doc tables are built.
-catalog = ["dep:colored", "dep:mq-lang", "dep:serde"]
+catalog = ["dep:colored", "dep:mq-lang", "dep:mq-syntax", "dep:serde"]
 default = ["catalog"]
 
 [lints]
@@ -21,7 +21,8 @@ workspace = true
 
 [dependencies]
 colored = {workspace = true, optional = true}
-mq-lang = {workspace = true, features = ["cst", "http"], optional = true}
+mq-lang = {workspace = true, features = ["http"], optional = true}
+mq-syntax = {workspace = true, features = ["cst"], optional = true}
 serde = {workspace = true, features = ["derive"], optional = true}
 
 [dev-dependencies]

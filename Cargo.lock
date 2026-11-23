@@ -616,9 +616,9 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "clipboard-win"
-version = "5.4.1"
+version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+checksum = "052af7878466feccda12ba7a6a67d019d712f296809559b47c12c8cc196d3a9a"
 dependencies = [
  "error-code",
 ]
@@ -1296,9 +1296,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -2444,6 +2444,7 @@ dependencies = [
  "miette",
  "mimalloc",
  "mq-lang",
+ "mq-syntax",
  "proptest",
  "rstest",
  "rustc-hash",
@@ -2464,6 +2465,7 @@ dependencies = [
  "mq-hir",
  "mq-lang",
  "mq-markdown",
+ "mq-syntax",
  "mq-test",
  "proptest",
  "rstest",
@@ -2491,6 +2493,7 @@ dependencies = [
  "miette",
  "mq-lang",
  "mq-markdown",
+ "mq-syntax",
  "quick-xml",
  "reqwest",
  "robots_txt",
@@ -2513,6 +2516,7 @@ dependencies = [
  "dap",
  "miette",
  "mq-lang",
+ "mq-syntax",
  "rstest",
  "serde",
  "serde_json",
@@ -2541,7 +2545,7 @@ dependencies = [
  "clap",
  "glob",
  "miette",
- "mq-lang",
+ "mq-syntax",
  "proptest",
  "rstest",
 ]
@@ -2564,6 +2568,7 @@ version = "0.10.2"
 dependencies = [
  "colored 3.1.1",
  "mq-lang",
+ "mq-syntax",
  "serde",
 ]
 
@@ -2574,6 +2579,7 @@ dependencies = [
  "itertools 0.15.0",
  "mq-help",
  "mq-lang",
+ "mq-syntax",
  "proptest",
  "rstest",
  "rustc-hash",
@@ -2605,11 +2611,11 @@ dependencies = [
  "ignore",
  "itertools 0.15.0",
  "md5",
- "memchr",
  "miette",
  "mimalloc",
  "mq-macros",
  "mq-markdown",
+ "mq-syntax",
  "percent-encoding",
  "proptest",
  "quick-xml",
@@ -2626,7 +2632,6 @@ dependencies = [
  "siphasher",
  "smallvec",
  "smol_str",
- "string-interner",
  "strsim",
  "tempfile",
  "thin-vec",
@@ -2652,7 +2657,7 @@ dependencies = [
  "clap",
  "colored 3.1.1",
  "mq-hir",
- "mq-lang",
+ "mq-syntax",
  "rstest",
  "rustc-hash",
  "serde_json",
@@ -2673,6 +2678,7 @@ dependencies = [
  "mq-lang",
  "mq-lint",
  "mq-markdown",
+ "mq-syntax",
  "rstest",
  "rustc-hash",
  "serde",
@@ -2729,6 +2735,7 @@ dependencies = [
  "mq-hir",
  "mq-lang",
  "mq-markdown",
+ "mq-syntax",
  "regex",
  "rstest",
  "rustyline",
@@ -2760,6 +2767,7 @@ dependencies = [
  "mq-lang",
  "mq-markdown",
  "mq-repl",
+ "mq-syntax",
  "nix",
  "notify",
  "quick-xml",
@@ -2781,6 +2789,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-syntax"
+version = "0.10.2"
+dependencies = [
+ "itertools 0.15.0",
+ "memchr",
+ "miette",
+ "proptest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "smol_str",
+ "string-interner",
+ "strsim",
+ "thin-vec",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "mq-test"
 version = "0.10.2"
 dependencies = [
@@ -2789,6 +2816,7 @@ dependencies = [
  "glob",
  "miette",
  "mq-lang",
+ "mq-syntax",
  "rayon",
  "rstest",
  "rustc-hash",
@@ -2808,6 +2836,7 @@ dependencies = [
  "mq-hir",
  "mq-lang",
  "mq-markdown",
+ "mq-syntax",
  "opfs",
  "serde",
  "serde-wasm-bindgen",
@@ -4825,9 +4854,9 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

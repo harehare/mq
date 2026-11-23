@@ -104,8 +104,8 @@ pub(crate) fn predicate_kinds(name: &str) -> Option<KindSet> {
 
 /// The node kinds a selector (`.h1`, `.code`, `:list`) matches. `None` for attribute,
 /// property and recursive selectors, which do not test the kind of a node.
-pub(crate) fn selector_kinds(selector: &mq_lang::Selector) -> Option<KindSet> {
-    use mq_lang::Selector;
+pub(crate) fn selector_kinds(selector: &mq_syntax::Selector) -> Option<KindSet> {
+    use mq_syntax::Selector;
 
     let one = KindSet::of;
     Some(match selector {
@@ -386,7 +386,7 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
             Some(Type::dict(Type::Var(k), Type::Var(v)))
         }
         // Node-kind pattern (`:h1`, `:code`, `:list`) narrows to the kinds it matches.
-        _ => mq_lang::Selector::from_selector_str(&format!(".{name}"))
+        _ => mq_syntax::Selector::from_selector_str(&format!(".{name}"))
             .and_then(|selector| selector_kinds(&selector))
             .map(Type::Node),
     }
@@ -704,7 +704,10 @@ pub(crate) fn analyze_condition(
 /// Returns a list of `(reason, range)` pairs for dead branches detected by type analysis.
 /// A dead branch is one whose condition is always false (or always true) based on the
 /// statically known type of the variable.
-pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> Vec<(String, Option<mq_lang::Range>)> {
+pub(crate) fn resolve_type_narrowings(
+    hir: &Hir,
+    ctx: &mut InferenceContext,
+) -> Vec<(String, Option<mq_syntax::Range>)> {
     let narrowings = ctx.take_type_narrowings();
     if narrowings.is_empty() {
         return Vec::new();
@@ -767,7 +770,7 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> 
         }
     }
 
-    let mut dead_branches: Vec<(String, Option<mq_lang::Range>)> = Vec::new();
+    let mut dead_branches: Vec<(String, Option<mq_syntax::Range>)> = Vec::new();
 
     for narrowing in &narrowings {
         // Apply then-branch narrowings, and detect always-false conditions.
@@ -1004,7 +1007,7 @@ fn detect_dead_then_branch(
     entry: &NarrowingEntry,
     then_branch_id: SymbolId,
     hir: &Hir,
-) -> Option<(String, Option<mq_lang::Range>)> {
+) -> Option<(String, Option<mq_syntax::Range>)> {
     if entry.is_complement {
         return None;
     }
@@ -1053,7 +1056,7 @@ fn detect_dead_then_branch(
 pub(crate) fn resolve_cross_arm_narrowings(
     hir: &Hir,
     ctx: &mut InferenceContext,
-) -> Vec<(String, Option<mq_lang::Range>)> {
+) -> Vec<(String, Option<mq_syntax::Range>)> {
     let narrowings = ctx.take_cross_arm_narrowings();
     if narrowings.is_empty() {
         return Vec::new();
@@ -1096,7 +1099,7 @@ pub(crate) fn resolve_cross_arm_narrowings(
         }
     }
 
-    let mut dead_branches: Vec<(String, Option<mq_lang::Range>)> = Vec::new();
+    let mut dead_branches: Vec<(String, Option<mq_syntax::Range>)> = Vec::new();
 
     for CrossArmNarrowing {
         def_id,

@@ -16,8 +16,11 @@ use thin_vec::ThinVec;
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub struct Param {
+    /// The parameter name.
     pub ident: IdentWithToken,
+    /// The default value, if any.
     pub default: Option<Shared<Node>>,
+    /// Whether this is a variadic parameter (`*args`).
     pub is_variadic: bool,
 }
 
@@ -32,10 +35,12 @@ impl Display for Param {
 }
 
 impl Param {
+    /// Creates a required parameter.
     pub fn new(name: IdentWithToken) -> Self {
         Self::with_default(name, None)
     }
 
+    /// Creates a parameter with an optional default value.
     pub fn with_default(name: IdentWithToken, default_value: Option<Shared<Node>>) -> Self {
         Self {
             ident: name,
@@ -56,9 +61,13 @@ impl Param {
 
 /// Function parameters.
 pub type Params = ThinVec<Param>;
+/// Call arguments.
 pub type Args = SmallVec<[Shared<Node>; 2]>;
+/// An `if`/`elif`/`else` branch: an optional condition and its body.
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
+/// The branches of an `if` expression.
 pub type Branches = ThinVec<Cond>;
+/// The arms of a `match` expression.
 pub type MatchArms = ThinVec<MatchArm>;
 
 /// An AST node: an expression plus the id of the token it was parsed from.
@@ -277,12 +286,17 @@ impl Display for IdentWithToken {
     }
 }
 
+/// A segment of an interpolated string.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum StringSegment {
+    /// Literal text.
     Text(String),
+    /// An embedded expression.
     Expr(Shared<Node>),
+    /// An environment variable reference (`${$NAME}`).
     Env(SmolStr),
+    /// The piped value (`${self}`).
     Self_,
 }
 
@@ -308,11 +322,15 @@ pub enum Pattern {
     Or(ThinVec<Pattern>), // p1 || p2 || p3
 }
 
+/// One arm of a `match` expression.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub struct MatchArm {
+    /// The pattern to match.
     pub pattern: Pattern,
+    /// The `if` guard, if any.
     pub guard: Option<Shared<Node>>,
+    /// The expression evaluated when the arm matches.
     pub body: Shared<Node>,
 }
 
@@ -340,10 +358,13 @@ impl From<&str> for Literal {
     }
 }
 
+/// The member reached by a `module::member` access.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum AccessTarget {
+    /// A function call.
     Call(IdentWithToken, Box<Args>),
+    /// A plain identifier.
     Ident(IdentWithToken),
 }
 
@@ -553,7 +574,7 @@ pub enum Expr {
     Yield(Option<Shared<Node>>),
 }
 
-#[cfg(feature = "debugger")]
+#[cfg(feature = "expr-display")]
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -1273,7 +1294,7 @@ mod tests {
         assert!(a < b);
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_call() {
         let call = Expr::Call(IdentWithToken::new("func"), smallvec![make_node(0), make_node(1)]);
@@ -1281,7 +1302,7 @@ mod tests {
         assert!(s.starts_with("func("), "expected func(...), got: {s}");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_call_dynamic() {
         let callee = Shared::new(Node {
@@ -1293,7 +1314,7 @@ mod tests {
         assert!(s.contains('('), "expected parens in: {s}");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_literal() {
         let lit = Expr::Literal(Literal::None);
@@ -1302,20 +1323,20 @@ mod tests {
         assert_eq!(format!("{lit}"), "42");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_ident() {
         let ident = Expr::Ident(IdentWithToken::new("x"));
         assert_eq!(format!("{ident}"), "x");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_self() {
         assert_eq!(format!("{}", Expr::Self_), "self");
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(feature = "expr-display")]
     #[test]
     fn test_expr_display_other_is_empty() {
         assert_eq!(format!("{}", Expr::Continue), "");

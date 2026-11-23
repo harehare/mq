@@ -125,7 +125,7 @@ fn write_category(
 fn write_snippet(
     w: &mut impl Write,
     lines: &[&str],
-    range: &mq_lang::Range,
+    range: &mq_syntax::Range,
     severity: Severity,
     bar: &colored::ColoredString,
 ) -> io::Result<()> {

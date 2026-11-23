@@ -6,6 +6,7 @@
 
 - `mq-markdown`: all Markdown parsing and manipulation
 - `mq-run`: all CLI logic
+- `mq-syntax`: lexer, AST parser and CST parser (re-exported by `mq-lang`)
 - `mq-hir`: HIR shared by the LSP, linter and type checker
 - `mq-check`: type checker, holds builtin type signatures
 - `mq-macros`: `#[mq_macros::mq_fn]` native builtin registration

@@ -73,7 +73,7 @@ pub(crate) fn get_non_keyword_children(
 }
 
 /// Helper function to get the range of a symbol
-pub(super) fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_lang::Range> {
+pub(super) fn get_symbol_range(hir: &Hir, symbol_id: SymbolId) -> Option<mq_syntax::Range> {
     hir.symbol(symbol_id)
         .and_then(|symbol| crate::symbol_range(hir, symbol))
 }
@@ -143,8 +143,8 @@ pub(super) fn is_foreach_iterable_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
 /// - Number attributes: depth, level, index, column, row, line, end_line
 /// - Bool attributes: ordered, checked
 /// - Markdown array attributes: values, children
-pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
-    use mq_lang::AttrKind;
+pub(crate) fn attr_kind_to_type(attr_kind: &mq_syntax::AttrKind) -> Type {
+    use mq_syntax::AttrKind;
     match attr_kind {
         AttrKind::Value
         | AttrKind::Lang
@@ -311,7 +311,7 @@ pub(super) fn resolve_builtin_call(
     symbol_id: SymbolId,
     func_name: &str,
     arg_tys: &[Type],
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
     may_get_piped_input: bool,
 ) -> Type {
     let mut call = BuiltinCall::new(symbol_id, func_name, arg_tys, range, CallKind::Function);
@@ -330,7 +330,7 @@ pub(super) fn resolve_builtin_call_with_brackets(
     func_name: &str,
     explicit_arg_tys: &[Type],
     children: &[SymbolId],
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
 ) {
     let trailing_bracket_count = hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
     let real_arg_tys = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
@@ -365,7 +365,7 @@ pub(super) fn chain_bracket_accesses(
     children: &[SymbolId],
     key_count: usize,
     result_ty: Type,
-    range: Option<mq_lang::Range>,
+    range: Option<mq_syntax::Range>,
 ) -> Type {
     let mut current_ty = result_ty;
     for &key_id in &children[children.len() - key_count..] {

@@ -433,7 +433,7 @@ fn builtins_accept_every_argument_that_the_runtime_accepts() {
         .with_fetch_response("https://example.com/", "a\nb")
         .with_stdin_line("a")
         .with_command_response("echo", &["a".to_string()], "a");
-    let mut engine = Engine::with_default_io(mq_lang::Shared::new(io));
+    let mut engine = Engine::with_default_io(mq_syntax::Shared::new(io));
     engine.load_builtin_module();
     engine.set_timeout(Duration::from_millis(300));
     let values: Vec<Option<RuntimeValue>> = VALUES

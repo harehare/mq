@@ -5,7 +5,7 @@ use miette::WrapErr;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use mq_lang::DictMap;
-use mq_lang::Shared;
+use mq_syntax::Shared;
 use rayon::prelude::*;
 use std::collections::{BTreeSet, HashSet};
 use std::ffi::OsString;
@@ -2318,7 +2318,7 @@ impl Cli {
                 for v in args.chunks(2) {
                     engine.define_string_value(&v[0], &v[1]);
                     named.insert(
-                        mq_lang::Ident::new(&v[0]),
+                        mq_syntax::Ident::new(&v[0]),
                         mq_lang::RuntimeValue::String(Shared::new(v[1].clone())),
                     );
                 }
@@ -2330,7 +2330,7 @@ impl Cli {
                         serde_json::from_str(&v[1]).map_err(|e| miette!("--argjson {}: invalid JSON: {}", v[0], e))?;
                     let runtime_value: mq_lang::RuntimeValue = json_value.into();
                     engine.define_value(&v[0], runtime_value.clone()).into_diagnostic()?;
-                    named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
+                    named.insert(mq_syntax::Ident::new(&v[0]), runtime_value);
                 }
             }
 
@@ -2347,11 +2347,11 @@ impl Cli {
                         .into_iter::<serde_json::Value>()
                         .collect::<Result<_, _>>()
                         .into_diagnostic()?;
-                    let runtime_value = mq_lang::RuntimeValue::Array(mq_lang::Shared::new(
+                    let runtime_value = mq_lang::RuntimeValue::Array(mq_syntax::Shared::new(
                         json_values.into_iter().map(Into::into).collect(),
                     ));
                     engine.define_value(&v[0], runtime_value.clone()).into_diagnostic()?;
-                    named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
+                    named.insert(mq_syntax::Ident::new(&v[0]), runtime_value);
                 }
             }
 
@@ -2364,11 +2364,11 @@ impl Cli {
                 .collect();
             let args_map: DictMap = [
                 (
-                    mq_lang::Ident::new("positional"),
+                    mq_syntax::Ident::new("positional"),
                     mq_lang::RuntimeValue::Array(Shared::new(positional)),
                 ),
                 (
-                    mq_lang::Ident::new("named"),
+                    mq_syntax::Ident::new("named"),
                     mq_lang::RuntimeValue::Dict(Shared::new(named)),
                 ),
             ]
@@ -3617,7 +3617,7 @@ impl Cli {
 
     /// Returns `true` if the dict is a known expandable typed dict (has `type: :symbol`).
     fn is_typed_dict(map: &DictMap) -> bool {
-        let type_key = mq_lang::Ident::new("type");
+        let type_key = mq_syntax::Ident::new("type");
         matches!(
             map.get(&type_key),
             Some(mq_lang::RuntimeValue::Symbol(s)) if s.resolve_with(|s| matches!(s, "section" | "table"))
@@ -3629,15 +3629,15 @@ impl Cli {
     /// Returns `None` if the dict is not a known expandable type.
     /// To add support for a new type, add a match arm for the type name.
     fn expand_typed_dict(map: &DictMap) -> Option<Vec<mq_markdown::Node>> {
-        let type_key = mq_lang::Ident::new("type");
+        let type_key = mq_syntax::Ident::new("type");
         match map.get(&type_key) {
             Some(mq_lang::RuntimeValue::Symbol(s)) => match s.to_string().as_str() {
                 "section" => {
                     let mut nodes = Vec::new();
-                    if let Some(header) = map.get(&mq_lang::Ident::new("header")) {
+                    if let Some(header) = map.get(&mq_syntax::Ident::new("header")) {
                         Self::collect_markdown_nodes(header, &mut nodes);
                     }
-                    if let Some(children) = map.get(&mq_lang::Ident::new("children")) {
+                    if let Some(children) = map.get(&mq_syntax::Ident::new("children")) {
                         Self::collect_markdown_nodes(children, &mut nodes);
                     }
                     Some(nodes)
@@ -3646,13 +3646,13 @@ impl Cli {
                     // Reconstruct table nodes in the same order as table::to_markdown():
                     // header cells + align row + flattened data rows
                     let mut nodes = Vec::new();
-                    if let Some(header) = map.get(&mq_lang::Ident::new("header")) {
+                    if let Some(header) = map.get(&mq_syntax::Ident::new("header")) {
                         Self::collect_markdown_nodes(header, &mut nodes);
                     }
-                    if let Some(align) = map.get(&mq_lang::Ident::new("align")) {
+                    if let Some(align) = map.get(&mq_syntax::Ident::new("align")) {
                         Self::collect_markdown_nodes(align, &mut nodes);
                     }
-                    if let Some(rows) = map.get(&mq_lang::Ident::new("rows")) {
+                    if let Some(rows) = map.get(&mq_syntax::Ident::new("rows")) {
                         Self::collect_markdown_nodes(rows, &mut nodes);
                     }
                     Some(nodes)
@@ -3669,7 +3669,7 @@ impl Cli {
         match runtime_value {
             // Moves the node out when nothing else holds it.
             mq_lang::RuntimeValue::Markdown(node, _) => {
-                out.push(mq_lang::Shared::try_unwrap(node).unwrap_or_else(|shared| (*shared).clone()))
+                out.push(mq_syntax::Shared::try_unwrap(node).unwrap_or_else(|shared| (*shared).clone()))
             }
             other => Self::push_nodes_ref(&other, out),
         }

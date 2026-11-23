@@ -3,7 +3,7 @@ use crate::stats::{Summary, mann_whitney_p};
 use glob::glob;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use miette::{IntoDiagnostic, NamedSource};
-use mq_lang::CstNodeKind;
+use mq_syntax::CstNodeKind;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -505,7 +505,7 @@ impl BenchRunner {
         let query = format!("{content}\n| {}()", bench.name);
         let mut engine: BenchEngine = mq_lang::Engine::with_io(
             mq_lang::DefaultModuleResolver::default(),
-            mq_lang::Shared::new(mq_lang::MemIo::default()),
+            mq_syntax::Shared::new(mq_lang::MemIo::default()),
         );
         engine.load_builtin_module();
 
@@ -648,11 +648,11 @@ impl BenchRunner {
     }
 
     fn discover_benches(content: &str) -> Vec<DiscoveredBench> {
-        let (nodes, _) = mq_lang::parse_recovery(content);
+        let (nodes, _) = mq_syntax::parse_recovery(content);
         Self::discover_benches_in(&nodes)
     }
 
-    fn discover_benches_in(nodes: &[mq_lang::Shared<mq_lang::CstNode>]) -> Vec<DiscoveredBench> {
+    fn discover_benches_in(nodes: &[mq_syntax::Shared<mq_syntax::CstNode>]) -> Vec<DiscoveredBench> {
         let mut benches = Vec::new();
 
         for node in nodes {
@@ -687,7 +687,7 @@ impl BenchRunner {
     }
 
     /// Returns the number of positional parameters of a `def` node.
-    fn get_arity(node: &mq_lang::Shared<mq_lang::CstNode>) -> usize {
+    fn get_arity(node: &mq_syntax::Shared<mq_syntax::CstNode>) -> usize {
         let (sig, _) = node.split_cond_and_program();
         // sig[0] is the function name; the rest are parameter idents.
         sig.len().saturating_sub(1)

@@ -9,9 +9,10 @@
 
 use miette::miette;
 use mq_lang::DictMap;
+use mq_lang::RuntimeValue;
+use mq_syntax::Ident;
 #[cfg(test)]
-use mq_lang::Shared;
-use mq_lang::{Ident, RuntimeValue};
+use mq_syntax::Shared;
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 

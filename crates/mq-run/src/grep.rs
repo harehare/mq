@@ -8,7 +8,7 @@
 use crate::atomic_output::OutputSink;
 use miette::miette;
 #[cfg(test)]
-use mq_lang::Shared;
+use mq_syntax::Shared;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::PathBuf;
@@ -264,7 +264,7 @@ mod tests {
     fn test_flatten_flat_dict() {
         let mut m = DictMap::default();
         m.insert(
-            mq_lang::Ident::new("key"),
+            mq_syntax::Ident::new("key"),
             mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
         );
         assert_eq!(
@@ -280,12 +280,12 @@ mod tests {
     fn test_flatten_nested_dict() {
         let mut inner = DictMap::default();
         inner.insert(
-            mq_lang::Ident::new("b"),
+            mq_syntax::Ident::new("b"),
             mq_lang::RuntimeValue::String(Shared::new("deep".to_string())),
         );
         let mut outer = DictMap::default();
         outer.insert(
-            mq_lang::Ident::new("a"),
+            mq_syntax::Ident::new("a"),
             mq_lang::RuntimeValue::Dict(Shared::new(inner)),
         );
         assert_eq!(
@@ -302,7 +302,7 @@ mod tests {
         // dict["key"][0] → "key[0]"
         let mut m = DictMap::default();
         m.insert(
-            mq_lang::Ident::new("key"),
+            mq_syntax::Ident::new("key"),
             mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::String(Shared::new(
                 "val".to_string(),
             ))])),
@@ -321,7 +321,7 @@ mod tests {
         // [0].key → "[0].key"
         let mut m = DictMap::default();
         m.insert(
-            mq_lang::Ident::new("b"),
+            mq_syntax::Ident::new("b"),
             mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
         );
         let input = mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::Dict(Shared::new(m))]));
@@ -363,7 +363,7 @@ mod tests {
     fn test_to_nodes_dict() {
         let mut m = DictMap::default();
         m.insert(
-            mq_lang::Ident::new("key"),
+            mq_syntax::Ident::new("key"),
             mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
         );
         let actual: Vec<String> = to_nodes(&mq_lang::RuntimeValue::Dict(Shared::new(m)))
