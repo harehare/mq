@@ -751,6 +751,73 @@ fn test_query_session_closures_cross_queries(#[case] queries: &[&str], #[case] e
     assert_eq!(eval_in_session(queries), expected);
 }
 
+/// Closures across more than two chunk tables, and through the other VM features that carry a
+/// frame: generators, partial application, recursion, `try`, and closures held in collections.
+#[rstest]
+#[case::returned_then_passed_to_another_def(
+    &["def mk(n): fn(x): x + n;", "def use(rows, f): map(rows, f);", "[1, 2] | use(mk(1))"],
+    "[2, 3]"
+)]
+#[case::returned_closure_applied_by_another_def(
+    &["def mk(): fn(x): x * 2;", "def apply(f, v): f(v);", "apply(mk(), 21)"],
+    "42"
+)]
+#[case::closure_made_in_one_def_passed_to_an_older_one(
+    &["def a(f): f(1);", "def b(f): a(fn(x): f(x) + 1);", "b(fn(v): v * 10)"],
+    "11"
+)]
+#[case::returned_closures_in_an_array(
+    &["def mk(n): fn(x): x + n;", "[mk(1), mk(2)] | map(fn(f): f(10))"],
+    "[11, 12]"
+)]
+#[case::array_of_closures_returned(
+    &["def mk2(): [fn(x): x + 1, fn(x): x + 2];", "map(mk2(), fn(f): f(10))"],
+    "[11, 12]"
+)]
+#[case::curried_closures(
+    &["def curry(a): fn(b): fn(c): a + b + c;", "let f = curry(1)", "let g = f(2)", "g(3)"],
+    "6"
+)]
+#[case::partial_application_with_a_closure_argument(
+    &["def ap2(x, c): c(x);", "let p = partial(ap2, 5)", "p(fn(v): v + 1)"],
+    "6"
+)]
+#[case::partial_application_binding_a_closure(
+    &["def ap3(c, x): c(x);", "let p = partial(ap3, fn(v): v * 3)", "p(4)"],
+    "12"
+)]
+#[case::continuation_passing_recursion(
+    &["def fact(n, k): if (n == 0): k(1) else: fact(n - 1, fn(r): k(r * n)) end", "fact(5, fn(r): r)"],
+    "120"
+)]
+#[case::tail_call_keeps_the_closure(
+    &["def count(n, f): if (n == 0): f(n) else: count(n - 1, f) end", "count(3, fn(x): x + 100)"],
+    "100"
+)]
+#[case::closure_that_throws_is_caught_by_the_callee(
+    &["def safe(f): try: f(1) catch: \"caught\";", "safe(fn(x): error(\"boom\"))"],
+    "caught"
+)]
+#[case::generator_yields_a_closure(
+    &["def g(): yield: fn(x): x + 1;", "let s = g()", "let f = get(next(s), \"value\")", "f(1)"],
+    "2"
+)]
+#[case::generator_calls_a_closure_argument(
+    &["def g(f): yield: f(1) | yield: f(2);", "let s = g(fn(x): x * 10)", "[get(next(s), \"value\"), get(next(s), \"value\")]"],
+    "[10, 20]"
+)]
+#[case::two_defs_in_one_query_with_a_double_semicolon(
+    &["def adder(n): fn(x): x + n;;\ndef twice(rows, f): map(rows, f);\n[1, 2] | twice(adder(10))"],
+    "[11, 12]"
+)]
+#[case::closure_in_a_dict(
+    &["def apply_key(d, k, v): let f = get(d, k) | f(v);", "apply_key({\"f\": fn(x): x + 1}, \"f\", 41)"],
+    "42"
+)]
+fn test_query_session_closures_across_features(#[case] queries: &[&str], #[case] expected: &str) {
+    assert_eq!(eval_in_session(queries), expected);
+}
+
 #[test]
 fn test_query_session_persists_let_across_eval_calls() {
     let engine = DefaultEngine::default();
