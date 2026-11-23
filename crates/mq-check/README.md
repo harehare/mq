@@ -96,9 +96,10 @@ Builtins that return a dict are typed as records, so a misspelled key is an erro
 | Builtin | Result |
 | --- | --- |
 | `file_info(path)` | `{path: string, kind: string, size: number, modified: number \| none}` |
+| `multipart(parts)` | `{body: bytes, content_type: string}` |
 | `collection(dir)` | `[{path: string, title: string \| none, frontmatter: any, content: [markdown]}]` |
 
-`http_all` takes `[{url: string, method?: string \| symbol, body?: string, headers?: {string: string}}]`. `url` is required, unknown keys are rejected, and the optional keys may be left out or set to `none`.
+`http_all` takes `[{url: string, method?: string \| symbol, body?: string \| bytes, headers?: {string: string}}]`. `url` is required, unknown keys are rejected, and the optional keys may be left out or set to `none`.
 
 ```mq
 file_info("a.md")["modified"]                 // number | none

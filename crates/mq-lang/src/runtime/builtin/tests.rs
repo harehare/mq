@@ -6054,3 +6054,29 @@ fn test_type_predicates_arity(#[case] predicate: &str, #[case] piped_none: Runti
         .is_err()
     );
 }
+
+#[cfg(feature = "http")]
+#[rstest]
+#[case::string_body(vec![RuntimeValue::String(Shared::new("b".to_string())), ], Some(b"b".to_vec()))]
+#[case::bytes_body(vec![RuntimeValue::Bytes(Shared::new(vec![0, 255]))], Some(vec![0, 255]))]
+#[case::headers_only(vec![RuntimeValue::Dict(Shared::new(DictMap::default()))], None)]
+fn test_split_http_args_body_forms(#[case] rest: Vec<RuntimeValue>, #[case] expected: Option<Vec<u8>>) {
+    let mut args = vec![
+        RuntimeValue::String(Shared::new("post".to_string())),
+        RuntimeValue::String(Shared::new("https://example.com".to_string())),
+    ];
+    args.extend(rest);
+    let (_, _, body, _) = split_http_args(&args).unwrap();
+    assert_eq!(body.map(<[u8]>::to_vec), expected);
+}
+
+#[cfg(feature = "http")]
+#[test]
+fn test_split_http_args_rejects_non_body() {
+    let args = [
+        RuntimeValue::String(Shared::new("post".to_string())),
+        RuntimeValue::String(Shared::new("https://example.com".to_string())),
+        RuntimeValue::Number(1.into()),
+    ];
+    assert!(split_http_args(&args).is_none());
+}

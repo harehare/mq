@@ -10,6 +10,7 @@
 //! an internal address after the initial check.
 
 use crate::DictMap;
+use crate::Ident;
 
 use super::Error;
 use super::io_context;
@@ -57,7 +58,7 @@ fn extract_headers(headers: Option<&DictMap>) -> Result<Vec<(String, String)>, E
 pub(super) fn request(
     method: &RuntimeValue,
     url: &str,
-    body: Option<&str>,
+    body: Option<&[u8]>,
     headers: Option<&DictMap>,
 ) -> Result<RuntimeValue, Error> {
     let method = parse_method(method)?;
@@ -68,12 +69,116 @@ pub(super) fn request(
         .map_err(err)
 }
 
+/// Escapes a form field name or filename for use inside a quoted `Content-Disposition` parameter.
+fn escape_disposition(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "%22")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+/// A boundary that does not occur in any part body.
+fn pick_boundary(bodies: &[&[u8]]) -> String {
+    use std::hash::{BuildHasher, Hasher};
+
+    let state = std::collections::hash_map::RandomState::new();
+    loop {
+        let mut hasher = state.build_hasher();
+        hasher.write_u8(0);
+        let boundary = format!(
+            "mq-boundary-{:016x}{:016x}",
+            hasher.finish(),
+            state.hash_one(bodies.len())
+        );
+        let needle = boundary.as_bytes();
+        if !bodies
+            .iter()
+            .any(|body| body.windows(needle.len()).any(|w| w == needle))
+        {
+            return boundary;
+        }
+    }
+}
+
+/// Encodes `parts` as `multipart/form-data`, returning `{body: bytes, content_type: string}`.
+/// Each part is a dict with `name` and `value` (string or bytes), and optional `filename` and
+/// `content_type`. Bytes values default to `application/octet-stream`.
+pub(super) fn multipart(parts: &[RuntimeValue]) -> Result<RuntimeValue, Error> {
+    struct Part<'a> {
+        header: String,
+        value: &'a [u8],
+    }
+
+    let text = |fields: &DictMap, key: &str| -> Result<Option<String>, Error> {
+        match fields.get(&Ident::from(key)) {
+            None => Ok(None),
+            Some(v) if v.is_none() => Ok(None),
+            Some(RuntimeValue::String(s)) => Ok(Some(s.to_string())),
+            Some(other) => Err(err(format!("multipart: `{key}` must be a string, got {other}"))),
+        }
+    };
+
+    let mut encoded = Vec::with_capacity(parts.len());
+    for part in parts {
+        let RuntimeValue::Dict(fields) = part else {
+            return Err(err("multipart: each part must be a dict with `name` and `value`"));
+        };
+        let name = text(fields, "name")?.ok_or_else(|| err("multipart: each part needs a `name` string"))?;
+        let (value, is_bytes): (&[u8], bool) = match fields.get(&Ident::from("value")) {
+            Some(RuntimeValue::String(s)) => (s.as_bytes(), false),
+            Some(RuntimeValue::Bytes(b)) => (b.as_slice(), true),
+            Some(other) => {
+                return Err(err(format!(
+                    "multipart: `value` must be a string or bytes, got {other}"
+                )));
+            }
+            None => return Err(err("multipart: each part needs a `value`")),
+        };
+        let mut header = format!("Content-Disposition: form-data; name=\"{}\"", escape_disposition(&name));
+        let filename = text(fields, "filename")?;
+        if let Some(filename) = &filename {
+            header.push_str(&format!("; filename=\"{}\"", escape_disposition(filename)));
+        }
+        let content_type = match text(fields, "content_type")? {
+            Some(ct) if ct.contains(['\r', '\n']) => {
+                return Err(err("multipart: `content_type` must not contain line breaks"));
+            }
+            Some(ct) => Some(ct),
+            None if is_bytes || filename.is_some() => Some("application/octet-stream".to_string()),
+            None => None,
+        };
+        if let Some(ct) = content_type {
+            header.push_str(&format!("\r\nContent-Type: {ct}"));
+        }
+        encoded.push(Part { header, value });
+    }
+
+    let bodies: Vec<&[u8]> = encoded.iter().map(|p| p.value).collect();
+    let boundary = pick_boundary(&bodies);
+    let mut body = Vec::new();
+    for part in &encoded {
+        body.extend_from_slice(format!("--{boundary}\r\n{}\r\n\r\n", part.header).as_bytes());
+        body.extend_from_slice(part.value);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+    let mut result = DictMap::default();
+    result.insert(Ident::from("body"), RuntimeValue::Bytes(Shared::new(body)));
+    result.insert(
+        Ident::from("content_type"),
+        RuntimeValue::String(format!("multipart/form-data; boundary={boundary}").into()),
+    );
+    Ok(RuntimeValue::Dict(Shared::new(result)))
+}
+
 /// Opens the response body as a streaming reader handle instead of buffering it, backing
 /// `open_http`. Same method/body/header handling as [`request`].
 pub(super) fn open_stream(
     method: &RuntimeValue,
     url: &str,
-    body: Option<&str>,
+    body: Option<&[u8]>,
     headers: Option<&DictMap>,
 ) -> Result<RuntimeValue, Error> {
     let method = parse_method(method)?;
@@ -105,6 +210,85 @@ mod tests {
 
     fn symbol(name: &str) -> RuntimeValue {
         RuntimeValue::Symbol(Ident::new(name))
+    }
+
+    fn part(fields: &[(&str, RuntimeValue)]) -> RuntimeValue {
+        let mut map = DictMap::default();
+        for (key, value) in fields {
+            map.insert(Ident::new(key), value.clone());
+        }
+        RuntimeValue::Dict(Shared::new(map))
+    }
+
+    fn text(value: &str) -> RuntimeValue {
+        RuntimeValue::String(value.to_string().into())
+    }
+
+    fn field(result: &RuntimeValue, key: &str) -> RuntimeValue {
+        let RuntimeValue::Dict(map) = result else {
+            panic!("expected dict")
+        };
+        map.get(&Ident::new(key)).cloned().unwrap()
+    }
+
+    #[rstest]
+    #[case::quote("a\"b", "a%22b")]
+    #[case::backslash("a\\b", "a\\\\b")]
+    #[case::trailing_backslash("a\\", "a\\\\")]
+    #[case::line_breaks("a\r\nb", "a%0D%0Ab")]
+    fn test_escape_disposition(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(escape_disposition(input), expected);
+    }
+
+    #[test]
+    fn test_multipart_encodes_text_and_file_parts() {
+        let parts = [
+            part(&[("name", text("title")), ("value", text("hi"))]),
+            part(&[
+                ("name", text("file")),
+                ("value", RuntimeValue::Bytes(Shared::new(vec![0, 255, 10]))),
+                ("filename", text("a\"b\\c.bin")),
+            ]),
+        ];
+        let result = multipart(&parts).unwrap();
+        let RuntimeValue::String(content_type) = field(&result, "content_type") else {
+            panic!()
+        };
+        let boundary = content_type.strip_prefix("multipart/form-data; boundary=").unwrap();
+        let RuntimeValue::Bytes(body) = field(&result, "body") else {
+            panic!()
+        };
+
+        let mut expected = Vec::new();
+        expected.extend_from_slice(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nhi\r\n").as_bytes(),
+        );
+        expected.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a%22b\\\\c.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        expected.extend_from_slice(&[0, 255, 10]);
+        expected.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        assert_eq!(*body, expected);
+    }
+
+    #[rstest]
+    #[case::not_dict(text("x"))]
+    #[case::missing_name(part(&[("value", text("v"))]))]
+    #[case::missing_value(part(&[("name", text("n"))]))]
+    #[case::bad_value(part(&[("name", text("n")), ("value", RuntimeValue::Number(1.into()))]))]
+    #[case::header_injection(part(&[("name", text("n")), ("value", text("v")), ("content_type", text("a\r\nX: y"))]))]
+    fn test_multipart_rejects_invalid_parts(#[case] bad: RuntimeValue) {
+        assert!(multipart(&[bad]).is_err());
+    }
+
+    #[test]
+    fn test_pick_boundary_avoids_body_content() {
+        let boundary = pick_boundary(&[b"abc"]);
+        assert!(boundary.starts_with("mq-boundary-"));
+        assert!(!boundary.contains("abc"));
     }
 
     #[rstest]
@@ -155,7 +339,7 @@ mod tests {
             );
         }
         assert!(
-            request(&symbol("post"), "https://example.invalid", Some("{}"), None).is_err(),
+            request(&symbol("post"), "https://example.invalid", Some(b"{}"), None).is_err(),
             "http should be blocked when net access is not allowed, even with a body"
         );
 

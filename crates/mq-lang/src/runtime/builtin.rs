@@ -5525,35 +5525,48 @@ fn extract_image(arg: &mut RuntimeValue, dir: &str) -> Result<RuntimeValue, Erro
     Ok(std::mem::take(arg))
 }
 
+/// Splits `http`/`open_http` arguments into `(method, url, body, headers)`. The optional third
+/// argument is the body (string or bytes), or the headers when it is a dict.
+#[cfg(feature = "http")]
+type HttpArgs<'a> = (&'a RuntimeValue, &'a str, Option<&'a [u8]>, Option<&'a DictMap>);
+
+#[cfg(feature = "http")]
+fn split_http_args(args: &[RuntimeValue]) -> Option<HttpArgs<'_>> {
+    fn body_of(value: &RuntimeValue) -> Option<&[u8]> {
+        match value {
+            RuntimeValue::String(s) => Some(s.as_bytes()),
+            RuntimeValue::Bytes(b) => Some(b.as_slice()),
+            _ => None,
+        }
+    }
+
+    let [
+        method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+        RuntimeValue::String(url),
+        rest @ ..,
+    ] = args
+    else {
+        return None;
+    };
+    match rest {
+        [] => Some((method, url, None, None)),
+        [RuntimeValue::Dict(headers)] => Some((method, url, None, Some(&**headers))),
+        [body] => Some((method, url, Some(body_of(body)?), None)),
+        [body, RuntimeValue::Dict(headers)] => Some((method, url, Some(body_of(body)?), Some(&**headers))),
+        _ => None,
+    }
+}
+
 /// Performs an HTTPS request with the given method (`"get"`/`:get`, `"post"`/`:post`, etc.) and
-/// returns the response body as a string. `body`, when given, is sent regardless of method.
-/// `headers`, a dict of string to string, is applied to the request when given.
-/// Requires the ambient [`Io`]'s net permission (see [`io_context`]).
+/// returns the response body as a string. `body` (string or bytes), when given, is sent
+/// regardless of method. `headers`, a dict of string to string, is applied to the request when
+/// given. Requires the ambient [`Io`]'s net permission (see [`io_context`]).
 #[cfg(feature = "http")]
 #[mq_macros::mq_fn(name = "http", params = Range(2, 4))]
 fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-        ] => http::request(method, url, None, None),
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-            RuntimeValue::String(body),
-        ] => http::request(method, url, Some(body), None),
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-            RuntimeValue::Dict(headers),
-        ] => http::request(method, url, None, Some(headers)),
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-            RuntimeValue::String(body),
-            RuntimeValue::Dict(headers),
-        ] => http::request(method, url, Some(body), Some(headers)),
-        args => Err(Error::InvalidTypes(
+    match split_http_args(&args) {
+        Some((method, url, body, headers)) => http::request(method, url, body, headers),
+        None => Err(Error::InvalidTypes(
             ident.to_string(),
             args.iter_mut().map(std::mem::take).collect(),
         )),
@@ -5569,27 +5582,22 @@ fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
 #[cfg(feature = "http")]
 #[mq_macros::mq_fn(name = "open_http", params = Range(2, 4))]
 fn open_http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match split_http_args(&args) {
+        Some((method, url, body, headers)) => http::open_stream(method, url, body, headers),
+        None => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
+/// Encodes `parts`, an array of `{name, value, filename?, content_type?}` dicts, as a
+/// `multipart/form-data` body. Returns `{body, content_type}` for use with `http`.
+#[cfg(feature = "http")]
+#[mq_macros::mq_fn(name = "multipart", params = Fixed(1))]
+fn multipart_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-        ] => http::open_stream(method, url, None, None),
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-            RuntimeValue::String(body),
-        ] => http::open_stream(method, url, Some(body), None),
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-            RuntimeValue::Dict(headers),
-        ] => http::open_stream(method, url, None, Some(headers)),
-        [
-            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
-            RuntimeValue::String(url),
-            RuntimeValue::String(body),
-            RuntimeValue::Dict(headers),
-        ] => http::open_stream(method, url, Some(body), Some(headers)),
+        [RuntimeValue::Array(parts)] => http::multipart(parts),
         args => Err(Error::InvalidTypes(
             ident.to_string(),
             args.iter_mut().map(std::mem::take).collect(),
@@ -5649,10 +5657,11 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         .map_err(|_| Error::Runtime(format!("http_all: invalid HTTP method {method:?}")))?
         .to_string();
     let body = match option("body") {
-        Some(RuntimeValue::String(body)) => Some(body.to_string()),
+        Some(RuntimeValue::String(body)) => Some(body.as_bytes().to_vec()),
+        Some(RuntimeValue::Bytes(body)) => Some(body.to_vec()),
         Some(other) => {
             return Err(Error::Runtime(format!(
-                "http_all: `body` must be a string, got {other}"
+                "http_all: `body` must be a string or bytes, got {other}"
             )));
         }
         None => None,
@@ -6346,6 +6355,8 @@ mq_macros::builtin_dispatch! {
     OPEN_HTTP,
     #[cfg(feature = "http")]
     HTTP_ALL,
+    #[cfg(feature = "http")]
+    MULTIPART,
     #[cfg(all(feature = "http", feature = "mock-io"))]
     MOCK_FETCH,
     #[cfg(feature = "process-io")]

@@ -2262,7 +2262,7 @@ key: 1
     BuiltinDoc {
         name: "http",
         aliases: &[],
-        description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post; get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+        description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post; get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string or bytes) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
         params: &["method", "url", "body", "headers"],
         param_types: &["string", "string", "string", "dict"],
         returns: "string",
@@ -2273,7 +2273,7 @@ key: 1
     BuiltinDoc {
         name: "http_all",
         aliases: &[],
-        description: "Performs a batch of HTTPS requests and returns the response bodies as an array of strings in request order. Each request is a dict with a `url` string and optional `method` (string or symbol, default GET), `body` (string) and `headers` (dict of string to string). Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+        description: "Performs a batch of HTTPS requests and returns the response bodies as an array of strings in request order. Each request is a dict with a `url` string and optional `method` (string or symbol, default GET), `body` (string or bytes) and `headers` (dict of string to string). Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
         params: &["requests"],
         param_types: &["array"],
         returns: "array",
@@ -2861,6 +2861,17 @@ key: 1
             expected: r#"6"#,
         }],
         capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
+        name: "multipart",
+        aliases: &[],
+        description: "Encodes an array of parts as a multipart/form-data body. Each part is a dict with a `name` string, a `value` (string or bytes) and optional `filename` and `content_type` strings; bytes values default to application/octet-stream. Returns a dict with `body` (bytes) and `content_type` (string, including the boundary) to pass to `http`.",
+        params: &["parts"],
+        param_types: &["array"],
+        returns: "dict",
+        examples: &[],
+        capability: Some("http"),
         kind: DocKind::Function,
     },
     BuiltinDoc {

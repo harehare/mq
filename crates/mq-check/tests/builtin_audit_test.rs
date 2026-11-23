@@ -96,6 +96,7 @@ const EVIDENCE: &[(&str, &str)] = &[
     ),
     ("join_by", "join_by([{\"id\": 1}], [{\"uid\": 1}], \"id\", \"uid\")"),
     ("http", "http(:get, \"https://example.com/\")"),
+    ("multipart", "multipart([{\"name\": \"a\", \"value\": \"b\"}])"),
     ("http_all", "http_all([{\"url\": \"https://example.com/\"}])"),
     ("http_lines", "http_lines(:get, \"https://example.com/\")"),
     ("send", "send(to_coroutine([1]), 1)"),
