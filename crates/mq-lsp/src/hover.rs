@@ -153,11 +153,12 @@ fn hir_hover(
     type_env: Option<mq_check::TypeEnv>,
     position: Position,
 ) -> Option<Hover> {
-    let source = hir.read_recover().source_by_url(&url);
+    let hir = hir.read_recover();
+    let source = hir.source_by_url(&url);
 
     if let Some(source) = source {
         let lsp_position = mq_syntax::Position::new(position.line + 1, position.character + 1);
-        if let Some((symbol_id, symbol)) = hir.read_recover().find_symbol_in_position(source, lsp_position) {
+        if let Some((symbol_id, symbol)) = hir.find_symbol_in_position(source, lsp_position) {
             match &symbol.kind {
                 mq_hir::SymbolKind::Function(_)
                 | mq_hir::SymbolKind::Variable
@@ -167,8 +168,7 @@ fn hir_hover(
                     let type_scheme = type_env.as_ref().and_then(|env| env.get(&symbol_id));
                     let name = symbol.value.as_deref().unwrap_or_default();
 
-                    let examples: Vec<mq_help::BuiltinExample> = {
-                        let hir = hir.read_recover();
+                    let examples: Vec<mq_help::BuiltinExample> =
                         if symbol.source.source_id == Some(hir.builtin.source_id) {
                             hir.builtin
                                 .docs
@@ -177,8 +177,7 @@ fn hir_hover(
                                 .unwrap_or_default()
                         } else {
                             Vec::new()
-                        }
-                    };
+                        };
 
                     let (kind_label, signature, params) = match &symbol.kind {
                         mq_hir::SymbolKind::Function(args) => {
@@ -213,15 +212,12 @@ fn hir_hover(
                         }),
                         // The text under the cursor, which may be a reference to a symbol
                         // declared in another source.
-                        range: hir
-                            .read_recover()
-                            .find_range_in_position(source, lsp_position)
-                            .map(|text_range| {
-                                Range::new(
-                                    Position::new(text_range.start.line - 1, text_range.start.column - 1),
-                                    Position::new(text_range.end.line - 1, text_range.end.column - 1),
-                                )
-                            }),
+                        range: hir.find_range_in_position(source, lsp_position).map(|text_range| {
+                            Range::new(
+                                Position::new(text_range.start.line - 1, text_range.start.column - 1),
+                                Position::new(text_range.end.line - 1, text_range.end.column - 1),
+                            )
+                        }),
                     })
                 }
                 _ => None,

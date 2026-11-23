@@ -1304,6 +1304,81 @@ async fn test_did_close() {
     assert!(!backend.error_map.contains_key(&uri.to_string()));
     assert!(!backend.documents.contains_key(&uri.to_string()));
     assert!(!backend.source_map.read_recover().contains_left(&uri.to_string()));
+    assert!(backend.hir.read_recover().source_by_url(&uri).is_none());
+}
+
+#[tokio::test]
+async fn test_locks_recover_after_panic() {
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        workspace_roots: RwLock::new(Vec::new()),
+        versions: DashMap::new(),
+        config: LspConfig::default(),
+    });
+    let backend = service.inner();
+
+    // Poison both locks as a panicking handler would.
+    let hir = Arc::clone(&backend.hir);
+    let _ = std::thread::spawn(move || {
+        let _guard = hir.write().unwrap();
+        panic!("handler panic");
+    })
+    .join();
+    assert!(backend.hir.is_poisoned());
+    std::thread::scope(|s| {
+        let _ = s
+            .spawn(|| {
+                let _guard = backend.source_map.write().unwrap();
+                panic!("handler panic");
+            })
+            .join();
+    });
+    assert!(backend.source_map.is_poisoned());
+
+    let uri = Url::parse("file:///poisoned.mq").unwrap();
+    backend
+        .did_open(ls_types::DidOpenTextDocumentParams {
+            text_document: ls_types::TextDocumentItem {
+                uri: to_uri(&uri),
+                language_id: "mq".to_string(),
+                version: 1,
+                text: "let x = 1 | x".to_string(),
+            },
+        })
+        .await;
+
+    assert!(backend.source_map.read_recover().contains_left(&uri.to_string()));
+    let hover = backend
+        .hover(ls_types::HoverParams {
+            text_document_position_params: ls_types::TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
+                position: ls_types::Position::new(0, 12),
+            },
+            work_done_progress_params: Default::default(),
+        })
+        .await;
+    assert!(hover.is_ok_and(|h| h.is_some()));
+    let hints = backend
+        .inlay_hint(ls_types::InlayHintParams {
+            text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
+            range: ls_types::Range::new(ls_types::Position::new(0, 0), ls_types::Position::new(1, 0)),
+            work_done_progress_params: Default::default(),
+        })
+        .await;
+    assert!(hints.is_ok());
+    let symbols = backend
+        .document_symbol(ls_types::DocumentSymbolParams {
+            text_document: TextDocumentIdentifier { uri: to_uri(&uri) },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        })
+        .await;
+    assert!(symbols.is_ok());
 }
 
 #[tokio::test]

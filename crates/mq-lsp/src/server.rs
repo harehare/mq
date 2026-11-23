@@ -140,8 +140,11 @@ impl LanguageServer for Backend {
         self.versions.remove(&uri_string);
         self.type_env_map.remove(&uri_string);
 
-        // Remove from source map
+        // Remove from source map and release the document's HIR source
         self.source_map.write_recover().remove_by_left(&uri_string);
+        if let Ok(url) = Url::parse(&uri_string) {
+            self.hir.write_recover().remove_source(&url);
+        }
 
         // Clear diagnostics for the closed file
         self.client

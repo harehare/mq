@@ -17,10 +17,10 @@ pub(crate) fn response(
     range: Range,
 ) -> Option<Vec<InlayHint>> {
     let type_env = type_env?;
-    let source = hir.read_recover().source_by_url(&url)?;
+    let hir = hir.read_recover();
+    let source = hir.source_by_url(&url)?;
 
     let hints: Vec<InlayHint> = hir
-        .read_recover()
         .symbols()
         .filter_map(|(symbol_id, symbol)| {
             // Only process symbols from this source file

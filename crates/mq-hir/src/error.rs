@@ -79,7 +79,7 @@ impl Hir {
                         })
                     }
                 }
-                SymbolKind::Include(_) | SymbolKind::Import(_) if self.circular_modules.contains(&symbol_id) => {
+                SymbolKind::Include(_) | SymbolKind::Import(_) if self.is_circular_directive(symbol_id, symbol) => {
                     Some(HirError::CircularModule {
                         symbol: symbol.clone(),
                         module_name: symbol.value.clone().unwrap_or(SmolStr::new("unknown")),
