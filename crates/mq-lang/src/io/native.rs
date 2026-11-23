@@ -64,7 +64,7 @@ fn http_agent() -> &'static ureq::Agent {
 fn send_http_request(
     method: &str,
     url: &str,
-    body: Option<&str>,
+    body: Option<&[u8]>,
     headers: &[(String, String)],
 ) -> Result<ureq::http::Response<ureq::Body>, IoError> {
     if !crate::module::resolver::ssrf::is_https(url) {
@@ -85,7 +85,7 @@ fn send_http_request(
     let response = match body {
         Some(body) => {
             let request = builder
-                .body(body.to_string())
+                .body(body.to_vec())
                 .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
             http_agent().run(request)
         }
@@ -245,7 +245,7 @@ impl Io for NativeIo {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<String, IoError> {
         /// Matches the `http()` builtin's existing limits.
@@ -269,7 +269,7 @@ impl Io for NativeIo {
         &self,
         _method: &str,
         _url: &str,
-        _body: Option<&str>,
+        _body: Option<&[u8]>,
         _headers: &[(String, String)],
     ) -> Result<String, IoError> {
         Err(IoError::Other(Cow::Borrowed(
@@ -284,7 +284,7 @@ impl Io for NativeIo {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<Box<dyn IoReader>, IoError> {
         let response = send_http_request(method, url, body, headers)?;

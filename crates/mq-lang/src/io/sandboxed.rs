@@ -359,7 +359,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<String, IoError> {
         if self.allow_net.is_denied() {
@@ -375,7 +375,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<Box<dyn IoReader>, IoError> {
         if self.allow_net.is_denied() {

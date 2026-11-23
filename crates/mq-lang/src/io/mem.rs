@@ -278,7 +278,7 @@ impl Io for MemIo {
         &self,
         _method: &str,
         url: &str,
-        _body: Option<&str>,
+        _body: Option<&[u8]>,
         _headers: &[(String, String)],
     ) -> Result<String, IoError> {
         self.fetch(url)

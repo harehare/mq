@@ -90,7 +90,7 @@ impl Io for CompileTimeIo {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<String, IoError> {
         self.inner.http_request(method, url, body, headers)
@@ -100,7 +100,7 @@ impl Io for CompileTimeIo {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<Box<dyn IoReader>, IoError> {
         self.inner.http_request_stream(method, url, body, headers)

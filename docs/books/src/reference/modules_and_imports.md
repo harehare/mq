@@ -603,6 +603,17 @@ corresponding flag raises a runtime error explaining how to opt in.
 body regardless of method. The optional `headers` argument is a dict of string to string
 (e.g. `{"Content-Type": "application/json"}`) applied to the request.
 
+`body` may be a string or bytes. `multipart(parts)` builds a `multipart/form-data` body from an array
+of `{name, value, filename?, content_type?}` dicts, where `value` is a string or bytes, and returns
+`{body, content_type}`:
+
+```sh
+mq --allow-net --allow-read '
+  let m = multipart([{"name": "title", "value": "report"}, {"name": "file", "value": read_file_bytes("report.pdf"), "filename": "report.pdf", "content_type": "application/pdf"}])
+  | http(:post, "https://example.com/upload", m["body"], {"Content-Type": m["content_type"]})
+'
+```
+
 `http_all([...requests])` issues a batch of HTTP requests and returns an array of response
 bodies in the same order. Each request is a dict with a required `url` and optional `method`
 (defaults to `get`), `body`, and `headers` keys, e.g.:

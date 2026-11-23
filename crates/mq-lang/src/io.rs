@@ -62,7 +62,7 @@ impl<T: std::io::BufRead + IoSyncBound> IoReader for T {}
 pub struct HttpRequestSpec {
     pub method: String,
     pub url: String,
-    pub body: Option<String>,
+    pub body: Option<Vec<u8>>,
     pub headers: Vec<(String, String)>,
 }
 
@@ -169,7 +169,7 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<String, IoError>;
 
@@ -180,7 +180,7 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
         &self,
         method: &str,
         url: &str,
-        body: Option<&str>,
+        body: Option<&[u8]>,
         headers: &[(String, String)],
     ) -> Result<Box<dyn IoReader>, IoError> {
         Ok(Box::new(std::io::Cursor::new(

@@ -1995,7 +1995,14 @@ fn register_net(ctx: &mut InferenceContext) {
         register_many(
             ctx,
             &["http"],
-            vec![method, Type::String, Type::String, headers.clone()],
+            vec![method.clone(), Type::String, Type::String, headers.clone()],
+            Type::String,
+        );
+        register_ternary(ctx, "http", method.clone(), Type::String, Type::Bytes, Type::String);
+        register_many(
+            ctx,
+            &["http"],
+            vec![method, Type::String, Type::Bytes, headers.clone()],
             Type::String,
         );
     }
@@ -2022,7 +2029,21 @@ fn register_net(ctx: &mut InferenceContext) {
         register_many(
             ctx,
             &["open_http"],
-            vec![method, Type::String, Type::String, headers.clone()],
+            vec![method.clone(), Type::String, Type::String, headers.clone()],
+            Type::Dynamic,
+        );
+        register_ternary(
+            ctx,
+            "open_http",
+            method.clone(),
+            Type::String,
+            Type::Bytes,
+            Type::Dynamic,
+        );
+        register_many(
+            ctx,
+            &["open_http"],
+            vec![method, Type::String, Type::Bytes, headers.clone()],
             Type::Dynamic,
         );
     }
@@ -2032,10 +2053,20 @@ fn register_net(ctx: &mut InferenceContext) {
     let request = record_of(&[
         ("url", Type::String),
         ("method", optional(method_or_symbol())),
-        ("body", optional(Type::String)),
+        ("body", optional(Type::union(vec![Type::String, Type::Bytes]))),
         ("headers", optional(headers.clone())),
     ]);
     register_unary(ctx, "http_all", Type::array(request), Type::array(Type::String));
+
+    // multipart: ([part]) -> {body: bytes, content_type: string}
+    let part = record_of(&[
+        ("name", Type::String),
+        ("value", Type::union(vec![Type::String, Type::Bytes])),
+        ("filename", optional(Type::String)),
+        ("content_type", optional(Type::String)),
+    ]);
+    let encoded = record_of(&[("body", Type::Bytes), ("content_type", Type::String)]);
+    register_unary(ctx, "multipart", Type::array(part), encoded);
 
     // mock_fetch: (url, body) -> none
     register_binary(ctx, "mock_fetch", Type::String, Type::String, Type::None);
