@@ -159,7 +159,9 @@ def _escape_line(line):
 # ```
 #
 # Returns: markdown
-def escape(value): to_md_text(join(map(split(to_string(value), "\n"), _escape_line), "\n"));
+def _escape_str(value): join(map(split(to_string(value), "\n"), _escape_line), "\n");
+
+def escape(value): to_md_text(_escape_str(value));
 
 # Turns single newlines in `value` into hard line breaks; blank lines are kept.
 #
@@ -446,7 +448,7 @@ def _data_blocks(data, depth):
   elif (is_array(data)):
     if (_is_flat_records(data)): _data_table(data) else: _data_list(data, 0)
   else:
-    [text(escape(to_string(data)))];
+    to_markdown(_escape_str(data));
 
 # Converts nested data (dicts, arrays, scalars) into markdown nodes, recursively.
 # A dict becomes a `Key`/`Value` table for its scalar entries, followed by a heading

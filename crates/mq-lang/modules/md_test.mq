@@ -422,6 +422,11 @@ def test_md_from_data_empty_records_and_markup_string():
   | assert_eq([empty, str], ["- {}\n- {}", "\\# Draft"])
 end
 
+def test_md_from_data_scalar_text_value_is_unescaped():
+  let node = first(md::from_data("# Draft"))
+  | assert_eq([to_text(node), to_string(node)], ["# Draft", "\\# Draft"])
+end
+
 def test_md_from_data_heading_depth_is_capped():
   let result = to_string(md::doc(md::from_data({"a": {"b": 1, "c": {"d": 1}}}, 6)))
   | assert_eq(contains(result, "####### "), false)
