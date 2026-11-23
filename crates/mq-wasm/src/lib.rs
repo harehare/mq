@@ -6,3 +6,10 @@
 //!
 /// JavaScript-facing API.
 pub mod script;
+
+/// HTML to Markdown conversion.
+#[cfg(feature = "html")]
+pub mod html;
+/// Diagnostics, hover, inlay hints, formatter and AST dump.
+#[cfg(feature = "lang-service")]
+pub mod lang_service;

@@ -84,7 +84,7 @@ build-chrome-extension:
 # Build @mqlang/node package
 [working-directory: 'crates/mq-wasm']
 build-node-wasm:
-    CARGO_PROFILE_RELEASE_OPT_LEVEL=z wasm-pack build --release --target nodejs --out-dir ../../packages/mq-nodejs/mq-wasm -- --no-default-features
+    CARGO_PROFILE_RELEASE_OPT_LEVEL=z wasm-pack build --release --target nodejs --out-dir ../../packages/mq-nodejs/mq-wasm -- --no-default-features --features lang-service,html
     rm ../../packages/mq-nodejs/mq-wasm/README.md
     rm ../../packages/mq-nodejs/mq-wasm/package.json
 

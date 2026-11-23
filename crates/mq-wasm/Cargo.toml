@@ -23,17 +23,17 @@ workspace = true
 itertools = {workspace = true}
 js-sys = {workspace = true}
 md5 = {workspace = true}
-mq-formatter = {workspace = true}
-mq-hir = {workspace = true}
-mq-check = {workspace = true}
-mq-help = {workspace = true}
-mq-lang = {workspace = true, features = ["ast-json", "http-import", "wasm"]}
-mq-syntax = {workspace = true, features = ["cst"]}
+mq-formatter = {workspace = true, optional = true}
+mq-hir = {workspace = true, optional = true}
+mq-check = {workspace = true, optional = true}
+mq-help = {workspace = true, optional = true}
+mq-lang = {path = "../mq-lang", version = "0.10.2", default-features = false, features = ["http-import", "wasm"]}
+mq-syntax = {workspace = true}
 mq-markdown = {workspace = true}
 opfs = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive"]}
 serde-wasm-bindgen = {workspace = true}
-serde_json = {workspace = true}
+serde_json = {workspace = true, optional = true}
 wasm-bindgen = {workspace = true}
 wasm-bindgen-futures = {workspace = true}
 web-sys = {version = "0.3", features = ["Response", "console"]}
@@ -42,7 +42,17 @@ web-sys = {version = "0.3", features = ["Response", "console"]}
 wasm-bindgen-test = {workspace = true}
 
 [features]
-default = ["opfs"]
+default = ["opfs", "lang-service", "html"]
+html = ["mq-lang/html-to-markdown", "mq-markdown/html-to-markdown"]
+lang-service = [
+  "dep:mq-check",
+  "dep:mq-formatter",
+  "dep:mq-help",
+  "dep:mq-hir",
+  "dep:serde_json",
+  "mq-lang/ast-json",
+  "mq-syntax/cst",
+]
 opfs = ["dep:opfs"]
 test-in-worker = []
 
