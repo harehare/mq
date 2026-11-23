@@ -71,7 +71,11 @@ pub(super) fn request(
 
 /// Escapes a form field name or filename for use inside a quoted `Content-Disposition` parameter.
 fn escape_disposition(value: &str) -> String {
-    value.replace('"', "%22").replace('\r', "%0D").replace('\n', "%0A")
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "%22")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
 }
 
 /// A boundary that does not occur in any part body.
@@ -227,6 +231,15 @@ mod tests {
         map.get(&Ident::new(key)).cloned().unwrap()
     }
 
+    #[rstest]
+    #[case::quote("a\"b", "a%22b")]
+    #[case::backslash("a\\b", "a\\\\b")]
+    #[case::trailing_backslash("a\\", "a\\\\")]
+    #[case::line_breaks("a\r\nb", "a%0D%0Ab")]
+    fn test_escape_disposition(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(escape_disposition(input), expected);
+    }
+
     #[test]
     fn test_multipart_encodes_text_and_file_parts() {
         let parts = [
@@ -234,7 +247,7 @@ mod tests {
             part(&[
                 ("name", text("file")),
                 ("value", RuntimeValue::Bytes(Shared::new(vec![0, 255, 10]))),
-                ("filename", text("a\"b.bin")),
+                ("filename", text("a\"b\\c.bin")),
             ]),
         ];
         let result = multipart(&parts).unwrap();
@@ -252,7 +265,7 @@ mod tests {
         );
         expected.extend_from_slice(
             format!(
-                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a%22b.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a%22b\\\\c.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
             )
             .as_bytes(),
         );
