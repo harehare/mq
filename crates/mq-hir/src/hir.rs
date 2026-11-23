@@ -641,7 +641,7 @@ mod tests {
         hir.builtin.disabled = true;
 
         let main = Url::parse("file:///main.mq").unwrap();
-        let (nodes, _) = mq_lang::parse_recovery(r#"import "lib";"#);
+        let (nodes, _) = mq_syntax::parse_recovery(r#"import "lib";"#);
         hir.add_nodes(main.clone(), &nodes);
         let module_id = hir
             .symbols()
@@ -652,7 +652,7 @@ mod tests {
             .unwrap();
         let lib = hir.url_by_source(&module_id).unwrap().clone();
 
-        let (nodes, _) = mq_lang::parse_recovery("def temporary(): 1;");
+        let (nodes, _) = mq_syntax::parse_recovery("def temporary(): 1;");
         hir.add_nodes(lib.clone(), &nodes);
         hir.remove_source(&lib);
 
@@ -694,13 +694,13 @@ mod tests {
         let a = hir.module_url("a").unwrap();
         let b = hir.module_url("b").unwrap();
 
-        let (nodes, _) = mq_lang::parse_recovery("import \"b\"");
+        let (nodes, _) = mq_syntax::parse_recovery("import \"b\"");
         hir.add_nodes(a.clone(), &nodes);
-        let (nodes, _) = mq_lang::parse_recovery("import \"a\"");
+        let (nodes, _) = mq_syntax::parse_recovery("import \"a\"");
         hir.add_nodes(b, &nodes);
         assert!(matches!(&hir.errors()[..], [HirError::CircularModule { module_name, .. }] if module_name == "a"));
 
-        let (nodes, _) = mq_lang::parse_recovery("def fa(): 1;");
+        let (nodes, _) = mq_syntax::parse_recovery("def fa(): 1;");
         hir.add_nodes(a, &nodes);
         assert!(hir.errors().is_empty(), "{:?}", hir.errors());
     }
@@ -717,7 +717,7 @@ mod tests {
         hir.builtin.disabled = true;
 
         let main = Url::parse("file:///main.mq").unwrap();
-        let (nodes, _) = mq_lang::parse_recovery(r#"include "a" | helper()"#);
+        let (nodes, _) = mq_syntax::parse_recovery(r#"include "a" | helper()"#);
         hir.add_nodes(main, &nodes);
         let id_of = |hir: &Hir, name: &str| {
             hir.symbols()
@@ -730,9 +730,9 @@ mod tests {
         let a = hir.url_by_source(&id_of(&hir, "a")).unwrap().clone();
         let b = hir.url_by_source(&id_of(&hir, "b")).unwrap().clone();
 
-        let (nodes, _) = mq_lang::parse_recovery(r#"include "b";"#);
+        let (nodes, _) = mq_syntax::parse_recovery(r#"include "b";"#);
         hir.add_nodes(a.clone(), &nodes);
-        let (nodes, _) = mq_lang::parse_recovery("def otherx(): 2;\ndef helper(): 1;");
+        let (nodes, _) = mq_syntax::parse_recovery("def otherx(): 2;\ndef helper(): 1;");
         let (b_id, _) = hir.add_nodes(b, &nodes);
         let before = module_ranges(&hir, b_id, "helper");
 
@@ -754,7 +754,7 @@ mod tests {
         hir.builtin.disabled = true;
 
         let main = Url::parse("file:///main.mq").unwrap();
-        let (nodes, _) = mq_lang::parse_recovery(r#"include "lib" | f()"#);
+        let (nodes, _) = mq_syntax::parse_recovery(r#"include "lib" | f()"#);
         hir.add_nodes(main, &nodes);
         let old_id = hir
             .symbols()
@@ -764,7 +764,7 @@ mod tests {
             })
             .unwrap();
         let old_url = hir.url_by_source(&old_id).unwrap().clone();
-        let (nodes, _) = mq_lang::parse_recovery("def f(): 1;");
+        let (nodes, _) = mq_syntax::parse_recovery("def f(): 1;");
         hir.add_nodes(old_url.clone(), &nodes);
 
         std::fs::write(vendor.join("lib.mq"), "\n\ndef f(): 2;").unwrap();
@@ -807,7 +807,7 @@ mod tests {
             })
             .unwrap();
         let url = hir.url_by_source(&id).unwrap().clone();
-        let (nodes, _) = mq_lang::parse_recovery(code);
+        let (nodes, _) = mq_syntax::parse_recovery(code);
         hir.add_nodes(url.clone(), &nodes);
         url
     }
@@ -824,7 +824,7 @@ mod tests {
             "import \"lib\" as active | import \"{}/lib\" as shared | active::f()",
             slash_path(&global)
         );
-        let (nodes, _) = mq_lang::parse_recovery(&code);
+        let (nodes, _) = mq_syntax::parse_recovery(&code);
         hir.add_nodes(main, &nodes);
         let lib = open_global_lib(&mut hir, "def f(): 1;");
 
@@ -856,11 +856,15 @@ mod tests {
         let mut hir = shadowed_lib_hir(&global, &vendor);
 
         let main = Url::parse("file:///main.mq").unwrap();
-        let (nodes, _) = mq_lang::parse_recovery(r#"import "lib";"#);
+        let (nodes, _) = mq_syntax::parse_recovery(r#"import "lib";"#);
         hir.add_nodes(main, &nodes);
         let lib = open_global_lib(&mut hir, "def helper(): 1;");
 
-        std::fs::write(vendor.join("lib.mq"), format!("include \"{}/lib\"", slash_path(&global))).unwrap();
+        std::fs::write(
+            vendor.join("lib.mq"),
+            format!("include \"{}/lib\"", slash_path(&global)),
+        )
+        .unwrap();
         hir.remove_source(&lib);
 
         let source_id = hir.source_by_url(&lib).expect("dependency stays loaded");
@@ -883,7 +887,7 @@ mod tests {
         let url_a = hir.module_url("a").unwrap();
         let url_b = hir.module_url("b").unwrap();
         let open = |hir: &mut Hir, url: &Url, code: &str| {
-            let (nodes, _) = mq_lang::parse_recovery(code);
+            let (nodes, _) = mq_syntax::parse_recovery(code);
             hir.add_nodes(url.clone(), &nodes);
         };
 
