@@ -36,6 +36,7 @@ mod runtime;
 pub mod suggest;
 mod tarn;
 #[doc(hidden)]
+#[cfg(feature = "text-diff")]
 pub mod text_diff;
 #[cfg(feature = "vm-profile")]
 pub mod vm_profile;

@@ -21,7 +21,7 @@ base64 = {workspace = true}
 caseless = {workspace = true}
 ciborium = {workspace = true}
 csv = {workspace = true}
-encoding_rs = {workspace = true}
+encoding_rs = {workspace = true, optional = true}
 html-escape = "0.3"
 md5 = {workspace = true}
 sha2 = {workspace = true}
@@ -51,16 +51,16 @@ smol_str = {workspace = true}
 strsim = {workspace = true}
 thiserror = {workspace = true}
 url = {workspace = true}
-toon-format = {workspace = true}
+toon-format = {workspace = true, optional = true}
 quick-xml = {workspace = true}
 unicode-normalization = {workspace = true}
 unicode-segmentation = {workspace = true}
 unicode-width = {workspace = true}
-similar = {workspace = true}
+similar = {workspace = true, optional = true}
 tiktoken-rs = { version = "0.12", optional = true }
 ureq = { workspace = true, optional = true }
 uuid = {workspace = true, features = ["v4", "v7"]}
-ammonia = {workspace = true}
+ammonia = {workspace = true, optional = true}
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["console"] }
@@ -81,8 +81,12 @@ wasm = ["dep:web-time"]
 # Lets `Engine::set_builtin_source` replace the bundled `builtin.mq`, for mutation testing.
 custom-builtin = []
 html-parse = ["dep:ego-tree", "dep:scraper"]
+sanitize-html = ["dep:ammonia"]
+encoding = ["dep:encoding_rs"]
+text-diff = ["dep:similar"]
+toon = ["dep:toon-format"]
 debugger = ["sync", "mq-syntax/expr-display"]
-default = ["html-to-markdown"]
+default = ["html-to-markdown", "sanitize-html", "encoding", "text-diff", "toon"]
 file-io = ["dep:ignore"]
 html-to-markdown = ["mq-markdown/html-to-markdown"]
 process-io = []

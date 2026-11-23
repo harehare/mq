@@ -346,6 +346,7 @@ fn test_strip_tags(#[case] input: &str, #[case] expected: &str) {
 }
 
 // Test sanitize_html
+#[cfg(feature = "sanitize-html")]
 #[rstest]
 #[case("<script>alert('xss')</script><p>hi</p>", "<p>hi</p>")]
 #[case(r#"<img src=x onerror="alert(1)">"#, r#"<img src="x">"#)]

@@ -3252,9 +3252,6 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 // strip_tags
 #[case::strip_tags_basic(r#"strip_tags("<p>Hello <em>world</em>!</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello world!".to_string()))].into()))]
 #[case::strip_tags_no_tags(r#"strip_tags("plain text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("plain text".to_string()))].into()))]
-// sanitize_html
-#[case::sanitize_html_script(r#"sanitize_html("<script>alert('xss')</script><p>hi</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("<p>hi</p>".to_string()))].into()))]
-#[case::sanitize_html_safe_tags(r#"sanitize_html("<b>bold</b>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("<b>bold</b>".to_string()))].into()))]
 // to_number conversion
 #[case::to_number_string(r#"to_number("42")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // to_boolean conversion
@@ -3663,8 +3660,6 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::html_unescape_none("html_unescape(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // strip_tags: None input → None
 #[case::strip_tags_none("strip_tags(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
-// sanitize_html: None input → None
-#[case::sanitize_html_none("sanitize_html(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // markdown_escape: None input → None
 #[case::markdown_escape_none(r#"markdown_escape(None, "text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // ltrim: None input → None
@@ -4059,8 +4054,6 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::html_unescape_non_string("html_unescape(42)", vec![RuntimeValue::None],)]
 // strip_tags: non-string/non-markdown/non-none → type error
 #[case::strip_tags_non_string("strip_tags(42)", vec![RuntimeValue::None],)]
-// sanitize_html: non-string/non-markdown/non-none → type error
-#[case::sanitize_html_non_string("sanitize_html(42)", vec![RuntimeValue::None],)]
 // markdown_escape: non-string/non-markdown/non-none text → type error
 #[case::markdown_escape_non_string(r#"markdown_escape(42, "text")"#, vec![RuntimeValue::None],)]
 // markdown_escape: unknown context → runtime error
@@ -4513,4 +4506,29 @@ fn test_index_error_names_the_operation(mut engine: Engine, #[case] program: &st
     let message = err.to_string();
     assert!(message.contains(expected), "{message}");
     assert!(!message.contains("Invalid types"), "{message}");
+}
+
+#[cfg(feature = "sanitize-html")]
+mod sanitize_html {
+    use mq_lang::{DefaultEngine, RuntimeValue, Shared};
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(r#"sanitize_html("<script>alert('xss')</script><p>hi</p>")"#, "<p>hi</p>")]
+    #[case(r#"sanitize_html("<b>bold</b>")"#, "<b>bold</b>")]
+    fn sanitizes(#[case] program: &str, #[case] expected: &str) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let result = engine.eval(program, vec![RuntimeValue::None].into_iter()).unwrap();
+        assert_eq!(result, vec![RuntimeValue::String(Shared::new(expected.to_string()))].into());
+    }
+
+    #[test]
+    fn none_passes_through_and_non_string_errors() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let result = engine.eval("sanitize_html(None)", vec![RuntimeValue::None].into_iter()).unwrap();
+        assert_eq!(result, vec![RuntimeValue::None].into());
+        assert!(engine.eval("sanitize_html(42)", vec![RuntimeValue::None].into_iter()).is_err());
+    }
 }

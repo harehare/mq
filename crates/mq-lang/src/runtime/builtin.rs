@@ -35,6 +35,7 @@ use crate::runtime::reader_handle::{HandleKind, ReaderHandle};
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
 use crate::tarn::interpreter::coroutine;
+#[cfg(feature = "text-diff")]
 use crate::text_diff::{self, ChangeTag};
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
@@ -1067,6 +1068,7 @@ fn utf8_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     }
 }
 
+#[cfg(feature = "encoding")]
 #[mq_macros::mq_fn(name = "decode", params = Fixed(2))]
 fn decode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -1079,6 +1081,7 @@ fn decode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+#[cfg(feature = "encoding")]
 #[mq_macros::mq_fn(name = "encode", params = Fixed(2))]
 fn encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -1344,6 +1347,7 @@ fn markdown_escape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
     }
 }
 
+#[cfg(feature = "sanitize-html")]
 #[mq_macros::mq_fn(name = "sanitize_html", params = Fixed(1))]
 fn sanitize_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4719,6 +4723,7 @@ fn _yaml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+#[cfg(feature = "toon")]
 #[mq_macros::mq_fn(name = "_toon_parse", params = Fixed(1))]
 fn _toon_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4733,6 +4738,7 @@ fn _toon_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+#[cfg(feature = "toon")]
 #[mq_macros::mq_fn(name = "_toon_stringify", params = Fixed(1))]
 fn _toon_stringify_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4972,6 +4978,7 @@ fn shift_right_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+#[cfg(feature = "text-diff")]
 fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<RuntimeValue>) {
     let char_changes = text_diff::changes(&text_diff::chars(s1), &text_diff::chars(s2));
     let mut del_inline: Vec<RuntimeValue> = Vec::new();
@@ -5007,6 +5014,7 @@ fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<Runtime
     (del_inline, ins_inline)
 }
 
+#[cfg(feature = "text-diff")]
 #[mq_macros::mq_fn(name = "_diff", params = Fixed(2))]
 fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -6127,6 +6135,7 @@ mq_macros::builtin_dispatch! {
     HTML_UNESCAPE,
     MARKDOWN_ESCAPE,
     STRIP_TAGS,
+    #[cfg(feature = "sanitize-html")]
     SANITIZE_HTML,
     TO_MARKDOWN_STRING,
     TO_STRING,
@@ -6138,7 +6147,9 @@ mq_macros::builtin_dispatch! {
     TO_HEX,
     HEXDUMP,
     UTF8,
+    #[cfg(feature = "encoding")]
     DECODE,
+    #[cfg(feature = "encoding")]
     ENCODE,
     XOR,
     BAND,
@@ -6293,7 +6304,9 @@ mq_macros::builtin_dispatch! {
     _JSON_PARSE,
     _GRON_PARSE,
     _YAML_PARSE,
+    #[cfg(feature = "toon")]
     _TOON_PARSE,
+    #[cfg(feature = "toon")]
     _TOON_STRINGIFY,
     _TOML_PARSE,
     _CBOR_PARSE,
@@ -6305,6 +6318,7 @@ mq_macros::builtin_dispatch! {
     SHIFT_LEFT,
     SHIFT_RIGHT,
     BIT_LENGTH,
+    #[cfg(feature = "text-diff")]
     _DIFF,
     BASENAME,
     DIRNAME,

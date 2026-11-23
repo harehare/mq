@@ -1040,7 +1040,7 @@ key: 1
         param_types: &[],
         returns: "dynamic",
         examples: &[],
-        capability: None,
+        capability: Some("text-diff"),
         kind: DocKind::Internal,
     },
     BuiltinDoc {
@@ -1172,7 +1172,7 @@ key: 1
         param_types: &[],
         returns: "dynamic",
         examples: &[],
-        capability: None,
+        capability: Some("toon"),
         kind: DocKind::Internal,
     },
     BuiltinDoc {
@@ -1183,7 +1183,7 @@ key: 1
         param_types: &[],
         returns: "dynamic",
         examples: &[],
-        capability: None,
+        capability: Some("toon"),
         kind: DocKind::Internal,
     },
     BuiltinDoc {
@@ -1727,7 +1727,7 @@ key: 1
             code: r#"decode(encode("hi", "shift_jis"), "shift_jis")"#,
             expected: r#"hi"#,
         }],
-        capability: None,
+        capability: Some("encoding"),
         kind: DocKind::Function,
     },
     BuiltinDoc {
@@ -1819,7 +1819,7 @@ key: 1
         param_types: &["string", "string"],
         returns: "bytes",
         examples: &[],
-        capability: None,
+        capability: Some("encoding"),
         kind: DocKind::Function,
     },
     BuiltinDoc {
@@ -3260,7 +3260,7 @@ key: 1
         param_types: &["string"],
         returns: "string",
         examples: &[],
-        capability: None,
+        capability: Some("sanitize-html"),
         kind: DocKind::Function,
     },
     BuiltinDoc {

@@ -3,6 +3,7 @@ use crate::Shared;
 use crate::number::Number;
 use crate::runtime::builtin::Error;
 use base64::prelude::*;
+#[cfg(feature = "encoding")]
 use encoding_rs::Encoding;
 use html_escape::decode_html_entities;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
@@ -741,6 +742,7 @@ pub(super) fn strip_tags(input: &str) -> Result<RuntimeValue, Error> {
 }
 
 /// Sanitize HTML using an allowlist of safe tags/attributes (XSS protection).
+#[cfg(feature = "sanitize-html")]
 #[inline(always)]
 pub(super) fn sanitize_html(input: &str) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(Shared::new(ammonia::clean(input))))
@@ -895,6 +897,7 @@ pub(super) fn hexdump(input: &[u8]) -> Result<RuntimeValue, Error> {
 }
 
 /// Decode bytes as text using a WHATWG encoding label. Errors on invalid input rather than substituting.
+#[cfg(feature = "encoding")]
 #[inline(always)]
 pub(super) fn decode(input: &[u8], label: &str) -> Result<RuntimeValue, Error> {
     let encoding = Encoding::for_label(label.as_bytes())
@@ -910,6 +913,7 @@ pub(super) fn decode(input: &[u8], label: &str) -> Result<RuntimeValue, Error> {
 }
 
 /// Encode text as bytes using a WHATWG encoding label. Errors on unmappable input rather than substituting.
+#[cfg(feature = "encoding")]
 #[inline(always)]
 pub(super) fn encode(input: &str, label: &str) -> Result<RuntimeValue, Error> {
     let encoding = Encoding::for_label(label.as_bytes())
