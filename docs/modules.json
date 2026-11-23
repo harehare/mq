@@ -466,6 +466,24 @@
       "repo": "github.com/harehare/docset.mq",
       "category": "libraries-toolkits",
       "description": "Treats a directory of Markdown docs as one documentation set"
+    },
+    {
+      "name": "bignum",
+      "repo": "github.com/harehare/bignum.mq",
+      "category": "data-algorithms",
+      "description": "Arbitrary-precision integers (`bigint`) and fixed-point decimals (`decimal`) for exact money calculations"
+    },
+    {
+      "name": "matrix",
+      "repo": "github.com/harehare/matrix.mq",
+      "category": "data-algorithms",
+      "description": "Matrix arithmetic, powers, determinant, inverse and linear systems"
+    },
+    {
+      "name": "mqmq",
+      "repo": "github.com/harehare/mqmq",
+      "category": "interpreters-examples",
+      "description": "Self-hosted mq interpreter: lexer, parser and evaluator written in mq"
     }
   ]
 }
