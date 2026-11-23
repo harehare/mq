@@ -406,7 +406,10 @@ def _is_flat_records(items):
 
 def _data_table(rows):
   let header = uniq(flat_map(rows, fn(r): keys(r);))
-  | table(map(header, escape), map(rows, fn(r): map(header, fn(h): _data_cell(r[h]););));
+  | if (is_empty(header)): map(rows, fn(_): list("{}", 0);) else: _data_table_rows(header, rows);
+
+def _data_table_rows(header, rows):
+  table(map(header, escape), map(rows, fn(r): map(header, fn(h): _data_cell(r[h]););));
 
 def _data_key_value_table(d, ks):
   table(["Key", "Value"], map(ks, fn(k): [escape(k), _data_cell(d[k])];));
@@ -419,7 +422,7 @@ def _data_dict_item(item, k, level):
 
 def _data_list_item(item, level):
   if (is_array(item)):
-    _data_list(item, level + 1)
+    [list("[]", level)] + _data_list(item, level + 1)
   elif (is_dict(item)):
     flat_map(keys(item), fn(k): _data_dict_item(item, k, level);)
   else:
@@ -443,7 +446,7 @@ def _data_blocks(data, depth):
   elif (is_array(data)):
     if (_is_flat_records(data)): _data_table(data) else: _data_list(data, 0)
   else:
-    [text(to_string(data))];
+    [text(escape(to_string(data)))];
 
 # Converts nested data (dicts, arrays, scalars) into markdown nodes, recursively.
 # A dict becomes a `Key`/`Value` table for its scalar entries, followed by a heading

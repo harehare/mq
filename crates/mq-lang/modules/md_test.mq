@@ -407,7 +407,19 @@ end
 
 def test_md_from_data_nested_array_indents():
   let result = to_string(md::doc(md::from_data([1, [2, 3]])))
-  | assert_eq(result, "- 1\n  - 2\n  - 3")
+  | assert_eq(result, "- 1\n- []\n  - 2\n  - 3")
+end
+
+def test_md_from_data_sibling_arrays_keep_groups():
+  let a = to_string(md::doc(md::from_data([["red", "blue"], ["green", "yellow"]])))
+  | let b = to_string(md::doc(md::from_data([["red", "blue", "green", "yellow"]])))
+  | assert_eq([a, a == b], ["- []\n  - red\n  - blue\n- []\n  - green\n  - yellow", false])
+end
+
+def test_md_from_data_empty_records_and_markup_string():
+  let empty = to_string(md::doc(md::from_data([{}, {}])))
+  | let str = to_string(md::doc(md::from_data("# Draft")))
+  | assert_eq([empty, str], ["- {}\n- {}", "\\# Draft"])
 end
 
 def test_md_from_data_heading_depth_is_capped():
