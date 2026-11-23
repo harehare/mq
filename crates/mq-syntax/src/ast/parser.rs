@@ -1360,8 +1360,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }));
                 }
 
+                // Check for a call on the result (e.g., foo(a)(b))
+                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
+                    self.parse_postfix_ops(call_node, ident_token)
                 // Check for bracket access after function call (e.g., foo()[0])
-                if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     let result = self.parse_bracket_access(call_node, ident_token)?;
                     self.parse_postfix_ops(result, ident_token)
                 } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Selector(_))) {

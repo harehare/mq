@@ -752,8 +752,11 @@ impl<'a> Parser<'a> {
                     return Ok(Shared::new(node));
                 }
 
+                // Check for a call on the result (e.g., foo(a)(b))
+                if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LParen)) {
+                    self.parse_postfix_chain(Shared::new(node))
                 // Check for bracket access after function call (e.g., foo()[0])
-                if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
+                } else if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                     let result = self.parse_bracket_access(node)?;
                     self.parse_postfix_chain(result)
                 } else if let Some(attr_node) = self.try_parse_attribute_access(&mut node)? {
