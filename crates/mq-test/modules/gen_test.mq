@@ -73,6 +73,10 @@ def test_tuple_is_deterministic_for_the_same_seed():
   | assert_eq((gen::tuple(gens))(42), (gen::tuple(gens))(42))
 end
 
+def test_tuple_direct_seed_call():
+  assert_eq(gen::tuple([gen::const(1)])(42), [1])
+end
+
 def test_nested_array_does_not_collide_across_the_index_97_boundary():
   # `[0][97]` and `[1][0]` used to alias under the old radix-97 `_sub_seed`. Check over a few
   # seeds since a single pair could coincidentally match.

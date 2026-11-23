@@ -707,6 +707,10 @@ impl<'a> Parser<'a> {
             if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 return self.parse_bracket_access(node);
             }
+            // Check for a call on the result (e.g., module::func(a)(b))
+            if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LParen)) {
+                return self.parse_postfix_chain(Shared::new(node));
+            }
             return Ok(Shared::new(node));
         }
 
@@ -897,10 +901,11 @@ impl<'a> Parser<'a> {
         // Check for function call after bracket access (e.g., arr[0]())
         // and handle further postfix operations (e.g., arr[0]()[1])
         if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LParen)) {
+            let leading_trivia = final_node.leading_trivia.clone();
             let args = self.parse_args()?;
             let dynamic_call_node = Node {
-                token: final_node.token.clone(),
-                leading_trivia: final_node.leading_trivia.clone(),
+                token: Self::open_paren_token(&args),
+                leading_trivia,
                 trailing_trivia: TriviaList::new(),
                 kind: NodeKind::CallDynamic {
                     callee: final_node,
@@ -913,14 +918,21 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// The `(` that opens an argument list. A dynamic call uses it as its own token so that
+    /// symbol lookup does not confuse the call with its callee.
+    fn open_paren_token(args: &ArgList) -> Option<Shared<Token>> {
+        args.first().and_then(|arg| arg.token.clone())
+    }
+
     /// Parses postfix operations (dynamic calls and bracket access) after a primary expression.
     /// Handles chains like `(expr)(args)[N]`, `expr[N](args)[M]`, etc.
+    /// A `?` right after a dynamic call suppresses errors of the whole chain.
     fn parse_postfix_chain(&mut self, mut current: Shared<Node>) -> Result<Shared<Node>, ParseError> {
         loop {
             if matches!(self.peek_non_trivia().map(|t| &t.kind), Some(TokenKind::LParen)) {
-                let token = current.token.clone();
                 let leading_trivia = current.leading_trivia.clone();
                 let args = self.parse_args()?;
+                let token = Self::open_paren_token(&args);
                 current = Shared::new(Node {
                     kind: NodeKind::CallDynamic { callee: current, args },
                     token,
@@ -955,6 +967,16 @@ impl<'a> Parser<'a> {
             } else {
                 break;
             }
+        }
+        if matches!(current.kind, NodeKind::CallDynamic { .. })
+            && self.try_next_token(|kind| matches!(kind, TokenKind::Question))
+        {
+            let question = self.next_node(|kind| matches!(kind, TokenKind::Question), NodeKind::Token)?;
+            let mut node = Shared::unwrap_or_clone(current);
+            if let NodeKind::CallDynamic { args, .. } = &mut node.kind {
+                args.push(question);
+            }
+            current = Shared::new(node);
         }
         Ok(current)
     }

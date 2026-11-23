@@ -7361,3 +7361,36 @@ fn test_nested_index_assign_rejects_non_variable_root(#[case] code: &str) {
         "{code}"
     );
 }
+
+#[rstest]
+#[case::qualified("m::f(1)(2)")]
+#[case::qualified_chained("m::f(1)(2)(3)")]
+#[case::ident("f(1)(2)")]
+fn test_parse_call_on_call_result(#[case] code: &str) {
+    let program = parse_program_source(code).expect("should parse");
+    assert_eq!(program.len(), 1);
+    assert!(matches!(&program[0].expr, Expr::CallDynamic(..)), "{code}");
+}
+
+#[test]
+fn test_parse_qualified_call_on_result_keeps_qualified_callee() {
+    let program = parse_program_source("m::f(1)(2)").expect("should parse");
+    let Expr::CallDynamic(callee, _) = &program[0].expr else {
+        panic!("expected a dynamic call");
+    };
+    assert!(matches!(&callee.expr, Expr::QualifiedAccess(..)));
+}
+
+#[rstest]
+#[case::ident("f(1)(2)?")]
+#[case::qualified("m::f(1)(2)?")]
+#[case::chained("f(1)(2)(3)?")]
+#[case::bracket("a[0](1)?")]
+fn test_parse_suppress_error_wraps_whole_call_chain(#[case] code: &str) {
+    let program = parse_program_source(code).expect("should parse");
+    assert_eq!(program.len(), 1);
+    let Expr::Try(body, None, _) = &program[0].expr else {
+        panic!("expected a try wrapper for {code}");
+    };
+    assert!(matches!(&body.expr, Expr::CallDynamic(..)), "{code}");
+}

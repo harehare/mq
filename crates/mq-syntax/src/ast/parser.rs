@@ -1284,6 +1284,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                                 return self.parse_bracket_access(qualified_node, ident_token);
                             }
+                            // Check for a call on the result (e.g., module::func(a)(b))
+                            if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
+                                return self.parse_postfix_ops(qualified_node, ident_token);
+                            }
                             return Ok(qualified_node);
                         }
                         _ => {
@@ -1341,23 +1345,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 });
 
                 if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Question)) {
-                    let question_token = self
-                        .tokens
-                        .next()
-                        .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
-                    let question_token_id = self.alloc_token(question_token);
-
-                    return Ok(Shared::new(Node {
-                        token_id: question_token_id,
-                        expr: Expr::Try(
-                            call_node,
-                            None,
-                            Shared::new(Node {
-                                token_id,
-                                expr: Expr::Literal(Literal::None),
-                            }),
-                        ),
-                    }));
+                    return self.parse_suppress_error(call_node, token_id);
                 }
 
                 // Check for a call on the result (e.g., foo(a)(b))
@@ -1590,8 +1578,34 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    /// Consumes the `?` that follows `expr` and wraps it in a `try` that yields `None` on error.
+    fn parse_suppress_error(
+        &mut self,
+        expr: Shared<Node>,
+        none_token_id: TokenId,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        let question_token = self
+            .tokens
+            .next()
+            .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
+        let question_token_id = self.alloc_token(question_token);
+
+        Ok(Shared::new(Node {
+            token_id: question_token_id,
+            expr: Expr::Try(
+                expr,
+                None,
+                Shared::new(Node {
+                    token_id: none_token_id,
+                    expr: Expr::Literal(Literal::None),
+                }),
+            ),
+        }))
+    }
+
     /// Parses postfix operations (dynamic calls and bracket access) after a primary expression.
     /// Handles chains like `(expr)(args)[N]`, `expr[N](args)[M]`, etc.
+    /// A `?` right after a dynamic call suppresses errors of the whole chain.
     fn parse_postfix_ops(
         &mut self,
         mut current: Shared<Node>,
@@ -1611,6 +1625,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             } else {
                 break;
             }
+        }
+        if matches!(current.expr, Expr::CallDynamic(..))
+            && self.is_next_token(|kind| matches!(kind, TokenKind::Question))
+        {
+            let none_token_id = current.token_id;
+            return self.parse_suppress_error(current, none_token_id);
         }
         Ok(current)
     }
