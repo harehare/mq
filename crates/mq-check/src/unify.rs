@@ -212,7 +212,7 @@ pub fn unify(
             unify(ctx, ret1, ret2, range, origin);
         }
 
-        // Union vs Union: compatible when every member of each union has a corresponding
+        // Union vs Union: compatible when every member of one union has a corresponding
         // member (by discriminant) in the other union, or when a type variable is present.
         // This must come before the general Union arm to avoid incorrectly comparing each
         // member of the first union against the whole-Union discriminant of the second.
@@ -224,8 +224,10 @@ pub fn unify(
                         || matches!(m2, Type::Var(_))
                 })
             };
+            // One side may be a subset of the other, so an argument that can only be a
+            // few of a parameter's variants is accepted.
             let all_matched = types1.iter().all(|m1| member_matches(m1, types2))
-                && types2.iter().all(|m2| member_matches(m2, types1));
+                || types2.iter().all(|m2| member_matches(m2, types1));
             if !all_matched {
                 ctx.report_mismatch(t1, t2, range, origin);
             }

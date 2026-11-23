@@ -78,6 +78,12 @@ fn test_new_record_results(#[case] code: &str, #[case] expected: &str) {
 #[case::omitted(r#"http_all([{url: "http://a"}])"#)]
 #[case::all_fields(r#"http_all([{url: "http://a", method: :post, body: "x", headers: {"a": "b"}}])"#)]
 #[case::explicit_none(r#"http_all([{url: "http://a", method: None, body: None, headers: None}])"#)]
+#[case::string_or_bytes_body(
+    r#"def f(x): http_all([{url: "http://a", body: if (is_none(x)): "p" else: to_bytes("p")}]) end"#
+)]
+#[case::string_or_none_body(
+    r#"def f(x): http_all([{url: "http://a", body: if (is_none(x)): "payload" else: None}]) end"#
+)]
 fn test_http_all_request_may_omit_optional_fields(#[case] code: &str) {
     let mut hir = Hir::default();
     hir.add_code(None, code);
@@ -89,6 +95,9 @@ fn test_http_all_request_may_omit_optional_fields(#[case] code: &str) {
 #[case::unknown_key(r#"http_all([{url: "a", bogus: 1}])"#)]
 #[case::missing_required(r#"http_all([{method: "get"}])"#)]
 #[case::non_string_header(r#"http_all([{url: "a", headers: {"X-Test": 1}}])"#)]
+#[case::string_or_number_body(r#"def f(x): http_all([{url: "a", body: if (is_none(x)): "p" else: 1}]) end"#)]
+#[case::bytes_or_number_body(r#"def f(x): http_all([{url: "a", body: if (is_none(x)): to_bytes("p") else: 1}]) end"#)]
+#[case::number_or_none_body(r#"def f(x): http_all([{url: "a", body: if (is_none(x)): 1 else: None}]) end"#)]
 fn test_http_all_request_rejects_bad_fields(#[case] code: &str) {
     let mut hir = Hir::default();
     hir.add_code(None, code);
