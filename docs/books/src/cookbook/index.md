@@ -82,6 +82,7 @@ Every recipe follows the same four parts:
 ## Fetching over the network
 
 - [Fetch a web page and filter it](fetch-and-filter-a-web-page.md)
+- [Turn a JSON API response into Markdown](turn-a-json-api-response-into-markdown.md)
 
 ## Lazy streams and generators
 
