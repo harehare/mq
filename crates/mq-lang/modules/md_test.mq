@@ -427,6 +427,11 @@ def test_md_from_data_scalar_text_value_is_unescaped():
   | assert_eq([to_text(node), to_string(node)], ["# Draft", "\\# Draft"])
 end
 
+def test_md_from_data_scalar_prose_stays_one_node():
+  let res = md::from_data("See www.a.com.\n\nNext")
+  | assert_eq([len(res), to_text(first(res)), to_string(md::doc(md::from_data("See www.a.com.")))], [1, "See www.a.com.\n\nNext", "See www.a.com."])
+end
+
 def test_md_from_data_heading_depth_is_capped():
   let result = to_string(md::doc(md::from_data({"a": {"b": 1, "c": {"d": 1}}}, 6)))
   | assert_eq(contains(result, "####### "), false)

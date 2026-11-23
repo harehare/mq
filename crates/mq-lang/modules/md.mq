@@ -442,13 +442,16 @@ def _data_dict_blocks(data, depth):
   | let head = if (is_empty(scalars)): [] else: _data_key_value_table(data, scalars)
   | head + flat_map(nested, fn(k): [h(escape(k), depth)] + _data_blocks(data[k], min(depth + 1, 6)););
 
+# A parsed text node (so rendering escapes it) holding the raw scalar as its value.
+def _data_text(data): set_attr(first(to_markdown("x")), "value", to_string(data));
+
 def _data_blocks(data, depth):
   if (is_dict(data)):
     _data_dict_blocks(data, depth)
   elif (is_array(data)):
     if (_is_flat_records(data)): _data_table(data) else: _data_list(data, 0)
   else:
-    to_markdown(_escape_str(data));
+    [_data_text(data)];
 
 # Converts nested data (dicts, arrays, scalars) into markdown nodes, recursively.
 # A dict becomes a `Key`/`Value` table for its scalar entries, followed by a heading
