@@ -10,7 +10,7 @@ use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use crate::tarn::value::new_cell;
-use crate::tarn::value::{Cell, Closure, Locals, StackValue};
+use crate::tarn::value::{Cell, Closure, ClosureValue, Locals, StackValue};
 use crate::{Ident, Shared, TokenArena};
 use std::collections::VecDeque;
 
@@ -226,6 +226,18 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
             call_site.frame_chunks.clone(),
         ),
         StackValue::Value(RuntimeValue::Closure(vc)) => {
+            if !Shared::ptr_eq(&vc.chunks, chunks) {
+                // The callee runs on its own chunk table, e.g. a function from an earlier query
+                // of a session. A closure argument names a chunk of the caller's table, so it
+                // must carry that table along or the callee would run some other chunk.
+                for arg in args.iter_mut() {
+                    if let StackValue::Closure(closure) = arg {
+                        *arg = StackValue::Value(RuntimeValue::Closure(Shared::new(ClosureValue::from_closure(
+                            chunks, closure,
+                        ))));
+                    }
+                }
+            }
             if !vc.bound_args.is_empty() {
                 // `args` is a caller-owned pooled buffer. Prepend into a second pooled buffer,
                 // then immediately return the emptied original one instead of dropping its

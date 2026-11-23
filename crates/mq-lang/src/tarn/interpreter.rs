@@ -1067,6 +1067,28 @@ fn yield_outside_generator(
     (Err(VmError::Corrupt("yield outside a generator")), locals)
 }
 
+/// Makes a closure that the top frame returns to its caller carry its own chunk table when the two
+/// frames run on different ones (a function of an earlier session query returning `fn(x): ...`).
+/// A bare closure names a chunk of the returning frame's table, which the caller cannot resolve.
+#[inline]
+fn closure_across_tables(value: StackValue, frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> StackValue {
+    let StackValue::Closure(closure) = &value else {
+        return value;
+    };
+    let [.., caller, finished] = frames else {
+        return value;
+    };
+    let finished_chunks = finished.chunks.as_ref().unwrap_or(root_chunks);
+    let caller_chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
+    if Shared::ptr_eq(finished_chunks, caller_chunks) {
+        return value;
+    }
+    StackValue::Value(RuntimeValue::Closure(Shared::new(ClosureValue::from_closure(
+        finished_chunks,
+        closure,
+    ))))
+}
+
 /// Shared by `drive_initial_frame` (seeds a single fresh frame) and `OpCode::Resume` (restores a
 /// coroutine's saved, possibly multi-frame, stack).
 fn drive_frames<const CHECK_TIMEOUT: bool>(
@@ -1139,6 +1161,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
             };
             break 'frames DriveOutcome::Completed(value, finished.locals);
         }
+        let value = closure_across_tables(value, frames, root_chunks);
         let Some(continuation) = execution.limits.pop_frame(
             frames,
             #[cfg(feature = "debugger")]
@@ -2675,6 +2698,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .last()
                         .is_some_and(|frame| matches!(frame.on_complete, Continuation::Push)) =>
             {
+                let value = closure_across_tables(value, frames, root_chunks);
                 execution.limits.pop_frame(
                     frames,
                     #[cfg(feature = "debugger")]

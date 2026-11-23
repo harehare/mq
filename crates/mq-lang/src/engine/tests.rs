@@ -703,6 +703,54 @@ fn test_eval_error_outside_a_session_has_no_source_name() {
     assert_eq!(error.source_code.name(), "");
 }
 
+/// Runs each of `queries` in one session and returns the result of the last one.
+fn eval_in_session(queries: &[&str]) -> String {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let mut session = Session::new(engine);
+    let mut last = String::new();
+    for query in queries {
+        let result = session.eval(query, null_input().into_iter()).unwrap();
+        last = result[0].to_string();
+    }
+    last
+}
+
+#[rstest]
+#[case::map(&["def twice(rows, f): map(rows, f);", "[1, 2] | twice(fn(x): x * 10)"], "[10, 20]")]
+#[case::filter(&["def keep(rows, f): filter(rows, f);", "[1, 5, 9] | keep(fn(x): x > 2)"], "[5, 9]")]
+#[case::called_directly(&["def ap(x, c): c(x);", "5 | ap(fn(v): v + 1)"], "6")]
+#[case::captures_a_local_of_the_later_query(&["def ap(x, c): c(x);", "let k = 3 | 5 | ap(fn(v): v + k)"], "8")]
+#[case::forwarded_through_two_defs(&["def inner(f): f(1);", "def outer(f): inner(f);", "outer(fn(v): v + 100)"], "101")]
+#[case::forwarded_through_defs_of_different_queries(
+    &["def a(rows, f): map(rows, f);", "def b(rows, f): a(rows, f);", "[1, 2] | b(fn(x): x + 1)"],
+    "[2, 3]"
+)]
+#[case::closure_in_the_argument_of_a_closure(
+    &["def compose(f, g): fn(x): f(g(x));", "[1, 2] | map(compose(fn(a): a * 2, fn(b): b + 1))"],
+    "[4, 6]"
+)]
+#[case::two_closure_arguments(&["def both(f, g): f(1) + g(2);", "both(fn(a): a * 10, fn(b): b * 100)"], "210")]
+#[case::returned_closure(&["def adder(n): fn(x): x + n;", "[1, 2] | map(adder(10))"], "[11, 12]")]
+#[case::returned_closure_called_later(&["def adder(n): fn(x): x + n;", "let add5 = adder(5)", "add5(1)"], "6")]
+#[case::closure_kept_in_a_binding(&["def ap(x, c): c(x);", "let double = fn(v): v * 2", "4 | ap(double)"], "8")]
+#[case::a_def_of_the_same_query_still_works(&["def ap(x, c): c(x); | 5 | ap(fn(v): v + 1)"], "6")]
+#[case::default_parameter_takes_a_closure(
+    &["def run(x, f = fn(v): v + 1): f(x);", "run(1)"],
+    "2"
+)]
+#[case::default_parameter_overridden_by_a_closure(
+    &["def run(x, f = fn(v): v + 1): f(x);", "run(1, fn(v): v * 50)"],
+    "50"
+)]
+#[case::variadic_collects_closures(
+    &["def first_call(*fs): fs[0](7);", "first_call(fn(v): v + 1, fn(v): v + 2)"],
+    "8"
+)]
+fn test_query_session_closures_cross_queries(#[case] queries: &[&str], #[case] expected: &str) {
+    assert_eq!(eval_in_session(queries), expected);
+}
+
 #[test]
 fn test_query_session_persists_let_across_eval_calls() {
     let engine = DefaultEngine::default();
