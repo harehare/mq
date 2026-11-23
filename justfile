@@ -109,7 +109,7 @@ fmt-mq:
 
 # Regenerate the module table in docs/books/src/start/modules.md from docs/modules.json.
 modules-table:
-    mq --allow-read --allow-write -f scripts/modules_table.mq
+    cargo run -q -p mq-run --bin mq -- --allow-read --allow-write -I null -f scripts/modules_table.mq
 
 # Run bundled mq tests through the Tarn bytecode VM.
 test-mq:

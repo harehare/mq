@@ -112,6 +112,9 @@ The same list is available from the command line with `mq module search`.
 <tr data-category="libraries-toolkits"><td><a href="https://github.com/harehare/returns.mq">returns.mq</a></td><td><span class="module-category-badge">Libraries &amp; Toolkits</span></td><td>Result and Maybe types for railway-oriented error handling, inspired by <a href="https://github.com/dry-python/returns">dry-python/returns</a></td></tr>
 <tr data-category="libraries-toolkits"><td><a href="https://github.com/harehare/markl.mq">markl.mq</a></td><td><span class="module-category-badge">Libraries &amp; Toolkits</span></td><td>Markdown template engine with <code>{{ expression }}</code> tags, layouts, and per-site themes</td></tr>
 <tr data-category="libraries-toolkits"><td><a href="https://github.com/harehare/docset.mq">docset.mq</a></td><td><span class="module-category-badge">Libraries &amp; Toolkits</span></td><td>Treats a directory of Markdown docs as one documentation set</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/bignum.mq">bignum.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Arbitrary-precision integers (<code>bigint</code>) and fixed-point decimals (<code>decimal</code>) for exact money calculations</td></tr>
+<tr data-category="data-algorithms"><td><a href="https://github.com/harehare/matrix.mq">matrix.mq</a></td><td><span class="module-category-badge">Data Structures &amp; Algorithms</span></td><td>Matrix arithmetic, powers, determinant, inverse and linear systems</td></tr>
+<tr data-category="interpreters-examples"><td><a href="https://github.com/harehare/mqmq">mqmq.mq</a></td><td><span class="module-category-badge">Interpreters &amp; Examples</span></td><td>Self-hosted mq interpreter: lexer, parser and evaluator written in mq</td></tr>
 </tbody>
 </table>
 <!-- modules:end -->
