@@ -160,6 +160,20 @@ mod tests {
     }
 
     #[test]
+    fn test_signature_help_inside_argument_before_chained_call() {
+        let mut hir = Hir::default();
+        let url = Url::parse("file:///test.mq").unwrap();
+        let code = "def f(a): fn(x): a + x;; | f(1)(2)";
+        hir.add_code(Some(url.clone()), code);
+
+        let argument = code.find('1').expect("first argument") as u32;
+        let result =
+            response(Arc::new(RwLock::new(hir)), url, Position::new(0, argument), Some(code)).expect("signature for f");
+
+        assert_eq!(result.signatures[0].label, "f(a)");
+    }
+
+    #[test]
     fn test_signature_help_second_parameter() {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();

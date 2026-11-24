@@ -3902,7 +3902,7 @@ Shared::new(Node {
                             trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
-                    token: None,
+                    token: Some(Shared::new(token(TokenKind::LParen))),
                     leading_trivia: TriviaList::new(),
                     trailing_trivia: TriviaList::new(),
                 }),
@@ -4764,7 +4764,7 @@ Shared::new(Node {
                             trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
-                    token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
+                    token: Some(Shared::new(token(TokenKind::LParen))),
                     leading_trivia: TriviaList::new(),
                     trailing_trivia: TriviaList::new(),
                 }),
@@ -8609,4 +8609,61 @@ fn test_interpolation_holds_a_single_expression(#[case] code: &str) {
     let (_, errors) = crate::parse_recovery(code);
 
     assert!(errors.has_errors(), "{code}");
+}
+
+fn parse_single(code: &str) -> Shared<Node> {
+    let (nodes, errors) = crate::parse_recovery(code);
+    assert!(!errors.has_errors(), "{code}");
+    let mut nodes = nodes.into_iter().filter(|node| !matches!(node.kind, NodeKind::Eof));
+    let node = nodes.next().expect("one node");
+    assert!(nodes.next().is_none(), "{code}");
+    node
+}
+
+#[rstest]
+#[case::ident("f(1)(2)")]
+#[case::qualified("m::f(1)(2)")]
+#[case::chained("m::f(1)(2)(3)")]
+fn test_call_on_call_result_is_dynamic_call(#[case] code: &str) {
+    let node = parse_single(code);
+    assert!(matches!(node.kind, NodeKind::CallDynamic { .. }), "{code}");
+}
+
+#[test]
+fn test_qualified_call_on_result_keeps_qualified_callee() {
+    let node = parse_single("m::f(1)(2)");
+    let NodeKind::CallDynamic { callee, .. } = &node.kind else {
+        panic!("expected a dynamic call");
+    };
+    assert!(matches!(callee.kind, NodeKind::QualifiedAccess { .. }));
+}
+
+#[rstest]
+#[case::ident("f(1)(2)", 5)]
+#[case::qualified("m::f(1)(2)", 8)]
+#[case::spaced("f(1) (2)", 6)]
+fn test_dynamic_call_token_is_its_own_open_paren(#[case] code: &str, #[case] column: u32) {
+    let node = parse_single(code);
+    let NodeKind::CallDynamic { callee, .. } = &node.kind else {
+        panic!("expected a dynamic call");
+    };
+    let own = node.token.as_ref().expect("dynamic call has a token");
+    assert!(matches!(own.kind, TokenKind::LParen), "{code}");
+    assert_eq!(own.range.start.column, column, "{code}");
+    assert_ne!(node.range(), callee.range(), "{code}");
+}
+
+#[rstest]
+#[case::ident("f(1)(2)?")]
+#[case::qualified("m::f(1)(2)?")]
+fn test_suppress_error_after_call_on_result(#[case] code: &str) {
+    let node = parse_single(code);
+    let NodeKind::CallDynamic { args, .. } = &node.kind else {
+        panic!("expected a dynamic call");
+    };
+    let last = args.last().expect("args");
+    assert!(
+        matches!(last.token.as_ref().map(|t| &t.kind), Some(TokenKind::Question)),
+        "{code}"
+    );
 }

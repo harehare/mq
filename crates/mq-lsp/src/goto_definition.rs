@@ -108,6 +108,14 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_goto_definition_on_callee_of_chained_call() {
+        let code = "def f(a): fn(x): a + x;; | f(1)(2)";
+        let call = code.rfind("f(").expect("call site") as u32;
+        let location = goto(code, Position::new(0, call)).expect("function definition");
+        assert_eq!(location.range.start, Position::new(0, 4));
+    }
+
     fn goto(code: &str, position: Position) -> Option<Location> {
         let mut hir = Hir::default();
         let url = Url::parse("file:///test.mq").unwrap();

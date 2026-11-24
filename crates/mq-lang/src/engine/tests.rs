@@ -3138,3 +3138,13 @@ fn test_set_builtin_source_replaces_a_soft_builtin() {
         RuntimeValue::Boolean(false)
     );
 }
+
+#[test]
+fn test_error_suppression_after_chained_dynamic_call() {
+    let mut engine = DefaultEngine::default();
+    let query = "def f(): fn(x): error(\"boom\");; | f()(1)? | is_none";
+    assert_eq!(
+        engine.eval(query, null_input().into_iter()).unwrap()[0],
+        RuntimeValue::Boolean(true)
+    );
+}

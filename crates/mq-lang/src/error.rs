@@ -277,7 +277,7 @@ fn unexpected_token_hint(source: &str, offset: usize, token: &Token) -> Option<C
     }
     match &token.kind {
         TokenKind::LParen => Some(Cow::Borrowed(
-            "Only a function name can be followed by `(...)`. Literals and call results cannot be called; bind the function to a name first.",
+            "Only a function name, a call result, a group or an index can be followed by `(...)`. Literals cannot be called; bind the function to a name first.",
         )),
         TokenKind::Pipe if before.ends_with('|') => Some(Cow::Borrowed(
             "Expected an expression between two `|`. Remove the extra `|`.",

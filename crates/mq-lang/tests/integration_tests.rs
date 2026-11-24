@@ -3869,6 +3869,21 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(6.into())].into())
 )]
+#[case::call_on_call_result(
+    "def f(a): fn(x): a + x;; | f(1)(2)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(3.into())].into())
+)]
+#[case::call_on_call_result_chained(
+    "def g(a): fn(x): fn(y): a + x + y;;; | g(1)(2)(3)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(6.into())].into())
+)]
+#[case::call_on_get_result(
+    "let d = {\"k\": fn(v): v * 2;} | get(d, \"k\")(5)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(10.into())].into())
+)]
 #[case::send_stored_as_value(
     "def g(): let value = yield: 1 | yield: value; | let resume = send | let s = g() | next(s) | let result = resume(s, 7) | get(result, \"value\")",
     vec![RuntimeValue::None],
