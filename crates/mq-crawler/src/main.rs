@@ -160,7 +160,7 @@ struct CliArgs {
     #[clap(short = 'v', long, action = clap::ArgAction::Count, conflicts_with = "quiet")]
     verbose: u8,
     /// Suppress log messages on stderr. A fatal error is still reported.
-    #[clap(long)]
+    #[clap(short = 'Q', long)]
     quiet: bool,
     #[clap(flatten)]
     pub conversion: ConversionArgs,

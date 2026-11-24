@@ -208,14 +208,14 @@ By default only errors are written to stderr. The crawl statistics are written w
 mq-crawl -v https://example.com
 
 # Suppress all log messages and statistics (a fatal error is still reported)
-mq-crawl --quiet https://example.com
+mq-crawl -Q https://example.com
 ```
 
 ### Exit Codes and Short Flags
 
 `mq-crawl` exits non-zero when it fails to start (bad arguments, unreachable WebDriver, invalid checkpoint) the crawl itself fails, or any page failed to fetch (including oversized responses). Pages skipped by robots.txt or for being non-HTML do not affect the exit code. Errors are printed as `miette` diagnostics.
 
-Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
+Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`; use `-Q` for `--quiet` here) and `-U` is `--webdriver-url` (`--update` in `mq`).
 
 ### HTML to Markdown Options
 
