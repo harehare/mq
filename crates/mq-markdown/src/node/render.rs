@@ -1344,6 +1344,8 @@ fn escape_text_with(value: String, mdx: bool) -> String {
 
     let mut result = String::with_capacity(value.len());
     let mut at_line_start = true;
+    // Leading spaces on the current line; up to three still allow a block marker.
+    let mut indent = 0;
     // True while in an unbroken digit run since line start (ordered-list marker number).
     let mut leading_digits = false;
     let mut chars = value
@@ -1392,7 +1394,12 @@ fn escape_text_with(value: String, mdx: bool) -> String {
         } else {
             leading_digits && is_digit
         };
-        at_line_start = c == '\n';
+        if at_line_start && c == ' ' && indent < 3 {
+            indent += 1;
+        } else {
+            at_line_start = c == '\n';
+            indent = 0;
+        }
     }
 
     result
@@ -1424,6 +1431,17 @@ mod tests {
     #[case::ordered_list_dot("5. not a list", "5\\. not a list")]
     #[case::ordered_list_paren("5) not a list", "5\\) not a list")]
     #[case::setext_h1_underline("Foo\n===", "Foo\n\\===")]
+    #[case::indented_heading("  # Draft", "  \\# Draft")]
+    #[case::indented_list_marker("   - item", "   \\- item")]
+    #[case::indented_ordered_list("  1. item", "  1\\. item")]
+    #[case::indented_blockquote("  > quote", "  \\> quote")]
+    #[case::indented_setext("Foo\n  ===", "Foo\n  \\===")]
+    #[case::indented_after_newline("a\n   # b", "a\n   \\# b")]
+    #[case::indented_plus("  + item", "  \\+ item")]
+    #[case::three_spaces_then_tab("   \t# b", "   &#9;# b")]
+    #[case::four_spaces_list_not_escaped("    - item", "    - item")]
+    #[case::space_then_text_then_hash("  a # b", "  a # b")]
+    #[case::four_spaces_not_escaped("    # code", "    # code")]
     #[case::hash_not_at_line_start("a#b", "a#b")]
     #[case::dash_not_at_line_start("a-b", "a-b")]
     #[case::plus_not_at_line_start("a+b", "a+b")]
