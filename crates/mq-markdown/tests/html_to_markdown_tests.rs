@@ -2014,3 +2014,18 @@ fn test_smart_extraction_ignores_header_when_using_main() {
     assert!(md.contains("Main content"));
     assert!(!md.contains("Site"), "header should still be excluded: {md}");
 }
+
+#[test]
+fn test_noise_class_on_body_does_not_drop_document() {
+    let html = r#"<!DOCTYPE html><html><head><title>Docs</title></head>
+<body class="sidebar-available">
+  <a href="/release"><div><h3>Version 6.6.1 Released!</h3></div></a>
+  <main><div id="main-contents"><h1>Setup Options</h1><p>This page explains all the available options.</p></div></main>
+</body></html>"#;
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("# Setup Options"), "got: {md:?}");
+    assert!(
+        md.contains("This page explains all the available options."),
+        "got: {md:?}"
+    );
+}

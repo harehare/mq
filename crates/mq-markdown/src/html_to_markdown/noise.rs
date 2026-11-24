@@ -134,7 +134,12 @@ fn is_icon_font(element: &HtmlElement) -> bool {
 }
 
 /// Returns true if `element`'s `class`/`id` tokens identify it as boilerplate noise.
+/// Document-level wrappers are never noise: a token on `<body>` (e.g. `sidebar-available`)
+/// describes page layout and must not delete the whole document.
 pub(super) fn is_noise_by_class_id(element: &HtmlElement) -> bool {
+    if matches!(element.tag_name.as_str(), "html" | "body" | "main") {
+        return false;
+    }
     is_icon_font(element) || class_id_tokens(element).any(|token| NOISE_TOKENS.contains(&token.as_str()))
 }
 
@@ -207,6 +212,16 @@ mod tests {
     #[case(&[("class", "お知らせ-share")], true)]
     fn test_is_noise_by_class_id(#[case] attrs: &[(&str, &str)], #[case] expected: bool) {
         assert_eq!(is_noise_by_class_id(&element_with_attrs(attrs)), expected);
+    }
+
+    #[rstest]
+    #[case("html")]
+    #[case("body")]
+    #[case("main")]
+    fn test_structural_elements_are_never_noise_by_class_id(#[case] tag: &str) {
+        let mut el = element_with_attrs(&[("class", "sidebar-available")]);
+        el.tag_name = tag.to_string();
+        assert!(!is_noise_by_class_id(&el));
     }
 
     proptest! {
