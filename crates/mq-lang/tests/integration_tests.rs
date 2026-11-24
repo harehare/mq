@@ -2935,6 +2935,17 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::property_selector_iterator_index_1(r#"."items"[1]"#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
 // chained property iterator: ."a"."b"[] iterates all elements of a nested array
 #[case::property_selector_nested_iterator(r#"."a"."b"[]"#, vec![{let mut outer = DictMap::default(); let mut inner = DictMap::default(); inner.insert(Ident::new("b"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
+// postfix key access: any name directly after a value reads a dict key
+#[case::postfix_key_access("let d = {\"a\": 1} | d.a", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::postfix_key_access_missing("let d = {\"a\": 1} | d.b", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::postfix_key_access_selector_name("let d = {\"h23\": 1, \"text\": 2, \"url\": 3} | d.h23 + d.text + d.url", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(6.into())].into()))]
+#[case::postfix_key_access_chain("let d = {\"a\": {\"b\": [1, {\"c\": 3}]}} | d.a.b[1].c", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+#[case::postfix_key_access_quoted("let d = {\"my key\": 2} | d.\"my key\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::postfix_key_access_after_index("[{\"x\": 5}][0].x", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
+#[case::postfix_key_access_after_call("def f(): {\"x\": 5}; | f().x", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
+// postfix key access: a Markdown node rejects names that are not attributes
+#[case::postfix_key_access_markdown_unknown("let n = to_markdown(\"# t\")[0] | try: n.foo catch: \"err\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("err".to_string()))].into()))]
+#[case::postfix_attr_markdown("let n = to_markdown(\"# t\")[0] | n.depth", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // paren-free calls: 0-arg user-defined function called without parentheses
 #[case::paren_free_zero_arg_user_fn("def greet(): \"Hello!\"; | greet", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello!".to_string()))].into()))]
 // paren-free calls: 1-arg user-defined function called without parentheses uses current value

@@ -4,7 +4,7 @@ use crate::{
     Position, Range, Shared, Token, TokenKind,
     ast::constants,
     cst::node::{ArgList, BinaryOp, Elifs, UnaryOp},
-    selector::Selector,
+    selector::{Selector, postfix_key},
 };
 use smol_str::SmolStr;
 use thin_vec::thin_vec;
@@ -723,7 +723,7 @@ impl<'a> Parser<'a> {
 
         // Check for attribute access: ident.attr -> attr(ident, "attr")
         if let Some(attr_node) = self.try_parse_attribute_access(&mut node)? {
-            return Ok(attr_node);
+            return self.parse_postfix_chain(attr_node);
         }
 
         match self.peek_non_trivia() {
@@ -764,7 +764,7 @@ impl<'a> Parser<'a> {
                     let result = self.parse_bracket_access(node)?;
                     self.parse_postfix_chain(result)
                 } else if let Some(attr_node) = self.try_parse_attribute_access(&mut node)? {
-                    Ok(attr_node)
+                    self.parse_postfix_chain(attr_node)
                 } else {
                     Ok(Shared::new(node))
                 }
@@ -783,9 +783,12 @@ impl<'a> Parser<'a> {
         {
             let selector_token = self.shared(peek_token);
 
-            // Only attribute selectors (`.url`, `.level`) can follow a value.
+            // After a value, attribute selectors (`.url`) and dict keys written without a gap
+            // (`d.key`) are accepted.
             match Selector::try_from(&*selector_token) {
                 Ok(selector) if selector.is_attribute_selector() => {}
+                _ if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Selector(_)))
+                    && postfix_key(&selector_token).is_some() => {}
                 Err(error) => return Err(ParseError::UnknownSelector(error)),
                 Ok(_) => return Err(ParseError::UnexpectedToken(selector_token)),
             }

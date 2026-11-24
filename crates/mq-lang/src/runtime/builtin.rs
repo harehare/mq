@@ -3264,6 +3264,9 @@ fn attr_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             })
             .collect::<Vec<_>>()
             .into()),
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+            Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
+        }
         [a, ..] => Ok(std::mem::take(a)),
         _ => Err(invalid_arity(ident, 2, args.len())),
     }

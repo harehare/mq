@@ -771,6 +771,7 @@ end
   end
 "#
 )]
+#[case::dict_key_access_chain(r#"let d = {"a": {"b": [1]}} | d.a.b[0]"#, r#"let d = {"a": {"b": [1]}} | d.a.b[0]"#)]
 #[case::dict_nested_multiline_level3(
     r#"{
 "level1": {

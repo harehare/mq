@@ -5,7 +5,7 @@ use crate::error::SyntaxError;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::range::Position;
-use crate::selector::Selector;
+use crate::selector::{Selector, postfix_key};
 use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
@@ -41,6 +41,7 @@ struct RetainedToken {
 /// Parses a token stream into an AST, allocating tokens in the arena.
 pub struct Parser<'a, 'alloc> {
     tokens: Peekable<core::slice::Iter<'a, Token>>,
+    input: &'a [Token],
     token_base_address: usize,
     token_cache: Vec<Option<RetainedToken>>,
     token_arena: &'alloc mut Arena<Token>,
@@ -58,6 +59,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let token_slice = tokens.as_slice();
         Self {
             tokens: tokens.peekable(),
+            input: token_slice,
             token_base_address: token_slice.as_ptr() as usize,
             token_cache: vec![None; token_slice.len()],
             token_arena,
@@ -915,6 +917,31 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    /// True when `token` starts exactly where the previous token ends (`d.key`, not `d .key`).
+    fn is_adjacent_to_previous(&self, token: &Token) -> bool {
+        self.token_index(token)
+            .checked_sub(1)
+            .and_then(|i| self.input.get(i))
+            .is_some_and(|prev| prev.range.end == token.range.start)
+    }
+
+    /// Builds `get(base, "key")` for `base.key`; Markdown values reject it at runtime.
+    fn build_key_access(&mut self, base_node: Shared<Node>, selector_token: &Token, key: &str) -> Shared<Node> {
+        let key_token_id = self.alloc_token(selector_token);
+        let key_literal = Shared::new(Node {
+            token_id: key_token_id,
+            expr: Expr::Literal(Literal::String(key.into())),
+        });
+        self.tokens.next(); // Consume selector token
+        Shared::new(Node {
+            token_id: self.alloc_token(selector_token),
+            expr: Expr::Call(
+                IdentWithToken::new_with_token(constants::builtins::GET, Some(key_token_id)),
+                smallvec![base_node, key_literal],
+            ),
+        })
+    }
+
     fn parse_attribute_access(&mut self, base_node: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
         let selector_token = match self.tokens.peek() {
             Some(t) => *t,
@@ -924,11 +951,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if let TokenKind::Selector(selector) = &selector_token.kind
             && selector.len() > 1
         {
-            if !Selector::try_from(selector_token)
-                .map_err(SyntaxError::UnknownSelector)?
-                .is_attribute_selector()
-            {
-                return Err(SyntaxError::UnexpectedToken((*selector_token).clone()));
+            let is_attribute = matches!(Selector::try_from(selector_token), Ok(s) if s.is_attribute_selector());
+            if !is_attribute {
+                return match postfix_key(selector_token).filter(|_| self.is_adjacent_to_previous(selector_token)) {
+                    Some(key) => Ok(self.build_key_access(base_node, selector_token, &key)),
+                    None => Err(match Selector::try_from(selector_token) {
+                        Err(error) => SyntaxError::UnknownSelector(error),
+                        Ok(_) => SyntaxError::UnexpectedToken((*selector_token).clone()),
+                    }),
+                };
             }
 
             let attribute_name = &selector[1..]; // Skip the leading '.'
@@ -1234,7 +1265,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     )),
                 });
 
-                self.parse_attribute_access(base_node)
+                let node = self.parse_attribute_access(base_node)?;
+                self.parse_postfix_ops(node, ident_token)
             }
             Some(TokenKind::DoubleColon) => {
                 // Parse qualified access: module::function(), module::ident, or module::module2::method
@@ -1356,7 +1388,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let result = self.parse_bracket_access(call_node, ident_token)?;
                     self.parse_postfix_ops(result, ident_token)
                 } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Selector(_))) {
-                    self.parse_attribute_access(call_node)
+                    let node = self.parse_attribute_access(call_node)?;
+                    self.parse_postfix_ops(node, ident_token)
                 } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
                     Ok(call_node)
                 } else {
