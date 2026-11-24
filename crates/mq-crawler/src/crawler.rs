@@ -48,6 +48,8 @@ pub struct CrawlResult {
     pub links_discovered: usize,
     /// Total pages visited.
     pub total_pages_visited: usize,
+    /// First error message that made a page fail, kept for the final diagnostic.
+    pub first_failure: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -74,6 +76,12 @@ pub struct CrawlResultStats {
 }
 
 impl CrawlResult {
+    /// Counts a failed page and keeps the first error message.
+    fn record_failure(&mut self, message: String) {
+        self.pages_failed += 1;
+        self.first_failure.get_or_insert(message);
+    }
+
     /// Elapsed time, if the crawl has started and finished.
     pub fn duration(&self) -> Option<Duration> {
         if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
@@ -391,6 +399,11 @@ impl Crawler {
         self.result.read().await.to_stats()
     }
 
+    /// The first error that made a page fail, if any.
+    pub async fn first_failure(&self) -> Option<String> {
+        self.result.read().await.first_failure.clone()
+    }
+
     /// Runs the crawl to completion.
     pub async fn run(&mut self) -> Result<(), String> {
         // Record start time
@@ -488,14 +501,16 @@ impl Crawler {
             notified.await;
         }
 
+        let mut checkpoint_error = None;
         if self.checkpoint_path.is_some()
             && let Err(e) = self.save_checkpoint().await
         {
-            tracing::warn!("Failed to save final checkpoint: {}", e);
+            tracing::error!("Failed to save final checkpoint: {}", e);
+            checkpoint_error = Some(format!("Failed to save final checkpoint: {}", e));
         }
 
         self.finalize_crawl().await;
-        Ok(())
+        checkpoint_error.map_or(Ok(()), Err)
     }
 
     /// Saves a checkpoint if `--checkpoint-path` is set and at least
@@ -512,7 +527,7 @@ impl Crawler {
 
         *pages_at_last_checkpoint = pages_crawled;
         if let Err(e) = self.save_checkpoint().await {
-            tracing::warn!("Failed to save checkpoint: {}", e);
+            tracing::error!("Failed to save checkpoint: {}", e);
         }
     }
 
@@ -640,7 +655,10 @@ impl Crawler {
             Ok(rules) => rules,
             Err(e) => {
                 tracing::error!("Failed to fetch robots.txt for {}: {}", current_url, e);
-                self.result.write().await.pages_failed += 1;
+                self.result
+                    .write()
+                    .await
+                    .record_failure(format!("Failed to fetch robots.txt for {}: {}", current_url, e));
                 return;
             }
         };
@@ -682,28 +700,33 @@ impl Crawler {
                 let current_url_clone = current_url.clone();
                 let self_clone = self.clone();
                 let new_links = tokio::task::spawn_blocking(move || {
-                    if let Err(e) = Self::execute_query(&query, &html_content_clone, conversion_options).map(|md| {
-                        if let Err(e) = self_clone.output_markdown(&current_url_clone, md.as_str()) {
-                            tracing::error!("Failed to output markdown for {}: {}", current_url_clone, e);
-                        }
-                    }) {
-                        tracing::error!(
+                    let failure = match Self::execute_query(&query, &html_content_clone, conversion_options) {
+                        Ok(md) => self_clone
+                            .output_markdown(&current_url_clone, md.as_str())
+                            .err()
+                            .map(|e| format!("Failed to output markdown for {}: {}", current_url_clone, e)),
+                        Err(e) => Some(format!(
                             "Failed to execute mq query on content from {}: {}",
-                            current_url_clone,
-                            e
-                        );
+                            current_url_clone, e
+                        )),
+                    };
+                    if let Some(message) = &failure {
+                        tracing::error!("{}", message);
                     }
 
-                    extract_links(&html_content, &current_url_clone)
+                    (extract_links(&html_content, &current_url_clone), failure)
                 })
                 .await;
 
                 match new_links {
-                    Ok(new_links) => {
+                    Ok((new_links, failure)) => {
                         {
                             let mut result = self.result.write().await;
                             result.links_discovered += new_links.len();
-                            result.pages_crawled += 1;
+                            match failure {
+                                Some(message) => result.record_failure(message),
+                                None => result.pages_crawled += 1,
+                            }
                         }
 
                         {
@@ -732,10 +755,10 @@ impl Crawler {
             }
             Err(e) => {
                 tracing::error!("Failed to fetch URL {}: {}", current_url, e);
-                {
-                    let mut result = self.result.write().await;
-                    result.pages_failed += 1;
-                }
+                self.result
+                    .write()
+                    .await
+                    .record_failure(format!("Failed to fetch URL {}: {}", current_url, e));
             }
         }
     }
@@ -1373,6 +1396,68 @@ mod tests {
         let stats = crawler.stats().await;
         assert_eq!(stats.pages_crawled, 0);
         assert_eq!(stats.pages_failed, 1);
+    }
+
+    #[tokio::test]
+    async fn test_crawl_counts_invalid_query_as_failed() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body("<html><body>ok</body></html>");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/", port)).unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions {
+                mq_query: Some("select(".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        let stats = crawler.stats().await;
+        assert_eq!(stats.pages_crawled, 0);
+        assert_eq!(stats.pages_failed, 1);
+        assert!(crawler.first_failure().await.unwrap().contains("mq query"));
+    }
+
+    #[tokio::test]
+    async fn test_crawl_fails_when_final_checkpoint_cannot_be_saved() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body("<html><body>ok</body></html>");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/", port)).unwrap();
+        let missing = std::env::temp_dir().join(format!("mq-crawl-missing-{}/crawl.json", std::process::id()));
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions {
+                checkpoint_path: Some(missing.to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let err = crawler.run().await.unwrap_err();
+        assert!(err.contains("final checkpoint"), "{err}");
     }
 
     #[tokio::test]
