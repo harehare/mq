@@ -3643,7 +3643,13 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 // set_children: leaf node (no children) → unchanged
 #[case::set_children_leaf_node(r##"to_markdown("plain text") | first() | set_children(["ignored"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("plain text".to_string()))].into()))]
 // attr: non-markdown → returns first arg
-#[case::attr_non_markdown(r#"attr("not_markdown", "key")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_markdown".to_string()))].into()))]
+#[case::attr_string_is_error(r#"try: attr("not_markdown", "key") catch: "err""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("err".to_string()))].into()))]
+#[case::attr_number_is_error(r#"try: attr(1, "key") catch: "err""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("err".to_string()))].into()))]
+#[case::attr_dict_key(r#"attr({"url": "u"}, "url")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("u".to_string()))].into()))]
+#[case::attr_dict_missing_key(r#"attr({"url": "u"}, "level")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::postfix_known_attr_on_dict(r#"let d = {"url": "u", "level": 2} | d.url"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("u".to_string()))].into()))]
+#[case::postfix_known_attr_on_string_is_error(r#"let s = "x" | try: s.url catch: "err""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("err".to_string()))].into()))]
+#[case::postfix_known_attr_on_array_of_dicts(r#"let a = [{"url": "u"}, {"url": "v"}] | a.url"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec!["u".into(), "v".into()]))].into()))]
 // _diff: two different strings → paired delete+insert = 2 dicts
 #[case::diff_strings("_diff(\"abc\", \"axc\") | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // _diff: two arrays - equal(1), paired(delete 2/insert 4), equal(3) = 4 dicts
