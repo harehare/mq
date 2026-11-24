@@ -159,7 +159,9 @@ def _escape_line(line):
 # ```
 #
 # Returns: markdown
-def escape(value): to_md_text(join(map(split(to_string(value), "\n"), _escape_line), "\n"));
+def _escape_str(value): join(map(split(to_string(value), "\n"), _escape_line), "\n");
+
+def escape(value): to_md_text(_escape_str(value));
 
 # Turns single newlines in `value` into hard line breaks; blank lines are kept.
 #
@@ -396,6 +398,82 @@ def table(header, rows, aligns = []):
 #
 # Returns: markdown
 def doc(*values): to_md_fragment(values);
+
+def _is_scalar(v): !is_array(v) && !is_dict(v);
+
+def _data_cell(v): if (is_none(v)): "" else: escape(to_string(v));
+
+def _is_flat_records(items):
+  !is_empty(items) && all(items, fn(r): is_dict(r) && all(values(r), _is_scalar););
+
+def _data_table(rows):
+  let header = uniq(flat_map(rows, fn(r): keys(r);))
+  | if (is_empty(header)): map(rows, fn(_): list("{}", 0);) else: _data_table_rows(header, rows);
+
+def _data_table_rows(header, rows):
+  table(map(header, escape), map(rows, fn(r): map(header, fn(h): _data_cell(r[h]););));
+
+def _data_key_value_table(d, ks):
+  table(["Key", "Value"], map(ks, fn(k): [escape(k), _data_cell(d[k])];));
+
+def _data_dict_item(item, k, level):
+  if (_is_scalar(item[k])):
+    [list(escape(k + ": " + to_string(item[k])), level)]
+  else:
+    [list(escape(k), level)] + _data_list(item[k], level + 1);
+
+def _data_list_item(item, level):
+  if (is_array(item)):
+    [list("[]", level)] + _data_list(item, level + 1)
+  elif (is_dict(item)):
+    flat_map(keys(item), fn(k): _data_dict_item(item, k, level);)
+  else:
+    [list(escape(to_string(item)), level)];
+
+def _data_list(data, level):
+  if (is_array(data)):
+    flat_map(data, fn(item): _data_list_item(item, level);)
+  else:
+    _data_list_item(data, level);
+
+def _data_dict_blocks(data, depth):
+  let scalars = filter(keys(data), fn(k): _is_scalar(data[k]);)
+  | let nested = filter(keys(data), fn(k): !_is_scalar(data[k]);)
+  | let head = if (is_empty(scalars)): [] else: _data_key_value_table(data, scalars)
+  | head + flat_map(nested, fn(k): [h(escape(k), depth)] + _data_blocks(data[k], min(depth + 1, 6)););
+
+# A parsed text node (so rendering escapes it) holding the raw scalar as its value.
+def _data_text(data): set_attr(first(to_markdown("x")), "value", to_string(data));
+
+def _data_blocks(data, depth):
+  if (is_dict(data)):
+    _data_dict_blocks(data, depth)
+  elif (is_array(data)):
+    if (_is_flat_records(data)): _data_table(data) else: _data_list(data, 0)
+  else:
+    [_data_text(data)];
+
+# Converts nested data (dicts, arrays, scalars) into markdown nodes, recursively.
+# A dict becomes a `Key`/`Value` table for its scalar entries, followed by a heading
+# per nested entry (starting at `depth`, capped at 6). An array of flat dicts becomes
+# a table; any other array becomes a nested bullet list. Returns an array of nodes
+# ready to splice into `doc()`.
+#
+# Example:
+# ```
+# import "md" | md::doc(md::from_data({"name": "mq", "tags": ["a", "b"]}))
+# #=> |Key|Value|
+# |---|---|
+# |name|mq|
+# ## tags
+# - a
+# - b
+# ```
+#
+# Returns: array
+def from_data(data, depth = 2):
+  _expect_type("md::from_data", "depth", depth, "number")
+  | _data_blocks(data, clamp(depth, 1, 6));
 
 def _is_definition(md): to_md_name(md) == "definition";
 def _is_footnote_def(md): to_md_name(md) == "footnote";

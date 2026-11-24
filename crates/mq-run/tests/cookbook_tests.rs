@@ -1059,6 +1059,20 @@ fn cookbook_fetch_and_filter_a_web_page() {
 }
 
 #[test]
+fn cookbook_turn_a_json_api_response_into_markdown() {
+    // The recipe's live fetch depends on the network. Exercise the parse/render
+    // pipeline with a fixed response body instead of `http()`.
+    let body = r#"{"full_name": "o/r", "stargazers_count": 3, "language": "Rust", "license": {"key": "mit", "name": "MIT License"}, "topics": ["cli", "jq"]}"#;
+    let query = r#"import "json" | import "md" | json::json_parse() | let r = . | md::doc(md::h1(r["full_name"]), md::from_data({"stars": r["stargazers_count"], "language": r["language"], "license": r["license"], "topics": r["topics"]}))"#;
+    let path = write_temp("cookbook_turn_a_json_api_response_into_markdown.json", body);
+    let out = run(&["-I", "raw", query, path.to_str().unwrap()]);
+    assert_eq!(
+        out.trim(),
+        "# o/r\n|Key|Value|\n|---|---|\n|stars|3|\n|language|Rust|\n## license\n|Key|Value|\n|---|---|\n|key|mit|\n|name|MIT License|\n## topics\n- cli\n- jq"
+    );
+}
+
+#[test]
 fn cookbook_find_latest_version_with_semver() {
     let tags = write_temp(
         "cookbook_find_latest_version_with_semver.txt",

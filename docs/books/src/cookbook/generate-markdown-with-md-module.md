@@ -60,3 +60,13 @@ Add `-F html` to the same query to get HTML instead of Markdown:
 - Other builders follow the same pattern: `h1` to `h6`, `code(value, lang)`, `link(url, text)`, `image(url, alt)`, `blockquote`, `callout(value, kind)` for `> [!NOTE]`-style alerts, and `list(value, level, ordered, checked)`. `md::list("todo", 0, false, false)` gives `- [ ] todo` and passing `true` as the last argument gives `- [x] todo`.
 - The nodes are printed on consecutive lines with no blank line between blocks, and table cells are not padded, as in the output above.
 - If the data is already in a JSON file and you only need a table, see [Turn JSON into a Markdown table](json-to-markdown-table.md).
+
+## Expand nested data recursively
+
+`md::from_data` converts any nested value without a hand-written layout. A dict becomes a `Key`/`Value` table plus one heading per nested entry, an array of flat dicts becomes a table, and other arrays become nested bullet lists.
+
+```bash
+$ mq -I json 'import "md" | md::doc(md::from_data(.))' project.json
+```
+
+Pass a second argument to set the first heading level (default 2, capped at 6): `md::from_data(., 3)`.

@@ -391,3 +391,59 @@ def test_md_valid_arguments_accepted(op):
   let result = try: op() catch: "error"
   | assert_ne(result, "error")
 end
+
+# -- from_data --
+
+def test_md_from_data_flat_records_to_table():
+  let result = to_string(md::doc(md::from_data([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}])))
+  | assert_eq(result, "|a|b|\n|---|---|\n|1|x|\n|2|y|")
+end
+
+def test_md_from_data_dict_nests_headings():
+  let data = {"name": "mq", "deps": {"rust": "1", "tags": ["a", "b"]}}
+  | let result = to_string(md::doc(md::from_data(data)))
+  | assert_eq(result, "|Key|Value|\n|---|---|\n|name|mq|\n## deps\n|Key|Value|\n|---|---|\n|rust|1|\n### tags\n- a\n- b")
+end
+
+def test_md_from_data_nested_array_indents():
+  let result = to_string(md::doc(md::from_data([1, [2, 3]])))
+  | assert_eq(result, "- 1\n- []\n  - 2\n  - 3")
+end
+
+def test_md_from_data_sibling_arrays_keep_groups():
+  let a = to_string(md::doc(md::from_data([["red", "blue"], ["green", "yellow"]])))
+  | let b = to_string(md::doc(md::from_data([["red", "blue", "green", "yellow"]])))
+  | assert_eq([a, a == b], ["- []\n  - red\n  - blue\n- []\n  - green\n  - yellow", false])
+end
+
+def test_md_from_data_empty_records_and_markup_string():
+  let empty = to_string(md::doc(md::from_data([{}, {}])))
+  | let str = to_string(md::doc(md::from_data("# Draft")))
+  | assert_eq([empty, str], ["- {}\n- {}", "\\# Draft"])
+end
+
+def test_md_from_data_scalar_text_value_is_unescaped():
+  let node = first(md::from_data("# Draft"))
+  | assert_eq([to_text(node), to_string(node)], ["# Draft", "\\# Draft"])
+end
+
+def test_md_from_data_scalar_prose_stays_one_node():
+  let res = md::from_data("See www.a.com.\n\nNext")
+  | assert_eq([len(res), to_text(first(res)), to_string(md::doc(md::from_data("See www.a.com.")))], [1, "See www.a.com.\n\nNext", "See www.a.com."])
+end
+
+def test_md_from_data_heading_depth_is_capped():
+  let result = to_string(md::doc(md::from_data({"a": {"b": 1, "c": {"d": 1}}}, 6)))
+  | assert_eq(contains(result, "####### "), false)
+end
+
+def test_md_from_data_scalar_and_none_cell():
+  let scalar = to_string(md::doc(md::from_data(5)))
+  | let none_cell = to_string(md::doc(md::from_data([{"a": None}])))
+  | assert_eq([scalar, none_cell], ["5", "|a|\n|---|\n||"])
+end
+
+def test_md_from_data_depth_type_error():
+  let result = try: md::from_data({}, "x") catch: "error"
+  | assert_eq(result, "error")
+end
