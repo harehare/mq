@@ -5,6 +5,7 @@ use fantoccini::wd::TimeoutConfiguration;
 use miette::miette;
 use mq_crawler::crawler::{Crawler, CrawlerOptions};
 use std::process::ExitCode;
+use tracing::level_filters::LevelFilter;
 use url::Url;
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -123,9 +124,10 @@ struct CliArgs {
     /// Example: --allowed-domains example.com,docs.example.com
     #[clap(long, value_delimiter = ',', value_name = "DOMAIN")]
     allowed_domains: Option<Vec<String>>,
-    /// Output format for results and statistics
-    #[clap(short = 'f', long, default_value_t = OutputFormat::Text)]
-    format: OutputFormat,
+    /// Output format for results and statistics [default: text]. An explicit format prints
+    /// statistics without -v; --quiet still suppresses them.
+    #[clap(short = 'f', long)]
+    format: Option<OutputFormat>,
     /// Optional URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from.
     /// Discovered URLs are added to the crawl frontier alongside the start URL and are still
     /// subject to robots.txt, domain filtering, and depth limits.
@@ -155,6 +157,12 @@ struct CliArgs {
     /// Bearer token for "Authorization: Bearer <token>". Non-browser crawling only.
     #[clap(long, value_name = "TOKEN", conflicts_with = "basic_auth")]
     bearer_token: Option<String>,
+    /// Log more on stderr: -v adds info messages and crawl statistics, -vv adds debug messages.
+    #[clap(short = 'v', long, action = clap::ArgAction::Count, conflicts_with = "quiet")]
+    verbose: u8,
+    /// Suppress log messages on stderr. A fatal error is still reported.
+    #[clap(short = 'Q', long)]
+    quiet: bool,
     #[clap(flatten)]
     pub conversion: ConversionArgs,
 }
@@ -218,9 +226,19 @@ pub struct ConversionArgs {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
+    let args = CliArgs::parse();
+    let level = match (args.quiet, args.verbose) {
+        (true, _) => LevelFilter::OFF,
+        (_, 0) => LevelFilter::ERROR,
+        (_, 1) => LevelFilter::INFO,
+        _ => LevelFilter::DEBUG,
+    };
+    tracing_subscriber::fmt()
+        .with_max_level(level)
+        .with_writer(std::io::stderr)
+        .init();
 
-    match run(CliArgs::parse()).await {
+    match run(args).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{:?}", e);
@@ -357,7 +375,8 @@ async fn run(args: CliArgs) -> miette::Result<()> {
         .map_err(|e| miette!(e))?
     };
 
-    let format = match args.format {
+    let format_requested = args.format.is_some();
+    let format = match args.format.unwrap_or_default() {
         OutputFormat::Text => mq_crawler::crawler::OutputFormat::Text,
         OutputFormat::Json => mq_crawler::crawler::OutputFormat::Json,
     };
@@ -407,6 +426,7 @@ async fn run(args: CliArgs) -> miette::Result<()> {
             checkpoint_path: args.checkpoint_path,
             checkpoint_interval_pages: args.checkpoint_interval_pages,
             resume_checkpoint,
+            suppress_stats: args.quiet || (args.verbose == 0 && !format_requested),
         },
     )
     .await
@@ -417,7 +437,12 @@ async fn run(args: CliArgs) -> miette::Result<()> {
     // Skipped pages (robots.txt, non-HTML) are deliberate; only failed fetches fail the crawl.
     let pages_failed = crawler.stats().await.pages_failed;
     if pages_failed > 0 {
-        return Err(miette!("Crawl finished with {} failed page(s).", pages_failed));
+        let first = crawler.first_failure().await.unwrap_or_default();
+        return Err(miette!(
+            "Crawl finished with {} failed page(s). First failure: {}",
+            pages_failed,
+            first
+        ));
     }
 
     tracing::info!("Crawling complete.");

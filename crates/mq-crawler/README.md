@@ -199,11 +199,23 @@ mq-crawl --max-response-bytes 2097152 https://example.com
 
 Responses whose `Content-Type` is not HTML (PDFs, images, ...) are skipped and counted as "Pages skipped (non-HTML)". URLs with a known non-HTML extension (`.pdf`, `.png`, `.zip`, ...) are not requested at all and are counted as "URLs skipped (extension)"; pass `--no-skip-extensions` to request them anyway. Oversized pages count as failed. With `--headless` or `--webdriver-url`, only the size limit applies, after rendering.
 
+### Logging
+
+By default only errors are written to stderr. The crawl statistics are written with `-v`.
+
+```bash
+# Add info messages and crawl statistics (-vv for debug)
+mq-crawl -v https://example.com
+
+# Suppress all log messages and statistics (a fatal error is still reported)
+mq-crawl -Q https://example.com
+```
+
 ### Exit Codes and Short Flags
 
 `mq-crawl` exits non-zero when it fails to start (bad arguments, unreachable WebDriver, invalid checkpoint) the crawl itself fails, or any page failed to fetch (including oversized responses). Pages skipped by robots.txt or for being non-HTML do not affect the exit code. Errors are printed as `miette` diagnostics.
 
-Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
+Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`; use `-Q` for `--quiet` here) and `-U` is `--webdriver-url` (`--update` in `mq`).
 
 ### HTML to Markdown Options
 
