@@ -796,7 +796,7 @@ impl<'a> Parser<'a> {
             // The attribute may start on the next line; the trivia in between stays on its node.
             let adjacent = matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Selector(_)));
             let leading_trivia = if adjacent {
-                node.leading_trivia.clone()
+                TriviaList::new()
             } else {
                 self.parse_leading_trivia()
             };

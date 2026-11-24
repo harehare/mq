@@ -925,7 +925,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             .is_some_and(|prev| prev.range.end == token.range.start)
     }
 
-    /// Builds `get(base, "key")` for `base.key`; Markdown values reject it at runtime.
+    /// Builds `base["key"]` for `base.key`, so a user-defined `get` cannot intercept it.
     fn build_key_access(&mut self, base_node: Shared<Node>, selector_token: &Token, key: &str) -> Shared<Node> {
         let key_token_id = self.alloc_token(selector_token);
         let key_literal = Shared::new(Node {
@@ -934,11 +934,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         });
         self.tokens.next(); // Consume selector token
         Shared::new(Node {
-            token_id: self.alloc_token(selector_token),
-            expr: Expr::Call(
-                IdentWithToken::new_with_token(constants::builtins::GET, Some(key_token_id)),
-                smallvec![base_node, key_literal],
-            ),
+            token_id: key_token_id,
+            expr: Expr::Index(base_node, key_literal),
         })
     }
 

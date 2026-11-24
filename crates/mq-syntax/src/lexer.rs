@@ -694,9 +694,14 @@ impl<'a> Cursor<'a> {
                 }
             }
             _ => {
+                // Right after a value (`d.count*2`), `-` and `*` are operators, not selector characters.
+                let after_value = self.pos > 0
+                    && matches!(self.src.as_bytes()[self.pos - 1], b if b.is_ascii_alphanumeric() || matches!(b, b'_' | b')' | b']' | b'}' | b'"'));
                 len += bytes[1..]
                     .iter()
-                    .take_while(|&&b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'*'))
+                    .take_while(|&&b| {
+                        b.is_ascii_alphanumeric() || b == b'_' || (!after_value && matches!(b, b'-' | b'*'))
+                    })
                     .count();
             }
         }

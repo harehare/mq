@@ -2937,6 +2937,10 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::property_selector_nested_iterator(r#"."a"."b"[]"#, vec![{let mut outer = DictMap::default(); let mut inner = DictMap::default(); inner.insert(Ident::new("b"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
 // postfix key access: any name directly after a value reads a dict key
 #[case::postfix_key_access("let d = {\"a\": 1} | d.a", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::postfix_key_access_shadowed_get("def get(a, b): 99 end | let d = {\"key\": 1} | d.key", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::postfix_key_access_shadowed_get_selector_name("def get(a, b): 99 end | let d = {\"text\": 1} | d.text", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::postfix_key_access_compact_mul("let d = {\"count\": 3} | d.count*2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(6.into())].into()))]
+#[case::postfix_key_access_compact_sub("let d = {\"count\": 3} | d.count-1", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::postfix_key_access_missing("let d = {\"a\": 1} | d.b", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::postfix_key_access_selector_name("let d = {\"h23\": 1, \"text\": 2, \"url\": 3} | d.h23 + d.text + d.url", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(6.into())].into()))]
 #[case::postfix_key_access_chain("let d = {\"a\": {\"b\": [1, {\"c\": 3}]}} | d.a.b[1].c", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
