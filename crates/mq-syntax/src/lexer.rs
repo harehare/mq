@@ -694,8 +694,11 @@ impl<'a> Cursor<'a> {
                 }
             }
             _ => {
-                // Right after a value (`d.count*2`), `-` and `*` are operators, not selector characters.
-                let after_value = self.pos > 0
+                // After a named key (`d.count*2`), `-` and `*` are operators. A selector that
+                // starts with them (`.blockquote.**`, `.---`) is a punctuation-only alias.
+                let punctuation_alias = matches!(bytes.get(1), Some(b'-' | b'*'));
+                let after_value = !punctuation_alias
+                    && self.pos > 0
                     && matches!(self.src.as_bytes()[self.pos - 1], b if b.is_ascii_alphanumeric() || matches!(b, b'_' | b')' | b']' | b'}' | b'"'));
                 len += bytes[1..]
                     .iter()
