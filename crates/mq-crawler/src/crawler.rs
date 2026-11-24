@@ -227,6 +227,7 @@ pub struct Crawler {
     depth_limit: Option<usize>,
     domain_last_request: Arc<DashMap<String, Instant>>,
     format: OutputFormat,
+    suppress_stats: bool,
     http_client: HttpClient,
     initial_domain: String,
     max_pages: Option<usize>,
@@ -277,6 +278,8 @@ pub struct CrawlerOptions {
     pub checkpoint_interval_pages: usize,
     /// Checkpoint to continue from instead of starting at `start_url`.
     pub resume_checkpoint: Option<CrawlCheckpoint>,
+    /// Do not write the crawl statistics to stderr.
+    pub suppress_stats: bool,
 }
 
 impl Crawler {
@@ -299,6 +302,7 @@ impl Crawler {
             checkpoint_path,
             checkpoint_interval_pages,
             resume_checkpoint,
+            suppress_stats,
         } = options;
         let initial_domain = start_url
             .host_str()
@@ -357,6 +361,7 @@ impl Crawler {
             notify: Arc::new(Notify::new()),
             concurrency: concurrency.max(1),
             format,
+            suppress_stats,
             conversion_options,
             depth_limit,
         })
@@ -767,8 +772,7 @@ impl Crawler {
             result.total_pages_visited = visited_len;
         }
 
-        // Write statistics to stderr
-        {
+        if !self.suppress_stats {
             let result = self.result.read().await;
             result.write_stats_to_stderr(&self.format);
         }

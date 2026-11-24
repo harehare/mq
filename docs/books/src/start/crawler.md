@@ -96,6 +96,8 @@ mq-crawl [OPTIONS] <URL>
 | `--generate-front-matter` | Generate YAML front matter from page metadata | - |
 | `--use-title-as-h1` | Use the HTML `<title>` as the first H1 heading | - |
 | `-f, --format <FORMAT>` | Output format: `text` or `json` | `text` |
+| `-v, --verbose` | Also write info messages and crawl statistics to stderr; `-vv` adds debug messages | errors only |
+| `--quiet` | Suppress all log messages and statistics on stderr; a fatal error is still reported | - |
 
 `mq-crawl` exits non-zero when it fails to start, the crawl fails, or any page failed to fetch. Pages skipped by robots.txt or for being non-HTML do not count. Some short flags differ from `mq`: `-q` is `--mq-query` here (`--quiet` in `mq`) and `-U` is `--webdriver-url` (`--update` in `mq`).
 

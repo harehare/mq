@@ -5,6 +5,7 @@ use fantoccini::wd::TimeoutConfiguration;
 use miette::miette;
 use mq_crawler::crawler::{Crawler, CrawlerOptions};
 use std::process::ExitCode;
+use tracing::level_filters::LevelFilter;
 use url::Url;
 
 #[derive(Clone, Debug, Default, clap::ValueEnum)]
@@ -155,6 +156,12 @@ struct CliArgs {
     /// Bearer token for "Authorization: Bearer <token>". Non-browser crawling only.
     #[clap(long, value_name = "TOKEN", conflicts_with = "basic_auth")]
     bearer_token: Option<String>,
+    /// Log more on stderr: -v adds info messages and crawl statistics, -vv adds debug messages.
+    #[clap(short = 'v', long, action = clap::ArgAction::Count, conflicts_with = "quiet")]
+    verbose: u8,
+    /// Suppress log messages on stderr. A fatal error is still reported.
+    #[clap(long)]
+    quiet: bool,
     #[clap(flatten)]
     pub conversion: ConversionArgs,
 }
@@ -218,9 +225,19 @@ pub struct ConversionArgs {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
+    let args = CliArgs::parse();
+    let level = match (args.quiet, args.verbose) {
+        (true, _) => LevelFilter::OFF,
+        (_, 0) => LevelFilter::ERROR,
+        (_, 1) => LevelFilter::INFO,
+        _ => LevelFilter::DEBUG,
+    };
+    tracing_subscriber::fmt()
+        .with_max_level(level)
+        .with_writer(std::io::stderr)
+        .init();
 
-    match run(CliArgs::parse()).await {
+    match run(args).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{:?}", e);
@@ -407,6 +424,7 @@ async fn run(args: CliArgs) -> miette::Result<()> {
             checkpoint_path: args.checkpoint_path,
             checkpoint_interval_pages: args.checkpoint_interval_pages,
             resume_checkpoint,
+            suppress_stats: args.quiet || args.verbose == 0,
         },
     )
     .await
