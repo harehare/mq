@@ -1,5 +1,20 @@
 use super::Error;
-use chrono::{DateTime, Datelike, Duration, Months, NaiveDateTime, Utc, Weekday};
+use jiff::Span;
+use jiff::Timestamp;
+use jiff::civil::{DateTime, Weekday};
+use jiff::tz::TimeZone;
+
+/// Converts Unix seconds to a UTC civil datetime.
+pub(super) fn from_unix_secs(secs: i64) -> Option<DateTime> {
+    Timestamp::from_second(secs)
+        .ok()
+        .map(|ts| TimeZone::UTC.to_datetime(ts))
+}
+
+/// Converts a UTC civil datetime to Unix seconds.
+pub(super) fn to_unix_secs(dt: DateTime) -> Option<i64> {
+    TimeZone::UTC.to_timestamp(dt).ok().map(|ts| ts.as_second())
+}
 
 /// Date/time units used by `date_add` and `date_diff`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,39 +50,29 @@ impl TryFrom<&str> for DateUnit {
 
 impl DateUnit {
     /// Adds `amount` of this unit to `dt`. Returns `None` on overflow.
-    pub fn apply_add(self, dt: DateTime<Utc>, amount: i64) -> Option<DateTime<Utc>> {
-        match self {
-            Self::Seconds => dt.checked_add_signed(Duration::seconds(amount)),
-            Self::Minutes => dt.checked_add_signed(Duration::minutes(amount)),
-            Self::Hours => dt.checked_add_signed(Duration::hours(amount)),
-            Self::Days => dt.checked_add_signed(Duration::days(amount)),
-            Self::Weeks => dt.checked_add_signed(Duration::weeks(amount)),
-            Self::Months => {
-                if amount >= 0 {
-                    dt.checked_add_months(Months::new(amount as u32))
-                } else {
-                    dt.checked_sub_months(Months::new((-amount) as u32))
-                }
-            }
-            Self::Years => {
-                if amount >= 0 {
-                    dt.checked_add_months(Months::new(amount as u32 * 12))
-                } else {
-                    dt.checked_sub_months(Months::new((-amount) as u32 * 12))
-                }
-            }
+    pub fn apply_add(self, dt: DateTime, amount: i64) -> Option<DateTime> {
+        let span = match self {
+            Self::Seconds => Span::new().try_seconds(amount),
+            Self::Minutes => Span::new().try_minutes(amount),
+            Self::Hours => Span::new().try_hours(amount),
+            Self::Days => Span::new().try_days(amount),
+            Self::Weeks => Span::new().try_weeks(amount),
+            Self::Months => Span::new().try_months(amount),
+            Self::Years => Span::new().try_years(amount),
         }
+        .ok()?;
+        dt.checked_add(span).ok()
     }
 
-    /// Returns the signed difference in this unit. Errors for `Months` and `Years` as
-    /// `chrono::Duration` does not represent variable-length calendar units.
-    pub fn apply_diff(self, diff: Duration) -> Result<i64, Error> {
+    /// Returns the signed difference of `secs` seconds in this unit. Errors for `Months` and
+    /// `Years` as they are variable-length calendar units.
+    pub fn apply_diff(self, secs: i64) -> Result<i64, Error> {
         match self {
-            Self::Seconds => Ok(diff.num_seconds()),
-            Self::Minutes => Ok(diff.num_minutes()),
-            Self::Hours => Ok(diff.num_hours()),
-            Self::Days => Ok(diff.num_days()),
-            Self::Weeks => Ok(diff.num_weeks()),
+            Self::Seconds => Ok(secs),
+            Self::Minutes => Ok(secs / 60),
+            Self::Hours => Ok(secs / 3600),
+            Self::Days => Ok(secs / 86_400),
+            Self::Weeks => Ok(secs / 604_800),
             Self::Months | Self::Years => Err(Error::Runtime(format!(
                 "date_diff does not support unit {:?}, expected \"seconds\", \"minutes\", \"hours\", \"days\", or \"weeks\"",
                 match self {
@@ -80,16 +85,16 @@ impl DateUnit {
 }
 
 /// Public helper called from `builtin.rs` for `date_add`.
-pub(super) fn add(dt: DateTime<Utc>, amount: i64, unit: &str) -> Result<DateTime<Utc>, Error> {
+pub(super) fn add(dt: DateTime, amount: i64, unit: &str) -> Result<DateTime, Error> {
     let unit = DateUnit::try_from(unit)?;
     unit.apply_add(dt, amount)
         .ok_or_else(|| Error::Runtime("date_add: arithmetic overflow or invalid date".to_string()))
 }
 
 /// Public helper called from `builtin.rs` for `date_diff`.
-pub(super) fn diff(diff: Duration, unit: &str) -> Result<i64, Error> {
+pub(super) fn diff(secs: i64, unit: &str) -> Result<i64, Error> {
     let unit = DateUnit::try_from(unit)?;
-    unit.apply_diff(diff)
+    unit.apply_diff(secs)
 }
 
 /// Like `DateUnit::try_from`, but also accepts singular unit words (e.g. "day"), since
@@ -109,13 +114,13 @@ fn parse_relative_unit(word: &str) -> Option<DateUnit> {
 
 fn parse_weekday(word: &str) -> Option<Weekday> {
     match word {
-        "sunday" => Some(Weekday::Sun),
-        "monday" => Some(Weekday::Mon),
-        "tuesday" => Some(Weekday::Tue),
-        "wednesday" => Some(Weekday::Wed),
-        "thursday" => Some(Weekday::Thu),
-        "friday" => Some(Weekday::Fri),
-        "saturday" => Some(Weekday::Sat),
+        "sunday" => Some(Weekday::Sunday),
+        "monday" => Some(Weekday::Monday),
+        "tuesday" => Some(Weekday::Tuesday),
+        "wednesday" => Some(Weekday::Wednesday),
+        "thursday" => Some(Weekday::Thursday),
+        "friday" => Some(Weekday::Friday),
+        "saturday" => Some(Weekday::Saturday),
         _ => None,
     }
 }
@@ -123,25 +128,25 @@ fn parse_weekday(word: &str) -> Option<Weekday> {
 /// Walks forward (or backward) from `base` a day at a time until `target` weekday is
 /// reached, preserving `base`'s time-of-day. `base`'s own weekday never matches, so this
 /// always lands on the next/previous occurrence, never today.
-fn nearest_weekday(base: DateTime<Utc>, target: Weekday, forward: bool) -> DateTime<Utc> {
+fn nearest_weekday(base: DateTime, target: Weekday, forward: bool) -> Option<DateTime> {
     let time = base.time();
-    let mut date = base.date_naive();
+    let mut date = base.date();
 
     loop {
         date = if forward {
-            date.succ_opt().expect("date arithmetic within a week cannot overflow")
+            date.tomorrow().ok()?
         } else {
-            date.pred_opt().expect("date arithmetic within a week cannot overflow")
+            date.yesterday().ok()?
         };
         if date.weekday() == target {
-            return NaiveDateTime::new(date, time).and_utc();
+            return Some(DateTime::from_parts(date, time));
         }
     }
 }
 
 /// A relative-date expression, parsed out of its source string ahead of evaluation.
 ///
-/// Splitting parsing (`&str` -> `RelativeExpr`) from evaluation (`RelativeExpr` -> `DateTime<Utc>`)
+/// Splitting parsing (`&str` -> `RelativeExpr`) from evaluation (`RelativeExpr` -> `DateTime`)
 /// means the two can't drift apart: every supported form is named once here, and `eval` is an
 /// exhaustive match the compiler checks, rather than a second ad-hoc string match that has to be
 /// kept in sync with the parser by hand.
@@ -194,17 +199,21 @@ impl RelativeExpr {
         }
     }
 
-    fn eval(self, base: DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+    fn apply_days(base: DateTime, days: i64) -> Option<DateTime> {
+        DateUnit::Days.apply_add(base, days)
+    }
+
+    fn eval(self, base: DateTime) -> Result<DateTime, Error> {
         let overflow = || Error::Runtime("date_relative: arithmetic overflow or invalid date".to_string());
 
         match self {
             Self::Now => Ok(base),
-            Self::Yesterday => Ok(base - Duration::days(1)),
-            Self::Tomorrow => Ok(base + Duration::days(1)),
+            Self::Yesterday => Self::apply_days(base, -1).ok_or_else(overflow),
+            Self::Tomorrow => Self::apply_days(base, 1).ok_or_else(overflow),
             Self::Ago { amount, unit } => unit.apply_add(base, -amount).ok_or_else(overflow),
             Self::In { amount, unit } => unit.apply_add(base, amount).ok_or_else(overflow),
-            Self::NextWeekday(weekday) => Ok(nearest_weekday(base, weekday, true)),
-            Self::LastWeekday(weekday) => Ok(nearest_weekday(base, weekday, false)),
+            Self::NextWeekday(weekday) => nearest_weekday(base, weekday, true).ok_or_else(overflow),
+            Self::LastWeekday(weekday) => nearest_weekday(base, weekday, false).ok_or_else(overflow),
         }
     }
 }
@@ -215,18 +224,17 @@ impl RelativeExpr {
 /// Supported forms: "now", "today", "yesterday", "tomorrow", "<n> <unit> ago",
 /// "in <n> <unit>", "next <weekday>", "last <weekday>". Units accept singular or plural
 /// ("day"/"days", ...); weekdays use their full English name ("monday", ...).
-pub(super) fn parse_relative(s: &str, base: DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+pub(super) fn parse_relative(s: &str, base: DateTime) -> Result<DateTime, Error> {
     RelativeExpr::parse(s)?.eval(base)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use rstest::rstest;
 
-    fn utc(year: i32, month: u32, day: u32) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(year, month, day, 0, 0, 0).unwrap()
+    fn utc(year: i16, month: i8, day: i8) -> DateTime {
+        jiff::civil::datetime(year, month, day, 0, 0, 0, 0)
     }
 
     #[rstest]
@@ -268,12 +276,7 @@ mod tests {
     #[case(DateUnit::Weeks, utc(2024, 1, 1), 1, utc(2024, 1, 8))]
     #[case(DateUnit::Months, utc(2024, 1, 31), 1, utc(2024, 2, 29))] // 2024 is leap year
     #[case(DateUnit::Years, utc(2024, 2, 29), 1, utc(2025, 2, 28))]
-    fn test_apply_add(
-        #[case] unit: DateUnit,
-        #[case] dt: DateTime<Utc>,
-        #[case] amount: i64,
-        #[case] expected: DateTime<Utc>,
-    ) {
+    fn test_apply_add(#[case] unit: DateUnit, #[case] dt: DateTime, #[case] amount: i64, #[case] expected: DateTime) {
         assert_eq!(unit.apply_add(dt, amount).unwrap(), expected);
     }
 
@@ -292,16 +295,14 @@ mod tests {
     #[case(DateUnit::Days, 172800, 2)]
     #[case(DateUnit::Weeks, 1209600, 2)]
     fn test_apply_diff(#[case] unit: DateUnit, #[case] secs: i64, #[case] expected: i64) {
-        let d = Duration::seconds(secs);
-        assert_eq!(unit.apply_diff(d).unwrap(), expected);
+        assert_eq!(unit.apply_diff(secs).unwrap(), expected);
     }
 
     #[rstest]
     #[case(DateUnit::Months)]
     #[case(DateUnit::Years)]
     fn test_apply_diff_unsupported(#[case] unit: DateUnit) {
-        let d = Duration::days(30);
-        assert!(unit.apply_diff(d).is_err());
+        assert!(unit.apply_diff(30 * 86_400).is_err());
     }
 
     #[test]
@@ -318,14 +319,12 @@ mod tests {
 
     #[test]
     fn test_diff_wrapper() {
-        let d = Duration::days(7);
-        assert_eq!(diff(d, "weeks").unwrap(), 1);
+        assert_eq!(diff(7 * 86_400, "weeks").unwrap(), 1);
     }
 
     #[test]
     fn test_diff_wrapper_invalid_unit() {
-        let d = Duration::days(30);
-        assert!(diff(d, "months").is_err());
+        assert!(diff(30 * 86_400, "months").is_err());
     }
 
     // Base is 2024-01-15, a Monday.
@@ -350,7 +349,7 @@ mod tests {
     #[case("next friday", utc(2024, 1, 19))]
     #[case("last monday", utc(2024, 1, 8))]
     #[case("last friday", utc(2024, 1, 12))]
-    fn test_parse_relative_valid(#[case] input: &str, #[case] expected: DateTime<Utc>) {
+    fn test_parse_relative_valid(#[case] input: &str, #[case] expected: DateTime) {
         let base = utc(2024, 1, 15);
         assert_eq!(parse_relative(input, base).unwrap(), expected);
     }
@@ -370,8 +369,8 @@ mod tests {
 
     #[test]
     fn test_parse_relative_preserves_time_of_day() {
-        let base = Utc.with_ymd_and_hms(2024, 1, 15, 9, 30, 0).unwrap();
-        let expected = Utc.with_ymd_and_hms(2024, 1, 22, 9, 30, 0).unwrap();
+        let base = jiff::civil::datetime(2024, 1, 15, 9, 30, 0, 0);
+        let expected = jiff::civil::datetime(2024, 1, 22, 9, 30, 0, 0);
         assert_eq!(parse_relative("next monday", base).unwrap(), expected);
     }
 }

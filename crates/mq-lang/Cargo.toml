@@ -27,7 +27,7 @@ md5 = {workspace = true}
 sha2 = {workspace = true}
 hmac = {workspace = true}
 siphasher = {workspace = true}
-chrono = {workspace = true}
+jiff = {workspace = true}
 dirs = {workspace = true}
 glob = {workspace = true}
 ignore = {workspace = true, optional = true}

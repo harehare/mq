@@ -55,7 +55,7 @@ bimap = "0.6.3"
 caseless = "0.2.2"
 cbindgen = "0.29.2"
 chromiumoxide = {version = "0.9", default-features = false}
-chrono = "0.4.44"
+jiff = "1"
 ciborium = "0.2.2"
 clap = "4.6.1"
 clap_complete = "4.6.5"

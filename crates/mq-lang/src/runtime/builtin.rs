@@ -38,7 +38,6 @@ use crate::tarn::interpreter::coroutine;
 use crate::text_diff::{self, ChangeTag};
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
-use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -430,35 +429,35 @@ fn now_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<Runti
 }
 
 /// Array format: [year, month (0-11), day (1-31), hour (0-23), minute (0-59), second (0-60), weekday (0=Sun), day-of-year (0-365)]
-fn broken_down_time_array<Tz: chrono::TimeZone>(dt: &chrono::DateTime<Tz>) -> RuntimeValue {
+fn broken_down_time_array(dt: jiff::civil::DateTime) -> RuntimeValue {
     RuntimeValue::Array(Shared::new(vec![
         RuntimeValue::Number(((dt.year()) as i64).into()),
-        RuntimeValue::Number((dt.month0() as i64).into()),
+        RuntimeValue::Number(((dt.month() - 1) as i64).into()),
         RuntimeValue::Number((dt.day() as i64).into()),
         RuntimeValue::Number((dt.hour() as i64).into()),
         RuntimeValue::Number((dt.minute() as i64).into()),
         RuntimeValue::Number((dt.second() as i64).into()),
-        RuntimeValue::Number((dt.weekday().num_days_from_sunday() as i64).into()),
-        RuntimeValue::Number((dt.ordinal0() as i64).into()),
+        RuntimeValue::Number((dt.weekday().to_sunday_zero_offset() as i64).into()),
+        RuntimeValue::Number(((dt.day_of_year() - 1) as i64).into()),
     ]))
 }
 
-fn broken_down_time_to_naive(caller: &str, arr: &[RuntimeValue]) -> Result<chrono::NaiveDateTime, Error> {
+fn broken_down_time_to_naive(caller: &str, arr: &[RuntimeValue]) -> Result<jiff::civil::DateTime, Error> {
     let get_i64 = |v: &RuntimeValue| -> Result<i64, Error> {
         match v {
             RuntimeValue::Number(n) => Ok(n.value() as i64),
             _ => Err(Error::Runtime(format!("{caller}: array elements must be numbers"))),
         }
     };
-    let year = get_i64(&arr[0])? as i32;
-    let month = (get_i64(&arr[1])? + 1) as u32;
-    let day = get_i64(&arr[2])? as u32;
-    let hour = get_i64(&arr[3])? as u32;
-    let minute = get_i64(&arr[4])? as u32;
-    let second = get_i64(&arr[5])? as u32;
-    NaiveDate::from_ymd_opt(year, month, day)
-        .and_then(|d| d.and_hms_opt(hour, minute, second))
-        .ok_or_else(|| Error::Runtime(format!("{caller}: invalid date components")))
+    let invalid = || Error::Runtime(format!("{caller}: invalid date components"));
+    let component = |i: usize| -> Result<i64, Error> { get_i64(&arr[i]) };
+    let year = i16::try_from(component(0)?).map_err(|_| invalid())?;
+    let month = i8::try_from(component(1)? + 1).map_err(|_| invalid())?;
+    let day = i8::try_from(component(2)?).map_err(|_| invalid())?;
+    let hour = i8::try_from(component(3)?).map_err(|_| invalid())?;
+    let minute = i8::try_from(component(4)?).map_err(|_| invalid())?;
+    let second = i8::try_from(component(5)?).map_err(|_| invalid())?;
+    jiff::civil::DateTime::new(year, month, day, hour, minute, second, 0).map_err(|_| invalid())
 }
 
 /// Converts Unix timestamp (seconds) to broken-down UTC time array:
@@ -468,8 +467,8 @@ fn gmtime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     match args.as_mut_slice() {
         [RuntimeValue::Number(secs)] => {
             let secs_val = secs.value() as i64;
-            DateTime::from_timestamp(secs_val, 0)
-                .map(|dt| broken_down_time_array(&dt))
+            date::from_unix_secs(secs_val)
+                .map(broken_down_time_array)
                 .ok_or_else(|| Error::Runtime(format!("Invalid timestamp: {}", secs_val)))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -484,8 +483,9 @@ fn localtime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     match args.as_mut_slice() {
         [RuntimeValue::Number(secs)] => {
             let secs_val = secs.value() as i64;
-            DateTime::from_timestamp(secs_val, 0)
-                .map(|dt| broken_down_time_array(&dt.with_timezone(&Local)))
+            jiff::Timestamp::from_second(secs_val)
+                .map(|ts| broken_down_time_array(jiff::tz::TimeZone::system().to_datetime(ts)))
+                .ok()
                 .ok_or_else(|| Error::Runtime(format!("Invalid timestamp: {}", secs_val)))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -499,7 +499,10 @@ fn localtime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 fn mktime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(arr)] if arr.len() == 8 => {
-            broken_down_time_to_naive("mktime", arr).map(|dt| RuntimeValue::Number(dt.and_utc().timestamp().into()))
+            let dt = broken_down_time_to_naive("mktime", arr)?;
+            date::to_unix_secs(dt)
+                .map(|secs| RuntimeValue::Number(secs.into()))
+                .ok_or_else(|| Error::Runtime("mktime: invalid date components".to_string()))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => Err(invalid_arity(ident, 1, args.len())),
@@ -512,9 +515,9 @@ fn strftime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
     match args.as_mut_slice() {
         [RuntimeValue::Number(secs), RuntimeValue::String(fmt)] => {
             let secs_val = secs.value() as i64;
-            let dt = DateTime::from_timestamp(secs_val, 0)
-                .ok_or_else(|| Error::Runtime(format!("strftime: invalid timestamp: {}", secs_val)))?;
-            convert::format_datetime("strftime", &dt, fmt.as_str()).map(|s| RuntimeValue::String(Shared::new(s)))
+            let ts = jiff::Timestamp::from_second(secs_val)
+                .map_err(|_| Error::Runtime(format!("strftime: invalid timestamp: {}", secs_val)))?;
+            convert::format_datetime("strftime", ts, fmt.as_str()).map(|s| RuntimeValue::String(Shared::new(s)))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -533,14 +536,18 @@ fn strptime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             let date_str = date_str.as_str();
             let fmt = fmt.as_str();
 
-            chrono::NaiveDateTime::parse_from_str(date_str, fmt)
+            jiff::civil::DateTime::strptime(fmt, date_str)
                 .or_else(|e| {
-                    chrono::NaiveDate::parse_from_str(date_str, fmt)
-                        .map(|d| d.and_time(chrono::NaiveTime::MIN))
+                    jiff::civil::Date::strptime(fmt, date_str)
+                        .map(|d| d.to_datetime(jiff::civil::Time::midnight()))
                         .map_err(|_| e)
                 })
-                .map(|dt| RuntimeValue::Number(dt.and_utc().timestamp().into()))
                 .map_err(|e| Error::Runtime(format!("strptime: {}", e)))
+                .and_then(|dt| {
+                    date::to_unix_secs(dt)
+                        .map(|secs| RuntimeValue::Number(secs.into()))
+                        .ok_or_else(|| Error::Runtime("strptime: timestamp out of range".to_string()))
+                })
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -563,8 +570,8 @@ fn date_add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             RuntimeValue::String(unit),
         ] if arr.len() == 8 => {
             let amount = n.value() as i64;
-            let dt = broken_down_time_to_naive("date_add", arr)?.and_utc();
-            date::add(dt, amount, unit.as_str()).map(|dt| broken_down_time_array(&dt))
+            let dt = broken_down_time_to_naive("date_add", arr)?;
+            date::add(dt, amount, unit.as_str()).map(broken_down_time_array)
         }
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -585,10 +592,12 @@ fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
             RuntimeValue::Array(arr2),
             RuntimeValue::String(unit),
         ] if arr1.len() == 8 && arr2.len() == 8 => {
-            let dt1 = broken_down_time_to_naive("date_diff", arr1)?.and_utc();
-            let dt2 = broken_down_time_to_naive("date_diff", arr2)?.and_utc();
-            let duration = dt2.signed_duration_since(dt1);
-            date::diff(duration, unit.as_str()).map(|n| RuntimeValue::Number(n.into()))
+            let to_secs = |dt| {
+                date::to_unix_secs(dt).ok_or_else(|| Error::Runtime("date_diff: invalid date components".to_string()))
+            };
+            let dt1 = to_secs(broken_down_time_to_naive("date_diff", arr1)?)?;
+            let dt2 = to_secs(broken_down_time_to_naive("date_diff", arr2)?)?;
+            date::diff(dt2 - dt1, unit.as_str()).map(|n| RuntimeValue::Number(n.into()))
         }
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -610,9 +619,12 @@ fn date_relative_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
     match args.as_mut_slice() {
         [RuntimeValue::Number(base), RuntimeValue::String(s)] => {
             let base_secs = base.value() as i64;
-            let base_dt = DateTime::from_timestamp(base_secs, 0)
+            let base_dt = date::from_unix_secs(base_secs)
                 .ok_or_else(|| Error::Runtime(format!("date_relative: invalid base timestamp: {}", base_secs)))?;
-            date::parse_relative(s.as_str(), base_dt).map(|dt| RuntimeValue::Number(dt.timestamp().into()))
+            let dt = date::parse_relative(s.as_str(), base_dt)?;
+            date::to_unix_secs(dt)
+                .map(|secs| RuntimeValue::Number(secs.into()))
+                .ok_or_else(|| Error::Runtime("date_relative: arithmetic overflow or invalid date".to_string()))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),

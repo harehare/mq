@@ -382,8 +382,8 @@ pub(super) fn to_text(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 /// convert from date string to Unix timestamp (seconds)
 #[inline(always)]
 pub(super) fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
-    match chrono::DateTime::parse_from_rfc3339(date_str) {
-        Ok(datetime) => Ok(RuntimeValue::Number(datetime.timestamp().into())),
+    match date_str.parse::<jiff::Timestamp>() {
+        Ok(ts) => Ok(RuntimeValue::Number(ts.as_second().into())),
         Err(e) => Err(Error::Runtime(format!(
             "from_date: cannot parse {:?} as an RFC 3339 date ({})",
             date_str, e
@@ -392,20 +392,16 @@ pub(super) fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
 }
 
 /// Formats `dt` with a strftime `fmt`, returning an error for an unknown specifier.
-pub(super) fn format_datetime(name: &str, dt: &chrono::DateTime<chrono::Utc>, fmt: &str) -> Result<String, Error> {
-    use std::fmt::Write;
-
-    let mut out = String::new();
-    write!(out, "{}", dt.format(fmt)).map_err(|_| Error::Runtime(format!("{}: invalid format {:?}", name, fmt)))?;
-    Ok(out)
+pub(super) fn format_datetime(name: &str, ts: jiff::Timestamp, fmt: &str) -> Result<String, Error> {
+    jiff::fmt::strtime::format(fmt, ts).map_err(|_| Error::Runtime(format!("{}: invalid format {:?}", name, fmt)))
 }
 
 /// Formats a Unix timestamp (seconds) with a strftime `fmt`.
 #[inline(always)]
 pub(super) fn to_date(secs: Number, fmt: &str) -> Result<RuntimeValue, Error> {
-    let dt = chrono::DateTime::from_timestamp(secs.value() as i64, 0)
-        .ok_or_else(|| Error::InvalidDateTimeFormat(fmt.to_string()))?;
-    Ok(RuntimeValue::String(format_datetime("to_date", &dt, fmt)?.into()))
+    let ts =
+        jiff::Timestamp::from_second(secs.value() as i64).map_err(|_| Error::InvalidDateTimeFormat(fmt.to_string()))?;
+    Ok(RuntimeValue::String(format_datetime("to_date", ts, fmt)?.into()))
 }
 
 /// Encode to base64
