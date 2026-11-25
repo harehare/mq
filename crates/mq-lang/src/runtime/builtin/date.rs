@@ -112,72 +112,53 @@ pub(super) fn diff(from: DateTime, to: DateTime, unit: &str) -> Result<i64, Erro
 }
 
 /// Rewrites directives that jiff's strptime rejects into equivalent forms. `%z` has a plain and a
-/// colon form (`+05:30`), and `%+` an offset and a trailing `Z` form, so a format yields at most
-/// four candidates. Every occurrence of a directive uses the same form within a candidate, which
-/// keeps the work linear in the format length however many directives it repeats.
-fn strptime_candidates(fmt: &str) -> Vec<String> {
+/// colon form (`+05:30`), and `%+` an offset and a trailing `Z` form. Each occurrence picks the
+/// first form that matches the input at that point, found by parsing the format prefix up to it.
+/// The work is quadratic in the number of such directives at worst.
+fn strptime_format(fmt: &str, input: &str) -> String {
     const Z: [&str; 2] = ["%z", "%:z"];
     const PLUS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f%:z", "%Y-%m-%dT%H:%M:%S%.fZ"];
 
-    let has = |spec: char| {
-        let mut chars = fmt.chars();
-        while let Some(c) = chars.next() {
-            if c == '%' && chars.next() == Some(spec) {
-                return true;
-            }
+    let mut out = String::with_capacity(fmt.len());
+    let mut chars = fmt.chars();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
         }
-        false
-    };
-    let z_forms = if has('z') { &Z[..] } else { &Z[..1] };
-    let plus_forms = if has('+') { &PLUS[..] } else { &PLUS[..1] };
-
-    let mut candidates = Vec::new();
-    for z in z_forms {
-        for plus in plus_forms {
-            let mut out = String::with_capacity(fmt.len());
-            let mut chars = fmt.chars();
-            while let Some(c) = chars.next() {
-                if c != '%' {
-                    out.push(c);
-                    continue;
-                }
-                match chars.next() {
-                    Some('c') => out.push_str("%a %b %e %H:%M:%S %Y"),
-                    Some('x') => out.push_str("%m/%d/%y"),
-                    Some('X') => out.push_str("%H:%M:%S"),
-                    Some('r') => out.push_str("%I:%M:%S %p"),
-                    Some('z') => out.push_str(z),
-                    Some('+') => out.push_str(plus),
-                    Some(spec) => {
-                        out.push('%');
-                        out.push(spec);
-                    }
-                    None => out.push('%'),
-                }
+        let forms: &[&str] = match chars.next() {
+            Some('c') => &["%a %b %e %H:%M:%S %Y"],
+            Some('x') => &["%m/%d/%y"],
+            Some('X') => &["%H:%M:%S"],
+            Some('r') => &["%I:%M:%S %p"],
+            Some('z') => &Z,
+            Some('+') => &PLUS,
+            Some(spec) => {
+                out.push('%');
+                out.push(spec);
+                continue;
             }
-            candidates.push(out);
-        }
+            None => {
+                out.push('%');
+                break;
+            }
+        };
+        let form = forms
+            .iter()
+            .find(|form| BrokenDownTime::parse_prefix(format!("{out}{form}"), input).is_ok())
+            .unwrap_or(&forms[0]);
+        out.push_str(form);
     }
-    candidates
+    out
 }
 
 /// Parses `input` with a strptime `fmt` and returns Unix seconds. An explicit epoch (`%s`) is used
 /// as is. Otherwise the calendar fields are read as UTC, ignoring any offset, and a missing time
 /// defaults to midnight.
 pub(super) fn strptime(input: &str, fmt: &str) -> Result<i64, Error> {
-    let mut first_error = None;
-    for candidate in strptime_candidates(fmt) {
-        match BrokenDownTime::parse(&candidate, input) {
-            Ok(tm) => return strptime_secs(&tm),
-            Err(e) => {
-                first_error.get_or_insert(e);
-            }
-        }
-    }
-    Err(Error::Runtime(format!(
-        "strptime: {}",
-        first_error.map(|e| e.to_string()).unwrap_or_default()
-    )))
+    let tm = BrokenDownTime::parse(strptime_format(fmt, input), input)
+        .map_err(|e| Error::Runtime(format!("strptime: {}", e)))?;
+    strptime_secs(&tm)
 }
 
 fn strptime_secs(tm: &BrokenDownTime) -> Result<i64, Error> {
@@ -495,6 +476,10 @@ mod tests {
     #[case("2024-01-01 00:00:00 +05:30", "%Y-%m-%d %H:%M:%S %z", 1_704_067_200)]
     #[case("2024-01-01T00:00:00+05:30", "%+", 1_704_067_200)]
     #[case("2024-01-01T00:00:00Z", "%+", 1_704_067_200)]
+    #[case("2024-01-01 local=+0530 source=+05:30", "%Y-%m-%d local=%z source=%z", 1_704_067_200)]
+    #[case("2024-01-01 a=+05:30 b=+0530", "%Y-%m-%d a=%z b=%z", 1_704_067_200)]
+    #[case("2024-01-01T00:00:00Z|2024-01-01T00:00:00+05:30", "%+|%+", 1_704_067_200)]
+    #[case("2024-01-01T00:00:00+05:30|2024-01-01T00:00:00Z", "%+|%+", 1_704_067_200)]
     #[case("Mon Jan  1 00:00:00 2024", "%c", 1_704_067_200)]
     #[case("01/02/24", "%x", 1_704_153_600)]
     #[case("2024-01-01 10:20:30", "%Y-%m-%d %X", 1_704_104_430)]
@@ -512,14 +497,13 @@ mod tests {
     }
 
     #[test]
-    fn test_strptime_candidates_keep_escaped_percent() {
-        assert_eq!(strptime_candidates("%%z %c"), vec!["%%z %a %b %e %H:%M:%S %Y"]);
+    fn test_strptime_format_keeps_escaped_percent() {
+        assert_eq!(strptime_format("%%z %c", ""), "%%z %a %b %e %H:%M:%S %Y");
     }
 
     #[test]
     fn test_strptime_many_offset_directives() {
         let fmt = "%z".repeat(64) + &"%+".repeat(64);
-        assert_eq!(strptime_candidates(&fmt).len(), 4);
         assert!(strptime("", &fmt).is_err());
     }
 }
