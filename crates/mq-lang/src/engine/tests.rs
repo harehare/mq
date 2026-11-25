@@ -707,6 +707,7 @@ fn session_eval_all(queries: &[&str]) -> crate::RuntimeValues {
 #[case::returned_closure(&["def mk(n): fn(v): v + n;", "mk(1)(2)"], vec![3.into()])]
 #[case::returned_closure_passed_back(&["def mk(n): fn(v): v + n;", "def ap(x, g): g(x);", "ap(5, mk(10))"], vec![15.into()])]
 #[case::recursive_def(&["def rec(n, g): if (n == 0): g(n) else: rec(n - 1, g);", "rec(3, fn(v): v + 7)"], vec![7.into()])]
+#[case::closure_piped_through_passthrough(&["def passthrough(): .;", "def mk(): fn(x): x + 1;; | mk() | let f = passthrough() | f(2)"], vec![3.into()])]
 #[case::map_closure(&["def ap2(xs, g): map(xs, g);", "ap2([1, 2], fn(v): v + 1)"], vec![RuntimeValue::Array(vec![2.into(), 3.into()].into())])]
 fn test_query_session_closure_argument_to_earlier_def(#[case] queries: &[&str], #[case] expected: Vec<RuntimeValue>) {
     assert_eq!(session_eval_all(queries), expected.into());
