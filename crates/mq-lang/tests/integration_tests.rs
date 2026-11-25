@@ -3010,6 +3010,11 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 // strptime: parse date string with a given format (UTC)
 #[case::strptime_date("strptime(\"2024-01-01\", \"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
 #[case::strptime_datetime("strptime(\"1970-01-01T00:00:00\", \"%Y-%m-%dT%H:%M:%S\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::strptime_epoch("strptime(\"1704067200\", \"%s\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
+#[case::strptime_colon_offset("strptime(\"2024-01-01 00:00:00 +05:30\", \"%Y-%m-%d %H:%M:%S %z\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
+#[case::strptime_rfc3339("strptime(\"2024-01-01T00:00:00Z\", \"%+\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
+#[case::strptime_pre_epoch_fraction("strptime(\"1969-12-31 23:59:59.5\", \"%Y-%m-%d %H:%M:%S%.f\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-1_i64).into())].into()))]
+#[case::from_date_pre_epoch_fraction("from_date(\"1969-12-31T23:59:59.500Z\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-1_i64).into())].into()))]
 // strftime | strptime roundtrip
 #[case::strftime_strptime_roundtrip("strftime(1704067200, \"%Y-%m-%d\") | strptime(\"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
 // now | gmtime / strftime pipeline

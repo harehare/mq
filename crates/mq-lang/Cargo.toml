@@ -67,6 +67,8 @@ web-sys = { version = "0.3", features = ["console"] }
 uuid = {workspace = true, features = ["js"]}
 getrandom = { version = "0.4", features = ["wasm_js"] }
 web-time = {workspace = true, optional = true}
+# Lets `localtime` read the host time zone in the browser.
+jiff = {workspace = true, features = ["js"]}
 
 [features]
 ast-json = ["mq-syntax/ast-json", "smallvec/serde", "smol_str/serde", "thin-vec/serde"]

@@ -442,7 +442,7 @@ fn broken_down_time_array(dt: jiff::civil::DateTime) -> RuntimeValue {
     ]))
 }
 
-fn broken_down_time_to_naive(caller: &str, arr: &[RuntimeValue]) -> Result<jiff::civil::DateTime, Error> {
+fn broken_down_time_to_civil(caller: &str, arr: &[RuntimeValue]) -> Result<jiff::civil::DateTime, Error> {
     let get_i64 = |v: &RuntimeValue| -> Result<i64, Error> {
         match v {
             RuntimeValue::Number(n) => Ok(n.value() as i64),
@@ -499,7 +499,7 @@ fn localtime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 fn mktime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(arr)] if arr.len() == 8 => {
-            let dt = broken_down_time_to_naive("mktime", arr)?;
+            let dt = broken_down_time_to_civil("mktime", arr)?;
             date::to_unix_secs(dt)
                 .map(|secs| RuntimeValue::Number(secs.into()))
                 .ok_or_else(|| Error::Runtime("mktime: invalid date components".to_string()))
@@ -529,6 +529,7 @@ fn strftime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
 
 /// Parses a date string using the given strptime format and returns a Unix timestamp (seconds, UTC).
 /// Formats without a time component (e.g. "%Y-%m-%d") default the time to midnight.
+/// "%s" parses an epoch directly; offsets in the input are ignored.
 #[mq_macros::mq_fn(name = "strptime", params = Fixed(2))]
 fn strptime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -536,18 +537,7 @@ fn strptime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             let date_str = date_str.as_str();
             let fmt = fmt.as_str();
 
-            jiff::civil::DateTime::strptime(fmt, date_str)
-                .or_else(|e| {
-                    jiff::civil::Date::strptime(fmt, date_str)
-                        .map(|d| d.to_datetime(jiff::civil::Time::midnight()))
-                        .map_err(|_| e)
-                })
-                .map_err(|e| Error::Runtime(format!("strptime: {}", e)))
-                .and_then(|dt| {
-                    date::to_unix_secs(dt)
-                        .map(|secs| RuntimeValue::Number(secs.into()))
-                        .ok_or_else(|| Error::Runtime("strptime: timestamp out of range".to_string()))
-                })
+            date::strptime(date_str, fmt).map(|secs| RuntimeValue::Number(secs.into()))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -570,7 +560,7 @@ fn date_add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             RuntimeValue::String(unit),
         ] if arr.len() == 8 => {
             let amount = n.value() as i64;
-            let dt = broken_down_time_to_naive("date_add", arr)?;
+            let dt = broken_down_time_to_civil("date_add", arr)?;
             date::add(dt, amount, unit.as_str()).map(broken_down_time_array)
         }
         [a, b, c] => Err(Error::InvalidTypes(
@@ -583,7 +573,8 @@ fn date_add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
 
 /// Returns the difference (array2 - array1) in the given unit.
 /// Input format: [year, month (0-11), day, hour, minute, second, weekday, day-of-year]
-/// Units: "seconds", "minutes", "hours", "days", "weeks"
+/// Units: "seconds", "minutes", "hours", "days", "weeks", "months", "years"
+/// Returns whole units, truncated toward zero. Month/year differences are calendar-aware.
 #[mq_macros::mq_fn(name = "date_diff", params = Fixed(3))]
 fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -592,12 +583,9 @@ fn date_diff_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
             RuntimeValue::Array(arr2),
             RuntimeValue::String(unit),
         ] if arr1.len() == 8 && arr2.len() == 8 => {
-            let to_secs = |dt| {
-                date::to_unix_secs(dt).ok_or_else(|| Error::Runtime("date_diff: invalid date components".to_string()))
-            };
-            let dt1 = to_secs(broken_down_time_to_naive("date_diff", arr1)?)?;
-            let dt2 = to_secs(broken_down_time_to_naive("date_diff", arr2)?)?;
-            date::diff(dt2 - dt1, unit.as_str()).map(|n| RuntimeValue::Number(n.into()))
+            let dt1 = broken_down_time_to_civil("date_diff", arr1)?;
+            let dt2 = broken_down_time_to_civil("date_diff", arr2)?;
+            date::diff(dt1, dt2, unit.as_str()).map(|n| RuntimeValue::Number(n.into()))
         }
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),

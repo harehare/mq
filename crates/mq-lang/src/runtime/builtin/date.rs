@@ -1,8 +1,8 @@
 use super::Error;
-use jiff::Span;
-use jiff::Timestamp;
-use jiff::civil::{DateTime, Weekday};
+use jiff::civil::{DateTime, Time, Weekday};
+use jiff::fmt::strtime::BrokenDownTime;
 use jiff::tz::TimeZone;
+use jiff::{Span, Timestamp, Unit};
 
 /// Converts Unix seconds to a UTC civil datetime.
 pub(super) fn from_unix_secs(secs: i64) -> Option<DateTime> {
@@ -11,9 +11,15 @@ pub(super) fn from_unix_secs(secs: i64) -> Option<DateTime> {
         .map(|ts| TimeZone::UTC.to_datetime(ts))
 }
 
+/// Returns the whole Unix second containing `ts`, rounding toward negative infinity.
+/// `Timestamp::as_second` truncates toward zero, which is one second too late before the epoch.
+pub(super) fn floor_unix_secs(ts: Timestamp) -> i64 {
+    ts.as_second() - i64::from(ts.subsec_nanosecond() < 0)
+}
+
 /// Converts a UTC civil datetime to Unix seconds.
 pub(super) fn to_unix_secs(dt: DateTime) -> Option<i64> {
-    TimeZone::UTC.to_timestamp(dt).ok().map(|ts| ts.as_second())
+    TimeZone::UTC.to_timestamp(dt).ok().map(floor_unix_secs)
 }
 
 /// Date/time units used by `date_add` and `date_diff`.
@@ -64,23 +70,32 @@ impl DateUnit {
         dt.checked_add(span).ok()
     }
 
-    /// Returns the signed difference of `secs` seconds in this unit. Errors for `Months` and
-    /// `Years` as they are variable-length calendar units.
-    pub fn apply_diff(self, secs: i64) -> Result<i64, Error> {
+    fn unit(self) -> Unit {
         match self {
-            Self::Seconds => Ok(secs),
-            Self::Minutes => Ok(secs / 60),
-            Self::Hours => Ok(secs / 3600),
-            Self::Days => Ok(secs / 86_400),
-            Self::Weeks => Ok(secs / 604_800),
-            Self::Months | Self::Years => Err(Error::Runtime(format!(
-                "date_diff does not support unit {:?}, expected \"seconds\", \"minutes\", \"hours\", \"days\", or \"weeks\"",
-                match self {
-                    Self::Months => "months",
-                    _ => "years",
-                }
-            ))),
+            Self::Seconds => Unit::Second,
+            Self::Minutes => Unit::Minute,
+            Self::Hours => Unit::Hour,
+            Self::Days => Unit::Day,
+            Self::Weeks => Unit::Week,
+            Self::Months => Unit::Month,
+            Self::Years => Unit::Year,
         }
+    }
+
+    /// Returns the number of whole units from `from` to `to`, truncated toward zero.
+    pub fn apply_diff(self, from: DateTime, to: DateTime) -> Result<i64, Error> {
+        let span = from
+            .until((self.unit(), to))
+            .map_err(|e| Error::Runtime(format!("date_diff: {}", e)))?;
+        Ok(match self {
+            Self::Seconds => span.get_seconds(),
+            Self::Minutes => span.get_minutes(),
+            Self::Hours => i64::from(span.get_hours()),
+            Self::Days => i64::from(span.get_days()),
+            Self::Weeks => i64::from(span.get_weeks()),
+            Self::Months => i64::from(span.get_months()),
+            Self::Years => i64::from(span.get_years()),
+        })
     }
 }
 
@@ -92,9 +107,77 @@ pub(super) fn add(dt: DateTime, amount: i64, unit: &str) -> Result<DateTime, Err
 }
 
 /// Public helper called from `builtin.rs` for `date_diff`.
-pub(super) fn diff(secs: i64, unit: &str) -> Result<i64, Error> {
-    let unit = DateUnit::try_from(unit)?;
-    unit.apply_diff(secs)
+pub(super) fn diff(from: DateTime, to: DateTime, unit: &str) -> Result<i64, Error> {
+    DateUnit::try_from(unit)?.apply_diff(from, to)
+}
+
+/// Expands directives that jiff's strptime rejects into equivalent forms, yielding one candidate
+/// format per alternative. `%z` also tries the colon form (`+05:30`), and `%+` also tries a
+/// trailing `Z`, since jiff accepts neither with a single directive.
+fn strptime_candidates(fmt: &str) -> Vec<String> {
+    let mut candidates = vec![String::new()];
+    let mut chars = fmt.chars();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            candidates.iter_mut().for_each(|f| f.push(c));
+            continue;
+        }
+        let Some(spec) = chars.next() else {
+            candidates.iter_mut().for_each(|f| f.push('%'));
+            break;
+        };
+        let alternatives: &[&str] = match spec {
+            'c' => &["%a %b %e %H:%M:%S %Y"],
+            'x' => &["%m/%d/%y"],
+            'X' => &["%H:%M:%S"],
+            'r' => &["%I:%M:%S %p"],
+            'z' => &["%z", "%:z"],
+            '+' => &["%Y-%m-%dT%H:%M:%S%.f%:z", "%Y-%m-%dT%H:%M:%S%.fZ"],
+            _ => &[],
+        };
+        if alternatives.is_empty() {
+            candidates.iter_mut().for_each(|f| {
+                f.push('%');
+                f.push(spec);
+            });
+        } else {
+            candidates = candidates
+                .iter()
+                .flat_map(|f| alternatives.iter().map(move |a| format!("{f}{a}")))
+                .collect();
+        }
+    }
+    candidates
+}
+
+/// Parses `input` with a strptime `fmt` and returns Unix seconds. An explicit epoch (`%s`) is used
+/// as is. Otherwise the calendar fields are read as UTC, ignoring any offset, and a missing time
+/// defaults to midnight.
+pub(super) fn strptime(input: &str, fmt: &str) -> Result<i64, Error> {
+    let mut first_error = None;
+    for candidate in strptime_candidates(fmt) {
+        match BrokenDownTime::parse(&candidate, input) {
+            Ok(tm) => return strptime_secs(&tm),
+            Err(e) => {
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    Err(Error::Runtime(format!(
+        "strptime: {}",
+        first_error.map(|e| e.to_string()).unwrap_or_default()
+    )))
+}
+
+fn strptime_secs(tm: &BrokenDownTime) -> Result<i64, Error> {
+    if let Some(ts) = tm.timestamp() {
+        return Ok(floor_unix_secs(ts));
+    }
+    let dt = tm
+        .to_datetime()
+        .or_else(|e| tm.to_date().map(|d| d.to_datetime(Time::midnight())).map_err(|_| e))
+        .map_err(|e| Error::Runtime(format!("strptime: {}", e)))?;
+    to_unix_secs(dt).ok_or_else(|| Error::Runtime("strptime: timestamp out of range".to_string()))
 }
 
 /// Like `DateUnit::try_from`, but also accepts singular unit words (e.g. "day"), since
@@ -153,8 +236,6 @@ fn nearest_weekday(base: DateTime, target: Weekday, forward: bool) -> Option<Dat
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RelativeExpr {
     Now,
-    Yesterday,
-    Tomorrow,
     Ago { amount: i64, unit: DateUnit },
     In { amount: i64, unit: DateUnit },
     NextWeekday(Weekday),
@@ -171,8 +252,18 @@ impl RelativeExpr {
 
         match lower.as_str() {
             "now" | "today" => return Ok(Self::Now),
-            "yesterday" => return Ok(Self::Yesterday),
-            "tomorrow" => return Ok(Self::Tomorrow),
+            "yesterday" => {
+                return Ok(Self::Ago {
+                    amount: 1,
+                    unit: DateUnit::Days,
+                });
+            }
+            "tomorrow" => {
+                return Ok(Self::In {
+                    amount: 1,
+                    unit: DateUnit::Days,
+                });
+            }
             _ => {}
         }
 
@@ -199,17 +290,11 @@ impl RelativeExpr {
         }
     }
 
-    fn apply_days(base: DateTime, days: i64) -> Option<DateTime> {
-        DateUnit::Days.apply_add(base, days)
-    }
-
     fn eval(self, base: DateTime) -> Result<DateTime, Error> {
         let overflow = || Error::Runtime("date_relative: arithmetic overflow or invalid date".to_string());
 
         match self {
             Self::Now => Ok(base),
-            Self::Yesterday => Self::apply_days(base, -1).ok_or_else(overflow),
-            Self::Tomorrow => Self::apply_days(base, 1).ok_or_else(overflow),
             Self::Ago { amount, unit } => unit.apply_add(base, -amount).ok_or_else(overflow),
             Self::In { amount, unit } => unit.apply_add(base, amount).ok_or_else(overflow),
             Self::NextWeekday(weekday) => nearest_weekday(base, weekday, true).ok_or_else(overflow),
@@ -289,20 +374,27 @@ mod tests {
     }
 
     #[rstest]
-    #[case(DateUnit::Seconds, 120, 120)]
-    #[case(DateUnit::Minutes, 120, 2)]
-    #[case(DateUnit::Hours, 7200, 2)]
-    #[case(DateUnit::Days, 172800, 2)]
-    #[case(DateUnit::Weeks, 1209600, 2)]
-    fn test_apply_diff(#[case] unit: DateUnit, #[case] secs: i64, #[case] expected: i64) {
-        assert_eq!(unit.apply_diff(secs).unwrap(), expected);
+    #[case(DateUnit::Seconds, utc(2024, 1, 1), utc(2024, 1, 3), 172_800)]
+    #[case(DateUnit::Minutes, utc(2024, 1, 1), utc(2024, 1, 3), 2_880)]
+    #[case(DateUnit::Hours, utc(2024, 1, 1), utc(2024, 1, 3), 48)]
+    #[case(DateUnit::Days, utc(2024, 1, 1), utc(2024, 1, 3), 2)]
+    #[case(DateUnit::Weeks, utc(2024, 1, 1), utc(2024, 1, 15), 2)]
+    #[case(DateUnit::Days, utc(2024, 1, 3), utc(2024, 1, 1), -2)]
+    #[case(DateUnit::Months, utc(2024, 1, 15), utc(2024, 3, 15), 2)]
+    #[case(DateUnit::Months, utc(2024, 1, 31), utc(2024, 2, 29), 0)]
+    #[case(DateUnit::Months, utc(2024, 3, 15), utc(2024, 1, 15), -2)]
+    #[case(DateUnit::Years, utc(2020, 2, 29), utc(2024, 2, 29), 4)]
+    #[case(DateUnit::Years, utc(2020, 2, 29), utc(2024, 2, 28), 3)]
+    fn test_apply_diff(#[case] unit: DateUnit, #[case] from: DateTime, #[case] to: DateTime, #[case] expected: i64) {
+        assert_eq!(unit.apply_diff(from, to).unwrap(), expected);
     }
 
-    #[rstest]
-    #[case(DateUnit::Months)]
-    #[case(DateUnit::Years)]
-    fn test_apply_diff_unsupported(#[case] unit: DateUnit) {
-        assert!(unit.apply_diff(30 * 86_400).is_err());
+    #[test]
+    fn test_apply_diff_truncates_toward_zero() {
+        let from = jiff::civil::datetime(2024, 1, 1, 0, 0, 0, 0);
+        let to = jiff::civil::datetime(2024, 1, 2, 12, 0, 0, 0);
+        assert_eq!(DateUnit::Days.apply_diff(from, to).unwrap(), 1);
+        assert_eq!(DateUnit::Days.apply_diff(to, from).unwrap(), -1);
     }
 
     #[test]
@@ -319,12 +411,12 @@ mod tests {
 
     #[test]
     fn test_diff_wrapper() {
-        assert_eq!(diff(7 * 86_400, "weeks").unwrap(), 1);
+        assert_eq!(diff(utc(2024, 1, 1), utc(2024, 1, 8), "weeks").unwrap(), 1);
     }
 
     #[test]
     fn test_diff_wrapper_invalid_unit() {
-        assert!(diff(30 * 86_400, "months").is_err());
+        assert!(diff(utc(2024, 1, 1), utc(2024, 1, 8), "fortnights").is_err());
     }
 
     // Base is 2024-01-15, a Monday.
@@ -372,5 +464,44 @@ mod tests {
         let base = jiff::civil::datetime(2024, 1, 15, 9, 30, 0, 0);
         let expected = jiff::civil::datetime(2024, 1, 22, 9, 30, 0, 0);
         assert_eq!(parse_relative("next monday", base).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("1970-01-01T00:00:00Z", 0)]
+    #[case("1969-12-31T23:59:59.5Z", -1)]
+    #[case("1969-12-31T23:59:59Z", -1)]
+    #[case("1970-01-01T00:00:00.5Z", 0)]
+    fn test_floor_unix_secs(#[case] input: &str, #[case] expected: i64) {
+        assert_eq!(floor_unix_secs(input.parse().unwrap()), expected);
+    }
+
+    #[rstest]
+    #[case("1704067200", "%s", 1_704_067_200)]
+    #[case("-1", "%s", -1)]
+    #[case("2024-01-01", "%Y-%m-%d", 1_704_067_200)]
+    #[case("1969-12-31 23:59:59.5", "%Y-%m-%d %H:%M:%S%.f", -1)]
+    #[case("2024-01-01 00:00:00 +0530", "%Y-%m-%d %H:%M:%S %z", 1_704_067_200)]
+    #[case("2024-01-01 00:00:00 +05:30", "%Y-%m-%d %H:%M:%S %z", 1_704_067_200)]
+    #[case("2024-01-01T00:00:00+05:30", "%+", 1_704_067_200)]
+    #[case("2024-01-01T00:00:00Z", "%+", 1_704_067_200)]
+    #[case("Mon Jan  1 00:00:00 2024", "%c", 1_704_067_200)]
+    #[case("01/02/24", "%x", 1_704_153_600)]
+    #[case("2024-01-01 10:20:30", "%Y-%m-%d %X", 1_704_104_430)]
+    #[case("2024-01-01 10:20:30 PM", "%Y-%m-%d %r", 1_704_147_630)]
+    fn test_strptime(#[case] input: &str, #[case] fmt: &str, #[case] expected: i64) {
+        assert_eq!(strptime(input, fmt).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("not a date", "%Y-%m-%d")]
+    #[case("2024-01-01", "%Y-%m-%d %H")]
+    #[case("10:20:30", "%H:%M:%S")]
+    fn test_strptime_invalid(#[case] input: &str, #[case] fmt: &str) {
+        assert!(strptime(input, fmt).is_err());
+    }
+
+    #[test]
+    fn test_strptime_candidates_keep_escaped_percent() {
+        assert_eq!(strptime_candidates("%%z %c"), vec!["%%z %a %b %e %H:%M:%S %Y"]);
     }
 }

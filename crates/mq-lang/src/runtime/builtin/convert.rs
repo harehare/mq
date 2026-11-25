@@ -383,7 +383,7 @@ pub(super) fn to_text(value: &RuntimeValue) -> Result<RuntimeValue, Error> {
 #[inline(always)]
 pub(super) fn from_date(date_str: &str) -> Result<RuntimeValue, Error> {
     match date_str.parse::<jiff::Timestamp>() {
-        Ok(ts) => Ok(RuntimeValue::Number(ts.as_second().into())),
+        Ok(ts) => Ok(RuntimeValue::Number(super::date::floor_unix_secs(ts).into())),
         Err(e) => Err(Error::Runtime(format!(
             "from_date: cannot parse {:?} as an RFC 3339 date ({})",
             date_str, e
