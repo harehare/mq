@@ -10,7 +10,7 @@ use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use crate::tarn::value::new_cell;
-use crate::tarn::value::{Cell, Closure, Locals, StackValue};
+use crate::tarn::value::{Cell, Closure, ClosureValue, Locals, StackValue};
 use crate::{Ident, Shared, TokenArena};
 use std::collections::VecDeque;
 
@@ -115,6 +115,18 @@ pub(super) fn generator_coroutine(
     let handle =
         super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool), Shared::clone(token_arena));
     StackValue::Value(RuntimeValue::Coroutine(handle))
+}
+
+/// Makes stack closures carry their own chunk table, for values that cross into a frame running
+/// on a different one. A stack closure holds only a chunk index into `chunks`.
+pub(super) fn detach_closures(values: &mut [StackValue], chunks: &Shared<Vec<Chunk>>) {
+    for value in values {
+        if let StackValue::Closure(closure) = value {
+            *value = StackValue::Value(RuntimeValue::Closure(Shared::new(ClosureValue::from_closure(
+                chunks, closure,
+            ))));
+        }
+    }
 }
 
 pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
@@ -235,6 +247,9 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
                 combined.append(args);
                 std::mem::swap(args, &mut combined);
                 execution.limits.recycle_stack(combined);
+            }
+            if !Shared::ptr_eq(&vc.chunks, chunks) {
+                detach_closures(args, chunks);
             }
             (
                 &vc.chunks,

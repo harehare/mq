@@ -2675,6 +2675,14 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .last()
                         .is_some_and(|frame| matches!(frame.on_complete, Continuation::Push)) =>
             {
+                let mut value = value;
+                // Only a frame running a closure value's own chunks can differ from its caller.
+                if let [.., caller, callee] = frames.as_slice()
+                    && let Some(callee_chunks) = &callee.chunks
+                    && !Shared::ptr_eq(caller.chunks.as_ref().unwrap_or(root_chunks), callee_chunks)
+                {
+                    calls::detach_closures(std::slice::from_mut(&mut value), callee_chunks);
+                }
                 execution.limits.pop_frame(
                     frames,
                     #[cfg(feature = "debugger")]

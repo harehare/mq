@@ -687,6 +687,31 @@ fn test_query_session_error_shows_the_current_query(#[case] query: &str, #[case]
     assert!(query[offset.min(query.len())..].starts_with(at), "label at {offset}");
 }
 
+/// Evaluates each query in one session and returns the last result.
+fn session_eval_all(queries: &[&str]) -> crate::RuntimeValues {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let mut session = Session::new(engine);
+    let mut result = vec![].into();
+    for query in queries {
+        result = session.eval(query, null_input().into_iter()).unwrap();
+    }
+    result
+}
+
+#[rstest]
+#[case::closure_last(&["def ap(x, g): g(x);", "ap(3, fn(v): v + 1)"], vec![4.into()])]
+#[case::closure_first(&["def ap(f, x): f(x);", "ap(fn(v): v + 1, 3)"], vec![4.into()])]
+#[case::named_fn(&["def ap(x, g): g(x);", "def inc(v): v + 1;", "ap(3, inc)"], vec![4.into()])]
+#[case::called_twice(&["def ap(x, g): g(x);", "ap(3, fn(v): v + 1)", "ap(5, fn(v): v * 2)"], vec![10.into()])]
+#[case::returned_closure(&["def mk(n): fn(v): v + n;", "mk(1)(2)"], vec![3.into()])]
+#[case::returned_closure_passed_back(&["def mk(n): fn(v): v + n;", "def ap(x, g): g(x);", "ap(5, mk(10))"], vec![15.into()])]
+#[case::recursive_def(&["def rec(n, g): if (n == 0): g(n) else: rec(n - 1, g);", "rec(3, fn(v): v + 7)"], vec![7.into()])]
+#[case::map_closure(&["def ap2(xs, g): map(xs, g);", "ap2([1, 2], fn(v): v + 1)"], vec![RuntimeValue::Array(vec![2.into(), 3.into()].into())])]
+fn test_query_session_closure_argument_to_earlier_def(#[case] queries: &[&str], #[case] expected: Vec<RuntimeValue>) {
+    assert_eq!(session_eval_all(queries), expected.into());
+}
+
 #[test]
 fn test_query_session_forgets_a_query_that_does_not_parse() {
     let engine = DefaultEngine::default();
