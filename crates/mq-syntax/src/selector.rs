@@ -72,6 +72,24 @@ fn unescape_property_key(s: &str) -> String {
     result
 }
 
+/// Dict key named by a selector token written right after a value (`d.key`, `d."my key"`).
+///
+/// Unlike a leading selector, any plain identifier is accepted, including names that are
+/// Markdown selectors (`d.text`). Returns `None` for tokens that cannot name a key.
+pub fn postfix_key(token: &Token) -> Option<String> {
+    let TokenKind::Selector(s) = &token.kind else {
+        return None;
+    };
+    if let Ok(Selector::Property(key)) = Selector::try_from(token) {
+        return Some(key.resolve_with(str::to_string));
+    }
+    let name = s.strip_prefix('.')?;
+    let mut chars = name.chars();
+    let first = chars.next()?;
+    ((first.is_alphabetic() || first == '_') && chars.all(|c| c.is_alphanumeric() || c == '_'))
+        .then(|| name.to_string())
+}
+
 /// Escapes `"` and `\` characters in a property key for display as `."key"`.
 fn escape_property_key(key: &str) -> String {
     let mut result = String::with_capacity(key.len() + 2);

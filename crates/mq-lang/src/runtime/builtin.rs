@@ -3248,25 +3248,34 @@ fn attr_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
         [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
             Ok(node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE))
         }
-        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => Ok(nodes
-            .iter()
-            .flat_map(|node| match node {
-                RuntimeValue::Markdown(node, _) => {
-                    let value = node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE);
-
-                    match value {
-                        RuntimeValue::Array(arr) => Shared::unwrap_or_clone(arr),
-                        RuntimeValue::None => Vec::new(),
-                        v => vec![v],
-                    }
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+            Ok(map.get(key.as_str()).cloned().unwrap_or(RuntimeValue::NONE))
+        }
+        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => {
+            let mut out = Vec::with_capacity(nodes.len());
+            for node in nodes.iter() {
+                let value = match node {
+                    RuntimeValue::Markdown(node, _) => node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE),
+                    RuntimeValue::Dict(map) => map.get(attr.as_str()).cloned().unwrap_or(RuntimeValue::NONE),
+                    other => other.clone(),
+                };
+                match value {
+                    RuntimeValue::Array(arr) => out.extend(Shared::unwrap_or_clone(arr)),
+                    RuntimeValue::None => {}
+                    v => out.push(v),
                 }
-                a => vec![a.clone()],
-            })
-            .collect::<Vec<_>>()
-            .into()),
+            }
+            Ok(out.into())
+        }
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
+        [a, RuntimeValue::String(attr)] => Err(attr_error(a, attr)),
         [a, ..] => Ok(std::mem::take(a)),
         _ => Err(invalid_arity(ident, 2, args.len())),
     }
+}
+
+fn attr_error(value: &RuntimeValue, attr: &str) -> Error {
+    Error::Runtime(format!("cannot read `.{attr}` of {}", value.name()))
 }
 
 #[mq_macros::mq_fn(name = "set_attr", params = Fixed(3))]

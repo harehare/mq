@@ -351,6 +351,18 @@ Accessing a key that doesn't exist returns `none`:
 ."age"    # Returns: none
 ```
 
+### Dot Access After a Value
+
+Right after a value (a variable, call result or index), `.name` reads a dict key without quotes. Any name works, including names of Markdown selectors, and accesses chain with `[n]`.
+
+```mq
+let d = {"user": {"tags": ["a", "b"]}, "text": "hi"}
+| d.user.tags[0]   # Returns: "a"
+| d.text           # Returns: "hi"
+```
+
+On a Markdown node, only attributes are valid (`node.depth`); any other name is a runtime error. A leading `.name` that is not a Markdown selector is still a syntax error, so use `."name"` for dict keys there.
+
 ## Combining Selectors with Functions
 
 You can combine selectors with functions like `select()`, `map()`, and `filter()` for powerful transformations:

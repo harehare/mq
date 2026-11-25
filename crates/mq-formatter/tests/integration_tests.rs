@@ -81,3 +81,16 @@ fn test_bundled_mq_files_format_idempotently() {
         }
     }
 }
+
+#[test]
+fn test_commented_postfix_key_access_keeps_adjacency() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq-fmt");
+
+    cmd.arg("-")
+        .write_stdin("# lookup\nd.key")
+        .assert()
+        .success()
+        .stdout("# lookup\nd.key\n");
+
+    Ok(())
+}

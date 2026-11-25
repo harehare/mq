@@ -8195,8 +8195,6 @@ fn test_statements_need_no_separator(#[case] code: &str) {
 #[case::or_assignment("a || b = c")]
 #[case::unary_minus_twice("--x")]
 #[case::unary_not_minus("!-x")]
-#[case::unknown_attribute("history.txt")]
-#[case::non_attribute_selector("mq.h")]
 #[case::pipe_after_stray_terminator("1; | 2")]
 #[case::module_with_expression("module m: 1;")]
 #[case::as_with_call("x as f(1)")]

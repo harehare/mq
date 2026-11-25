@@ -771,6 +771,7 @@ end
   end
 "#
 )]
+#[case::dict_key_access_chain(r#"let d = {"a": {"b": [1]}} | d.a.b[0]"#, r#"let d = {"a": {"b": [1]}} | d.a.b[0]"#)]
 #[case::dict_nested_multiline_level3(
     r#"{
 "level1": {
@@ -1162,6 +1163,9 @@ end
 #[case::selector_call_pipe(".h(1)|.text()", ".h(1) | .text()")]
 #[case::descendant_chain(".blockquote .code", ".blockquote .code")]
 #[case::descendant_chain_no_space(".blockquote.code", ".blockquote .code")]
+#[case::descendant_chain_no_space_emphasis(".blockquote.**", ".blockquote .**")]
+#[case::descendant_chain_no_space_hr_stars(".blockquote.***", ".blockquote .***")]
+#[case::descendant_chain_no_space_hr_dashes(".blockquote.---", ".blockquote .---")]
 #[case::descendant_chain_extra_space(".blockquote  .code", ".blockquote .code")]
 #[case::descendant_chain_three_levels(".blockquote .list .code", ".blockquote .list .code")]
 #[case::descendant_chain_with_selector_call(".blockquote .code(\"rust\")", ".blockquote .code(\"rust\")")]
