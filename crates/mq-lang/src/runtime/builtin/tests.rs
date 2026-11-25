@@ -779,6 +779,9 @@ fn test_date_add_invalid_unit() {
 #[case(1704067200_i64, 1704153600_i64, "days", 1_i64)]
 #[case(1704067200_i64, 1704672000_i64, "weeks", 1_i64)]
 #[case(1704153600_i64, 1704067200_i64, "seconds", -86400_i64)]
+#[case(1704067200_i64, 1709251200_i64, "months", 2_i64)] // 2024-01-01 -> 2024-03-01
+#[case(1704067200_i64, 1767225600_i64, "years", 2_i64)] // 2024-01-01 -> 2026-01-01
+#[case(1709251200_i64, 1704067200_i64, "months", -2_i64)]
 fn test_date_diff(#[case] base1: i64, #[case] base2: i64, #[case] unit: &str, #[case] expected: i64) {
     let env = VmEnv::default();
     let arr1 = gmtime_array(base1);
@@ -800,7 +803,7 @@ fn test_date_diff_invalid_unit() {
     let result = eval_builtin(
         &RuntimeValue::None,
         &Ident::new("date_diff"),
-        vec![arr.clone(), arr, RuntimeValue::String(Shared::new("months".into()))].into(),
+        vec![arr.clone(), arr, RuntimeValue::String(Shared::new("fortnights".into()))].into(),
         &env,
     );
     assert!(matches!(result, Err(Error::Runtime(_))));

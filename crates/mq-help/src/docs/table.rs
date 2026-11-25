@@ -1694,7 +1694,7 @@ key: 1
     BuiltinDoc {
         name: "date_diff",
         aliases: &[],
-        description: "Returns the difference (array2 - array1) in the given unit. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\".",
+        description: "Returns the difference (array2 - array1) in whole units, truncated toward zero. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\", \"months\", \"years\". Month/year differences are calendar-aware.",
         params: &["array1", "array2", "unit"],
         param_types: &["array", "array", "string"],
         returns: "number",
@@ -3633,7 +3633,7 @@ x
     BuiltinDoc {
         name: "strptime",
         aliases: &[],
-        description: "Parses a date string using the given strptime format (e.g. \"%Y-%m-%d\") and returns a Unix timestamp (seconds, UTC).",
+        description: "Parses a date string using the given strptime format (e.g. \"%Y-%m-%d\") and returns a Unix timestamp (seconds, UTC). \"%s\" parses an epoch directly; offsets in the input are ignored.",
         params: &["date_str", "format"],
         param_types: &["string", "string"],
         returns: "number",
