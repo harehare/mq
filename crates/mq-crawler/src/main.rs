@@ -135,6 +135,10 @@ struct CliArgs {
     /// statistics without -v; --quiet still suppresses them.
     #[clap(short = 'f', long)]
     format: Option<OutputFormat>,
+    /// Only list the URLs reached, one per line, without converting pages or running a query.
+    /// With --output, URLs are written to urls.txt in that directory.
+    #[clap(long, conflicts_with = "mq_query")]
+    map: bool,
     /// Optional URL of a sitemap.xml (or sitemap index) to enumerate additional seed URLs from.
     /// Discovered URLs are added to the crawl frontier alongside the start URL and are still
     /// subject to robots.txt, domain filtering, and depth limits.
@@ -428,6 +432,7 @@ async fn run(args: CliArgs) -> miette::Result<()> {
             allowed_domains: effective_allowed,
             include: args.include,
             exclude: args.exclude,
+            map: args.map,
             additional_seed_urls: sitemap_seed_urls,
             max_pages: args.max_pages,
             max_response_bytes: Some(args.max_response_bytes).filter(|&bytes| bytes > 0),

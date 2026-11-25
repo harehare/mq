@@ -250,6 +250,7 @@ pub struct Crawler {
     http_client: HttpClient,
     include_patterns: Vec<glob::Pattern>,
     initial_domain: String,
+    map: bool,
     max_pages: Option<usize>,
     max_response_bytes: Option<usize>,
     skip_extensions: bool,
@@ -292,6 +293,9 @@ pub struct CrawlerOptions {
     pub exclude: Vec<String>,
     /// Extra URLs queued at depth 0 next to the start URL.
     pub additional_seed_urls: Vec<Url>,
+    /// Only list the URLs reached, one per line, without converting pages or running the query.
+    /// Written to `urls.txt` in `output_path` when set, otherwise to stdout.
+    pub map: bool,
     /// Maximum number of pages to crawl. Unlimited when unset.
     pub max_pages: Option<usize>,
     /// Largest page body accepted, in bytes. Unlimited when unset.
@@ -324,6 +328,7 @@ impl Crawler {
             include,
             exclude,
             additional_seed_urls,
+            map,
             max_pages,
             max_response_bytes,
             skip_extensions,
@@ -393,6 +398,7 @@ impl Crawler {
             robots_cache: Arc::new(DashMap::new()),
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
             domain_last_request: Arc::new(DashMap::new()),
+            map,
             max_pages,
             max_response_bytes,
             skip_extensions,
@@ -756,15 +762,22 @@ impl Crawler {
                 let current_url_clone = current_url.clone();
                 let self_clone = self.clone();
                 let new_links = tokio::task::spawn_blocking(move || {
-                    let failure = match Self::execute_query(&query, &html_content_clone, conversion_options) {
-                        Ok(md) => self_clone
-                            .output_markdown(&current_url_clone, md.as_str())
+                    let failure = if self_clone.map {
+                        self_clone
+                            .output_map_url(&current_url_clone)
                             .err()
-                            .map(|e| format!("Failed to output markdown for {}: {}", current_url_clone, e)),
-                        Err(e) => Some(format!(
-                            "Failed to execute mq query on content from {}: {}",
-                            current_url_clone, e
-                        )),
+                            .map(|e| format!("Failed to output URL {}: {}", current_url_clone, e))
+                    } else {
+                        match Self::execute_query(&query, &html_content_clone, conversion_options) {
+                            Ok(md) => self_clone
+                                .output_markdown(&current_url_clone, md.as_str())
+                                .err()
+                                .map(|e| format!("Failed to output markdown for {}: {}", current_url_clone, e)),
+                            Err(e) => Some(format!(
+                                "Failed to execute mq query on content from {}: {}",
+                                current_url_clone, e
+                            )),
+                        }
                     };
                     if let Some(message) = &failure {
                         tracing::error!("{}", message);
@@ -856,6 +869,20 @@ impl Crawler {
             let result = self.result.read().await;
             result.write_stats_to_stderr(&self.format);
         }
+    }
+
+    fn output_map_url(&self, url: &Url) -> Result<(), String> {
+        let Some(ref output_dir) = self.output_path else {
+            println!("{}", url);
+            return Ok(());
+        };
+        std::fs::create_dir_all(output_dir).map_err(|e| format!("Failed to create {}: {}", output_dir, e))?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(Path::new(output_dir).join("urls.txt"))
+            .map_err(|e| format!("Failed to open urls.txt: {}", e))?;
+        writeln!(file, "{}", url).map_err(|e| format!("Failed to write urls.txt: {}", e))
     }
 
     fn output_markdown(&self, url: &Url, markdown: &str) -> Result<(), String> {
@@ -1350,6 +1377,56 @@ mod tests {
         let result = crawler.result.read().await;
         assert_eq!(result.pages_crawled, 1);
         assert_eq!(result.pages_skipped_robots, 1);
+    }
+
+    #[tokio::test]
+    async fn test_map_lists_urls_without_running_query() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body(r#"<html><body><a href="/a">a</a><a href="/b">b</a></body></html>"#);
+            })
+            .await;
+        for path in ["/a", "/b"] {
+            server
+                .mock_async(move |when, then| {
+                    when.method(GET).path(path);
+                    then.status(200)
+                        .header("content-type", "text/html")
+                        .body("<html><body><h1>page</h1></body></html>");
+                })
+                .await;
+        }
+
+        let out = tempfile::tempdir().unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            Url::parse(&format!("http://localhost:{}/", port)).unwrap(),
+            CrawlerOptions {
+                map: true,
+                // A query that would fail on every page if it were run.
+                mq_query: Some("this_is_not_defined()".to_string()),
+                output_path: Some(out.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        let mut urls: Vec<String> = std::fs::read_to_string(out.path().join("urls.txt"))
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect();
+        urls.sort();
+        let base = format!("http://localhost:{}", port);
+        assert_eq!(urls, vec![format!("{base}/"), format!("{base}/a"), format!("{base}/b")]);
+        assert!(!out.path().join("localhost_index.md").exists());
     }
 
     #[rstest]

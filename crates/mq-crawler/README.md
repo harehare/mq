@@ -26,6 +26,7 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 - **WebDriver Support**: Use Selenium WebDriver for browser-based crawling
 - **Domain Filtering**: Restrict crawling to specific domains
 - **URL Filtering**: Restrict the crawl with `--include` / `--exclude` glob patterns
+- **URL Mapping**: List the URLs a crawl reaches with `--map`, without converting pages
 - **Sitemap Ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
 - **Max Pages Limit**: Cap the total number of pages visited to bound resource usage
 - **Checkpoint & Resume**: Periodically snapshot crawl progress and resume an interrupted crawl later
@@ -143,6 +144,18 @@ A checkpoint is also written once the crawl stops for any reason (queue exhauste
 # Only links matching --include are queued; --exclude always wins.
 # The start URL itself is always crawled.
 mq-crawl --include '/docs/*' --exclude '/docs/archive/*' https://example.com/docs/
+```
+
+### URL Mapping
+
+```bash
+# Print every URL reached, one per line, without converting pages to Markdown.
+# Pages are still fetched to discover links, so robots.txt, --depth, --include
+# and --exclude apply as in a normal crawl.
+mq-crawl --map https://example.com
+
+# Write the list to ./out/urls.txt instead of stdout.
+mq-crawl --map -o ./out https://example.com
 ```
 
 ### Sitemap Ingestion
