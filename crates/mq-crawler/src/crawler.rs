@@ -222,6 +222,16 @@ fn extract_links(html_content: &str, base_url: &Url) -> Vec<Url> {
     found_urls
 }
 
+/// Returns whether `url`'s path and query pass the include/exclude globs.
+/// An empty include list admits every URL; exclude always wins.
+fn matches_path_filters(include: &[glob::Pattern], exclude: &[glob::Pattern], url: &Url) -> bool {
+    let target = match url.query() {
+        Some(q) => format!("{}?{}", url.path(), q),
+        None => url.path().to_string(),
+    };
+    (include.is_empty() || include.iter().any(|p| p.matches(&target))) && !exclude.iter().any(|p| p.matches(&target))
+}
+
 #[derive(Debug, Clone)]
 /// Crawls pages from a start URL and applies an mq query to each page.
 pub struct Crawler {
@@ -234,9 +244,11 @@ pub struct Crawler {
     concurrency: usize,
     depth_limit: Option<usize>,
     domain_last_request: Arc<DashMap<String, Instant>>,
+    exclude_patterns: Vec<glob::Pattern>,
     format: OutputFormat,
     suppress_stats: bool,
     http_client: HttpClient,
+    include_patterns: Vec<glob::Pattern>,
     initial_domain: String,
     max_pages: Option<usize>,
     max_response_bytes: Option<usize>,
@@ -272,6 +284,11 @@ pub struct CrawlerOptions {
     pub depth_limit: Option<usize>,
     /// Domains the crawl may visit: the start domain only when unset, any domain when empty.
     pub allowed_domains: Option<Vec<String>>,
+    /// Glob patterns matched against each URL's path and query. When non-empty, only matching
+    /// URLs are queued. The start URL is always crawled.
+    pub include: Vec<String>,
+    /// Glob patterns for URLs that are never queued. Takes precedence over `include`.
+    pub exclude: Vec<String>,
     /// Extra URLs queued at depth 0 next to the start URL.
     pub additional_seed_urls: Vec<Url>,
     /// Maximum number of pages to crawl. Unlimited when unset.
@@ -303,6 +320,8 @@ impl Crawler {
             conversion_options,
             depth_limit,
             allowed_domains,
+            include,
+            exclude,
             additional_seed_urls,
             max_pages,
             max_response_bytes,
@@ -312,6 +331,14 @@ impl Crawler {
             resume_checkpoint,
             suppress_stats,
         } = options;
+        let parse_patterns = |patterns: Vec<String>| {
+            patterns
+                .iter()
+                .map(|p| glob::Pattern::new(p).map_err(|e| format!("Invalid glob pattern '{}': {}", p, e)))
+                .collect::<Result<Vec<_>, _>>()
+        };
+        let include_patterns = parse_patterns(include)?;
+        let exclude_patterns = parse_patterns(exclude)?;
         let initial_domain = start_url
             .host_str()
             .ok_or_else(|| "Start URL has no host".to_string())?
@@ -343,12 +370,17 @@ impl Crawler {
         } else {
             to_visit.push((start_url.clone(), 0));
             for seed_url in additional_seed_urls {
+                if !matches_path_filters(&include_patterns, &exclude_patterns, &seed_url) {
+                    continue;
+                }
                 to_visit.push((seed_url, 0));
             }
         }
 
         Ok(Self {
             allowed_domains,
+            exclude_patterns,
+            include_patterns,
             checkpoint_interval_pages: checkpoint_interval_pages.max(1),
             checkpoint_path,
             http_client,
@@ -734,6 +766,7 @@ impl Crawler {
                             for link in new_links {
                                 if !self.visited.contains(&link)
                                     && !self.should_skip_url_without_visited_check(&link)
+                                    && matches_path_filters(&self.include_patterns, &self.exclude_patterns, &link)
                                     && self.depth_limit.is_none_or(|limit| next_depth <= limit)
                                 {
                                     self.to_visit.push((link, next_depth));
@@ -1050,6 +1083,64 @@ mod tests {
 
         assert!(!crawler.should_skip_url_without_visited_check(&allowed_url));
         assert!(crawler.should_skip_url_without_visited_check(&denied_url));
+    }
+
+    #[rstest]
+    #[case(&[], &[], "/any", true)]
+    #[case(&["/docs/*"], &[], "/docs/a/b", true)]
+    #[case(&["/docs/*"], &[], "/blog/a", false)]
+    #[case(&[], &["/blog/*"], "/blog/a", false)]
+    #[case(&[], &["/blog/*"], "/docs/a", true)]
+    #[case(&["/docs/*"], &["/docs/private/*"], "/docs/private/x", false)]
+    #[case(&["/search?q=*"], &[], "/search?q=rust", true)]
+    fn test_matches_path_filters(
+        #[case] include: &[&str],
+        #[case] exclude: &[&str],
+        #[case] path: &str,
+        #[case] expected: bool,
+    ) {
+        let compile = |v: &[&str]| v.iter().map(|p| glob::Pattern::new(p).unwrap()).collect::<Vec<_>>();
+        let url = Url::parse(&format!("http://start.invalid{}", path)).unwrap();
+        assert_eq!(
+            matches_path_filters(&compile(include), &compile(exclude), &url),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn test_crawler_new_rejects_invalid_glob() {
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+        let result = Crawler::new(
+            http_client,
+            Url::parse("http://start.invalid/").unwrap(),
+            CrawlerOptions {
+                include: vec!["[".to_string()],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(result.unwrap_err().contains("Invalid glob pattern"));
+    }
+
+    #[tokio::test]
+    async fn test_crawler_new_filters_seed_urls() {
+        let http_client = HttpClient::new_reqwest(30.0).unwrap();
+        let crawler = Crawler::new(
+            http_client,
+            Url::parse("http://start.invalid/").unwrap(),
+            CrawlerOptions {
+                include: vec!["/docs/*".to_string()],
+                additional_seed_urls: vec![
+                    Url::parse("http://start.invalid/docs/a").unwrap(),
+                    Url::parse("http://start.invalid/blog/b").unwrap(),
+                ],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // Start URL is exempt; only the matching seed is queued.
+        assert_eq!(crawler.to_visit.len(), 2);
     }
 
     #[tokio::test]

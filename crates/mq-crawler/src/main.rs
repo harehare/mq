@@ -124,6 +124,13 @@ struct CliArgs {
     /// Example: --allowed-domains example.com,docs.example.com
     #[clap(long, value_delimiter = ',', value_name = "DOMAIN")]
     allowed_domains: Option<Vec<String>>,
+    /// Glob matched against each URL's path and query (e.g. "/docs/*"). Only matching links are
+    /// crawled; the start URL is always crawled. Repeatable.
+    #[clap(long, value_name = "GLOB")]
+    include: Vec<String>,
+    /// Glob for URLs to skip, matched like --include. Takes precedence over --include. Repeatable.
+    #[clap(long, value_name = "GLOB")]
+    exclude: Vec<String>,
     /// Output format for results and statistics [default: text]. An explicit format prints
     /// statistics without -v; --quiet still suppresses them.
     #[clap(short = 'f', long)]
@@ -419,6 +426,8 @@ async fn run(args: CliArgs) -> miette::Result<()> {
             },
             depth_limit: args.depth,
             allowed_domains: effective_allowed,
+            include: args.include,
+            exclude: args.exclude,
             additional_seed_urls: sitemap_seed_urls,
             max_pages: args.max_pages,
             max_response_bytes: Some(args.max_response_bytes).filter(|&bytes| bytes > 0),

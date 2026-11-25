@@ -25,6 +25,7 @@ Make web scraping and content extraction effortless with intelligent Markdown co
 - **Headless Chrome**: Built-in headless Chrome for JavaScript-heavy sites (no external server needed)
 - **WebDriver Support**: Use Selenium WebDriver for browser-based crawling
 - **Domain Filtering**: Restrict crawling to specific domains
+- **URL Filtering**: Restrict the crawl with `--include` / `--exclude` glob patterns
 - **Sitemap Ingestion**: Seed the crawl frontier from a `sitemap.xml` (or sitemap index) up front
 - **Max Pages Limit**: Cap the total number of pages visited to bound resource usage
 - **Checkpoint & Resume**: Periodically snapshot crawl progress and resume an interrupted crawl later
@@ -134,6 +135,15 @@ mq-crawl --resume-from crawl-state.json --checkpoint-path crawl-state.json https
 ```
 
 A checkpoint is also written once the crawl stops for any reason (queue exhausted, `--max-pages` reached), so `--resume-from` reflects the true end state of the previous run.
+
+### URL Filtering
+
+```bash
+# Patterns are globs matched against each URL's path and query.
+# Only links matching --include are queued; --exclude always wins.
+# The start URL itself is always crawled.
+mq-crawl --include '/docs/*' --exclude '/docs/archive/*' https://example.com/docs/
+```
 
 ### Sitemap Ingestion
 
