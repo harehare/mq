@@ -111,40 +111,51 @@ pub(super) fn diff(from: DateTime, to: DateTime, unit: &str) -> Result<i64, Erro
     DateUnit::try_from(unit)?.apply_diff(from, to)
 }
 
-/// Expands directives that jiff's strptime rejects into equivalent forms, yielding one candidate
-/// format per alternative. `%z` also tries the colon form (`+05:30`), and `%+` also tries a
-/// trailing `Z`, since jiff accepts neither with a single directive.
+/// Rewrites directives that jiff's strptime rejects into equivalent forms. `%z` has a plain and a
+/// colon form (`+05:30`), and `%+` an offset and a trailing `Z` form, so a format yields at most
+/// four candidates. Every occurrence of a directive uses the same form within a candidate, which
+/// keeps the work linear in the format length however many directives it repeats.
 fn strptime_candidates(fmt: &str) -> Vec<String> {
-    let mut candidates = vec![String::new()];
-    let mut chars = fmt.chars();
-    while let Some(c) = chars.next() {
-        if c != '%' {
-            candidates.iter_mut().for_each(|f| f.push(c));
-            continue;
+    const Z: [&str; 2] = ["%z", "%:z"];
+    const PLUS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f%:z", "%Y-%m-%dT%H:%M:%S%.fZ"];
+
+    let has = |spec: char| {
+        let mut chars = fmt.chars();
+        while let Some(c) = chars.next() {
+            if c == '%' && chars.next() == Some(spec) {
+                return true;
+            }
         }
-        let Some(spec) = chars.next() else {
-            candidates.iter_mut().for_each(|f| f.push('%'));
-            break;
-        };
-        let alternatives: &[&str] = match spec {
-            'c' => &["%a %b %e %H:%M:%S %Y"],
-            'x' => &["%m/%d/%y"],
-            'X' => &["%H:%M:%S"],
-            'r' => &["%I:%M:%S %p"],
-            'z' => &["%z", "%:z"],
-            '+' => &["%Y-%m-%dT%H:%M:%S%.f%:z", "%Y-%m-%dT%H:%M:%S%.fZ"],
-            _ => &[],
-        };
-        if alternatives.is_empty() {
-            candidates.iter_mut().for_each(|f| {
-                f.push('%');
-                f.push(spec);
-            });
-        } else {
-            candidates = candidates
-                .iter()
-                .flat_map(|f| alternatives.iter().map(move |a| format!("{f}{a}")))
-                .collect();
+        false
+    };
+    let z_forms = if has('z') { &Z[..] } else { &Z[..1] };
+    let plus_forms = if has('+') { &PLUS[..] } else { &PLUS[..1] };
+
+    let mut candidates = Vec::new();
+    for z in z_forms {
+        for plus in plus_forms {
+            let mut out = String::with_capacity(fmt.len());
+            let mut chars = fmt.chars();
+            while let Some(c) = chars.next() {
+                if c != '%' {
+                    out.push(c);
+                    continue;
+                }
+                match chars.next() {
+                    Some('c') => out.push_str("%a %b %e %H:%M:%S %Y"),
+                    Some('x') => out.push_str("%m/%d/%y"),
+                    Some('X') => out.push_str("%H:%M:%S"),
+                    Some('r') => out.push_str("%I:%M:%S %p"),
+                    Some('z') => out.push_str(z),
+                    Some('+') => out.push_str(plus),
+                    Some(spec) => {
+                        out.push('%');
+                        out.push(spec);
+                    }
+                    None => out.push('%'),
+                }
+            }
+            candidates.push(out);
         }
     }
     candidates
@@ -503,5 +514,12 @@ mod tests {
     #[test]
     fn test_strptime_candidates_keep_escaped_percent() {
         assert_eq!(strptime_candidates("%%z %c"), vec!["%%z %a %b %e %H:%M:%S %Y"]);
+    }
+
+    #[test]
+    fn test_strptime_many_offset_directives() {
+        let fmt = "%z".repeat(64) + &"%+".repeat(64);
+        assert_eq!(strptime_candidates(&fmt).len(), 4);
+        assert!(strptime("", &fmt).is_err());
     }
 }
