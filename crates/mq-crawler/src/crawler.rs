@@ -532,6 +532,14 @@ impl Crawler {
 
             self.maybe_save_checkpoint(&mut pages_at_last_checkpoint).await;
 
+            // The drain may have discarded every remaining entry (already visited
+            // or skipped) without spawning, so no worker is left to notify us.
+            if active_tasks.load(Ordering::SeqCst) == 0
+                && (self.to_visit.is_empty() || self.max_pages.is_some_and(|max| self.visited.len() >= max))
+            {
+                break;
+            }
+
             // Block until a task finishes or a new URL is enqueued.
             // If notify_one() was already called since we created `notified`
             // above, this returns immediately without spinning.
@@ -1691,6 +1699,36 @@ mod tests {
             queued.push(item);
         }
         assert_eq!(queued, vec![(kept, 2), (start_url, 0)]);
+    }
+
+    #[tokio::test]
+    async fn test_resume_with_visited_duplicate_in_frontier_completes() {
+        let start_url = Url::parse("http://start.invalid/").unwrap();
+        let guide = Url::parse("http://start.invalid/docs/guide").unwrap();
+        let news = Url::parse("http://start.invalid/news").unwrap();
+        let checkpoint = CrawlCheckpoint {
+            visited: vec![guide.clone()],
+            frontier: vec![(guide, 1), (news, 1)],
+            stats: CrawlResultStats::default(),
+        };
+
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions {
+                concurrency: 1,
+                include: vec!["/docs/*".to_string()],
+                resume_checkpoint: Some(checkpoint),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(10), crawler.run())
+            .await
+            .expect("resumed crawl must not hang")
+            .unwrap();
     }
 
     #[tokio::test]
