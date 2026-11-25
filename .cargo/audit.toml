@@ -1,0 +1,5 @@
+[advisories]
+ignore = [
+  # cookie 0.16.2 via fantoccini/webdriver. PrivateJar is unused and mq never forks.
+  "RUSTSEC-2026-0594",
+]
