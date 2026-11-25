@@ -694,18 +694,27 @@ impl<'a> Cursor<'a> {
                 }
             }
             _ => {
-                // After a named key (`d.count*2`), `-` and `*` are operators. A selector that
-                // starts with them (`.blockquote.**`, `.---`) is a punctuation-only alias.
-                let punctuation_alias = matches!(bytes.get(1), Some(b'-' | b'*'));
-                let after_value = !punctuation_alias
-                    && self.pos > 0
-                    && matches!(self.src.as_bytes()[self.pos - 1], b if b.is_ascii_alphanumeric() || matches!(b, b'_' | b')' | b']' | b'}' | b'"'));
-                len += bytes[1..]
-                    .iter()
-                    .take_while(|&&b| {
-                        b.is_ascii_alphanumeric() || b == b'_' || (!after_value && matches!(b, b'-' | b'*'))
-                    })
-                    .count();
+                // The punctuation-only aliases (`.**`, `.***`, `.---`) stay whole even after a
+                // value. Otherwise `-` and `*` right after one (`d.count*2`, `if(c).-1`) are operators.
+                let alias_char = if rest.starts_with(".**") {
+                    Some(b'*')
+                } else if rest.starts_with(".---") {
+                    Some(b'-')
+                } else {
+                    None
+                };
+                if let Some(c) = alias_char {
+                    len += bytes[1..].iter().take_while(|&&b| b == c).count();
+                } else {
+                    let after_value = self.pos > 0
+                        && matches!(self.src.as_bytes()[self.pos - 1], b if b.is_ascii_alphanumeric() || matches!(b, b'_' | b')' | b']' | b'}' | b'"'));
+                    len += bytes[1..]
+                        .iter()
+                        .take_while(|&&b| {
+                            b.is_ascii_alphanumeric() || b == b'_' || (!after_value && matches!(b, b'-' | b'*'))
+                        })
+                        .count();
+                }
             }
         }
 

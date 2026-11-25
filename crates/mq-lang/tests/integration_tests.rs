@@ -2939,6 +2939,8 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::postfix_key_access("let d = {\"a\": 1} | d.a", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::postfix_key_access_shadowed_get("def get(a, b): 99 end | let d = {\"key\": 1} | d.key", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::postfix_key_access_shadowed_get_selector_name("def get(a, b): 99 end | let d = {\"text\": 1} | d.text", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::if_branch_compact_sub("if(true).-1 else: 0", vec![RuntimeValue::Number(10.into())], Ok(vec![RuntimeValue::Number(9.into())].into()))]
+#[case::if_branch_compact_mul("if(true).*2 else: 0", vec![RuntimeValue::Number(10.into())], Ok(vec![RuntimeValue::Number(20.into())].into()))]
 #[case::postfix_key_access_compact_mul("let d = {\"count\": 3} | d.count*2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(6.into())].into()))]
 #[case::postfix_key_access_compact_sub("let d = {\"count\": 3} | d.count-1", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::postfix_key_access_missing("let d = {\"a\": 1} | d.b", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
