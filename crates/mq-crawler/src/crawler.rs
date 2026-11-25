@@ -253,6 +253,7 @@ pub struct Crawler {
     max_pages: Option<usize>,
     max_response_bytes: Option<usize>,
     skip_extensions: bool,
+    start_url: Url,
     mq_query: String,
     output_path: Option<String>,
     result: Arc<RwLock<CrawlResult>>,
@@ -359,6 +360,9 @@ impl Crawler {
                 visited.insert(url);
             }
             for (url, depth) in checkpoint.frontier {
+                if url != start_url && !matches_path_filters(&include_patterns, &exclude_patterns, &url) {
+                    continue;
+                }
                 to_visit.push((url, depth));
             }
             initial_result.pages_crawled = checkpoint.stats.pages_crawled;
@@ -392,6 +396,7 @@ impl Crawler {
             max_pages,
             max_response_bytes,
             skip_extensions,
+            start_url,
             mq_query: mq_query.unwrap_or("identity()".to_string()),
             user_agent,
             output_path,
@@ -714,6 +719,17 @@ impl Crawler {
                 let html_content = fetched.content;
                 // Resolve links and name output after the URL actually served, not the requested one.
                 let current_url = fetched.final_url;
+                if current_url != requested_url
+                    && requested_url != self.start_url
+                    && !matches_path_filters(&self.include_patterns, &self.exclude_patterns, &current_url)
+                {
+                    tracing::info!(
+                        "Skipping {}: redirected to {} which is excluded by path filters",
+                        requested_url,
+                        current_url
+                    );
+                    return;
+                }
                 if current_url != requested_url && !self.visited.insert(current_url.clone()) {
                     tracing::info!(
                         "Skipping {}: redirected to already visited {}",
@@ -1642,5 +1658,85 @@ mod tests {
         assert_eq!(result.pages_skipped_non_html, 4);
         assert_eq!(result.pages_failed, 2);
         assert_eq!(result.links_discovered, 7);
+    }
+
+    #[tokio::test]
+    async fn test_resume_applies_path_filters_to_frontier() {
+        let start_url = Url::parse("http://start.invalid/").unwrap();
+        let kept = Url::parse("http://start.invalid/docs/new").unwrap();
+        let dropped = Url::parse("http://start.invalid/docs/old").unwrap();
+        let checkpoint = CrawlCheckpoint {
+            visited: vec![],
+            frontier: vec![(dropped, 1), (kept.clone(), 2), (start_url.clone(), 0)],
+            stats: CrawlResultStats::default(),
+        };
+
+        let crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url.clone(),
+            CrawlerOptions {
+                concurrency: 1,
+                checkpoint_interval_pages: 1,
+                include: vec!["/docs/*".to_string()],
+                exclude: vec!["/docs/old".to_string()],
+                resume_checkpoint: Some(checkpoint),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let mut queued = Vec::new();
+        while let Some(item) = crawler.to_visit.pop() {
+            queued.push(item);
+        }
+        assert_eq!(queued, vec![(kept, 2), (start_url, 0)]);
+    }
+
+    #[tokio::test]
+    async fn test_crawl_skips_redirect_to_excluded_path() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/docs/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body(r#"<html><body><a href="/docs/old-guide">x</a></body></html>"#);
+            })
+            .await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/docs/old-guide");
+                then.status(301).header("location", "/docs/archive/old-guide");
+            })
+            .await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/docs/archive/old-guide");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body("<html><body>archived</body></html>");
+            })
+            .await;
+
+        let start_url = Url::parse(&format!("http://localhost:{}/docs/", port)).unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions {
+                include: vec!["/docs/*".to_string()],
+                exclude: vec!["/docs/archive/*".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        let archived = Url::parse(&format!("http://localhost:{}/docs/archive/old-guide", port)).unwrap();
+        assert!(!crawler.visited.contains(&archived));
+        assert_eq!(crawler.result.read().await.pages_crawled, 1);
     }
 }
