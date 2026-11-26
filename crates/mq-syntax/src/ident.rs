@@ -1,65 +1,60 @@
-use std::hash::{BuildHasher, Hasher};
+use std::hash::{BuildHasher, RandomState};
 use std::num::NonZeroU32;
 use std::sync::{LazyLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use hashbrown::HashTable;
-use rustc_hash::FxBuildHasher;
 
 /// Append-only string table: every string lives in one buffer, and a symbol is its 1-based index.
 #[derive(Default)]
 struct Interner {
     text: String,
     /// End offset in `text` of each interned string, so string `i` spans `ends[i - 1]..ends[i]`.
-    ends: Vec<u32>,
+    ends: Vec<usize>,
     table: HashTable<NonZeroU32>,
+    /// Randomly keyed so that attacker-chosen keys (e.g. JSON object keys) cannot be crafted to collide.
+    hasher: RandomState,
 }
 
-fn span<'a>(text: &'a str, ends: &[u32], sym: NonZeroU32) -> &'a str {
+fn span<'a>(text: &'a str, ends: &[usize], sym: NonZeroU32) -> &'a str {
     let i = sym.get() as usize - 1;
-    let start = if i == 0 { 0 } else { ends[i - 1] as usize };
-    &text[start..ends[i] as usize]
+    let start = if i == 0 { 0 } else { ends[i - 1] };
+    &text[start..ends[i]]
 }
 
 /// Byte-wise equality of `s` against the interned string, skipping the char-boundary checks of
 /// slicing a `str`.
-fn span_eq(text: &str, ends: &[u32], sym: NonZeroU32, s: &str) -> bool {
+fn span_eq(text: &str, ends: &[usize], sym: NonZeroU32, s: &str) -> bool {
     let i = sym.get() as usize - 1;
-    let start = if i == 0 { 0 } else { ends[i - 1] as usize };
-    text.as_bytes().get(start..ends[i] as usize) == Some(s.as_bytes())
-}
-
-fn hash_str(s: &str) -> u64 {
-    let mut hasher = FxBuildHasher.build_hasher();
-    hasher.write(s.as_bytes());
-    hasher.finish()
+    let start = if i == 0 { 0 } else { ends[i - 1] };
+    text.as_bytes().get(start..ends[i]) == Some(s.as_bytes())
 }
 
 impl Interner {
     fn get(&self, s: &str) -> Option<NonZeroU32> {
         self.table
-            .find(hash_str(s), |&sym| span_eq(&self.text, &self.ends, sym, s))
+            .find(self.hasher.hash_one(s), |&sym| span_eq(&self.text, &self.ends, sym, s))
             .copied()
     }
 
     fn get_or_intern(&mut self, s: &str) -> NonZeroU32 {
-        let Self { text, ends, table } = self;
-        let hash = hash_str(s);
+        let Self {
+            text,
+            ends,
+            table,
+            hasher,
+        } = self;
+        let hash = hasher.hash_one(s);
         if let Some(&sym) = table.find(hash, |&sym| span_eq(text, ends, sym, s)) {
             return sym;
         }
-        let end = text
-            .len()
-            .checked_add(s.len())
-            .and_then(|n| u32::try_from(n).ok())
-            .expect("interned identifiers exceed 4 GiB");
         let sym = u32::try_from(ends.len())
             .ok()
             .and_then(|n| n.checked_add(1))
             .and_then(NonZeroU32::new)
             .expect("too many interned identifiers");
         text.push_str(s);
-        ends.push(end);
-        table.insert_unique(hash, sym, |&sym| hash_str(span(text, ends, sym)));
+        ends.push(text.len());
+        table.insert_unique(hash, sym, |&sym| hasher.hash_one(span(text, ends, sym)));
         sym
     }
 

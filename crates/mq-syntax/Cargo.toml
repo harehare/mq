@@ -19,7 +19,6 @@ hashbrown = {workspace = true}
 itertools = {workspace = true}
 memchr = {workspace = true}
 miette = {workspace = true, optional = true}
-rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive", "rc"], optional = true}
 serde_json = {workspace = true, optional = true}
 smallvec = {workspace = true}
