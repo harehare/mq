@@ -1505,15 +1505,6 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
-dependencies = [
- "foldhash 0.2.0",
-]
-
-[[package]]
-name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
@@ -2711,16 +2702,17 @@ dependencies = [
 name = "mq-syntax"
 version = "0.10.2"
 dependencies = [
+ "hashbrown 0.17.1",
  "itertools 0.15.0",
  "memchr",
  "miette",
  "proptest",
  "rstest",
+ "rustc-hash",
  "serde",
  "serde_json",
  "smallvec",
  "smol_str",
- "string-interner",
  "strsim",
  "thin-vec",
  "thiserror 2.0.21",
@@ -4031,16 +4023,6 @@ checksum = "2a3fe7c28c6512e766b0874335db33c94ad7b8f9054228ae1c2abd47ce7d335e"
 dependencies = [
  "approx",
  "num-traits",
-]
-
-[[package]]
-name = "string-interner"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad3df9b59e2eded8d825c7c4363ad339a20fb6bc0b9a4778560f518f59910b15"
-dependencies = [
- "hashbrown 0.16.1",
- "serde",
 ]
 
 [[package]]

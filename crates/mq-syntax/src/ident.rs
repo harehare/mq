@@ -1,16 +1,81 @@
+use std::hash::{BuildHasher, Hasher};
+use std::num::NonZeroU32;
 use std::sync::{LazyLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use string_interner::{DefaultBackend, DefaultSymbol, StringInterner};
+use hashbrown::HashTable;
+use rustc_hash::FxBuildHasher;
 
-static STRING_INTERNER: LazyLock<RwLock<StringInterner<DefaultBackend>>> =
-    LazyLock::new(|| RwLock::new(StringInterner::default()));
+/// Append-only string table: every string lives in one buffer, and a symbol is its 1-based index.
+#[derive(Default)]
+struct Interner {
+    text: String,
+    /// End offset in `text` of each interned string, so string `i` spans `ends[i - 1]..ends[i]`.
+    ends: Vec<u32>,
+    table: HashTable<NonZeroU32>,
+}
+
+fn span<'a>(text: &'a str, ends: &[u32], sym: NonZeroU32) -> &'a str {
+    let i = sym.get() as usize - 1;
+    let start = if i == 0 { 0 } else { ends[i - 1] as usize };
+    &text[start..ends[i] as usize]
+}
+
+/// Byte-wise equality of `s` against the interned string, skipping the char-boundary checks of
+/// slicing a `str`.
+fn span_eq(text: &str, ends: &[u32], sym: NonZeroU32, s: &str) -> bool {
+    let i = sym.get() as usize - 1;
+    let start = if i == 0 { 0 } else { ends[i - 1] as usize };
+    text.as_bytes().get(start..ends[i] as usize) == Some(s.as_bytes())
+}
+
+fn hash_str(s: &str) -> u64 {
+    let mut hasher = FxBuildHasher.build_hasher();
+    hasher.write(s.as_bytes());
+    hasher.finish()
+}
+
+impl Interner {
+    fn get(&self, s: &str) -> Option<NonZeroU32> {
+        self.table
+            .find(hash_str(s), |&sym| span_eq(&self.text, &self.ends, sym, s))
+            .copied()
+    }
+
+    fn get_or_intern(&mut self, s: &str) -> NonZeroU32 {
+        let Self { text, ends, table } = self;
+        let hash = hash_str(s);
+        if let Some(&sym) = table.find(hash, |&sym| span_eq(text, ends, sym, s)) {
+            return sym;
+        }
+        let end = text
+            .len()
+            .checked_add(s.len())
+            .and_then(|n| u32::try_from(n).ok())
+            .expect("interned identifiers exceed 4 GiB");
+        let sym = u32::try_from(ends.len())
+            .ok()
+            .and_then(|n| n.checked_add(1))
+            .and_then(NonZeroU32::new)
+            .expect("too many interned identifiers");
+        text.push_str(s);
+        ends.push(end);
+        table.insert_unique(hash, sym, |&sym| hash_str(span(text, ends, sym)));
+        sym
+    }
+
+    fn resolve(&self, sym: NonZeroU32) -> Option<&str> {
+        (sym.get() as usize <= self.ends.len()).then(|| span(&self.text, &self.ends, sym))
+    }
+}
+
+static STRING_INTERNER: LazyLock<RwLock<Interner>> = LazyLock::new(|| RwLock::new(Interner::default()));
 
 // The interner is append-only, so a panic in an unrelated writer must not take down every later lookup.
-fn interner_read() -> RwLockReadGuard<'static, StringInterner<DefaultBackend>> {
+fn interner_read() -> RwLockReadGuard<'static, Interner> {
     STRING_INTERNER.read().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn interner_write() -> RwLockWriteGuard<'static, StringInterner<DefaultBackend>> {
+fn interner_write() -> RwLockWriteGuard<'static, Interner> {
     STRING_INTERNER.write().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -19,7 +84,7 @@ fn interner_write() -> RwLockWriteGuard<'static, StringInterner<DefaultBackend>>
 /// Identifiers are stored in a global string interner, allowing fast equality
 /// checks and reduced memory usage for frequently used strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Ident(DefaultSymbol);
+pub struct Ident(NonZeroU32);
 
 impl Ident {
     /// Creates a new interned identifier from a string slice.
@@ -102,7 +167,11 @@ impl<'de> serde::Deserialize<'de> for Ident {
 
 /// Returns all interned strings currently in the global string interner.
 pub fn all_symbols() -> Vec<String> {
-    interner_read().iter().map(|(_, s)| s.to_string()).collect()
+    let interner = interner_read();
+    (1..=interner.ends.len())
+        .filter_map(|i| NonZeroU32::new(i as u32))
+        .map(|sym| span(&interner.text, &interner.ends, sym).to_string())
+        .collect()
 }
 
 #[cfg(test)]
@@ -135,6 +204,20 @@ mod tests {
         let ident = Ident::new("resolve");
         let len = ident.resolve_with(|s| s.len());
         assert_eq!(len, "resolve".len());
+    }
+
+    #[test]
+    fn test_ident_distinguishes_empty_prefixes_and_unicode() {
+        let names = ["", "a", "ab", "abc", "ba", "日本", "日"];
+        let idents: Vec<Ident> = names.iter().map(|n| Ident::new(n)).collect();
+        for (i, a) in idents.iter().enumerate() {
+            assert_eq!(a.to_string(), names[i]);
+            assert_eq!(Ident::lookup(names[i]), Some(*a));
+            for (j, b) in idents.iter().enumerate() {
+                assert_eq!(a == b, i == j);
+            }
+        }
+        assert_eq!(Ident::lookup("not_interned_anywhere"), None);
     }
 
     #[cfg(feature = "ast-json")]

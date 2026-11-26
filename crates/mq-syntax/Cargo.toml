@@ -15,14 +15,15 @@ version.workspace = true
 workspace = true
 
 [dependencies]
+hashbrown = {workspace = true}
 itertools = {workspace = true}
 memchr = {workspace = true}
 miette = {workspace = true, optional = true}
+rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive", "rc"], optional = true}
 serde_json = {workspace = true, optional = true}
 smallvec = {workspace = true}
 smol_str = {workspace = true}
-string-interner = {workspace = true}
 strsim = {workspace = true}
 thiserror = {workspace = true}
 thin-vec = {workspace = true}
