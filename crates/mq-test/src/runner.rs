@@ -408,6 +408,23 @@ impl TestRunner {
 
             let discovered = Self::discover_tests(&content);
 
+            if discovered.is_empty()
+                && let Some(message) = Self::syntax_error(&content)
+            {
+                any_failed.store(true, Ordering::Relaxed);
+                file_errors
+                    .lock()
+                    .unwrap()
+                    .push((file.clone(), format!("# {}\n\n❌ {message}\n\n---\n", file.display())));
+                if self.format == OutputFormat::Json {
+                    json_results.lock().unwrap().push(serde_json::json!({
+                        "file": file.display().to_string(),
+                        "error": message,
+                    }));
+                }
+                return;
+            }
+
             if let Some(name) = Self::find_duplicate_name(&discovered) {
                 any_failed.store(true, Ordering::Relaxed);
                 let message = format!("duplicate test function `{name}`");
@@ -754,6 +771,13 @@ impl TestRunner {
     fn find_duplicate_name(tests: &[DiscoveredTest]) -> Option<&str> {
         let mut seen = std::collections::HashSet::new();
         tests.iter().map(|t| t.name()).find(|name| !seen.insert(*name))
+    }
+
+    /// First parse error of `content`. A definition lost to recovery is otherwise
+    /// indistinguishable from a file with no tests.
+    fn syntax_error(content: &str) -> Option<String> {
+        let (_, errors) = mq_syntax::parse_recovery(content);
+        errors.to_vec().first().map(|e| format!("syntax error: {e}"))
     }
 
     fn discover_tests(content: &str) -> Vec<DiscoveredTest> {

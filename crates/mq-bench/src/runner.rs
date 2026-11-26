@@ -377,7 +377,16 @@ impl BenchRunner {
                 }
             };
 
-            let (benches, skipped): (Vec<_>, Vec<_>) = Self::discover_benches(&content)
+            let discovered = Self::discover_benches(&content);
+            if discovered.is_empty()
+                && let Some(message) = Self::syntax_error(&content)
+            {
+                any_failed = true;
+                failures.push(format!("# {}\n\n❌ {message}\n\n---\n", file.display()));
+                continue;
+            }
+
+            let (benches, skipped): (Vec<_>, Vec<_>) = discovered
                 .into_iter()
                 .filter(|bench| self.matches(bench))
                 .partition(|bench| bench.arity == 0);
@@ -645,6 +654,13 @@ impl BenchRunner {
             Some(filter) => bench.name.to_lowercase().contains(&filter.to_lowercase()),
             None => true,
         }
+    }
+
+    /// First parse error of `content`. A definition lost to recovery is otherwise
+    /// indistinguishable from a file with no benches.
+    fn syntax_error(content: &str) -> Option<String> {
+        let (_, errors) = mq_syntax::parse_recovery(content);
+        errors.to_vec().first().map(|e| format!("syntax error: {e}"))
     }
 
     fn discover_benches(content: &str) -> Vec<DiscoveredBench> {

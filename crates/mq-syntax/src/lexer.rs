@@ -162,6 +162,10 @@ keywords! {
 /// Words that lex as boolean literals rather than identifiers.
 pub const BOOLEAN_LITERALS: &[&str] = &["true", "false"];
 
+/// Longest identifier the lexer accepts. Identifiers live in a process-wide interner that is never
+/// freed, so unbounded names would let untrusted input grow it without limit.
+pub const MAX_IDENT_BYTES: usize = 1024;
+
 fn ident_kind(word: &str) -> TokenKind {
     match word {
         "true" => TokenKind::BoolLiteral(true),
@@ -530,14 +534,14 @@ impl<'a> Cursor<'a> {
                 if let Some(token) = self.byte_string() {
                     Some(token)
                 } else {
-                    Some(self.ident_or_keyword())
+                    self.ident_or_keyword()
                 }
             }
             b's' => {
                 if let Some(token) = self.interpolated_string() {
                     Some(token)
                 } else {
-                    Some(self.ident_or_keyword())
+                    self.ident_or_keyword()
                 }
             }
             b'(' => Some(self.simple(1, TokenKind::LParen)),
@@ -595,7 +599,7 @@ impl<'a> Cursor<'a> {
                 }
             }
             b'@' => Some(self.simple(1, TokenKind::Convert)),
-            c if c.is_ascii_alphabetic() || c == b'_' => Some(self.ident_or_keyword()),
+            c if c.is_ascii_alphabetic() || c == b'_' => self.ident_or_keyword(),
             _ => None,
         }
     }
@@ -737,19 +741,22 @@ impl<'a> Cursor<'a> {
         None
     }
 
-    fn ident_or_keyword(&mut self) -> Token {
+    fn ident_or_keyword(&mut self) -> Option<Token> {
         let rest = self.rest();
         let bytes = rest.as_bytes();
         let base_len = bytes.iter().take_while(|&&b| is_word_byte(b)).count();
+        if base_len > MAX_IDENT_BYTES {
+            return None;
+        }
         let base = &rest[..base_len];
         let next = rest[base_len..].chars().next();
         let at_word_boundary = next.is_none_or(|c| !c.is_alphanumeric());
 
         if at_word_boundary && let Some(kind) = keyword_kind(base) {
-            return self.simple(base_len, kind);
+            return Some(self.simple(base_len, kind));
         }
 
-        self.simple(base_len, ident_kind(base))
+        Some(self.simple(base_len, ident_kind(base)))
     }
 
     fn string_or_empty(&mut self) -> Option<Token> {
@@ -2134,6 +2141,13 @@ mod tests {
         let mut expected = expected;
         expected.push(TokenKind::Eof);
         assert_eq!(kinds(input, true), Ok(expected));
+    }
+
+    #[rstest]
+    #[case::at_limit(MAX_IDENT_BYTES, true)]
+    #[case::over_limit(MAX_IDENT_BYTES + 1, false)]
+    fn test_ident_length_limit(#[case] len: usize, #[case] accepted: bool) {
+        assert_eq!(kinds(&"a".repeat(len), false).is_ok(), accepted);
     }
 
     #[test]
