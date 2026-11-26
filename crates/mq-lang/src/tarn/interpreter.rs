@@ -1938,7 +1938,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         RuntimeValue::Number(n) => RuntimeValue::Number(Number::new(-n.value())),
                         other => call_builtin(
                             negate_ident(),
-                            &[other],
+                            [other],
                             &current_self(locals, chunks),
                             execution.env,
                             execution.host_functions,
@@ -1988,7 +1988,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         RuntimeValue::Array(array) => RuntimeValue::Number(Number::new(array.len() as f64)),
                         value => call_builtin(
                             &LEN_IDENT,
-                            &[value],
+                            [value],
                             &current_self(locals, chunks),
                             execution.env,
                             execution.host_functions,
@@ -2012,7 +2012,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             .unwrap_or(RuntimeValue::None),
                         (array, index) => call_builtin(
                             &GET_IDENT,
-                            &[array, index],
+                            [array, index],
                             &current_self(locals, chunks),
                             execution.env,
                             execution.host_functions,
@@ -2600,13 +2600,30 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     break 'dispatch FrameOutcome::Complete(locals.get(*slot));
                 }
                 OpCode::ReturnBinaryLocalLocal { op, left, right } => {
-                    let value = eval_local_local_binary_op(*op, locals, *left, *right, chunks, execution)
-                        .map_err(|e| locate(chunk, ip, e))?;
+                    let value = return_binary_local_local(
+                        *op,
+                        locals,
+                        *left,
+                        *right,
+                        frame.chunk_index != 0,
+                        chunks,
+                        execution,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?;
                     break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
                 }
                 OpCode::ReturnBinaryLocalConst { op, local, constant } => {
-                    let value = eval_local_const_binary_op(*op, locals, *local, chunk, *constant, chunks, execution)
-                        .map_err(|e| locate(chunk, ip, e))?;
+                    let value = return_binary_local_const(
+                        *op,
+                        locals,
+                        *local,
+                        chunk,
+                        *constant,
+                        frame.chunk_index != 0,
+                        chunks,
+                        execution,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?;
                     break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
                 }
                 OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
@@ -3126,6 +3143,75 @@ fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
     }
 }
 
+/// For an `Add` in a frame that is returning, moves a string, array or bytes local out so that
+/// `local + x` extends it in place instead of copying it. `None` leaves the local for the caller to clone.
+/// Locals of the entry chunk can be read after the program finishes, so only other chunks move.
+fn take_returning_local(locals: &mut Locals, slot: u16, op: BinaryOp, can_move: bool) -> Option<RuntimeValue> {
+    if op != BinaryOp::Add || !can_move || slot == SELF_SLOT {
+        return None;
+    }
+    match locals.direct_runtime_value_mut(slot)? {
+        value @ (RuntimeValue::String(_) | RuntimeValue::Array(_) | RuntimeValue::Bytes(_)) => {
+            Some(std::mem::take(value))
+        }
+        _ => None,
+    }
+}
+
+/// `ReturnBinaryLocalLocal` body.
+#[inline(never)]
+fn return_binary_local_local(
+    op: BinaryOp,
+    locals: &mut Locals,
+    left: u16,
+    right: u16,
+    can_move: bool,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<RuntimeValue> {
+    match take_returning_local(locals, left, op, can_move && left != right) {
+        Some(moved) => local_runtime_value(locals, right, chunks).and_then(|right| {
+            binop(
+                op,
+                moved,
+                right,
+                locals,
+                chunks,
+                execution.env,
+                execution.host_functions,
+            )
+        }),
+        None => eval_local_local_binary_op(op, locals, left, right, chunks, execution),
+    }
+}
+
+/// `ReturnBinaryLocalConst` body.
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn return_binary_local_const(
+    op: BinaryOp,
+    locals: &mut Locals,
+    local: u16,
+    chunk: &Chunk,
+    constant: u16,
+    can_move: bool,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &ExecutionContext<'_>,
+) -> VmResult<RuntimeValue> {
+    match take_returning_local(locals, local, op, can_move) {
+        Some(moved) => binop(
+            op,
+            moved,
+            chunk.constants[constant as usize].clone(),
+            locals,
+            chunks,
+            execution.env,
+            execution.host_functions,
+        ),
+        None => eval_local_const_binary_op(op, locals, local, chunk, constant, chunks, execution),
+    }
+}
+
 fn local_runtime_value(locals: &Locals, slot: u16, chunks: &Shared<Vec<Chunk>>) -> VmResult<RuntimeValue> {
     let value = locals.get(slot);
     Ok(into_runtime_value(value, chunks))
@@ -3335,7 +3421,7 @@ fn binop(
         BinaryOp::Mod => &MOD_IDENT,
         _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
     };
-    call_builtin(ident, &[a, b], &borrow_self(locals, chunks), env, host_functions)
+    call_builtin(ident, [a, b], &borrow_self(locals, chunks), env, host_functions)
 }
 
 #[inline(always)]

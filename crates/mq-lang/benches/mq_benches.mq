@@ -38,3 +38,12 @@ def bench_string_pipeline():
   let text = join(map(range(0, 199), fn(i): "word" + to_string(i);), "  ")
   | join(split(text, "  "), "-")
 end
+
+# Accumulates an array and a string one item at a time through `fold`, so the
+# `acc + x` in the callback must extend `acc` in place rather than copy it.
+def bench_fold_concat():
+  let items = range(0, 4999)
+  | let array = fold(items, [], fn(acc, x): acc + [x];)
+  | let text = fold(items, "", fn(acc, x): acc + "x";)
+  | [len(array), len(text)]
+end
