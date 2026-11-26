@@ -519,15 +519,13 @@ impl<'a, R: ModuleResolver> EngineRunContext<'a, R> {
         }
     }
 
-    /// Builds the interpreter settings for one input, using the caller's shared deadline.
-    fn run_options(&self, timeout: Option<Duration>) -> interpreter::RunOptions<'a> {
-        interpreter::RunOptions {
-            host_functions: self.host_functions,
-            timeout,
-            max_call_stack_depth: self.max_call_stack_depth,
-            capture_stack_trace: self.capture_stack_trace,
-            global_bindings: self.global_bindings,
-        }
+    /// Builds the run for one input, using the caller's shared deadline.
+    fn new_run(&self, timeout: Option<Duration>) -> interpreter::Run<'a> {
+        interpreter::Run::new(self.host_functions)
+            .timeout(timeout)
+            .max_call_stack_depth(self.max_call_stack_depth)
+            .capture_stack_trace(self.capture_stack_trace)
+            .env(interpreter::Env::Build(self.global_bindings))
     }
 }
 
@@ -666,20 +664,18 @@ impl<R: ModuleResolver> PreludeScan<'_, R> {
             &[],
             &self.result,
         )?;
-        let (run_result, captured, _) = interpreter::run_with_globals_capturing_locals(
+        let interpreter::RunOutput {
+            result: run_result,
+            captured,
+            ..
+        } = interpreter::run(
             &compiled,
             RuntimeValue::None,
-            &[],
-            interpreter::RunOptions {
-                host_functions: self.host_functions,
-                timeout: remaining_timeout(self.deadline),
-                max_call_stack_depth: self.max_call_stack_depth,
-                capture_stack_trace: false,
-                // A module can't see Engine globals.
-                global_bindings: &[],
-            },
-            &var_names,
-            interpreter::ExecutionPools::default(),
+            // A module can't see Engine globals, so the default empty env applies.
+            interpreter::Run::new(self.host_functions)
+                .timeout(remaining_timeout(self.deadline))
+                .max_call_stack_depth(self.max_call_stack_depth)
+                .capture(interpreter::Capture::Names(&var_names)),
         );
         run_result?;
         self.result.by_path.insert(path.to_string(), captured);
@@ -783,14 +779,12 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 &[],
                 &result,
             )?;
-            let value = interpreter::run_with_globals(
+            let value = interpreter::run(
                 &compiled,
                 RuntimeValue::None,
-                context.host_functions,
-                remaining_timeout(deadline),
-                context.max_call_stack_depth,
-                context.global_bindings,
-            )?;
+                context.new_run(remaining_timeout(deadline)),
+            )
+            .result?;
             Ok(match value {
                 RuntimeValue::Array(values) => Shared::unwrap_or_clone(values),
                 other => vec![other],
@@ -1126,14 +1120,16 @@ where
         &context.preresolved_module_vars,
     )?;
 
+    let before_env = VmEnv::from_bindings(context.global_bindings, Shared::clone(&before_compiled.token_arena));
     let (values, before_bindings) = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
-        let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
+        let interpreter::RunOutput { result, captured, .. } = interpreter::run(
             &before_compiled,
             value,
-            bindings,
-            context.run_options(remaining_timeout(deadline)),
-            &before_names,
-            interpreter::ExecutionPools::default(),
+            context
+                .new_run(remaining_timeout(deadline))
+                .env(interpreter::Env::Prebuilt(&before_env))
+                .bindings(bindings)
+                .capture(interpreter::Capture::Names(&before_names)),
         );
         result.map(|value| (value, captured))
     })
@@ -1155,13 +1151,13 @@ where
     } else {
         binding_values(&before_bindings)
     };
-    let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
+    let interpreter::RunOutput { result, captured, .. } = interpreter::run(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
-        &aggregate_values,
-        context.run_options(remaining_timeout(deadline)),
-        &seed.capture_names,
-        interpreter::ExecutionPools::default(),
+        context
+            .new_run(remaining_timeout(deadline))
+            .bindings(&aggregate_values)
+            .capture(interpreter::Capture::Names(&seed.capture_names)),
     );
     let value = result?;
     store_session(session, session_bindings_from_captured(&aggregate_compiled, captured));
@@ -1197,14 +1193,20 @@ where
         &context.preresolved_module_vars,
     )?;
 
+    let env = VmEnv::from_bindings(context.global_bindings, Shared::clone(&compiled.token_arena));
     let (values, captured) = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
-        let (result, newly_captured, _) = interpreter::run_with_globals_capturing_locals(
+        let interpreter::RunOutput {
+            result,
+            captured: newly_captured,
+            ..
+        } = interpreter::run(
             &compiled,
             value,
-            bindings,
-            context.run_options(remaining_timeout(deadline)),
-            &seed.capture_names,
-            interpreter::ExecutionPools::default(),
+            context
+                .new_run(remaining_timeout(deadline))
+                .env(interpreter::Env::Prebuilt(&env))
+                .bindings(bindings)
+                .capture(interpreter::Capture::Names(&seed.capture_names)),
         );
         result.map(|value| (value, newly_captured))
     })
@@ -1260,13 +1262,14 @@ where
     );
 
     let input_result = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
-        let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+        let interpreter::RunOutput { result, captured, .. } = interpreter::run(
             &before_compiled,
             value,
-            bindings,
-            engine.run_options(remaining_timeout(deadline)),
-            &before_names,
-            &mut hook,
+            engine
+                .new_run(remaining_timeout(deadline))
+                .bindings(bindings)
+                .capture(interpreter::Capture::Names(&before_names))
+                .hook(&mut hook),
         );
         result.map(|value| (value, captured))
     });
@@ -1292,13 +1295,14 @@ where
     } else {
         binding_values(&before_bindings)
     };
-    let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+    let interpreter::RunOutput { result, captured, .. } = interpreter::run(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
-        &aggregate_values,
-        engine.run_options(remaining_timeout(deadline)),
-        &seed.capture_names,
-        &mut hook,
+        engine
+            .new_run(remaining_timeout(deadline))
+            .bindings(&aggregate_values)
+            .capture(interpreter::Capture::Names(&seed.capture_names))
+            .hook(&mut hook),
     );
     match result {
         Ok(RuntimeValue::Array(values)) => {
@@ -1353,13 +1357,19 @@ where
     );
 
     let input_result = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
-        let (result, newly_captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+        let interpreter::RunOutput {
+            result,
+            captured: newly_captured,
+            ..
+        } = interpreter::run(
             &compiled,
             value,
-            bindings,
-            context.engine.run_options(remaining_timeout(deadline)),
-            &seed.capture_names,
-            &mut hook,
+            context
+                .engine
+                .new_run(remaining_timeout(deadline))
+                .bindings(bindings)
+                .capture(interpreter::Capture::Names(&seed.capture_names))
+                .hook(&mut hook),
         );
         result.map(|value| (value, newly_captured))
     });
@@ -1425,12 +1435,12 @@ where
             context.engine.host_functions.clone(),
         );
         return run_inputs(inputs, |value| {
-            interpreter::run_with_debug_hook_and_globals(
+            interpreter::run(
                 &compiled,
                 value,
-                context.engine.run_options(remaining_timeout(deadline)),
-                &mut hook,
+                context.engine.new_run(remaining_timeout(deadline)).hook(&mut hook),
             )
+            .result
         })
         .map_err(|error| {
             hook.notify_error(&error);
@@ -1457,12 +1467,12 @@ where
     let mut let_bindings: Vec<(Ident, RuntimeValue)> = Vec::new();
     let values = if let_names.is_empty() {
         run_inputs(inputs, |value| {
-            interpreter::run_with_debug_hook_and_globals(
+            interpreter::run(
                 &compiled,
                 value,
-                context.engine.run_options(remaining_timeout(deadline)),
-                &mut hook,
+                context.engine.new_run(remaining_timeout(deadline)).hook(&mut hook),
             )
+            .result
         })
         .map_err(|error| {
             hook.notify_error(&error);
@@ -1472,13 +1482,14 @@ where
         inputs
             .map(|input| {
                 match map_input_values(input, |v| {
-                    let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+                    let interpreter::RunOutput { result, captured, .. } = interpreter::run(
                         &compiled,
                         v,
-                        &[],
-                        context.engine.run_options(remaining_timeout(deadline)),
-                        &let_names,
-                        &mut hook,
+                        context
+                            .engine
+                            .new_run(remaining_timeout(deadline))
+                            .capture(interpreter::Capture::Names(&let_names))
+                            .hook(&mut hook),
                     );
                     if result.is_ok() {
                         let_bindings = captured;
@@ -1499,7 +1510,7 @@ where
     let program = program_after_nodes(before, after);
     let input = RuntimeValue::Array(Shared::new(values));
     let result = if let_names.is_empty() {
-        let run_options = context.engine.run_options(remaining_timeout(deadline));
+        let run = context.engine.new_run(remaining_timeout(deadline));
         let aggregate_compiled = compiler::compile_program_for_engine(
             &program,
             context.engine.token_arena,
@@ -1508,10 +1519,10 @@ where
             &context.engine.preresolved_module_vars,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());
-        interpreter::run_with_debug_hook_and_globals(&aggregate_compiled, input, run_options, &mut hook)
+        interpreter::run(&aggregate_compiled, input, run.hook(&mut hook)).result
     } else {
         let let_values = binding_values(&let_bindings);
-        let run_options = context.engine.run_options(remaining_timeout(deadline));
+        let run = context.engine.new_run(remaining_timeout(deadline));
         let aggregate_compiled = compiler::compile_program_for_engine_with_bindings(
             &program,
             context.engine.token_arena,
@@ -1522,15 +1533,7 @@ where
             &context.engine.preresolved_module_vars,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());
-        interpreter::run_with_debug_hook_and_globals_capturing_locals(
-            &aggregate_compiled,
-            input,
-            &let_values,
-            run_options,
-            &[],
-            &mut hook,
-        )
-        .0
+        interpreter::run(&aggregate_compiled, input, run.bindings(&let_values).hook(&mut hook)).result
     };
     match result {
         Ok(RuntimeValue::Array(values)) => Ok(Shared::unwrap_or_clone(values)),
