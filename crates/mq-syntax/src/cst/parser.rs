@@ -785,9 +785,12 @@ impl<'a> Parser<'a> {
 
             // After a value, attribute selectors (`.url`) and dict keys written without a gap
             // (`d.key`) are accepted.
+            // Trailing trivia is already consumed, so adjacency means no trivia token just before.
+            let touching = self.pos > 0 && !self.tokens[self.pos - 1].kind.is_trivia();
             match Selector::try_from(&*selector_token) {
                 Ok(selector) if selector.is_attribute_selector() => {}
-                _ if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Selector(_)))
+                _ if touching
+                    && matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Selector(_)))
                     && postfix_key(&selector_token).is_some() => {}
                 Err(error) => return Err(ParseError::UnknownSelector(error)),
                 Ok(_) => return Err(ParseError::UnexpectedToken(selector_token)),
