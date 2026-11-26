@@ -6083,3 +6083,12 @@ fn test_split_http_args_rejects_non_body() {
     ];
     assert!(split_http_args(&args).is_none());
 }
+
+#[test]
+fn test_builtin_lookup_cache_stays_bounded() {
+    for i in 0..BUILTIN_LOOKUP_CACHE_MAX * 2 {
+        assert!(get_builtin_functions(&Ident::new(&format!("no_such_builtin_{i}"))).is_none());
+    }
+    BUILTIN_LOOKUP_CACHE.with(|cache| assert!(cache.borrow().len() <= BUILTIN_LOOKUP_CACHE_MAX));
+    assert!(get_builtin_functions(&Ident::new("len")).is_some());
+}

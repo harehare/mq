@@ -6073,13 +6073,20 @@ thread_local! {
         std::cell::RefCell::new(FxHashMap::default());
 }
 
+/// Bounds the cache, which also holds misses for every user-defined name seen.
+const BUILTIN_LOOKUP_CACHE_MAX: usize = 4096;
+
 pub fn get_builtin_functions(name: &Ident) -> Option<&'static BuiltinFunction> {
     BUILTIN_LOOKUP_CACHE.with(|cache| {
         if let Some(found) = cache.borrow().get(name) {
             return *found;
         }
         let result = name.resolve_with(get_builtin_functions_by_str);
-        cache.borrow_mut().insert(*name, result);
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= BUILTIN_LOOKUP_CACHE_MAX {
+            cache.clear();
+        }
+        cache.insert(*name, result);
         result
     })
 }
