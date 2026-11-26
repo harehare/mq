@@ -2407,6 +2407,7 @@ dependencies = [
  "encoding_rs",
  "fantoccini",
  "futures",
+ "glob",
  "httpmock",
  "miette",
  "mq-lang",

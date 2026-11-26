@@ -23,6 +23,7 @@ dashmap = {workspace = true}
 encoding_rs = {workspace = true}
 fantoccini = {workspace = true, features = ["rustls-tls"]}
 futures = {workspace = true}
+glob = {workspace = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-lang = {workspace = true}
 mq-syntax = {workspace = true}
