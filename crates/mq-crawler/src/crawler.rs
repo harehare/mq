@@ -251,8 +251,11 @@ pub struct Crawler {
     include_patterns: Vec<glob::Pattern>,
     initial_domain: String,
     map: bool,
+    /// Shared handle to `urls.txt` so concurrent workers write whole lines.
+    map_writer: Arc<std::sync::Mutex<Option<fs::File>>>,
     max_pages: Option<usize>,
     max_response_bytes: Option<usize>,
+    resumed: bool,
     skip_extensions: bool,
     start_url: Url,
     mq_query: String,
@@ -354,6 +357,7 @@ impl Crawler {
         let to_visit = SegQueue::new();
         let visited = DashSet::new();
         let mut initial_result = CrawlResult::default();
+        let resumed = resume_checkpoint.is_some();
 
         if let Some(checkpoint) = resume_checkpoint {
             tracing::info!(
@@ -399,8 +403,10 @@ impl Crawler {
             crawl_delay: Duration::from_secs_f64(crawl_delay_secs),
             domain_last_request: Arc::new(DashMap::new()),
             map,
+            map_writer: Arc::new(std::sync::Mutex::new(None)),
             max_pages,
             max_response_bytes,
+            resumed,
             skip_extensions,
             start_url,
             mq_query: mq_query.unwrap_or("identity()".to_string()),
@@ -483,7 +489,28 @@ impl Crawler {
             }
         }
 
+        self.open_map_file()?;
         self.run_parallel().await
+    }
+
+    /// Opens `urls.txt` once before workers start. A fresh crawl truncates it;
+    /// a resumed crawl appends.
+    fn open_map_file(&self) -> Result<(), String> {
+        let (true, Some(dir)) = (self.map, &self.output_path) else {
+            return Ok(());
+        };
+        let mut options = fs::OpenOptions::new();
+        options.create(true);
+        if self.resumed {
+            options.append(true);
+        } else {
+            options.write(true).truncate(true);
+        }
+        let file = options
+            .open(Path::new(dir).join("urls.txt"))
+            .map_err(|e| format!("Failed to open urls.txt: {}", e))?;
+        *self.map_writer.lock().map_err(|e| e.to_string())? = Some(file);
+        Ok(())
     }
 
     async fn run_parallel(&mut self) -> Result<(), String> {
@@ -872,17 +899,14 @@ impl Crawler {
     }
 
     fn output_map_url(&self, url: &Url) -> Result<(), String> {
-        let Some(ref output_dir) = self.output_path else {
+        if self.output_path.is_none() {
             println!("{}", url);
             return Ok(());
-        };
-        std::fs::create_dir_all(output_dir).map_err(|e| format!("Failed to create {}: {}", output_dir, e))?;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(Path::new(output_dir).join("urls.txt"))
-            .map_err(|e| format!("Failed to open urls.txt: {}", e))?;
-        writeln!(file, "{}", url).map_err(|e| format!("Failed to write urls.txt: {}", e))
+        }
+        let mut guard = self.map_writer.lock().map_err(|e| e.to_string())?;
+        let file = guard.as_mut().ok_or_else(|| "urls.txt is not open".to_string())?;
+        file.write_all(format!("{}\n", url).as_bytes())
+            .map_err(|e| format!("Failed to write urls.txt: {}", e))
     }
 
     fn output_markdown(&self, url: &Url, markdown: &str) -> Result<(), String> {
@@ -1427,6 +1451,98 @@ mod tests {
         let base = format!("http://localhost:{}", port);
         assert_eq!(urls, vec![format!("{base}/"), format!("{base}/a"), format!("{base}/b")]);
         assert!(!out.path().join("localhost_index.md").exists());
+    }
+
+    #[tokio::test]
+    async fn test_fresh_map_truncates_existing_urls_file() {
+        let server = MockServer::start_async().await;
+        let port = server.address().port();
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body("<html><body></body></html>");
+            })
+            .await;
+
+        let out = tempfile::tempdir().unwrap();
+        std::fs::write(out.path().join("urls.txt"), "http://stale.invalid/\n").unwrap();
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            Url::parse(&format!("http://localhost:{}/", port)).unwrap(),
+            CrawlerOptions {
+                map: true,
+                output_path: Some(out.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crawler.run().await.unwrap();
+
+        let content = std::fs::read_to_string(out.path().join("urls.txt")).unwrap();
+        assert_eq!(content, format!("http://localhost:{}/\n", port));
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_map_writes_keep_whole_lines() {
+        let out = tempfile::tempdir().unwrap();
+        let crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            Url::parse("http://start.invalid/").unwrap(),
+            CrawlerOptions {
+                map: true,
+                output_path: Some(out.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crawler.open_map_file().unwrap();
+
+        let handles: Vec<_> = (0..64)
+            .map(|i| {
+                let c = crawler.clone();
+                std::thread::spawn(move || c.output_map_url(&Url::parse(&format!("http://start.invalid/{i}")).unwrap()))
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap().unwrap();
+        }
+
+        let content = std::fs::read_to_string(out.path().join("urls.txt")).unwrap();
+        assert_eq!(content.lines().count(), 64);
+        assert!(
+            content
+                .lines()
+                .all(|l| l.starts_with("http://start.invalid/") && l.matches("http").count() == 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resume_with_only_visited_pending_urls_terminates() {
+        let start_url = Url::parse("http://start.invalid/").unwrap();
+        let checkpoint = CrawlCheckpoint {
+            visited: vec![start_url.clone()],
+            frontier: vec![(start_url.clone(), 0)],
+            stats: CrawlResultStats::default(),
+        };
+        let mut crawler = Crawler::new(
+            HttpClient::new_reqwest(30.0).unwrap(),
+            start_url,
+            CrawlerOptions {
+                resume_checkpoint: Some(checkpoint),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), crawler.run())
+            .await
+            .expect("crawl hung")
+            .unwrap();
     }
 
     #[rstest]
