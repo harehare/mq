@@ -168,3 +168,26 @@ fn legacy_coverage_flags_still_combine_both_formats() {
     assert!(ws.path("lcov.info").exists());
     assert!(stdout(&output).trim_start().starts_with(['{', '[']));
 }
+
+#[test]
+fn oversized_test_name_fails_the_run() {
+    let ws = Workspace::new("oversized_name");
+    ws.write(
+        "big.mq",
+        &format!("def test_{}():\n  assert_eq(1, 1)\nend\n", "a".repeat(1025)),
+    );
+
+    let output = ws.run(&["big.mq"]);
+
+    assert!(!output.status.success(), "stdout: {}", stdout(&output));
+}
+
+#[test]
+fn valid_file_without_tests_still_succeeds() {
+    let ws = Workspace::new("no_tests");
+    ws.write("none.mq", "def helper(): 1 end\n");
+
+    let output = ws.run(&["none.mq"]);
+
+    assert!(output.status.success(), "stdout: {}", stdout(&output));
+}
