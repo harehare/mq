@@ -92,6 +92,8 @@ const INVALID: &[&str] = &[
     "fn(x: x",
     "x |",
     "| x",
+    "x .code",
+    ".code+lang .code+lang",
 ];
 
 #[test]
