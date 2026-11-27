@@ -12,9 +12,13 @@ env:
 
 jobs:
   docker:
-    name: Docker image
-    runs-on: ubuntu-latest
+    name: Docker image (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
       - name: Resolve image
         run: |
