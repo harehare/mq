@@ -261,7 +261,13 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
     let mut callee_locals = execution
         .limits
         .take_locals(callee_chunk.local_count, callee_chunk.captured_local_slots());
-    callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
+    let mut self_value = call_site.locals.get(SELF_SLOT);
+    if !Shared::ptr_eq(callee_chunks, chunks)
+        && let StackValue::Closure(closure) = self_value
+    {
+        self_value = StackValue::Value(into_runtime_value(StackValue::Closure(closure), chunks));
+    }
+    callee_locals.set(SELF_SLOT, self_value);
 
     let frame = bind_params(
         &callee_chunk.param_shape,

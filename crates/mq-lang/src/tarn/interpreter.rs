@@ -2675,6 +2675,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .last()
                         .is_some_and(|frame| matches!(frame.on_complete, Continuation::Push)) =>
             {
+                let value = rebase_returned_closure(value, frames, root_chunks);
                 execution.limits.pop_frame(
                     frames,
                     #[cfg(feature = "debugger")]
@@ -2686,6 +2687,21 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             FrameOutcome::TailEnter(frame) => return Ok(FrameSliceOutcome::TailEnter(frame)),
             FrameOutcome::Suspend(value) => return Ok(FrameSliceOutcome::Suspend(value)),
         }
+    }
+}
+
+/// Makes a bare closure returned by the top frame self-contained when the caller uses another
+/// chunk pool, since the caller would index it against its own pool.
+fn rebase_returned_closure(value: StackValue, frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> StackValue {
+    let StackValue::Closure(_) = value else {
+        return value;
+    };
+    let pool = |frame: &Frame| frame.chunks.clone().unwrap_or_else(|| Shared::clone(root_chunks));
+    match frames {
+        [.., caller, finished] if !Shared::ptr_eq(&pool(caller), &pool(finished)) => {
+            StackValue::Value(into_runtime_value(value, &pool(finished)))
+        }
+        _ => value,
     }
 }
 
