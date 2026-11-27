@@ -1,4 +1,4 @@
-name: GitHub Actions Security Analysis with zizmor 🌈
+name: Workflow security
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions: {}
 
 jobs:
   zizmor:
-    name: Run zizmor 🌈
+    name: zizmor
     runs-on: ubuntu-latest
     permissions:
       security-events: write # Required for upload-sarif (used by zizmor-action) to upload SARIF files.
@@ -26,5 +26,5 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run zizmor 🌈
+      - name: zizmor
         uses: zizmorcore/zizmor-action@v0.8.1
