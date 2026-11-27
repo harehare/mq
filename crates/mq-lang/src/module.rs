@@ -90,6 +90,9 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
     /// instead of reparsing its cached source.
     module_ast_cache: FxHashMap<ModuleId, Module>,
+    /// File modules parsed into a long-lived arena, shared by derived loaders. Set only for
+    /// sessions, whose queries all share one arena and would otherwise reparse every module.
+    persistent_modules: Option<Shared<SharedCell<FxHashMap<ModuleId, Module>>>>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
     #[cfg(feature = "http-import")]
@@ -188,9 +191,35 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "custom-builtin")]
             builtin_source: None,
             module_ast_cache: FxHashMap::default(),
+            persistent_modules: None,
             resolver,
             #[cfg(feature = "http-import")]
             http_depth: 0,
+        }
+    }
+
+    /// Keeps file modules parsed once for this loader and every loader derived from it.
+    pub(crate) fn keep_modules_parsed(&mut self) {
+        self.persistent_modules
+            .get_or_insert_with(|| Shared::new(SharedCell::new(FxHashMap::default())));
+    }
+
+    fn persistent_module(&self, module_id: ModuleId) -> Option<Module> {
+        let modules = self.persistent_modules.as_ref()?;
+        #[cfg(not(feature = "sync"))]
+        let modules = modules.borrow();
+        #[cfg(feature = "sync")]
+        let modules = modules.read().unwrap();
+        modules.get(&module_id).cloned()
+    }
+
+    fn remember_module(&self, module_id: ModuleId, module: &Module) {
+        if let Some(modules) = &self.persistent_modules {
+            #[cfg(not(feature = "sync"))]
+            let mut modules = modules.borrow_mut();
+            #[cfg(feature = "sync")]
+            let mut modules = modules.write().unwrap();
+            modules.insert(module_id, module.clone());
         }
     }
 
@@ -212,6 +241,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "custom-builtin")]
             builtin_source: self.builtin_source.clone(),
             module_ast_cache: FxHashMap::default(),
+            persistent_modules: self.persistent_modules.clone(),
             resolver: self.resolver.clone(),
             #[cfg(feature = "http-import")]
             http_depth: 0,
@@ -412,11 +442,18 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         if self.is_loaded(module_path) {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_path.to_string())));
         }
-        let program = self.resolve(module_path)?;
         let module_id = self.module_id_of(module_path);
+        if let Some(module) = self.persistent_module(module_id) {
+            self.loaded_modules.insert(module_id);
+            self.module_ast_cache.insert(module_id, module.clone());
+            return Ok(module);
+        }
+        let program = self.resolve(module_path)?;
         self.source_cache.insert(module_id, program.clone());
         let name = self.resolver.canonical_name(module_path).to_owned();
-        self.load_keyed(module_path, &name, &program, token_arena)
+        let module = self.load_keyed(module_path, &name, &program, token_arena)?;
+        self.remember_module(module_id, &module);
+        Ok(module)
     }
 
     /// Returns every file module this loader resolved, sorted by specifier.

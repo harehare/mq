@@ -36,7 +36,8 @@ pub struct Session<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sandboxed
 
 impl<T: ModuleResolver, IO: Io> Session<T, IO> {
     /// Starts a session that evaluates queries on `engine`.
-    pub fn new(engine: Engine<T, IO>) -> Self {
+    pub fn new(mut engine: Engine<T, IO>) -> Self {
+        engine.vm.module_loader.keep_modules_parsed();
         Self {
             engine,
             bindings: Shared::new(SharedCell::new(Vec::new())),
@@ -128,5 +129,31 @@ impl<T: ModuleResolver, IO: Io> Session<T, IO> {
             ),
             None => (String::new(), current.clone()),
         })
+    }
+}
+
+#[cfg(test)]
+mod import_growth_tests {
+    use super::*;
+
+    #[test]
+    fn evals_after_an_import_do_not_reparse_the_module() {
+        let mut engine = crate::DefaultEngine::default();
+        engine.load_builtin_module();
+        let mut session = Session::new(engine);
+        session.eval("import \"csv\"", crate::null_input().into_iter()).unwrap();
+        let tokens = |session: &Session| {
+            #[cfg(not(feature = "sync"))]
+            let arena = session.engine.token_arena.borrow();
+            #[cfg(feature = "sync")]
+            let arena = session.engine.token_arena.read().unwrap();
+            arena.len()
+        };
+        session.eval("1 + 1", crate::null_input().into_iter()).unwrap();
+        let before = tokens(&session);
+        for _ in 0..100 {
+            session.eval("1 + 1", crate::null_input().into_iter()).unwrap();
+        }
+        assert!(tokens(&session) - before < 100 * 16);
     }
 }
