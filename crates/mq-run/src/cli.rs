@@ -3552,13 +3552,15 @@ impl Cli {
         flate2::read::GzDecoder::new(&raw[..])
             .take(self.max_decompressed_size.saturating_add(1))
             .read_to_end(&mut decompressed)
-            .into_diagnostic()?;
+            .into_diagnostic()
+            .wrap_err_with(|| ReadFailure(file.to_path_buf()))?;
         if decompressed.len() as u64 > self.max_decompressed_size {
             return Err(miette!(
                 "decompressed size of {} exceeds the limit of {} bytes (see --max-decompressed-size)",
                 file.display(),
                 self.max_decompressed_size
-            ));
+            )
+            .wrap_err(ReadFailure(file.to_path_buf())));
         }
 
         let fmt = self

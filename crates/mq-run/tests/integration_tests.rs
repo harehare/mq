@@ -3032,7 +3032,11 @@ fn test_gzip_max_decompressed_size(#[case] name: &str, #[case] size: usize, #[ca
         .expect("Failed to run mq");
     assert_eq!(output.status.success(), ok);
     if !ok {
-        assert!(String::from_utf8_lossy(&output.stderr).contains("exceeds the limit"));
+        // miette wraps long messages (e.g. Windows temp paths), so compare without line breaks.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(stderr.contains("exceeds the limit"), "{stderr}");
+        assert_eq!(output.status.code(), Some(2));
     }
 }
 
