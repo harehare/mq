@@ -1,0 +1,104 @@
+name: Post-release smoke
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify (e.g. v0.10.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  docker:
+    name: Docker image (smoke + scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Resolve image
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY}:${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Pull image
+        run: docker pull "$IMAGE"
+
+      - name: Check version and run a query
+        run: |
+          out=$(docker run --rm "$IMAGE" --version)
+          echo "$out"
+          grep -F "${TAG#v}" <<< "$out"
+          out=$(printf '# Hello\n\nworld\n' | docker run --rm -i "$IMAGE" '.h1 | to_text()')
+          echo "$out"
+          test "$out" = "Hello"
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  install-script:
+    name: install.sh (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the latest release, which is TAG once it is published.
+      - name: Install with scripts/install.sh
+        env:
+          MQ_HOME: ${{ runner.temp }}/mq-bin
+        run: bash scripts/install.sh
+
+      - name: Check version and run a query
+        env:
+          MQ_HOME: ${{ runner.temp }}/mq-bin
+        run: |
+          out=$("$MQ_HOME/mq" --version)
+          echo "$out"
+          grep -F "${TAG#v}" <<< "$out"
+          out=$(printf '# Hello\n\nworld\n' | "$MQ_HOME/mq" '.h1 | to_text()')
+          echo "$out"
+          test "$out" = "Hello"
+
+  npm:
+    name: npm mq-nodejs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+
+      - name: Install published package
+        run: |
+          mkdir smoke && cd smoke
+          npm init -y > /dev/null
+          npm install "mq-nodejs@${TAG#v}"
+
+      - name: Run a query
+        working-directory: smoke
+        run: |
+          node -e '
+            const { run } = require("mq-nodejs");
+            run(".h1 | to_text()", "# Hello\n\nworld\n").then((out) => {
+              console.log(out);
+              if (out.trim() !== "Hello") process.exit(1);
+            });
+          '
