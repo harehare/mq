@@ -236,6 +236,15 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
                 std::mem::swap(args, &mut combined);
                 execution.limits.recycle_stack(combined);
             }
+            if !Shared::ptr_eq(&vc.chunks, chunks) {
+                // A closure from another chunk pool (e.g. an earlier session query) is indexed
+                // against its own chunks, so the callee cannot resolve a bare stack closure.
+                for arg in args.iter_mut() {
+                    if let StackValue::Closure(closure) = arg {
+                        *arg = StackValue::Value(into_runtime_value(StackValue::Closure(closure.clone()), chunks));
+                    }
+                }
+            }
             (
                 &vc.chunks,
                 vc.chunk_index,
