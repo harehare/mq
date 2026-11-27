@@ -92,6 +92,13 @@ mq --arg who world -I null 's"hi ${who}"'            # hi world
 
 `--arg`, `--argjson`, `--rawfile`, `--slurpfile` and `--args` pass values into the query, as in jq. List style, link style and other Markdown output options (`--list-style`, `--link-url-style`, `--link-title-style`) apply when the output is Markdown.
 
+Files ending in `.gz` are decompressed before parsing. Decompressed output larger than 1 GiB is rejected, which guards against compression bombs. Raise or lower the limit with `--max-decompressed-size <BYTES>`:
+
+```sh
+mq -I csv '.[] | .name' data.csv.gz
+mq --max-decompressed-size 4294967296 '.h1' big.md.gz   # allow up to 4 GiB
+```
+
 ### Exit status
 
 `mq` exits non-zero on a syntax or runtime error. With `-e` / `--exit-status` the exit code follows the result, as in jq: 0 for a truthy value, 1 for `false` or `none`, 4 when there is no result.
