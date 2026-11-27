@@ -175,6 +175,8 @@ mod import_cache_tests {
         assert!(tokens(&session) - before < 100 * 16);
     }
 
+    // The debugger feature keeps plain queries in the engine's arena.
+    #[cfg(not(feature = "debugger"))]
     #[test]
     fn plain_eval_does_not_keep_modules_parsed() {
         let mut engine = crate::DefaultEngine::default();
@@ -188,6 +190,7 @@ mod import_cache_tests {
         assert_eq!(tokens_of(&engine), before);
     }
 
+    #[cfg(not(feature = "debugger"))]
     fn tokens_of(engine: &crate::DefaultEngine) -> usize {
         #[cfg(not(feature = "sync"))]
         let arena = engine.token_arena.borrow();
