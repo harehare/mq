@@ -64,9 +64,18 @@ impl fmt::Display for Markdown {
 }
 
 /// The line where the block before a node ends. An item that ends in a fence without a closing one
-/// ends at the start of the line after it, which is not yet a line of its own.
-fn last_line(position: &Position, node: Option<&Node>) -> u32 {
-    if matches!(node, Some(Node::List(_))) && position.end.column == 1 && position.end.line > position.start.line {
+/// ends at the start of the line after it, which is not yet a line of its own. A table's delimiter
+/// row is positioned at column one of its own line, so an item whose end is that of such a row is not
+/// such an item.
+pub(crate) fn last_line(position: &Position, node: Option<&Node>) -> u32 {
+    let ends_before_line = match node {
+        Some(Node::List(item)) => !matches!(
+            item.values.last(),
+            Some(Node::TableAlign(align)) if align.position.as_ref().is_some_and(|pos| pos.end == position.end)
+        ),
+        _ => false,
+    };
+    if ends_before_line && position.end.column == 1 && position.end.line > position.start.line {
         position.end.line - 1
     } else {
         position.end.line
@@ -430,6 +439,22 @@ mod tests {
 
     use crate::{ListStyle, TitleSurroundStyle, UrlSurroundStyle};
 
+    #[test]
+    fn removing_a_trailing_fence_keeps_a_quoted_table_and_the_next_item_apart() {
+        let mut markdown = "> - | a |\n>   | - |\n>   ```\n>   code\n> - next"
+            .parse::<super::Markdown>()
+            .unwrap();
+        let Some(super::Node::Blockquote(quote)) = markdown.nodes.first_mut() else {
+            panic!("expected a block quote");
+        };
+        let Some(super::Node::List(item)) = quote.values.first_mut() else {
+            panic!("expected a list item");
+        };
+        assert!(matches!(item.values.pop(), Some(super::Node::Code(_))));
+        let rendered = markdown.to_string();
+        assert!(rendered.ends_with("\n> - next\n"), "{rendered:?}");
+    }
+
     use super::*;
 
     #[rstest]
@@ -438,6 +463,46 @@ mod tests {
     #[case::header("# Title\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
     #[case::list_nested_sublist_after_blank_line_stays_nested("1.  foo\n\n    - bar", 2, "1. foo\n\n   - bar\n")]
+    #[case::quote_nested_item_with_later_child_adds_no_blank_line(
+        "> a\n> - - b\n>   # c",
+        1,
+        "> a\n> - - b\n>   # c\n"
+    )]
+    #[case::quote_item_ending_in_table_adds_no_blank_line(
+        "> - | a |\n>   | - |\n>\n> p",
+        1,
+        "> - | a |\n>   | - |\n> \n> p\n"
+    )]
+    #[case::quote_item_after_unclosed_fence_starts_on_its_own_line(
+        "> - ```\n>   code\n> - - inner\n>   # heading",
+        1,
+        "> - ```\n>   code\n>   ```\n> - - inner\n>   # heading\n"
+    )]
+    #[case::quote_plain_item_after_unclosed_fence(
+        "> - ```\n>   code\n> - plain",
+        1,
+        "> - ```\n>   code\n>   ```\n> - plain\n"
+    )]
+    #[case::quote_ordered_item_after_unclosed_fence(
+        "> 1. ```\n>    code\n> 2. - inner\n>    # h",
+        1,
+        "> 1. ```\n>    code\n>    ```\n> 2. - inner\n>    # h\n"
+    )]
+    #[case::nested_quote_item_after_unclosed_fence(
+        "> > - ```\n> >   code\n> > - - inner\n> >   # heading",
+        1,
+        "> > - ```\n> >   code\n> >   ```\n> > - - inner\n> >   # heading\n"
+    )]
+    #[case::deep_quote_item_after_unclosed_fence(
+        "> - a\n>   - ```\n>     code\n>   - - inner\n>     # h",
+        1,
+        "> - a\n>   - ```\n>     code\n>     ```\n>   - - inner\n>     # h\n"
+    )]
+    #[case::item_after_unclosed_fence_at_top_level(
+        "- ```\n  code\n- - inner\n  # heading",
+        3,
+        "- ```\n  code\n  ```\n- - inner\n  # heading\n"
+    )]
     #[case::list_ordered_nested_in_ordered_uses_own_marker_width(
         "10.  foo\n\n     1. bar",
         2,
