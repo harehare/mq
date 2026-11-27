@@ -189,6 +189,37 @@ pub fn load_and_run_mqc(input: &MqcInput) {
     }
 }
 
+/// Compiles `context`'s script to `.mqc`, then checks that running the loaded file gives the
+/// result of evaluating the source. Scripts that do not compile are skipped.
+pub fn roundtrip_mqc(context: &Context) {
+    let script = context.to_script();
+    let new_engine = || {
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.set_timeout(std::time::Duration::from_millis(100));
+        engine.set_max_call_stack_depth(64);
+        engine
+    };
+    let input = || mq_lang::parse_markdown_input("# a\n\n## b\n").unwrap().into_iter();
+    let outcome = |result: mq_lang::MqResult| match result {
+        Ok(values) => format!("{values:?}"),
+        Err(error) => format!("error: {error}"),
+    };
+
+    let Ok(mqc) = new_engine().precompile(&script, &[]) else {
+        return;
+    };
+    let expected = outcome(new_engine().eval(&script, input()));
+    let mut engine = new_engine();
+    let program = engine.load(&mqc).expect("a freshly compiled .mqc loads");
+    let actual = outcome(engine.eval_compiled(&program, input()));
+    // A timeout depends on where the run was when time ran out.
+    if expected.contains("timeout") || actual.contains("timeout") {
+        return;
+    }
+    assert_eq!(actual, expected, "script: {script}");
+}
+
 /// Markup that the `markdown` targets join into documents, so that they reach the block and inline
 /// rules that random bytes seldom do.
 const MARKDOWN_TOKENS: &[&str] = &[
