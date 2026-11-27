@@ -60,3 +60,17 @@ doc = false
 name = "stdlib"
 path = "fuzz_targets/stdlib.rs"
 test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "grammar"
+path = "fuzz_targets/grammar.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "markdown_roundtrip"
+path = "fuzz_targets/markdown_roundtrip.rs"
+test = false

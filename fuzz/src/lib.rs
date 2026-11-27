@@ -1,9 +1,16 @@
 //! Shared input generation for the fuzz targets: `interpreter` feeds generated scripts
 //! through [`mq_lang::DefaultEngine`], `mqc` loads corrupted `.mqc` files, and `markdown` and
-//! `markdown_scaling` read and render generated Markdown and MDX.
+//! `markdown_scaling` read and render generated Markdown and MDX. `grammar` and `markdown_roundtrip`
+//! build well-formed programs and documents from a grammar instead.
 
 use arbitrary::Arbitrary;
 use itertools::Itertools;
+
+mod grammar;
+mod markdown_tree;
+
+pub use grammar::{Program, run_program};
+pub use markdown_tree::{Document, check_round_trip};
 
 #[derive(Debug, Clone, Arbitrary)]
 pub enum Expr {
@@ -494,6 +501,39 @@ pub fn run_stdlib(input: &StdlibInput) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fills a buffer from a fixed seed, so that the generated inputs are the same on every run.
+    fn bytes(seed: u64) -> Vec<u8> {
+        let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        (0..4096)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state >> 24) as u8
+            })
+            .collect()
+    }
+
+    /// Generated programs must parse and agree between the direct and compiled paths.
+    #[test]
+    fn test_generated_programs_parse_and_agree() {
+        for seed in 0..300 {
+            let data = bytes(seed);
+            let program = Program::arbitrary(&mut arbitrary::Unstructured::new(&data)).unwrap();
+            run_program(&program);
+        }
+    }
+
+    /// Generated documents must read and write to a fixed point.
+    #[test]
+    fn test_generated_documents_round_trip() {
+        for seed in 0..300 {
+            let data = bytes(seed);
+            let document = Document::arbitrary(&mut arbitrary::Unstructured::new(&data)).unwrap();
+            check_round_trip(&document);
+        }
+    }
 
     /// Every call must compile and run on ordinary and hostile text without panicking.
     #[test]
