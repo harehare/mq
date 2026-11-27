@@ -328,6 +328,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     /// Replaces the resolver search paths.
     pub fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
         self.resolver.set_search_paths(paths);
+        if let Some(modules) = &self.persistent_modules {
+            #[cfg(not(feature = "sync"))]
+            modules.borrow_mut().clear();
+            #[cfg(feature = "sync")]
+            modules.write().unwrap().clear();
+        }
     }
 
     /// Parses `code` and registers it as module `module_name`.
