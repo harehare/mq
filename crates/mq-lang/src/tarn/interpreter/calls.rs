@@ -722,8 +722,8 @@ fn resume_bind_params(
         arg_count,
         param_count,
     } = state;
-    for index in next_index..shape.bindings.len() {
-        match &shape.bindings[index] {
+    for (index, binding) in shape.bindings.iter().enumerate().skip(next_index) {
+        match binding {
             ParamBinding::Variadic(slot) => {
                 let collected: Vec<RuntimeValue> = remaining_args
                     .drain(..)
