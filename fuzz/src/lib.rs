@@ -214,7 +214,7 @@ pub fn roundtrip_mqc(context: &Context) {
     let program = engine.load(&mqc).expect("a freshly compiled .mqc loads");
     let actual = outcome(engine.eval_compiled(&program, input()));
     // A timeout depends on where the run was when time ran out.
-    if expected.contains("timeout") || actual.contains("timeout") {
+    if expected.contains("timed out") || actual.contains("timed out") {
         return;
     }
     assert_eq!(actual, expected, "script: {script}");
