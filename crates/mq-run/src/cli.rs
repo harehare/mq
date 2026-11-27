@@ -157,6 +157,11 @@ pub struct Cli {
     #[arg(long, value_name = "FORMAT", num_args = 0..=1, default_missing_value = "text")]
     profile: Option<ProfileFormat>,
 
+    /// Print the hottest source lines to stderr (`profile-lines` feature builds only).
+    #[cfg(feature = "profile-lines")]
+    #[arg(long, default_value_t = false)]
+    profile_lines: bool,
+
     /// Print the Tarn VM bytecode to stdout and exit without running the program or reading
     /// input. Pass a format as `--dump-bytecode=json` (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
@@ -3179,7 +3184,7 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "profile")]
-        let fn_profile = self.profile.map(|_| mq_lang::profile::ProfileScope::start());
+        let fn_profile = self.start_profile();
         let mut cache = ProgramCache::default();
         let index = self.program_index(&mut engine, &mut cache, query, first_file)?;
         let runtime_values = engine
@@ -3210,7 +3215,7 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "profile")]
-        let fn_profile = self.profile.map(|_| mq_lang::profile::ProfileScope::start());
+        let fn_profile = self.start_profile();
 
         let runtime_values = if self.output.update {
             let results = engine
@@ -3260,7 +3265,7 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "profile")]
-        let fn_profile = self.profile.map(|_| mq_lang::profile::ProfileScope::start());
+        let fn_profile = self.start_profile();
         let input = self.resolve_input(file, content)?;
         let runtime_values = engine
             .eval_compiled(&cache.programs[index].1, input.into_iter())
@@ -3275,15 +3280,31 @@ impl Cli {
     }
 
     #[cfg(feature = "profile")]
+    fn start_profile(&self) -> Option<mq_lang::profile::ProfileScope> {
+        #[cfg(feature = "profile-lines")]
+        if self.profile_lines {
+            return Some(mq_lang::profile::ProfileScope::start().with_lines());
+        }
+        self.profile.map(|_| mq_lang::profile::ProfileScope::start())
+    }
+
+    #[cfg(feature = "profile")]
     fn emit_profile(&self, scope: Option<mq_lang::profile::ProfileScope>) {
-        let (Some(scope), Some(format)) = (scope, self.profile) else {
+        let Some(scope) = scope else {
             return;
         };
         let profile = scope.finish();
-        match format {
-            ProfileFormat::Text => eprint!("{profile}"),
-            ProfileFormat::Folded => eprint!("{}", profile.to_folded()),
-            ProfileFormat::Json => eprintln!("{}", profile.to_json()),
+        if let Some(format) = self.profile {
+            match format {
+                ProfileFormat::Text => eprint!("{profile}"),
+                ProfileFormat::Folded => eprint!("{}", profile.to_folded()),
+                ProfileFormat::Json => eprintln!("{}", profile.to_json()),
+            }
+        }
+        #[cfg(feature = "profile-lines")]
+        if self.profile_lines {
+            let query = self.get_query().ok();
+            eprint!("{}", profile.format_lines(20, query.as_deref()));
         }
     }
 

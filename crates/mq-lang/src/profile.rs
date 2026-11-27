@@ -30,8 +30,27 @@ struct Entry {
     child_time: Duration,
 }
 
+/// Line attribution state. Time goes to the line of the instruction running when an
+/// interval starts, so callee and native builtin time is charged to the line that ran it.
+struct LineState {
+    token: Option<crate::ast::TokenId>,
+    current: Option<(u32, u32)>,
+    since: Instant,
+    map: HashMap<(u32, u32), (u64, Duration)>,
+}
+
+impl LineState {
+    fn flush(&mut self, now: Instant) {
+        if let Some(key) = self.current.take() {
+            self.map.entry(key).or_default().1 += now.saturating_duration_since(self.since);
+        }
+        self.token = None;
+    }
+}
+
 #[derive(Default)]
 struct State {
+    lines: Option<LineState>,
     nodes: Vec<Node>,
     index: HashMap<(u32, Ident), u32>,
     stack: Vec<Entry>,
@@ -83,6 +102,19 @@ impl State {
     }
 }
 
+/// Time attributed to one source line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineProfile {
+    /// Raw id of the module the line belongs to. `0` is the top-level query.
+    pub module_id: u32,
+    /// One-based line number.
+    pub line: u32,
+    /// Times execution moved onto this line.
+    pub hits: u64,
+    /// Time spent running instructions of this line, including native builtins it calls.
+    pub time: Duration,
+}
+
 /// Aggregated timing of one function.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionProfile {
@@ -101,6 +133,7 @@ pub struct FunctionProfile {
 pub struct Profile {
     functions: Vec<FunctionProfile>,
     stacks: Vec<(Vec<String>, Duration)>,
+    lines: Vec<LineProfile>,
 }
 
 impl Profile {
@@ -112,6 +145,35 @@ impl Profile {
     /// Returns the sum of self time over all functions.
     pub fn total_time(&self) -> Duration {
         self.functions.iter().map(|f| f.self_time).sum()
+    }
+
+    /// Returns lines ordered by descending time. Empty unless line profiling was enabled.
+    pub fn lines(&self) -> &[LineProfile] {
+        &self.lines
+    }
+
+    /// Renders the `top` hottest lines. `query` is the top-level query text, shown beside
+    /// module `0` lines.
+    pub fn format_lines(&self, top: usize, query: Option<&str>) -> String {
+        let all: f64 = self.lines.iter().map(|l| l.time.as_secs_f64()).sum();
+        let mut out = format!("{:<14} {:>10} {:>12} {:>6}  source\n", "line", "hits", "time", "%");
+        for l in self.lines.iter().take(top) {
+            let pct = if all > 0.0 {
+                l.time.as_secs_f64() / all * 100.0
+            } else {
+                0.0
+            };
+            let (place, text) = if l.module_id == 0 {
+                let text = query
+                    .and_then(|q| q.lines().nth(l.line.saturating_sub(1) as usize))
+                    .map_or("", str::trim);
+                (format!("query:{}", l.line), text)
+            } else {
+                (format!("module{}:{}", l.module_id, l.line), "")
+            };
+            let _ = writeln!(out, "{place:<14} {:>10} {:>12.3?} {pct:>5.1}%  {text}", l.hits, l.time);
+        }
+        out
     }
 
     /// Renders Brendan Gregg's folded stacks (`a;b;c <microseconds>`), accepted by `inferno`
@@ -191,6 +253,20 @@ impl ProfileScope {
         }
     }
 
+    /// Also attributes time to source lines. Requires the `profile-lines` feature to have an effect.
+    #[must_use]
+    pub fn with_lines(self) -> Self {
+        with_state(|state| {
+            state.lines = Some(LineState {
+                token: None,
+                current: None,
+                since: Instant::now(),
+                map: HashMap::new(),
+            });
+        });
+        self
+    }
+
     /// Stops this scope, restores a possible parent scope, and returns the result.
     pub fn finish(mut self) -> Profile {
         let state = ACTIVE.with(|active| active.replace(self.previous.take()));
@@ -215,6 +291,28 @@ fn build(mut state: State) -> Profile {
     while !state.stack.is_empty() {
         state.exit();
     }
+    let mut lines: Vec<LineProfile> = state
+        .lines
+        .take()
+        .map(|mut l| {
+            l.flush(Instant::now());
+            l.map
+                .into_iter()
+                .map(|((module_id, line), (hits, time))| LineProfile {
+                    module_id,
+                    line,
+                    hits,
+                    time,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    lines.sort_by(|a, b| {
+        b.time
+            .cmp(&a.time)
+            .then(a.module_id.cmp(&b.module_id))
+            .then(a.line.cmp(&b.line))
+    });
     let mut by_name: HashMap<Ident, FunctionProfile> = HashMap::new();
     for node in &state.nodes {
         let entry = by_name.entry(node.name).or_insert_with(|| FunctionProfile {
@@ -245,7 +343,11 @@ fn build(mut state: State) -> Profile {
         })
         .collect();
     stacks.sort();
-    Profile { functions, stacks }
+    Profile {
+        functions,
+        stacks,
+        lines,
+    }
 }
 
 fn with_state(f: impl FnOnce(&mut State)) {
@@ -266,6 +368,45 @@ pub(crate) fn enter(name: Option<Ident>, count_call: bool) {
 #[inline]
 pub(crate) fn exit() {
     with_state(State::exit);
+}
+
+/// Moves line attribution to `token`'s line. Called before each instruction.
+#[cfg(feature = "profile-lines")]
+#[inline]
+pub(crate) fn line_tick(token: Option<crate::ast::TokenId>, arena: &crate::TokenArena) {
+    with_state(|state| {
+        let Some(lines) = state.lines.as_mut() else {
+            return;
+        };
+        if token == lines.token && lines.current.is_some() {
+            return;
+        }
+        lines.token = token;
+        let key = token.map(|id| crate::with_token(arena, id, |t| (t.module_id.raw(), t.range.start.line)));
+        if key == lines.current {
+            return;
+        }
+        let now = Instant::now();
+        if let Some(previous) = lines.current {
+            lines.map.entry(previous).or_default().1 += now.saturating_duration_since(lines.since);
+        }
+        if let Some(key) = key {
+            lines.map.entry(key).or_default().0 += 1;
+        }
+        lines.current = key;
+        lines.since = now;
+    });
+}
+
+/// Closes the open line interval so time outside the VM is not charged to a line.
+#[cfg(feature = "profile-lines")]
+#[inline]
+pub(crate) fn line_flush() {
+    with_state(|state| {
+        if let Some(lines) = state.lines.as_mut() {
+            lines.flush(Instant::now());
+        }
+    });
 }
 
 /// Returns the current stack depth, or 0 when inactive.

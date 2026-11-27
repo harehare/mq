@@ -18,6 +18,7 @@ debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-d
 debug-trace = ["debugger", "mq-lang/debug-trace"]
 vm-profile = ["mq-lang/vm-profile"]
 profile = ["mq-lang/profile"]
+profile-lines = ["profile", "mq-lang/profile-lines"]
 default = ["use_mimalloc", "http-import", "html-parse", "watch"]
 http-import = ["mq-lang/http-import-ureq"]
 tiktoken = ["mq-lang/tiktoken"]

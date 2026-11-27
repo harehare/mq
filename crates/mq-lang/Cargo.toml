@@ -78,6 +78,8 @@ debug-trace = ["debugger"]
 # Enables execution-count profiling for Tarn bytecode instructions. This is intended for
 # development diagnostics and is deliberately excluded from normal builds.
 vm-profile = []
+# Adds per-line time attribution (`ProfileScope::with_lines`). Costs one lookup per VM instruction.
+profile-lines = ["profile"]
 # Enables per-function wall-clock profiling (`mq_lang::profile`). Excluded from normal builds.
 profile = []
 # Use the browser clock for VM deadlines when targeting WebAssembly.

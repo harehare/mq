@@ -1052,6 +1052,8 @@ fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
     );
     #[cfg(feature = "profile")]
     profile::truncate(profile_mark);
+    #[cfg(feature = "profile-lines")]
+    profile::line_flush();
     match outcome {
         DriveOutcome::Completed(value, locals) => (Ok(value), locals),
         DriveOutcome::Suspended(_) => yield_outside_generator(
@@ -1609,6 +1611,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 effect_probe = Some((ip, stack.len()));
             }
             ip += 1;
+            #[cfg(feature = "profile-lines")]
+            profile::line_tick(chunk.token_at(ip - 1), &execution.token_arena);
             #[cfg(feature = "vm-profile")]
             if op.is_profiled_instruction() {
                 vm_profile::record_opcode(op.profile_name());
