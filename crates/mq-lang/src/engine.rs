@@ -205,6 +205,16 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.vm.io = Shared::clone(&io);
     }
 
+    /// Returns the display name of the module with raw id `module_id`, as recorded by the
+    /// line profiler.
+    #[cfg(feature = "profile-lines")]
+    pub fn profile_module_name(&self, module_id: u32) -> String {
+        self.vm
+            .module_loader
+            .module_name(crate::ModuleId::new(module_id))
+            .into_owned()
+    }
+
     /// Set search paths for module loading.
     ///
     /// These paths will be searched when loading external modules

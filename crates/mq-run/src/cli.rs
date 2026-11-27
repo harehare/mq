@@ -3194,7 +3194,7 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, &None);
         #[cfg(feature = "profile")]
-        self.emit_profile(fn_profile);
+        self.emit_profile(fn_profile, &engine);
 
         self.emit_results(runtime_values, grep_input, &None)
     }
@@ -3229,7 +3229,7 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
         #[cfg(feature = "profile")]
-        self.emit_profile(fn_profile);
+        self.emit_profile(fn_profile, engine);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -3273,7 +3273,7 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
         #[cfg(feature = "profile")]
-        self.emit_profile(fn_profile);
+        self.emit_profile(fn_profile, engine);
         let matches = self.output.paginate(runtime_values.compact());
         self.record_exit_status(&matches);
         Ok(matches.len())
@@ -3289,7 +3289,7 @@ impl Cli {
     }
 
     #[cfg(feature = "profile")]
-    fn emit_profile(&self, scope: Option<mq_lang::profile::ProfileScope>) {
+    fn emit_profile(&self, scope: Option<mq_lang::profile::ProfileScope>, engine: &mq_lang::DefaultEngine) {
         let Some(scope) = scope else {
             return;
         };
@@ -3304,7 +3304,10 @@ impl Cli {
         #[cfg(feature = "profile-lines")]
         if self.profile_lines {
             let query = self.get_query().ok();
-            eprint!("{}", profile.format_lines(20, query.as_deref()));
+            eprint!(
+                "{}",
+                profile.format_lines(20, query.as_deref(), |id| engine.profile_module_name(id))
+            );
         }
     }
 

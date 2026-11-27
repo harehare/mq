@@ -153,10 +153,10 @@ impl Profile {
     }
 
     /// Renders the `top` hottest lines. `query` is the top-level query text, shown beside
-    /// module `0` lines.
-    pub fn format_lines(&self, top: usize, query: Option<&str>) -> String {
+    /// module `0` lines, and `module_name` resolves other module ids.
+    pub fn format_lines(&self, top: usize, query: Option<&str>, module_name: impl Fn(u32) -> String) -> String {
         let all: f64 = self.lines.iter().map(|l| l.time.as_secs_f64()).sum();
-        let mut out = format!("{:<14} {:>10} {:>12} {:>6}  source\n", "line", "hits", "time", "%");
+        let mut out = format!("{:<28} {:>10} {:>12} {:>6}  source\n", "line", "hits", "time", "%");
         for l in self.lines.iter().take(top) {
             let pct = if all > 0.0 {
                 l.time.as_secs_f64() / all * 100.0
@@ -169,9 +169,9 @@ impl Profile {
                     .map_or("", str::trim);
                 (format!("query:{}", l.line), text)
             } else {
-                (format!("module{}:{}", l.module_id, l.line), "")
+                (format!("{}:{}", module_name(l.module_id), l.line), "")
             };
-            let _ = writeln!(out, "{place:<14} {:>10} {:>12.3?} {pct:>5.1}%  {text}", l.hits, l.time);
+            let _ = writeln!(out, "{place:<28} {:>10} {:>12.3?} {pct:>5.1}%  {text}", l.hits, l.time);
         }
         out
     }
