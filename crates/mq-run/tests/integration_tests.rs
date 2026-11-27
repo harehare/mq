@@ -3009,6 +3009,33 @@ fn test_gzip_invalid_content_fails_cleanly() {
     cmd.arg("self").arg(&file_path).assert().failure();
 }
 
+#[rstest]
+#[case::within_limit("gzip_limit_ok.txt.gz", 1024, 1024, true)]
+#[case::one_over_limit("gzip_limit_over.txt.gz", 1025, 1024, false)]
+#[case::bomb("gzip_limit_bomb.txt.gz", 50 * 1024 * 1024, 1024 * 1024, false)]
+fn test_gzip_max_decompressed_size(#[case] name: &str, #[case] size: usize, #[case] limit: u64, #[case] ok: bool) {
+    let (_, file_path) = create_gzip_file(name, &"0".repeat(size));
+    let file_path_clone = file_path.clone();
+    defer! {
+        std::fs::remove_file(&file_path_clone).ok();
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let output = cmd
+        .arg("--max-decompressed-size")
+        .arg(limit.to_string())
+        .arg("-I")
+        .arg("text")
+        .arg("len")
+        .arg(&file_path)
+        .output()
+        .expect("Failed to run mq");
+    assert_eq!(output.status.success(), ok);
+    if !ok {
+        assert!(String::from_utf8_lossy(&output.stderr).contains("exceeds the limit"));
+    }
+}
+
 #[test]
 fn test_watch_reruns_on_file_change() -> Result<(), Box<dyn std::error::Error>> {
     use assert_cmd::prelude::*;

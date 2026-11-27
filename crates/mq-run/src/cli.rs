@@ -53,6 +53,9 @@ struct ProgramCache {
     file_vars_set: bool,
 }
 
+/// Default limit on the decompressed size of a `.gz` input (1 GiB).
+const DEFAULT_MAX_DECOMPRESSED_SIZE: u64 = 1 << 30;
+
 fn parse_timeout(value: &str) -> Result<Duration, String> {
     let secs = value
         .parse::<f64>()
@@ -121,6 +124,10 @@ pub struct Cli {
     /// Must be a finite positive number. No timeout by default.
     #[arg(long, value_name = "SECONDS", value_parser = parse_timeout, allow_negative_numbers = true)]
     timeout: Option<Duration>,
+
+    /// Maximum decompressed size in bytes of a `.gz` input.
+    #[arg(long, value_name = "BYTES", default_value_t = DEFAULT_MAX_DECOMPRESSED_SIZE)]
+    max_decompressed_size: u64,
 
     /// Include VM frames in uncaught runtime errors.
     #[arg(long, default_value_t = false)]
@@ -3543,8 +3550,16 @@ impl Cli {
             .wrap_err_with(|| ReadFailure(file.to_path_buf()))?;
         let mut decompressed = Vec::new();
         flate2::read::GzDecoder::new(&raw[..])
+            .take(self.max_decompressed_size.saturating_add(1))
             .read_to_end(&mut decompressed)
             .into_diagnostic()?;
+        if decompressed.len() as u64 > self.max_decompressed_size {
+            return Err(miette!(
+                "decompressed size of {} exceeds the limit of {} bytes (see --max-decompressed-size)",
+                file.display(),
+                self.max_decompressed_size
+            ));
+        }
 
         let fmt = self
             .explicit_input_format()
