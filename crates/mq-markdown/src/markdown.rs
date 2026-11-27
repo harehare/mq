@@ -65,7 +65,7 @@ impl fmt::Display for Markdown {
 
 /// The line where the block before a node ends. An item that ends in a fence without a closing one
 /// ends at the start of the line after it, which is not yet a line of its own.
-fn last_line(position: &Position, node: Option<&Node>) -> u32 {
+pub(crate) fn last_line(position: &Position, node: Option<&Node>) -> u32 {
     if matches!(node, Some(Node::List(_))) && position.end.column == 1 && position.end.line > position.start.line {
         position.end.line - 1
     } else {
@@ -442,6 +442,36 @@ mod tests {
         "> a\n> - - b\n>   # c",
         1,
         "> a\n> - - b\n>   # c\n"
+    )]
+    #[case::quote_item_after_unclosed_fence_starts_on_its_own_line(
+        "> - ```\n>   code\n> - - inner\n>   # heading",
+        1,
+        "> - ```\n>   code\n>   ```\n> - - inner\n>   # heading\n"
+    )]
+    #[case::quote_plain_item_after_unclosed_fence(
+        "> - ```\n>   code\n> - plain",
+        1,
+        "> - ```\n>   code\n>   ```\n> - plain\n"
+    )]
+    #[case::quote_ordered_item_after_unclosed_fence(
+        "> 1. ```\n>    code\n> 2. - inner\n>    # h",
+        1,
+        "> 1. ```\n>    code\n>    ```\n> 2. - inner\n>    # h\n"
+    )]
+    #[case::nested_quote_item_after_unclosed_fence(
+        "> > - ```\n> >   code\n> > - - inner\n> >   # heading",
+        1,
+        "> > - ```\n> >   code\n> >   ```\n> > - - inner\n> >   # heading\n"
+    )]
+    #[case::deep_quote_item_after_unclosed_fence(
+        "> - a\n>   - ```\n>     code\n>   - - inner\n>     # h",
+        1,
+        "> - a\n>   - ```\n>     code\n>     ```\n>   - - inner\n>     # h\n"
+    )]
+    #[case::item_after_unclosed_fence_at_top_level(
+        "- ```\n  code\n- - inner\n  # heading",
+        3,
+        "- ```\n  code\n  ```\n- - inner\n  # heading\n"
     )]
     #[case::list_ordered_nested_in_ordered_uses_own_marker_width(
         "10.  foo\n\n     1. bar",

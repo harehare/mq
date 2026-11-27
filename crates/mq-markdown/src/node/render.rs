@@ -889,7 +889,7 @@ fn separate(
     if let Some(pos) = position {
         let new_line_count = pre_position
             .as_ref()
-            .map(|p: &Position| pos.start.line.saturating_sub(p.end.line))
+            .map(|p: &Position| pos.start.line.saturating_sub(crate::markdown::last_line(p, previous)))
             .unwrap_or_default();
         let new_line_count = separated_from(new_line_count, previous, node, rendered);
         *pre_position = Some(pos);
