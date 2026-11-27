@@ -687,6 +687,38 @@ fn test_query_session_error_shows_the_current_query(#[case] query: &str, #[case]
     assert!(query[offset.min(query.len())..].starts_with(at), "label at {offset}");
 }
 
+#[rstest]
+#[case::two_params("def apply(v, f): f(v);", "apply(3, fn(n): n + 1)", 4)]
+#[case::one_param("def ap(f): f(1);", "ap(fn(n): n + 1)", 2)]
+fn test_query_session_passes_a_closure_to_an_earlier_def(
+    #[case] definition: &str,
+    #[case] call: &str,
+    #[case] want: i64,
+) {
+    let mut session = Session::new(DefaultEngine::default());
+    session.eval(definition, null_input().into_iter()).unwrap();
+    let result = session.eval(call, null_input().into_iter()).unwrap();
+    assert_eq!(result[0], RuntimeValue::Number(want.into()));
+}
+
+#[rstest]
+#[case::returned_closure(
+    "def use_factory(make): let f = make(3) | f(2);",
+    "use_factory(fn(x): fn(y): x + y;;)",
+    5
+)]
+#[case::piped_closure(
+    "def apply_pair(first, second): second(1) + first(1);",
+    "fn(n): n + 10; | apply_pair(fn(n): n + 1)",
+    13
+)]
+fn test_query_session_closure_crosses_chunk_pools(#[case] definition: &str, #[case] call: &str, #[case] want: i64) {
+    let mut session = Session::new(DefaultEngine::default());
+    session.eval(definition, null_input().into_iter()).unwrap();
+    let result = session.eval(call, null_input().into_iter()).unwrap();
+    assert_eq!(result[0], RuntimeValue::Number(want.into()));
+}
+
 #[test]
 fn test_query_session_forgets_a_query_that_does_not_parse() {
     let engine = DefaultEngine::default();

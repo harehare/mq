@@ -236,6 +236,15 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
                 std::mem::swap(args, &mut combined);
                 execution.limits.recycle_stack(combined);
             }
+            if !Shared::ptr_eq(&vc.chunks, chunks) {
+                // A closure from another chunk pool (e.g. an earlier session query) is indexed
+                // against its own chunks, so the callee cannot resolve a bare stack closure.
+                for arg in args.iter_mut() {
+                    if let StackValue::Closure(closure) = arg {
+                        *arg = StackValue::Value(into_runtime_value(StackValue::Closure(closure.clone()), chunks));
+                    }
+                }
+            }
             (
                 &vc.chunks,
                 vc.chunk_index,
@@ -252,7 +261,13 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
     let mut callee_locals = execution
         .limits
         .take_locals(callee_chunk.local_count, callee_chunk.captured_local_slots());
-    callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
+    let mut self_value = call_site.locals.get(SELF_SLOT);
+    if !Shared::ptr_eq(callee_chunks, chunks)
+        && let StackValue::Closure(closure) = self_value
+    {
+        self_value = StackValue::Value(into_runtime_value(StackValue::Closure(closure), chunks));
+    }
+    callee_locals.set(SELF_SLOT, self_value);
 
     let frame = bind_params(
         &callee_chunk.param_shape,
@@ -713,8 +728,8 @@ fn resume_bind_params(
         arg_count,
         param_count,
     } = state;
-    for index in next_index..shape.bindings.len() {
-        match &shape.bindings[index] {
+    for (index, binding) in shape.bindings.iter().enumerate().skip(next_index) {
+        match binding {
             ParamBinding::Variadic(slot) => {
                 let collected: Vec<RuntimeValue> = remaining_args
                     .drain(..)
