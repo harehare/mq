@@ -438,6 +438,11 @@ mod tests {
     #[case::header("# Title\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::list("- Item 1\n- Item 2", 2, "- Item 1\n- Item 2\n")]
     #[case::list_nested_sublist_after_blank_line_stays_nested("1.  foo\n\n    - bar", 2, "1. foo\n\n   - bar\n")]
+    #[case::quote_nested_item_with_later_child_adds_no_blank_line(
+        "> a\n> - - b\n>   # c",
+        1,
+        "> a\n> - - b\n>   # c\n"
+    )]
     #[case::list_ordered_nested_in_ordered_uses_own_marker_width(
         "10.  foo\n\n     1. bar",
         2,

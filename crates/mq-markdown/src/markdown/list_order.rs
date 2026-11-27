@@ -86,7 +86,7 @@ fn reorder_into(nodes: &[Node], out: &mut Reordered) {
                 from = at;
             }
         }
-        let segment_lines: Option<Vec<u32>> = segments.iter().map(|segment| start_line(&segment[0])).collect();
+        let segment_lines: Option<Vec<u32>> = segments.iter().map(|segment| first_line(segment)).collect();
         let Some(segment_lines) = segment_lines else {
             out.push(node.clone());
             index += 1;
@@ -98,10 +98,14 @@ fn reorder_into(nodes: &[Node], out: &mut Reordered) {
         out.push(Node::List(List {
             values: item.values[..head].to_vec(),
             position: span(&item.values[..head]).or_else(|| {
-                // Without children it ends where it starts, so the nested item follows the marker.
-                item.position.clone().map(|position| Position {
-                    end: position.start.clone(),
-                    start: position.start,
+                // Without children it ends where it starts. The item's own position starts at its
+                // first child, which is after the nested items, so the marker is taken to be on the
+                // line of the first nested item, which follows it.
+                let mut point = item.position.as_ref()?.start.clone();
+                point.line = segment_lines[0];
+                Some(Position {
+                    end: point.clone(),
+                    start: point,
                 })
             }),
             ..item.clone()
@@ -131,6 +135,23 @@ fn continuation(item: &List, values: &[Node]) -> Node {
         position: span(values),
         ..item.clone()
     })
+}
+
+/// The line where the items of `segment` start. The position of an item starts at its first child,
+/// which can be after the items nested in it, so the children and the nested items are looked at too.
+fn first_line(segment: &[Node]) -> Option<u32> {
+    segment
+        .iter()
+        .flat_map(|node| {
+            let children = match node {
+                Node::List(item) => item.values.as_slice(),
+                _ => &[],
+            };
+            std::iter::once(node).chain(children)
+        })
+        .map(start_line)
+        .min()
+        .flatten()
 }
 
 /// The position from the start of the first node to the end of the last.
