@@ -65,10 +65,14 @@ impl fmt::Display for Markdown {
 
 /// The line where the block before a node ends. An item that ends in a fence without a closing one
 /// ends at the start of the line after it, which is not yet a line of its own. A table's delimiter
-/// row is positioned at column one of its own line, so an item ending in one is not such an item.
+/// row is positioned at column one of its own line, so an item whose end is that of such a row is not
+/// such an item.
 pub(crate) fn last_line(position: &Position, node: Option<&Node>) -> u32 {
     let ends_before_line = match node {
-        Some(Node::List(item)) => !matches!(item.values.last(), Some(Node::TableAlign(_))),
+        Some(Node::List(item)) => !matches!(
+            item.values.last(),
+            Some(Node::TableAlign(align)) if align.position.as_ref().is_some_and(|pos| pos.end == position.end)
+        ),
         _ => false,
     };
     if ends_before_line && position.end.column == 1 && position.end.line > position.start.line {
@@ -434,6 +438,22 @@ mod tests {
     use rstest::rstest;
 
     use crate::{ListStyle, TitleSurroundStyle, UrlSurroundStyle};
+
+    #[test]
+    fn removing_a_trailing_fence_keeps_a_quoted_table_and_the_next_item_apart() {
+        let mut markdown = "> - | a |\n>   | - |\n>   ```\n>   code\n> - next"
+            .parse::<super::Markdown>()
+            .unwrap();
+        let Some(super::Node::Blockquote(quote)) = markdown.nodes.first_mut() else {
+            panic!("expected a block quote");
+        };
+        let Some(super::Node::List(item)) = quote.values.first_mut() else {
+            panic!("expected a list item");
+        };
+        assert!(matches!(item.values.pop(), Some(super::Node::Code(_))));
+        let rendered = markdown.to_string();
+        assert!(rendered.ends_with("\n> - next\n"), "{rendered:?}");
+    }
 
     use super::*;
 
