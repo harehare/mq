@@ -284,6 +284,13 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         host_functions: execution.host_functions,
         capture_stack_trace: execution.capture_stack_trace,
     };
+    // Restored frames have no profile entries; rebuild them so pops stay symmetric.
+    #[cfg(feature = "profile")]
+    let profile_mark = crate::profile::depth();
+    #[cfg(feature = "profile")]
+    for frame in &frames {
+        super::profile_enter(frame, &chunks, false);
+    }
     let outcome = super::drive_frames::<CHECK_TIMEOUT>(
         &chunks,
         &mut frames,
@@ -292,6 +299,8 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         #[cfg(feature = "debugger")]
         debug,
     );
+    #[cfg(feature = "profile")]
+    crate::profile::truncate(profile_mark);
     let suspended_call_depth = execution.limits.leave_suspended_call_depth(caller_depth);
 
     // Keep only resyncs unchanged by this invocation.

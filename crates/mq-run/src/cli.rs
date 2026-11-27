@@ -152,6 +152,11 @@ pub struct Cli {
     #[arg(long = "vm-profile", default_value_t = false)]
     vm_profile: bool,
 
+    /// Print per-function timing to stderr (`profile` feature builds only).
+    #[cfg(feature = "profile")]
+    #[arg(long, value_name = "FORMAT", num_args = 0..=1, default_missing_value = "text")]
+    profile: Option<ProfileFormat>,
+
     /// Print the Tarn VM bytecode to stdout and exit without running the program or reading
     /// input. Pass a format as `--dump-bytecode=json` (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
@@ -358,6 +363,15 @@ enum SandboxProfile {
     Networked,
     /// Everything, equivalent to `--allow-all`.
     Unsafe,
+}
+
+#[cfg(feature = "profile")]
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq)]
+enum ProfileFormat {
+    Text,
+    /// Folded stacks for `inferno` and speedscope.
+    Folded,
+    Json,
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
@@ -3164,6 +3178,8 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+        #[cfg(feature = "profile")]
+        let fn_profile = self.profile.map(|_| mq_lang::profile::ProfileScope::start());
         let mut cache = ProgramCache::default();
         let index = self.program_index(&mut engine, &mut cache, query, first_file)?;
         let runtime_values = engine
@@ -3172,6 +3188,8 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, &None);
+        #[cfg(feature = "profile")]
+        self.emit_profile(fn_profile);
 
         self.emit_results(runtime_values, grep_input, &None)
     }
@@ -3191,6 +3209,8 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+        #[cfg(feature = "profile")]
+        let fn_profile = self.profile.map(|_| mq_lang::profile::ProfileScope::start());
 
         let runtime_values = if self.output.update {
             let results = engine
@@ -3203,6 +3223,8 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
+        #[cfg(feature = "profile")]
+        self.emit_profile(fn_profile);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -3237,15 +3259,32 @@ impl Cli {
         let index = self.program_index(engine, cache, query, file)?;
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+        #[cfg(feature = "profile")]
+        let fn_profile = self.profile.map(|_| mq_lang::profile::ProfileScope::start());
         let input = self.resolve_input(file, content)?;
         let runtime_values = engine
             .eval_compiled(&cache.programs[index].1, input.into_iter())
             .map_err(|error| *error)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
+        #[cfg(feature = "profile")]
+        self.emit_profile(fn_profile);
         let matches = self.output.paginate(runtime_values.compact());
         self.record_exit_status(&matches);
         Ok(matches.len())
+    }
+
+    #[cfg(feature = "profile")]
+    fn emit_profile(&self, scope: Option<mq_lang::profile::ProfileScope>) {
+        let (Some(scope), Some(format)) = (scope, self.profile) else {
+            return;
+        };
+        let profile = scope.finish();
+        match format {
+            ProfileFormat::Text => eprint!("{profile}"),
+            ProfileFormat::Folded => eprint!("{}", profile.to_folded()),
+            ProfileFormat::Json => eprintln!("{}", profile.to_json()),
+        }
     }
 
     #[cfg(feature = "vm-profile")]

@@ -78,6 +78,8 @@ debug-trace = ["debugger"]
 # Enables execution-count profiling for Tarn bytecode instructions. This is intended for
 # development diagnostics and is deliberately excluded from normal builds.
 vm-profile = []
+# Enables per-function wall-clock profiling (`mq_lang::profile`). Excluded from normal builds.
+profile = []
 # Use the browser clock for VM deadlines when targeting WebAssembly.
 wasm = ["dep:web-time"]
 # Lets `Engine::set_builtin_source` replace the bundled `builtin.mq`, for mutation testing.

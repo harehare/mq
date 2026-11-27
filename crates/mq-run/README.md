@@ -156,6 +156,7 @@ Any executable named `mq-NAME` in `~/.local/bin` or on `PATH` is available as `m
 | `debugger`                  | Builds `mq-dbg`, the step debugger, with DAP support             |
 | `tiktoken`                  | Token-counting builtins                                          |
 | `debug-trace`, `vm-profile` | VM diagnostics for development                                   |
+| `profile`                   | `--profile[=text\|folded\|json]` per-function timing to stderr    |
 
 ## Embedding
 

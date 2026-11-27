@@ -31,6 +31,8 @@ use super::value::{
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::number::Number;
+#[cfg(feature = "profile")]
+use crate::profile;
 use crate::runtime::builtin::{self, Args, resolve_index};
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, ResumeBuiltin, RuntimeValue};
@@ -951,6 +953,13 @@ fn run_chunk(
     result
 }
 
+/// Starts profiling the function `frame` runs.
+#[cfg(feature = "profile")]
+fn profile_enter(frame: &Frame, root_chunks: &Shared<Vec<Chunk>>, count_call: bool) {
+    let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
+    profile::enter(chunks[frame.chunk_index as usize].function_name, count_call);
+}
+
 /// Result of one dispatched step inside `run_frame_slice`.
 enum FrameOutcome {
     Enter(Frame),
@@ -1028,15 +1037,22 @@ fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<StackValue>, Locals) {
+    #[cfg(feature = "profile")]
+    let profile_mark = profile::depth();
+    #[cfg(feature = "profile")]
+    profile_enter(&initial, root_chunks, true);
     frames.push(initial);
-    match drive_frames::<CHECK_TIMEOUT>(
+    let outcome = drive_frames::<CHECK_TIMEOUT>(
         root_chunks,
         frames,
         operand_stack,
         execution,
         #[cfg(feature = "debugger")]
         debug,
-    ) {
+    );
+    #[cfg(feature = "profile")]
+    profile::truncate(profile_mark);
+    match outcome {
         DriveOutcome::Completed(value, locals) => (Ok(value), locals),
         DriveOutcome::Suspended(_) => yield_outside_generator(
             frames,
@@ -1112,6 +1128,13 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                         Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
                     }
                 }
+                #[cfg(feature = "profile")]
+                {
+                    profile::exit();
+                    if let Some(top) = frames.last() {
+                        profile_enter(top, root_chunks, true);
+                    }
+                }
                 continue 'frames;
             }
             Ok(FrameSliceOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
@@ -1182,13 +1205,20 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 operand_stack.push(coroutine);
             }
             CallStep::Enter(next) => {
-                if let Err(e) = execution.limits.push_frame(
+                let pushed = execution.limits.push_frame(
                     frames,
                     next,
                     operand_stack.len(),
                     #[cfg(feature = "debugger")]
                     debug,
-                ) {
+                );
+                #[cfg(feature = "profile")]
+                if pushed.is_ok()
+                    && let Some(top) = frames.last()
+                {
+                    profile_enter(top, root_chunks, true);
+                }
+                if let Err(e) = pushed {
                     let e = locate_at_top(frames, root_chunks, e);
                     match unwind_frames(
                         e,
@@ -1388,7 +1418,13 @@ fn unwind_frames(
                     #[cfg(feature = "debugger")]
                     debug,
                 ) {
-                    Ok(()) => return Ok(()),
+                    Ok(()) => {
+                        #[cfg(feature = "profile")]
+                        if let Some(top) = frames.last() {
+                            profile_enter(top, root_chunks, true);
+                        }
+                        return Ok(());
+                    }
                     Err(new_e) => {
                         e = locate_at_top(&*frames, root_chunks, new_e);
                         continue;
@@ -2109,14 +2145,18 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     let value = local_runtime_value(locals, *local, chunks)?;
                     let mut args = Args::new();
                     args.push(value);
+                    #[cfg(feature = "profile")]
+                    profile::enter(Some(*builtin), true);
                     let result = builtin::eval_resolved_builtin(
                         func,
                         &borrow_self(locals, chunks),
                         builtin,
                         args,
                         execution.env,
-                    )
-                    .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
+                    );
+                    #[cfg(feature = "profile")]
+                    profile::exit();
+                    let result = result.map_err(|e| locate(chunk, ip, VmError::from(e)))?;
                     stack.push(StackValue::Value(result));
                 }
                 OpCode::GetEnvVar(name_idx) => {
@@ -2145,21 +2185,29 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
                 OpCode::CallNative { func, ident, argc } => {
                     let args = pop_call_args!(*argc);
+                    #[cfg(feature = "profile")]
+                    profile::enter(Some(*ident), true);
                     let result =
-                        builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), ident, args, execution.env)
-                            .map_err(|e| locate(chunk, ip, VmError::from(e)))?;
+                        builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), ident, args, execution.env);
+                    #[cfg(feature = "profile")]
+                    profile::exit();
+                    let result = result.map_err(|e| locate(chunk, ip, VmError::from(e)))?;
                     stack.push(StackValue::Value(result));
                 }
                 OpCode::CallBuiltin(ident, argc) => {
                     let args = pop_call_args!(*argc);
+                    #[cfg(feature = "profile")]
+                    profile::enter(Some(*ident), true);
                     let result = call_builtin_args(
                         ident,
                         args,
                         &borrow_self(locals, chunks),
                         execution.env,
                         execution.host_functions,
-                    )
-                    .map_err(|e| locate(chunk, ip, e))?;
+                    );
+                    #[cfg(feature = "profile")]
+                    profile::exit();
+                    let result = result.map_err(|e| locate(chunk, ip, e))?;
                     stack.push(StackValue::Value(result));
                 }
                 OpCode::CallStatic(chunk_index, argc) => {
@@ -2724,7 +2772,12 @@ fn enter_frame(
             #[cfg(feature = "debugger")]
             debug,
         )
-        .map_err(|e| locate_at_top(frames, root_chunks, e))
+        .map_err(|e| locate_at_top(frames, root_chunks, e))?;
+    #[cfg(feature = "profile")]
+    if let Some(top) = frames.last() {
+        profile_enter(top, root_chunks, true);
+    }
+    Ok(())
 }
 
 /// Marks a self call immediately followed by `Return` as a tail call.
