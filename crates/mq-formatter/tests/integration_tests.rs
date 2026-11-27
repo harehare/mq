@@ -1,4 +1,5 @@
 //! Formatter integration tests.
+#![cfg(feature = "cli")]
 
 use assert_cmd::cargo;
 

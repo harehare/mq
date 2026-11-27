@@ -2934,7 +2934,6 @@ fn selector_does_not_match_non_markdown_input() {
     );
 }
 
-#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 fn text_node(value: &str) -> mq_markdown::Node {
     mq_markdown::Node::Text(mq_markdown::Text {
         value: value.to_string(),
