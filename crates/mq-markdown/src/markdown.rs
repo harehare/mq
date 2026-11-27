@@ -64,9 +64,14 @@ impl fmt::Display for Markdown {
 }
 
 /// The line where the block before a node ends. An item that ends in a fence without a closing one
-/// ends at the start of the line after it, which is not yet a line of its own.
+/// ends at the start of the line after it, which is not yet a line of its own. A table's delimiter
+/// row is positioned at column one of its own line, so an item ending in one is not such an item.
 pub(crate) fn last_line(position: &Position, node: Option<&Node>) -> u32 {
-    if matches!(node, Some(Node::List(_))) && position.end.column == 1 && position.end.line > position.start.line {
+    let ends_before_line = match node {
+        Some(Node::List(item)) => !matches!(item.values.last(), Some(Node::TableAlign(_))),
+        _ => false,
+    };
+    if ends_before_line && position.end.column == 1 && position.end.line > position.start.line {
         position.end.line - 1
     } else {
         position.end.line
@@ -442,6 +447,11 @@ mod tests {
         "> a\n> - - b\n>   # c",
         1,
         "> a\n> - - b\n>   # c\n"
+    )]
+    #[case::quote_item_ending_in_table_adds_no_blank_line(
+        "> - | a |\n>   | - |\n>\n> p",
+        1,
+        "> - | a |\n>   | - |\n> \n> p\n"
     )]
     #[case::quote_item_after_unclosed_fence_starts_on_its_own_line(
         "> - ```\n>   code\n> - - inner\n>   # heading",
