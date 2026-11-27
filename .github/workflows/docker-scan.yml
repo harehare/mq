@@ -1,0 +1,55 @@
+name: Docker scan
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - Cargo.lock
+      - .github/workflows/docker-scan.yml
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build image (smoke + scan)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build -t mq:scan .
+
+      - name: Check version and run a query
+        run: |
+          docker run --rm mq:scan --version
+          out=$(printf '# Hello\n\nworld\n' | docker run --rm -i mq:scan '.h1 | to_text()')
+          test "$out" = "Hello"
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: mq:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  published:
+    name: Scan published image
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Scan latest image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:latest
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

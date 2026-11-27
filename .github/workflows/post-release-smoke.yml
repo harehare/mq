@@ -18,7 +18,7 @@ env:
 
 jobs:
   docker:
-    name: Docker image (smoke + scan)
+    name: Docker image
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -37,14 +37,6 @@ jobs:
           out=$(printf '# Hello\n\nworld\n' | docker run --rm -i "$IMAGE" '.h1 | to_text()')
           echo "$out"
           test "$out" = "Hello"
-
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ env.IMAGE }}
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
 
   install-script:
     name: install.sh (${{ matrix.os }})
