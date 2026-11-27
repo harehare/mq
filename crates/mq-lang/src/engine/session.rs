@@ -37,7 +37,7 @@ pub struct Session<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sandboxed
 impl<T: ModuleResolver, IO: Io> Session<T, IO> {
     /// Starts a session that evaluates queries on `engine`.
     pub fn new(mut engine: Engine<T, IO>) -> Self {
-        engine.vm.module_loader.keep_modules_parsed();
+        engine.vm.module_loader.persist_modules();
         Self {
             engine,
             bindings: Shared::new(SharedCell::new(Vec::new())),

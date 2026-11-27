@@ -65,6 +65,35 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct PersistentModules(Shared<SharedCell<FxHashMap<ModuleId, Module>>>);
+
+impl PersistentModules {
+    fn get(&self, module_id: ModuleId) -> Option<Module> {
+        #[cfg(not(feature = "sync"))]
+        let modules = self.0.borrow();
+        #[cfg(feature = "sync")]
+        let modules = self.0.read().unwrap();
+        modules.get(&module_id).cloned()
+    }
+
+    fn insert(&self, module_id: ModuleId, module: &Module) {
+        #[cfg(not(feature = "sync"))]
+        let mut modules = self.0.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut modules = self.0.write().unwrap();
+        modules.insert(module_id, module.clone());
+    }
+
+    fn clear(&self) {
+        #[cfg(not(feature = "sync"))]
+        let mut modules = self.0.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut modules = self.0.write().unwrap();
+        modules.clear();
+    }
+}
+
 /// Loads, caches and tracks the source of modules through a [`ModuleResolver`].
 #[derive(Debug, Clone)]
 pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
@@ -90,9 +119,8 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
     /// instead of reparsing its cached source.
     module_ast_cache: FxHashMap<ModuleId, Module>,
-    /// File modules parsed into a long-lived arena, shared by derived loaders. Set only for
-    /// sessions, whose queries all share one arena and would otherwise reparse every module.
-    persistent_modules: Option<Shared<SharedCell<FxHashMap<ModuleId, Module>>>>,
+    /// Set only for sessions, whose queries share one arena and would otherwise reparse every module.
+    persistent_modules: Option<PersistentModules>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
     #[cfg(feature = "http-import")]
@@ -198,29 +226,9 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
-    /// Keeps file modules parsed once for this loader and every loader derived from it.
-    pub(crate) fn keep_modules_parsed(&mut self) {
-        self.persistent_modules
-            .get_or_insert_with(|| Shared::new(SharedCell::new(FxHashMap::default())));
-    }
-
-    fn persistent_module(&self, module_id: ModuleId) -> Option<Module> {
-        let modules = self.persistent_modules.as_ref()?;
-        #[cfg(not(feature = "sync"))]
-        let modules = modules.borrow();
-        #[cfg(feature = "sync")]
-        let modules = modules.read().unwrap();
-        modules.get(&module_id).cloned()
-    }
-
-    fn remember_module(&self, module_id: ModuleId, module: &Module) {
-        if let Some(modules) = &self.persistent_modules {
-            #[cfg(not(feature = "sync"))]
-            let mut modules = modules.borrow_mut();
-            #[cfg(feature = "sync")]
-            let mut modules = modules.write().unwrap();
-            modules.insert(module_id, module.clone());
-        }
+    /// Parses each file module once for this loader and every loader derived from it.
+    pub(crate) fn persist_modules(&mut self) {
+        self.persistent_modules.get_or_insert_with(PersistentModules::default);
     }
 
     pub(crate) fn with_same_resolver(&self) -> Self {
@@ -329,10 +337,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
         self.resolver.set_search_paths(paths);
         if let Some(modules) = &self.persistent_modules {
-            #[cfg(not(feature = "sync"))]
-            modules.borrow_mut().clear();
-            #[cfg(feature = "sync")]
-            modules.write().unwrap().clear();
+            modules.clear();
         }
     }
 
@@ -449,7 +454,11 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_path.to_string())));
         }
         let module_id = self.module_id_of(module_path);
-        if let Some(module) = self.persistent_module(module_id) {
+        if let Some(module) = self
+            .persistent_modules
+            .as_ref()
+            .and_then(|modules| modules.get(module_id))
+        {
             self.loaded_modules.insert(module_id);
             self.module_ast_cache.insert(module_id, module.clone());
             return Ok(module);
@@ -458,7 +467,9 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.source_cache.insert(module_id, program.clone());
         let name = self.resolver.canonical_name(module_path).to_owned();
         let module = self.load_keyed(module_path, &name, &program, token_arena)?;
-        self.remember_module(module_id, &module);
+        if let Some(modules) = &self.persistent_modules {
+            modules.insert(module_id, &module);
+        }
         Ok(module)
     }
 
