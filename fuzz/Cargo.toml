@@ -36,6 +36,13 @@ test = false
 [[bin]]
 bench = false
 doc = false
+name = "mqc_roundtrip"
+path = "fuzz_targets/mqc_roundtrip.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
 name = "markdown"
 path = "fuzz_targets/markdown.rs"
 test = false

@@ -311,6 +311,29 @@ fn run_with_limits(bytes: &[u8]) {
     }
 }
 
+/// A run's outcome as comparable text, errors included.
+fn outcome(result: crate::MqResult) -> String {
+    match result {
+        Ok(values) => format!("{values:?}"),
+        Err(error) => format!("error: {error}"),
+    }
+}
+
+proptest! {
+    /// Running a program from its `.mqc` file gives the result of evaluating its source.
+    #[test]
+    fn test_mqc_round_trip_gives_the_same_result(
+        program in prop::sample::select(FUZZ_PROGRAMS),
+        input in prop::sample::select(vec!["# a\n\n## b\n", "text\n\n- one\n- two\n", "[mq](https://mqlang.org)\n", ""]),
+    ) {
+        let expected = outcome(engine().eval(program, markdown(input).into_iter()));
+        let mut engine = engine();
+        let loaded = load(&mut engine, &compile(program)).unwrap();
+        let actual = outcome(engine.eval_compiled(&loaded, markdown(input).into_iter()));
+        prop_assert_eq!(actual, expected, "program: {}", program);
+    }
+}
+
 proptest! {
     #[test]
     #[ignore = "run fuzz tests explicitly"]

@@ -200,7 +200,7 @@ test-cov:
 test-miri *args:
     MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test -p mq-ffi --lib {{args}}
 
-# Run fuzzing tests (targets: interpreter, mqc, markdown, markdown_scaling, stdlib). Extra args go to cargo-fuzz, e.g. `-- -max_total_time=60`
+# Run fuzzing tests (targets: interpreter, mqc, mqc_roundtrip, markdown, markdown_scaling, stdlib). Extra args go to cargo-fuzz, e.g. `-- -max_total_time=60`
 test-fuzz target="interpreter" *args:
     #!/usr/bin/env sh
     set -eu
