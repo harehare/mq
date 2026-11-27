@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [interpreter, grammar, mqc, mqc_roundtrip, markdown, markdown_roundtrip, stdlib]
+        target: [interpreter, grammar, mqc, mqc_roundtrip, markdown, markdown_roundtrip, markdown_scaling, stdlib]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
