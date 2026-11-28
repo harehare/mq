@@ -94,8 +94,8 @@ impl Parser<'_> {
     }
 
     fn skip_whitespace(&mut self) {
-        while self.peek().is_some_and(char::is_whitespace) {
-            self.pos += 1;
+        while let Some(c) = self.peek().filter(|c| c.is_whitespace()) {
+            self.pos += c.len_utf8();
         }
     }
 
@@ -178,8 +178,8 @@ impl Parser<'_> {
 
     fn parse_name(&mut self) -> Result<Type, TypeExprError> {
         let start = self.pos;
-        while self.peek().is_some_and(|c| c.is_alphanumeric() || c == '_') {
-            self.pos += 1;
+        while let Some(c) = self.peek().filter(|c| c.is_alphanumeric() || *c == '_') {
+            self.pos += c.len_utf8();
         }
         let name = &self.src[start..self.pos];
         named_type(name).ok_or_else(|| {
@@ -240,6 +240,7 @@ mod tests {
     #[case::none("1 | 2", None)]
     #[case::declared("# @input h1 | h2\n.depth", Some(node([NodeKind::H1, NodeKind::H2])))]
     #[case::after_other_comments("#!/usr/bin/env mq\n\n# doc\n# @input code\n.", Some(node([NodeKind::Code])))]
+    #[case::unicode_whitespace("# @input h1\u{a0}| h2\n.depth", Some(node([NodeKind::H1, NodeKind::H2])))]
     #[case::stops_at_code(".\n# @input code", None)]
     #[case::not_a_directive("# @inputs code\n.", None)]
     fn test_declared_input_type(#[case] src: &str, #[case] expected: Option<Type>) {
@@ -250,6 +251,7 @@ mod tests {
     #[case::invalid("# @input headin")]
     #[case::empty("# @input ")]
     #[case::twice("# @input h1\n# @input h2")]
+    #[case::unicode_name("# @input códe\n.depth")]
     fn test_declared_input_type_errors(#[case] src: &str) {
         assert!(declared_input_type(src).is_err());
     }

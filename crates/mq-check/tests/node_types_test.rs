@@ -213,6 +213,35 @@ fn test_declared_input_type_flows_past_a_leading_definition(
 }
 
 #[test]
+fn test_declared_input_type_reaches_a_selector_after_a_module_directive() {
+    let errors = errors_with_input(r#"include "test" | .depth"#, "code");
+    assert!(
+        errors
+            .iter()
+            .any(|e| matches!(e, mq_check::TypeError::UndefinedAttribute { .. })),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn test_scripts_in_one_hir_do_not_feed_each_other() {
+    let mut hir = Hir::default();
+    hir.add_code(None, "1");
+    hir.add_code(None, ".depth");
+    let errors = TypeChecker::with_options(mq_check::TypeCheckerOptions {
+        input_type: Some(mq_check::type_expr::parse_type("code").unwrap()),
+        ..Default::default()
+    })
+    .check(&hir);
+    assert!(
+        errors
+            .iter()
+            .any(|e| matches!(e, mq_check::TypeError::UndefinedAttribute { .. })),
+        "{errors:?}"
+    );
+}
+
+#[test]
 fn test_without_a_declared_input_type_the_input_is_unknown() {
     assert!(errors(".depth").is_empty());
 }
