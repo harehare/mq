@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write as _};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::Ident;
@@ -13,6 +14,12 @@ use crate::Ident;
 thread_local! {
     static ACTIVE: RefCell<Option<State>> = const { RefCell::new(None) };
 }
+
+/// Number of live scopes on all threads. While it is zero every VM hook returns after one
+/// relaxed load instead of touching the thread-local.
+static SCOPES: AtomicUsize = AtomicUsize::new(0);
+/// Number of live scopes that also record lines, for the per-instruction hook.
+static LINE_SCOPES: AtomicUsize = AtomicUsize::new(0);
 
 const ROOT: u32 = u32::MAX;
 
@@ -369,21 +376,24 @@ impl fmt::Display for Profile {
 pub struct ProfileScope {
     previous: Option<State>,
     finished: bool,
+    lines: bool,
 }
 
 impl ProfileScope {
     /// Starts profiling on the current thread.
     pub fn start() -> Self {
+        SCOPES.fetch_add(1, Ordering::Relaxed);
         let previous = ACTIVE.with(|active| active.replace(Some(State::default())));
         Self {
             previous,
             finished: false,
+            lines: false,
         }
     }
 
     /// Also attributes time to source lines. Requires the `profile-lines` feature to have an effect.
     #[must_use]
-    pub fn with_lines(self) -> Self {
+    pub fn with_lines(mut self) -> Self {
         with_state(|state| {
             state.lines = Some(LineState {
                 token: None,
@@ -392,6 +402,10 @@ impl ProfileScope {
                 map: HashMap::new(),
             });
         });
+        if !self.lines {
+            self.lines = true;
+            LINE_SCOPES.fetch_add(1, Ordering::Relaxed);
+        }
         self
     }
 
@@ -407,6 +421,10 @@ impl Drop for ProfileScope {
     fn drop(&mut self) {
         if !self.finished {
             ACTIVE.with(|active| active.replace(self.previous.take()));
+        }
+        SCOPES.fetch_sub(1, Ordering::Relaxed);
+        if self.lines {
+            LINE_SCOPES.fetch_sub(1, Ordering::Relaxed);
         }
     }
 }
@@ -486,7 +504,11 @@ fn build(mut state: State) -> Profile {
     }
 }
 
+#[inline(always)]
 fn with_state(f: impl FnOnce(&mut State)) {
+    if SCOPES.load(Ordering::Relaxed) == 0 {
+        return;
+    }
     ACTIVE.with(|active| {
         if let Some(state) = active.borrow_mut().as_mut() {
             f(state);
@@ -534,6 +556,14 @@ pub(crate) fn exit() {
     with_state(State::exit);
 }
 
+/// Whether line attribution is on. Checked before computing a token, so the per-instruction
+/// cost with no scope is one relaxed load.
+#[cfg(feature = "profile-lines")]
+#[inline(always)]
+pub(crate) fn lines_enabled() -> bool {
+    LINE_SCOPES.load(Ordering::Relaxed) > 0
+}
+
 /// Moves line attribution to `token`'s line. Called before each instruction.
 #[cfg(feature = "profile-lines")]
 #[inline]
@@ -576,6 +606,9 @@ pub(crate) fn line_flush() {
 /// Returns the current stack depth, or 0 when inactive.
 #[inline]
 pub(crate) fn depth() -> usize {
+    if SCOPES.load(Ordering::Relaxed) == 0 {
+        return 0;
+    }
     ACTIVE.with(|active| active.borrow().as_ref().map_or(0, |s| s.stack.len()))
 }
 

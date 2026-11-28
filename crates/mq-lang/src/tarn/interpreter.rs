@@ -1619,7 +1619,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             ip += 1;
             #[cfg(feature = "profile-lines")]
-            profile::line_tick(chunk.token_at(ip - 1), &execution.token_arena);
+            if profile::lines_enabled() {
+                profile::line_tick(chunk.token_at(ip - 1), &execution.token_arena);
+            }
             #[cfg(feature = "vm-profile")]
             if op.is_profiled_instruction() {
                 vm_profile::record_opcode(op.profile_name());

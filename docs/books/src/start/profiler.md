@@ -14,7 +14,20 @@ cargo install --git https://github.com/harehare/mq.git mq-run --bin mq --feature
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq --features profile-lines
 ```
 
-`profile-lines` includes `profile`. It adds work to every VM instruction, so a build with it runs slower than one with only `profile`.
+`profile-lines` includes `profile`.
+
+## Overhead
+
+Without the features, `mq` contains none of the profiler code. In a build with them, a run without `--profile` costs up to about 8% on call-heavy queries.
+
+With a profile flag, `mq` runs slower because it takes timestamps and updates counters while it runs. Release build, median of 10 runs, relative to a build without the features:
+
+| Query | `--profile` | `--profile-lines` |
+| ----- | ----------- | ----------------- |
+| Recursive `fib(31)` (about 2.7 million calls) | 2.4x | 3.3x |
+| `map` over 3 million elements | 2.6x | 4.3x |
+
+Use the numbers to compare functions and lines within one profile. The cost is per call, so functions that are called very often and do little work look more expensive than they are, and absolute times are longer than in a normal run.
 
 ## Per-function timing
 
