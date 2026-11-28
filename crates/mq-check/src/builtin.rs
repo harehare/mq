@@ -1625,13 +1625,14 @@ fn register_markdown(ctx: &mut InferenceContext) {
     // is_h_level: (markdown, number) -> bool
     register_binary(ctx, "is_h_level", Type::markdown(), Type::Number, Type::Bool);
 
-    // structural_diff: (string | markdown | [markdown], same) -> [{kind, node, path, old, new}]
+    // structural_diff: (string | markdown | [markdown], same) -> [{kind, node, path, from, old, new}]
     let document = Type::union(vec![Type::String, Type::markdown(), Type::array(Type::markdown())]);
     let optional_text = Type::union(vec![Type::String, Type::None]);
     let edit = record_of(&[
         ("kind", Type::String),
         ("node", Type::String),
         ("path", Type::String),
+        ("from", optional_text.clone()),
         ("old", optional_text.clone()),
         ("new", optional_text),
     ]);

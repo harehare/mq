@@ -3647,7 +3647,7 @@ x
     BuiltinDoc {
         name: "structural_diff",
         aliases: &[],
-        description: "Compares two Markdown documents block by block and returns the edits as an array of `{kind, node, path, old, new}` dicts. `kind` is \"insert\", \"delete\" or \"update\", and `path` is the chain of headings above the block joined with \" > \". Each argument is a Markdown string, a node or an array of nodes.",
+        description: "Compares two Markdown documents block by block and returns the edits as an array of `{kind, node, path, from, old, new}` dicts. `kind` is \"insert\", \"delete\", \"update\" or \"move\", and `path` is the chain of headings above the block joined with \" > \". `from` is the previous path of an updated or moved block when it differs. Each argument is a Markdown string, a node or an array of nodes.",
         params: &["old", "new"],
         param_types: &["string", "string"],
         returns: "array",

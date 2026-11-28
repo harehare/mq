@@ -799,7 +799,8 @@ struct OutputArgs {
 
     /// With --update, print a diff instead of the transformed content; nothing is
     /// written. `--diff` is a unified (line) diff; `--diff=structural` lists the
-    /// changed headings, paragraphs, list items and table rows, with the heading path.
+    /// inserted, deleted, updated and moved headings, paragraphs, list items and
+    /// table rows, with the heading path.
     /// Multiple files are diffed one at a time with their path in the headers; stdin
     /// is labeled `<stdin>`. Exits 1 if anything would change.
     #[arg(
@@ -4062,9 +4063,11 @@ impl Cli {
                 ("insert", _, Some(new)) => ('+', "\x1b[32m", new),
                 ("delete", Some(old), _) => ('-', "\x1b[31m", old),
                 ("update", Some(old), Some(new)) => ('~', "\x1b[33m", format!("{old} -> {new}")),
+                ("move", _, Some(new)) => ('>', "\x1b[36m", new),
                 _ => continue,
             };
-            let line = format!("{symbol} {node}{location}: {body}");
+            let origin = field("from").map(|p| format!(" (from [{p}])")).unwrap_or_default();
+            let line = format!("{symbol} {node}{location}: {body}{origin}");
             if colorize {
                 out.push_str(color);
                 out.push_str(&line);

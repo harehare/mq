@@ -15,6 +15,8 @@ pub(super) enum EditKind {
     Insert,
     Delete,
     Update,
+    /// The same unit deleted in one place and inserted in another.
+    Move,
 }
 
 impl EditKind {
@@ -23,6 +25,7 @@ impl EditKind {
             Self::Insert => "insert",
             Self::Delete => "delete",
             Self::Update => "update",
+            Self::Move => "move",
         }
     }
 }
@@ -35,6 +38,8 @@ pub(super) struct Edit {
     pub node: String,
     /// Titles of the headings above the unit, joined with `" > "`.
     pub path: String,
+    /// Where the unit was before, when that differs from `path` (updates and moves).
+    pub from: Option<String>,
     pub old: Option<String>,
     pub new: Option<String>,
 }
@@ -72,7 +77,37 @@ pub(super) fn diff(old: &[Node], new: &[Node]) -> Vec<Edit> {
         }
     }
     flush(&mut edits, &old_units, &new_units, &mut deleted, &mut inserted);
+    detect_moves(edits)
+}
+
+/// Turns each insert that repeats an unmatched delete (same kind and text) into a move.
+fn detect_moves(edits: Vec<Edit>) -> Vec<Edit> {
+    let mut taken = vec![false; edits.len()];
+    let mut moved = vec![None; edits.len()];
+    for (i, insert) in edits.iter().enumerate().filter(|(_, e)| e.kind == EditKind::Insert) {
+        let source = edits
+            .iter()
+            .enumerate()
+            .find(|(d, e)| e.kind == EditKind::Delete && !taken[*d] && e.node == insert.node && e.old == insert.new);
+        if let Some((d, _)) = source {
+            taken[d] = true;
+            moved[i] = Some(d);
+        }
+    }
     edits
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !taken[*i])
+        .map(|(i, e)| match moved[i] {
+            Some(d) => Edit {
+                kind: EditKind::Move,
+                from: Some(edits[d].path.clone()),
+                old: e.new.clone(),
+                ..e.clone()
+            },
+            None => e.clone(),
+        })
+        .collect()
 }
 
 /// Emits the edits for one run of consecutive deletes and inserts, pairing similar units as updates.
@@ -108,6 +143,7 @@ fn edit(kind: EditKind, old: Option<&Unit>, new: Option<&Unit>) -> Edit {
         kind,
         node: anchor.node.clone(),
         path: anchor.path.clone(),
+        from: old.filter(|u| u.path != anchor.path).map(|u| u.path.clone()),
         old: old.map(|u| u.text.clone()),
         new: new.map(|u| u.text.clone()),
     }
@@ -245,12 +281,51 @@ mod tests {
         "- a\n- b\n- c\n",
         vec![(EditKind::Insert, "list", "")]
     )]
+    #[case::heading_rename_keeps_children_unchanged(
+        "# Doc\n\n## Install\n\ntext\n\n- a\n",
+        "# Doc\n\n## Installation\n\ntext\n\n- a\n",
+        vec![(EditKind::Update, "h2", "Doc")]
+    )]
+    #[case::moved_between_sections(
+        "# A\n\n## X\n\nmoved paragraph\n\n## Y\n\nstay\n",
+        "# A\n\n## X\n\n## Y\n\nstay\n\nmoved paragraph\n",
+        vec![(EditKind::Move, "text", "A > Y")]
+    )]
+    #[case::reordered_in_section(
+        "# A\n\none\n\ntwo\n",
+        "# A\n\ntwo\n\none\n",
+        vec![(EditKind::Move, "text", "A")]
+    )]
     fn test_diff(#[case] old: &str, #[case] new: &str, #[case] expected: Vec<(EditKind, &str, &str)>) {
         let expected: Vec<_> = expected
             .into_iter()
             .map(|(k, n, p)| (k, n.to_string(), p.to_string()))
             .collect();
         assert_eq!(run(old, new), expected);
+    }
+
+    #[test]
+    fn test_move_records_the_source_path() {
+        let edits = diff(
+            &parse("# A\n\n## X\n\nitem\n\n## Y\n\nstay\n"),
+            &parse("# A\n\n## X\n\n## Y\n\nstay\n\nitem\n"),
+        );
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].from.as_deref(), Some("A > X"));
+        assert_eq!(edits[0].path, "A > Y");
+        assert_eq!(edits[0].new.as_deref(), Some("item"));
+    }
+
+    #[test]
+    fn test_update_under_renamed_heading_records_the_old_path() {
+        let edits = diff(
+            &parse("# A\n\n## Old\n\nthe quick brown fox\n"),
+            &parse("# A\n\n## New\n\nthe quick brown fax\n"),
+        );
+        let paragraph = edits.iter().find(|e| e.node == "text").unwrap();
+        assert_eq!(paragraph.kind, EditKind::Update);
+        assert_eq!(paragraph.path, "A > New");
+        assert_eq!(paragraph.from.as_deref(), Some("A > Old"));
     }
 
     #[test]

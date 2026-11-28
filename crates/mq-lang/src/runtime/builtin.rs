@@ -5021,6 +5021,7 @@ fn structural_diff_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedE
             );
             map.insert(Ident::new("node"), RuntimeValue::String(Shared::new(edit.node)));
             map.insert(Ident::new("path"), RuntimeValue::String(Shared::new(edit.path)));
+            map.insert(Ident::new("from"), text(edit.from));
             map.insert(Ident::new("old"), text(edit.old));
             map.insert(Ident::new("new"), text(edit.new));
             RuntimeValue::Dict(Shared::new(map))
