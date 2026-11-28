@@ -64,6 +64,28 @@ function Install-Mq {
         return $null
     }
 
+    # Verify the cosign signature of checksums.txt when cosign is installed.
+    function Test-ChecksumsSignature([string]$Checksums, [string]$TempDir) {
+        if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
+            Write-Log 'cosign not found, skipping signature verification (checksum only)'
+            return
+        }
+        $bundle = Join-Path $TempDir 'checksums.txt.sigstore.json'
+        try {
+            Invoke-WebRequest -Uri (Get-ReleaseUrl 'checksums.txt.sigstore.json') -OutFile $bundle -UseBasicParsing
+        } catch {
+            Write-Log 'No signature published for this release, skipping signature verification'
+            return
+        }
+        $file = Join-Path $TempDir 'checksums.txt'
+        [IO.File]::WriteAllText($file, $Checksums)
+        & cosign verify-blob --bundle $bundle `
+            --certificate-identity-regexp "^https://github\.com/$repo/\.github/workflows/release\.yml@refs/tags/v" `
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' $file *> $null
+        if ($LASTEXITCODE -ne 0) { throw 'Signature verification failed for checksums.txt, aborting installation' }
+        Write-Log 'Signature verified for checksums.txt'
+    }
+
     function Install-Binary([string]$Name, [string]$Target, [string]$Checksums, [string]$TempDir) {
         $fileName = "$Name-$Target.exe"
         $url = Get-ReleaseUrl $fileName
@@ -116,6 +138,7 @@ function Install-Mq {
         Write-Log 'Downloading checksums'
         $checksums = (Invoke-WebRequest -Uri (Get-ReleaseUrl 'checksums.txt') -UseBasicParsing).Content
         if ($checksums -is [byte[]]) { $checksums = [Text.Encoding]::UTF8.GetString($checksums) }
+        Test-ChecksumsSignature $checksums $tempDir
 
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
         Install-Binary 'mq' $target $checksums $tempDir
