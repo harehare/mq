@@ -280,15 +280,12 @@ jobs:
           digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
           cosign sign --yes "$IMAGE@$digest"
 
-  release:
-    name: Create Release
+  checksums:
+    name: Checksums and SBOM
     needs: [build, deb, rpm]
     runs-on: ubuntu-latest
     permissions:
-      packages: write
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -300,7 +297,6 @@ jobs:
         uses: taiki-e/install-action@v2.90.6
         with:
           tool: cargo-cyclonedx
-      - uses: sigstore/cosign-installer@v4.1.4
       - name: Download artifacts
         uses: actions/download-artifact@v8.0.2
         with:
@@ -319,6 +315,36 @@ jobs:
           done
           mkdir checksums
           mv checksums.txt ./checksums/checksums.txt
+      - name: Upload checksums and SBOM
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-checksums
+          path: |
+            target/sbom/mq.cdx.json
+            target/checksums/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign and attest
+    needs: [checksums]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: sigstore/cosign-installer@v4.1.4
+      - name: Download artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: mq*
+          path: target
+      - name: Download checksums and SBOM
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-checksums
+          path: target
       - name: Sign checksums
         run: |
           cosign sign-blob --yes \
@@ -335,6 +361,36 @@ jobs:
         with:
           subject-path: target/mq*/*
           sbom-path: target/sbom/mq.cdx.json
+      - name: Upload signature
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-signature
+          path: target/checksums/checksums.txt.sigstore.json
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [sign]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: mq*
+          path: target
+      - name: Download checksums and SBOM
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-checksums
+          path: target
+      - name: Download signature
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-signature
+          path: target
       - name: Create Release
         run: |
           gh release create "$TAG_NAME" \
