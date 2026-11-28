@@ -56,6 +56,16 @@ $ mq -U --diff 'select(contains("1.2.0")) | replace("1.2.0", "1.3.0")' CHANGELOG
 
 `--diff` never writes to the file, just as `-U` never has on its own. It exits with code `1` if anything would change (`0` otherwise), which is handy for a CI check. With multiple files, each gets its own diff headed by its path.
 
+To review the change by block rather than by line, use `--diff=structural`. It lists each inserted, deleted or updated heading, paragraph, list item or table row with the headings above it, and ignores changes that only reformat the Markdown:
+
+```sh
+$ mq -U --diff=structural '.h2 | update("Installation")' README.md
+--- README.md
+~ h2 [mq]: ## Install -> ## Installation
+```
+
+The same comparison is available in queries as `structural_diff(old, new)`.
+
 ## Editing files in place
 
 `-i` / `--in-place` rewrites each input file with the `-U` result instead of printing it:
