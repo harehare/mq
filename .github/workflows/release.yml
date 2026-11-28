@@ -237,6 +237,7 @@ jobs:
     permissions:
       packages: write
       contents: read
+      id-token: write
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8.0.2
@@ -270,6 +271,14 @@ jobs:
         env:
           IMAGE_REF: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
         run: docker buildx imagetools inspect "$IMAGE_REF"
+      - uses: sigstore/cosign-installer@v4.1.4
+      - name: Sign image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          cosign sign --yes "$IMAGE@$digest"
 
   release:
     name: Create Release
@@ -278,20 +287,54 @@ jobs:
     permissions:
       packages: write
       contents: write
+      id-token: write
+      attestations: write
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
+        with:
+          cache: false
+      - name: Install cargo-cyclonedx
+        uses: taiki-e/install-action@v2.90.6
+        with:
+          tool: cargo-cyclonedx
+      - uses: sigstore/cosign-installer@v4.1.4
       - name: Download artifacts
         uses: actions/download-artifact@v8.0.2
         with:
           pattern: mq*
           path: target
+      - name: Generate SBOM
+        run: |
+          mkdir -p target/sbom
+          cargo cyclonedx --manifest-path crates/mq-run/Cargo.toml --format json --spec-version 1.5 --override-filename mq
+          mv crates/mq-run/mq.json target/sbom/mq.cdx.json
       - name: Generate checksums
         run: |
           cd target
-          for file in mq*/*; do
+          for file in mq*/* sbom/*; do
             sha256sum "$file" >> checksums.txt
           done
           mkdir checksums
           mv checksums.txt ./checksums/checksums.txt
+      - name: Sign checksums
+        run: |
+          cosign sign-blob --yes \
+            --bundle target/checksums/checksums.txt.sigstore.json \
+            target/checksums/checksums.txt
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: |
+            target/mq*/*
+            target/checksums/checksums.txt
+      - name: Attest SBOM
+        uses: actions/attest-sbom@v4.1.0
+        with:
+          subject-path: target/mq*/*
+          sbom-path: target/sbom/mq.cdx.json
       - name: Create Release
         run: |
           gh release create "$TAG_NAME" \

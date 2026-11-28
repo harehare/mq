@@ -118,6 +118,38 @@ get_download_url() {
     echo "https://github.com/$MQ_REPO/releases/download/$version/mq-${target}${ext}"
 }
 
+# Verify the cosign signature of the checksums file when cosign is installed
+verify_checksums_signature() {
+    local checksums_url="$1"
+    local checksums_file="$2"
+
+    if ! command -v cosign &> /dev/null; then
+        log "cosign not found, skipping signature verification (checksum only)"
+        return 0
+    fi
+
+    local bundle_file
+    bundle_file=$(mktemp)
+    if ! curl -fsSL "${checksums_url}.sigstore.json" -o "$bundle_file"; then
+        rm -f "$bundle_file"
+        warn "No signature published for this release, skipping signature verification"
+        return 0
+    fi
+
+    log "Verifying signature of checksums file..."
+    if cosign verify-blob \
+        --bundle "$bundle_file" \
+        --certificate-identity-regexp "^https://github\.com/$MQ_REPO/\.github/workflows/release\.yml@refs/tags/v" \
+        --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+        "$checksums_file" > /dev/null 2>&1; then
+        rm -f "$bundle_file"
+        log "✓ Signature verification successful"
+        return 0
+    fi
+    rm -f "$bundle_file"
+    return 1
+}
+
 # Download checksums file
 download_checksums() {
     local version="$1"
@@ -130,6 +162,11 @@ download_checksums() {
         warn "Failed to download checksums file, skipping verification"
         return 1
     fi
+
+    verify_checksums_signature "$checksums_url" "$checksums_file" || {
+        rm -f "$checksums_file"
+        error "Signature verification failed for checksums file, aborting installation"
+    }
 
     echo "$checksums_file"
 }

@@ -70,6 +70,24 @@ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.10.2/
 Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.10.2/mq-aarch64-pc-windows-msvc.exe -OutFile "$env:USERPROFILE\bin\mq.exe"
 ```
 
+### Verifying releases
+
+Each release ships `checksums.txt` (covers the binaries and the SBOM), `checksums.txt.sigstore.json` (a cosign signature of `checksums.txt`) and `mq.cdx.json` (a CycloneDX SBOM). Binaries also carry GitHub build provenance and SBOM attestations.
+
+```sh
+# Verify a binary with its GitHub attestation
+gh attestation verify mq-x86_64-unknown-linux-gnu --repo harehare/mq
+
+# Verify the signature of checksums.txt, then the file hashes
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/harehare/mq/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --check --ignore-missing checksums.txt
+```
+
+The install scripts verify the checksum, and also the signature when `cosign` is installed.
+
 ## Homebrew
 
 ```sh
