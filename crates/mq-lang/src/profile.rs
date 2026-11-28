@@ -32,7 +32,18 @@ struct Node {
     parent: u32,
     name: Ident,
     calls: u64,
+    /// Every enter, including coroutine frames re-entered on resume. Each one costs a timer read.
+    entries: u64,
     self_time: Duration,
+}
+
+/// Per-call cost of the hooks themselves, measured when a scope starts.
+#[derive(Default, Clone, Copy)]
+struct Overhead {
+    /// Lands in the callee's own self time.
+    callee: Duration,
+    /// Lands in the caller's self time.
+    caller: Duration,
 }
 
 struct Entry {
@@ -65,8 +76,7 @@ struct State {
     nodes: Vec<Node>,
     index: HashMap<(u32, Ident), u32>,
     stack: Vec<Entry>,
-    active: HashMap<Ident, u32>,
-    totals: HashMap<Ident, Duration>,
+    overhead: Overhead,
     closure_names: HashMap<(usize, crate::ast::TokenId), Ident>,
 }
 
@@ -78,14 +88,16 @@ impl State {
                 parent,
                 name,
                 calls: 0,
+                entries: 0,
                 self_time: Duration::ZERO,
             });
             (self.nodes.len() - 1) as u32
         });
+        let node_ref = &mut self.nodes[node as usize];
+        node_ref.entries += 1;
         if count_call {
-            self.nodes[node as usize].calls += 1;
+            node_ref.calls += 1;
         }
-        *self.active.entry(name).or_default() += 1;
         self.stack.push(Entry {
             node,
             start: Instant::now(),
@@ -100,18 +112,41 @@ impl State {
         let elapsed = entry.start.elapsed();
         let node = &mut self.nodes[entry.node as usize];
         node.self_time += elapsed.saturating_sub(entry.child_time);
-        let name = node.name;
         if let Some(parent) = self.stack.last_mut() {
             parent.child_time += elapsed;
         }
-        if let Some(active) = self.active.get_mut(&name) {
-            *active -= 1;
-            // Only the outermost activation adds to `total`, so recursion is not double counted.
-            if *active == 0 {
-                *self.totals.entry(name).or_default() += elapsed;
-            }
-        }
     }
+}
+
+/// Measures what one enter/exit pair adds to the callee's and the caller's self time, on a
+/// scratch state. A warm-up lets the clock and caches settle, and the median of several
+/// batches resists scheduler noise.
+fn measure_overhead() -> Overhead {
+    const WARMUP_PAIRS: u32 = 20_000;
+    const BATCHES: usize = 15;
+    const PAIRS: u32 = 2_000;
+    let name = Ident::new("<calibrate>");
+    let mut state = State::default();
+    let mut batch = |count: u32| {
+        state.nodes.clear();
+        state.index.clear();
+        state.stack.clear();
+        let started = Instant::now();
+        for _ in 0..count {
+            state.enter(name, true);
+            state.exit();
+        }
+        let wall = started.elapsed();
+        let callee = state.nodes.first().map_or(Duration::ZERO, |n| n.self_time);
+        Overhead {
+            callee: callee / count,
+            caller: wall.saturating_sub(callee) / count,
+        }
+    };
+    batch(WARMUP_PAIRS);
+    let mut samples: Vec<Overhead> = (0..BATCHES).map(|_| batch(PAIRS)).collect();
+    samples.sort_by_key(|o| o.callee + o.caller);
+    samples[samples.len() / 2]
 }
 
 /// Time attributed to one source line.
@@ -146,12 +181,18 @@ pub struct Profile {
     functions: Vec<FunctionProfile>,
     stacks: Vec<(Vec<String>, Duration)>,
     lines: Vec<LineProfile>,
+    overhead: Duration,
 }
 
 impl Profile {
     /// Returns functions ordered by descending self time, then name.
     pub fn functions(&self) -> &[FunctionProfile] {
         &self.functions
+    }
+
+    /// Returns the measurement cost per call that was subtracted from the function times.
+    pub fn overhead_per_call(&self) -> Duration {
+        self.overhead
     }
 
     /// Returns the sum of self time over all functions.
@@ -327,7 +368,12 @@ tr:hover td{background:rgba(255,255,255,.05)}\
     /// Renders the per-function table as JSON, with times in nanoseconds.
     pub fn to_json(&self) -> String {
         let mut out = String::from("{\"total_ns\":");
-        let _ = write!(out, "{},\"functions\":[", self.total_time().as_nanos());
+        let _ = write!(
+            out,
+            "{},\"overhead_per_call_ns\":{},\"functions\":[",
+            self.total_time().as_nanos(),
+            self.overhead.as_nanos()
+        );
         for (i, f) in self.functions.iter().enumerate() {
             if i > 0 {
                 out.push(',');
@@ -366,6 +412,7 @@ impl fmt::Display for Profile {
                 func.name, func.calls, func.self_time, func.total_time, pct
             )?;
         }
+        writeln!(f, "(measurement cost of {:.0?} per call subtracted)", self.overhead)?;
         Ok(())
     }
 }
@@ -384,6 +431,8 @@ impl ProfileScope {
     pub fn start() -> Self {
         SCOPES.fetch_add(1, Ordering::Relaxed);
         let previous = ACTIVE.with(|active| active.replace(Some(State::default())));
+        let overhead = measure_overhead();
+        with_state(|state| state.overhead = overhead);
         Self {
             previous,
             finished: false,
@@ -467,33 +516,84 @@ fn build(mut state: State) -> Profile {
             .then(a.module_id.cmp(&b.module_id))
             .then(a.line.cmp(&b.line))
     });
+    let nodes = &state.nodes;
+    // Charge each call's measurement cost back out: the callee's own time holds the hooks'
+    // callee share, and the caller's time holds the caller share of every call it made.
+    let mut child_entries = vec![0u64; nodes.len()];
+    for node in nodes {
+        if node.parent != ROOT {
+            child_entries[node.parent as usize] += node.entries;
+        }
+    }
+    // Calibrated at both ends; the smaller is less likely to be inflated by a noisy moment.
+    let end = measure_overhead();
+    let overhead = if end.callee + end.caller < state.overhead.callee + state.overhead.caller {
+        end
+    } else {
+        state.overhead
+    };
+    let corrected: Vec<Duration> = nodes
+        .iter()
+        .zip(&child_entries)
+        .map(|(node, &children)| {
+            let cost = overhead
+                .callee
+                .saturating_mul(node.entries.try_into().unwrap_or(u32::MAX))
+                + overhead.caller.saturating_mul(children.try_into().unwrap_or(u32::MAX));
+            node.self_time.saturating_sub(cost)
+        })
+        .collect();
+
+    // Parents are always created before their children, so one reverse pass sums subtrees.
+    let mut subtree = corrected.clone();
+    for i in (0..nodes.len()).rev() {
+        if nodes[i].parent != ROOT {
+            let time = subtree[i];
+            subtree[nodes[i].parent as usize] += time;
+        }
+    }
+    let is_outermost = |index: usize| {
+        let mut parent = nodes[index].parent;
+        while parent != ROOT {
+            if nodes[parent as usize].name == nodes[index].name {
+                return false;
+            }
+            parent = nodes[parent as usize].parent;
+        }
+        true
+    };
+
     let mut by_name: HashMap<Ident, FunctionProfile> = HashMap::new();
-    for node in &state.nodes {
+    for (i, node) in nodes.iter().enumerate() {
         let entry = by_name.entry(node.name).or_insert_with(|| FunctionProfile {
             name: label(node.name),
             calls: 0,
             self_time: Duration::ZERO,
-            total_time: state.totals.get(&node.name).copied().unwrap_or_default(),
+            total_time: Duration::ZERO,
         });
         entry.calls += node.calls;
-        entry.self_time += node.self_time;
+        entry.self_time += corrected[i];
+        // Only the outermost activation adds to `total`, so recursion is not double counted.
+        if is_outermost(i) {
+            entry.total_time += subtree[i];
+        }
     }
     let mut functions: Vec<_> = by_name.into_values().collect();
     functions.sort_by(|a, b| b.self_time.cmp(&a.self_time).then_with(|| a.name.cmp(&b.name)));
 
-    let mut stacks: Vec<_> = state
-        .nodes
+    let mut stacks: Vec<_> = nodes
         .iter()
-        .map(|node| {
+        .enumerate()
+        .map(|(i, node)| {
             let mut path = vec![label(node.name)];
             let mut parent = node.parent;
             while parent != ROOT {
-                let p = &state.nodes[parent as usize];
+                let p = &nodes[parent as usize];
                 path.push(label(p.name));
                 parent = p.parent;
             }
             path.reverse();
-            (path, node.self_time)
+            (path, corrected[i])
         })
         .collect();
     stacks.sort();
@@ -501,6 +601,7 @@ fn build(mut state: State) -> Profile {
         functions,
         stacks,
         lines,
+        overhead: overhead.callee + overhead.caller,
     }
 }
 
@@ -733,5 +834,32 @@ mod tests {
             "{:?}",
             profile.functions()
         );
+    }
+
+    #[test]
+    fn measurement_cost_is_subtracted_without_exceeding_wall_time() {
+        let mut engine = crate::DefaultEngine::default();
+        engine.load_builtin_module();
+        let scope = ProfileScope::start();
+        let started = Instant::now();
+        let result = engine.eval(
+            "def fib(n): if (n < 2): n else: fib(n - 1) + fib(n - 2); fib(15)",
+            std::iter::once(crate::RuntimeValue::None),
+        );
+        let wall = started.elapsed();
+        assert!(result.is_ok());
+        let profile = scope.finish();
+        assert!(profile.overhead_per_call() > Duration::ZERO);
+        // Subtracting the hooks' cost leaves less than the elapsed time, never more.
+        assert!(profile.total_time() < wall, "{:?} vs {wall:?}", profile.total_time());
+        assert!(profile.to_json().contains("\"overhead_per_call_ns\""));
+    }
+
+    #[test]
+    fn correction_never_makes_times_negative_or_total_smaller_than_self() {
+        let (profile, _) = profile_of("def f(n): if (n == 0): 0 else: f(n - 1); f(50)");
+        for f in profile.functions() {
+            assert!(f.total_time >= f.self_time, "{f:?}");
+        }
     }
 }

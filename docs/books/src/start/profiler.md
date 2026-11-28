@@ -24,10 +24,20 @@ With a profile flag, `mq` runs slower because it takes timestamps and updates co
 
 | Query | `--profile` | `--profile-lines` |
 | ----- | ----------- | ----------------- |
-| Recursive `fib(31)` (about 2.7 million calls) | 2.4x | 3.3x |
+| Recursive `fib(31)` (about 4.4 million calls) | 2.4x | 3.3x |
 | `map` over 3 million elements | 2.6x | 4.3x |
 
-Use the numbers to compare functions and lines within one profile. The cost is per call, so functions that are called very often and do little work look more expensive than they are, and absolute times are longer than in a normal run.
+### Measurement cost
+
+Each profiled call costs tens of nanoseconds for the timestamps and bookkeeping. When a scope starts and again when it ends, `mq` measures that cost and subtracts it per call from the function times, so a function called millions of times no longer looks slow only because it was timed. The text output ends with the amount, for example `(measurement cost of 41ns per call subtracted)`, and the JSON output has it as `overhead_per_call_ns`.
+
+The correction is approximate:
+
+- On a recursive `fib(31)`, the corrected total is within about 10% of the run time without the profiler.
+- Callbacks that a builtin such as `map` calls cost more to track than plain calls, so they are still reported higher than they are. On `map` over 3 million elements the total is about 1.5x the real time.
+- Line times (`--profile-lines`) are not corrected.
+
+Compare functions and lines within one profile rather than against a normal run, and treat very small times with caution.
 
 ## Per-function timing
 
@@ -42,6 +52,7 @@ function                              calls         self        total  self%
 map                                       1     45.577ms     58.078ms  73.5%
 <closure@query:1>                     20002     12.551ms     62.049ms  20.2%
 fib                                    1973      3.621ms      3.621ms   5.8%
+(measurement cost of 41ns per call subtracted)
 ```
 
 | Column | Meaning |
