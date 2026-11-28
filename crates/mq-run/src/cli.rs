@@ -162,6 +162,11 @@ pub struct Cli {
     #[arg(long, default_value_t = false)]
     profile_lines: bool,
 
+    /// Write the line profile as a heatmap HTML file (`profile-lines` feature builds only).
+    #[cfg(feature = "profile-lines")]
+    #[arg(long, value_name = "FILE")]
+    profile_lines_html: Option<PathBuf>,
+
     /// Print the Tarn VM bytecode to stdout and exit without running the program or reading
     /// input. Pass a format as `--dump-bytecode=json` (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
@@ -3282,13 +3287,14 @@ impl Cli {
     #[cfg(feature = "profile")]
     fn start_profile(&self) -> Option<mq_lang::profile::ProfileScope> {
         #[cfg(feature = "profile-lines")]
-        if self.profile_lines {
+        if self.profile_lines || self.profile_lines_html.is_some() {
             return Some(mq_lang::profile::ProfileScope::start().with_lines());
         }
         self.profile.map(|_| mq_lang::profile::ProfileScope::start())
     }
 
     #[cfg(feature = "profile")]
+    #[cfg_attr(not(feature = "profile-lines"), allow(unused_variables))]
     fn emit_profile(&self, scope: Option<mq_lang::profile::ProfileScope>, engine: &mq_lang::DefaultEngine) {
         let Some(scope) = scope else {
             return;
@@ -3299,6 +3305,21 @@ impl Cli {
                 ProfileFormat::Text => eprint!("{profile}"),
                 ProfileFormat::Folded => eprint!("{}", profile.to_folded()),
                 ProfileFormat::Json => eprintln!("{}", profile.to_json()),
+            }
+        }
+        #[cfg(feature = "profile-lines")]
+        if let Some(path) = &self.profile_lines_html {
+            let query = self.get_query().unwrap_or_default();
+            let html = profile.format_lines_html(|id| {
+                let name = if id == 0 {
+                    "query".to_string()
+                } else {
+                    engine.profile_module_name(id)
+                };
+                (name, engine.profile_module_source(id, &query))
+            });
+            if let Err(error) = std::fs::write(path, html) {
+                eprintln!("failed to write {}: {error}", path.display());
             }
         }
         #[cfg(feature = "profile-lines")]

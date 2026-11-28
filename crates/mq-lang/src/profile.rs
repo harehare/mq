@@ -16,6 +16,10 @@ thread_local! {
 
 const ROOT: u32 = u32::MAX;
 
+/// Unprofiled lines shown around each profiled line in the HTML heatmap.
+#[cfg(feature = "profile-lines")]
+const HTML_CONTEXT: usize = 3;
+
 /// A node of the call tree: one function reached through one call path.
 struct Node {
     parent: u32,
@@ -176,6 +180,104 @@ impl Profile {
         out
     }
 
+    /// Renders a self-contained HTML heatmap of the profiled lines, one section per module,
+    /// hottest first. `module` returns a module's display name and source for a raw id.
+    /// Line background darkens with the line's share of the hottest line's time.
+    #[cfg(feature = "profile-lines")]
+    pub fn format_lines_html(&self, module: impl Fn(u32) -> (String, Option<String>)) -> String {
+        let mut modules: Vec<u32> = Vec::new();
+        for l in &self.lines {
+            if !modules.contains(&l.module_id) {
+                modules.push(l.module_id);
+            }
+        }
+        let module_time =
+            |id: u32| -> Duration { self.lines.iter().filter(|l| l.module_id == id).map(|l| l.time).sum() };
+        modules.sort_by_key(|&id| (std::cmp::Reverse(module_time(id)), id));
+        let hottest = self
+            .lines
+            .iter()
+            .map(|l| l.time)
+            .max()
+            .unwrap_or_default()
+            .as_secs_f64();
+
+        let mut out = String::from(
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>mq line profile</title><style>\
+:root{--bg:#2a3444;--card:#1e293b;--fg:#e2e8f0;--muted:#94a3b8;--line:#4a5568;--accent:#4fc3f7;--accent-fg:#85d4ff}\
+body{margin:0;padding:2rem;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,sans-serif}\
+h1{font-family:'Space Grotesk',Inter,sans-serif;font-size:1.6rem;color:var(--accent-fg);margin:0 0 .25rem}\
+p.sub{color:var(--muted);margin:0 0 1.5rem;font-size:.85rem}\
+section{background:var(--card);border:1px solid var(--line);border-radius:.75rem;margin:0 0 1.25rem;overflow:hidden}\
+h2{font-size:.9rem;font-weight:600;margin:0;padding:.7rem 1rem;border-bottom:1px solid var(--line);color:var(--accent-fg)}\
+h2 span{color:var(--muted);font-weight:400;margin-left:.6rem}\
+table{border-collapse:collapse;width:100%;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}\
+td{padding:0 .75rem;white-space:pre;vertical-align:top}\
+td.n{text-align:right;color:var(--muted);width:1%}\
+td.g{color:var(--muted);text-align:center;padding:.15rem 0}\
+tr:hover td{background:rgba(255,255,255,.05)}\
+</style></head><body><h1>mq line profile</h1><p class=sub>Darker lines took more time, relative to the hottest line.</p>",
+        );
+        for id in modules {
+            let (name, source) = module(id);
+            let times: HashMap<u32, &LineProfile> = self
+                .lines
+                .iter()
+                .filter(|l| l.module_id == id)
+                .map(|l| (l.line, l))
+                .collect();
+            let _ = write!(
+                out,
+                "<section><h2>{}<span>{:.3?}</span></h2><table>",
+                html_escape(&name),
+                module_time(id)
+            );
+            let source_lines: Vec<&str> = source.as_deref().map(|s| s.lines().collect()).unwrap_or_default();
+            let last = times.keys().copied().max().unwrap_or(0) as usize;
+            let total = source_lines.len().max(last);
+            // Show profiled lines with a few lines of context; collapse the rest.
+            let visible = |number: usize| {
+                (number.saturating_sub(HTML_CONTEXT)..=number + HTML_CONTEXT).any(|n| times.contains_key(&(n as u32)))
+            };
+            let mut skipped = false;
+            for number in 1..=total {
+                if !visible(number) {
+                    if !skipped {
+                        out.push_str("<tr><td class=g colspan=4>&#8942;</td></tr>");
+                        skipped = true;
+                    }
+                    continue;
+                }
+                skipped = false;
+                let text = source_lines.get(number - 1).copied().unwrap_or("");
+                let (hits, time, style) = match times.get(&(number as u32)) {
+                    Some(p) => {
+                        // Square root keeps lines much cooler than the hottest one visible.
+                        let alpha = if hottest > 0.0 {
+                            (p.time.as_secs_f64() / hottest).sqrt() * 0.6
+                        } else {
+                            0.0
+                        };
+                        (
+                            p.hits.to_string(),
+                            format!("{:.3?}", p.time),
+                            format!(" style=\"background:rgba(79,195,247,{alpha:.2})\""),
+                        )
+                    }
+                    None => (String::new(), String::new(), String::new()),
+                };
+                let _ = write!(
+                    out,
+                    "<tr{style}><td class=n>{number}</td><td class=n>{hits}</td><td class=n>{time}</td><td>{}</td></tr>",
+                    html_escape(text)
+                );
+            }
+            out.push_str("</table></section>");
+        }
+        out.push_str("</body></html>");
+        out
+    }
+
     /// Renders Brendan Gregg's folded stacks (`a;b;c <microseconds>`), accepted by `inferno`
     /// and speedscope.
     pub fn to_folded(&self) -> String {
@@ -281,6 +383,14 @@ impl Drop for ProfileScope {
             ACTIVE.with(|active| active.replace(self.previous.take()));
         }
     }
+}
+
+#[cfg(feature = "profile-lines")]
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn label(name: Ident) -> String {

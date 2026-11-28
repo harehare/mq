@@ -157,7 +157,7 @@ Any executable named `mq-NAME` in `~/.local/bin` or on `PATH` is available as `m
 | `tiktoken`                  | Token-counting builtins                                          |
 | `debug-trace`, `vm-profile` | VM diagnostics for development                                   |
 | `profile`                   | `--profile[=text\|folded\|json]` per-function timing to stderr    |
-| `profile-lines`             | `--profile-lines` hottest source lines (implies `profile`)       |
+| `profile-lines`             | `--profile-lines`, `--profile-lines-html FILE` hot lines (implies `profile`) |
 
 ## Embedding
 

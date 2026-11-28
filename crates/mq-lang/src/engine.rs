@@ -205,6 +205,16 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.vm.io = Shared::clone(&io);
     }
 
+    /// Returns the source of the module with raw id `module_id`, using `query` for the
+    /// top-level module. Used to render the line profile as HTML.
+    #[cfg(feature = "profile-lines")]
+    pub fn profile_module_source(&self, module_id: u32, query: &str) -> Option<String> {
+        self.vm
+            .module_loader
+            .get_source_code(crate::ModuleId::new(module_id), query.to_string())
+            .ok()
+    }
+
     /// Returns the display name of the module with raw id `module_id`, as recorded by the
     /// line profiler.
     #[cfg(feature = "profile-lines")]
