@@ -3645,6 +3645,20 @@ x
         kind: DocKind::Function,
     },
     BuiltinDoc {
+        name: "structural_diff",
+        aliases: &[],
+        description: "Compares two Markdown documents block by block and returns the edits as an array of `{kind, node, path, from, old, new}` dicts. `kind` is \"insert\", \"delete\", \"update\" or \"move\", and `path` is the chain of headings above the block joined with \" > \". `from` is the previous path of an updated or moved block when it differs. Each argument is a Markdown string, a node or an array of nodes.",
+        params: &["old", "new"],
+        param_types: &["string", "string"],
+        returns: "array",
+        examples: &[BuiltinExample {
+            code: r##"structural_diff("# Install\n", "# Installation\n") | map(fn(e): e["kind"];)"##,
+            expected: r#"["update"]"#,
+        }],
+        capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
         name: "sub",
         aliases: &[],
         description: "Subtracts the second value from the first value.",

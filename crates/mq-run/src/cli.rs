@@ -360,6 +360,13 @@ enum SandboxProfile {
     Unsafe,
 }
 
+/// How `--diff` renders a change.
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq)]
+enum DiffFormat {
+    Unified,
+    Structural,
+}
+
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum OutputFormat {
     #[default]
@@ -790,11 +797,22 @@ struct OutputArgs {
     #[arg(short = 'U', long = "update", default_value_t = false)]
     update: bool,
 
-    /// With --update, print a unified diff instead of the transformed content;
-    /// nothing is written. Multiple files are diffed one at a time with their path
-    /// in the headers; stdin is labeled `<stdin>`. Exits 1 if anything would change.
-    #[arg(long = "diff", default_value_t = false, requires = "update")]
-    diff: bool,
+    /// With --update, print a diff instead of the transformed content; nothing is
+    /// written. `--diff` is a unified (line) diff; `--diff=structural` lists the
+    /// inserted, deleted, updated and moved headings, paragraphs, list items and
+    /// table rows, with the heading path.
+    /// Multiple files are diffed one at a time with their path in the headers; stdin
+    /// is labeled `<stdin>`. Exits 1 if anything would change.
+    #[arg(
+        long = "diff",
+        value_enum,
+        value_name = "FORMAT",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "unified",
+        requires = "update"
+    )]
+    diff: Option<DiffFormat>,
 
     /// With --update, rewrite each input file with the result instead of printing it.
     /// Writes atomically and keeps the file mode; symlinks are followed and files whose
@@ -2199,7 +2217,7 @@ impl Cli {
             return Err(miette!("The output format is not supported for the update option"));
         }
 
-        if self.output.diff && matches!(self.resolved_output_format(), OutputFormat::Grep) {
+        if self.output.diff.is_some() && matches!(self.resolved_output_format(), OutputFormat::Grep) {
             return Err(miette!("--diff is not supported with -F grep"));
         }
 
@@ -2273,7 +2291,7 @@ impl Cli {
         let result = self.execute_once();
 
         // --diff: exit 1 if anything would change, for CI gating. Takes precedence over -e.
-        if self.output.diff && exit_status::had_diff() {
+        if self.output.diff.is_some() && exit_status::had_diff() {
             result?;
             std::process::exit(ExitReason::Failure.code());
         }
@@ -3098,7 +3116,7 @@ impl Cli {
 
     /// Rejects inputs `--in-place` cannot write back to, before any file is modified.
     fn check_in_place_inputs(&self, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
-        if !self.output.in_place || self.output.diff {
+        if !self.output.in_place || self.output.diff.is_some() {
             return Ok(());
         }
         let mut seen = std::collections::HashSet::new();
@@ -3204,7 +3222,7 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
 
-        if self.output.update && self.output.diff {
+        if self.output.update && self.output.diff.is_some() {
             return self.emit_diff(&runtime_values, file, content);
         }
 
@@ -3932,8 +3950,17 @@ impl Cli {
         let rendered = String::from_utf8_lossy(&rendered);
 
         if original != rendered {
-            exit_status::mark_diff();
-            self.print_unified_diff(original, &rendered, file)?;
+            match self.output.diff {
+                Some(DiffFormat::Structural) => {
+                    if self.print_structural_diff(original, &rendered, file)? {
+                        exit_status::mark_diff();
+                    }
+                }
+                _ => {
+                    exit_status::mark_diff();
+                    self.print_unified_diff(original, &rendered, file)?;
+                }
+            }
         }
 
         Ok(())
@@ -3947,18 +3974,7 @@ impl Cli {
             return Ok(());
         }
 
-        let mut handle = OutputSink::open(
-            &self.output.output_file,
-            self.output.atomic_output,
-            self.output.unbuffered,
-            self.clobber_mode(),
-            &self.output.output_claimed,
-        )?;
-
-        let label = file
-            .as_ref()
-            .map(|f| f.display().to_string())
-            .unwrap_or_else(|| "<stdin>".to_string());
+        let label = Self::diff_label(file);
 
         let diff_text = mq_lang::text_diff::unified(original, rendered, &label);
 
@@ -3984,10 +4000,100 @@ impl Cli {
             out.push('\n');
         }
 
+        self.write_diff_output(&out)
+    }
+
+    fn diff_label(file: &Option<PathBuf>) -> String {
+        file.as_ref()
+            .map(|f| f.display().to_string())
+            .unwrap_or_else(|| "<stdin>".to_string())
+    }
+
+    fn write_diff_output(&self, out: &str) -> miette::Result<()> {
+        let mut handle = OutputSink::open(
+            &self.output.output_file,
+            self.output.atomic_output,
+            self.output.unbuffered,
+            self.clobber_mode(),
+            &self.output.output_claimed,
+        )?;
         Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
         handle.finish()?;
 
         Ok(())
+    }
+
+    /// Prints the structural edits between `original` and `rendered`, one per line under
+    /// a file header, and returns whether there were any. Changes that only reformat the
+    /// Markdown produce no edits. Colorizes `+`/`-`/`~` lines when color is enabled.
+    fn print_structural_diff(&self, original: &str, rendered: &str, file: &Option<PathBuf>) -> miette::Result<bool> {
+        let parse = |text: &str| -> miette::Result<mq_lang::RuntimeValue> {
+            let nodes = if self.is_mdx_input(file) {
+                mq_lang::parse_mdx_input_with(text, self.parse_options())?
+            } else {
+                mq_lang::parse_markdown_input_with(text, self.parse_options())?
+            };
+            Ok(mq_lang::RuntimeValue::Array(nodes.into()))
+        };
+        let mut engine = DefaultEngine::default();
+        for (name, text) in [("__diff_old", original), ("__diff_new", rendered)] {
+            engine.define_value(name, parse(text)?).map_err(|e| miette!("{e}"))?;
+        }
+        let result = engine
+            .eval(
+                "structural_diff(__diff_old, __diff_new)",
+                std::iter::once(mq_lang::RuntimeValue::NONE),
+            )
+            .map_err(|e| miette!("{e}"))?;
+
+        let colorize = self.use_color();
+        let mut out = String::new();
+        let edits = result.values().iter().flat_map(|v| match v {
+            mq_lang::RuntimeValue::Array(items) => items.to_vec(),
+            other => vec![other.clone()],
+        });
+        for edit in edits {
+            let field = |name: &str| match &edit {
+                mq_lang::RuntimeValue::Dict(map) => map.get(&mq_lang::Ident::new(name)).and_then(|v| match v {
+                    mq_lang::RuntimeValue::String(s) => Some(s.replace('\n', "\\n")),
+                    _ => None,
+                }),
+                _ => None,
+            };
+            let (kind, node, path) = (field("kind"), field("node"), field("path"));
+            let (Some(kind), Some(node)) = (kind, node) else {
+                continue;
+            };
+            let location = path
+                .filter(|p| !p.is_empty())
+                .map(|p| format!(" [{p}]"))
+                .unwrap_or_default();
+            let (symbol, color, body) = match (kind.as_str(), field("old"), field("new")) {
+                ("insert", _, Some(new)) => ('+', "\x1b[32m", new),
+                ("delete", Some(old), _) => ('-', "\x1b[31m", old),
+                ("update", Some(old), Some(new)) => ('~', "\x1b[33m", format!("{old} -> {new}")),
+                ("move", _, Some(new)) => ('>', "\x1b[36m", new),
+                _ => continue,
+            };
+            let origin = field("from").map(|p| format!(" (from [{p}])")).unwrap_or_default();
+            let line = format!("{symbol} {node}{location}: {body}{origin}");
+            if colorize {
+                out.push_str(color);
+                out.push_str(&line);
+                out.push_str("\x1b[0m");
+            } else {
+                out.push_str(&line);
+            }
+            out.push('\n');
+        }
+
+        if out.is_empty() {
+            return Ok(false);
+        }
+        if !self.quiet {
+            self.write_diff_output(&format!("--- {}\n{out}", Self::diff_label(file)))?;
+        }
+        Ok(true)
     }
 }
 

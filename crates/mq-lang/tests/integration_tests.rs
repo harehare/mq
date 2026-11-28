@@ -2751,6 +2751,8 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::set_code_block_lang_simple(r##"to_markdown("```\ncode\n```") | first() | set_code_block_lang("rust") | .code.lang"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("rust".to_string()))].into()))]
 #[case::set_list_ordered_simple(r##"to_markdown("- item") | first() | set_list_ordered(true) | .list.ordered"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::diff_simple(r##"_diff("abc", "abd") | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::structural_diff_strings(r##"structural_diff("# Install\n", "# Installation\n") | map(fn(e): e["kind"];)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("update".to_string()))]))].into()))]
+#[case::structural_diff_node_arrays(r##"structural_diff(to_markdown("# A\n\none"), to_markdown("# A\n\none\n\ntwo")) | map(fn(e): e["path"];)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("A".to_string()))]))].into()))]
 #[case::get_markdown_position_simple(r##"to_markdown("# title") | first() | _get_markdown_position() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::get_location_simple(r##"to_markdown("# title") | first() | get_location() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::get_location_non_markdown(r##"get_location("not a node")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]

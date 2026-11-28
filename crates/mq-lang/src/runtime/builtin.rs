@@ -15,6 +15,7 @@ mod random;
 mod range;
 mod regex;
 pub(super) mod tokenizer;
+mod tree_diff;
 mod xml;
 
 use crate::DictMap;
@@ -4981,6 +4982,54 @@ fn shift_right_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Collects the Markdown nodes of a document given as a string, a node or an array of those.
+fn document_nodes(name: &str, value: &RuntimeValue) -> Result<Vec<mq_markdown::Node>, Error> {
+    match value {
+        RuntimeValue::String(s) => mq_markdown::Markdown::from_markdown_str(s.as_str())
+            .map(|md| md.nodes)
+            .map_err(|e| Error::Runtime(format!("{name}: {e}"))),
+        RuntimeValue::Markdown(node, _) => Ok(vec![(**node).clone()]),
+        RuntimeValue::Array(values) => {
+            let mut nodes = Vec::with_capacity(values.len());
+            for v in values.iter() {
+                match v {
+                    RuntimeValue::Markdown(node, _) => nodes.push((**node).clone()),
+                    other => return Err(Error::InvalidTypes(name.to_string(), vec![other.clone()])),
+                }
+            }
+            Ok(nodes)
+        }
+        other => Err(Error::InvalidTypes(name.to_string(), vec![other.clone()])),
+    }
+}
+
+#[mq_macros::mq_fn(name = "structural_diff", params = Fixed(2))]
+fn structural_diff_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    let [old, new] = args.as_slice() else {
+        return Err(invalid_arity(ident, 2, args.len()));
+    };
+    let name = ident.to_string();
+    let edits = tree_diff::diff(&document_nodes(&name, old)?, &document_nodes(&name, new)?);
+    let text = |s: Option<String>| s.map_or(RuntimeValue::NONE, |s| RuntimeValue::String(Shared::new(s)));
+    let result = edits
+        .into_iter()
+        .map(|edit| {
+            let mut map = DictMap::default();
+            map.insert(
+                Ident::new("kind"),
+                RuntimeValue::String(Shared::new(edit.kind.as_str().into())),
+            );
+            map.insert(Ident::new("node"), RuntimeValue::String(Shared::new(edit.node)));
+            map.insert(Ident::new("path"), RuntimeValue::String(Shared::new(edit.path)));
+            map.insert(Ident::new("from"), text(edit.from));
+            map.insert(Ident::new("old"), text(edit.old));
+            map.insert(Ident::new("new"), text(edit.new));
+            RuntimeValue::Dict(Shared::new(map))
+        })
+        .collect();
+    Ok(RuntimeValue::Array(Shared::new(result)))
+}
+
 fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<RuntimeValue>) {
     let char_changes = text_diff::changes(&text_diff::chars(s1), &text_diff::chars(s2));
     let mut del_inline: Vec<RuntimeValue> = Vec::new();
@@ -6331,6 +6380,7 @@ mq_macros::builtin_dispatch! {
     SHIFT_RIGHT,
     BIT_LENGTH,
     _DIFF,
+    STRUCTURAL_DIFF,
     BASENAME,
     DIRNAME,
     EXTNAME,
