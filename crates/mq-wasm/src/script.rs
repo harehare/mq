@@ -835,7 +835,7 @@ pub async fn diagnostics(code: &str, enable_type_check: Option<bool>) -> JsValue
         }));
 
         if enable_type_check.unwrap_or(false) && errors.is_empty() {
-            let mut checker = mq_check::TypeChecker::default();
+            let mut checker = type_checker_for(code);
             for error in checker.check(&hir) {
                 if let Some(range) = error.location() {
                     errors.push(Diagnostic {
@@ -859,7 +859,7 @@ pub async fn inlay_hints(code: &str) -> JsValue {
     let mut hir = mq_hir::Hir::default();
     hir.add_code(None, code);
 
-    let mut checker = mq_check::TypeChecker::default();
+    let mut checker = type_checker_for(code);
     let _ = checker.check(&hir);
 
     let symbol_types = checker.symbol_types();
@@ -1032,7 +1032,7 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
     let mut hir = mq_hir::Hir::default();
     let (source_id, _, _) = hir.add_code(None, code);
 
-    let mut checker = mq_check::TypeChecker::default();
+    let mut checker = type_checker_for(code);
     let _ = checker.check(&hir);
     let type_env = checker.symbol_types();
 
@@ -1340,6 +1340,14 @@ async fn fetch_text(url: &str) -> Result<String, String> {
     text_val
         .as_string()
         .ok_or_else(|| "response body is not a string".to_string())
+}
+
+/// A type checker that uses the input type the script declares with `# @input`.
+fn type_checker_for(code: &str) -> mq_check::TypeChecker {
+    let options = mq_check::TypeCheckerOptions::default()
+        .for_source(code)
+        .unwrap_or_default();
+    mq_check::TypeChecker::with_options(options)
 }
 
 #[cfg(test)]

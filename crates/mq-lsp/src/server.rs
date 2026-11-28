@@ -656,7 +656,16 @@ impl Backend {
 
         if errors.is_empty() && self.config.enable_type_checking {
             let hir_guard = self.hir.read_recover();
-            let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options.clone());
+            // An invalid `# @input` is reported and falls back to the configured options.
+            let options = self
+                .config
+                .type_checker_options
+                .for_nodes(&nodes)
+                .unwrap_or_else(|error| {
+                    errors.push(LspError::InvalidInputType(error));
+                    self.config.type_checker_options.clone()
+                });
+            let mut checker = mq_check::TypeChecker::with_options(options.clone());
             let type_errors = checker.check_classified(&hir_guard);
 
             // Build a set of text ranges from the current source's symbols
@@ -678,12 +687,9 @@ impl Backend {
                             .map(|range| source_locations.contains(&range))
                             .unwrap_or(false)
                     })
-                    .filter_map(|c| {
-                        let options = &self.config.type_checker_options;
-                        match c.severity(options)? {
-                            mq_check::Severity::Error => Some(LspError::TypeError(c.error, c.related)),
-                            mq_check::Severity::Warning => Some(LspError::UncertainTypeError(c.error, c.related)),
-                        }
+                    .filter_map(|c| match c.severity(&options)? {
+                        mq_check::Severity::Error => Some(LspError::TypeError(c.error, c.related)),
+                        mq_check::Severity::Warning => Some(LspError::UncertainTypeError(c.error, c.related)),
                     }),
             );
         }

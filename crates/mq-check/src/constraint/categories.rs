@@ -12,8 +12,9 @@ pub(super) struct SymbolCategories {
     /// Pass 1: literals, variables, parameters, function definitions
     pub(super) pass1_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 2: root-level pipe stages (parent=None, non-builtin, non-module, not a `def`/`let`/
-    /// `var`/`fn` keyword)
-    pub(super) root_symbols: Vec<SymbolId>,
+    /// `var`/`fn` keyword or an `include`/`import` directive), grouped by source
+    /// One pipeline per open source, so scripts open together do not feed each other.
+    pub(super) root_pipelines: Vec<Vec<SymbolId>>,
     /// Pass 2.5: Assign symbols (processed before other Pass 3 symbols
     /// so that variable types are updated before Refs and Calls are resolved)
     pub(super) assign_symbols: Vec<(SymbolId, SymbolKind)>,
@@ -81,13 +82,14 @@ fn is_definition_keyword(symbol: &Symbol) -> bool {
 pub(super) fn categorize_symbols(hir: &Hir, children_index: &ChildrenIndex) -> SymbolCategories {
     let mut cats = SymbolCategories {
         pass1_symbols: Vec::new(),
-        root_symbols: Vec::new(),
+        root_pipelines: Vec::new(),
         assign_symbols: Vec::new(),
         pass3_symbols: Vec::new(),
         pass4_functions: Vec::new(),
     };
 
     let reachable = reachable_module_symbols(hir, children_index);
+    let mut roots_by_source: Vec<(Option<_>, Vec<SymbolId>)> = Vec::new();
 
     // Categorize non-builtin symbols and the module symbols user code reaches
     for (symbol_id, symbol) in hir.symbols() {
@@ -101,8 +103,16 @@ pub(super) fn categorize_symbols(hir: &Hir, children_index: &ChildrenIndex) -> S
 
         // Root symbols (pass 2). The keyword that introduces a definition is not a pipe stage:
         // counting it would hand the document to the keyword instead of to the next stage.
-        if symbol.parent.is_none() && !is_definition_keyword(symbol) && !is_module {
-            cats.root_symbols.push(symbol_id);
+        if symbol.parent.is_none()
+            && !is_definition_keyword(symbol)
+            && !is_module
+            && !matches!(symbol.kind, SymbolKind::Include(_) | SymbolKind::Import(_))
+        {
+            let source = symbol.source.source_id;
+            match roots_by_source.iter_mut().find(|(id, _)| *id == source) {
+                Some((_, stages)) => stages.push(symbol_id),
+                None => roots_by_source.push((source, vec![symbol_id])),
+            }
         }
 
         match &symbol.kind {
@@ -136,5 +146,6 @@ pub(super) fn categorize_symbols(hir: &Hir, children_index: &ChildrenIndex) -> S
         }
     }
 
+    cats.root_pipelines = roots_by_source.into_iter().map(|(_, stages)| stages).collect();
     cats
 }

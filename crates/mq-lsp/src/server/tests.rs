@@ -2471,3 +2471,111 @@ async fn test_workspace_folder_indexes_unopened_files() {
     };
     assert_eq!(symbols.len(), 1);
 }
+
+#[rstest::rstest]
+#[case::declared("# @input code\n.depth", true)]
+#[case::not_declared(".depth", false)]
+#[tokio::test]
+async fn test_input_type_declared_in_the_script_is_type_checked(#[case] text: &str, #[case] has_error: bool) {
+    let config = LspConfig::new(
+        vec![],
+        true,
+        mq_check::TypeCheckerOptions::default(),
+        false,
+        Default::default(),
+    );
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        versions: DashMap::new(),
+        workspace_roots: RwLock::new(Vec::new()),
+        config: config.clone(),
+    });
+    let backend = service.inner();
+    let uri = Url::parse("file:///input_type.mq").unwrap();
+    backend.on_change(uri.clone(), text.to_string()).await;
+
+    let errors = backend.error_map.get(&uri.to_string()).unwrap();
+    assert_eq!(errors.iter().any(|e| matches!(e, LspError::TypeError(..))), has_error);
+}
+
+#[rstest::rstest]
+#[case::declared_opened_second("1", "# @input code\n.depth", 1, true)]
+#[case::declared_opened_first("# @input code\n.depth", "1", 0, true)]
+#[tokio::test]
+async fn test_scripts_open_together_keep_their_own_input_type(
+    #[case] first: &str,
+    #[case] second: &str,
+    #[case] declared: usize,
+    #[case] has_error: bool,
+) {
+    let config = LspConfig::new(
+        vec![],
+        true,
+        mq_check::TypeCheckerOptions::default(),
+        false,
+        Default::default(),
+    );
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        versions: DashMap::new(),
+        workspace_roots: RwLock::new(Vec::new()),
+        config,
+    });
+    let backend = service.inner();
+    let uris = [
+        Url::parse("file:///first.mq").unwrap(),
+        Url::parse("file:///second.mq").unwrap(),
+    ];
+    backend.on_change(uris[0].clone(), first.to_string()).await;
+    backend.on_change(uris[1].clone(), second.to_string()).await;
+
+    let errors = backend.error_map.get(&uris[declared].to_string()).unwrap();
+    assert_eq!(errors.iter().any(|e| matches!(e, LspError::TypeError(..))), has_error);
+}
+
+#[tokio::test]
+async fn test_invalid_input_declaration_is_reported_on_its_line() {
+    let config = LspConfig::new(
+        vec![],
+        true,
+        mq_check::TypeCheckerOptions::default(),
+        false,
+        Default::default(),
+    );
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        versions: DashMap::new(),
+        workspace_roots: RwLock::new(Vec::new()),
+        config,
+    });
+    let backend = service.inner();
+    let uri = Url::parse("file:///invalid_input.mq").unwrap();
+    backend
+        .on_change(uri.clone(), "# doc\n# @input headin\n.depth".to_string())
+        .await;
+
+    let errors = backend.error_map.get(&uri.to_string()).unwrap();
+    let range = errors
+        .iter()
+        .find_map(|e| match e {
+            LspError::InvalidInputType(error) => error.range(),
+            _ => None,
+        })
+        .expect("invalid input declaration is reported");
+    assert_eq!(range.start.line, 2);
+}

@@ -150,18 +150,18 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     //
     // Root-level symbols form an implicit pipe chain. The first symbol in the chain
     // receives the input document, which is `dynamic` unless the caller declared its type.
-    if !cats.root_symbols.is_empty() {
+    for stages in &cats.root_pipelines {
         let input_type = ctx.input_type().clone();
-        ctx.set_piped_input(cats.root_symbols[0], input_type.clone());
-        forward_input_to_initializer(hir, ctx, &children_index, cats.root_symbols[0], input_type);
-    }
-    for i in 1..cats.root_symbols.len() {
-        let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, cats.root_symbols[i - 1]);
-        ctx.set_piped_input(cats.root_symbols[i], prev_ty.clone());
-        if let Some(source) = prev_source {
-            ctx.set_piped_source(cats.root_symbols[i], source);
+        ctx.set_piped_input(stages[0], input_type.clone());
+        forward_input_to_initializer(hir, ctx, &children_index, stages[0], input_type);
+        for i in 1..stages.len() {
+            let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, stages[i - 1]);
+            ctx.set_piped_input(stages[i], prev_ty.clone());
+            if let Some(source) = prev_source {
+                ctx.set_piped_source(stages[i], source);
+            }
+            forward_input_to_initializer(hir, ctx, &children_index, stages[i], prev_ty);
         }
-        forward_input_to_initializer(hir, ctx, &children_index, cats.root_symbols[i], prev_ty);
     }
 
     // Pass 2.5: Process Assign symbols before other operators/calls.
@@ -188,7 +188,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
 
     // Pass 3.5: Thread the root pipe chain again now that the stages have types, so a stage
     // whose input was unknown in Pass 2 (e.g. an array literal) reaches the stages after it.
-    for pair in cats.root_symbols.windows(2) {
+    for pair in cats.root_pipelines.iter().flat_map(|stages| stages.windows(2)) {
         let is_stage = hir.symbol(pair[1]).is_some_and(|s| {
             matches!(
                 s.kind,
@@ -201,7 +201,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     }
 
     // The root stages that are an `if` pass their input on to the condition and the branches.
-    for &stage in &cats.root_symbols {
+    for &stage in cats.root_pipelines.iter().flatten() {
         if hir.symbol(stage).is_some_and(|s| matches!(s.kind, SymbolKind::If))
             && let Some(input) = ctx.get_piped_input(stage).cloned()
         {

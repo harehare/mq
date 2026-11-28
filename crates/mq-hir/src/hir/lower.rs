@@ -906,7 +906,7 @@ impl Hir {
         } = &**node
             && let Some(selector) = selector_from_cst_node(node)
         {
-            let symbol_id = self.insert_symbol(Symbol {
+            let symbol_id = self.add_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Selector(selector),
                 source: SourceInfo::new(Some(source_id), Some(node.range())),

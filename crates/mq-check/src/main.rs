@@ -223,9 +223,19 @@ fn collect_check_diagnostics(
     let has_syntax_errors = diagnostics.iter().any(|d| d.severity == format::Severity::Error);
 
     if !has_syntax_errors {
-        let mut checker = TypeChecker::with_options(type_checker_options.clone());
-        let errors = checker.check_classified(&hir);
-        diagnostics.extend(format::type_diagnostics(&errors, type_checker_options));
+        match type_checker_options.for_source(code) {
+            Ok(options) => {
+                let mut checker = TypeChecker::with_options(options.clone());
+                let errors = checker.check_classified(&hir);
+                diagnostics.extend(format::type_diagnostics(&errors, &options));
+            }
+            Err(error) => diagnostics.push(format::CheckDiagnostic {
+                severity: format::Severity::Error,
+                code: "typechecker::invalid_type_expression",
+                message: error.to_string(),
+                range: error.range(),
+            }),
+        }
     }
 
     diagnostics
@@ -245,7 +255,13 @@ fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &Ch
         return Ok(true);
     }
 
-    check_type(w, code, &hir, opts.show_types, &opts.type_checker_options)
+    match opts.type_checker_options.for_source(code) {
+        Ok(options) => check_type(w, code, &hir, opts.show_types, &options),
+        Err(error) => {
+            writeln!(w, "  {} {}\n", "error:".bright_red().bold(), error.with_help().white())?;
+            Ok(true)
+        }
+    }
 }
 
 /// Writes syntax errors and warnings in a unified format.
@@ -603,6 +619,35 @@ mod tests {
         assert!(diagnostics.iter().any(|d| d.code == "typechecker::undefined_attribute"));
         let diagnostics = collect_check_diagnostics(".depth", None, &TypeCheckerOptions::default());
         assert!(diagnostics.is_empty());
+    }
+
+    #[rstest::rstest]
+    #[case::declared("# @input code\n.depth", None, true)]
+    #[case::declared_after_blank_and_comment("\n# note\n#   @input code\n.depth", None, true)]
+    #[case::cli_wins("# @input code\n.depth", Some("h1"), false)]
+    #[case::after_code_is_ignored(".depth\n# @input code", None, false)]
+    fn test_declared_input_type_is_applied(#[case] code: &str, #[case] cli: Option<&str>, #[case] errors: bool) {
+        let options = TypeCheckerOptions {
+            input_type: cli.map(|t| mq_check::type_expr::parse_type(t).unwrap()),
+            ..Default::default()
+        };
+        let diagnostics = collect_check_diagnostics(code, None, &options);
+        assert_eq!(
+            diagnostics.iter().any(|d| d.code == "typechecker::undefined_attribute"),
+            errors
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::unknown_type("# @input headin\n.depth")]
+    #[case::twice("# @input h1\n# @input h2\n.depth")]
+    fn test_invalid_declaration_is_an_error(#[case] code: &str) {
+        let diagnostics = collect_check_diagnostics(code, None, &TypeCheckerOptions::default());
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "typechecker::invalid_type_expression" && d.severity == format::Severity::Error)
+        );
     }
 
     #[test]

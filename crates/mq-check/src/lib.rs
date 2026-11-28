@@ -346,6 +346,26 @@ pub struct TypeCheckerOptions {
     pub input_type: Option<types::Type>,
 }
 
+impl TypeCheckerOptions {
+    /// Returns these options with the input type declared by `# @input` in `src`.
+    /// An explicit `input_type` takes precedence over the declaration.
+    pub fn for_source(&self, src: &str) -> std::result::Result<Self, type_expr::TypeExprError> {
+        self.for_nodes(&mq_syntax::parse_recovery(src).0)
+    }
+
+    /// Like [`for_source`](Self::for_source), for a script that is already parsed.
+    pub fn for_nodes(
+        &self,
+        nodes: &[mq_syntax::Shared<mq_syntax::cst::node::Node>],
+    ) -> std::result::Result<Self, type_expr::TypeExprError> {
+        let mut options = self.clone();
+        if options.input_type.is_none() {
+            options.input_type = type_expr::declared_input_type(nodes)?;
+        }
+        Ok(options)
+    }
+}
+
 /// Wall-clock time of each phase of [`TypeChecker::check_profiled`], in execution order.
 ///
 /// A phase that runs more than once appears once per run.
