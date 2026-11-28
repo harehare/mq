@@ -566,6 +566,7 @@ impl HttpModuleResolver<UreqFetcher> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "http-import-ureq")]
     use super::*;
 
     #[cfg(feature = "http-import-ureq")]

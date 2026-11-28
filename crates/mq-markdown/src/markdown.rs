@@ -1190,6 +1190,7 @@ mod color_tests {
 #[cfg(test)]
 #[cfg(feature = "json")]
 mod json_tests {
+    #[cfg(feature = "html-to-markdown")]
     use rstest::rstest;
 
     use super::*;

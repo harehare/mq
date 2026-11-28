@@ -7,7 +7,9 @@ use mq_lang::DefaultEngine;
 use mq_lang::DictMap;
 use mq_syntax::Shared;
 use rayon::prelude::*;
-use std::collections::{BTreeSet, HashSet};
+#[cfg(feature = "watch")]
+use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
@@ -17,6 +19,7 @@ use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
+#[cfg(feature = "watch")]
 use std::sync::mpsc;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
