@@ -639,7 +639,7 @@ struct ProgramArgs {
         short = 'a',
         long = "allow-all",
         default_value_t = false,
-        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env", "allow_http_import"]
+        conflicts_with_all = ALLOW_ALL_CONFLICTS
     )]
     allow_all: bool,
 
@@ -649,10 +649,34 @@ struct ProgramArgs {
     #[arg(
         long = "sandbox",
         value_enum,
-        conflicts_with_all = ["allow_net", "allow_read", "allow_run", "allow_env", "allow_http_import", "allow_all"]
+        conflicts_with_all = SANDBOX_CONFLICTS
     )]
     sandbox: Option<SandboxProfile>,
 }
+
+#[cfg(feature = "http-import")]
+const ALLOW_ALL_CONFLICTS: &[&str] = &[
+    "allow_net",
+    "allow_read",
+    "allow_write",
+    "allow_run",
+    "allow_env",
+    "allow_http_import",
+];
+#[cfg(not(feature = "http-import"))]
+const ALLOW_ALL_CONFLICTS: &[&str] = &["allow_read", "allow_write", "allow_run", "allow_env"];
+
+#[cfg(feature = "http-import")]
+const SANDBOX_CONFLICTS: &[&str] = &[
+    "allow_net",
+    "allow_read",
+    "allow_run",
+    "allow_env",
+    "allow_http_import",
+    "allow_all",
+];
+#[cfg(not(feature = "http-import"))]
+const SANDBOX_CONFLICTS: &[&str] = &["allow_read", "allow_run", "allow_env", "allow_all"];
 
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {

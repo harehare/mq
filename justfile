@@ -177,6 +177,8 @@ test-default:
 # Build each feature on its own (with dev-deps, so test code is covered) to catch missing cfg gates.
 check-features:
     cargo hack check --workspace --exclude mq-wasm --each-feature --tests --keep-going
+    cargo run -q -p mq-run --no-default-features -- --help > /dev/null
+    cargo run -q -p mq-run --no-default-features -- completion zsh > /dev/null
 
 # Pairwise feature combinations of the crates with the most features.
 check-features-powerset:

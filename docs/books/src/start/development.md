@@ -19,7 +19,7 @@ Install development dependencies:
 
 ```sh
 # Using cargo
-cargo install just wasm-pack
+cargo install just wasm-pack cargo-hack cargo-nextest
 ```
 
 Or if you prefer using asdf:
