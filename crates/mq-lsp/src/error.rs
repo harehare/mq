@@ -13,6 +13,8 @@ pub enum LspError {
     UncertainTypeError(mq_check::TypeError, Vec<mq_check::Related>),
     /// A lint warning.
     LintWarning(mq_lint::Diagnostic),
+    /// An invalid `# @input` declaration.
+    InvalidInputType(mq_check::type_expr::TypeExprError),
 }
 
 fn lint_severity(severity: mq_lint::Severity) -> ls_types::DiagnosticSeverity {
@@ -94,6 +96,20 @@ impl LspError {
                     diagnostic.tags = Some(vec![ls_types::DiagnosticTag::UNNECESSARY]);
                 }
                 diagnostic
+            }
+            LspError::InvalidInputType(error) => {
+                let range = error.range().map(|r| lsp_range(lines, r)).unwrap_or_default();
+                ls_types::Diagnostic::new(
+                    range,
+                    Some(ls_types::DiagnosticSeverity::ERROR),
+                    Some(NumberOrString::String(
+                        "typechecker::invalid_type_expression".to_string(),
+                    )),
+                    Some("mq-check".to_string()),
+                    error.with_help(),
+                    None,
+                    None,
+                )
             }
             LspError::LintWarning(diagnostic) => {
                 let range = diagnostic.range.map(|r| lsp_range(lines, r)).unwrap_or_else(|| {

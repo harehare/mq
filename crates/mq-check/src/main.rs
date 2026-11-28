@@ -233,7 +233,7 @@ fn collect_check_diagnostics(
                 severity: format::Severity::Error,
                 code: "typechecker::invalid_type_expression",
                 message: error.to_string(),
-                range: None,
+                range: error.range(),
             }),
         }
     }

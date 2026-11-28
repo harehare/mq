@@ -656,12 +656,15 @@ impl Backend {
 
         if errors.is_empty() && self.config.enable_type_checking {
             let hir_guard = self.hir.read_recover();
-            // An invalid `# @input` falls back to the configured options.
+            // An invalid `# @input` is reported and falls back to the configured options.
             let options = self
                 .config
                 .type_checker_options
-                .for_source(&text)
-                .unwrap_or_else(|_| self.config.type_checker_options.clone());
+                .for_nodes(&nodes)
+                .unwrap_or_else(|error| {
+                    errors.push(LspError::InvalidInputType(error));
+                    self.config.type_checker_options.clone()
+                });
             let mut checker = mq_check::TypeChecker::with_options(options.clone());
             let type_errors = checker.check_classified(&hir_guard);
 

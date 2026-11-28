@@ -11,6 +11,7 @@
 
 use miette::{Diagnostic, SourceSpan};
 use mq_markdown::NodeKind;
+use mq_syntax::{Range, cst::node::Node};
 use thiserror::Error;
 
 use crate::{kind_set::KindSet, types::Type};
@@ -26,9 +27,15 @@ pub struct TypeExprError {
     span: SourceSpan,
     #[help]
     help: Option<String>,
+    range: Option<Range>,
 }
 
 impl TypeExprError {
+    /// The `# @input` line the error is in, when it was read from a script.
+    pub fn range(&self) -> Option<Range> {
+        self.range
+    }
+
     /// The message followed by the hint on valid names, for command line output.
     pub fn with_help(&self) -> String {
         match &self.help {
@@ -51,18 +58,12 @@ pub fn parse_type(src: &str) -> Result<Type, TypeExprError> {
 
 /// Reads the input type a script declares with `# @input <type>` in its leading comments.
 ///
-/// Only the comment and blank lines before the first line of code are read. Returns `None` when
-/// there is no declaration, and an error when the type is invalid or declared twice.
-pub fn declared_input_type(src: &str) -> Result<Option<Type>, TypeExprError> {
+/// Only the comments before the first node are read. Returns `None` when there is no
+/// declaration, and an error located at the `# @input` line when the type is invalid or declared
+/// twice.
+pub fn declared_input_type(nodes: &[mq_syntax::Shared<Node>]) -> Result<Option<Type>, TypeExprError> {
     let mut declared = None;
-    for line in src.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Some(comment) = line.strip_prefix('#') else {
-            break;
-        };
+    for (range, comment) in nodes.first().map(|node| node.comments()).unwrap_or_default() {
         let Some(ty) = comment
             .trim_start()
             .strip_prefix("@input")
@@ -70,15 +71,28 @@ pub fn declared_input_type(src: &str) -> Result<Option<Type>, TypeExprError> {
         else {
             continue;
         };
+        // The comment range starts after the `#`.
+        let line_range = Range {
+            start: mq_syntax::Position::new(range.start.line, range.start.column.saturating_sub(1).max(1)),
+            end: range.end,
+        };
+        let line = format!("#{comment}");
         if declared.is_some() {
             return Err(TypeExprError {
-                source_text: line.to_string(),
-                message: "the input type is declared more than once".to_string(),
                 span: (0, line.len()).into(),
+                source_text: line,
+                message: "the input type is declared more than once".to_string(),
                 help: Some("keep a single `# @input` line".to_string()),
+                range: Some(line_range),
             });
         }
-        declared = Some(parse_type(ty.trim())?);
+        let type_offset = line.len() - ty.trim_start().len();
+        declared = Some(parse_type(ty.trim()).map_err(|mut error| {
+            error.span = (error.span.offset() + type_offset, error.span.len()).into();
+            error.source_text = line.trim_end().to_string();
+            error.range = Some(line_range);
+            error
+        })?);
     }
     Ok(declared)
 }
@@ -116,6 +130,7 @@ impl Parser<'_> {
             message,
             span: (self.pos.min(self.src.len()), len).into(),
             help,
+            range: None,
         }
     }
 
@@ -244,16 +259,35 @@ mod tests {
     #[case::stops_at_code(".\n# @input code", None)]
     #[case::not_a_directive("# @inputs code\n.", None)]
     fn test_declared_input_type(#[case] src: &str, #[case] expected: Option<Type>) {
-        assert_eq!(declared_input_type(src).unwrap(), expected);
+        assert_eq!(
+            declared_input_type(&mq_syntax::parse_recovery(src).0).unwrap(),
+            expected
+        );
     }
 
     #[rstest]
-    #[case::invalid("# @input headin")]
-    #[case::empty("# @input ")]
-    #[case::twice("# @input h1\n# @input h2")]
-    #[case::unicode_name("# @input códe\n.depth")]
-    fn test_declared_input_type_errors(#[case] src: &str) {
-        assert!(declared_input_type(src).is_err());
+    #[case::invalid("# @input headin\n.", (1, 1, 1, 16), "# @input headin", 9)]
+    #[case::empty("# @input \n.", (1, 1, 1, 10), "# @input", 9)]
+    #[case::twice("# @input h1\n# @input h2\n.", (2, 1, 2, 12), "# @input h2", 0)]
+    #[case::after_comments("# doc\n  # @input h1 | x\n.", (2, 3, 2, 18), "# @input h1 | x", 14)]
+    #[case::unicode_name("# @input códe\n.depth", (1, 1, 1, 14), "# @input códe", 9)]
+    fn test_declared_input_type_errors(
+        #[case] src: &str,
+        #[case] range: (u32, u32, u32, u32),
+        #[case] line: &str,
+        #[case] span_start: usize,
+    ) {
+        let error = declared_input_type(&mq_syntax::parse_recovery(src).0).unwrap_err();
+        let (start_line, start_column, end_line, end_column) = range;
+        assert_eq!(
+            error.range(),
+            Some(Range {
+                start: mq_syntax::Position::new(start_line, start_column),
+                end: mq_syntax::Position::new(end_line, end_column),
+            })
+        );
+        assert_eq!(error.source_text, line);
+        assert_eq!(error.span.offset(), span_start);
     }
 
     #[rstest]
