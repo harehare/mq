@@ -13,6 +13,13 @@ const _: () = {
     }
 };
 
+// `just build` sets MQ_FORBID_PROFILER so `mq` fails to build if `profile` leaks in.
+const _: () = {
+    if cfg!(feature = "profile") && option_env!("MQ_FORBID_PROFILER").is_some() {
+        panic!("the `mq` binary must not be built with the `profile` feature, use `mq-profile`");
+    }
+};
+
 fn main() -> std::process::ExitCode {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     if let Some(code) = mq_run::Cli::run_external_subcommand(&args) {

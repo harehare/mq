@@ -1,26 +1,26 @@
 # Profiler
 
-The profiler reports which mq functions and source lines take the most time. It is built only when the `profile` feature is enabled, so normal `mq` builds are unaffected.
+The profiler reports which mq functions and source lines take the most time. It is a separate binary, `mq-profile`, that behaves like `mq` and adds the profiling flags. It is built only with the `profile` feature, so `mq` itself is unaffected and installing one does not replace the other.
 
 ## Installation
 
-Build `mq` from source with the feature enabled:
+Build `mq-profile` from source with the feature enabled:
 
 ```bash
 # Per-function timing
-cargo install --git https://github.com/harehare/mq.git mq-run --bin mq --features profile
+cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-profile --features profile
 
 # Per-function timing and per-line timing
-cargo install --git https://github.com/harehare/mq.git mq-run --bin mq --features profile-lines
+cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-profile --features profile-lines
 ```
 
 `profile-lines` includes `profile`.
 
 ## Overhead
 
-Without the features, `mq` contains none of the profiler code. In a build with them, a run without `--profile` costs up to about 8% on call-heavy queries.
+`mq` contains none of the profiler code. `mq-profile` run without a profile flag costs up to about 8% on call-heavy queries.
 
-With a profile flag, `mq` runs slower because it takes timestamps and updates counters while it runs. Release build, median of 10 runs, relative to a build without the features:
+With a profile flag, `mq-profile` runs slower because it takes timestamps and updates counters while it runs. Release build, median of 10 runs, relative to `mq`:
 
 | Query | `--profile` | `--profile-lines` |
 | ----- | ----------- | ----------------- |
@@ -29,7 +29,7 @@ With a profile flag, `mq` runs slower because it takes timestamps and updates co
 
 ### Measurement cost
 
-Each profiled call costs tens of nanoseconds for the timestamps and bookkeeping. When a scope starts and again when it ends, `mq` measures that cost and subtracts it per call from the function times, so a function called millions of times no longer looks slow only because it was timed. The text output ends with the amount, for example `(measurement cost of 41ns per call subtracted)`, and the JSON output has it as `overhead_per_call_ns`.
+Each profiled call costs tens of nanoseconds for the timestamps and bookkeeping. When a scope starts and again when it ends, `mq-profile` measures that cost and subtracts it per call from the function times, so a function called millions of times no longer looks slow only because it was timed. The text output ends with the amount, for example `(measurement cost of 41ns per call subtracted)`, and the JSON output has it as `overhead_per_call_ns`.
 
 The correction is approximate:
 
@@ -44,7 +44,7 @@ Compare functions and lines within one profile rather than against a normal run,
 `--profile` prints a table to stderr after the query runs. The query result is still written to stdout.
 
 ```bash
-mq --profile -f query.mq input.md
+mq-profile --profile -f query.mq input.md
 ```
 
 ```text
@@ -73,7 +73,7 @@ The profile is printed even when the query fails, so you can see where the time 
 `folded` prints one stack per line with its self time in microseconds, in the format used by flame graph tools. Pass it to [inferno](https://github.com/jonhoo/inferno) or load it into [speedscope](https://www.speedscope.app/):
 
 ```bash
-mq --profile=folded -f query.mq input.md 2> profile.folded
+mq-profile --profile=folded -f query.mq input.md 2> profile.folded
 inferno-flamegraph < profile.folded > flame.svg
 ```
 
@@ -84,7 +84,7 @@ inferno-flamegraph < profile.folded > flame.svg
 `--profile-lines` prints the 20 hottest source lines. It needs the `profile-lines` feature and can be combined with `--profile`.
 
 ```bash
-mq --profile-lines -f query.mq input.md
+mq-profile --profile-lines -f query.mq input.md
 ```
 
 ```text
@@ -103,7 +103,7 @@ query:1                               2     11.584µs   0.1%  import "helper" | 
 `--profile-lines-html FILE` writes the line profile as a self-contained HTML page. Each module is a card with its source, and a line's background gets darker the more of the hottest line's time it took. Lines far from any measured line are collapsed.
 
 ```bash
-mq --profile-lines-html profile.html -f query.mq input.md
+mq-profile --profile-lines-html profile.html -f query.mq input.md
 ```
 
 ## Using the profiler from Rust

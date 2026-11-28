@@ -85,6 +85,12 @@ name = "mq-dbg"
 path = "src/bin/dbg.rs"
 required-features = ["debugger"]
 
+[[bin]]
+doc = false
+name = "mq-profile"
+path = "src/bin/profile.rs"
+required-features = ["profile"]
+
 [package.metadata.binstall]
 pkg-fmt = "bin"
 pkg-url = "{ repo }/releases/download/v{ version }/mq-{ target }{ binary-ext }"

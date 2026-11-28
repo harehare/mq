@@ -152,17 +152,17 @@ pub struct Cli {
     #[arg(long = "vm-profile", default_value_t = false)]
     vm_profile: bool,
 
-    /// Print per-function timing to stderr (`profile` feature builds only).
+    /// Print per-function timing to stderr (`mq-profile` only).
     #[cfg(feature = "profile")]
     #[arg(long, value_name = "FORMAT", num_args = 0..=1, default_missing_value = "text")]
     profile: Option<ProfileFormat>,
 
-    /// Print the hottest source lines to stderr (`profile-lines` feature builds only).
+    /// Print the hottest source lines to stderr (`mq-profile` built with `profile-lines`).
     #[cfg(feature = "profile-lines")]
     #[arg(long, default_value_t = false)]
     profile_lines: bool,
 
-    /// Write the line profile as a heatmap HTML file (`profile-lines` feature builds only).
+    /// Write the line profile as a heatmap HTML file (`mq-profile` built with `profile-lines`).
     #[cfg(feature = "profile-lines")]
     #[arg(long, value_name = "FILE")]
     profile_lines_html: Option<PathBuf>,
