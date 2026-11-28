@@ -152,6 +152,26 @@ pub struct Cli {
     #[arg(long = "vm-profile", default_value_t = false)]
     vm_profile: bool,
 
+    /// Print per-function timing to stderr (`mq-profile` only).
+    #[cfg(feature = "profile")]
+    #[arg(long, value_name = "FORMAT", num_args = 0..=1, require_equals = true, default_missing_value = "text")]
+    profile: Option<ProfileFormat>,
+
+    /// Print the hottest source lines to stderr (`mq-profile` built with `profile-lines`).
+    #[cfg(feature = "profile-lines")]
+    #[arg(long, default_value_t = false)]
+    profile_lines: bool,
+
+    /// Write the line profile as a heatmap HTML file (`mq-profile` built with `profile-lines`).
+    #[cfg(feature = "profile-lines")]
+    #[arg(long, value_name = "FILE")]
+    profile_lines_html: Option<PathBuf>,
+
+    /// Line profiles of every evaluation, written as one heatmap when the run ends.
+    #[cfg(feature = "profile-lines")]
+    #[arg(skip)]
+    line_report: std::sync::Mutex<mq_lang::profile::LineReport>,
+
     /// Print the Tarn VM bytecode to stdout and exit without running the program or reading
     /// input. Pass a format as `--dump-bytecode=json` (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
@@ -358,6 +378,15 @@ enum SandboxProfile {
     Networked,
     /// Everything, equivalent to `--allow-all`.
     Unsafe,
+}
+
+#[cfg(feature = "profile")]
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq)]
+enum ProfileFormat {
+    Text,
+    /// Folded stacks for `inferno` and speedscope.
+    Folded,
+    Json,
 }
 
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
@@ -2103,7 +2132,27 @@ impl Cli {
         }
 
         self.validate_output_options()?;
-        self.run_query()
+        let result = self.run_query();
+        let heatmap = self.write_heatmap();
+        // The query's own error wins over a heatmap write failure.
+        result.and(heatmap)
+    }
+
+    /// Writes the combined line heatmap requested by `--profile-lines-html`.
+    #[cfg(feature = "profile-lines")]
+    fn write_heatmap(&self) -> miette::Result<()> {
+        let Some(path) = &self.profile_lines_html else {
+            return Ok(());
+        };
+        let report = self.line_report.lock().unwrap_or_else(|e| e.into_inner());
+        std::fs::write(path, report.format_html())
+            .map_err(|error| miette!("failed to write {}: {error}", path.display()))
+    }
+
+    #[cfg(not(feature = "profile-lines"))]
+    #[inline(always)]
+    fn write_heatmap(&self) -> miette::Result<()> {
+        Ok(())
     }
 
     /// Runs the subcommands that take no query or input document, so none of the query
@@ -3166,8 +3215,10 @@ impl Cli {
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         let mut cache = ProgramCache::default();
         let index = self.program_index(&mut engine, &mut cache, query, first_file)?;
-        let runtime_values = engine
-            .eval_compiled(&cache.programs[index].1, combined_input.into_iter())
+        let runtime_values = self
+            .eval_profiled(&mut engine, |engine| {
+                engine.eval_compiled(&cache.programs[index].1, combined_input.into_iter())
+            })
             .map_err(|error| *error)?;
 
         #[cfg(feature = "vm-profile")]
@@ -3193,12 +3244,15 @@ impl Cli {
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
 
         let runtime_values = if self.output.update {
-            let results = engine
-                .eval_compiled(program, input.clone().into_iter())
+            let results = self
+                .eval_profiled(engine, |engine| {
+                    engine.eval_compiled(program, input.clone().into_iter())
+                })
                 .map_err(|e| *e)?;
             self.apply_update(input, results)?
         } else {
-            engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
+            self.eval_profiled(engine, |engine| engine.eval_compiled(program, input.into_iter()))
+                .map_err(|e| *e)?
         };
 
         #[cfg(feature = "vm-profile")]
@@ -3238,14 +3292,88 @@ impl Cli {
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         let input = self.resolve_input(file, content)?;
-        let runtime_values = engine
-            .eval_compiled(&cache.programs[index].1, input.into_iter())
+        let runtime_values = self
+            .eval_profiled(engine, |engine| {
+                engine.eval_compiled(&cache.programs[index].1, input.into_iter())
+            })
             .map_err(|error| *error)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
         let matches = self.output.paginate(runtime_values.compact());
         self.record_exit_status(&matches);
         Ok(matches.len())
+    }
+
+    /// Runs `eval`, printing the requested profile even when it fails.
+    #[cfg(not(feature = "profile"))]
+    #[inline(always)]
+    fn eval_profiled<T, E>(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        eval: impl FnOnce(&mut mq_lang::DefaultEngine) -> Result<T, E>,
+    ) -> Result<T, E> {
+        eval(engine)
+    }
+
+    /// Runs `eval`, printing the requested profile even when it fails.
+    #[cfg(feature = "profile")]
+    fn eval_profiled<T, E>(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        eval: impl FnOnce(&mut mq_lang::DefaultEngine) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let scope = self.start_profile();
+        let result = eval(engine);
+        self.emit_profile(scope, engine);
+        result
+    }
+
+    #[cfg(feature = "profile")]
+    fn start_profile(&self) -> Option<mq_lang::profile::ProfileScope> {
+        #[cfg(feature = "profile-lines")]
+        if self.profile_lines || self.profile_lines_html.is_some() {
+            return Some(mq_lang::profile::ProfileScope::start().with_lines());
+        }
+        self.profile.map(|_| mq_lang::profile::ProfileScope::start())
+    }
+
+    #[cfg(feature = "profile")]
+    #[cfg_attr(not(feature = "profile-lines"), allow(unused_variables))]
+    fn emit_profile(&self, scope: Option<mq_lang::profile::ProfileScope>, engine: &mq_lang::DefaultEngine) {
+        let Some(scope) = scope else {
+            return;
+        };
+        let profile = scope.finish().with_module_names(|id| engine.profile_module_name(id));
+        if let Some(format) = self.profile {
+            match format {
+                ProfileFormat::Text => eprint!("{profile}"),
+                ProfileFormat::Folded => eprint!("{}", profile.to_folded()),
+                ProfileFormat::Json => eprintln!("{}", profile.to_json()),
+            }
+        }
+        #[cfg(feature = "profile-lines")]
+        if self.profile_lines_html.is_some() {
+            let query = self.get_query().unwrap_or_default();
+            self.line_report
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .add(&profile, |id| {
+                    let name = if id == 0 {
+                        "query".to_string()
+                    } else {
+                        engine.profile_module_name(id)
+                    };
+                    (name, engine.profile_module_source(id, &query))
+                });
+        }
+        #[cfg(feature = "profile-lines")]
+        if self.profile_lines {
+            let query = self.get_query().ok();
+            eprint!(
+                "{}",
+                profile.format_lines(20, query.as_deref(), |id| engine.profile_module_name(id))
+            );
+        }
     }
 
     #[cfg(feature = "vm-profile")]

@@ -28,7 +28,7 @@ bench-local:
 
 # Build the project in release mode
 build:
-    MQ_FORBID_DEBUGGER=1 cargo build --release -p mq-run --bin mq
+    MQ_FORBID_DEBUGGER=1 MQ_FORBID_PROFILER=1 cargo build --release -p mq-run --bin mq
     cargo build --release -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release -p mq-lsp
     cargo build --release -p mq-crawler -p mq-bench
@@ -39,7 +39,7 @@ build:
 
 # Build for a specific target architecture
 build-target target:
-    MQ_FORBID_DEBUGGER=1 cargo build --release --target {{target}} -p mq-run --bin mq
+    MQ_FORBID_DEBUGGER=1 MQ_FORBID_PROFILER=1 cargo build --release --target {{target}} -p mq-run --bin mq
     cargo build --release --target {{target}} -p mq-run --bin mq-dbg --features="debugger"
     cargo build --release --target {{target}} -p mq-lsp
     cargo build --release --target {{target}} -p mq-crawler -p mq-bench

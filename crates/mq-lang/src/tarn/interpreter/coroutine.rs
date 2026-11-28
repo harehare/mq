@@ -219,6 +219,8 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<RuntimeValue> {
+    #[cfg(feature = "profile")]
+    let first_resume;
     let (mut frames, mut operand_stack, chunks, token_arena, caller_depth, pending_resyncs) = {
         let mut state = borrow_mut(handle);
         match &state.status {
@@ -235,6 +237,10 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
                     .limits
                     .enter_suspended_call_depth(state.suspended_call_depth)?;
                 let was_suspended = matches!(state.status, CoroutineStatus::Suspended);
+                #[cfg(feature = "profile")]
+                {
+                    first_resume = !was_suspended;
+                }
                 state.status = CoroutineStatus::Running;
                 let mut operand_stack = std::mem::take(&mut state.operand_stack);
                 if was_suspended {
@@ -284,6 +290,15 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         host_functions: execution.host_functions,
         capture_stack_trace: execution.capture_stack_trace,
     };
+    // Restored frames have no profile entries; rebuild them so pops stay symmetric.
+    #[cfg(feature = "profile")]
+    let profile_mark = crate::profile::depth();
+    #[cfg(feature = "profile")]
+    for (index, frame) in frames.iter().enumerate() {
+        // Only the generator's own frame, on its first resume, is a new call.
+        let count_call = first_resume && index == 0;
+        super::profile_enter(frame, &chunks, &resumed_execution.token_arena, count_call, false);
+    }
     let outcome = super::drive_frames::<CHECK_TIMEOUT>(
         &chunks,
         &mut frames,
@@ -292,6 +307,8 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         #[cfg(feature = "debugger")]
         debug,
     );
+    #[cfg(feature = "profile")]
+    crate::profile::truncate(profile_mark);
     let suspended_call_depth = execution.limits.leave_suspended_call_depth(caller_depth);
 
     // Keep only resyncs unchanged by this invocation.

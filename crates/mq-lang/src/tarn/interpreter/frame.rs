@@ -286,6 +286,8 @@ impl ExecutionLimits {
         #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
     ) -> Option<Continuation> {
         let frame = frames.pop()?;
+        #[cfg(feature = "profile")]
+        crate::profile::exit();
         self.call_depth = self.call_depth.saturating_sub(frame.call_depth_cost);
         if frame.reusable_locals {
             self.recycle_locals(frame.locals);

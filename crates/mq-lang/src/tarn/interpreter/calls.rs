@@ -901,6 +901,21 @@ pub(super) fn call_builtin_args(
     env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
+    #[cfg(feature = "profile")]
+    crate::profile::enter(*ident);
+    let result = call_builtin_args_inner(ident, args, self_value, env, host_functions);
+    #[cfg(feature = "profile")]
+    crate::profile::exit();
+    result
+}
+
+fn call_builtin_args_inner(
+    ident: &Ident,
+    args: Args,
+    self_value: &RuntimeValue,
+    env: &VmEnv,
+    host_functions: &HostFunctions,
+) -> VmResult<RuntimeValue> {
     // Builtins keep precedence over host functions of the same name.
     let Some(builtin_fn) = builtin::get_builtin_functions(ident) else {
         if let Some(host_fn) = host_functions.get(ident) {

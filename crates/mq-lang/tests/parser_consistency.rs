@@ -110,6 +110,27 @@ fn corpus_acceptance_agrees() {
 }
 
 #[test]
+fn assignment_targets_agree() {
+    let mismatches: Vec<_> = [
+        "tot.l /= 2",
+        "a.b = 1",
+        "a.b.c = 1",
+        "a.b[0] = 1",
+        "a[0].b = 1",
+        "a.url = 1",
+        "a.url |= 1",
+        "a.b |= 1",
+        "f(x).b = 1",
+    ]
+    .iter()
+    .filter(|code| ast_accepts(code) != cst_accepts(code))
+    .map(|code| format!("{code:?}: ast={} cst={}", ast_accepts(code), cst_accepts(code)))
+    .collect();
+
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+}
+
+#[test]
 fn invalid_inputs_are_rejected_by_both() {
     let mismatches: Vec<_> = INVALID
         .iter()

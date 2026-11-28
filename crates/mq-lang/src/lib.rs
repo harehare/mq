@@ -32,6 +32,8 @@ mod io;
 mod module;
 #[cfg(feature = "mqc")]
 pub mod mqc;
+#[cfg(feature = "profile")]
+pub mod profile;
 mod runtime;
 pub mod suggest;
 mod tarn;

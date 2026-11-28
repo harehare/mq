@@ -17,6 +17,8 @@ html-parse = ["mq-lang/html-parse"]
 debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap", "debug-trace"]
 debug-trace = ["debugger", "mq-lang/debug-trace"]
 vm-profile = ["mq-lang/vm-profile"]
+profile = ["mq-lang/profile"]
+profile-lines = ["profile", "mq-lang/profile-lines"]
 default = ["use_mimalloc", "http-import", "html-parse", "watch"]
 http-import = ["mq-lang/http-import-ureq"]
 tiktoken = ["mq-lang/tiktoken"]
@@ -82,6 +84,12 @@ doc = false
 name = "mq-dbg"
 path = "src/bin/dbg.rs"
 required-features = ["debugger"]
+
+[[bin]]
+doc = false
+name = "mq-profile"
+path = "src/bin/profile.rs"
+required-features = ["profile"]
 
 [package.metadata.binstall]
 pkg-fmt = "bin"
