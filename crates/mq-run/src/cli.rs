@@ -154,7 +154,7 @@ pub struct Cli {
 
     /// Print per-function timing to stderr (`mq-profile` only).
     #[cfg(feature = "profile")]
-    #[arg(long, value_name = "FORMAT", num_args = 0..=1, default_missing_value = "text")]
+    #[arg(long, value_name = "FORMAT", num_args = 0..=1, require_equals = true, default_missing_value = "text")]
     profile: Option<ProfileFormat>,
 
     /// Print the hottest source lines to stderr (`mq-profile` built with `profile-lines`).
@@ -166,6 +166,11 @@ pub struct Cli {
     #[cfg(feature = "profile-lines")]
     #[arg(long, value_name = "FILE")]
     profile_lines_html: Option<PathBuf>,
+
+    /// Line profiles of every evaluation, written as one heatmap when the run ends.
+    #[cfg(feature = "profile-lines")]
+    #[arg(skip)]
+    line_report: std::sync::Mutex<mq_lang::profile::LineReport>,
 
     /// Print the Tarn VM bytecode to stdout and exit without running the program or reading
     /// input. Pass a format as `--dump-bytecode=json` (mq-dbg `debug-trace` build only).
@@ -2127,7 +2132,27 @@ impl Cli {
         }
 
         self.validate_output_options()?;
-        self.run_query()
+        let result = self.run_query();
+        let heatmap = self.write_heatmap();
+        // The query's own error wins over a heatmap write failure.
+        result.and(heatmap)
+    }
+
+    /// Writes the combined line heatmap requested by `--profile-lines-html`.
+    #[cfg(feature = "profile-lines")]
+    fn write_heatmap(&self) -> miette::Result<()> {
+        let Some(path) = &self.profile_lines_html else {
+            return Ok(());
+        };
+        let report = self.line_report.lock().unwrap_or_else(|e| e.into_inner());
+        std::fs::write(path, report.format_html())
+            .map_err(|error| miette!("failed to write {}: {error}", path.display()))
+    }
+
+    #[cfg(not(feature = "profile-lines"))]
+    #[inline(always)]
+    fn write_heatmap(&self) -> miette::Result<()> {
+        Ok(())
     }
 
     /// Runs the subcommands that take no query or input document, so none of the query
@@ -3327,19 +3352,19 @@ impl Cli {
             }
         }
         #[cfg(feature = "profile-lines")]
-        if let Some(path) = &self.profile_lines_html {
+        if self.profile_lines_html.is_some() {
             let query = self.get_query().unwrap_or_default();
-            let html = profile.format_lines_html(|id| {
-                let name = if id == 0 {
-                    "query".to_string()
-                } else {
-                    engine.profile_module_name(id)
-                };
-                (name, engine.profile_module_source(id, &query))
-            });
-            if let Err(error) = std::fs::write(path, html) {
-                eprintln!("failed to write {}: {error}", path.display());
-            }
+            self.line_report
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .add(&profile, |id| {
+                    let name = if id == 0 {
+                        "query".to_string()
+                    } else {
+                        engine.profile_module_name(id)
+                    };
+                    (name, engine.profile_module_source(id, &query))
+                });
         }
         #[cfg(feature = "profile-lines")]
         if self.profile_lines {

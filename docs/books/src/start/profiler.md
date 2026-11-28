@@ -68,7 +68,7 @@ The profile is printed even when the query fails, so you can see where the time 
 
 ### Output formats
 
-`--profile` takes an optional format: `--profile=text` (default), `--profile=folded` or `--profile=json`.
+`--profile` takes an optional format, which must be attached with `=` so it does not swallow the query: `--profile=text` (default), `--profile=folded` or `--profile=json`.
 
 `folded` prints one stack per line with its self time in microseconds, in the format used by flame graph tools. Pass it to [inferno](https://github.com/jonhoo/inferno) or load it into [speedscope](https://www.speedscope.app/):
 
@@ -100,7 +100,7 @@ query:1                               2     11.584µs   0.1%  import "helper" | 
 
 ### Heatmap
 
-`--profile-lines-html FILE` writes the line profile as a self-contained HTML page. Each module is a card with its source, and a line's background gets darker the more of the hottest line's time it took. Lines far from any measured line are collapsed.
+`--profile-lines-html FILE` writes the line profile as a self-contained HTML page. Each module is a card with its source, and a line's background gets darker the more of the hottest line's time it took. Lines far from any measured line are collapsed. With several input files the lines of all of them are combined into one page, written when the run ends. A failed write makes the command exit with an error.
 
 ```bash
 mq-profile --profile-lines-html profile.html -f query.mq input.md

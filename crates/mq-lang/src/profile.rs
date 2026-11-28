@@ -175,11 +175,22 @@ pub struct FunctionProfile {
     pub total_time: Duration,
 }
 
+/// One call path in a finished profile. Parents precede their children.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Frame {
+    parent: u32,
+    /// Index into `Profile::labels`.
+    label: u32,
+    self_time: Duration,
+}
+
 /// The result of one profiled scope.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Profile {
     functions: Vec<FunctionProfile>,
-    stacks: Vec<(Vec<String>, Duration)>,
+    /// Distinct display labels, shared by all frames of the same function.
+    labels: Vec<String>,
+    frames: Vec<Frame>,
     lines: Vec<LineProfile>,
     overhead: Duration,
 }
@@ -229,104 +240,6 @@ impl Profile {
         out
     }
 
-    /// Renders a self-contained HTML heatmap of the profiled lines, one section per module,
-    /// hottest first. `module` returns a module's display name and source for a raw id.
-    /// Line background darkens with the line's share of the hottest line's time.
-    #[cfg(feature = "profile-lines")]
-    pub fn format_lines_html(&self, module: impl Fn(u32) -> (String, Option<String>)) -> String {
-        let mut modules: Vec<u32> = Vec::new();
-        for l in &self.lines {
-            if !modules.contains(&l.module_id) {
-                modules.push(l.module_id);
-            }
-        }
-        let module_time =
-            |id: u32| -> Duration { self.lines.iter().filter(|l| l.module_id == id).map(|l| l.time).sum() };
-        modules.sort_by_key(|&id| (std::cmp::Reverse(module_time(id)), id));
-        let hottest = self
-            .lines
-            .iter()
-            .map(|l| l.time)
-            .max()
-            .unwrap_or_default()
-            .as_secs_f64();
-
-        let mut out = String::from(
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>mq line profile</title><style>\
-:root{--bg:#2a3444;--card:#1e293b;--fg:#e2e8f0;--muted:#94a3b8;--line:#4a5568;--accent:#4fc3f7;--accent-fg:#85d4ff}\
-body{margin:0;padding:2rem;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,sans-serif}\
-h1{font-family:'Space Grotesk',Inter,sans-serif;font-size:1.6rem;color:var(--accent-fg);margin:0 0 .25rem}\
-p.sub{color:var(--muted);margin:0 0 1.5rem;font-size:.85rem}\
-section{background:var(--card);border:1px solid var(--line);border-radius:.75rem;margin:0 0 1.25rem;overflow:hidden}\
-h2{font-size:.9rem;font-weight:600;margin:0;padding:.7rem 1rem;border-bottom:1px solid var(--line);color:var(--accent-fg)}\
-h2 span{color:var(--muted);font-weight:400;margin-left:.6rem}\
-table{border-collapse:collapse;width:100%;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}\
-td{padding:0 .75rem;white-space:pre;vertical-align:top}\
-td.n{text-align:right;color:var(--muted);width:1%}\
-td.g{color:var(--muted);text-align:center;padding:.15rem 0}\
-tr:hover td{background:rgba(255,255,255,.05)}\
-</style></head><body><h1>mq line profile</h1><p class=sub>Darker lines took more time, relative to the hottest line.</p>",
-        );
-        for id in modules {
-            let (name, source) = module(id);
-            let times: HashMap<u32, &LineProfile> = self
-                .lines
-                .iter()
-                .filter(|l| l.module_id == id)
-                .map(|l| (l.line, l))
-                .collect();
-            let _ = write!(
-                out,
-                "<section><h2>{}<span>{:.3?}</span></h2><table>",
-                html_escape(&name),
-                module_time(id)
-            );
-            let source_lines: Vec<&str> = source.as_deref().map(|s| s.lines().collect()).unwrap_or_default();
-            let last = times.keys().copied().max().unwrap_or(0) as usize;
-            let total = source_lines.len().max(last);
-            // Show profiled lines with a few lines of context; collapse the rest.
-            let visible = |number: usize| {
-                (number.saturating_sub(HTML_CONTEXT)..=number + HTML_CONTEXT).any(|n| times.contains_key(&(n as u32)))
-            };
-            let mut skipped = false;
-            for number in 1..=total {
-                if !visible(number) {
-                    if !skipped {
-                        out.push_str("<tr><td class=g colspan=4>&#8942;</td></tr>");
-                        skipped = true;
-                    }
-                    continue;
-                }
-                skipped = false;
-                let text = source_lines.get(number - 1).copied().unwrap_or("");
-                let (hits, time, style) = match times.get(&(number as u32)) {
-                    Some(p) => {
-                        // Square root keeps lines much cooler than the hottest one visible.
-                        let alpha = if hottest > 0.0 {
-                            (p.time.as_secs_f64() / hottest).sqrt() * 0.6
-                        } else {
-                            0.0
-                        };
-                        (
-                            p.hits.to_string(),
-                            format!("{:.3?}", p.time),
-                            format!(" style=\"background:rgba(79,195,247,{alpha:.2})\""),
-                        )
-                    }
-                    None => (String::new(), String::new(), String::new()),
-                };
-                let _ = write!(
-                    out,
-                    "<tr{style}><td class=n>{number}</td><td class=n>{hits}</td><td class=n>{time}</td><td>{}</td></tr>",
-                    html_escape(text)
-                );
-            }
-            out.push_str("</table></section>");
-        }
-        out.push_str("</body></html>");
-        out
-    }
-
     /// Replaces module ids in `<closure@ID:LINE>` labels with names from `module_name`, e.g.
     /// `<closure@query:3>`. Module `0` is the top-level query.
     #[must_use]
@@ -342,25 +255,64 @@ tr:hover td{background:rgba(255,255,255,.05)}\
                 f.name = name;
             }
         }
-        for (path, _) in &mut self.stacks {
-            for label in path {
-                if let Some(name) = rename(label) {
-                    *label = name;
-                }
+        for label in &mut self.labels {
+            if let Some(name) = rename(label) {
+                *label = name;
             }
         }
         self
     }
 
     /// Renders Brendan Gregg's folded stacks (`a;b;c <microseconds>`), accepted by `inferno`
-    /// and speedscope.
+    /// and speedscope. Paths are built while walking the call tree, never stored.
     pub fn to_folded(&self) -> String {
-        let mut out = String::new();
-        for (path, time) in &self.stacks {
-            let micros = time.as_micros();
-            if micros > 0 {
-                let _ = writeln!(out, "{} {micros}", path.join(";"));
+        let mut first_child = vec![ROOT; self.frames.len()];
+        let mut next_sibling = vec![ROOT; self.frames.len()];
+        let mut roots = Vec::new();
+        for (i, frame) in self.frames.iter().enumerate().rev() {
+            if frame.parent == ROOT {
+                roots.push(i as u32);
+            } else {
+                next_sibling[i] = first_child[frame.parent as usize];
+                first_child[frame.parent as usize] = i as u32;
             }
+        }
+        let by_label = |a: &u32, b: &u32| {
+            let (a, b) = (&self.frames[*a as usize], &self.frames[*b as usize]);
+            self.labels[a.label as usize]
+                .cmp(&self.labels[b.label as usize])
+                .then(a.self_time.cmp(&b.self_time))
+        };
+        let mut out = String::new();
+        // Siblings are visited in label order, which sorts the output by path.
+        let mut todo: Vec<(u32, usize)> = Vec::new();
+        let push_sorted = |todo: &mut Vec<(u32, usize)>, mut nodes: Vec<u32>, depth: usize| {
+            nodes.sort_by(|a, b| by_label(b, a));
+            todo.extend(nodes.into_iter().map(|n| (n, depth)));
+        };
+        push_sorted(&mut todo, roots, 0);
+        let mut path: Vec<u32> = Vec::new();
+        while let Some((node, depth)) = todo.pop() {
+            let frame = &self.frames[node as usize];
+            path.truncate(depth);
+            path.push(frame.label);
+            let micros = frame.self_time.as_micros();
+            if micros > 0 {
+                for (i, label) in path.iter().enumerate() {
+                    if i > 0 {
+                        out.push(';');
+                    }
+                    out.push_str(&self.labels[*label as usize]);
+                }
+                let _ = writeln!(out, " {micros}");
+            }
+            let mut children = Vec::new();
+            let mut child = first_child[node as usize];
+            while child != ROOT {
+                children.push(child);
+                child = next_sibling[child as usize];
+            }
+            push_sorted(&mut todo, children, depth + 1);
         }
         out
     }
@@ -388,6 +340,144 @@ tr:hover td{background:rgba(255,255,255,.05)}\
             );
         }
         out.push_str("]}");
+        out
+    }
+}
+
+/// One module's accumulated lines in a [`LineReport`].
+#[cfg(feature = "profile-lines")]
+#[derive(Debug)]
+struct ReportModule {
+    name: String,
+    source: Option<String>,
+    lines: HashMap<u32, (u64, Duration)>,
+}
+
+/// Line profiles from several evaluations merged into one HTML heatmap. Modules are matched
+/// by name and source, so engines that number the same module differently still combine.
+#[cfg(feature = "profile-lines")]
+#[derive(Debug, Default)]
+pub struct LineReport {
+    modules: Vec<ReportModule>,
+}
+
+#[cfg(feature = "profile-lines")]
+impl LineReport {
+    /// Adds the lines of `profile`. `module` returns a module's display name and source for
+    /// a raw id.
+    pub fn add(&mut self, profile: &Profile, module: impl Fn(u32) -> (String, Option<String>)) {
+        let mut ids: HashMap<u32, usize> = HashMap::new();
+        for l in &profile.lines {
+            let index = *ids.entry(l.module_id).or_insert_with(|| {
+                let (name, source) = module(l.module_id);
+                self.modules
+                    .iter()
+                    .position(|m| m.name == name && m.source == source)
+                    .unwrap_or_else(|| {
+                        self.modules.push(ReportModule {
+                            name,
+                            source,
+                            lines: HashMap::new(),
+                        });
+                        self.modules.len() - 1
+                    })
+            });
+            let entry = self.modules[index].lines.entry(l.line).or_default();
+            entry.0 += l.hits;
+            entry.1 += l.time;
+        }
+    }
+
+    /// Whether no line was recorded.
+    pub fn is_empty(&self) -> bool {
+        self.modules.is_empty()
+    }
+
+    /// Renders a self-contained HTML heatmap, one section per module, hottest first. Line
+    /// background darkens with the line's share of the hottest line's time.
+    pub fn format_html(&self) -> String {
+        let module_time = |id: usize| -> Duration { self.modules[id].lines.values().map(|l| l.1).sum() };
+        let mut modules: Vec<usize> = (0..self.modules.len()).collect();
+        modules.sort_by_key(|&id| (std::cmp::Reverse(module_time(id)), id));
+        let hottest = self
+            .modules
+            .iter()
+            .flat_map(|m| m.lines.values().map(|l| l.1))
+            .max()
+            .unwrap_or_default()
+            .as_secs_f64();
+
+        let mut out = String::from(
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>mq line profile</title><style>\
+:root{--bg:#2a3444;--card:#1e293b;--fg:#e2e8f0;--muted:#94a3b8;--line:#4a5568;--accent:#4fc3f7;--accent-fg:#85d4ff}\
+body{margin:0;padding:2rem;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,sans-serif}\
+h1{font-family:'Space Grotesk',Inter,sans-serif;font-size:1.6rem;color:var(--accent-fg);margin:0 0 .25rem}\
+p.sub{color:var(--muted);margin:0 0 1.5rem;font-size:.85rem}\
+section{background:var(--card);border:1px solid var(--line);border-radius:.75rem;margin:0 0 1.25rem;overflow:hidden}\
+h2{font-size:.9rem;font-weight:600;margin:0;padding:.7rem 1rem;border-bottom:1px solid var(--line);color:var(--accent-fg)}\
+h2 span{color:var(--muted);font-weight:400;margin-left:.6rem}\
+table{border-collapse:collapse;width:100%;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}\
+td{padding:0 .75rem;white-space:pre;vertical-align:top}\
+td.n{text-align:right;color:var(--muted);width:1%}\
+td.g{color:var(--muted);text-align:center;padding:.15rem 0}\
+tr:hover td{background:rgba(255,255,255,.05)}\
+</style></head><body><h1>mq line profile</h1><p class=sub>Darker lines took more time, relative to the hottest line.</p>",
+        );
+        for &id in &modules {
+            let ReportModule {
+                name,
+                source,
+                lines: times,
+            } = &self.modules[id];
+            let _ = write!(
+                out,
+                "<section><h2>{}<span>{:.3?}</span></h2><table>",
+                html_escape(name),
+                module_time(id)
+            );
+            let source_lines: Vec<&str> = source.as_deref().map(|s| s.lines().collect()).unwrap_or_default();
+            let last = times.keys().copied().max().unwrap_or(0) as usize;
+            let total = source_lines.len().max(last);
+            // Show profiled lines with a few lines of context; collapse the rest.
+            let visible = |number: usize| {
+                (number.saturating_sub(HTML_CONTEXT)..=number + HTML_CONTEXT).any(|n| times.contains_key(&(n as u32)))
+            };
+            let mut skipped = false;
+            for number in 1..=total {
+                if !visible(number) {
+                    if !skipped {
+                        out.push_str("<tr><td class=g colspan=4>&#8942;</td></tr>");
+                        skipped = true;
+                    }
+                    continue;
+                }
+                skipped = false;
+                let text = source_lines.get(number - 1).copied().unwrap_or("");
+                let (hits, time, style) = match times.get(&(number as u32)) {
+                    Some(&(hits, time)) => {
+                        // Square root keeps lines much cooler than the hottest one visible.
+                        let alpha = if hottest > 0.0 {
+                            (time.as_secs_f64() / hottest).sqrt() * 0.6
+                        } else {
+                            0.0
+                        };
+                        (
+                            hits.to_string(),
+                            format!("{time:.3?}"),
+                            format!(" style=\"background:rgba(79,195,247,{alpha:.2})\""),
+                        )
+                    }
+                    None => (String::new(), String::new(), String::new()),
+                };
+                let _ = write!(
+                    out,
+                    "<tr{style}><td class=n>{number}</td><td class=n>{hits}</td><td class=n>{time}</td><td>{}</td></tr>",
+                    html_escape(text)
+                );
+            }
+            out.push_str("</table></section>");
+        }
+        out.push_str("</body></html>");
         out
     }
 }
@@ -552,54 +642,75 @@ fn build(mut state: State) -> Profile {
             subtree[nodes[i].parent as usize] += time;
         }
     }
-    let is_outermost = |index: usize| {
-        let mut parent = nodes[index].parent;
-        while parent != ROOT {
-            if nodes[parent as usize].name == nodes[index].name {
-                return false;
-            }
-            parent = nodes[parent as usize].parent;
+    // Walk the call tree once, tracking which functions are active, so a recursive function's
+    // total counts only its outermost activation.
+    let mut first_child = vec![ROOT; nodes.len()];
+    let mut next_sibling = vec![ROOT; nodes.len()];
+    let mut roots = Vec::new();
+    for (i, node) in nodes.iter().enumerate().rev() {
+        if node.parent == ROOT {
+            roots.push(i as u32);
+        } else {
+            next_sibling[i] = first_child[node.parent as usize];
+            first_child[node.parent as usize] = i as u32;
         }
-        true
-    };
+    }
+    let mut outermost = vec![false; nodes.len()];
+    let mut active: HashMap<Ident, u32> = HashMap::new();
+    // The flag marks the exit of a node whose children are done.
+    let mut todo: Vec<(u32, bool)> = roots.into_iter().map(|n| (n, false)).collect();
+    while let Some((index, leaving)) = todo.pop() {
+        let name = nodes[index as usize].name;
+        if leaving {
+            if let Some(count) = active.get_mut(&name) {
+                *count -= 1;
+            }
+            continue;
+        }
+        let count = active.entry(name).or_insert(0);
+        outermost[index as usize] = *count == 0;
+        *count += 1;
+        todo.push((index, true));
+        let mut child = first_child[index as usize];
+        while child != ROOT {
+            todo.push((child, false));
+            child = next_sibling[child as usize];
+        }
+    }
 
+    let mut label_ids: HashMap<Ident, u32> = HashMap::new();
+    let mut labels: Vec<String> = Vec::new();
     let mut by_name: HashMap<Ident, FunctionProfile> = HashMap::new();
+    let mut frames = Vec::with_capacity(nodes.len());
     for (i, node) in nodes.iter().enumerate() {
+        let label_id = *label_ids.entry(node.name).or_insert_with(|| {
+            labels.push(label(node.name));
+            (labels.len() - 1) as u32
+        });
         let entry = by_name.entry(node.name).or_insert_with(|| FunctionProfile {
-            name: label(node.name),
+            name: labels[label_id as usize].clone(),
             calls: 0,
             self_time: Duration::ZERO,
             total_time: Duration::ZERO,
         });
         entry.calls += node.calls;
         entry.self_time += corrected[i];
-        // Only the outermost activation adds to `total`, so recursion is not double counted.
-        if is_outermost(i) {
+        if outermost[i] {
             entry.total_time += subtree[i];
         }
+        frames.push(Frame {
+            parent: node.parent,
+            label: label_id,
+            self_time: corrected[i],
+        });
     }
     let mut functions: Vec<_> = by_name.into_values().collect();
     functions.sort_by(|a, b| b.self_time.cmp(&a.self_time).then_with(|| a.name.cmp(&b.name)));
 
-    let mut stacks: Vec<_> = nodes
-        .iter()
-        .enumerate()
-        .map(|(i, node)| {
-            let mut path = vec![label(node.name)];
-            let mut parent = node.parent;
-            while parent != ROOT {
-                let p = &nodes[parent as usize];
-                path.push(label(p.name));
-                parent = p.parent;
-            }
-            path.reverse();
-            (path, corrected[i])
-        })
-        .collect();
-    stacks.sort();
     Profile {
         functions,
-        stacks,
+        labels,
+        frames,
         lines,
         overhead: overhead.callee + overhead.caller,
     }
@@ -861,5 +972,42 @@ mod tests {
         for f in profile.functions() {
             assert!(f.total_time >= f.self_time, "{f:?}");
         }
+    }
+
+    #[test]
+    fn builtins_called_as_values_are_profiled() {
+        let (profile, ok) = profile_of("[[1], [2, 3]] | map(len)");
+        assert!(ok);
+        assert_eq!(function(&profile, "len").calls, 2);
+        let (profile, ok) = profile_of("len([1, 2])");
+        assert!(ok);
+        assert_eq!(function(&profile, "len").calls, 1);
+    }
+
+    #[test]
+    fn deep_recursion_profiles_without_materializing_paths() {
+        let (profile, ok) = profile_of("def f(n): if (n <= 0): 0 else: 1 + f(n - 1); | f(100)");
+        assert!(ok);
+        let f = function(&profile, "f");
+        assert_eq!(f.calls, 101);
+        assert!(f.total_time >= f.self_time);
+        assert!(profile.to_json().contains("\"name\":\"f\""));
+    }
+
+    #[test]
+    fn folded_stacks_are_sorted_by_path() {
+        let scope = ProfileScope::start();
+        let (a, b) = (Ident::new("a"), Ident::new("b"));
+        for name in [b, a] {
+            enter(name);
+            std::thread::sleep(Duration::from_millis(2));
+            enter(Ident::new("c"));
+            std::thread::sleep(Duration::from_millis(2));
+            exit();
+            exit();
+        }
+        let folded = scope.finish().to_folded();
+        let paths: Vec<&str> = folded.lines().filter_map(|l| l.rsplit_once(' ').map(|p| p.0)).collect();
+        assert_eq!(paths, ["a", "a;c", "b", "b;c"]);
     }
 }

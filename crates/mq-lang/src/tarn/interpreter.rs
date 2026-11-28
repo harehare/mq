@@ -2209,8 +2209,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
                 OpCode::CallBuiltin(ident, argc) => {
                     let args = pop_call_args!(*argc);
-                    #[cfg(feature = "profile")]
-                    profile::enter(*ident);
                     let result = call_builtin_args(
                         ident,
                         args,
@@ -2218,8 +2216,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         execution.env,
                         execution.host_functions,
                     );
-                    #[cfg(feature = "profile")]
-                    profile::exit();
                     let result = result.map_err(|e| locate(chunk, ip, e))?;
                     stack.push(StackValue::Value(result));
                 }
