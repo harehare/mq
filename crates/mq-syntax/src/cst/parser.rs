@@ -2876,7 +2876,7 @@ impl<'a> Parser<'a> {
         let is_attribute = |n: &Shared<Node>| n.token.as_deref().is_some_and(Self::is_attribute_token);
 
         match &node.kind {
-            NodeKind::Ident { attr } | NodeKind::Self_ { attr } => attr.is_some(),
+            NodeKind::Ident { attr } | NodeKind::Self_ { attr } => attr.as_ref().is_some_and(is_attribute),
             NodeKind::SelfAttr => true,
             NodeKind::Call { args } | NodeKind::SelectorCall { args } => args.last().is_some_and(is_attribute),
             NodeKind::Selector { items } => items.last().is_some_and(is_attribute),
@@ -2888,38 +2888,58 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Whether `node` can be assigned to: a variable or an indexed variable such as `x[i][j]`.
+    /// Whether `node` can be assigned to: a variable followed by `[i]` indexes or `.key` dict keys, such as `x[i].k`.
     fn is_assignable(node: &Node) -> bool {
         let is_token = |n: &Shared<Node>, kind: TokenKind| n.token.as_ref().is_some_and(|t| t.kind == kind);
+        // A `.name` that is not an attribute selector is a dict key.
+        let is_key = |n: &Shared<Node>| {
+            n.token.as_deref().is_some_and(|t| {
+                matches!(t.kind, TokenKind::Selector(_))
+                    && !matches!(Selector::try_from(t), Ok(selector) if selector.is_attribute_selector())
+            })
+        };
+        let is_index = |chunk: &[Shared<Node>]| {
+            is_token(&chunk[0], TokenKind::LBracket) && !chunk[1].is_token() && is_token(&chunk[2], TokenKind::RBracket)
+        };
+        // `[i]` and `.key` steps only.
+        let is_steps = |mut steps: &[Shared<Node>]| {
+            while let Some(first) = steps.first() {
+                if is_key(first) {
+                    steps = &steps[1..];
+                } else if steps.len() >= 3 && is_index(&steps[..3]) {
+                    steps = &steps[3..];
+                } else {
+                    return false;
+                }
+            }
+            true
+        };
 
         match &node.kind {
-            NodeKind::Ident { attr } => attr.is_none(),
+            NodeKind::Ident { attr } => attr.as_ref().is_none_or(is_key),
             NodeKind::Call { args } => {
                 let is_ident = node
                     .token
                     .as_ref()
                     .is_some_and(|t| matches!(t.kind, TokenKind::Ident(_)));
-                let is_index = |chunk: &[Shared<Node>]| {
-                    is_token(&chunk[0], TokenKind::LBracket)
-                        && !chunk[1].is_token()
-                        && is_token(&chunk[2], TokenKind::RBracket)
-                };
-                // `x[i][j]`
-                let is_index_chain =
-                    is_ident && !args.is_empty() && args.len() % 3 == 0 && args.chunks(3).all(is_index);
-                // `get(x, i)`, optionally followed by more indexes, is the same as `x[i]`.
+                // `x[i]` and `x[i].k`
+                let is_ident_path = is_ident && !args.is_empty() && is_steps(args);
+                // `x.k[i]` and `x.a.b`
+                let is_key_path = args.first().is_some_and(|first| {
+                    matches!(first.kind, NodeKind::Ident { attr: Some(_) }) && Self::is_assignable(first)
+                }) && is_steps(&args[1..]);
+                // `get(x, i)`, optionally followed by more steps, is the same as `x[i]`.
                 let is_get_call = node
                     .token
                     .as_ref()
                     .is_some_and(|t| matches!(&t.kind, TokenKind::Ident(name) if name == "get"))
                     && args.len() >= 5
-                    && (args.len() - 5) % 3 == 0
-                    && args[5..].chunks(3).all(is_index)
+                    && is_steps(&args[5..])
                     && is_token(&args[0], TokenKind::LParen)
                     && is_token(&args[2], TokenKind::Comma)
                     && is_token(&args[4], TokenKind::RParen)
                     && Self::is_assignable(&args[1]);
-                is_index_chain || is_get_call
+                is_ident_path || is_key_path || is_get_call
             }
             _ => false,
         }
