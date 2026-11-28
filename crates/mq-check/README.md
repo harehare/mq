@@ -223,7 +223,7 @@ An expression is exact when it is
 
 - a literal, or an array or dict literal of exact elements
 - an operator on exact operands
-- a selector on the input document, when its type was declared with `--input-type`
+- a selector on the input document, when its type was declared with `--input-type` or `# @input`
 - a call of an audited builtin (see below) with exact arguments, fed by an exact pipe stage
 - an `if` whose branches are exact
 - a reference to a `let` or `var` that is never assigned again, whose value is exact, and that no condition narrows around the reference
@@ -257,6 +257,15 @@ Declares the type of the input document, so that selectors, predicates and attri
 ```bash
 echo '.depth' | mq-check --input-type 'h1 | h2'   # ok
 echo '.depth' | mq-check --input-type code        # Error: undefined attribute `depth` on code
+```
+
+### `# @input`
+
+A script can declare its own input type in the comment lines before its first line of code. `mq-check`, `mq-lsp` and the WASM API read the same declaration. `--input-type` takes precedence when both are given. Only one `# @input` line is allowed, and an invalid type is an error.
+
+```mq
+# @input h1 | h2
+.depth
 ```
 
 ### CI Integration

@@ -49,6 +49,40 @@ pub fn parse_type(src: &str) -> Result<Type, TypeExprError> {
     }
 }
 
+/// Reads the input type a script declares with `# @input <type>` in its leading comments.
+///
+/// Only the comment and blank lines before the first line of code are read. Returns `None` when
+/// there is no declaration, and an error when the type is invalid or declared twice.
+pub fn declared_input_type(src: &str) -> Result<Option<Type>, TypeExprError> {
+    let mut declared = None;
+    for line in src.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some(comment) = line.strip_prefix('#') else {
+            break;
+        };
+        let Some(ty) = comment
+            .trim_start()
+            .strip_prefix("@input")
+            .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        else {
+            continue;
+        };
+        if declared.is_some() {
+            return Err(TypeExprError {
+                source_text: line.to_string(),
+                message: "the input type is declared more than once".to_string(),
+                span: (0, line.len()).into(),
+                help: Some("keep a single `# @input` line".to_string()),
+            });
+        }
+        declared = Some(parse_type(ty.trim())?);
+    }
+    Ok(declared)
+}
+
 struct Parser<'a> {
     src: &'a str,
     pos: usize,
@@ -200,6 +234,24 @@ mod tests {
 
     fn node(kinds: impl IntoIterator<Item = NodeKind>) -> Type {
         Type::Node(KindSet::from_kinds(kinds))
+    }
+
+    #[rstest]
+    #[case::none("1 | 2", None)]
+    #[case::declared("# @input h1 | h2\n.depth", Some(node([NodeKind::H1, NodeKind::H2])))]
+    #[case::after_other_comments("#!/usr/bin/env mq\n\n# doc\n# @input code\n.", Some(node([NodeKind::Code])))]
+    #[case::stops_at_code(".\n# @input code", None)]
+    #[case::not_a_directive("# @inputs code\n.", None)]
+    fn test_declared_input_type(#[case] src: &str, #[case] expected: Option<Type>) {
+        assert_eq!(declared_input_type(src).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::invalid("# @input headin")]
+    #[case::empty("# @input ")]
+    #[case::twice("# @input h1\n# @input h2")]
+    fn test_declared_input_type_errors(#[case] src: &str) {
+        assert!(declared_input_type(src).is_err());
     }
 
     #[rstest]

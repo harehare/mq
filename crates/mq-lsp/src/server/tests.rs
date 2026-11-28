@@ -2471,3 +2471,34 @@ async fn test_workspace_folder_indexes_unopened_files() {
     };
     assert_eq!(symbols.len(), 1);
 }
+
+#[rstest::rstest]
+#[case::declared("# @input code\n.depth", true)]
+#[case::not_declared(".depth", false)]
+#[tokio::test]
+async fn test_input_type_declared_in_the_script_is_type_checked(#[case] text: &str, #[case] has_error: bool) {
+    let config = LspConfig::new(
+        vec![],
+        true,
+        mq_check::TypeCheckerOptions::default(),
+        false,
+        Default::default(),
+    );
+    let (service, _) = LspService::new(|client| Backend {
+        client,
+        hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+        source_map: RwLock::new(BiMap::new()),
+        type_env_map: DashMap::new(),
+        error_map: DashMap::new(),
+        documents: DashMap::new(),
+        versions: DashMap::new(),
+        workspace_roots: RwLock::new(Vec::new()),
+        config: config.clone(),
+    });
+    let backend = service.inner();
+    let uri = Url::parse("file:///input_type.mq").unwrap();
+    backend.on_change(uri.clone(), text.to_string()).await;
+
+    let errors = backend.error_map.get(&uri.to_string()).unwrap();
+    assert_eq!(errors.iter().any(|e| matches!(e, LspError::TypeError(..))), has_error);
+}
