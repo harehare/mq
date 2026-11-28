@@ -67,53 +67,60 @@ pub(super) fn diff(old: &[Node], new: &[Node]) -> Vec<Edit> {
         &new_keys.iter().map(String::as_str).collect::<Vec<_>>(),
     );
 
-    let mut edits = Vec::new();
+    // Runs of consecutive deletes and inserts between unchanged units.
+    let mut runs: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
     let (mut deleted, mut inserted): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
     for change in &changes {
         match (change.tag(), change.old_index(), change.new_index()) {
             (ChangeTag::Delete, Some(i), _) => deleted.push(i),
             (ChangeTag::Insert, _, Some(j)) => inserted.push(j),
-            _ => flush(&mut edits, &old_units, &new_units, &mut deleted, &mut inserted),
+            _ if !deleted.is_empty() || !inserted.is_empty() => {
+                runs.push((std::mem::take(&mut deleted), std::mem::take(&mut inserted)));
+            }
+            _ => {}
         }
     }
-    flush(&mut edits, &old_units, &new_units, &mut deleted, &mut inserted);
-    detect_moves(edits)
-}
+    if !deleted.is_empty() || !inserted.is_empty() {
+        runs.push((deleted, inserted));
+    }
 
-/// Turns each insert that repeats an unmatched delete (same kind and text) into a move.
-fn detect_moves(edits: Vec<Edit>) -> Vec<Edit> {
-    let mut taken = vec![false; edits.len()];
-    let mut moved = vec![None; edits.len()];
-    for (i, insert) in edits.iter().enumerate().filter(|(_, e)| e.kind == EditKind::Insert) {
-        let source = edits
-            .iter()
-            .enumerate()
-            .find(|(d, e)| e.kind == EditKind::Delete && !taken[*d] && e.node == insert.node && e.old == insert.new);
-        if let Some((d, _)) = source {
-            taken[d] = true;
-            moved[i] = Some(d);
+    // Exact moves are claimed before similar units are paired as updates.
+    let mut sources: Vec<usize> = runs.iter().flat_map(|(deleted, _)| deleted.iter().copied()).collect();
+    let mut moves: Vec<Vec<(usize, usize)>> = vec![Vec::new(); runs.len()];
+    for (run, moved) in runs.iter_mut().zip(&mut moves) {
+        run.1
+            .retain(|&j| match sources.iter().position(|&i| old_keys[i] == new_keys[j]) {
+                Some(pos) => {
+                    moved.push((sources.remove(pos), j));
+                    false
+                }
+                None => true,
+            });
+    }
+    let claimed: Vec<usize> = moves.iter().flatten().map(|&(i, _)| i).collect();
+    for (deleted, _) in &mut runs {
+        deleted.retain(|i| !claimed.contains(i));
+    }
+
+    let mut edits = Vec::new();
+    for ((deleted, inserted), moved) in runs.iter().zip(&moves) {
+        flush(&mut edits, &old_units, &new_units, deleted, inserted);
+        for &(i, j) in moved {
+            edits.push(Edit {
+                kind: EditKind::Move,
+                from: Some(old_units[i].path.clone()),
+                old: Some(new_units[j].text.clone()),
+                ..edit(EditKind::Insert, None, Some(&new_units[j]))
+            });
         }
     }
     edits
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !taken[*i])
-        .map(|(i, e)| match moved[i] {
-            Some(d) => Edit {
-                kind: EditKind::Move,
-                from: Some(edits[d].path.clone()),
-                old: e.new.clone(),
-                ..e.clone()
-            },
-            None => e.clone(),
-        })
-        .collect()
 }
 
 /// Emits the edits for one run of consecutive deletes and inserts, pairing similar units as updates.
-fn flush(edits: &mut Vec<Edit>, old: &[Unit], new: &[Unit], deleted: &mut Vec<usize>, inserted: &mut Vec<usize>) {
+fn flush(edits: &mut Vec<Edit>, old: &[Unit], new: &[Unit], deleted: &[usize], inserted: &[usize]) {
     let mut cursor = 0;
-    for &i in deleted.iter() {
+    for &i in deleted {
         let pair = (cursor..inserted.len())
             .filter(|&k| new[inserted[k]].node == old[i].node)
             .map(|k| (k, similarity(&old[i].text, &new[inserted[k]].text)))
@@ -133,8 +140,6 @@ fn flush(edits: &mut Vec<Edit>, old: &[Unit], new: &[Unit], deleted: &mut Vec<us
     for &j in &inserted[cursor..] {
         edits.push(edit(EditKind::Insert, None, Some(&new[j])));
     }
-    deleted.clear();
-    inserted.clear();
 }
 
 fn edit(kind: EditKind, old: Option<&Unit>, new: Option<&Unit>) -> Edit {
@@ -170,12 +175,12 @@ fn units(nodes: &[Node]) -> Vec<Unit> {
     walk(nodes, &mut |node| {
         if let Node::TableCell(cell) = node {
             match &mut row {
-                Some((index, cells, _)) if *index == cell.row => cells.push(node.value()),
+                Some((index, cells, _)) if *index == cell.row => cells.push(node.to_string()),
                 _ => {
                     if let Some((_, cells, path)) = row.take() {
                         out.push(table_row(cells, path));
                     }
-                    row = Some((cell.row, vec![node.value()], path_of(&headings)));
+                    row = Some((cell.row, vec![node.to_string()], path_of(&headings)));
                 }
             }
             return;
@@ -275,6 +280,26 @@ mod tests {
         "| x | y |\n|---|---|\n| 1 | 2 |\n",
         "| x | y |\n|---|---|\n| 1 | 20 |\n",
         vec![(EditKind::Update, "table_row", "")]
+    )]
+    #[case::table_link_label_changed(
+        "| [Install](guide.md) | v1 |\n|---|---|\n| a | b |\n",
+        "| [Setup](guide.md) | v1 |\n|---|---|\n| a | b |\n",
+        vec![(EditKind::Update, "table_row", "")]
+    )]
+    #[case::table_cell_gains_emphasis(
+        "| x | y |\n|---|---|\n| plain | 2 |\n",
+        "| x | y |\n|---|---|\n| **plain** | 2 |\n",
+        vec![(EditKind::Update, "table_row", "")]
+    )]
+    #[case::table_escaped_pipe_is_not_a_boundary(
+        "| x | y |\n|---|---|\n| a \\| b | c |\n",
+        "| x | y |\n|---|---|\n| a | b \\| c |\n",
+        vec![(EditKind::Update, "table_row", "")]
+    )]
+    #[case::move_with_similar_replacement_at_source(
+        "# A\n\n## X\n\nThe quick brown fox.\n\n## Y\n\nstay\n",
+        "# A\n\n## X\n\nThe quick brown fax.\n\n## Y\n\nstay\n\nThe quick brown fox.\n",
+        vec![(EditKind::Insert, "text", "A > X"), (EditKind::Move, "text", "A > Y")]
     )]
     #[case::list_item_added(
         "- a\n- b\n",

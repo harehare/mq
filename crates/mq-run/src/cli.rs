@@ -4027,9 +4027,18 @@ impl Cli {
     /// a file header, and returns whether there were any. Changes that only reformat the
     /// Markdown produce no edits. Colorizes `+`/`-`/`~` lines when color is enabled.
     fn print_structural_diff(&self, original: &str, rendered: &str, file: &Option<PathBuf>) -> miette::Result<bool> {
-        let engine = DefaultEngine::default();
-        engine.define_string_values(&[("__diff_old", original), ("__diff_new", rendered)]);
-        let mut engine = engine;
+        let parse = |text: &str| -> miette::Result<mq_lang::RuntimeValue> {
+            let nodes = if self.is_mdx_input(file) {
+                mq_lang::parse_mdx_input_with(text, self.parse_options())?
+            } else {
+                mq_lang::parse_markdown_input_with(text, self.parse_options())?
+            };
+            Ok(mq_lang::RuntimeValue::Array(nodes.into()))
+        };
+        let mut engine = DefaultEngine::default();
+        for (name, text) in [("__diff_old", original), ("__diff_new", rendered)] {
+            engine.define_value(name, parse(text)?).map_err(|e| miette!("{e}"))?;
+        }
         let result = engine
             .eval(
                 "structural_diff(__diff_old, __diff_new)",

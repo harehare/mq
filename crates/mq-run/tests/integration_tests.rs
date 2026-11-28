@@ -1920,6 +1920,23 @@ fn test_diff_structural_ignores_reformatting() {
         .stdout("");
 }
 
+#[test]
+fn test_diff_structural_parses_mdx_for_mdx_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("example.mdx");
+    std::fs::write(&file, "\\{1 + 1}\n").unwrap();
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.args([
+        "--unbuffered",
+        "--update",
+        "--diff=structural",
+        "to_mdx(\"{1 + 1}\") | first()",
+    ])
+    .arg(&file)
+    .assert()
+    .code(1);
+}
+
 #[rstest]
 #[case::changed(".h1 | upcase()", "# title\n", 1)]
 #[case::unchanged("self", "# title\n", 0)]
