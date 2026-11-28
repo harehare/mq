@@ -50,6 +50,7 @@
             cargo-deny
             cargo-edit
             cargo-fuzz
+            cargo-hack
             cargo-llvm-cov
             cargo-machete
             cargo-udeps

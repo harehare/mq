@@ -5,7 +5,7 @@ use rstest::rstest;
 use smol_str::SmolStr;
 
 use crate::io::MemIo;
-#[cfg(any(feature = "file-io", feature = "http", feature = "process-io"))]
+#[cfg(any(feature = "file-io", feature = "process-io"))]
 use crate::io::NativeIo;
 use crate::io::SandboxedIo;
 

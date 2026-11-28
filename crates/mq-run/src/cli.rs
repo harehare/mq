@@ -7,7 +7,9 @@ use mq_lang::DefaultEngine;
 use mq_lang::DictMap;
 use mq_syntax::Shared;
 use rayon::prelude::*;
-use std::collections::{BTreeSet, HashSet};
+#[cfg(feature = "watch")]
+use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
@@ -17,6 +19,7 @@ use std::path::Path;
 use std::process::Command;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
+#[cfg(feature = "watch")]
 use std::sync::mpsc;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
@@ -636,7 +639,7 @@ struct ProgramArgs {
         short = 'a',
         long = "allow-all",
         default_value_t = false,
-        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env", "allow_http_import"]
+        conflicts_with_all = ALLOW_ALL_CONFLICTS
     )]
     allow_all: bool,
 
@@ -646,10 +649,34 @@ struct ProgramArgs {
     #[arg(
         long = "sandbox",
         value_enum,
-        conflicts_with_all = ["allow_net", "allow_read", "allow_run", "allow_env", "allow_http_import", "allow_all"]
+        conflicts_with_all = SANDBOX_CONFLICTS
     )]
     sandbox: Option<SandboxProfile>,
 }
+
+#[cfg(feature = "http-import")]
+const ALLOW_ALL_CONFLICTS: &[&str] = &[
+    "allow_net",
+    "allow_read",
+    "allow_write",
+    "allow_run",
+    "allow_env",
+    "allow_http_import",
+];
+#[cfg(not(feature = "http-import"))]
+const ALLOW_ALL_CONFLICTS: &[&str] = &["allow_read", "allow_write", "allow_run", "allow_env"];
+
+#[cfg(feature = "http-import")]
+const SANDBOX_CONFLICTS: &[&str] = &[
+    "allow_net",
+    "allow_read",
+    "allow_run",
+    "allow_env",
+    "allow_http_import",
+    "allow_all",
+];
+#[cfg(not(feature = "http-import"))]
+const SANDBOX_CONFLICTS: &[&str] = &["allow_read", "allow_run", "allow_env", "allow_all"];
 
 #[derive(Clone, Debug, clap::Args, Default)]
 struct InputArgs {
@@ -708,13 +735,16 @@ impl ProgramArgs {
         let Some(value) = value.filter(|v| !v.is_empty()) else {
             return Ok(());
         };
+        #[cfg(feature = "http-import")]
+        let http_flag_given = self.allow_net.is_some() || self.allow_http_import.is_some();
+        #[cfg(not(feature = "http-import"))]
+        let http_flag_given = false;
         let explicit = self.sandbox.is_some()
             || self.allow_all
             || self.allow_read.is_some()
-            || self.allow_net.is_some()
             || self.allow_run.is_some()
             || self.allow_env.is_some()
-            || self.allow_http_import.is_some();
+            || http_flag_given;
         if explicit {
             return Ok(());
         }
@@ -738,12 +768,16 @@ impl ProgramArgs {
             Some(SandboxProfile::Networked) => sandboxed_io.allow_net(true).allow_write(self.allow_write.clone()),
             Some(SandboxProfile::Unsafe) => sandboxed_io.allow_all(),
             None if self.allow_all => sandboxed_io.allow_all(),
-            None => sandboxed_io
-                .allow_read(self.allow_read.clone())
-                .allow_write(self.allow_write.clone())
-                .allow_net(self.allow_net.clone())
-                .allow_run(self.allow_run.clone())
-                .allow_env(self.allow_env.clone()),
+            None => {
+                let io = sandboxed_io
+                    .allow_read(self.allow_read.clone())
+                    .allow_write(self.allow_write.clone())
+                    .allow_run(self.allow_run.clone())
+                    .allow_env(self.allow_env.clone());
+                #[cfg(feature = "http-import")]
+                let io = io.allow_net(self.allow_net.clone());
+                io
+            }
         }
     }
 

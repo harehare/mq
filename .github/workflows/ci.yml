@@ -150,11 +150,13 @@ jobs:
       - name: Install tools
         uses: taiki-e/install-action@v2.90.6
         with:
-          tool: nextest
+          tool: nextest,cargo-hack
       - name: Run feature-gated tests
         run: just test-lang-cached test-default
         env:
           NEXTEST_RETRIES: 3
+      - name: Check each feature on its own
+        run: just check-features
 
   format-check:
     runs-on: ubuntu-latest

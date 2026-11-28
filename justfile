@@ -174,6 +174,16 @@ test-workspace:
 test-default:
     cargo nextest run -p mq-lang -p mq-run
 
+# Build each feature on its own (with dev-deps, so test code is covered) to catch missing cfg gates.
+check-features:
+    cargo hack check --workspace --exclude mq-wasm --each-feature --tests --keep-going
+    cargo run -q -p mq-run --no-default-features -- --help > /dev/null
+    cargo run -q -p mq-run --no-default-features -- completion zsh > /dev/null
+
+# Pairwise feature combinations of the crates with the most features.
+check-features-powerset:
+    cargo hack check -p mq-lang -p mq-run -p mq-syntax -p mq-markdown --feature-powerset --depth 2 --tests --keep-going
+
 test: test-lang-cached test-workspace
 
 # Lint and type check all tracked .mq files with the in-tree mq-lint/mq-check, run per directory so sibling modules resolve
@@ -190,7 +200,7 @@ lint-mq:
     exit $status
 
 # Run formatting, linting and all tests
-test-all: fmt fmt-mq lint-mq lint test-mq test-doc test-doc-examples test-all-features test-lang-cached test-default
+test-all: fmt fmt-mq lint-mq lint test-mq test-doc test-doc-examples test-all-features test-lang-cached test-default check-features
 
 # Run tests with code coverage reporting
 test-cov:
