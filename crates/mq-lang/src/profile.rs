@@ -60,6 +60,7 @@ struct State {
     stack: Vec<Entry>,
     active: HashMap<Ident, u32>,
     totals: HashMap<Ident, Duration>,
+    closure_names: HashMap<(usize, crate::ast::TokenId), Ident>,
 }
 
 impl State {
@@ -278,6 +279,31 @@ tr:hover td{background:rgba(255,255,255,.05)}\
         out
     }
 
+    /// Replaces module ids in `<closure@ID:LINE>` labels with names from `module_name`, e.g.
+    /// `<closure@query:3>`. Module `0` is the top-level query.
+    #[must_use]
+    pub fn with_module_names(mut self, module_name: impl Fn(u32) -> String) -> Self {
+        let rename = |label: &str| -> Option<String> {
+            let (id, line) = label.strip_prefix("<closure@")?.strip_suffix('>')?.split_once(':')?;
+            let id: u32 = id.parse().ok()?;
+            let name = if id == 0 { "query".to_string() } else { module_name(id) };
+            Some(format!("<closure@{name}:{line}>"))
+        };
+        for f in &mut self.functions {
+            if let Some(name) = rename(&f.name) {
+                f.name = name;
+            }
+        }
+        for (path, _) in &mut self.stacks {
+            for label in path {
+                if let Some(name) = rename(label) {
+                    *label = name;
+                }
+            }
+        }
+        self
+    }
+
     /// Renders Brendan Gregg's folded stacks (`a;b;c <microseconds>`), accepted by `inferno`
     /// and speedscope.
     pub fn to_folded(&self) -> String {
@@ -468,10 +494,38 @@ fn with_state(f: impl FnOnce(&mut State)) {
     });
 }
 
-/// Starts timing `name`. `count_call` is false when re-entering a resumed coroutine frame.
+/// Starts timing builtin `name`.
 #[inline]
-pub(crate) fn enter(name: Option<Ident>, count_call: bool) {
-    with_state(|state| state.enter(name.unwrap_or_else(|| Ident::new("<closure>")), count_call));
+pub(crate) fn enter(name: Ident) {
+    with_state(|state| state.enter(name, true));
+}
+
+/// Starts timing the function a frame runs. Unnamed chunks are labelled by the line of their
+/// first instruction (`<closure@MODULE:LINE>`), or `<main>` for the top-level program.
+pub(crate) fn enter_frame(
+    name: Option<Ident>,
+    token: Option<crate::ast::TokenId>,
+    arena: &crate::TokenArena,
+    count_call: bool,
+    top_level: bool,
+) {
+    with_state(|state| {
+        let name = match name {
+            Some(name) => name,
+            None if top_level => Ident::new("<main>"),
+            None => match token {
+                Some(id) => {
+                    let key = (crate::Shared::as_ptr(arena) as *const () as usize, id);
+                    *state.closure_names.entry(key).or_insert_with(|| {
+                        let (module, line) = crate::with_token(arena, id, |t| (t.module_id.raw(), t.range.start.line));
+                        Ident::new(&format!("<closure@{module}:{line}>"))
+                    })
+                }
+                None => Ident::new("<closure>"),
+            },
+        };
+        state.enter(name, count_call);
+    });
 }
 
 /// Stops timing the innermost entry.
@@ -545,9 +599,9 @@ mod tests {
         let scope = ProfileScope::start();
         let f = Ident::new("f");
         let g = Ident::new("g");
-        enter(Some(f), true);
-        enter(Some(f), true);
-        enter(Some(g), true);
+        enter(f);
+        enter(f);
+        enter(g);
         exit();
         exit();
         exit();
@@ -561,10 +615,90 @@ mod tests {
     #[test]
     fn truncate_closes_open_entries() {
         let scope = ProfileScope::start();
-        enter(Some(Ident::new("a")), true);
-        enter(Some(Ident::new("b")), true);
+        enter(Ident::new("a"));
+        enter(Ident::new("b"));
         truncate(0);
         assert_eq!(depth(), 0);
         assert_eq!(scope.finish().functions().len(), 2);
+    }
+
+    fn profile_of(code: &str) -> (Profile, bool) {
+        let mut engine = crate::DefaultEngine::default();
+        engine.load_builtin_module();
+        let scope = ProfileScope::start();
+        let ok = engine.eval(code, std::iter::once(crate::RuntimeValue::None)).is_ok();
+        assert_eq!(depth(), 0, "profile stack must be balanced after evaluation");
+        (scope.finish(), ok)
+    }
+
+    fn function<'a>(profile: &'a Profile, name: &str) -> &'a FunctionProfile {
+        profile
+            .functions()
+            .iter()
+            .find(|f| f.name == name)
+            .unwrap_or_else(|| panic!("{name} not profiled: {:?}", profile.functions()))
+    }
+
+    #[test]
+    fn recursion_counts_each_call_and_total_is_not_double_counted() {
+        let (profile, ok) = profile_of("def fib(n): if (n < 2): n else: fib(n - 1) + fib(n - 2); fib(10)");
+        assert!(ok);
+        let fib = function(&profile, "fib");
+        assert_eq!(fib.calls, 177);
+        assert!(fib.total_time >= fib.self_time);
+        assert!(fib.total_time <= profile.total_time());
+    }
+
+    #[test]
+    fn tail_calls_are_counted_once_per_iteration() {
+        let (profile, ok) =
+            profile_of("def count(n, acc): if (n == 0): acc else: count(n - 1, acc + 1); count(100, 0)");
+        assert!(ok);
+        assert_eq!(function(&profile, "count").calls, 101);
+    }
+
+    #[test]
+    fn generator_resume_keeps_the_stack_balanced() {
+        let code = "def h(): let c = (fn(): yield: 1 | yield: 2 | yield: 3;)() | next(c) | next(c) | next(c); h()";
+        let (profile, ok) = profile_of(code);
+        assert!(ok);
+        assert_eq!(function(&profile, "h").calls, 1);
+        let generator = profile
+            .functions()
+            .iter()
+            .find(|f| f.name.starts_with("<closure@"))
+            .expect("generator frame is profiled");
+        assert_eq!(generator.calls, 1);
+    }
+
+    #[test]
+    fn caught_errors_keep_the_stack_balanced() {
+        let code = "def boom(n): if (n == 0): error(\"x\") else: boom(n - 1); try: boom(3) catch: 1";
+        let (profile, ok) = profile_of(code);
+        assert!(ok);
+        assert_eq!(function(&profile, "boom").calls, 4);
+    }
+
+    #[test]
+    fn uncaught_errors_still_produce_a_profile() {
+        let (profile, ok) = profile_of("def inf(n): inf(n + 1) + 1; inf(0)");
+        assert!(!ok);
+        assert!(function(&profile, "inf").calls > 1);
+    }
+
+    #[test]
+    fn unnamed_functions_are_labelled_by_location() {
+        let (profile, ok) = profile_of("def f(): [1, 2] | map(fn(x): x + 1;); f()");
+        assert!(ok);
+        let profile = profile.with_module_names(|id| format!("m{id}"));
+        assert!(function(&profile, "<main>").calls == 1);
+        assert!(
+            profile
+                .functions()
+                .iter()
+                .any(|f| f.name.starts_with("<closure@query:1")),
+            "{:?}",
+            profile.functions()
+        );
     }
 }

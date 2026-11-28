@@ -3188,18 +3188,16 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-        #[cfg(feature = "profile")]
-        let fn_profile = self.start_profile();
         let mut cache = ProgramCache::default();
         let index = self.program_index(&mut engine, &mut cache, query, first_file)?;
-        let runtime_values = engine
-            .eval_compiled(&cache.programs[index].1, combined_input.into_iter())
+        let runtime_values = self
+            .eval_profiled(&mut engine, |engine| {
+                engine.eval_compiled(&cache.programs[index].1, combined_input.into_iter())
+            })
             .map_err(|error| *error)?;
 
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, &None);
-        #[cfg(feature = "profile")]
-        self.emit_profile(fn_profile, &engine);
 
         self.emit_results(runtime_values, grep_input, &None)
     }
@@ -3219,22 +3217,21 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-        #[cfg(feature = "profile")]
-        let fn_profile = self.start_profile();
 
         let runtime_values = if self.output.update {
-            let results = engine
-                .eval_compiled(program, input.clone().into_iter())
+            let results = self
+                .eval_profiled(engine, |engine| {
+                    engine.eval_compiled(program, input.clone().into_iter())
+                })
                 .map_err(|e| *e)?;
             self.apply_update(input, results)?
         } else {
-            engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
+            self.eval_profiled(engine, |engine| engine.eval_compiled(program, input.into_iter()))
+                .map_err(|e| *e)?
         };
 
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
-        #[cfg(feature = "profile")]
-        self.emit_profile(fn_profile, engine);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -3269,19 +3266,41 @@ impl Cli {
         let index = self.program_index(engine, cache, query, file)?;
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-        #[cfg(feature = "profile")]
-        let fn_profile = self.start_profile();
         let input = self.resolve_input(file, content)?;
-        let runtime_values = engine
-            .eval_compiled(&cache.programs[index].1, input.into_iter())
+        let runtime_values = self
+            .eval_profiled(engine, |engine| {
+                engine.eval_compiled(&cache.programs[index].1, input.into_iter())
+            })
             .map_err(|error| *error)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
-        #[cfg(feature = "profile")]
-        self.emit_profile(fn_profile, engine);
         let matches = self.output.paginate(runtime_values.compact());
         self.record_exit_status(&matches);
         Ok(matches.len())
+    }
+
+    /// Runs `eval`, printing the requested profile even when it fails.
+    #[cfg(not(feature = "profile"))]
+    #[inline(always)]
+    fn eval_profiled<T, E>(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        eval: impl FnOnce(&mut mq_lang::DefaultEngine) -> Result<T, E>,
+    ) -> Result<T, E> {
+        eval(engine)
+    }
+
+    /// Runs `eval`, printing the requested profile even when it fails.
+    #[cfg(feature = "profile")]
+    fn eval_profiled<T, E>(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        eval: impl FnOnce(&mut mq_lang::DefaultEngine) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let scope = self.start_profile();
+        let result = eval(engine);
+        self.emit_profile(scope, engine);
+        result
     }
 
     #[cfg(feature = "profile")]
@@ -3299,7 +3318,7 @@ impl Cli {
         let Some(scope) = scope else {
             return;
         };
-        let profile = scope.finish();
+        let profile = scope.finish().with_module_names(|id| engine.profile_module_name(id));
         if let Some(format) = self.profile {
             match format {
                 ProfileFormat::Text => eprint!("{profile}"),

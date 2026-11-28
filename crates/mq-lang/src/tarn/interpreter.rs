@@ -955,9 +955,16 @@ fn run_chunk(
 
 /// Starts profiling the function `frame` runs.
 #[cfg(feature = "profile")]
-fn profile_enter(frame: &Frame, root_chunks: &Shared<Vec<Chunk>>, count_call: bool) {
+fn profile_enter(
+    frame: &Frame,
+    root_chunks: &Shared<Vec<Chunk>>,
+    arena: &crate::TokenArena,
+    count_call: bool,
+    top_level: bool,
+) {
     let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
-    profile::enter(chunks[frame.chunk_index as usize].function_name, count_call);
+    let chunk = &chunks[frame.chunk_index as usize];
+    profile::enter_frame(chunk.function_name, chunk.token_at(0), arena, count_call, top_level);
 }
 
 /// Result of one dispatched step inside `run_frame_slice`.
@@ -1040,7 +1047,7 @@ fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
     #[cfg(feature = "profile")]
     let profile_mark = profile::depth();
     #[cfg(feature = "profile")]
-    profile_enter(&initial, root_chunks, true);
+    profile_enter(&initial, root_chunks, &execution.token_arena, true, profile_mark == 0);
     frames.push(initial);
     let outcome = drive_frames::<CHECK_TIMEOUT>(
         root_chunks,
@@ -1134,7 +1141,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 {
                     profile::exit();
                     if let Some(top) = frames.last() {
-                        profile_enter(top, root_chunks, true);
+                        profile_enter(top, root_chunks, &execution.token_arena, true, false);
                     }
                 }
                 continue 'frames;
@@ -1218,7 +1225,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 if pushed.is_ok()
                     && let Some(top) = frames.last()
                 {
-                    profile_enter(top, root_chunks, true);
+                    profile_enter(top, root_chunks, &execution.token_arena, true, false);
                 }
                 if let Err(e) = pushed {
                     let e = locate_at_top(frames, root_chunks, e);
@@ -1423,7 +1430,7 @@ fn unwind_frames(
                     Ok(()) => {
                         #[cfg(feature = "profile")]
                         if let Some(top) = frames.last() {
-                            profile_enter(top, root_chunks, true);
+                            profile_enter(top, root_chunks, &execution.token_arena, true, false);
                         }
                         return Ok(());
                     }
@@ -2150,7 +2157,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     let mut args = Args::new();
                     args.push(value);
                     #[cfg(feature = "profile")]
-                    profile::enter(Some(*builtin), true);
+                    profile::enter(*builtin);
                     let result = builtin::eval_resolved_builtin(
                         func,
                         &borrow_self(locals, chunks),
@@ -2190,7 +2197,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 OpCode::CallNative { func, ident, argc } => {
                     let args = pop_call_args!(*argc);
                     #[cfg(feature = "profile")]
-                    profile::enter(Some(*ident), true);
+                    profile::enter(*ident);
                     let result =
                         builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), ident, args, execution.env);
                     #[cfg(feature = "profile")]
@@ -2201,7 +2208,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 OpCode::CallBuiltin(ident, argc) => {
                     let args = pop_call_args!(*argc);
                     #[cfg(feature = "profile")]
-                    profile::enter(Some(*ident), true);
+                    profile::enter(*ident);
                     let result = call_builtin_args(
                         ident,
                         args,
@@ -2779,7 +2786,7 @@ fn enter_frame(
         .map_err(|e| locate_at_top(frames, root_chunks, e))?;
     #[cfg(feature = "profile")]
     if let Some(top) = frames.last() {
-        profile_enter(top, root_chunks, true);
+        profile_enter(top, root_chunks, &execution.token_arena, true, false);
     }
     Ok(())
 }

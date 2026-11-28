@@ -27,7 +27,7 @@ mq --profile -f query.mq input.md
 ```text
 function                              calls         self        total  self%
 map                                       1     45.577ms     58.078ms  73.5%
-<closure>                             20002     12.551ms     62.049ms  20.2%
+<closure@query:1>                     20002     12.551ms     62.049ms  20.2%
 fib                                    1973      3.621ms      3.621ms   5.8%
 ```
 
@@ -38,7 +38,9 @@ fib                                    1973      3.621ms      3.621ms   5.8%
 | `total` | Time including callees. A recursive function is counted once, not once per level. |
 | `self%` | Share of the summed self time. |
 
-Builtins and the functions defined in `builtin.mq` are listed alongside your own `def`s. Anonymous functions and the top-level program appear as `<closure>`.
+Builtins and the functions defined in `builtin.mq` are listed alongside your own `def`s. Anonymous functions are labelled by where their code starts, such as `<closure@query:3>` or `<closure@helper:7>`, and the top-level program is `<main>`.
+
+The profile is printed even when the query fails, so you can see where the time went before the error.
 
 ### Output formats
 

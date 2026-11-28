@@ -216,8 +216,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     }
 
     /// Returns the display name of the module with raw id `module_id`, as recorded by the
-    /// line profiler.
-    #[cfg(feature = "profile-lines")]
+    /// profiler.
+    #[cfg(feature = "profile")]
     pub fn profile_module_name(&self, module_id: u32) -> String {
         self.vm
             .module_loader
